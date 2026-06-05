@@ -74,17 +74,17 @@ void print_performance_report(
 
 void save_logits(
     const std::string& dump_logits_path,
-    const std::vector<uint16_t>& prefill_logits,
-    const std::vector<uint16_t>& decode_logits) {
+    const std::vector<std::byte>& prefill_logits,
+    const std::vector<std::byte>& decode_logits) {
   std::ofstream outFile(dump_logits_path.c_str(), std::ios::binary);
   if (outFile.is_open()) {
     outFile.write(
         reinterpret_cast<const char*>(prefill_logits.data()),
-        prefill_logits.size() * sizeof(uint16_t));
+        prefill_logits.size());
 
     outFile.write(
         reinterpret_cast<const char*>(decode_logits.data()),
-        decode_logits.size() * sizeof(uint16_t));
+        decode_logits.size());
     outFile.close();
   } else {
     ET_CHECK_MSG(false, "Error saving the dump logits file");
@@ -93,8 +93,7 @@ void save_logits(
 
 } // namespace
 
-template <typename T>
-QNNMultimodalRunner<T>::QNNMultimodalRunner(
+QNNMultimodalRunner::QNNMultimodalRunner(
     std::unique_ptr<executorch::extension::Module> encoder,
     std::unique_ptr<executorch::extension::Module> tok_embedding,
     std::unique_ptr<executorch::extension::Module> text_decoder,
@@ -148,16 +147,14 @@ QNNMultimodalRunner<T>::QNNMultimodalRunner(
   ET_LOG(Info, "eval mode=%d", eval_mode_);
 }
 
-template <typename T>
-bool QNNMultimodalRunner<T>::is_loaded() const {
+bool QNNMultimodalRunner::is_loaded() const {
   return encoder_->is_loaded() && tok_embedding_->is_loaded() &&
       text_decoder_->is_loaded() && embedding_merger_ && tokenizer_ &&
       decoder_runner_ && prompt_processor_ && token_generator_ && kv_manager_ &&
       buffer_manager_;
 }
 
-template <typename T>
-Error QNNMultimodalRunner<T>::load() {
+Error QNNMultimodalRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
@@ -226,8 +223,8 @@ Error QNNMultimodalRunner<T>::load() {
 
   ET_LOG(Info, "Reading metadata from model");
   // retrieve any method meta, can be either prefill or kv
-  int64_t num_layers =
-      ET_UNWRAP(text_decoder_->get("get_n_layers")).toScalar().to<int64_t>();
+  ET_UNWRAP(num_layers_evalue__, text_decoder_->get("get_n_layers"));
+  int64_t num_layers = num_layers_evalue__.toScalar().to<int64_t>();
 
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
   // k_cache: [1, n_heads, head_dim, seq_len]
@@ -295,22 +292,26 @@ Error QNNMultimodalRunner<T>::load() {
   // attention
   int32_t sliding_window = context_len_;
   if (text_decoder_->method_names()->count("get_sliding_window") > 0) {
-    sliding_window =
-        ET_UNWRAP(text_decoder_->get("get_sliding_window")).toInt();
+    ET_UNWRAP(
+        sliding_window_evalue__, text_decoder_->get("get_sliding_window"));
+    sliding_window = sliding_window_evalue__.toInt();
   }
-  kv_manager_ = std::make_unique<KVManager<T>>(typename KVManager<T>::Metadata{
-      context_len_,
-      head_dim,
-      max_ar_len,
-      max_cache_len,
-      num_heads,
-      num_layers});
+  kv_manager_ = std::make_unique<KVManager>(
+      KVManager::Metadata{
+          context_len_,
+          head_dim,
+          max_ar_len,
+          max_cache_len,
+          num_heads,
+          num_layers},
+      std::make_unique<MethodMeta>(std::move(
+          text_decoder_->method_meta(token_generator_method_name).get())));
 
-  prompt_processor_ = std::make_unique<MultimodalPromptProcessor<T>>(
+  prompt_processor_ = std::make_unique<MultimodalPromptProcessor>(
       decoder_runner_.get(),
       kv_manager_.get(),
       prompt_processor_method_name,
-      typename MultimodalPromptProcessor<T>::Metadata{
+      MultimodalPromptProcessor::Metadata{
           context_len_,
           num_heads,
           num_layers,
@@ -319,7 +320,9 @@ Error QNNMultimodalRunner<T>::load() {
           use_int64_token,
           sliding_window,
           cache_mode_,
-          static_cast<int32_t>(dim)});
+          static_cast<int32_t>(dim)},
+      std::make_unique<MethodMeta>(std::move(
+          text_decoder_->method_meta(prompt_processor_method_name).get())));
 
   // Initialize EmbeddingGenerator
   tok_embedding_generator_ = std::make_unique<TokenEmbeddingProcessor>(
@@ -333,14 +336,14 @@ Error QNNMultimodalRunner<T>::load() {
           static_cast<int32_t>(dim)});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
     // Initialize TokenGenerator
-    token_generator_ = std::make_unique<MultimodalLhdTokenGenerator<T>>(
+    token_generator_ = std::make_unique<MultimodalLhdTokenGenerator>(
         tokenizer_.get(),
         tok_embedding_generator_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        typename MultimodalLhdTokenGenerator<T>::Metadata{
+        MultimodalLhdTokenGenerator::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -353,16 +356,18 @@ Error QNNMultimodalRunner<T>::load() {
             sliding_window,
             cache_mode_,
             static_cast<int32_t>(dim)},
-        &stats_);
+        &stats_,
+        std::make_unique<MethodMeta>(std::move(
+            text_decoder_->method_meta(token_generator_method_name).get())));
   } else {
-    token_generator_ = std::make_unique<MultimodalTokenGenerator<T>>(
+    token_generator_ = std::make_unique<MultimodalTokenGenerator>(
         tokenizer_.get(),
         tok_embedding_generator_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        typename MultimodalTokenGenerator<T>::Metadata{
+        MultimodalTokenGenerator::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -372,7 +377,9 @@ Error QNNMultimodalRunner<T>::load() {
             sliding_window,
             cache_mode_,
             static_cast<int32_t>(dim)},
-        &stats_);
+        &stats_,
+        std::make_unique<MethodMeta>(std::move(
+            text_decoder_->method_meta(token_generator_method_name).get())));
   }
 
   buffer_manager_ = std::make_unique<ClientMem>();
@@ -409,8 +416,7 @@ Error QNNMultimodalRunner<T>::load() {
   return Error::Ok;
 }
 
-template <typename T>
-executorch::runtime::Error QNNMultimodalRunner<T>::generate(
+executorch::runtime::Error QNNMultimodalRunner::generate(
     const std::vector<MultimodalInput>& inputs,
     const llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
@@ -522,8 +528,9 @@ executorch::runtime::Error QNNMultimodalRunner<T>::generate(
   // print the first token from prefill. No prev_token so use cur_token for
   // it.
   if (token_callback) {
-    token_callback(
-        ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
+    ET_UNWRAP_TOKENIZER(
+        decoded_token__, tokenizer_->decode(cur_token, cur_token));
+    token_callback(decoded_token__);
   }
   ET_LOG(
       Info,
@@ -533,8 +540,15 @@ executorch::runtime::Error QNNMultimodalRunner<T>::generate(
   // start the main loop
   prompt_tokens.push_back(cur_token);
 
-  int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens, cur_pos_, seq_len, token_callback, dump_logits, nullptr));
+  ET_UNWRAP(
+      num_generated_tokens,
+      token_generator_->generate(
+          prompt_tokens,
+          cur_pos_,
+          seq_len,
+          token_callback,
+          dump_logits,
+          nullptr));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,
@@ -561,8 +575,7 @@ executorch::runtime::Error QNNMultimodalRunner<T>::generate(
   return Error::Ok;
 }
 
-template <typename T>
-Result<ModelVersion> QNNMultimodalRunner<T>::get_model_version() {
+Result<ModelVersion> QNNMultimodalRunner::get_model_version() {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -571,16 +584,11 @@ Result<ModelVersion> QNNMultimodalRunner<T>::get_model_version() {
   return model_version_;
 }
 
-template <typename T>
-Result<MethodMeta> QNNMultimodalRunner<T>::get_encoder_method_meta() {
+Result<MethodMeta> QNNMultimodalRunner::get_encoder_method_meta() {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
   return encoder_->method_meta(kEncoderForwardName);
 }
-
-// Explicit instantiations
-template class QNNMultimodalRunner<uint16_t>;
-template class QNNMultimodalRunner<uint8_t>;
 
 } // namespace example

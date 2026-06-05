@@ -126,4 +126,4 @@ class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPa
             return super().call_operator(op, args, kwargs, meta)
         else:
             # Do not handle; forward unchanged.
-            return ExportPass.call_operator(self, op, args, kwargs, meta)
+            return ArmPass.call_operator(self, op, args, kwargs, meta)

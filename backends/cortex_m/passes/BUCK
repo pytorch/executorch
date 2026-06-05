@@ -36,6 +36,7 @@ fbcode_target(_kind = runtime.python_library,
         "decompose_hardswish_pass.py",
         "decompose_mean_pass.py",
         "quantized_clamp_activation_pass.py",
+        "scratch_buffer_sizes.py",
     ],
     deps=[
         "//caffe2:torch",

@@ -15,6 +15,7 @@ them to optimized MLX operations.
 
 from __future__ import annotations
 
+import os
 from typing import Any, List, Optional, Tuple
 
 import torch
@@ -37,6 +38,7 @@ from executorch.backends.mlx.pattern_utils import (
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
+    AddmmNode,
     AddNode,
     AsTypeNode,
     DequantizeNode,
@@ -52,6 +54,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     SubtractIntNode,
     SymSizeNode,
     TakeNode,
+    TransposeNode,
 )
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
@@ -883,6 +886,18 @@ class QuantizedLinearHandler(PatternHandler):
             out_dtype=out_dtype,
         )
 
+    # MLX's quantized_matmul Metal kernels are only instantiated for
+    # group_size in {32, 64, 128}. For smaller group sizes (e.g. GGUF
+    # Q6_K with group_size=16), emit DequantizeNode + matmul instead.
+    # Weights stay packed in the .pte file; dequantized on-device.
+    # This non-fused path is significantly slower and must be opted in
+    # via ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1.
+    _MIN_FUSED_GROUP_SIZE = 32
+
+    @staticmethod
+    def _allow_non_fused() -> bool:
+        return os.environ.get("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", "0") == "1"
+
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
 
@@ -908,19 +923,59 @@ class QuantizedLinearHandler(PatternHandler):
         x_dtype = x_node.meta["val"].dtype
         needs_cast = self.out_dtype != x_dtype
 
-        P.emit(
-            QuantizedMatmulNode(
-                x=P.slot_to_tid(x_slot),
-                w=P.slot_to_tid(w),
-                scales=P.slot_to_tid(scale_slot),
-                out=P.slot_to_tid(out),
-                biases=P.slot_to_tid(biases),
-                group_size=self.group_size,
-                bits=self.bits,
-                mode="affine",
-                transpose=True,
+        if self.group_size >= self._MIN_FUSED_GROUP_SIZE:
+            P.emit(
+                QuantizedMatmulNode(
+                    x=P.slot_to_tid(x_slot),
+                    w=P.slot_to_tid(w),
+                    scales=P.slot_to_tid(scale_slot),
+                    out=P.slot_to_tid(out),
+                    biases=P.slot_to_tid(biases),
+                    group_size=self.group_size,
+                    bits=self.bits,
+                    mode="affine",
+                    transpose=True,
+                )
             )
-        )
+        else:
+            if not self._allow_non_fused():
+                raise ValueError(
+                    f"Quantized linear with group_size={self.group_size} requires "
+                    f"the non-fused dequantize+matmul path, which is significantly "
+                    f"slower than the fused QuantizedMatmulNode (group_size >= 32). "
+                    f"Set ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1 to allow this."
+                )
+            out_scalar_type = torch_dtype_to_scalar_type(self.out_dtype)
+            _, w_deq = P.make_tmp_slot()
+            P.emit(
+                DequantizeNode(
+                    w=P.slot_to_tid(w),
+                    scales=P.slot_to_tid(scale_slot),
+                    out=P.slot_to_tid(w_deq),
+                    biases=P.slot_to_tid(biases),
+                    group_size=self.group_size,
+                    bits=self.bits,
+                    mode="affine",
+                    dtype=out_scalar_type,
+                )
+            )
+            _, w_t = P.make_tmp_slot()
+            P.emit(
+                TransposeNode(
+                    x=P.slot_to_tid(w_deq),
+                    out=P.slot_to_tid(w_t),
+                    perm=[1, 0],
+                )
+            )
+            P.emit(
+                AddmmNode(
+                    mat1=P.slot_to_tid(x_slot),
+                    mat2=P.slot_to_tid(w_t),
+                    out=P.slot_to_tid(out),
+                )
+            )
+            # DequantizeNode already produces the correct dtype.
+            needs_cast = False
 
         if has_bias:
             P.emit(

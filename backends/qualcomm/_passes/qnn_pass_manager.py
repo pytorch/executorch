@@ -26,6 +26,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
@@ -36,6 +37,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
+    DecomposeSelectScatter,
     DecomposeSilu,
     DecomposeTan,
     DecomposeThreshold,
@@ -48,6 +50,7 @@ from executorch.backends.qualcomm._passes import (
     FuseConsecutiveCast,
     FuseConsecutiveTranspose,
     I64toI32,
+    InsertCastForFpActQuantizedWeight,
     InsertIOQDQ,
     InsertRequantize,
     InsertReshapeForReduceOps,
@@ -108,6 +111,7 @@ def get_capture_program_passes():
         (DecomposeAny, True),
         (DecomposeAtan2, True),
         (DecomposeColIm, True),
+        (DecomposeFill, True),
         (DecomposeLogVariants, True),
         (DecomposeMaxPool3d, True),
         (DecomposeMinMaxDim, True),
@@ -119,6 +123,7 @@ def get_capture_program_passes():
         (FixedLinearKeepDim, True),
         (FoldQDQ, True),
         (I64toI32, True),
+        (InsertCastForFpActQuantizedWeight, True),
         (LayoutTransform, True),
         (RecomposePadMaxPool2d, True),
         (RecomposePixelUnshuffle, True),
@@ -245,12 +250,14 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeFill())
         self.add_pass(DecomposeGlu())
         # HTP and GPU doesn't support ElementWiseUnary with operation=reciprocal
         # Decompose Reciprocal into Div for these 2 backend
         # TODO: Skip this pass for CPU backend (Dependency: Backend-aware passes manager)
         self.add_pass(DecomposeReciprocal())
         self.add_pass(DecomposeRemainder())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeLogVariants())
         self.add_pass(ReplaceInfValues())
@@ -266,10 +273,12 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposePad())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeSelectScatter())
         self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeTriu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeFill())
         # DecomposeFloorDivide does not apply to the annotation pipeline,
         # since the CPU QDQ model would reduce accuracy.
         # We keep div and floor operations in floating-point to maintain precision.

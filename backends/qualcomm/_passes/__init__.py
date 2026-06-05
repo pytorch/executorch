@@ -21,6 +21,7 @@ from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
+from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
@@ -31,6 +32,7 @@ from .decompose_pad import DecomposePad
 from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
+from .decompose_select_scatter import DecomposeSelectScatter
 from .decompose_silu import DecomposeSilu
 from .decompose_tan import DecomposeTan
 from .decompose_threshold import DecomposeThreshold
@@ -43,6 +45,7 @@ from .fold_qdq import FoldQDQ
 from .fuse_consecutive_cast import FuseConsecutiveCast
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
+from .insert_cast_for_fp_act_quantized_weight import InsertCastForFpActQuantizedWeight
 from .insert_io_qdq import InsertIOQDQ
 from .insert_requantize import InsertRequantize
 from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
@@ -78,6 +81,7 @@ __all__ = [
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
@@ -88,6 +92,7 @@ __all__ = [
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
+    DecomposeSelectScatter,
     DecomposeSilu,
     DecomposeTan,
     DecomposeThreshold,
@@ -100,6 +105,7 @@ __all__ = [
     FuseConsecutiveCast,
     FuseConsecutiveTranspose,
     I64toI32,
+    InsertCastForFpActQuantizedWeight,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     InsertRequantize,

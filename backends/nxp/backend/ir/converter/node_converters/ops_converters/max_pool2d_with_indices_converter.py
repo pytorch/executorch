@@ -7,7 +7,6 @@ import operator
 
 import numpy as np
 import torch
-
 from executorch.backends.nxp.backend.edge_helper import try_get_arg
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
@@ -74,7 +73,7 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
             MaxPool2DWithIndicesConverter._get_node_args(node)
         )
 
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             # Requirements specified by the new Neutron flow documentation.
 
             supported_types = [torch.int8, torch.uint8]
@@ -152,9 +151,7 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
         :return: Tuple of (kernel_size, stride, padding, dilation, ceil_mode).
         """
         kernel_size = node.args[1]
-        stride = node.args[
-            2
-        ]  # The default value is equal to the kernel_size, so it is never empty here.
+        stride = try_get_arg(node, 2) or kernel_size
         padding = try_get_arg(node, 3) or (0, 0)
         dilation = try_get_arg(node, 4) or (1, 1)
         ceil_mode = try_get_arg(node, 5) or False

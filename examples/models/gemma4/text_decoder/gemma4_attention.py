@@ -25,7 +25,6 @@ import torch.nn.functional as F
 from torch import nn
 
 from .gemma4_config import Gemma4Config
-from .gemma4_norm import RMSNorm, RMSNormNoWeight
 
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
@@ -189,9 +188,11 @@ class Gemma4Attention(nn.Module):
         )
 
         # QKV norms sized by per-layer head_dim
-        self.q_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        self.k_norm = RMSNorm(self.head_dim, eps=config.rms_norm_eps)
-        self.v_norm = RMSNormNoWeight(self.head_dim, eps=config.rms_norm_eps)
+        self.q_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.k_norm = nn.RMSNorm(self.head_dim, eps=config.rms_norm_eps)
+        self.v_norm = nn.RMSNorm(
+            self.head_dim, eps=config.rms_norm_eps, elementwise_affine=False
+        )
 
         # Partial RoPE: for full attention, only rotate partial_rotary_factor of dims
         # but produce full head_dim cos/sin (zero-padded) to match HF's rotate_half pairing

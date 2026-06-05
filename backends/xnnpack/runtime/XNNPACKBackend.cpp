@@ -98,8 +98,15 @@ class XnnpackBackend final
         weights_cache_mutex_, std::defer_lock);
     if (use_weight_cache) {
       lock_weights_cache.lock();
+
+      const auto& cache_path = options_.get_packed_cache_path();
+      if (!cache_path.empty()) {
+        weights_cache_->set_packed_cache_path(cache_path);
+      }
+
       weights_cache_->initialize_for_runtime(
           context.get_runtime_allocator(), named_data_map);
+      workspace->set_uses_weight_cache();
     }
 
     auto [workspace_lock, workspace_ptr] = workspace->acquire();
@@ -129,6 +136,7 @@ class XnnpackBackend final
           Error, "XNNCompiler::compileModel failed: 0x%x", (unsigned int)err);
       return err;
     }
+
     return executor;
   }
 
@@ -138,13 +146,15 @@ class XnnpackBackend final
       Span<EValue*> args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
+    auto workspace = executor->get_workspace();
+
     std::unique_lock<std::mutex> lock_weights_cache(
         weights_cache_mutex_, std::defer_lock);
-    if (executor->uses_weight_cache()) {
+    if (executor->uses_weight_cache() || workspace->uses_weight_cache()) {
       lock_weights_cache.lock();
     }
 
-    auto [raii_lock, _] = executor->get_workspace()->acquire();
+    auto [raii_lock, _] = workspace->acquire();
 
     // Prepare Inputs/Outputs and Propagate Input Shapes
     Error err = executor->prepare_args(args);
@@ -167,14 +177,16 @@ class XnnpackBackend final
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
+      auto workspace = executor->get_workspace();
+
+      const std::lock_guard<std::mutex> lock_weights_cache(
+          weights_cache_mutex_);
 
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
 #endif
 
       if (executor->uses_weight_cache()) {
-        const std::lock_guard<std::mutex> lock_weights_cache(
-            weights_cache_mutex_);
         weights_cache_->delete_packed_data(executor->get_packed_data_names());
       }
 
@@ -183,7 +195,6 @@ class XnnpackBackend final
       // the same backend instance. Make sure to hold onto the workspace
       // shared_ptr, as the pointer in the executor is freed, which includes
       // the mutex referenced by raii_lock.
-      auto workspace = executor->get_workspace();
       auto [raii_lock, _] = workspace->acquire();
 
       // XNNExecutor is not trivially destructible. Since this was constructed

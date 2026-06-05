@@ -7,6 +7,12 @@
 
 set -eo pipefail
 
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+et_root_dir=$(cd "${script_dir}/../../.." && pwd)
+ootb_requirements="${et_root_dir}/backends/arm/requirements-arm-ootb-test.txt"
+
+cd "${et_root_dir}"
+
 help() {
     echo "Usage:"
     echo " $0 [TESTNAME]"
@@ -28,8 +34,17 @@ else
 fi
 
 
+install_ootb_test_requirements() {
+    python3 - <<'PY' || pip install -r "${ootb_requirements}"
+import notebook  # noqa: F401
+import nbconvert  # noqa: F401
+PY
+}
+
+
 run_ootb_tests_ethos_u() {
     echo "$FUNCNAME: Running out-of-the-box tests for Arm Ethos-U"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute examples/arm/ethos_u_minimal_example.ipynb
@@ -38,6 +53,7 @@ run_ootb_tests_ethos_u() {
 
 run_ootb_tests_tosa() {
     echo "$FUNCNAME: Running out-of-the-box tests for TOSA"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute backends/arm/scripts/TOSA_minimal_example.ipynb
@@ -46,6 +62,7 @@ run_ootb_tests_tosa() {
 
 run_ootb_tests_vgf() {
     echo "$FUNCNAME: Running out-of-the-box tests for VGF"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute examples/arm/vgf_minimal_example.ipynb
@@ -55,9 +72,6 @@ run_ootb_tests_vgf() {
 run_deit_e2e_ethos_u() {
     echo "$FUNCNAME: Fine-tune, export, build, and run the DEiT e2e test"
 
-    local script_dir
-    script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
-    et_root_dir=$(cd "${script_dir}/../../.." && pwd)
     local example_dir="${et_root_dir}/examples/arm/image_classification_example_ethos_u"
     local work_root="${et_root_dir}/arm_test/deit_tiny_ootb_smoke"
     local model_dir="${work_root}/deit_tiny_finetuned"

@@ -506,6 +506,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
 | `aten.special_expm1` | `DecomposeExpM1` |
+| `aten.fill.Scalar` | `DecomposeFill` |
 | `aten.floor_divide` | `DecomposeFloorDivide` |
 | `aten.glu` | `DecomposeGlu` |
 | `aten.linalg_vector_norm` | `DecomposeLinalgVectorNorm` |
@@ -517,6 +518,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.reflection_pad2d` | `DecomposePad` |
 | `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
 | `aten.roll` | `DecomposeRoll` |
+| `aten.select_scatter` | `DecomposeSelectScatter` |
 | `aten.silu` | `DecomposeSilu` |
 | `aten.tan` | `DecomposeTan` |
 | `aten.threshold` | `DecomposeThreshold` |

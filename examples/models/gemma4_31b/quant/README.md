@@ -50,5 +50,3 @@ The format is compatible with torchao's `save_pretrained` / `load_pretrained`.
 
 - `pack_metal.py` — Metal backend packer.
 - `gguf.py` — extend with Q5_K, Q8_0 GGUF quant types.
-- Upstream `Int4TilePackedTo4dTensor.from_int4_tensor()` to torchao
-  to replace the manual conversion in `pack_int4_for_cuda`.

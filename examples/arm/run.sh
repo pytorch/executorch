@@ -659,7 +659,7 @@ configure_ethosu_scratch_if_requested() {
         return
     fi
     local scratch_size
-    scratch_size=$(get_ethosu_scratch_size "$pte_path" || true)
+    scratch_size=$(get_ethosu_scratch_size "$pte_path" | tail -n 1)
     if [[ -z "${scratch_size}" ]]; then
         echo "WARNING: Failed to derive Ethos-U scratch size from ${pte_path}" >&2
         return
@@ -777,7 +777,7 @@ for i in "${!test_model[@]}"; do
             exit 1
         fi
         set -x
-        backends/cortex_m/test/build_test_runner.sh
+        backends/cortex_m/test/build_test_runner.sh --target="${target}"
         cortex_m_elf="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300/arm_executor_runner"
         if [ "$build_only" = false ] ; then
             backends/arm/scripts/run_fvp.sh --elf="${cortex_m_elf}" --target="${target}" --bundle="${pte_file}"

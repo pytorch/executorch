@@ -33,6 +33,7 @@ def _ensure_cortex_m_dependencies() -> None:
 
 _ensure_cortex_m_dependencies()
 
+from .cortex_m_pass import CortexMPass  # noqa  # usort: skip
 from .activation_fusion_pass import ActivationFusionPass  # noqa
 from .clamp_hardswish_pass import ClampHardswishPass  # noqa
 from .convert_to_cortex_m_pass import ConvertToCortexMPass  # noqa

@@ -18,6 +18,8 @@
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/executor/program.h>
 
+#include <executorch/runtime/core/device_memory_buffer.h>
+
 #ifdef USE_ATEN_LIB
 #define ET_MODULE_NAMESPACE module::aten
 #else // !USE_ATEN_LIB
@@ -716,6 +718,11 @@ class Module {
   struct PlannedMemory {
     std::vector<std::vector<uint8_t>> planned_buffers;
     std::vector<runtime::Span<uint8_t>> planned_spans;
+    std::vector<runtime::DeviceMemoryBuffer> device_buffers;
+    /// Per-buffer Device (type + index) metadata used by
+    /// HierarchicalAllocator. Owns the storage backing the device span the
+    /// allocator references, so it must outlive `planned_memory`.
+    std::vector<runtime::etensor::Device> planned_devices;
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
   };
   std::unique_ptr<PlannedMemory> make_planned_memory(
@@ -723,6 +730,8 @@ class Module {
   std::unique_ptr<PlannedMemory> make_planned_memory_with_shared_arenas(
       const std::vector<size_t>& buffer_sizes,
       std::vector<std::vector<uint8_t>>& shared_arenas);
+  std::unique_ptr<PlannedMemory> make_planned_memory_with_devices(
+      const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta);
   runtime::Result<std::vector<size_t>> get_mem_planned_buffer_sizes(
       const std::string& method_name);
   runtime::Result<std::vector<size_t>> get_max_mem_planned_buffer_sizes();

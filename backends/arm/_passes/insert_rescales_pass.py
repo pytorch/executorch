@@ -509,7 +509,13 @@ class InsertControlFlowRescalesPass(ArmPass):
             input_node = input_nodes[qargs_index]
             if len(input_node.users) == 0:
                 continue
-            if len(out_qparams_map := input_node.meta.get("output_qparams", {})) != 1:
+            out_qparams_map = input_node.meta.get("output_qparams", {})
+            if len(out_qparams_map) == 0:
+                # Nested control-flow submodules may also expose frozen captured
+                # values as placeholders. Those are not control-flow boundary
+                # inputs, so there is no qparam pair to bridge with a RESCALE.
+                continue
+            if len(out_qparams_map) != 1:
                 raise ValueError(
                     f"Expected submodule input {input_node} to have exactly one output qparam, got {out_qparams_map}"
                 )

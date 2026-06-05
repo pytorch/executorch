@@ -6,25 +6,35 @@
 # LICENSE file in the root directory of this source tree.
 
 import executorch.backends.cortex_m.ops.operators  # noqa
+import executorch.exir as exir
 
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
-from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
+
+from executorch.backends.cortex_m.passes.cortex_m_pass import CortexMPass
+from executorch.backends.cortex_m.passes.passes_utils import (
+    build_activation_lut,
+    quantize_multiplier_aot,
+)
+from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
+    required_cmsis_nn_buffer_sizes,
+)
 
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     get_param_tensor,
     is_param_node,
 )
-
-from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes import make_alloc_node
+from torch._subclasses.fake_tensor import FakeTensorMode
+
 from torch.export.graph_signature import InputKind
 from torch.fx.passes.infra.pass_manager import PassResult
 
 
-class ConvertToCortexMPass(XNNPACKPass):
+class ConvertToCortexMPass(CortexMPass):
     """
     Cortex-M backend pass for replacing supported quantized kernels with Cortex-M
     accelerated kernels.
@@ -32,6 +42,15 @@ class ConvertToCortexMPass(XNNPACKPass):
     Used for ops which require changes to input tensors which is not supported
     by call_operator.
     """
+
+    def _create_uninitialized_alloc_node(self):
+        """Create an unitialized alloc node to be initialize at a later point."""
+        with FakeTensorMode() as mode:
+            return make_alloc_node(
+                self.exported_program.graph_module,
+                mode.from_tensor(torch.empty(0)),
+                None,
+            )
 
     def _compute_kernel_sum(self, weights, bias, input_offset, weight_offset):
         """
@@ -238,6 +257,9 @@ class ConvertToCortexMPass(XNNPACKPass):
                 torch.tensor(quantized_shifts, dtype=torch.int32),
             )
 
+        with node.graph.inserting_before(node):
+            scratch = self._create_uninitialized_alloc_node()
+
         if use_depthwise_conv:
             # Compute depth_multiplier for depthwise convolution
             # For depthwise: output_channels = input_channels * depth_multiplier
@@ -263,6 +285,7 @@ class ConvertToCortexMPass(XNNPACKPass):
                 quantized_shift_tensor,
                 output_qmin,
                 output_qmax,
+                scratch,
             )
             return exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default, new_args
         else:
@@ -280,8 +303,35 @@ class ConvertToCortexMPass(XNNPACKPass):
                 quantized_shift_tensor,
                 output_qmin,
                 output_qmax,
+                scratch,
             )
             return exir_ops.edge.cortex_m.quantized_conv2d.default, new_args
+
+    def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
+        """For nodes with a registered buffer size function for node.target, set the buffer sizes
+        of the last n args, which should be exir.memory.alloc nodes. For nodes without a
+        registered function, do nothing.
+        """
+
+        scratch_buffer_sizes = required_cmsis_nn_buffer_sizes(
+            node, self.target_config.backend
+        )
+        if scratch_buffer_sizes is None:
+            return
+
+        # Assume that scratch_buffer_sizes are given from left to right in the call signature of node.target.
+        for i, scratch_buffer_size in enumerate(reversed(scratch_buffer_sizes)):
+            scratch_arg = node.args[-(i + 1)]
+            if (
+                not isinstance(scratch_arg, torch.fx.Node)
+                or scratch_arg.target != exir.memory.alloc
+            ):
+                raise RuntimeError(
+                    f"Expected scratch alloc node as final argument(s) for {node.target}, got {scratch_arg}."
+                )
+
+            # buffer size is given in bytes, always use uint8 as dtype.
+            scratch_arg.args = (((scratch_buffer_size,), torch.uint8),)
 
     def _get_transpose_conv2d_replacement(self, node):
         """
@@ -363,6 +413,10 @@ class ConvertToCortexMPass(XNNPACKPass):
                 torch.tensor(quantized_shifts, dtype=torch.int32),
             )
 
+        with node.graph.inserting_before(node):
+            scratch = self._create_uninitialized_alloc_node()
+            output_scratch = self._create_uninitialized_alloc_node()
+
         new_args = (
             x,
             weight_nhwc,
@@ -377,6 +431,8 @@ class ConvertToCortexMPass(XNNPACKPass):
             quantized_shift_tensor,
             output_qmin,
             output_qmax,
+            scratch,
+            output_scratch,
         )
         return exir_ops.edge.cortex_m.quantized_transpose_conv2d.default, new_args
 
@@ -415,6 +471,9 @@ class ConvertToCortexMPass(XNNPACKPass):
                     args=(rhs_node, [0, 2, 1]),
                 )
 
+        with node.graph.inserting_before(node):
+            scratch = self._create_uninitialized_alloc_node()
+
         args = (
             lhs_node,
             -lhs_zp,
@@ -423,8 +482,41 @@ class ConvertToCortexMPass(XNNPACKPass):
             output_zp,
             output_mult,
             output_shift,
+            scratch,
         )
         return exir_ops.edge.cortex_m.quantized_batch_matmul.default, args
+
+    def _get_activation_replacement(self, node):
+        """Lower a standalone quantized sigmoid / tanh / silu to a single
+        cortex_m.quantized_activation call backed by an AoT-built 256-entry
+        int8 LUT. The kernel is shape-agnostic; the LUT encodes both the
+        activation function and the input/output qparams.
+        """
+        input_qparams = node.meta["input_qparams"][0]
+        output_qparams = node.meta["output_qparams"][0]
+        lut_tensor = build_activation_lut(
+            node.target,
+            float(input_qparams.scale),
+            int(input_qparams.zp),
+            float(output_qparams.scale),
+            int(output_qparams.zp),
+        )
+
+        # Constant placeholders must appear before user-input placeholders;
+        # anchor on the first existing placeholder so the new LUT lands in the
+        # constant-placeholder block at the top of the graph.
+        first_placeholder = next(n for n in node.graph.nodes if n.op == "placeholder")
+        with node.graph.inserting_before(first_placeholder):
+            lut_node = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_lut",
+                InputKind.PARAMETER,
+                lut_tensor,
+            )
+
+        new_args = (node.args[0], lut_node)
+        return exir_ops.edge.cortex_m.quantized_activation.default, new_args
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
@@ -449,6 +541,12 @@ class ConvertToCortexMPass(XNNPACKPass):
                         op, args = self._get_convolution_replacement(node)
                 case exir_ops.edge.aten.bmm.default:
                     op, args = self._get_bmm_replacement(node)
+                case (
+                    exir_ops.edge.aten.sigmoid.default
+                    | exir_ops.edge.aten.tanh.default
+                    | exir_ops.edge.aten.silu.default
+                ):
+                    op, args = self._get_activation_replacement(node)
                 case _:
                     continue
 
@@ -459,6 +557,7 @@ class ConvertToCortexMPass(XNNPACKPass):
                     args=args,
                     kwargs={},
                 )
+                self._initialize_alloc_node_size(cortex_m_op)
 
                 node.replace_all_uses_with(cortex_m_op)
                 graph_module.graph.erase_node(node)
