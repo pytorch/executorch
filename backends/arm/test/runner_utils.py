@@ -845,11 +845,19 @@ def vkml_emulation_layer_installed() -> bool:
     existing_layers = set(vk_instance_layers.split(":"))
     layers_exists = required_layers.issubset(existing_layers)
 
-    # Check LD_LIBRARY_PATH for "emulation-layer/deploy"
+    # Check dynamic library search paths for the emulation layer deploy dir.
+    library_paths = []
     ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    dyld_library_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+    if ld_library_path:
+        library_paths.extend(ld_library_path.split(os.path.pathsep))
+    if dyld_library_path:
+        library_paths.extend(dyld_library_path.split(os.path.pathsep))
+
     deploy_exists = False
-    for path in ld_library_path.split(os.path.pathsep):
-        if "emulation-layer/deploy" in path and os.path.isdir(path):
+    deploy_markers = ("emulation-layer/deploy", "emulation_layer/deploy")
+    for path in library_paths:
+        if any(marker in path for marker in deploy_markers) and os.path.isdir(path):
             deploy_exists = True
 
     return layers_exists and deploy_exists
@@ -884,7 +892,7 @@ def _elf_search_roots() -> list[Path]:
 
 
 def _elf_path_candidates(
-    target_board: str, use_portable_ops: bool = False
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
 ) -> list[Path]:
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
@@ -893,11 +901,14 @@ def _elf_path_candidates(
     if target_board in ("corstone-300", "corstone-320"):
         build_dir = Path(
             "arm_test",
-            f"arm_semihosting_executor_runner_{portable_ops_str}{target_board}",
+            f"arm_semihosting_executor_runner_"
+            f"{portable_ops_str}{target_board}{build_dir_suffix}",
         )
         binary_name = "arm_executor_runner"
     else:
-        build_dir = Path("arm_test", f"arm_executor_runner_{portable_ops_str}vkml")
+        build_dir = Path(
+            "arm_test", f"arm_executor_runner_{portable_ops_str}vkml{build_dir_suffix}"
+        )
         binary_name = "executor_runner"
 
     candidates: list[Path] = []
@@ -942,9 +953,15 @@ def _resolve_existing_elf_path(elf_candidates: Iterable[Path]) -> Path:
     )
 
 
-def get_elf_path(target_board: str, use_portable_ops: bool = False) -> str:
+def get_elf_path(
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
+) -> str:
     elf_path = _resolve_existing_elf_path(
-        _elf_path_candidates(target_board, use_portable_ops=use_portable_ops)
+        _elf_path_candidates(
+            target_board,
+            use_portable_ops=use_portable_ops,
+            build_dir_suffix=build_dir_suffix,
+        )
     )
     return str(elf_path)
 

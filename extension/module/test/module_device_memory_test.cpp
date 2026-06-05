@@ -146,17 +146,28 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelMethodMetaReportsCudaBuffer) {
   auto meta = module.method_meta("forward");
   ASSERT_TRUE(meta.ok());
 
-  // ModuleAddWithDevice has 1 planned buffer (48 bytes) on CUDA.
-  ASSERT_EQ(meta->num_memory_planned_buffers(), 1);
+  ASSERT_EQ(meta->num_memory_planned_buffers(), 2);
 
-  auto size = meta->memory_planned_buffer_size(0);
-  ASSERT_TRUE(size.ok());
-  EXPECT_EQ(size.get(), 48);
+  {
+    auto size = meta->memory_planned_buffer_size(0);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 48);
 
-  auto device = meta->memory_planned_buffer_device(0);
-  ASSERT_TRUE(device.ok());
-  EXPECT_EQ(device->type(), DeviceType::CUDA);
-  EXPECT_EQ(device->index(), 0);
+    auto device = meta->memory_planned_buffer_device(0);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), DeviceType::CPU);
+    EXPECT_EQ(device->index(), 0);
+  }
+  {
+    auto size = meta->memory_planned_buffer_size(1);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 48);
+
+    auto device = meta->memory_planned_buffer_device(1);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), DeviceType::CUDA);
+    EXPECT_EQ(device->index(), 0);
+  }
 }
 
 TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {

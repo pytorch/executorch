@@ -78,7 +78,7 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
             AdaptiveAvgPool2dConverter._get_equivalent_avg_pool_parameters(node)
         )
 
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             # Requirements specified by the new Neutron flow documentation.
 
             if not NodeConverter.uses_quantization_type_for_io(

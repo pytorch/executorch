@@ -506,6 +506,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
 | `aten.special_expm1` | `DecomposeExpM1` |
+| `aten.fill.Scalar` | `DecomposeFill` |
 | `aten.floor_divide` | `DecomposeFloorDivide` |
 | `aten.glu` | `DecomposeGlu` |
 | `aten.linalg_vector_norm` | `DecomposeLinalgVectorNorm` |
