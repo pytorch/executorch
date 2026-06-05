@@ -12,13 +12,9 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dIm2Col.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Convolution.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <executorch/runtime/core/freeable_buffer.h>
-
-#include <cstdlib>
-#include <cstring>
 #include <optional>
 
 namespace vkcompute {
@@ -29,29 +25,20 @@ namespace {
 // Weight handling
 //
 
-// Reshape weight from [C_out, C_in, K_h, K_w] (PyTorch contiguous) into the
-// im2col-flat layout [C_out, K_h * K_w * Cin_padded] used by the GEMM step.
-// In the flat dim:
-//   new_k = (ki * K_w + kj) * Cin_padded + ci      (ci in [0, Cin_padded))
-//   new_weight[co, new_k] = weight[co, ci, ki, kj] if ci < C_in else 0
+// Prepack the ORIGINAL serialized conv2d weight [C_out, C_in, K_h, K_w]
+// directly on the GPU into the 4OC x 4IC blocked layout that conv2d_gemm.glsl
+// loads via load_packed_weight_tile_with_checks. The serialized weight data is
+// read as-is (never CPU-repacked); pack_conv2d_gemm_weight.glsl performs the
+// im2col K-axis reorder (k = (ki * K_w + kj) * Cin_padded + ci, ci-padding
+// lanes zeroed) and the 4x4 transpose in one pass.
 //
-// The returned ValueRef points to a new TensorRef backed by a heap allocation
-// whose lifetime is managed by the graph via FreeableBuffer.
-ValueRef build_im2col_flat_weight_tref(
+// The packed output is byte-identical to the layout the generic
+// prepack_fp_linear_weight (is_transposed=1) produced over a CPU-flattened
+// [C_out, K_total] weight, so conv2d_gemm.glsl is unchanged.
+ValueRef prepack_conv2d_gemm_weight(
     ComputeGraph& graph,
-    const ValueRef weight_ref) {
-  // Copy out metadata + data pointer while the TensorRefPtr is alive; drop
-  // the pointer before calling add_tensorref (which mutates graph values).
-  std::vector<int64_t> w_sizes;
-  vkapi::ScalarType dtype;
-  const void* old_buf_ptr;
-  {
-    TensorRefPtr w_tref = graph.get_tref(weight_ref);
-    w_sizes = w_tref->sizes;
-    dtype = w_tref->dtype;
-    old_buf_ptr = w_tref->data;
-  }
-
+    const ValueRef weight_data) {
+  const std::vector<int64_t> w_sizes = graph.sizes_of(weight_data);
   VK_CHECK_COND(w_sizes.size() == 4);
   const int64_t C_out = w_sizes[0];
   const int64_t C_in = w_sizes[1];
@@ -61,37 +48,67 @@ ValueRef build_im2col_flat_weight_tref(
   const int64_t Cin_padded = utils::align_up_4(C_in);
   const int64_t K_total = K_h * K_w * Cin_padded;
 
-  const size_t elem_size = vkapi::element_size(dtype);
-  const size_t new_nbytes = C_out * K_total * elem_size;
+  const int64_t N = C_out;
+  const int64_t K = K_total;
+  const int64_t N4 = utils::div_up(N, int64_t(4));
+  const int64_t K4 = utils::div_up(K, int64_t(4));
 
-  uint8_t* new_buf = static_cast<uint8_t*>(std::malloc(new_nbytes));
-  VK_CHECK_COND(new_buf != nullptr);
-  std::memset(new_buf, 0, new_nbytes);
+  // Packed tensor: K4 rows, N4*4 vec4 elements per row (4OC x 4IC blocks).
+  // kWidthPacked packs 4 scalars per texel, so width = N4*4*4 scalars.
+  const int64_t output_height = K4;
+  const int64_t output_width = N4 * 4 * 4;
 
-  const uint8_t* old_buf = static_cast<const uint8_t*>(old_buf_ptr);
-
-  for (int64_t co = 0; co < C_out; ++co) {
-    for (int64_t ci = 0; ci < C_in; ++ci) {
-      for (int64_t ki = 0; ki < K_h; ++ki) {
-        for (int64_t kj = 0; kj < K_w; ++kj) {
-          const int64_t old_idx = ((co * C_in + ci) * K_h + ki) * K_w + kj;
-          const int64_t new_idx =
-              co * K_total + (ki * K_w + kj) * Cin_padded + ci;
-          std::memcpy(
-              new_buf + new_idx * elem_size,
-              old_buf + old_idx * elem_size,
-              elem_size);
-        }
-      }
-    }
+  utils::StorageType weight_storage = utils::kTexture2D;
+  const uint32_t max_extent =
+      graph.context()->adapter_ptr()->max_texture2d_dim();
+  if (output_width / 4 > max_extent ||
+      utils::safe_downcast<uint32_t>(output_height) > max_extent) {
+    weight_storage = utils::kBuffer;
   }
 
-  executorch::runtime::FreeableBuffer fb(
-      static_cast<const void*>(new_buf),
-      new_nbytes,
-      [](void* /*ctx*/, void* data, size_t /*size*/) { std::free(data); });
+  ValueRef packed_weight = graph.add_tensor(
+      {output_height, output_width},
+      graph.dtype_of(weight_data),
+      weight_storage,
+      utils::kWidthPacked);
 
-  return graph.add_tensorref({C_out, K_total}, dtype, std::move(fb));
+  const utils::uvec3 global_wg_size = {
+      utils::safe_downcast<uint32_t>(N4),
+      utils::safe_downcast<uint32_t>(K4),
+      1u};
+
+  // Push constants must be uploaded in <= 16-byte (one ivec4) chunks; the
+  // shader's Block reads them back as dims0 / dims1. Layout must match
+  // pack_conv2d_gemm_weight.glsl.
+  const utils::ivec4 dims0{
+      utils::safe_downcast<int32_t>(N),
+      utils::safe_downcast<int32_t>(K),
+      utils::safe_downcast<int32_t>(C_in),
+      utils::safe_downcast<int32_t>(Cin_padded)};
+  const utils::ivec4 dims1{
+      utils::safe_downcast<int32_t>(K_h),
+      utils::safe_downcast<int32_t>(K_w),
+      0,
+      0};
+
+  std::string kernel_name = "pack_conv2d_gemm_weight";
+  add_storage_type_suffix(kernel_name, weight_storage);
+  add_dtype_suffix(kernel_name, graph.dtype_of(weight_data));
+  add_dtype_suffix(kernel_name, graph.get_staging_dtype_for(weight_data));
+
+  graph.prepack_nodes().emplace_back(new PrepackNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
+      weight_data,
+      packed_weight,
+      {},
+      {},
+      {PushConstantDataInfo(&dims0, sizeof(dims0)),
+       PushConstantDataInfo(&dims1, sizeof(dims1))}));
+
+  return packed_weight;
 }
 
 //
@@ -214,6 +231,9 @@ void conv2d_gemm_impl(
 
   const int64_t Cin_padded = utils::align_up_4(C_in);
   const int64_t K_total = K_h * K_w * Cin_padded;
+  // Cin_padded is align_up_4(C_in), so K_total is a multiple of 4 and the
+  // K4_total = K_total / 4 division below is exact.
+  VK_CHECK_COND(K_total % 4 == 0);
 
   // Extract scalar conv params, scoping the IntListPtrs so they don't keep
   // active value pointers around while we mutate the graph below.
@@ -314,20 +334,20 @@ void conv2d_gemm_impl(
       utils::safe_downcast<int32_t>(H_out),
       utils::safe_downcast<int32_t>(W_out));
 
-  // Step 2: flatten + prepack weight for the GEMM. The flat weight is
-  // [C_out, K_total] = [N, K], so the shared linear-weight prepack handles it
-  // via the is_transposed (source-is-[N, K]) path with batch size 1. The packed
-  // texture is what conv2d_gemm.glsl expects to load via
+  // Step 2: prepack weight for the GEMM directly from the serialized
+  // [C_out, C_in, K_h, K_w] weight on the GPU. The serialized data is read
+  // as-is (never CPU-repacked); the prepack shader does the im2col K-axis
+  // reorder + 4x4 transpose into the layout conv2d_gemm.glsl loads via
   // load_packed_weight_tile_with_checks.
-  ValueRef flat_weight = build_im2col_flat_weight_tref(graph, weight_data);
-  ValueRef packed_weight = prepack_fp_linear_weight(
-      graph, flat_weight, /*is_transposed=*/true, /*B=*/1);
+  ValueRef packed_weight = prepack_conv2d_gemm_weight(graph, weight_data);
 
-  // Bias prepack: matches the bias format conv2d_gemm expects
+  // Bias prepack: matches the bias format conv2d_gemm expects. prepack_biases
+  // only reads dim 0 (= C_out) of the weight, so the original 4D weight works
+  // directly.
   ValueRef packed_bias = prepack_biases(
       graph,
       bias,
-      flat_weight,
+      weight_data,
       /*transposed=*/false,
       utils::kTexture2D,
       utils::kWidthPacked);

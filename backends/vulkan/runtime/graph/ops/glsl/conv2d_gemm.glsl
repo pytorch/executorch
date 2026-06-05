@@ -189,19 +189,22 @@ void main() {
   FPInputTile in_tile;
   FPWeightTile w_tile;
 
-  for (int k4 = 0; k4 < K4; k4++) {
+  for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
     load_input_tile_with_checks(in_tile, k4, m_start, K4, M, W_out);
     load_packed_weight_tile_with_checks(w_tile, n4_start, k4, 0, N4, K4);
     fp_accumulate_with_fp_weight(out_tile, in_tile, w_tile);
   }
 
-  // Apply bias
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      if (n4_start + n4 < N4) {
-        // t_bias is an fp32 texture2d; cast its texel to the accumulator type.
-        out_tile.data[m][n4] += LINEAR_FP_OUTPUT_TILE_VEC4_T(
-            texelFetch(t_bias, ivec2(n4_start + n4, 0), 0));
+  // Apply bias. The bias texel depends only on n4, so fetch it once per n4 and
+  // add it to every m row rather than re-fetching inside the M loop.
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    if (n4_start + n4 < N4) {
+      // t_bias is an fp32 texture2d; cast its texel to the accumulator type.
+      const LINEAR_FP_OUTPUT_TILE_VEC4_T bias_texel =
+          LINEAR_FP_OUTPUT_TILE_VEC4_T(
+              texelFetch(t_bias, ivec2(n4_start + n4, 0), 0));
+      [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+        out_tile.data[m][n4] += bias_texel;
       }
     }
   }
