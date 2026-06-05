@@ -10,7 +10,7 @@ OpenAI-shaped responses (streaming and non-streaming)."""
 import json
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
 from .chat_template import ChatTemplate
@@ -40,12 +40,15 @@ class GenConfig:
 
     A plain dataclass (no runtime/pybind dependency): the control plane never
     loads a model. The worker reads these fields off the JSONL request; only the
-    knobs we honor today are here (max_new_tokens, temperature). -1 max_new_tokens
-    means "unset / let the worker pick from model metadata".
+    knobs we honor today are here (max_new_tokens, temperature, stop).
+    -1 max_new_tokens means "unset / let the worker pick from model metadata".
+    `stop` lets the worker terminate at a stop sequence instead of running to EOS
+    (the server still re-applies stops as a backstop).
     """
 
     max_new_tokens: int
     temperature: float = 0.0
+    stop: list[str] = field(default_factory=list)
 
 
 def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
@@ -79,13 +82,18 @@ class ServingChat:
         self._stops = template.special_tokens()
 
     @staticmethod
-    def _tool_names(req: ChatCompletionRequest) -> set[str]:
-        names = set()
+    def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
+        """Map each defined tool name to its JSON-schema ``parameters`` object.
+
+        The detector uses the key set to validate names and the schema to coerce
+        values to their declared types (the Qwen XML format is stringly-typed)."""
+        schemas = {}
         for t in req.tools or []:
             fn = t.get("function", {}) if isinstance(t, dict) else {}
-            if fn.get("name"):
-                names.add(fn["name"])
-        return names
+            name = fn.get("name")
+            if name:
+                schemas[name] = fn.get("parameters") or {}
+        return schemas
 
     def _strip_specials(self, text: str) -> str:
         cut = _earliest_stop(text, self._stops)
@@ -146,7 +154,7 @@ class ServingChat:
         """Returns (tool_calls | None, content_text). Falls back to plain text."""
         if self._tools_active(req):
             parsed = self._tool_detector_cls().detect_and_parse(
-                text, self._tool_names(req)
+                text, self._tool_schemas(req)
             )
             if parsed.calls:
                 content = self._strip_specials(parsed.normal_text) or None
@@ -189,6 +197,13 @@ class ServingChat:
         return GenConfig(
             max_new_tokens=req.resolved_max_tokens(),
             temperature=req.temperature if req.temperature is not None else 0.0,
+            # Let the worker terminate at the same boundary the control plane
+            # would cut: the model's special tokens (e.g. <|im_end|>) AND request
+            # stop sequences. This stops generation at end-of-turn even when the
+            # worker's EOS-by-token-id check misses it, instead of running to
+            # max_new (or erroring) past the turn. The server's
+            # _clean/_collect_until_stop still re-apply these as a backstop.
+            stop=self._stops + self._request_stops(req),
         )
 
     def _finish_reason(
@@ -197,14 +212,20 @@ class ServingChat:
         completion_tokens: int,
         tool_calls=None,
         stopped: bool = False,
+        worker_finish: Optional[str] = None,
     ) -> str:
-        # Precedence: tool call > stop boundary > length. `stopped` (a stop
-        # sequence / special token was hit) wins over "length" even if tokens
-        # queued before the runner observed stop() reached max_tokens.
+        # Precedence: tool call > stop boundary > worker reason > length heuristic.
+        # `stopped` (a server-side stop sequence / special token) wins even over
+        # the worker, since that truncation happened in the control plane.
         if tool_calls:
             return "tool_calls"
         if stopped:
             return "stop"
+        # The worker knows whether it hit EOS ("stop") or ran to max_new ("length",
+        # possibly a clamp to the context window) — trust it over the token-count
+        # heuristic, which can't see a silent clamp.
+        if worker_finish in ("stop", "length"):
+            return worker_finish
         mt = req.resolved_max_tokens()
         return "length" if mt and mt > 0 and completion_tokens >= mt else "stop"
 
@@ -225,12 +246,12 @@ class ServingChat:
             )
         # max_tokens / max_completion_tokens, if given, must be positive integers
         # (OpenAI rejects 0 and negatives; our -1 sentinel means "unset/auto").
-        for field in ("max_tokens", "max_completion_tokens"):
-            v = getattr(req, field)
+        for field_name in ("max_tokens", "max_completion_tokens"):
+            v = getattr(req, field_name)
             if v is not None and v <= 0:
                 raise APIError(
                     400,
-                    f"{field} must be a positive integer (got {v}).",
+                    f"{field_name} must be a positive integer (got {v}).",
                     "invalid_request_error",
                     "invalid_value",
                 )
@@ -290,8 +311,15 @@ class ServingChat:
         # (only possible when a tokenizer is available to count, e.g. --hf-tokenizer).
         if self._max_context:
             count = self._template.count_tokens(prompt)
-            if count is not None and count >= self._max_context:
-                raise ContextLengthExceeded(count, self._max_context)
+            if count is not None:
+                if count >= self._max_context:
+                    raise ContextLengthExceeded(count, self._max_context)
+                # An explicit max_tokens that wouldn't fit alongside the prompt
+                # must be rejected here, not run until the worker hits the context
+                # limit mid-decode (a 500 / streaming error after partial output).
+                requested = req.resolved_max_tokens()
+                if requested > 0 and count + requested > self._max_context:
+                    raise ContextLengthExceeded(count, self._max_context, requested)
         config = self._config(req)
         if req.stream:
             return self._stream(req, prompt, config)
@@ -315,7 +343,9 @@ class ServingChat:
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, content = self._extract_tools(req, self._truncate_raw(text, req))
-        finish = self._finish_reason(req, stats.completion_tokens, tool_calls, stopped)
+        finish = self._finish_reason(
+            req, stats.completion_tokens, tool_calls, stopped, stats.finish_reason
+        )
         return ChatCompletionResponse(
             model=self._model_id,
             choices=[
@@ -401,11 +431,18 @@ class ServingChat:
             for tc in tool_calls or []:
                 yield chunk(DeltaMessage(tool_calls=[tc]))
             finish = self._finish_reason(
-                req, stats.completion_tokens, tool_calls, stop_hit[0]
+                req,
+                stats.completion_tokens,
+                tool_calls,
+                stop_hit[0],
+                stats.finish_reason,
             )
         else:
             finish = self._finish_reason(
-                req, stats.completion_tokens, stopped=stop_hit[0]
+                req,
+                stats.completion_tokens,
+                stopped=stop_hit[0],
+                worker_finish=stats.finish_reason,
             )
         yield chunk(DeltaMessage(), finish=finish)
         if req.stream_options and req.stream_options.include_usage:

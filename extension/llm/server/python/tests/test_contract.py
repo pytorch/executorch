@@ -100,6 +100,37 @@ def test_request_params_forwarded_to_generation(make_client):
     assert abs(fake.captured_config.temperature - 0.1) < 1e-6
 
 
+def test_special_tokens_forwarded_to_worker_as_stops(make_client):
+    # The worker must be told to stop at the model's end-of-turn special tokens
+    # (e.g. <|im_end|>), not just request `stop` sequences. Otherwise a worker
+    # whose EOS-by-token-id check misses the turn end runs to max_new (or errors
+    # forwarding its own end token) past it — the text_llm_worker "decode failed"
+    # seen on a real model. (Forwarding only request stops would leave this [].)
+    client, fake = make_client()
+    client.post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert "<|im_end|>" in (fake.captured_config.stop or [])
+
+
+def test_request_stop_forwarded_to_worker(make_client):
+    # A request `stop` sequence must reach the worker (so it can terminate early),
+    # not only be applied by the Python backstop. The stop tests elsewhere pass
+    # via that backstop even if forwarding regresses; this asserts forwarding.
+    client, fake = make_client()
+    client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stop": ["STOP"],
+        },
+    )
+    # stop == special tokens + request stops, so check membership (not equality).
+    assert "STOP" in (fake.captured_config.stop or [])
+
+
 def test_tools_field_accepted(make_client):
     # tools is part of the contract even before parsing is enforced (M2).
     client, _ = make_client()
@@ -193,6 +224,36 @@ def test_context_length_exceeded_streaming_returns_400(make_client):
     assert resp.json()["error"]["code"] == "context_length_exceeded"
 
 
+def test_prompt_plus_max_tokens_exceeding_context_returns_400(make_client):
+    # Prompt fits (100 < 2048) but prompt + max_tokens (100 + 2000) > 2048: must
+    # reject up front, not run until the worker hits the limit mid-decode.
+    client, _ = make_client(max_context=2048, prompt_tokens=100)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 2000,
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "context_length_exceeded"
+
+
+def test_prompt_plus_max_tokens_within_context_ok(make_client):
+    # Prompt + max_tokens (100 + 100) <= 2048: must NOT be rejected.
+    client, _ = make_client(max_context=2048, prompt_tokens=100)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 100,
+        },
+    )
+    assert resp.status_code == 200
+
+
 # (1) Mid-generation failure -> structured error, never a dropped connection.
 def test_generation_failure_returns_structured_error(make_client):
     client, _ = make_client(fail=True)
@@ -245,6 +306,58 @@ def test_finish_reason_stop_when_under_max_tokens(make_client):
         },
     )
     assert resp.json()["choices"][0]["finish_reason"] == "stop"
+
+
+# Worker-reported finish_reason: the worker may silently clamp max_new to the
+# context window, so the token-count heuristic can't tell a real stop from a
+# truncation. Trust the worker's reason.
+def test_worker_reported_length_overrides_token_count(make_client):
+    # 3 tokens generated (< requested 100) but the worker says it ran to the cap
+    # (a context clamp): finish_reason must be "length", not "stop".
+    client, _ = make_client(tokens=["a", "b", "c"], finish_reason="length")
+    body = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 100,
+        },
+    ).json()
+    assert body["choices"][0]["finish_reason"] == "length"
+
+
+def test_worker_reported_stop_overrides_token_count(make_client):
+    # 3 tokens with max_tokens=3 (heuristic would say "length"), but the worker
+    # reports EOS: finish_reason must be "stop".
+    client, _ = make_client(tokens=["a", "b", "c"], finish_reason="stop")
+    body = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 3,
+        },
+    ).json()
+    assert body["choices"][0]["finish_reason"] == "stop"
+
+
+def test_server_stop_sequence_wins_over_worker_length(make_client):
+    # A server-side stop sequence is truncation in the control plane; it must
+    # win even when the worker would report "length".
+    client, _ = make_client(
+        tokens=["Hello ", "world ", "STOP", " x"], finish_reason="length"
+    )
+    body = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stop": ["STOP"],
+            "max_tokens": 100,
+        },
+    ).json()
+    assert body["choices"][0]["finish_reason"] == "stop"
+    assert "STOP" not in (body["choices"][0]["message"]["content"] or "")
 
 
 # (4) Error-variant matrix: malformed requests -> consistent 422.

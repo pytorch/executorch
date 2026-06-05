@@ -58,8 +58,12 @@ def test_pool_requires_at_least_one_worker():
         RunnerPool([])
 
 
-# Client disconnect / cancellation must stop the worker.
-def test_cancellation_calls_stop():
+# Client disconnect / cancellation invokes the worker's stop() HOOK — the pool's
+# contract. Whether that actually halts generation is up to the worker: a
+# production WorkerClient.stop() is a no-op (see worker_client.py), so early
+# termination comes from worker-side stop strings / EOS, not this hook. This test
+# asserts only that the pool calls the hook.
+def test_cancellation_calls_stop_hook():
     async def scenario():
         worker = _BlockingRunner()
         pool = RunnerPool([worker])

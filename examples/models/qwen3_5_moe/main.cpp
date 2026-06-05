@@ -174,6 +174,15 @@ int main(int argc, char** argv) {
         return 1;
       }
       const auto& d = step_result.get();
+      // A terminal step (EOS or cooperative stop) is the loop terminator, not
+      // generated output: don't count or emit it (matches the JSONL workers and
+      // the LLMSession contract).
+      if (d.is_terminal) {
+        if (print_text) {
+          printf("\n");
+        }
+        break;
+      }
       num_generated++;
       if (step == 0) {
         stats.first_token_ms = llm::time_in_ms();
@@ -181,12 +190,6 @@ int main(int argc, char** argv) {
       if (print_text && !d.text_piece.empty()) {
         fwrite(d.text_piece.data(), 1, d.text_piece.size(), stdout);
         fflush(stdout);
-      }
-      if (d.is_terminal) {
-        if (print_text) {
-          printf("\n");
-        }
-        break;
       }
     }
     stats.inference_end_ms = llm::time_in_ms();

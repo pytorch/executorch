@@ -30,13 +30,26 @@ class APIError(Exception):
 
 
 class ContextLengthExceeded(APIError):
-    def __init__(self, num_tokens: int, max_context: int):
-        super().__init__(
-            status=400,
-            message=(
+    def __init__(self, num_tokens: int, max_context: int, completion_tokens: int = 0):
+        # completion_tokens > 0: the prompt fits but prompt + requested
+        # max_tokens would run past the window — reject up front rather than
+        # fail (or truncate) mid-generation.
+        if completion_tokens > 0:
+            message = (
+                f"This model's maximum context length is {max_context} tokens. "
+                f"However, you requested {num_tokens + completion_tokens} tokens "
+                f"({num_tokens} in the messages, {completion_tokens} in the "
+                f"completion). Please reduce the length of the messages or "
+                f"completion."
+            )
+        else:
+            message = (
                 f"This model's maximum context length is {max_context} tokens, "
                 f"but the request has {num_tokens} prompt tokens."
-            ),
+            )
+        super().__init__(
+            status=400,
+            message=message,
             err_type="invalid_request_error",
             code="context_length_exceeded",
         )

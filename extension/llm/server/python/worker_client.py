@@ -16,10 +16,11 @@ the binary and its launch args differ.
 Protocol (one JSON object per line):
   worker -> stdout, once at startup:  {"ready": true}
   client -> stdin,  per request:      {"prompt": str, "max_new_tokens": int,
-                                       "temperature": float}
+                                       "temperature": float, "stop": [str, ...]}
   worker -> stdout, per request:      {"token": str} *   (streamed)
                                       {"done": true, "prompt_tokens": int,
-                                       "completion_tokens": int}
+                                       "completion_tokens": int,
+                                       "finish_reason": "stop" | "length"}
                                   or  {"error": str}
 
 The worker's stdout carries ONLY protocol JSON; its logs go to stderr. One
@@ -42,6 +43,10 @@ class WorkerStats:
 
     num_prompt_tokens: int = 0
     num_generated_tokens: int = 0
+    # Why generation stopped, as the worker saw it: "stop" (EOS / cooperative
+    # stop) or "length" (ran to max_new, possibly clamped to the context window).
+    # None if the worker didn't report it (older worker / fake).
+    finish_reason: Optional[str] = None
 
 
 class WorkerError(RuntimeError):
@@ -77,6 +82,7 @@ class WorkerClient:
             "prompt": prompt,
             "max_new_tokens": getattr(config, "max_new_tokens", -1),
             "temperature": getattr(config, "temperature", 0.0),
+            "stop": list(getattr(config, "stop", []) or []),
         }
         with self._lock:
             if self._proc.poll() is not None:
@@ -103,6 +109,7 @@ class WorkerClient:
                             WorkerStats(
                                 msg.get("prompt_tokens", 0),
                                 msg.get("completion_tokens", 0),
+                                msg.get("finish_reason"),
                             )
                         )
                     return

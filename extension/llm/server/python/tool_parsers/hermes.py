@@ -40,14 +40,14 @@ class HermesDetector:
     def __init__(self):
         self._next_index = 0
 
-    def detect_and_parse(self, text: str, tool_names: set[str]) -> ParseResult:
+    def detect_and_parse(self, text: str, tools: dict[str, dict]) -> ParseResult:
         """Return leading text + any complete tool calls. On no call or a parse
         failure, return the original text unchanged (kept visible to the client)."""
         if self.bot_token not in text:
             return ParseResult(normal_text=text)
         normal = text[: text.find(self.bot_token)].strip()
         try:
-            calls = self._parse_calls(text, tool_names)
+            calls = self._parse_calls(text, tools)
         except _UndefinedToolCall as e:
             # Degrade the whole response to visible text so the undefined call
             # isn't silently dropped (and its valid siblings aren't executed in
@@ -61,7 +61,7 @@ class HermesDetector:
             return ParseResult(normal_text=text)
         return ParseResult(normal_text=normal, calls=calls)
 
-    def _parse_calls(self, text: str, tool_names: set[str]) -> list[ToolCallItem]:
+    def _parse_calls(self, text: str, tools: dict[str, dict]) -> list[ToolCallItem]:
         calls = []
         for raw in _CALL_RE.findall(text):
             if not raw.strip():
@@ -72,15 +72,15 @@ class HermesDetector:
                     self._make_item(
                         entry.get("name"),
                         entry.get("arguments", entry.get("parameters")),
-                        tool_names,
+                        tools,
                     )
                 )
         return calls
 
     def _make_item(
-        self, name: Optional[str], arguments: Any, tool_names: set[str]
+        self, name: Optional[str], arguments: Any, tools: dict[str, dict]
     ) -> ToolCallItem:
-        if not name or name not in tool_names:
+        if not name or name not in tools:
             raise _UndefinedToolCall(repr(name))
         item = ToolCallItem(
             tool_index=self._next_index,

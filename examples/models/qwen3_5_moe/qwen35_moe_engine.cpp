@@ -208,15 +208,22 @@ class Qwen35MoESession : public LLMSession {
 #endif
     auto res = module_->execute(method, inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
-    auto sampled = read_sampled_token(res.get()[0].toTensor(), first_token_temp);
+    auto sampled =
+        read_sampled_token(res.get()[0].toTensor(), first_token_temp);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
     pending_ = sampled.get();
     prev_decode_token_.reset();
     pos_ += T; // the prompt tokens are now resident in KV/state
 #ifdef EXECUTORCH_BUILD_CUDA
     // Make prefill's writes to the shared mutable arenas visible to decode
-    // (which may run on a different stream).
-    cudaDeviceSynchronize();
+    // (which may run on a different stream). This barrier is relied upon for
+    // correctness, and it also surfaces any async error from the prefill
+    // launch, so a non-success here must abort the request rather than decode
+    // on stale or corrupt state.
+    if (cudaDeviceSynchronize() != cudaSuccess) {
+      ET_LOG(Error, "prefill_tokens: cudaDeviceSynchronize failed");
+      return Error::Internal;
+    }
 #endif
     return Error::Ok;
   }
@@ -263,9 +270,9 @@ class Qwen35MoESession : public LLMSession {
           token, std::move(text_piece), is_eos, /*is_terminal=*/true};
     }
 
-    // Only a NON-EOS, non-stopped token is forwarded (made resident at pos_), so
-    // the capacity check belongs here — after the short-circuit, so a final EOS
-    // is still emitted when state is exactly full. Without it, decode would
+    // Only a NON-EOS, non-stopped token is forwarded (made resident at pos_),
+    // so the capacity check belongs here — after the short-circuit, so a final
+    // EOS is still emitted when state is exactly full. Without it, decode would
     // write KV/recurrent state past the context window.
     const auto ctx_it = metadata_.find(kMaxContextLen);
     if (ctx_it != metadata_.end()) {
@@ -395,6 +402,19 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
     return metadata_result.error();
   }
   auto eos_ids = get_eos_ids(tokenizer.get(), meta_module.get());
+  // This export's metadata doesn't carry the chat-turn EOS (config.json has no
+  // eos_token_id and the .pte exports no get_eos_ids method), so get_eos_ids()
+  // misses it and a session would never terminate — it would decode to
+  // max_new_tokens every turn. <|im_end|> ends every Qwen assistant turn; add
+  // it explicitly so decode_one() stops at end of turn.
+  if (auto im_end = tokenizer->piece_to_id("<|im_end|>"); im_end.ok()) {
+    eos_ids.insert(*im_end);
+  } else {
+    ET_LOG(
+        Error,
+        "Qwen35MoEEngine: could not resolve <|im_end|> token id; the model may "
+        "not stop at end of turn");
+  }
 
   return std::unique_ptr<Qwen35MoEEngine>(new Qwen35MoEEngine(
       config, std::move(tokenizer), metadata_result.get(), std::move(eos_ids)));
