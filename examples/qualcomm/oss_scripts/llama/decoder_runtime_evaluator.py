@@ -424,7 +424,7 @@ class SqnrEval(EvalBase):
                 self.max_seq_length = pte_max_context_len
 
     def run(self, prompt):
-        golden_logits, _ = INFERENCE_REGISTRY[True](
+        result = INFERENCE_REGISTRY[True](
             get_example_inputs=self.get_example_inputs,
             prompt=prompt,
             module=self.source_model,
@@ -433,6 +433,7 @@ class SqnrEval(EvalBase):
             use_i64_token=self.args.embedding_quantize is not None,
             collect_logits=True,
         )
+        golden_logits = result.logits
 
         input_file_name = f"{self.args.artifact}/input_tokens.raw"
 
