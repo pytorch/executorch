@@ -11,7 +11,7 @@ and replays a scripted sequence of JSONL response lines.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -62,6 +62,7 @@ class _FakeProc:
 class _Cfg:
     max_new_tokens: int = 64
     temperature: float = 0.0
+    stop: list = field(default_factory=list)
 
 
 def _lines(*objs):
@@ -90,7 +91,38 @@ def test_generate_streams_tokens_then_stats():
     assert stats == {"prompt": 4, "gen": 2}
     # The request carried prompt + sampling, one JSON line.
     sent = json.loads(proc.stdin.written[0])
-    assert sent == {"prompt": "hi", "max_new_tokens": 64, "temperature": 0.7}
+    assert sent == {
+        "prompt": "hi",
+        "max_new_tokens": 64,
+        "temperature": 0.7,
+        "stop": [],
+    }
+
+
+def test_generate_forwards_stop_sequences():
+    proc = _FakeProc(_lines({"done": True, "prompt_tokens": 1, "completion_tokens": 0}))
+    WorkerClient(proc).generate("hi", _Cfg(stop=["STOP", "\n\n"]))
+    sent = json.loads(proc.stdin.written[0])
+    assert sent["stop"] == ["STOP", "\n\n"]
+
+
+def test_generate_reports_finish_reason():
+    proc = _FakeProc(
+        _lines(
+            {"token": "hi"},
+            {
+                "done": True,
+                "prompt_tokens": 2,
+                "completion_tokens": 1,
+                "finish_reason": "length",
+            },
+        )
+    )
+    seen = {}
+    WorkerClient(proc).generate(
+        "hi", _Cfg(), stats_callback=lambda s: seen.update(fr=s.finish_reason)
+    )
+    assert seen["fr"] == "length"
 
 
 def test_error_message_raises_worker_error():

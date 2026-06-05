@@ -28,14 +28,16 @@ from fastapi.testclient import TestClient
 class _FakeStats:
     num_prompt_tokens = 5
     num_generated_tokens = 0
+    finish_reason = None
 
 
 class FakeRunner:
     """Canned engine: emits fixed tokens, records the config it was given."""
 
-    def __init__(self, tokens, fail=False):
+    def __init__(self, tokens, fail=False, finish_reason=None):
         self._tokens = list(tokens)
         self._fail = fail
+        self._finish_reason = finish_reason  # worker-reported stop reason, if any
         self.captured_config = None
         self.stopped = False
         self.reset_count = 0
@@ -56,6 +58,7 @@ class FakeRunner:
         if stats_callback:
             stats = _FakeStats()
             stats.num_generated_tokens = len(self._tokens)
+            stats.finish_reason = self._finish_reason
             stats_callback(stats)
 
 
@@ -83,8 +86,9 @@ def make_client():
         max_context=None,
         prompt_tokens=None,
         fail=False,
+        finish_reason=None,
     ):
-        fake = FakeRunner(tokens, fail=fail)
+        fake = FakeRunner(tokens, fail=fail, finish_reason=finish_reason)
         pool = RunnerPool([fake])  # one fake worker handle
         template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
         if prompt_tokens is not None:

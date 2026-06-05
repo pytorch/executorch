@@ -16,10 +16,11 @@
 // Protocol (one JSON object per line; identical to worker_client.py):
 //   worker -> stdout, once:         {"ready": true}
 //   client -> stdin,  per request:  {"prompt": str, "max_new_tokens": int,
-//                                    "temperature": float}
+//                                    "temperature": float, "stop": [str, ...]}
 //   worker -> stdout, per request:  {"token": str} *   (streamed)
 //                                   {"done": true, "prompt_tokens": int,
-//                                    "completion_tokens": int}
+//                                    "completion_tokens": int,
+//                                    "finish_reason": "stop" | "length"}
 //                               or  {"error": str}
 //
 // stdout carries ONLY protocol JSON; all logs go to stderr (ET_LOG). One
@@ -74,6 +75,11 @@ void handle_request(
   const std::string prompt = req.at("prompt").get<std::string>();
   int64_t max_new = req.value("max_new_tokens", static_cast<int64_t>(-1));
   const float temperature = req.value("temperature", 0.0f);
+  // Stop strings (the request's `stop` sequences): terminate at the token
+  // boundary where one appears so we don't generate to EOS/max_new past it. The
+  // control plane also enforces these as a backstop.
+  const std::vector<std::string> stops =
+      req.value("stop", std::vector<std::string>{});
 
   if (session.reset() != Error::Ok) {
     throw std::runtime_error("session reset failed");
@@ -90,12 +96,21 @@ void handle_request(
   }
   const int64_t num_prompt = static_cast<int64_t>(ids.size());
 
-  if (max_new <= 0) {
-    // Fill the remaining context window when the client doesn't bound it.
-    const auto it = metadata.find(llm::kMaxContextLen);
-    max_new = (it != metadata.end())
-        ? std::max<int64_t>(1, it->second - num_prompt)
-        : 2048;
+  // Bound generation to the context window: default to filling the remaining
+  // room, and clamp an explicit max_new_tokens too, so decode never steps past
+  // the window (which would error mid-generation after partial output).
+  const auto ctx_it = metadata.find(llm::kMaxContextLen);
+  if (ctx_it != metadata.end()) {
+    const int64_t room = ctx_it->second - num_prompt;
+    if (room <= 0) {
+      throw std::runtime_error(
+          "prompt fills the context window; no room to generate");
+    }
+    if (max_new <= 0 || max_new > room) {
+      max_new = room;
+    }
+  } else if (max_new <= 0) {
+    max_new = 2048;
   }
 
   llm::SamplingConfig sampling;
@@ -104,8 +119,11 @@ void handle_request(
     throw std::runtime_error("prefill failed");
   }
 
-  std::string buf; // holds bytes not yet forming a complete UTF-8 prefix
+  std::string buf; // bytes not yet forming a complete UTF-8 prefix
+  std::string pending; // complete-UTF-8 text held back for stop-string matching
   int64_t num_generated = 0;
+  std::string finish = "length"; // EOS or stop string -> "stop"
+  bool stop_string = false; // a request stop string was matched
   for (int64_t step = 0; step < max_new; ++step) {
     auto step_result = session.decode_one(sampling);
     if (step_result.error() != Error::Ok) {
@@ -113,23 +131,43 @@ void handle_request(
     }
     const auto& d = step_result.get();
     if (d.is_terminal) {
-      break; // terminal step: not generated output
+      finish = "stop";
+      break; // terminal step (EOS / cooperative stop): not emitted or counted
     }
     ++num_generated;
     buf += d.text_piece;
     const size_t cut = llm::utf8_complete_prefix_len(buf);
     if (cut > 0) {
-      emit({{"token", buf.substr(0, cut)}});
+      pending += buf.substr(0, cut);
       buf.erase(0, cut);
     }
+    bool stop_hit = false;
+    const size_t safe = llm::stop_safe_prefix_len(pending, stops, stop_hit);
+    if (safe > 0) {
+      emit({{"token", pending.substr(0, safe)}});
+      pending.erase(0, safe);
+    }
+    if (stop_hit) {
+      finish = "stop"; // reached a stop string: drop it and everything after
+      stop_string = true;
+      break;
+    }
   }
-  if (!buf.empty()) {
-    emit({{"token", buf}}); // flush any trailing bytes (replaced if incomplete)
+  if (!stop_string) {
+    // EOS or length: flush held-back text + any trailing incomplete bytes
+    // (replaced if invalid). A stop-string hit drops the remainder instead.
+    pending += buf;
+    if (!pending.empty()) {
+      emit({{"token", pending}});
+    }
   }
+  // finish_reason: "stop" if the model emitted EOS or hit a stop string, else
+  // "length" — it ran to max_new (possibly clamped to the context window).
   emit(
       {{"done", true},
        {"prompt_tokens", num_prompt},
-       {"completion_tokens", num_generated}});
+       {"completion_tokens", num_generated},
+       {"finish_reason", finish}});
 }
 
 } // namespace
