@@ -1,0 +1,20 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Default TrainingArgs (train/config.py) for QAT. Copy this file, edit any
+# subset of fields, and pass it via `--train_config path/to/your_config.yaml`.
+
+
+# Distillation
+alpha: 0.99  # KD weight; (1 - alpha) is CE weight
+temperature: 1.0
+
+# Hyperparameters
+epochs: 1  # Train epochs
+lr: 2.0e-5
+grad_accum_steps: 1
+max_grad_norm: 1.0
+warmup_ratio: 0.05
