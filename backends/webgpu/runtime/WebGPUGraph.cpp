@@ -512,7 +512,7 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
 
   bool all_mapped = false;
   while (!all_mapped) {
-    webgpu_poll(instance_, device_);
+    webgpu_poll(instance_);
     all_mapped = true;
     for (size_t i = 0; i < count; i++) {
       if (outputs[i].second != 0 && !cb_data[i].done) {

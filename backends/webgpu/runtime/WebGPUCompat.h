@@ -22,13 +22,11 @@ namespace executorch::backends::webgpu {
 // Make progress on pending WebGPU callbacks; callers loop until their done flag
 // is set. Native (Dawn): pump the event queue + brief yield (no busy-spin).
 // Browser: yield to the JS event loop.
-inline void webgpu_poll(WGPUInstance instance, WGPUDevice device) {
+inline void webgpu_poll(WGPUInstance instance) {
 #if defined(__EMSCRIPTEN__)
   (void)instance;
-  (void)device;
   emscripten_sleep(0);
 #else
-  (void)device;
   wgpuInstanceProcessEvents(instance);
   std::this_thread::sleep_for(std::chrono::microseconds(50));
 #endif
