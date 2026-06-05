@@ -95,7 +95,7 @@ source modules/lib/executorch/examples/arm/arm-scratch/setup_path.sh
 Export a quantized INT8 MobileNetV2 with Ethos-U delegation. Choose the target
 that matches your hardware:
 
-**For Alif E8 (Ethos-U55 with 256 MACs):**
+**For Alif E8 (HP Ethos-U55 with 256 MACs):**
 
 ```bash
 python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
@@ -105,7 +105,7 @@ python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
     --output=mv2_ethosu.pte
 ```
 
-If rtss_he is used instead of rtss_hp below use `--target=ethos-u55-128`
+If rtss_he is used instead of rtss_hp below use `--target=ethos-u55-128` to match the hardware.
 
 **For Corstone-320 FVP (Ethos-U85 with 256 MACs):**
 
