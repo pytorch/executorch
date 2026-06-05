@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/examples/models/gemma4/runner/chat_template.h>
 #include <executorch/examples/models/gemma4/runner/gemma4_stats.h>
 #include <executorch/examples/models/gemma4/runner/generation_config.h>
 #include <executorch/extension/module/module.h>
@@ -154,14 +155,21 @@ class Gemma4Runner {
       const std::function<void(const std::string&)>& token_callback,
       Gemma4Stats* stats);
 
-  static constexpr int64_t kBosId = 2;
+  static constexpr int64_t kBosId = ::executorch::examples::gemma4::kBosId;
   static constexpr int64_t kEosId = 1;
-  static constexpr int64_t kTurnStartId = 105;
-  static constexpr int64_t kTurnEndId = 106;
+  // Chat-template token IDs are single-sourced from chat_template.h so this
+  // runner, the gemma4_31b runner, and the Python chat_template.py agree.
+  static constexpr int64_t kTurnStartId =
+      ::executorch::examples::gemma4::kTurnStartId;
+  static constexpr int64_t kTurnEndId =
+      ::executorch::examples::gemma4::kTurnEndId;
   static constexpr int64_t kAudioTokenId = 258881;
-  static constexpr int64_t kImageTokenId = 258880;
-  static constexpr int64_t kBoiTokenId = 255999;
-  static constexpr int64_t kEoiTokenId = 258882;
+  static constexpr int64_t kImageTokenId =
+      ::executorch::examples::gemma4::kImageTokenId;
+  static constexpr int64_t kBoiTokenId =
+      ::executorch::examples::gemma4::kBoiTokenId;
+  static constexpr int64_t kEoiTokenId =
+      ::executorch::examples::gemma4::kEoiTokenId;
   static constexpr int64_t kDefaultHiddenSizeE2B = 1536;
   static constexpr int64_t kDefaultHiddenSizeE4B = 2560;
   static constexpr int64_t kMaxSamples = 480000;
