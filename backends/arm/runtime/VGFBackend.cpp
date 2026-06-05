@@ -6,12 +6,19 @@
  */
 
 #include <cinttypes>
+#include <list>
+#include <numeric>
+
 using namespace std;
 
 #include <c10/util/safe_numerics.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
+#endif
 
 using executorch::aten::Tensor;
 using executorch::runtime::ArrayRef;
@@ -26,6 +33,13 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+
+#ifdef ET_EVENT_TRACER_ENABLED
+using executorch::runtime::event_tracer_end_profiling_delegate;
+using executorch::runtime::event_tracer_start_profiling_delegate;
+using executorch::runtime::EventTracer;
+using executorch::runtime::EventTracerEntry;
+#endif
 
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
@@ -69,7 +83,8 @@ VkResult vkml_allocate_basics(
     VkPhysicalDevice* physical_device,
     VkDevice* device,
     VkQueue* queue,
-    VkCommandPool* command_pool);
+    VkCommandPool* command_pool,
+    uint32_t* queue_family_index);
 
 void vkml_free_basics(
     VkInstance* instance,
@@ -104,7 +119,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         &vk_physical_device,
         &vk_device,
         &vk_queue,
-        &vk_command_pool);
+        &vk_command_pool,
+        &vk_queue_family_index);
     if (result != VK_SUCCESS) {
       ET_LOG(
           Error, "Failed to initialize the Vulkan device error 0x%08X", result);
@@ -142,8 +158,31 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     ET_LOG(Info, "Entered VGF init");
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    EventTracer* event_tracer = context.event_tracer();
+
+    EventTracerEntry init_total_event = event_tracer_start_profiling_delegate(
+        event_tracer,
+        "VGF_INIT_TOTAL",
+        /*delegate_debug_id=*/-1);
+
+    EventTracerEntry ensure_initialized_event =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "VGF_INIT_ENSURE_INITIALIZED",
+            /*delegate_debug_id=*/-1);
+#endif
+
     const_cast<VGFBackend*>(this)->ensure_initialized();
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(event_tracer, ensure_initialized_event);
+#endif
+
     if (!is_initialized_) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(event_tracer, init_total_event);
+#endif
       ET_LOG(
           Error,
           "VGF backend is unavailable because Vulkan initialization failed");
@@ -152,23 +191,62 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
     const char* vgf_data = reinterpret_cast<const char*>(processed->data());
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    EventTracerEntry allocate_repr_event =
+        event_tracer_start_profiling_delegate(
+            event_tracer,
+            "VGF_INIT_ALLOCATE_REPR",
+            /*delegate_debug_id=*/-1);
+#endif
+
     MemoryAllocator* allocator = context.get_runtime_allocator();
     VgfRepr* repr = allocator->allocateInstance<VgfRepr>();
     new (repr) VgfRepr(
-        vk_instance, vk_physical_device, vk_device, vk_queue, vk_command_pool);
+        vk_instance,
+        vk_physical_device,
+        vk_device,
+        vk_queue,
+        vk_command_pool,
+        vk_queue_family_index);
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(event_tracer, allocate_repr_event);
+
+    EventTracerEntry process_vgf_event = event_tracer_start_profiling_delegate(
+        event_tracer,
+        "VGF_INIT_PROCESS_VGF_BACKEND",
+        /*delegate_debug_id=*/-1);
+#endif
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    auto valid_vgf = repr->process_vgf(
+        vgf_data, processed->size(), compile_specs, event_tracer);
+#else
     auto valid_vgf =
         repr->process_vgf(vgf_data, processed->size(), compile_specs);
+#endif
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(event_tracer, process_vgf_event);
+#endif
+
     if (!valid_vgf) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(event_tracer, init_total_event);
+#endif
       ET_LOG(Error, "Failed to process VGF blob.");
       return Error::Internal;
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(event_tracer, init_total_event);
+#endif
 
     return repr;
   }
 
   Error execute(
-      ET_UNUSED BackendExecutionContext& context,
+      BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
@@ -186,15 +264,39 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       return Error::InvalidArgument;
     }
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    EventTracer* event_tracer = context.event_tracer();
+
+    EventTracerEntry vgf_execute_event = event_tracer_start_profiling_delegate(
+        event_tracer,
+        "VGF_EXECUTE",
+        /*delegate_debug_id=*/-1);
+
+    EventTracerEntry copy_inputs_event = event_tracer_start_profiling_delegate(
+        event_tracer,
+        "VGF_COPY_INPUTS",
+        /*delegate_debug_id=*/-1);
+#else
+    (void)context;
+#endif
+
     // Copy all inputs from EValue to VkDeviceMemory
     for (size_t input_arg_idx = 0; input_arg_idx < input_count;
          ++input_arg_idx) {
       const int io_idx = repr->model_input_io_index[input_arg_idx];
       if (io_idx < 0) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(Error, "Missing IO mapping for input %zu", input_arg_idx);
         return Error::InvalidArgument;
       }
       if (!args[input_arg_idx]->isTensor()) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(
             Error,
             "Expected input EValue %zu to be tensor, got %d",
@@ -209,6 +311,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       ET_LOG(Info, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(
             Error,
             "Input tensor byte size %zu does not match IO allocation %zu",
@@ -219,6 +325,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
       void* data;
       if (!repr->map_io(io, &data)) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(Error, "Failed to map Vulkan IO memory");
         return Error::Internal;
       }
@@ -226,11 +336,40 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       repr->unmap_io(io);
     }
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
+
+    EventTracerEntry dispatch_event = event_tracer_start_profiling_delegate(
+        event_tracer,
+        "VGF_DISPATCH_AND_WAIT",
+        /*delegate_debug_id=*/-1);
+#endif
+
     // Execute the workload
-    if (!repr->execute_vgf()) {
+    bool execute_ok = false;
+#ifdef ET_EVENT_TRACER_ENABLED
+    execute_ok = repr->execute_vgf(event_tracer);
+#else
+    execute_ok = repr->execute_vgf();
+#endif
+
+    if (!execute_ok) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
+      event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
       ET_LOG(Error, "Failed to execute the VGF representation");
       return Error::Internal;
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
+
+    EventTracerEntry copy_outputs_event = event_tracer_start_profiling_delegate(
+        event_tracer,
+        "VGF_COPY_OUTPUTS",
+        /*delegate_debug_id=*/-1);
+#endif
 
     // Copy all outputs from VKDeviceMemory to EValue
     for (size_t output_rel_idx = 0; output_rel_idx < output_count;
@@ -238,10 +377,18 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       const size_t output_arg_idx = input_count + output_rel_idx;
       const int io_idx = repr->model_output_io_index[output_rel_idx];
       if (io_idx < 0) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_outputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(Error, "Missing IO mapping for output %zu", output_rel_idx);
         return Error::InvalidArgument;
       }
       if (!args[output_arg_idx]->isTensor()) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_outputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(
             Error,
             "Expected output EValue %zu to be tensor, got %d",
@@ -255,6 +402,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       ET_LOG(Info, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_outputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(
             Error,
             "Output tensor byte size %zu does not match IO allocation %zu",
@@ -265,12 +416,21 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
       void* data;
       if (!repr->map_io(io, &data)) {
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_end_profiling_delegate(event_tracer, copy_outputs_event);
+        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
         ET_LOG(Error, "Failed to map Vulkan IO memory");
         return Error::Internal;
       }
       memcpy(tensor->mutable_data_ptr(), data, io_size);
       repr->unmap_io(io);
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    event_tracer_end_profiling_delegate(event_tracer, copy_outputs_event);
+    event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
+#endif
 
     return Error::Ok;
   }
@@ -286,6 +446,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   VkDevice vk_device = VK_NULL_HANDLE;
   VkQueue vk_queue = VK_NULL_HANDLE;
   VkCommandPool vk_command_pool = VK_NULL_HANDLE;
+  uint32_t vk_queue_family_index = UINT32_MAX;
   bool is_initialized_ = false;
 };
 
@@ -300,7 +461,8 @@ VkResult vkml_allocate_basics(
     VkPhysicalDevice* physical_device,
     VkDevice* device,
     VkQueue* queue,
-    VkCommandPool* command_pool) {
+    VkCommandPool* command_pool,
+    uint32_t* queue_family_index) {
   VkResult result;
 
   if (VK_SUCCESS != volkInitialize()) {
@@ -421,6 +583,9 @@ VkResult vkml_allocate_basics(
   if (qf == UINT32_MAX) {
     ET_LOG(Error, "Failed to find suitable queue");
     return VK_ERROR_UNKNOWN;
+  }
+  if (queue_family_index != nullptr) {
+    *queue_family_index = qf;
   }
 
   // Device with ML tensor extension

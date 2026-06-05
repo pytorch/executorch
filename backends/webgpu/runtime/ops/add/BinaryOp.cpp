@@ -52,7 +52,7 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
 
   uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kBinaryAddWorkgroupSize);
+      utils::clamp_workgroup_size(device, kBinaryAddWorkgroupSizeX);
   uint32_t workgroup_count =
       utils::compute_1d_workgroup_count(device, num_elements, wg_size, "add");
 

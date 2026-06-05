@@ -44,7 +44,7 @@ class GridSampler2d(torch.nn.Module):
         )
 
 
-def test_rewrite_grid_sampler_to_tosa_custom_no_target():
+def test_rewrite_grid_sampler_to_tosa_custom_vgf_no_target():
     model = GridSampler2d()
     example_inputs = (
         torch.randn(1, 3, 8, 8),
