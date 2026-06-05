@@ -30,7 +30,7 @@ if(NOT GLSLC_PATH AND EXECUTORCH_BUILD_VULKAN)
   message(
     FATAL_ERROR
       "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
-      "Please install the Vulkan SDK 1.4.321.0 or newer from "
+      "Please install the Vulkan SDK 1.4.341.1 or newer from "
       "https://vulkan.lunarg.com/sdk/home and ensure that the glslc binary is in your PATH. "
       "Note that the glslc distributed with the Android NDK is not compatible since it "
       "does not support the GL_EXT_integer_dot_product extension. "

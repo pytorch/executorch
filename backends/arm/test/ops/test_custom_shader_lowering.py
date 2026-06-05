@@ -79,7 +79,7 @@ class _GridReadTensorModule(torch.nn.Module):
 
 # Covers lowering of a standalone custom op to a buffer-backed tosa.CUSTOM.
 # Checks the emitted custom node carries the expected operator, domain, and buffer descriptors.
-def test_new_custom_op_lowers_to_tosa_custom_buffer_shader():
+def test_new_custom_op_vgf_lowers_to_tosa_custom_buffer_shader():
     if shutil.which("glslc") is None:
         pytest.skip("glslc not found")
     register_test_threes_library_ops()
@@ -105,7 +105,7 @@ def test_new_custom_op_lowers_to_tosa_custom_buffer_shader():
 
 # Covers replacing aten.add with a shader-backed custom op.
 # Checks the rewritten node lowers to tosa.CUSTOM with storage-buffer descriptors.
-def test_replacement_op_lowers_to_tosa_custom_shader():
+def test_replacement_op_vgf_lowers_to_tosa_custom_shader():
     if shutil.which("glslc") is None:
         pytest.skip("glslc not found")
     register_test_shader_library_ops()
@@ -132,7 +132,7 @@ def test_replacement_op_lowers_to_tosa_custom_shader():
 
 # Covers the in-tree grid-sampler rewrite path.
 # Checks grid_sampler_2d.default lowers to tosa.CUSTOM with the Vulkan shader domain.
-def test_in_tree_grid_sampler_lowers_to_tosa_custom():
+def test_in_tree_grid_sampler_vgf_lowers_to_tosa_custom():
     edge_model = to_edge(
         export(_GridSampleModule(), (torch.randn(1, 3, 8, 8), torch.randn(1, 4, 4, 2)))
     )
@@ -155,7 +155,7 @@ def test_in_tree_grid_sampler_lowers_to_tosa_custom():
 
 # Covers sampler/image descriptor selection during lowering.
 # Checks the lowered payload uses combined-image-sampler input, tensor grid input, and storage-image output.
-def test_sampler_shader_lowering_emits_expected_descriptor_types():
+def test_sampler_shader_vgf_lowering_emits_expected_descriptor_types():
     if shutil.which("glslc") is None:
         pytest.skip("glslc not found")
     register_test_shader_library_ops()
@@ -188,7 +188,7 @@ def test_sampler_shader_lowering_emits_expected_descriptor_types():
     assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE"
 
 
-def test_grid_read_shader_lowering_uses_distinct_custom_operator():
+def test_grid_read_shader_vgf_lowering_uses_distinct_custom_operator():
     if shutil.which("glslc") is None:
         pytest.skip("glslc not found")
     register_test_shader_library_ops()
@@ -212,7 +212,7 @@ def test_grid_read_shader_lowering_uses_distinct_custom_operator():
     assert custom_node.kwargs["operator_name"] == TEST_GRID_READ_TENSOR_OPERATOR
 
 
-def test_sampler_shader_lowering_rejects_three_channel_image_payload():
+def test_sampler_shader_vgf_lowering_rejects_three_channel_image_payload():
     if shutil.which("glslc") is None:
         pytest.skip("glslc not found")
     register_test_shader_library_ops()
@@ -237,7 +237,7 @@ def test_sampler_shader_lowering_rejects_three_channel_image_payload():
 
 # Covers decoding of implementation_attrs after lowering.
 # Checks the payload exposes the expected entry point and binding numbering.
-def test_shader_lowering_decodes_expected_implementation_attrs():
+def test_shader_lowering_vgf_decodes_expected_implementation_attrs():
     edge_model = to_edge(
         export(_GridSampleModule(), (torch.randn(1, 3, 8, 8), torch.randn(1, 4, 4, 2)))
     )

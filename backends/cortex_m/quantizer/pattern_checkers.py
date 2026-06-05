@@ -99,6 +99,25 @@ class CortexMLinearCheck(PatternCheck):
         return is_int8
 
 
+class CortexMActivationCheck(PatternCheck):
+    """Accept standalone elementwise activations (sigmoid / tanh / silu)
+    that the LUT-based cortex_m.quantized_activation op handles uniformly.
+
+    The kernel is shape-agnostic and the LUT is computed AoT from per-tensor
+    qparams, so the only thing to enforce is int8 per-tensor quantization.
+    """
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        is_int8 = cls.is_int8_activations(quantization_config)
+        is_per_tensor = cls.is_per_tensor(
+            quantization_config.get_input_act_qspec()
+        ) and cls.is_per_tensor(quantization_config.get_output_act_qspec())
+        return is_int8 and is_per_tensor
+
+
 class CortexMSoftmaxCheck(PatternCheck):
 
     @classmethod

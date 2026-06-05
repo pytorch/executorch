@@ -26,7 +26,7 @@ You may encounter some rough edges and features which may be documented or plann
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
-* [A commandline compiler for quick tests and example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
+* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
 ```
 
 This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on `vgf_minimal_example.ipyb`, provided in Arm's example folder.
@@ -163,10 +163,9 @@ assert os.path.exists(pte_path), "Build failed; no .pte-file found"
 
 
 ```{tip}
-For a quick test, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
+For a quick start, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
 To produce a pte file equivalent to the one above, run
-`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`.
-For production use, you should instead use the stable Python API shown above.
+`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`
 ```
 
 ## Runtime
@@ -220,7 +219,7 @@ In this tutorial you have learned how to use ExecuTorch to export a PyTorch mode
 
 Issue: glslc is not found when configuring the executor runner.
 Solution: The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
-`export PATH=$(pwd)/examples/arm/arm-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH`.
+`export PATH=$(pwd)/examples/arm/arm-scratch/vulkan_sdk/1.4.341.1/x86_64/bin:$PATH`.
 If not, add it and source the file.
 
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).

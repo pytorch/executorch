@@ -794,6 +794,58 @@ TEST_P(ProcessTest, YuvFullRangeVsVideoRange) {
   EXPECT_GT(video_data[0] - full_data[0], 0.05f);
 }
 
+TEST_P(ProcessTest, YuvFullRangeNonNeutralChroma) {
+  // Full range + non-neutral chroma: the existing full-range test uses neutral
+  // chroma (R=G=B from luma alone, chroma irrelevant) and the non-neutral tests
+  // run video range, so this is the only case that validates the full-range
+  // BT.601 chroma decode end to end. Reference RGB is computed from the
+  // full-range BT.601 definition, independent of the implementation:
+  //   R = Y + 1.402   * (Cr - 128)
+  //   G = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128)
+  //   B = Y + 1.772   * (Cb - 128)
+  // with Y, Cb, Cr in full-range [0, 255]. Values are chosen so no channel
+  // clamps, so a wrong matrix or bias surfaces directly on every channel.
+  const int32_t w = 4, h = 4;
+  const uint8_t y_val = 150, cb = 100, cr = 180;
+  auto img = make_yuv(w, h, y_val, cb, cr, YUVFormat::NV12);
+  ImageProcessor p(cfg(2, 2));
+
+  auto full = p.process_yuv(
+      img.y.data(),
+      w,
+      img.uv.data(),
+      w,
+      w,
+      h,
+      YUVFormat::NV12,
+      Orientation::UP,
+      kFullImage,
+      YUVRange::FULL);
+  ASSERT_TRUE(full.ok());
+
+  const float dcb = static_cast<float>(cb) - 128.0f;
+  const float dcr = static_cast<float>(cr) - 128.0f;
+  const float r = static_cast<float>(y_val) + 1.402f * dcr;
+  const float g = static_cast<float>(y_val) - 0.344136f * dcb - 0.714136f * dcr;
+  const float b = static_cast<float>(y_val) + 1.772f * dcb;
+
+  // Solid image: every pixel of each CHW channel plane equals that channel's
+  // decoded value. Target is 2x2, so 4 pixels per channel.
+  std::vector<float> expected(static_cast<size_t>(3) * 2 * 2);
+  for (int i = 0; i < 4; ++i) {
+    expected[i] = r / 255.0f;
+    expected[4 + i] = g / 255.0f;
+    expected[8 + i] = b / 255.0f;
+  }
+
+  expect_tensor_near(
+      full.get()->const_data_ptr<float>(),
+      expected.data(),
+      expected.size(),
+      0.02f,
+      "full-range non-neutral chroma");
+}
+
 TEST_P(ProcessTest, YuvDefaultsToVideoRange) {
   // Y=235 neutral chroma decodes to ~1.0 under video range; the default range
   // must match an explicit VIDEO request.
