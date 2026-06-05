@@ -19,3 +19,19 @@ def define_common_targets():
                 "//executorch/extension/image:image_processor" + aten_suffix,
             ],
         )
+
+    # Apple-specific GPU / CVPixelBuffer tests. The source is gated on
+    # __APPLE__, so on non-Apple platforms this builds as an empty (passing)
+    # test. CoreVideo is needed for the test's own CVPixelBuffer creation.
+    runtime.cxx_test(
+        name = "apple_test",
+        srcs = [
+            "image_processor_apple_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/image:image_processor",
+        ],
+        fbobjc_frameworks = [
+            "CoreVideo.framework",
+        ],
+    )

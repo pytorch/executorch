@@ -152,10 +152,7 @@ if(NOT ET_MODEL_PTE_ADDR
   )
 endif()
 
-if(NOT SEMIHOSTING
-   AND NOT ET_MODEL_PTE_ADDR
-   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
-)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   if(NOT EXISTS "${ET_PTE_FILE_PATH}")
     message(
       FATAL_ERROR
@@ -228,7 +225,7 @@ if(NOT CMAKE_SKIP_INSTALL_RULES AND TARGET ethosu_core_driver)
 endif()
 
 # Convert pte to header
-if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   add_custom_target(
     gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
   )
@@ -319,8 +316,7 @@ list(
 # EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
 # no undelegated ops, use neither.
 set(FOUND_OPS_IN_FILE FALSE)
-if(NOT SEMIHOSTING
-   AND NOT ET_MODEL_PTE_ADDR
+if(NOT ET_MODEL_PTE_ADDR
    AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
    AND EXISTS "${ET_PTE_FILE_PATH}"
 )
@@ -337,7 +333,7 @@ if(NOT SEMIHOSTING
   endif()
 endif()
 
-if(SEMIHOSTING)
+if(SEMIHOSTING AND "${ET_PTE_FILE_PATH}" STREQUAL "")
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
     "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
@@ -506,7 +502,7 @@ target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
@@ -569,6 +565,10 @@ if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
 endif()
 
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
+  target_compile_definitions(arm_executor_runner PUBLIC ET_COMPILED_PTE)
+endif()
+
 # Memory buffer sizes for Executorch flow
 
 if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
@@ -576,6 +576,14 @@ if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
     arm_executor_runner
     PUBLIC
       ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE}
+  )
+endif()
+
+if(DEFINED ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(
+    arm_executor_runner
+    PUBLIC
+      ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE}
   )
 endif()
 

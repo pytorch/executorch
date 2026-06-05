@@ -965,6 +965,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_fill(self):
+        module = Fill(3.14)  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_flip(self):
         sample_input = (torch.randn(3, 4, 5, 6),)
         module = Flip()  # noqa: F405
@@ -3583,6 +3588,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
         module = ExpM1()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_fill(self):
+        module = Fill(3.14)  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -7597,6 +7608,11 @@ class TestExampleLLMScript(TestQNN):
             case "sqnr":
                 cmds.extend(
                     [
+                        "--skip_user_prompt_calibration",
+                        "--tasks",
+                        "wikitext",
+                        "--limit",
+                        "1",
                         "--eval_methods",
                         "sqnr_eval",
                     ]
