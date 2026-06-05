@@ -347,7 +347,7 @@ elseif(FOUND_OPS_IN_FILE)
 else()
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
-    "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
+    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
   )
 endif()
 
