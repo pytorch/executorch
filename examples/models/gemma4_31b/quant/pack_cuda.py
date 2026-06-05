@@ -32,7 +32,25 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     w = weights["weight"]
-    if isinstance(w, (Int4Tensor, IntxUnpackedToInt8Tensor)):
+    if isinstance(w, Int4Tensor):
+        # Repack scale/zero from torchao's native [n_groups, N] layout into the
+        # coalesced [N, n_groups] layout the CUDA decode kernel reads (see
+        # int4_dispatch.py / int4_plain_mm.cuh). Doing the transpose here bakes
+        # it into the serialized weight constant, so the exported decode graph
+        # carries NO per-step transpose/clone — AOTInductor (freezing=False)
+        # does not constant-fold ops on parameters, so the transpose must
+        # already live in the constant for the coalesced layout to pay off.
+        w = Int4Tensor(
+            qdata=w.qdata,
+            scale=w.scale.t().contiguous(),
+            zero_point=w.zero_point.t().contiguous(),
+            block_size=w.block_size,
+            shape=w.shape,
+            act_pre_scale=w.act_pre_scale,
+            activation_dtype=w.activation_dtype,
+        )
+        module.weight = nn.Parameter(w, requires_grad=False)
+    elif isinstance(w, IntxUnpackedToInt8Tensor):
         module.weight = nn.Parameter(w, requires_grad=False)
     else:
         raise ValueError(f"Unsupported weight type: {type(w).__name__}")

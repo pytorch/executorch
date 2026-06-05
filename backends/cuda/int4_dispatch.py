@@ -59,11 +59,18 @@ def _meta(self, qdata, scale, zero, group_size):
 
 @impl(_lib, "int4_plain_mm", "CUDA")
 def _cuda(self, qdata, scale, zero, group_size):
+    # scale/zero are stored in the coalesced [N, n_groups] layout (transposed
+    # at pack time, see pack_cuda.pack_linear_for_cuda), which is exactly what
+    # _dequant_matmul expects.
     return _dequant_matmul(self, qdata, scale, zero, group_size)
 
 
 def _dequant_matmul(x, qdata, scale, zero, group_size):
-    """Dequant INT4 weights to input dtype and call F.linear."""
+    """Dequant INT4 weights to input dtype and call F.linear.
+
+    scale/zero are in the coalesced [N, n_groups] layout (baked into the
+    weight constant at pack time), aligned row-for-row with qdata's [N, *].
+    """
     N, K_half = qdata.shape
     K = K_half * 2
     n_groups = K // group_size
@@ -75,8 +82,8 @@ def _dequant_matmul(x, qdata, scale, zero, group_size):
     high = ((p >> 4) & 0x0F).to(dtype)
     data = torch.stack([low, high], dim=-1).reshape(N, n_groups, group_size)
 
-    s = scale.to(dtype).t().unsqueeze(-1)
-    z = zero.to(dtype).t().unsqueeze(-1)
+    s = scale.to(dtype).unsqueeze(-1)
+    z = zero.to(dtype).unsqueeze(-1)
     w_deq = ((data - z) * s).reshape(N, K)
 
     return F.linear(x, w_deq)
@@ -90,8 +97,10 @@ def _dequant_matmul(x, qdata, scale, zero, group_size):
 #   qdata : [N, K]          int8 (one value per element, natural k order)
 #   scale : [N, K//gs]      bf16 (per-group, row-major)
 #   zero  : [N, K//gs]      int8 (per-group asymmetric zero point)
-# vs Int4Tensor's nibble-packed [N, K//2] qdata and transposed [K//gs, N]
-# scale/zero. The op signature mirrors int4_plain_mm for shim uniformity.
+# vs Int4Tensor's nibble-packed [N, K//2] qdata. (For CUDA, Int4Tensor's
+# scale/zero are repacked to the same coalesced [N, K//gs] layout at pack time;
+# see pack_cuda.pack_linear_for_cuda.) The op signature mirrors int4_plain_mm
+# for shim uniformity.
 # ---------------------------------------------------------------------------
 
 _lib.define(
@@ -155,6 +164,11 @@ def _(func, types, args, kwargs):
 
     M = x_2d.shape[0]
     if M <= 4:
+        # scale/zero are already in the coalesced [N, n_groups] layout the
+        # decode kernel reads directly (baked into the weight constant at pack
+        # time). Passing them straight through keeps the export graph free of
+        # any per-step transpose/clone, so the coalesced layout is realized
+        # without recomputing it every decode step.
         out = torch.ops.executorch_cuda.int4_plain_mm(x_2d, qdata, scale, zero, gs)
     else:
         out = _dequant_matmul(x_2d, qdata, scale, zero, gs)

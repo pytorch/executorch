@@ -31,6 +31,7 @@ import executorch.backends.cuda.int4_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.examples.models.gemma4_31b.quant.pack_cuda import pack_linear_for_cuda
 from executorch.examples.models.gemma4_31b.quant.quantize import quantize_weight
 from executorch.examples.models.gemma4_31b.quant.recipe import QuantConfig
 
@@ -52,8 +53,9 @@ def _make_int4_linear(N, K, group_size=128, symmetric=False, bias=False):
     )
     int4_w = quantize_weight(w_bf16, config)
 
-    module = nn.Linear(K, N, bias=bias, dtype=torch.bfloat16, device="cuda")
-    module.weight = nn.Parameter(int4_w.cuda(), requires_grad=False)
+    module = nn.Linear(K, N, bias=bias, dtype=torch.bfloat16)
+    pack_linear_for_cuda(module, {"weight": int4_w})
+    module.cuda()
     return module, w_bf16.cuda()
 
 
@@ -175,7 +177,7 @@ class TestDeviceMovement(unittest.TestCase):
         config = QuantConfig(bits=4, group_size=128, symmetric=False, method="min_max")
         int4_w = quantize_weight(w_bf16, config)
         module = nn.Linear(512, 256, bias=False)
-        module.weight = nn.Parameter(int4_w, requires_grad=False)
+        pack_linear_for_cuda(module, {"weight": int4_w})
         module = module.to("cuda")
         x = torch.randn(1, 512, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_bf16.cuda()))
