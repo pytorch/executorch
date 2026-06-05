@@ -226,13 +226,14 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     IfNode,
     IntOrVid,
     MetalKernelNode,
+    MultiplyIntNode,
     SubtractIntNode,
 )
 
 
 # Shared Metal header: the GGUF block_q6_K struct (matches llama.cpp
-# ggml-common.h; sizeof == 210, no padding since max align is 2) plus a
-# per-element dequant helper used by the mat-mat kernel.
+# ggml-common.h; sizeof == 210, no padding since max align is 2) plus
+# dequant helpers for both per-element (embedding) and vectorized (matmul).
 _Q6K_HEADER = """
 #include <metal_simdgroup>
 #include <metal_simdgroup_matrix>
@@ -248,7 +249,7 @@ typedef struct {
 } block_q6_K;
 
 // Dequantize a single element at within-block position p (0..255) of a
-// block_q6_K. Matches the canonical ggml dequantize_row_q6_K layout.
+// block_q6_K. Used by the embedding kernel.
 inline float dequant_q6k_elem(device const block_q6_K * blk, int p) {
     const int h  = p >> 7;     // which 128-element half (0/1)
     const int pp = p & 127;    // position within half (0..127)
@@ -266,6 +267,43 @@ inline float dequant_q6k_elem(device const block_q6_K * blk, int p) {
     else             { q = (ql[l + 32] >> 4)  | ((qhb & 0xC0) >> 2); }
     const float scale = (float) sc[is + 2 * g];
     return (float) blk->d * scale * (float)(q - 32);
+}
+
+// Vectorized Q6_K dequantize: decodes 16 values per call into a 4x4 half
+// register. Ported from llama.cpp dequantize_q6_K. `il` ranges 0..15 and
+// selects which 16-element slice of the 256-element block to decode.
+inline void dequantize_q6_K_16(device const block_q6_K * xb, short il,
+                               thread half4x4 & reg) {
+    const half d_all = xb->d;
+    device const uint16_t * ql = (device const uint16_t *)xb->ql;
+    device const uint16_t * qh = (device const uint16_t *)xb->qh;
+    device const int8_t * scales = (device const int8_t *)xb->scales;
+
+    ql = ql + 32*(il/8) + 16*((il/2)&1) + 8*(il&1);
+    qh = qh + 16*(il/8) + 8*(il&1);
+    float sc = scales[(il%2) + 2 * ((il/2))];
+    il = (il/2) & 3;
+
+    const uint32_t kmask1 = il>1 ? (il>2 ? 0xC0C0C0C0 : 0x30303030) : (il>0 ? 0x0C0C0C0C : 0x03030303);
+    const uint32_t kmask2 = il>1 ? 0xF0F0F0F0 : 0x0F0F0F0F;
+    const float coeff = d_all * sc;
+    const float ml = coeff * 32.f;
+    const float dl0 = coeff;
+    const float dl1 = dl0 / 256.f;
+    const float dl2 = dl0 / (256.f * 256.f);
+    const float dl3 = dl0 / (256.f * 256.f * 256.f);
+    const uint8_t shr_h = il>2 ? 2 : 0;
+    const uint8_t shl_h = il>1 ? 0 : (il>0 ? 2 : 4);
+    const uint8_t shr_l = il>1 ? 4 : 0;
+    for (int i = 0; i < 4; ++i) {
+        const uint32_t  low = (ql[2*i] | (uint32_t)(ql[2*i+1] << 16)) & kmask2;
+        const uint32_t high = (qh[2*i] | (uint32_t)(qh[2*i+1] << 16)) & kmask1;
+        const uint32_t q = ((high << shl_h) >> shr_h) | (low >> shr_l);
+        reg[i][0] = (half)(dl0 *  ((half)(q & 0xFF))       - ml);
+        reg[i][1] = (half)(dl1 * ((float)(q & 0xFF00))     - ml);
+        reg[i][2] = (half)(dl2 * ((float)(q & 0xFF0000))   - ml);
+        reg[i][3] = (half)(dl3 * ((float)(q & 0xFF000000)) - ml);
+    }
 }
 """
 
@@ -344,105 +382,147 @@ def _q6k_matvec_source(has_bias: bool) -> str:
 """
 
 
-# Prefill mat-mat kernel (32x32x32 tiles, 4 simdgroups / 128 threads).
-# Each threadgroup computes a BM x BN output tile; weights are dequantized
-# on the fly into threadgroup memory and reused across the BM activation rows.
+# Prefill mat-mat kernel, ported from llama.cpp kernel_mul_mm (Q6_K variant).
+# 64x32 output tiles, 4 simdgroups / 128 threads per threadgroup.
+# Uses vectorized dequantize_q6_K_16 to decode 16 weight values per thread
+# into threadgroup memory, then runs simdgroup_multiply_accumulate on 8x8
+# tiles. NL=16 for Q6_K (QK_K / 16 = 16 dequant steps per super-block).
 # C[m, n] = sum_k x[m, k] * dequant(weight)[n, k] (+ bias[n]).
 def _q6k_matmul_source(has_bias: bool) -> str:
-    bias_line = "            v += (float) bias[gn];\n" if has_bias else ""
+    bias_add = "+ (float) bias[r0 + i]" if has_bias else ""
     return f"""
-    constexpr short BM = 32;   // activation rows per tile (M)
-    constexpr short BN = 32;   // output features per tile (N)
-    constexpr short BK = 32;   // K-chunk per iteration
+    constexpr short NR0 = 64;   // weight/output rows per tile (N dim)
+    constexpr short NR1 = 32;   // activation rows per tile (M dim)
+    constexpr short NK  = 32;   // K-chunk per iteration
+    constexpr short NL  = 16;   // Q6_K: QK_K / 16
+    constexpr short NL0 = NK / 16;  // = 2 — dequant iterations per thread for weight
+    constexpr short NL1 = NK / 8;   // = 4 — load iterations per thread for activation
 
-    threadgroup half  As[BM * BK];
-    threadgroup half  Bs[BN * BK];
-    threadgroup float Cs[BM * BN];
+    threadgroup half sa[4096];  // NR0 * NK storage (strided by 64)
+    threadgroup half sb[4096];  // NR1 * NK storage (strided by 64)
 
-    const ushort tid    = thread_index_in_threadgroup;     // 0..127
-    const ushort sgitg  = simdgroup_index_in_threadgroup;  // 0..3
-    const short  sg_row = sgitg / 2;                        // 0/1
-    const short  sg_col = sgitg % 2;                        // 0/1
+    const ushort tid   = thread_index_in_threadgroup;   // 0..127
+    const ushort sgitg = simdgroup_index_in_threadgroup; // 0..3
 
-    const uint tile_n_idx = thread_position_in_grid.x / 128u;
-    const uint tile_m_idx = thread_position_in_grid.y;
-    const int  tile_m0 = (int)tile_m_idx * BM;
-    const int  tile_n0 = (int)tile_n_idx * BN;
+    const uint r0 = thread_position_in_grid.y * NR0;  // first weight row
+    const uint r1 = (thread_position_in_grid.x / 128u) * NR1;  // first activation row
 
-    // M (number of activation rows) read at runtime from the injected x_shape,
-    // so this kernel works for both static and symbolic seqlen.
+    // M (number of activation rows) read at runtime.
     int M = 1;
     for (uint d = 0; d + 1 < x_ndim; ++d) {{ M *= (int) x_shape[d]; }}
 
     const int nb = K / QK_K;
-    device const block_q6_K * wrows = (device const block_q6_K *) weight;
 
-    simdgroup_float8x8 mc[2][2];
-    for (short a = 0; a < 2; ++a) {{
-        for (short b = 0; b < 2; ++b) {{
-            mc[a][b] = make_filled_simdgroup_matrix<float, 8>(0.f);
+    // Clamp tile edges.
+    const short nr0 = (N - (int)r0 < NR0) ? (N - (int)r0) : NR0;
+    const short nr1 = (M - (int)r1 < NR1) ? (M - (int)r1) : NR1;
+
+    // Thread → element mapping for cooperative loads.
+    const short lr0 = ((short)(tid / NL0) < nr0) ? (short)(tid / NL0) : (nr0 - 1);  // 0..63
+    const short lr1 = ((short)(tid / NL1) < nr1) ? (short)(tid / NL1) : (nr1 - 1);  // 0..31
+
+    short il0 = tid % NL0;
+    short il  = il0;  // current dequant sub-block index within Q6_K block
+
+    const short offset1 = il0 / NL;  // always 0 for NL=16, NL0=2
+
+    // Pointer to weight block for this thread's assigned row.
+    device const block_q6_K * wblk = (device const block_q6_K *) weight
+        + (uint)(r0 + lr0) * nb + offset1;
+
+    // Pointer to activation row for this thread.
+    const short iy = 8 * (tid % NL1);
+    device const InT * yp = x + (uint)(r1 + lr1) * (uint)K + iy;
+
+    // Accumulator: 8 simdgroup 8x8 matrices (4 sgitg configs x 2 sub-tiles).
+    simdgroup_half8x8 ma[4];
+    simdgroup_half8x8 mb[2];
+    simdgroup_float8x8 mc[8];
+    for (short i = 0; i < 8; ++i) {{
+        mc[i] = make_filled_simdgroup_matrix<float, 8>(0.f);
+    }}
+
+    for (int loop_k = 0; loop_k < K; loop_k += NK) {{
+        // --- Cooperative load: dequantized weight tile (NR0 x NK) into sa ---
+        half4x4 temp_a;
+        dequantize_q6_K_16(wblk, il, temp_a);
+
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (short i = 0; i < 16; ++i) {{
+            const short sx = 2 * il0 + i / 8;
+            const short sy = (tid / NL0) / 8;
+            const short lx = (tid / NL0) % 8;
+            const short ly = i % 8;
+            const short ib = 8 * sx + sy;
+            *(sa + 64 * ib + 8 * ly + lx) = temp_a[i / 4][i % 4];
+        }}
+
+        // --- Cooperative load: activation tile (NR1 x NK) into sb ---
+        const short sx_b = tid % NL1;
+        const short sy_b = (tid / NL1) / 8;
+        const short ly_b = (tid / NL1) % 8;
+        const short ib_b = 4 * sx_b + sy_b;
+
+        for (short i = 0; i < 8; ++i) {{
+            *(sb + 64 * ib_b + 8 * ly_b + i) = (half) *(yp + i);
+        }}
+
+        // Advance weight pointer through Q6_K sub-blocks.
+        il = (il + 2 < NL) ? il + 2 : il % 2;
+        wblk = (il < 2) ? wblk + (2 + NL - 1) / NL : wblk;
+
+        yp += NK;
+
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // --- Simdgroup matmul on loaded tiles ---
+        threadgroup const half * lsma = sa + 4 * 64 * (sgitg % 2);
+        threadgroup const half * lsmb = sb + 2 * 64 * (sgitg / 2);
+
+        for (short ik = 0; ik < NK / 8; ++ik) {{
+            simdgroup_barrier(mem_flags::mem_none);
+            for (short i = 0; i < 4; ++i) {{
+                simdgroup_load(ma[i], lsma + 64 * i, 8, ulong2(0, 0), false);
+            }}
+            simdgroup_barrier(mem_flags::mem_none);
+            for (short i = 0; i < 2; ++i) {{
+                simdgroup_load(mb[i], lsmb + 64 * i, 8, ulong2(0, 0), false);
+            }}
+            simdgroup_barrier(mem_flags::mem_none);
+            for (short i = 0; i < 8; ++i) {{
+                simdgroup_multiply_accumulate(mc[i], mb[i / 4], ma[i % 4], mc[i]);
+            }}
+            lsma += 8 * 64;
+            lsmb += 4 * 64;
         }}
     }}
 
-    for (int k0 = 0; k0 < K; k0 += BK) {{
-        // Cooperative load: activation tile (BM x BK), row-major in As.
-        for (short i = 0; i < (BM * BK) / 128; ++i) {{
-            const short idx = tid + i * 128;
-            const short mm = idx / BK;
-            const short kk = idx % BK;
-            const int gm = tile_m0 + mm;
-            As[mm * BK + kk] = (gm < M) ? (half) x[(uint)gm * (uint)K + (k0 + kk)] : (half)0;
-        }}
-        // Cooperative load: dequantized weight tile (BN x BK), row-major in Bs.
-        for (short i = 0; i < (BN * BK) / 128; ++i) {{
-            const short idx = tid + i * 128;
-            const short nn = idx / BK;
-            const short kk = idx % BK;
-            const int gn = tile_n0 + nn;
-            const int gk = k0 + kk;
-            half val = (half)0;
-            if (gn < N) {{
-                device const block_q6_K * blk = wrows + (uint)gn * nb + (gk / QK_K);
-                val = (half) dequant_q6k_elem(blk, gk % QK_K);
-            }}
-            Bs[nn * BK + kk] = val;
+    // --- Write results: always via threadgroup memory for float→InT cast ---
+    // Barrier needed: sa was used for weight tiles during the K-loop and is now
+    // reused as float staging for the output. Without this barrier, a fast
+    // simdgroup could start writing mc[] into sa while a slower one is still
+    // reading the last weight tile via simdgroup_load(ma[]).
+    // (Matches ggml-metal.metal:9546 in llama.cpp's bounds-checked write path.)
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    {{
+        threadgroup float * temp_str = ((threadgroup float *) sa)
+            + 32 * (sgitg & 1) + (16 * (sgitg >> 1)) * NR0;
+        for (short i = 0; i < 8; ++i) {{
+            simdgroup_store(mc[i], temp_str + 8 * (i % 4) + 8 * NR0 * (i / 4),
+                            NR0, ulong2(0, 0), false);
         }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        for (short kk = 0; kk < BK / 8; ++kk) {{
-            simdgroup_half8x8 a[2], b[2];
-            for (short sr = 0; sr < 2; ++sr) {{
-                simdgroup_load(a[sr], As + (16 * sg_row + 8 * sr) * BK + 8 * kk, BK, ulong2(0, 0), false);
-            }}
-            for (short sc = 0; sc < 2; ++sc) {{
-                // transpose=true yields b[k][n] = Bs[n][k] for C = A @ B^T.
-                simdgroup_load(b[sc], Bs + (16 * sg_col + 8 * sc) * BK + 8 * kk, BK, ulong2(0, 0), true);
-            }}
-            for (short sr = 0; sr < 2; ++sr) {{
-                for (short sc = 0; sc < 2; ++sc) {{
-                    simdgroup_multiply_accumulate(mc[sr][sc], a[sr], b[sc], mc[sr][sc]);
+        if (sgitg == 0) {{
+            for (int j = tid; j < nr1; j += NR1) {{
+                device InT * D = out + (uint)(r1 + j) * (uint)N + r0;
+                threadgroup float * Cp = ((threadgroup float *) sa) + j * NR0;
+                for (int i = 0; i < nr0; ++i) {{
+                    float v = Cp[i];
+                    D[i] = (InT)(v {bias_add});
                 }}
             }}
-        }}
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }}
-
-    for (short sr = 0; sr < 2; ++sr) {{
-        for (short sc = 0; sc < 2; ++sc) {{
-            simdgroup_store(mc[sr][sc], Cs + (16 * sg_row + 8 * sr) * BN + (16 * sg_col + 8 * sc), BN, ulong2(0, 0), false);
-        }}
-    }}
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    for (short i = 0; i < (BM * BN) / 128; ++i) {{
-        const short idx = tid + i * 128;
-        const short mm = idx / BN;
-        const short nn = idx % BN;
-        const int gm = tile_m0 + mm;
-        const int gn = tile_n0 + nn;
-        if (gm < M && gn < N) {{
-            float v = Cs[mm * BN + nn];
-{bias_line}            out[(uint)gm * (uint)N + gn] = (InT) v;
         }}
     }}
 """
@@ -450,8 +530,9 @@ def _q6k_matmul_source(has_bias: bool) -> str:
 
 # Number of simdgroups per threadgroup for the mat-vec kernel.
 _Q6K_MV_NSG = 4
-# Tile size for the mat-mat kernel (BM == BN); threadgroup handles a tile.
-_Q6K_MM_TILE = 32
+# Tile sizes for the mat-mat kernel (from llama.cpp kernel_mul_mm).
+_Q6K_MM_NR0 = 64  # weight/output rows (N dim) per threadgroup
+_Q6K_MM_NR1 = 32  # activation rows (M dim) per threadgroup
 
 
 def _emit_q6k_matvec(
@@ -529,9 +610,9 @@ def _emit_q6k_matmul(
     leading = emit_shape(P, x_node, x_slot, end_dim=-1)
     out_shape_flat = leading + [IntOrVid.from_literal(N)]
 
-    tile = _Q6K_MM_TILE
-    blocks_n = (N + tile - 1) // tile
-    grid_x = blocks_n * 128  # 128 threads (4 simdgroups) per threadgroup
+    # grid.x = ceil(M / NR1) * 128 threads (activation tiles)
+    # grid.y = ceil(N / NR0) (weight tiles)
+    blocks_n = (N + _Q6K_MM_NR0 - 1) // _Q6K_MM_NR0
 
     has_bias = bias_slot is not None
     inputs = [P.slot_to_tid(x_slot), P.slot_to_tid(weight_slot)]
@@ -539,6 +620,17 @@ def _emit_q6k_matmul(
     if has_bias:
         inputs.append(P.slot_to_tid(bias_slot))
         input_names.append("bias")
+
+    # blocks_m_iov = ceil(M / NR1); multiply by 128 for grid.x
+    _, grid_x_slot = P.make_tmp_value_slot()
+    P.emit(
+        MultiplyIntNode(
+            a=blocks_m_iov,
+            b=IntOrVid.from_literal(128),
+            out=P.slot_to_vid(grid_x_slot),
+        )
+    )
+    grid_x_iov = IntOrVid.from_vid(P.slot_to_vid(grid_x_slot))
 
     P.emit(
         MetalKernelNode(
@@ -548,8 +640,8 @@ def _emit_q6k_matmul(
             inputs=inputs,
             outputs=[P.slot_to_tid(out)],
             grid=[
-                IntOrVid.from_literal(grid_x),
-                blocks_m_iov,
+                grid_x_iov,
+                IntOrVid.from_literal(blocks_n),
                 IntOrVid.from_literal(1),
             ],
             threadgroup=[
@@ -623,7 +715,7 @@ def _gguf_linear_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             break
 
     out = P.make_or_get_slot(n)
-    tile = _Q6K_MM_TILE
+    tile = _Q6K_MM_NR1  # M-dimension tile (activation rows per threadgroup)
     if M == 1:
         # Static decode -> mat-vec.
         _emit_q6k_matvec(P, n, x_node, x_slot, weight_slot, bias_slot, N, K, out)
