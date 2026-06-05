@@ -8144,7 +8144,6 @@ class TestExampleLLMScript(TestQNN):
             "1024",
             "--max_context_len",
             "1024",
-            "--skip_user_prompt_calibration",
         ]
 
         match self.static_llm_eval_method:
@@ -8194,9 +8193,16 @@ class TestExampleLLMScript(TestQNN):
                     ]
                 )
             case _:
-                cmds.remove("--skip_user_prompt_calibration")
                 logging.warning(
                     "No llm eval method chosen. Only generate model output."
+                )
+                cmds.extend(
+                    [
+                        "--calib_tasks",
+                        "wikitext",
+                        "--calib_limit",
+                        "1",
+                    ]
                 )
 
         if is_llama_model:
@@ -8370,6 +8376,10 @@ class TestExampleLLMScript(TestQNN):
             "128",
             "--max_context_len",
             "128",
+            "--calib_tasks",
+            "wikitext",
+            "--calib_limit",
+            "1",
         ]
         self.add_default_cmds(cmds)
 
@@ -8431,6 +8441,10 @@ class TestExampleLLMScript(TestQNN):
             "128",
             "--max_context_len",
             "128",
+            "--calib_tasks",
+            "wikitext",
+            "--calib_limit",
+            "1",
         ]
         self.add_default_cmds(cmds)
 
@@ -8494,6 +8508,10 @@ class TestExampleLLMScript(TestQNN):
             "128",
             "--max_context_len",
             "128",
+            "--calib_tasks",
+            "wikitext",
+            "--calib_limit",
+            "1",
         ]
         if self.use_fp16:
             cmds.append("--use_fp16")
@@ -8647,7 +8665,7 @@ class TestExampleMultimodalityScript(TestQNN):
     def setUp(self):
         self.alm_specs = {
             "granite_speech_3_3-2b": TestExampleMultimodalityScript.ALMSpecs(
-                max_seq_len=512,
+                max_seq_len=1024,
                 sm8650_token_rate=5,
                 sm8750_token_rate=8,
                 encoder_pte_size=900_000_000,  # 900MB
@@ -8659,7 +8677,7 @@ class TestExampleMultimodalityScript(TestQNN):
         }
         self.vlm_specs = {
             "smolvlm_500m_instruct": TestExampleMultimodalityScript.VLMSpecs(
-                max_seq_len=128,
+                max_seq_len=1024,
                 sm8650_token_rate=50,
                 sm8750_token_rate=55,
                 encoder_pte_size=110_000_000,  # 110MB
@@ -8669,7 +8687,7 @@ class TestExampleMultimodalityScript(TestQNN):
                 golden_image_feature="city",
             ),
             "internvl3_1b": TestExampleMultimodalityScript.VLMSpecs(
-                max_seq_len=320,
+                max_seq_len=1024,
                 sm8650_token_rate=11,
                 sm8750_token_rate=13,
                 encoder_pte_size=425_000_000,  # 425MB
@@ -8721,6 +8739,8 @@ class TestExampleMultimodalityScript(TestQNN):
             "kv",
             "--max_seq_len",
             f"{alm_specs.max_seq_len}",
+            "--calib_samples",
+            "./examples/qualcomm/oss_scripts/llama/assets/samples/audio.json",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -8804,6 +8824,8 @@ class TestExampleMultimodalityScript(TestQNN):
             "kv",
             "--max_seq_len",
             f"{vlm_specs.max_seq_len}",
+            "--calib_samples",
+            "./examples/qualcomm/oss_scripts/llama/assets/samples/vision.json",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
