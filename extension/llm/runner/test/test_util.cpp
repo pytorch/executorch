@@ -18,6 +18,7 @@ namespace {
 using ::executorch::aten::ScalarType;
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::llm::convert_to_bfloat16;
+using ::executorch::extension::llm::stop_safe_prefix_len;
 using ::executorch::extension::llm::utf8_complete_prefix_len;
 
 class ConvertToBFloat16Test : public ::testing::Test {
@@ -84,6 +85,41 @@ TEST(Utf8CompletePrefixLenTest, HandlesAsciiAndMultiByteBoundaries) {
 
   // An invalid lead byte counts as length 1 (emitted, not stalled).
   EXPECT_EQ(utf8_complete_prefix_len("\x80"), 1u);
+}
+
+TEST(StopSafePrefixLenTest, NoStopsEmitsEverything) {
+  bool hit = true;
+  EXPECT_EQ(stop_safe_prefix_len("hello world", {}, hit), 11u);
+  EXPECT_FALSE(hit);
+}
+
+TEST(StopSafePrefixLenTest, StopFoundReturnsEarliestOffsetAndExcludesIt) {
+  bool hit = false;
+  // "STOP" begins at offset 6; emit "Hello " (6 bytes), drop the stop and rest.
+  EXPECT_EQ(stop_safe_prefix_len("Hello STOP there", {"STOP"}, hit), 6u);
+  EXPECT_TRUE(hit);
+  // Earliest of several wins.
+  hit = false;
+  EXPECT_EQ(stop_safe_prefix_len("aXbY", {"Y", "X"}, hit), 1u);
+  EXPECT_TRUE(hit);
+}
+
+TEST(StopSafePrefixLenTest, HoldsBackPossiblePartialStopTail) {
+  bool hit = false;
+  // No full stop yet, but the trailing "ST" could become "STOP": hold back
+  // len("STOP")-1 == 3 bytes, so of "hi ST" (5 bytes) only "hi" (2) is safe.
+  EXPECT_EQ(stop_safe_prefix_len("hi ST", {"STOP"}, hit), 2u);
+  EXPECT_FALSE(hit);
+}
+
+TEST(StopSafePrefixLenTest, HoldBackSnapsToUtf8Boundary) {
+  bool hit = false;
+  // "ab" + "€"(3 bytes). Stop "XX" => hold back 1 byte, which would land inside
+  // the euro sign; snap down so the multi-byte char isn't split.
+  const std::string text = "ab\xe2\x82\xac";
+  const size_t safe = stop_safe_prefix_len(text, {"XX"}, hit);
+  EXPECT_FALSE(hit);
+  EXPECT_EQ(safe, 2u); // only "ab"; the € is held whole
 }
 
 } // namespace

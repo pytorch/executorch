@@ -10,7 +10,14 @@ import json
 
 from executorch.extension.llm.server.python.tool_parsers import QwenFunctionCallDetector
 
-_TOOLS = {"get_weather", "add"}
+# name -> JSON-schema `parameters` (as the server passes it to the detector).
+_TOOLS = {
+    "get_weather": {"type": "object", "properties": {"city": {"type": "string"}}},
+    "add": {
+        "type": "object",
+        "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+    },
+}
 
 
 def _parse(text, tools=_TOOLS):
@@ -87,3 +94,33 @@ def test_missing_tool_call_wrapper_still_parses():
     r = _parse(text)
     assert len(r.calls) == 1
     assert json.loads(r.calls[0].arguments) == {"city": "Paris"}
+
+
+# Schema-aware coercion: the XML format is stringly-typed, so values must be cast
+# to the declared schema type (the cause of several BFCL function-calling misses).
+def test_boolean_value_coerced_by_schema():
+    tools = {"f": {"properties": {"flag": {"type": "boolean"}}}}
+    # The model writes a non-JSON capitalized "True"; the schema says boolean.
+    text = "<function=f><parameter=flag>True</parameter></function>"
+    r = _parse(text, tools)
+    assert json.loads(r.calls[0].arguments) == {"flag": True}
+
+
+def test_string_schema_keeps_numeric_literal_as_string():
+    tools = {"f": {"properties": {"id": {"type": "string"}}}}
+    # A numeric-looking value the schema declares as a string must NOT become int.
+    text = "<function=f><parameter=id>1234</parameter></function>"
+    r = _parse(text, tools)
+    args = json.loads(r.calls[0].arguments)
+    assert args == {"id": "1234"} and isinstance(args["id"], str)
+
+
+def test_untyped_param_falls_back_to_json_guess():
+    # No declared type -> best-effort JSON guess (so loosely-typed tools still work).
+    tools = {"f": {"properties": {}}}
+    text = (
+        "<function=f><parameter=n>42</parameter>"
+        "<parameter=items>[1, 2]</parameter></function>"
+    )
+    r = _parse(text, tools)
+    assert json.loads(r.calls[0].arguments) == {"n": 42, "items": [1, 2]}
