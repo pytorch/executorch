@@ -99,9 +99,6 @@ def map_dtype(data_type: torch.dtype) -> Any:
         torch.float16: ts.DType.FP16,
         torch.half: ts.DType.FP16,
         torch.bfloat16: ts.DType.BF16,
-        torch.float8_e4m3fn: ts.DType.FP8E4M3,
-        torch.float8_e5m2: ts.DType.FP8E5M2,
-        torch.float8_e8m0fnu: ts.DType.FP8UE8M0,
         torch.int8: ts.DType.INT8,
         # TOSA uses signless int8; unsigned semantics are expressed via RESCALE.
         torch.uint8: ts.DType.INT8,
@@ -238,16 +235,10 @@ class TosaArg:
                 if not tosa_spec.support_extension("bf16"):
                     return False
             case ts.DType.FP8E4M3:
-                if not (
-                    tosa_spec.support_extension("fp8e4m3")
-                    or tosa_spec.support_extension("mxfp")
-                ):
+                if not tosa_spec.support_extension("fp8e4m3"):
                     return False
             case ts.DType.FP8E5M2:
-                if not (
-                    tosa_spec.support_extension("fp8e5m2")
-                    or tosa_spec.support_extension("mxfp")
-                ):
+                if not tosa_spec.support_extension("fp8e5m2"):
                     return False
 
         return True
