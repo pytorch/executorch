@@ -86,6 +86,26 @@ behave. Subclasses may override to tweak defaults for specific targets.
 Args:
 - **config**: The custom ArmPassPipelineConfig to set.
 
+```python
+def VgfCompileSpec.validate_environment(self, build_dir: str | None = None, *, require_runtime_build: bool = False) -> 'VgfEnvironmentReport':
+```
+Run VGF environment preflight checks.
+
+By default this validates only AoT/export prerequisites. Runtime and
+source-build diagnostics are intentionally explicit in check_env.py.
+
+Args:
+- **build_dir**: Optional source-build CMake build directory or
+        CMakeCache.txt path.
+- **require_runtime_build**: If true, run source-build diagnostics instead
+        of the default AoT check.
+
+Returns:
+- **VgfEnvironmentReport**: Structured check report.
+
+Raises:
+- **RuntimeError**: If any required check fails.
+
 
 
 ### Partitioner API
