@@ -327,7 +327,7 @@ class TestGgufLinearMlx(unittest.TestCase):
     """Q6_K weights route to the fused mlx::gguf_linear op (raw-blob path)."""
 
     def _make_blob(self, N: int, K: int) -> torch.Tensor:
-        from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import (
+        from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
             make_q6_k_blob,
         )
 
@@ -398,7 +398,7 @@ class TestGgufEmbeddingMlx(unittest.TestCase):
     """Q6_K token embedding routes to the fused mlx::gguf_embedding op."""
 
     def _make_blob(self, vocab: int, K: int) -> torch.Tensor:
-        from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import (
+        from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
             make_q6_k_blob,
         )
 

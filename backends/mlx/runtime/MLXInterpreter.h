@@ -990,8 +990,8 @@ inline void exec_metal_kernel(
       n.name,
       n.input_names,
       n.output_names,
-      n.source,
-      n.header,
+      n.source ? *n.source : std::string{},
+      n.header ? *n.header : std::string{},
       n.ensure_row_contiguous,
       n.atomic_outputs);
 

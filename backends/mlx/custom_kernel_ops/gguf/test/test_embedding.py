@@ -14,18 +14,18 @@ dequant, so the bf16 outputs match exactly.
 
 Usage::
 
-    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_embedding run
-    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_embedding run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_embedding run
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_embedding run --rebuild
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.custom_kernel_ops.gguf_embedding  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.gguf.embedding  # noqa: F401
 
 import torch
 import torch.nn as nn
 
-from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import (
+from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
     make_q6_k_blob,
 )
 from executorch.backends.mlx.test.test_utils import OpTestCase

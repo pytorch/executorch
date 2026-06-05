@@ -6,65 +6,50 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""
-``mlx::gguf_embedding``: embedding gather against a GGUF-quantized table.
+"""GGUF **Q6_K** embedding implementation.
 
-    out = dequant(weight[indices])
+Provides the two pieces the ``mlx::gguf_embedding`` router dispatches to for the
+``"q6k"`` format:
 
-The embedding table is the raw GGUF ``block_q6_K`` blob (one quantized row per
-vocab entry). This is the gather counterpart to ``mlx::gguf_linear`` and exists
-because MLX's affine dequantize has no group_size=16 Metal kernel, so a Q6_K
-embedding (group_size 16) cannot use the generic quantized-embedding path.
+* :func:`eager_embedding` -- pure-torch reference (the custom-op eager body).
+* :func:`emit_embedding`  -- lowers the op to a fused Q6_K gather Metal kernel.
 
-``format`` selects the GGUF quant type; only ``"q6k"`` is supported. Output is
-bfloat16.
-
-Usage::
-
-    import executorch.backends.mlx.custom_kernel_ops.gguf_embedding  # noqa: F401
-
-    out = torch.ops.mlx.gguf_embedding(weight, indices, "q6k")
-    # weight:  (vocab, (K/256)*210)  uint8  GGUF q6_K blob
-    # indices: (...)                 int
-    # out:     (..., K)              bfloat16
+This is the gather counterpart to :mod:`.linear` and exists because MLX's affine
+dequantize has no group_size=16 Metal kernel, so a Q6_K embedding (group_size 16)
+cannot use the generic quantized-embedding path. Output is bfloat16.
 """
 
 from __future__ import annotations
 
 import torch
-
-from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
+from executorch.backends.mlx.builder.op_helpers import (
+    emit_product,
+    emit_shape,
+    torch_dtype_to_scalar_type,
+)
+from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+from executorch.backends.mlx.builder.slot_manager import Slot
+from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.common import (
     _Q6K_HEADER,
     dequantize_q6_k,
     Q6K_BLOCK_BYTES,
     QK_K,
+)
+from executorch.backends.mlx.serialization.mlx_graph_schema import (
+    IntOrVid,
+    MetalKernelNode,
 )
 from torch import Tensor
 from torch.fx.node import Node
 
 
 # ---------------------------------------------------------------------------
-# Custom op + eager fallback
+# Eager reference
 # ---------------------------------------------------------------------------
 
 
-@torch.library.custom_op("mlx::gguf_embedding", mutates_args=())
-def gguf_embedding(weight: Tensor, indices: Tensor, format: str) -> Tensor:
-    """Gather + dequantize rows of a GGUF-quantized embedding table.
-
-    Args:
-        weight: ``(vocab, (K/256)*210)`` uint8 GGUF ``q6_K`` blob.
-        indices: integer token ids of any shape.
-        format: GGUF quant type; only ``"q6k"`` supported.
-
-    Returns:
-        ``(*indices.shape, K)`` bfloat16.
-    """
-    if format != "q6k":
-        raise NotImplementedError(
-            f"mlx::gguf_embedding: unsupported format {format!r}; only 'q6k' "
-            f"is supported"
-        )
+def eager_embedding(weight: Tensor, indices: Tensor) -> Tensor:
+    """Eager gather + dequantize of Q6_K embedding rows; returns bfloat16."""
     if weight.dim() != 2:
         raise ValueError(
             f"mlx::gguf_embedding: weight must be 2-D (vocab, row_bytes); got "
@@ -83,29 +68,9 @@ def gguf_embedding(weight: Tensor, indices: Tensor, format: str) -> Tensor:
     return deq.reshape(*indices.shape, K).to(torch.bfloat16)
 
 
-@torch.library.register_fake("mlx::gguf_embedding")
-def gguf_embedding_fake(weight: Tensor, indices: Tensor, format: str) -> Tensor:
-    row_bytes = weight.shape[1]
-    K = (row_bytes // Q6K_BLOCK_BYTES) * QK_K
-    return indices.new_empty((*indices.shape, K), dtype=torch.bfloat16)
-
-
 # ---------------------------------------------------------------------------
-# MLX handler
+# Metal kernel source
 # ---------------------------------------------------------------------------
-
-from executorch.backends.mlx.builder.op_helpers import (
-    emit_product,
-    emit_shape,
-    torch_dtype_to_scalar_type,
-)
-from executorch.backends.mlx.builder.op_registry import REGISTRY
-from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
-from executorch.backends.mlx.builder.slot_manager import Slot
-from executorch.backends.mlx.serialization.mlx_graph_schema import (
-    IntOrVid,
-    MetalKernelNode,
-)
 
 
 # One thread per output element. grid = (K, num_idx, 1): x picks the feature j,
@@ -121,24 +86,17 @@ _Q6K_EMBED_SOURCE = """
 """
 
 
-@REGISTRY.register(target=[torch.ops.mlx.gguf_embedding.default])
-def _gguf_embedding_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Lower ``mlx::gguf_embedding`` to a fused Q6_K gather Metal kernel."""
+def emit_embedding(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Lower ``mlx::gguf_embedding`` (q6k) to a fused Q6_K gather Metal kernel."""
     args = P.args(n)
     if len(args) != 3:
         raise ValueError(
             f"mlx::gguf_embedding: expected 3 args (weight, indices, format); "
             f"got {len(args)}"
         )
-    weight_slot, indices_slot, fmt = args
+    weight_slot, indices_slot, _fmt = args
     weight_node = n.args[0]
     indices_node = n.args[1]
-
-    if fmt != "q6k":
-        raise NotImplementedError(
-            f"mlx::gguf_embedding: unsupported format {fmt!r}; only 'q6k' "
-            f"is supported"
-        )
 
     weight_meta = weight_node.meta["val"]
     if weight_meta.dim() != 2:

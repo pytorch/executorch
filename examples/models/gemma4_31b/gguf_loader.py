@@ -205,7 +205,7 @@ def load_gguf_model(
                 continue
 
             # Fallback: unpack Q6_K to a quantized tensor.
-            from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
+            from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import (
                 Q6K_BLOCK_BYTES,
                 QK_K,
             )

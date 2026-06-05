@@ -19,20 +19,20 @@ runs the same .pte with M=1 and M>1 to exercise both branches of the runtime
 
 Usage::
 
-    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear run
-    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear run -v
-    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear run --rebuild
-    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear eager
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear run
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear run -v
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear eager
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.custom_kernel_ops.gguf_linear  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.gguf.linear  # noqa: F401
 
 import torch
 import torch.nn as nn
 
-from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
+from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import (
     dequantize_q6_k,
     Q6K_BLOCK_BYTES,
     QK_K,
