@@ -48,6 +48,14 @@ if command -v apt-get >/dev/null 2>&1; then
   fi
 fi
 
+# The native binaries / pybind lib run INSIDE the CI conda env, whose libstdc++
+# predates GLIBCXX_3.4.32 (the Dawn prebuilt's floor) -- the same wall ssjia hit
+# for the vulkan op tests. Upgrade the conda runtime libstdc++ so the loaded
+# libstdc++.so.6 (conda's, not the system one) satisfies Dawn at run time.
+if command -v conda >/dev/null 2>&1; then
+  conda install -y -c conda-forge "libstdcxx-ng>=14" || true
+fi
+
 # --- Dawn: official prebuilt from GitHub (no S3) ------------------------------
 mkdir -p "${_dawn_dir}"
 if [[ ! -d "${_dawn_dir}/lib64/cmake/Dawn" ]]; then
