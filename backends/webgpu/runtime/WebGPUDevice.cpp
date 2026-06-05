@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <stdexcept>
 
 namespace executorch {
@@ -157,7 +158,30 @@ void set_default_webgpu_context(WebGPUContext* ctx) {
 }
 
 WebGPUContext* get_default_webgpu_context() {
-  return g_default_context;
+  if (g_default_context) {
+    return g_default_context;
+  }
+#if !defined(__EMSCRIPTEN__)
+  // Native-only lazy process-wide context, mirroring Vulkan api::context().
+  static const std::unique_ptr<WebGPUContext, void (*)(WebGPUContext*)>
+  lazy_context(
+      []() -> WebGPUContext* {
+        try {
+          return new WebGPUContext(create_webgpu_context());
+        } catch (...) {
+          return nullptr;
+        }
+      }(),
+      [](WebGPUContext* c) {
+        if (c) {
+          destroy_webgpu_context(*c);
+          delete c;
+        }
+      });
+  return lazy_context.get();
+#else
+  return nullptr;
+#endif
 }
 
 void destroy_webgpu_context(WebGPUContext& ctx) {

@@ -4,9 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
+    activation,
     avg_pool2d,
     avg_pool2d_adaptive,
-    cast_to_block_scaled,
     conv2d,
     conv3d,
     custom,
@@ -14,7 +14,6 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     gather,
     identity,
     matmul,
-    matmul_t_block_scaled,
     max_pool2d,
     max_pool2d_adaptive,
     pad,
@@ -26,4 +25,5 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     slice,
     table,
     transpose_conv2d,
+    unary_elementwise,
 )
