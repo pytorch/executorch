@@ -47,13 +47,15 @@ std::vector<float> read_f32_bin(const std::string& path) {
   if (!f) {
     return {};
   }
-  const size_t bytes =
-      static_cast<size_t>(f.tellg()) / sizeof(float) * sizeof(float);
+  const auto file_size = static_cast<size_t>(f.tellg());
+  if (file_size % sizeof(float) != 0) {
+    return {}; // truncated/corrupt golden; caller treats empty as failure
+  }
   f.seekg(0);
-  std::vector<float> data(bytes / sizeof(float));
+  std::vector<float> data(file_size / sizeof(float));
   f.read(
       reinterpret_cast<char*>(data.data()),
-      static_cast<std::streamsize>(bytes));
+      static_cast<std::streamsize>(file_size));
   return data;
 }
 

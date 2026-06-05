@@ -66,8 +66,10 @@ std::vector<float> readback(
   ci.callback = map_cb;
   ci.userdata1 = &cb;
   wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, nbytes, ci);
-  while (!cb.done) {
-    webgpu_poll(instance, device);
+  // Bounded poll so a never-delivered callback fails the test instead of
+  // hanging forever (~5s at 50us/spin).
+  for (int spins = 0; !cb.done && spins < 100000; ++spins) {
+    webgpu_poll(instance);
   }
 
   std::vector<float> out(nbytes / sizeof(float));

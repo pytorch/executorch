@@ -9,7 +9,7 @@
 # private prebuilt:
 #   * Dawn  : Google's official nightly prebuilt, downloaded directly from
 #             github.com/google/dawn/releases (pinned tag+rev+sha256) -- the same
-#             "fetch upstream's published binary" pattern as setup-wgpu-native.sh.
+#             "fetch a pinned upstream prebuilt" pattern used for other CI deps.
 #   * SwiftShader : reuse the prebuilt ALREADY on the ossci-android bucket (the one
 #             setup-vulkan-linux-deps.sh uses). No new S3 uploads anywhere.
 # Dawn (Chrome's WebGPU impl; its WGSL compiler Tint is the spec reference) on
