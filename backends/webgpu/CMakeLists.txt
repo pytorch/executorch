@@ -83,65 +83,37 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-# Native test target
+# Native test targets. Helper mirrors backends/vulkan's vulkan_op_test: every
+# test executable links the same backend + runtime libs.
+function(add_webgpu_native_test test_name test_src)
+  add_executable(${test_name} ${test_src})
+  target_include_directories(
+    ${test_name} PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+  )
+  target_link_libraries(
+    ${test_name}
+    PRIVATE webgpu_backend
+            ${WEBGPU_GPU_LIB}
+            executorch_core
+            extension_module_static
+            extension_data_loader
+            extension_tensor
+            portable_kernels
+            portable_ops_lib
+  )
+  if(APPLE)
+    target_link_libraries(
+      ${test_name} PRIVATE "-framework Metal" "-framework QuartzCore"
+                           "-framework CoreGraphics"
+    )
+  else()
+    target_link_libraries(${test_name} PRIVATE dl m pthread)
+  endif()
+  target_compile_options(${test_name} PRIVATE -fexceptions)
+  set_property(TARGET ${test_name} PROPERTY CXX_STANDARD 17)
+endfunction()
+
 if(EXECUTORCH_BUILD_WEBGPU_TEST)
-  add_executable(webgpu_native_test test/test_webgpu_native.cpp)
-
-  target_include_directories(
-    webgpu_native_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-  )
-
-  target_link_libraries(
-    webgpu_native_test
-    PRIVATE webgpu_backend
-            ${WEBGPU_GPU_LIB}
-            executorch_core
-            extension_module_static
-            extension_data_loader
-            extension_tensor
-            portable_kernels
-            portable_ops_lib
-  )
-
-  if(APPLE)
-    target_link_libraries(
-      webgpu_native_test PRIVATE "-framework Metal" "-framework QuartzCore"
-                                 "-framework CoreGraphics"
-    )
-  else()
-    target_link_libraries(webgpu_native_test PRIVATE dl m pthread)
-  endif()
-
-  target_compile_options(webgpu_native_test PRIVATE -fexceptions)
-  set_property(TARGET webgpu_native_test PROPERTY CXX_STANDARD 17)
-
-  add_executable(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
-
-  target_include_directories(
-    webgpu_rms_norm_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-  )
-
-  target_link_libraries(
-    webgpu_rms_norm_test
-    PRIVATE webgpu_backend
-            ${WEBGPU_GPU_LIB}
-            executorch_core
-            extension_module_static
-            extension_data_loader
-            extension_tensor
-            portable_kernels
-            portable_ops_lib
-  )
-
-  if(APPLE)
-    target_link_libraries(
-      webgpu_rms_norm_test PRIVATE "-framework Metal" "-framework QuartzCore"
-                                   "-framework CoreGraphics"
-    )
-  else()
-    target_link_libraries(webgpu_rms_norm_test PRIVATE dl m pthread)
-  endif()
-
-  target_compile_options(webgpu_rms_norm_test PRIVATE -fexceptions)
-  set_property(TARGET webgpu_rms_norm_test PROPERTY CXX_STANDARD 17)
+  add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
+  add_webgpu_native_test(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
 endif()
