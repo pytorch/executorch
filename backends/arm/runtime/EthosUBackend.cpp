@@ -76,8 +76,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   ~EthosUBackend() = default;
 
   virtual bool is_available() const override {
-    // TODO: revise to use a register check/init function
-    return 1;
+    return platform_is_available();
   }
 
   Result<DelegateHandle*> init(
