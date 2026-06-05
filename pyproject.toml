@@ -78,7 +78,7 @@ ethos_u = [
   # AoT ethos_u dependencies
   # Keep this in sync with AoT deps backends/arm/requirements-arm-ethos-u.txt and
   # backends/arm/requirements-arm-tosa.txt.
-  "ethos-u-vela==5.0.0",
+  "ethos-u-vela==5.1.0",
   "ml_dtypes==0.5.1",
   "tosa-tools==2026.2.1",
 ]

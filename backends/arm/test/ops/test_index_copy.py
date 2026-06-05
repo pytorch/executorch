@@ -93,12 +93,6 @@ class IndexCopyModule(torch.nn.Module):
         return x.index_copy(dim, index, y)
 
 
-xfails_u85 = {
-    "rand_single_index_not_zero_out_of_place": "MLETORCH-1949: index_copy (SCATTER/INDEX_PUT) produces incorrect results for non-zero indices on U85",
-    "rand_single_index_not_zero_in_place": "MLETORCH-1949: index_copy (SCATTER/INDEX_PUT) produces incorrect results for non-zero indices on U85",
-}
-
-
 @common.parametrize("test_data", IndexCopyModule.test_data)
 def test_index_copy_tosa_FP(test_data):
     inputs, inplace = test_data()
@@ -139,7 +133,7 @@ def test_index_copy_u55_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", IndexCopyModule.test_data, xfails=xfails_u85)
+@common.parametrize("test_data", IndexCopyModule.test_data)
 @common.XfailIfNoCorstone320
 def test_index_copy_u85_INT(test_data):
     inputs, inplace = test_data()
