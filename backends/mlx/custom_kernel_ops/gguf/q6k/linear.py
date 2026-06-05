@@ -293,7 +293,7 @@ def _q6k_matmul_source(has_bias: bool) -> str:
     // reused as float staging for the output. Without this barrier, a fast
     // simdgroup could start writing mc[] into sa while a slower one is still
     // reading the last weight tile via simdgroup_load(ma[]).
-    // (Matches ggml-metal.metal:9546 in llama.cpp's bounds-checked write path.)
+    // (Mirrors the barrier in llama.cpp kernel_mul_mm's bounds-checked write path.)
     threadgroup_barrier(mem_flags::mem_threadgroup);
     {{
         threadgroup float * temp_str = ((threadgroup float *) sa)
