@@ -12,7 +12,10 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+#include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch {
 namespace backends {
@@ -30,12 +33,28 @@ struct WebGPUDispatch {
   uint32_t workgroup_count_x = 1;
 };
 
+struct OutputCopy {
+  WGPUBuffer src_buffer = nullptr;
+  WGPUBuffer staging_buffer = nullptr;
+  size_t nbytes = 0;
+};
+
+struct ExecuteConfig {
+  size_t chunk_size = 0;
+  size_t initial_chunk_size = 0;
+};
+
 struct WebGPUMemoryStats {
   size_t tensor_buffer_bytes = 0;
+  size_t shared_buffer_bytes = 0;
+  int num_shared_objects = 0;
+  size_t unshared_tensor_buffer_bytes = 0;
   size_t staging_buffer_bytes = 0;
   size_t uniform_buffer_bytes = 0;
   int num_tensors = 0;
   int num_dispatches = 0;
+  int num_cached_pipelines = 0;
+  int num_cached_shaders = 0;
 
   size_t total_bytes() const {
     return tensor_buffer_bytes + staging_buffer_bytes + uniform_buffer_bytes;
@@ -49,7 +68,10 @@ class WebGPUGraph {
 
   // Build the graph from a deserialized VkGraph flatbuffer and constant data.
   // The flatbuffer_data pointer must remain valid during build().
-  void build(const void* flatbuffer_data, const uint8_t* constant_data);
+  void build(
+      const void* flatbuffer_data,
+      const uint8_t* constant_data,
+      const executorch::runtime::NamedDataMap* named_data_map = nullptr);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<std::pair<const void*, size_t>>& inputs);
@@ -99,6 +121,20 @@ class WebGPUGraph {
     uniform_buffer_bytes_ += bytes;
   }
 
+  WGPUShaderModule get_or_create_shader(
+      const std::string& key,
+      const char* wgsl_source);
+
+  WGPUComputePipeline get_or_create_pipeline(
+      const std::string& key,
+      WGPUShaderModule shader,
+      WGPUPipelineLayout layout);
+
+  WGPUBindGroupLayout get_or_create_bgl(
+      const std::string& key,
+      const WGPUBindGroupLayoutEntry* entries,
+      uint32_t count);
+
   void set_instance(WGPUInstance instance) {
     instance_ = instance;
   }
@@ -134,10 +170,25 @@ class WebGPUGraph {
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;
 
+  // Memory aliasing: tensors with the same mem_obj_id share a WGPUBuffer.
+  std::vector<int> tensor_mem_obj_ids_;
+  std::vector<WGPUBuffer> shared_buffers_;
+  std::vector<size_t> shared_buffer_sizes_;
+
   // Staging buffers for reading back outputs (MapRead | CopyDst).
   std::vector<WGPUBuffer> output_staging_buffers_;
 
+  // Pre-computed output copy descriptors for execute().
+  std::vector<OutputCopy> output_copies_;
+
   std::vector<WebGPUDispatch> dispatches_;
+
+  ExecuteConfig execute_config_;
+
+  // Caches for reusing GPU objects across dispatches.
+  std::unordered_map<std::string, WGPUShaderModule> shader_cache_;
+  std::unordered_map<std::string, WGPUComputePipeline> pipeline_cache_;
+  std::unordered_map<std::string, WGPUBindGroupLayout> bgl_cache_;
 
   size_t uniform_buffer_bytes_ = 0;
 };

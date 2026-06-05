@@ -318,7 +318,7 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
                         input_data = torch.rand(val.shape, dtype=val.dtype) * 10 - 5
                         args_with_random_data.append(input_data)
 
-                case list():
+                case list() if any(isinstance(a, Node) for a in arg):
                     # Lists of input nodes are not supported to keep the code simple. It is not crucial to support this
                     #  case as the affected operators are either not supported on Neutron, or are extremely unlikely to
                     #  be no-ops (e.g. GRU). One exception is `aten.cat`, which is explicitly supported above.

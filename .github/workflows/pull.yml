@@ -15,11 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Emits PR diff file list; non-PR events emit '*' so the per-job
-  # `if:` short-circuits via `event_name != 'pull_request'`.
+  # Emits the list of changed files for the current PR or push commit.
+  # On PR: PR diff. On push: diff against `github.event.before`.
+  # On events without a diff base (workflow_dispatch, tag creation,
+  # initial push), emits '*' — note that `contains('*', 'path')` is
+  # false (literal substring match, not glob), so path-filtered jobs
+  # rely on run-decision's is-full-run output for those events.
   changed-files:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      # Opt in to push-event diff so path-filtered jobs can skip pushes
+      # that don't touch their relevant paths. Without this, push events
+      # emit '*' and `contains('*', 'path')` is always false.
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
 
   test-qnn-wheel-packages-linux:
     name: test-qnn-wheel-packages-linux
@@ -501,6 +514,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-linux-gcc
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -509,6 +523,13 @@ jobs:
         ./install_requirements.sh
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        mkdir -p /tmp/bloaty-elfs
+        cp cmake-out/test/size_test /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "linux-gcc" /tmp/bloaty-elfs/head.elf strip
+
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
@@ -536,6 +557,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-linux-clang
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -545,6 +567,13 @@ jobs:
 
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        mkdir -p /tmp/bloaty-elfs
+        cp cmake-out/test/size_test /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "linux-clang" /tmp/bloaty-elfs/head.elf strip
+
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
@@ -574,6 +603,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-arm-${{ matrix.os }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -629,6 +659,13 @@ jobs:
         python .github/scripts/run_nm.py -e ${elf}
         python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
         python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        # Runs BEFORE the in-place strip below so the head ELF is still unstripped.
+        mkdir -p /tmp/bloaty-elfs
+        cp "${elf}" /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "arm-${{ matrix.os }}" /tmp/bloaty-elfs/head.elf "${toolchain_prefix}strip"
 
         # Add basic guard - TODO: refine this!
         ${toolchain_prefix}strip ${elf}
@@ -1547,9 +1584,8 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
   test-coreml-bc-macos:
-    needs: changed-files
+    needs: [changed-files, run-decision]
     if: |
-      github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_coreml_bc.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
@@ -1557,7 +1593,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'install_executorch.sh') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
       contains(needs.changed-files.outputs.changed-files, 'install_requirements.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml')
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-coreml-bc-macos (${{ matrix.runner }})
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:

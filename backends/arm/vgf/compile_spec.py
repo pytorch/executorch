@@ -4,11 +4,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from typing import TYPE_CHECKING
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
     TosaSpecification,
 )
+
+if TYPE_CHECKING:
+    from executorch.backends.arm.vgf.check_env import VgfEnvironmentReport
 
 # debug functionality
 logger = logging.getLogger(__name__)
@@ -58,6 +62,43 @@ class VgfCompileSpec(ArmCompileSpec):
                 "Arm backend only supports converter-backend for FP and/or INT. "
                 f"Invalid TOSA profile: {tosa_profiles}"
             )
+
+    def validate_environment(
+        self,
+        build_dir: str | None = None,
+        *,
+        require_runtime_build: bool = False,
+    ) -> "VgfEnvironmentReport":
+        """Run VGF environment preflight checks.
+
+        By default this validates only AoT/export prerequisites. Runtime and
+        source-build diagnostics are intentionally explicit in check_env.py.
+
+        Args:
+            build_dir: Optional source-build CMake build directory or
+                CMakeCache.txt path.
+            require_runtime_build: If true, run source-build diagnostics instead
+                of the default AoT check.
+
+        Returns:
+            VgfEnvironmentReport: Structured check report.
+
+        Raises:
+            RuntimeError: If any required check fails.
+
+        """
+        from executorch.backends.arm.vgf.check_env import (
+            check_vgf_aot_environment,
+            check_vgf_source_build_environment,
+        )
+
+        if build_dir is not None or require_runtime_build:
+            report = check_vgf_source_build_environment(build_dir=build_dir)
+        else:
+            report = check_vgf_aot_environment()
+
+        report.raise_for_errors()
+        return report
 
     @classmethod
     def _get_output_format(cls) -> str:

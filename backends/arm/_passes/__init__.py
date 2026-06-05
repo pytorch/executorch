@@ -5,7 +5,7 @@
 
 
 from . import arm_pass_utils  # noqa
-from .arm_pass import ArmPass  # noqa  # usort: skip
+from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
@@ -27,6 +27,7 @@ from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp_pass import ConvertToClampPass  # noqa
 from .decompose_acosh_pass import DecomposeAcoshPass  # noqa
 from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  # noqa
+from .decompose_adaptive_max_pool2d_pass import DecomposeAdaptiveMaxPool2dPass  # noqa
 from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_any_pass import DecomposeAnyPass  # noqa
@@ -42,6 +43,7 @@ from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # n
 from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
+from .decompose_dynamic_full_pass import DecomposeDynamicFullPass  # noqa
 from .decompose_einsum_pass import DecomposeEinsumPass  # noqa
 from .decompose_elu_pass import ConvertEluFamilyToEluPass, DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa

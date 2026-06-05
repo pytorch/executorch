@@ -16,8 +16,14 @@ def _program_preprocessor_flags():
     if enable_verification == "false":
         return ["-DET_ENABLE_PROGRAM_VERIFICATION=0"]
     elif enable_verification == "true":
-        # Enabled by default.
-        return []
+        # Enabled by default; allow opt-out via constraint
+        if not runtime.is_oss:
+            return select({
+                "DEFAULT": [],
+                "fbsource//xplat/executorch/tools/buck/constraints:executorch-program-verification-disabled": ["-DET_ENABLE_PROGRAM_VERIFICATION=0"],
+            })
+        else:
+            return []
     else:
         fail("executorch.enable_program_verification must be one of 'true' or 'false'; saw '" +
              enable_verification + "'")

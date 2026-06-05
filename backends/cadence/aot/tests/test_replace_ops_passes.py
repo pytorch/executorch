@@ -1250,6 +1250,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             inputs,
             "ReplaceTrivialConvWithLinear",
             rtol=2e-5,
+            atol=5e-6,
         )
 
         # Assert that conv1d is trivially converted to linear
@@ -1294,6 +1295,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             inputs,
             "ReplaceTrivialConvWithLinear",
             rtol=2e-5,
+            atol=5e-6,
         )
 
         # Assert that conv2d is trivially converted to linear

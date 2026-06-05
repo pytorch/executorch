@@ -146,7 +146,7 @@ class TestPackLinearForMlx(unittest.TestCase):
 
 class TestMlxGroupSize(unittest.TestCase):
     def test_passthrough(self):
-        for gs in (32, 64, 128):
+        for gs in (16, 32, 64, 128):
             self.assertEqual(_mlx_group_size(gs, 256), gs)
 
     def test_regroup_5376(self):
@@ -157,7 +157,49 @@ class TestMlxGroupSize(unittest.TestCase):
 
     def test_rejects_indivisible(self):
         with self.assertRaises(ValueError):
-            _mlx_group_size(48, 48)
+            _mlx_group_size(7, 7)
+
+
+class TestPackLinearGroupSize16(unittest.TestCase):
+    """Packing group_size=16 weights (GGUF Q6_K) preserves semantics."""
+
+    def _make_gs16_tensor(self, N=64, K=128):
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
+        return IntxUnpackedToInt8Tensor(
+            qdata=torch.randint(-32, 31, (N, K), dtype=torch.int8),
+            scale=torch.randn(N, K // 16, dtype=torch.bfloat16),
+            zero_point=torch.zeros(N, K // 16, dtype=torch.int8),
+            target_dtype=torch.int8,
+            block_size=(1, 16),
+            dtype=torch.bfloat16,
+            activation_quantization=None,
+        )
+
+    def test_dequant_preserves_values(self):
+        """Packing preserves the dequantized weight values."""
+        w = self._make_gs16_tensor(64, 128)
+        before = dequantize_weight(w, torch.float32)
+
+        module = nn.Linear(128, 64, bias=False)
+        pack_for_mlx(module, {"weight": w})
+        after = dequantize_weight(module.weight.data, torch.float32)
+
+        self.assertTrue(
+            torch.allclose(before, after, atol=1e-5),
+            f"max diff: {(before - after).abs().max():.6g}",
+        )
+
+    def test_forward_produces_valid_output(self):
+        """Packed gs=16 weight produces finite output in a linear forward."""
+        w = self._make_gs16_tensor(64, 128)
+        module = nn.Linear(128, 64, bias=False)
+        pack_for_mlx(module, {"weight": w})
+
+        x = torch.randn(1, 128, dtype=torch.bfloat16)
+        out = torch.nn.functional.linear(x, module.weight.data.dequantize())
+        self.assertEqual(out.shape, torch.Size([1, 64]))
+        self.assertFalse(torch.isnan(out).any())
 
 
 class TestPackEmbeddingForMlx(unittest.TestCase):

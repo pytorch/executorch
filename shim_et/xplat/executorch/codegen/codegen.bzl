@@ -535,6 +535,7 @@ def get_portable_lib_deps():
         "//executorch/kernels/portable/cpu:vec_ops",
         "//executorch/kernels/portable/cpu/pattern:all_deps",
         "//executorch/kernels/portable/cpu/util:all_deps",
+        "//executorch/runtime/core:device_allocator",
     ]
 
 def get_optimized_lib_deps():

@@ -4,15 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
 import unittest
 
-from executorch.exir._serialize._flatbuffer import (
-    _program_flatbuffer_to_json,
-    _program_json_to_flatbuffer,
+from executorch.exir._serialize._flatbuffer_program import (
+    _flatbuffer_to_program,
+    _program_to_flatbuffer,
 )
-from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
-from executorch.exir._serialize._program import _json_to_program, _program_to_json
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.schema import (
     AllocationDetails,
@@ -157,50 +154,12 @@ class TestFlatbufferProgram(unittest.TestCase):
             named_data=[],
         )
 
-    def _flatbuffer_to_dict(self, flatbuffer_data: bytes) -> dict:
-        return json.loads(_program_flatbuffer_to_json(flatbuffer_data))
-
-    def test_roundtrip_via_json(self) -> None:
+    def test_roundtrip_via_direct_python(self) -> None:
         program = self._make_program()
         result = _program_to_flatbuffer(
             program, constant_tensor_alignment=32, delegate_alignment=64
         )
-        self.assertGreater(len(result.data), 8)
-        self.assertEqual(result.data[4:6], b"ET")
-        self.assertGreaterEqual(result.max_alignment, 64)
-
-        program2 = _json_to_program(_program_flatbuffer_to_json(result.data))
-        self.assertEqual(program2, program)
-
-    def test_flatbuffer_paths_match(self) -> None:
-        program = self._make_program()
-        cases = [
-            (None, None),
-            (32, 64),
-        ]
-        for constant_tensor_alignment, delegate_alignment in cases:
-            with self.subTest(
-                constant_tensor_alignment=constant_tensor_alignment,
-                delegate_alignment=delegate_alignment,
-            ):
-                result = _program_to_flatbuffer(
-                    program,
-                    constant_tensor_alignment=constant_tensor_alignment,
-                    delegate_alignment=delegate_alignment,
-                )
-                result2 = _program_json_to_flatbuffer(
-                    _program_to_json(program),
-                    constant_tensor_alignment=constant_tensor_alignment,
-                    delegate_alignment=delegate_alignment,
-                )
-                direct_dict = self._flatbuffer_to_dict(result.data)
-                json_path_dict = self._flatbuffer_to_dict(result2.data)
-                self.assertEqual(
-                    direct_dict,
-                    json_path_dict,
-                    "Flatbuffer JSON differs between direct and JSON paths",
-                )
-                self.assertEqual(result.max_alignment, result2.max_alignment)
+        self.assertEqual(_flatbuffer_to_program(result.data), program)
 
     def test_bad_alignment_fails(self) -> None:
         program = Program(

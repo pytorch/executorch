@@ -14,6 +14,7 @@ import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.compiler_funcs import (
     prepare as prepare_fn,
+    QuantFusionPass,
     QuantizedInputWrapper,
     trace as trace_fn,
 )
@@ -21,7 +22,6 @@ from executorch.backends.cadence.aot.memory_planning import (
     CadenceMemoryPlanning,
     print_memory_planning_info,
 )
-from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.passes.fuse_ops import FuseQATConvBN
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceDefaultQuantizer,
@@ -154,9 +154,9 @@ def apply_pre_edge_transform_passes(
     quantizer: CadenceQuantizer,
 ) -> ExportedProgram:
     """
-    Apply pre-edge transform passes including QuantFusion and torch ops passes.
+    Apply pre-edge transform passes including QuantFusionPass and torch ops passes.
     This mirrors the Cadence AOT compiler flow:
-    1. QuantFusion - fuses dq->op->q patterns
+    1. QuantFusionPass - fuses dq->op->q patterns
     2. apply_torch_ops_passes - applied just before to_edge()
 
     The quantizer must be the same as the one used to convert the model.
@@ -169,7 +169,7 @@ def apply_pre_edge_transform_passes(
     PassManager(
         [
             FuseQATConvBN(converted_program),
-            QuantFusion(patterns),
+            QuantFusionPass(patterns),
         ]
     )(converted_program.graph_module)
 
