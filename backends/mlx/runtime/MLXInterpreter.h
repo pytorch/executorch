@@ -1422,10 +1422,13 @@ exec_bitwise_or(const BitwiseOrNode& n, ExecutionState& st, StreamOrDevice s) {
       n.out, bitwise_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
-inline void
-exec_bitwise_xor(const BitwiseXorNode& n, ExecutionState& st, StreamOrDevice s) {
+inline void exec_bitwise_xor(
+    const BitwiseXorNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
   st.set_tensor(
-      n.out, bitwise_xor(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+      n.out,
+      bitwise_xor(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
