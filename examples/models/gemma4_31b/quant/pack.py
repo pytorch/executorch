@@ -17,9 +17,10 @@ from typing import Callable
 import torch
 import torch.nn as nn
 
-# Packer signature: receives the module + a dict of its quantized weights
-# (keyed by attribute name), modifies module in-place.
-ModulePackerFn = Callable[[nn.Module, dict[str, torch.Tensor]], None]
+# Packer signature: receives the module + a dict of its weights keyed by
+# attribute name, modifies module in-place, and may return True when it handled
+# the assignment. Returning None preserves the legacy behavior.
+ModulePackerFn = Callable[[nn.Module, dict[str, torch.Tensor]], bool | None]
 
 
 def _is_quantized(value: torch.Tensor) -> bool:
@@ -84,7 +85,8 @@ def pack_one(
     """Pack a single weight into ``model``.
 
     Quantized subclass tensors are dispatched to the packer for the parent
-    module's type. Plain tensors are assigned directly.
+    module's type. Plain tensors are first offered to a parent-module packer;
+    if it does not return True, they are assigned directly.
     """
     parts = fqn.rsplit(".", 1)
     parent_fqn = parts[0] if len(parts) > 1 else ""
@@ -100,7 +102,12 @@ def pack_one(
             )
         packer(parent, {attr: value})
     else:
-        if isinstance(getattr(parent, attr, None), nn.Parameter):
+        existing = getattr(parent, attr, None)
+        if not isinstance(existing, nn.Parameter):
+            packer = packers.get(type(parent))
+            if packer is not None and packer(parent, {attr: value}) is True:
+                return
+        if isinstance(existing, nn.Parameter):
             setattr(parent, attr, nn.Parameter(value, requires_grad=False))
         else:
             parent.register_buffer(attr, value)
