@@ -84,9 +84,7 @@ def replace_with_gguf_linear(
         )
     linear_fqn = parts[0]
     grandparent_fqn, _, child_name = linear_fqn.rpartition(".")
-    grandparent = (
-        model.get_submodule(grandparent_fqn) if grandparent_fqn else model
-    )
+    grandparent = model.get_submodule(grandparent_fqn) if grandparent_fqn else model
     setattr(grandparent, child_name, GGUFLinear(weight_blob, format=format))
 
 
@@ -145,7 +143,5 @@ def replace_with_gguf_embedding(
         )
     module_fqn = parts[0]
     grandparent_fqn, _, child_name = module_fqn.rpartition(".")
-    grandparent = (
-        model.get_submodule(grandparent_fqn) if grandparent_fqn else model
-    )
+    grandparent = model.get_submodule(grandparent_fqn) if grandparent_fqn else model
     setattr(grandparent, child_name, GGUFEmbedding(weight_blob, format=format))

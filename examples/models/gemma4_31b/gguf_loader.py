@@ -103,6 +103,34 @@ def _validate_no_meta(model):
         p.requires_grad_(False)
 
 
+def _handle_mlx_q6k(model, model_key, result):
+    """Handle Q6_K tensors for the MLX backend.
+
+    Returns ``(processed, embed_q6k_raw)`` where ``processed`` is True
+    if the tensor was consumed by the fused gguf_linear/gguf_embedding
+    path (caller should ``continue``), and ``embed_q6k_raw`` is the raw
+    blob when the tensor is the embedding (for tied lm_head reuse).
+    """
+    from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
+        replace_with_gguf_embedding,
+        replace_with_gguf_linear,
+    )
+
+    embed_q6k_raw = None
+    parent = model.get_submodule(model_key.rsplit(".", 1)[0])
+    if isinstance(parent, torch.nn.Linear):
+        replace_with_gguf_linear(model, model_key, result, format="q6k")
+        return True, None
+    if isinstance(parent, torch.nn.Embedding):
+        if model_key == "embed_tokens.weight":
+            embed_q6k_raw = result
+        replace_with_gguf_embedding(model, model_key, result, format="q6k")
+        return True, embed_q6k_raw
+
+    # Any other Q6_K module: fall back to a quantized tensor.
+    return False, None
+
+
 def load_gguf_model(
     gguf_path: str,
     max_seq_len: int = 4096,
@@ -169,24 +197,14 @@ def load_gguf_model(
         # GGUF blob (group_size=16 has no MLX affine kernel). The embedding's
         # raw blob is also kept so a tied lm_head can use gguf_linear.
         if backend == "mlx" and gguf_type == GGMLQuantizationType.Q6_K:
-            from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
-                replace_with_gguf_embedding,
-                replace_with_gguf_linear,
-            )
-
-            parent = model.get_submodule(model_key.rsplit(".", 1)[0])
-            if isinstance(parent, torch.nn.Linear):
-                replace_with_gguf_linear(model, model_key, result, format="q6k")
-                n_processed += 1
-                continue
-            if isinstance(parent, torch.nn.Embedding):
-                if model_key == "embed_tokens.weight":
-                    embed_q6k_raw = result
-                replace_with_gguf_embedding(model, model_key, result, format="q6k")
+            processed, raw = _handle_mlx_q6k(model, model_key, result)
+            if raw is not None:
+                embed_q6k_raw = raw
+            if processed:
                 n_processed += 1
                 continue
 
-            # Any other Q6_K module: fall back to a quantized tensor.
+            # Fallback: unpack Q6_K to a quantized tensor.
             from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
                 Q6K_BLOCK_BYTES,
                 QK_K,

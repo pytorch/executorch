@@ -327,7 +327,9 @@ class TestGgufLinearMlx(unittest.TestCase):
     """Q6_K weights route to the fused mlx::gguf_linear op (raw-blob path)."""
 
     def _make_blob(self, N: int, K: int) -> torch.Tensor:
-        from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import make_q6_k_blob
+        from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import (
+            make_q6_k_blob,
+        )
 
         return make_q6_k_blob(N, K)
 
@@ -396,7 +398,9 @@ class TestGgufEmbeddingMlx(unittest.TestCase):
     """Q6_K token embedding routes to the fused mlx::gguf_embedding op."""
 
     def _make_blob(self, vocab: int, K: int) -> torch.Tensor:
-        from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import make_q6_k_blob
+        from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import (
+            make_q6_k_blob,
+        )
 
         return make_q6_k_blob(vocab, K)
 
@@ -428,9 +432,7 @@ class TestGgufEmbeddingMlx(unittest.TestCase):
     def test_gguf_embedding_delegates_to_mlx(self):
         from executorch.backends.mlx import MLXPartitioner
 
-        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
-            GGUFEmbedding,
-        )
+        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import GGUFEmbedding
         from executorch.exir import to_edge_transform_and_lower
         from torch.export import Dim, export
 

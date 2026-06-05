@@ -25,11 +25,12 @@ Reference:
 
 from typing import Optional, Tuple
 
-# Register the MLX custom ops used by this cache.
-import executorch.backends.mlx.custom_ops  # noqa: F401  mlx::custom_sdpa, mlx::kv_cache_update
 import executorch.backends.mlx.custom_kernel_ops.tq4_compress  # noqa: F401  mlx::tq4_compress
 import executorch.backends.mlx.custom_kernel_ops.tq_dequant  # noqa: F401  mlx::tq_dequant
 import executorch.backends.mlx.custom_kernel_ops.tq_norm  # noqa: F401  mlx::tq_norm
+
+# Register the MLX custom ops used by this cache.
+import executorch.backends.mlx.custom_ops  # noqa: F401  mlx::custom_sdpa, mlx::kv_cache_update
 
 import torch
 

@@ -25,7 +25,9 @@ import executorch.backends.mlx.custom_kernel_ops.gguf_embedding  # noqa: F401
 import torch
 import torch.nn as nn
 
-from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import make_q6_k_blob
+from executorch.backends.mlx.custom_kernel_ops.test.test_gguf_linear import (
+    make_q6_k_blob,
+)
 from executorch.backends.mlx.test.test_utils import OpTestCase
 
 
@@ -74,7 +76,7 @@ class GGUFEmbeddingTest(OpTestCase):
         return (weight, indices)
 
 
-if __name__ == "__main__":
+def _main() -> None:  # noqa: C901
     import argparse
     import sys
 
@@ -129,3 +131,7 @@ if __name__ == "__main__":
         if failed_names:
             print(f"Failed: {', '.join(failed_names)}")
         sys.exit(0 if failed == 0 else 1)
+
+
+if __name__ == "__main__":
+    _main()

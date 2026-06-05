@@ -32,8 +32,6 @@ Usage::
 from __future__ import annotations
 
 import torch
-from torch import Tensor
-from torch.fx.node import Node
 
 from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
     _Q6K_HEADER,
@@ -41,6 +39,8 @@ from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
     Q6K_BLOCK_BYTES,
     QK_K,
 )
+from torch import Tensor
+from torch.fx.node import Node
 
 
 # ---------------------------------------------------------------------------

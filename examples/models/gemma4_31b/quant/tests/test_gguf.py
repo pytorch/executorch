@@ -302,7 +302,9 @@ class TestQ6KRawBlob(unittest.TestCase):
         )
 
     def test_raw_blob_dequant_matches_gguf_reference(self):
-        from executorch.backends.mlx.custom_kernel_ops.gguf_linear import dequantize_q6_k
+        from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
+            dequantize_q6_k,
+        )
         from executorch.examples.models.gemma4_31b.quant.gguf import _raw_q6_k
 
         d, scales_16, qvals, block = self._block()
@@ -320,7 +322,9 @@ class TestQ6KRawBlob(unittest.TestCase):
         # dequantize Q6_K even though it cannot quantize to it).
         import gguf
 
-        from executorch.backends.mlx.custom_kernel_ops.gguf_linear import dequantize_q6_k
+        from executorch.backends.mlx.custom_kernel_ops.gguf_linear import (
+            dequantize_q6_k,
+        )
         from executorch.examples.models.gemma4_31b.quant.gguf import _raw_q6_k
 
         _, _, _, block = self._block()
