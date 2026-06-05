@@ -100,7 +100,7 @@ def _decode_sampler_payload(
 
 # Covers basic payload encoding and decoding for shader metadata.
 # Checks bindings, workgroup sizes, language, and formats are preserved.
-def test_buffer_shader_payload_encodes_bindings_and_formats():
+def test_buffer_shader_payload_vgf_encodes_bindings_and_formats():
     payload = decode_payload(
         encode_payload(
             build_grid_sampler_2d_payload(
@@ -124,7 +124,7 @@ def test_buffer_shader_payload_encodes_bindings_and_formats():
 
 # Covers sampler-specific payload fields for sampled image inputs.
 # Checks filter, address mode, and border color are encoded in the payload.
-def test_sampler_shader_payload_encodes_sampler_fields():
+def test_sampler_shader_payload_vgf_encodes_sampler_fields():
     payload = _decode_sampler_payload()
 
     assert (
@@ -145,7 +145,7 @@ def test_sampler_shader_payload_encodes_sampler_fields():
 
 # Covers the local shader asset contract used by the tests.
 # Checks the expected GLSL/SPIR-V asset names and that the SPIR-V bytes look valid.
-def test_shader_payload_uses_expected_glsl_and_spirv_asset():
+def test_shader_payload_vgf_uses_expected_glsl_and_spirv_asset():
     buffer_payload = build_grid_sampler_2d_payload(
         interpolation_mode=0,
         padding_mode=0,
@@ -160,7 +160,7 @@ def test_shader_payload_uses_expected_glsl_and_spirv_asset():
 
 # Covers validation of unsupported shader option values.
 # Checks invalid mode and padding_mode values raise instead of encoding silently.
-def test_shader_payload_rejects_invalid_mode_values():
+def test_shader_payload_vgf_rejects_invalid_mode_values():
     with pytest.raises(RuntimeError, match="Unsupported grid_sample mode"):
         _decode_sampler_payload(mode="garbage")
 
@@ -170,7 +170,7 @@ def test_shader_payload_rejects_invalid_mode_values():
 
 # Covers storage-image outputs, which should not carry sampler state.
 # Checks output payloads omit sampler metadata for storage images.
-def test_storage_image_payload_does_not_require_sampler_fields():
+def test_storage_image_payload_vgf_does_not_require_sampler_fields():
     payload = _decode_sampler_payload()
 
     assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE"

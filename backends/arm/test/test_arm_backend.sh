@@ -336,14 +336,16 @@ test_model_smollm2_135M() {
         -a "${et_root_dir}"/arm_test/ethos-u85-256_${pte_addr}/cmake-out/arm_executor_runner \
         -C mps4_board.subsystem.ethosu.extra_args="--fast" \
         --data smollm2.pte@"${pte_addr}"
-    
+
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
-test_smaller_stories_llama() {
-    echo "${TEST_SUITE_NAME}: Test smaller_stories_llama"
+_test_smaller_stories_llama() {
+    local backend=$1
 
-    backends/arm/scripts/build_executorch.sh
+    echo "${TEST_SUITE_NAME}: Test smaller_stories_llama for ${backend}"
+
+    # This model might consume a lot of memory so --numprocesses=auto is not used to avoid parallel testing
 
     mkdir -p stories110M
     pushd stories110M
@@ -357,12 +359,27 @@ test_smaller_stories_llama() {
     "${PYTEST_RETRY_ARGS[@]}" \
     --verbose \
     --color=yes \
-    --numprocesses=auto \
-    --junit-xml=stories110M/test-reports/unittest.xml \
+    --durations=0 \
     backends/arm/test/models/test_llama.py \
+    -k "${backend}" \
     --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
 
     echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_smaller_stories_llama_tosa() {
+    _test_smaller_stories_llama tosa
+}
+
+test_smaller_stories_llama_vkml() {
+    source backends/arm/test/setup_testing_vkml.sh
+
+    _test_smaller_stories_llama vgf
+}
+
+test_smaller_stories_llama() {
+    test_smaller_stories_llama_tosa
+    test_smaller_stories_llama_vkml
 }
 
 test_memory_allocation() {

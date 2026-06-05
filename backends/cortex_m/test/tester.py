@@ -42,6 +42,14 @@ class CortexMToEdge(ToEdge):
                 torch.ops.aten.hardsigmoid_.default,
                 torch.ops.aten.hardswish.default,
                 torch.ops.aten.hardswish_.default,
+                # silu naturally decomposes to sigmoid*x at the to_edge step.
+                # Preserve it so the LUT lowering can collapse it into a single
+                # cortex_m.quantized_activation call rather than emitting an
+                # extra elementwise mul. Set globally because no per-test
+                # opt-out exists today; any new cortex_m test that uses SiLU
+                # must therefore expect a single aten.silu op in the edge graph
+                # (not sigmoid+mul).
+                torch.ops.aten.silu.default,
             ],
             _check_ir_validity=False,
             _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
