@@ -622,7 +622,7 @@ void generate_randint_half_data(
   std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
-    val = static_cast<uint16_t>(std::abs(dis(gen)) % 65536);
+    val = float_to_half(static_cast<float>(dis(gen)));
   }
 }
 
@@ -700,8 +700,10 @@ void generate_zeros_data(std::vector<float>& data) {
 bool ValueSpec::validate_against_reference(
     float abs_tolerance,
     float rel_tolerance) const {
+  // Only validate float and half tensors. For half tensors, convert the
+  // computed half data to float for comparison against the fp32 reference.
   if (!is_tensor() || (dtype != vkapi::kFloat && dtype != vkapi::kHalf)) {
-    return true; // Skip validation for unsupported dtypes
+    return true; // Skip validation for non-float/half or non-tensor types
   }
 
   // For kHalf, materialize the GPU output as float so the same tolerance
@@ -714,6 +716,8 @@ bool ValueSpec::validate_against_reference(
       half_as_float[i] = half_to_float(half_bits[i]);
     }
   }
+  // Materialize computed data as float32 for comparison. The dtype is
+  // guaranteed to be float or half by the early-out above.
   const std::vector<float>& computed_data =
       (dtype == vkapi::kHalf) ? half_as_float : get_float_data();
   const auto& reference_data = get_ref_float_data();

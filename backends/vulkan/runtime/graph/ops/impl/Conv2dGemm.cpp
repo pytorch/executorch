@@ -293,29 +293,32 @@ void conv2d_gemm_impl(
   // lifetimes of every conv2d layer, so peak memory tracks the largest single
   // im2col rather than the sum of all of them. The TmpTensor must outlive
   // add_conv2d_gemm_node (its last consumer), so it lives to the end of this
-  // function; std::optional defers construction past the storage branch while
-  // preserving that lifetime (TmpTensor is non-copyable/non-movable).
+  // function.
   //
   // The 2D and buffer variants use a flat [M, K_total] kWidthPacked shape; the
   // texture3d variant uses the natural [1, K_total, H_out, W_out]
-  // kChannelsPacked shape so K4 lays along Z.
-  std::optional<TmpTensor> im2col_tmp;
+  // kChannelsPacked shape so K4 lays along Z. Hoist the per-storage differences
+  // into locals so the TmpTensor is constructed exactly once and never needs to
+  // be copied or moved.
+  std::vector<int64_t> im2col_sizes;
+  utils::StorageType im2col_tmp_storage;
+  utils::GPUMemoryLayout im2col_layout;
   if (im2col_storage == utils::kTexture3D) {
-    im2col_tmp.emplace(
-        &graph,
-        std::vector<int64_t>{1, K_total, H_out, W_out},
-        graph.dtype_of(in),
-        utils::kTexture3D,
-        utils::kChannelsPacked);
+    im2col_sizes = {1, K_total, H_out, W_out};
+    im2col_tmp_storage = utils::kTexture3D;
+    im2col_layout = utils::kChannelsPacked;
   } else {
-    im2col_tmp.emplace(
-        &graph,
-        std::vector<int64_t>{M, K_total},
-        graph.dtype_of(in),
-        im2col_storage,
-        utils::kWidthPacked);
+    im2col_sizes = {M, K_total};
+    im2col_tmp_storage = im2col_storage;
+    im2col_layout = utils::kWidthPacked;
   }
-  const ValueRef im2col_tensor = im2col_tmp->vref;
+  TmpTensor im2col_tmp(
+      &graph,
+      im2col_sizes,
+      graph.dtype_of(in),
+      im2col_tmp_storage,
+      im2col_layout);
+  const ValueRef im2col_tensor = im2col_tmp.vref;
 
   // Step 1: im2col
   add_conv2d_im2col_node(

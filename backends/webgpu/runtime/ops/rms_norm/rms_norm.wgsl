@@ -1,6 +1,3 @@
-// NOTE: This file is for editor/tooling support only. The runtime consumes the
-// inline copy of this shader in `rms_norm_wgsl.h` (kRmsNormWGSL). Keep the two
-// in sync by hand — any edit here must be mirrored there.
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_in: array<f32>;
 @group(0) @binding(2) var<storage, read> t_weight: array<f32>;
