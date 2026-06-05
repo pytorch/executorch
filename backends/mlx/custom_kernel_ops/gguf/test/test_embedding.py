@@ -63,7 +63,10 @@ class GGUFEmbeddingTest(OpTestCase):
             cls(vocab=512, K=1024, idx_shape=(4,)),
             cls(vocab=300, K=256, idx_shape=(16,)),  # vocab not tile-aligned
             cls(vocab=512, K=256, idx_shape=(2, 3)),  # multi-dim indices
-            cls(vocab=262144, K=5376, idx_shape=(8,)),  # real Gemma-4-31B embed
+            # Real Gemma-4-31B embed width (K=5376, 21 Q6_K blocks/row). Vocab is
+            # kept small so the packed weight fits CI-runner GPU buffer limits; the
+            # gather + per-row dequant path is identical regardless of vocab.
+            cls(vocab=2048, K=5376, idx_shape=(8,)),
         ]
 
     def create_model(self) -> nn.Module:
