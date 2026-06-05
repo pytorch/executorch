@@ -59,7 +59,7 @@ target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 find_package(Threads REQUIRED)
 find_package(Dawn REQUIRED)
 set(WEBGPU_GPU_LIB dawn::webgpu_dawn)
-target_link_libraries(webgpu_backend PUBLIC dawn::webgpu_dawn)
+target_link_libraries(webgpu_backend PUBLIC ${WEBGPU_GPU_LIB})
 
 if(APPLE)
   target_link_libraries(
