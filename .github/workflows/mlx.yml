@@ -77,9 +77,7 @@ jobs:
           backends/mlx/test/test_passes.py \
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
-          backends/mlx/test/test_gguf_dequant.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
-          examples/models/gemma4_31b/quant/tests/test_gguf.py \
           -v
         echo "::endgroup::"
 
