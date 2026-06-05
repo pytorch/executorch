@@ -70,9 +70,9 @@ class UndefinedQuantizeParamsWrapper final : public QuantizeParamsWrapper {
   }
 
   Qnn_QuantizeParams_t CreateQuantizeParams() override {
-    Qnn_QuantizeParams_t rval = {
-        .encodingDefinition = GetEncodingDefinition(),
-        .quantizationEncoding = GetQuantizationEncoding()};
+    Qnn_QuantizeParams_t rval;
+    rval.encodingDefinition = GetEncodingDefinition();
+    rval.quantizationEncoding = GetQuantizationEncoding();
     return rval;
   }
 };

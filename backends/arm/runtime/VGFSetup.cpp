@@ -12,6 +12,13 @@
 
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 
+#include <cstdlib>
+#include <limits>
+
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
+#endif
+
 #include <vgf/decoder.hpp>
 #if __has_include(<vgf/version.h>)
 #include <vgf/version.h>
@@ -25,6 +32,7 @@
 #include <limits>
 #include <optional>
 #include <type_traits>
+#include <unordered_map>
 
 using namespace mlsdk;
 
@@ -90,6 +98,40 @@ static size_t element_count_from_shape(const vector<int64_t>& shape) {
   }
   return count;
 }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+class ScopedVgfProfileEvent {
+ public:
+  ScopedVgfProfileEvent(
+      executorch::runtime::EventTracer* event_tracer,
+      const char* name)
+      : event_tracer_(event_tracer),
+        entry_(executorch::runtime::event_tracer_start_profiling_delegate(
+            event_tracer_,
+            name,
+            /*delegate_debug_id=*/-1)) {}
+
+  ~ScopedVgfProfileEvent() {
+    executorch::runtime::event_tracer_end_profiling_delegate(
+        event_tracer_, entry_);
+  }
+
+ private:
+  executorch::runtime::EventTracer* event_tracer_;
+  executorch::runtime::EventTracerEntry entry_;
+};
+#endif
+
+#define VGF_CONCAT_INNER(a, b) a##b
+#define VGF_CONCAT(a, b) VGF_CONCAT_INNER(a, b)
+
+#ifdef ET_EVENT_TRACER_ENABLED
+#define VGF_PROFILE_SCOPE(event_tracer, name)                      \
+  ScopedVgfProfileEvent VGF_CONCAT(_vgf_profile_scope_, __LINE__)( \
+      event_tracer, name)
+#else
+#define VGF_PROFILE_SCOPE(event_tracer, name) (void)(event_tracer)
+#endif
 
 static vector<int64_t> normalize_stride(
     const vector<int64_t>& shape,
@@ -545,6 +587,153 @@ static bool find_memory_index_from_bits(
   return false;
 }
 
+bool VgfRepr::init_timestamp_queries() {
+  const char* enable = std::getenv("EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES");
+  if (enable == nullptr || enable[0] == '\0') {
+    ET_LOG(Info, "VGF timestamp queries disabled");
+    return true;
+  }
+
+  if (timestamp_queries_enabled || vk_timestamp_query_pool != VK_NULL_HANDLE) {
+    return true;
+  }
+
+  if (vk_queue_family_index == UINT32_MAX) {
+    ET_LOG(Info, "VGF timestamp queries disabled: unknown queue family index");
+    return true;
+  }
+
+  uint32_t queue_family_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(
+      vk_physical, &queue_family_count, nullptr);
+
+  if (vk_queue_family_index >= queue_family_count) {
+    ET_LOG(
+        Info,
+        "VGF timestamp queries disabled: queue family index %u is out of range",
+        vk_queue_family_index);
+    return true;
+  }
+
+  vector<VkQueueFamilyProperties> queue_family_properties(queue_family_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(
+      vk_physical, &queue_family_count, queue_family_properties.data());
+
+  timestamp_valid_bits =
+      queue_family_properties[vk_queue_family_index].timestampValidBits;
+
+  if (timestamp_valid_bits == 0) {
+    ET_LOG(
+        Info,
+        "VGF timestamp queries disabled: queue family %u does not support timestamps",
+        vk_queue_family_index);
+    return true;
+  }
+
+  VkPhysicalDeviceProperties physical_device_properties;
+  vkGetPhysicalDeviceProperties(vk_physical, &physical_device_properties);
+
+  timestamp_period_ns =
+      static_cast<double>(physical_device_properties.limits.timestampPeriod);
+
+  if (timestamp_period_ns <= 0.0) {
+    ET_LOG(
+        Info,
+        "VGF timestampPeriod is %.6f; using fallback 52.0 ns/tick",
+        timestamp_period_ns);
+    timestamp_period_ns = 52.0;
+  }
+
+  VkQueryPoolCreateInfo query_pool_info{
+      .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+      .queryType = VK_QUERY_TYPE_TIMESTAMP,
+      .queryCount = 2,
+      .pipelineStatistics = 0,
+  };
+
+  VkResult result = vkCreateQueryPool(
+      vk_device, &query_pool_info, nullptr, &vk_timestamp_query_pool);
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(
+        Info,
+        "VGF timestamp queries disabled: vkCreateQueryPool failed with %d",
+        result);
+    vk_timestamp_query_pool = VK_NULL_HANDLE;
+    return true;
+  }
+
+  timestamp_queries_enabled = true;
+
+  ET_LOG(
+      Info,
+      "VGF timestamp queries enabled: queue_family=%u valid_bits=%u period_ns=%.6f",
+      vk_queue_family_index,
+      timestamp_valid_bits,
+      timestamp_period_ns);
+
+  return true;
+}
+
+void VgfRepr::read_timestamp_queries(
+    executorch::runtime::EventTracer* event_tracer) {
+  if (!timestamp_queries_enabled || vk_timestamp_query_pool == VK_NULL_HANDLE) {
+    return;
+  }
+
+  uint64_t timestamps[2] = {0, 0};
+  VkResult result;
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_TIMESTAMP_QUERY_READBACK");
+
+    result = vkGetQueryPoolResults(
+        vk_device,
+        vk_timestamp_query_pool,
+        0,
+        2,
+        sizeof(timestamps),
+        timestamps,
+        sizeof(uint64_t),
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+  }
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to read VGF timestamp query results: %d", result);
+    return;
+  }
+
+  uint64_t start = timestamps[0];
+  uint64_t end = timestamps[1];
+
+  uint64_t mask = std::numeric_limits<uint64_t>::max();
+  if (timestamp_valid_bits < 64) {
+    mask = (1ULL << timestamp_valid_bits) - 1ULL;
+    start &= mask;
+    end &= mask;
+  }
+
+  uint64_t delta_ticks;
+  if (end >= start) {
+    delta_ticks = end - start;
+  } else {
+    delta_ticks = (mask - start) + end + 1ULL;
+  }
+
+  const double duration_ns =
+      static_cast<double>(delta_ticks) * timestamp_period_ns;
+  const double duration_ms = duration_ns / 1000000.0;
+
+  ET_LOG(
+      Info,
+      "VGF_DATA_GRAPH_DEVICE_TIME ticks=%llu duration_ns=%.3f duration_ms=%.6f",
+      static_cast<unsigned long long>(delta_ticks),
+      duration_ns,
+      duration_ms);
+}
+
 static bool find_memory_index(
     VkPhysicalDevice vk_physical,
     VkMemoryRequirements2 memory_requirements,
@@ -572,12 +761,14 @@ VkResult allocate_memory(
         static_cast<unsigned int>(aims));
     return VK_ERROR_FEATURE_NOT_PRESENT;
   }
+
   const VkMemoryAllocateInfo allocate_info = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
       .pNext = nullptr,
       .allocationSize = memory_requirements.memoryRequirements.size,
       .memoryTypeIndex = memory_index,
   };
+
   VkResult result = vkAllocateMemory(device, &allocate_info, nullptr, memory);
   if (result == VK_SUCCESS && memory_type_index_out != nullptr) {
     *memory_type_index_out = memory_index;
@@ -1181,41 +1372,51 @@ static void debug_print_modules(
 bool VgfRepr::process_vgf(
     const char* vgf_data,
     size_t vgf_size,
-    ArrayRef<CompileSpec> specs) {
+    ArrayRef<CompileSpec> specs,
+    executorch::runtime::EventTracer* event_tracer) {
+  VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_PROCESS_VGF");
+  (void)specs;
+
   ET_LOG(Info, "Preparing VGF as Vulkan objects");
 
   VkResult result;
 
-  // Prepare temporary decoders
-  unique_ptr<vgflib::HeaderDecoder> header_decoder =
-      vgflib::CreateHeaderDecoder(vgf_data, vgflib::HeaderSize(), vgf_size);
-  if (!header_decoder) {
-    ET_LOG(Error, "Failed to create VGF header decoder");
-    return false;
-  }
+  unique_ptr<vgflib::HeaderDecoder> header_decoder;
+  unique_ptr<vgflib::ModelSequenceTableDecoder> sequence_decoder;
+  unique_ptr<vgflib::ModuleTableDecoder> module_decoder;
+  unique_ptr<vgflib::ModelResourceTableDecoder> resource_decoder;
+  unique_ptr<vgflib::ConstantDecoder> constant_decoder;
 
-  unique_ptr<vgflib::ModelSequenceTableDecoder> sequence_decoder =
-      vgflib::CreateModelSequenceTableDecoder(
-          vgf_data + header_decoder->GetModelSequenceTableOffset(),
-          header_decoder->GetModelSequenceTableSize());
-  unique_ptr<vgflib::ModuleTableDecoder> module_decoder =
-      vgflib::CreateModuleTableDecoder(
-          vgf_data + header_decoder->GetModuleTableOffset(),
-          header_decoder->GetModuleTableSize());
-  unique_ptr<vgflib::ModelResourceTableDecoder> resource_decoder =
-      vgflib::CreateModelResourceTableDecoder(
-          vgf_data + header_decoder->GetModelResourceTableOffset(),
-          header_decoder->GetModelResourceTableSize());
-  unique_ptr<vgflib::ConstantDecoder> constant_decoder =
-      vgflib::CreateConstantDecoder(
-          vgf_data + header_decoder->GetConstantsOffset(),
-          header_decoder->GetConstantsSize());
-  // Check the VGF decoders
-  if (not(header_decoder && module_decoder && sequence_decoder &&
-          resource_decoder && constant_decoder && header_decoder->IsValid() &&
-          header_decoder->CheckVersion())) {
-    ET_LOG(Error, "Failed to process VGF file internalsr");
-    return false;
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DECODE_TABLES");
+
+    // Prepare temporary decoders
+    header_decoder =
+        vgflib::CreateHeaderDecoder(vgf_data, vgflib::HeaderSize(), vgf_size);
+    if (!header_decoder) {
+      ET_LOG(Error, "Failed to create VGF header decoder");
+      return false;
+    }
+
+    sequence_decoder = vgflib::CreateModelSequenceTableDecoder(
+        vgf_data + header_decoder->GetModelSequenceTableOffset(),
+        header_decoder->GetModelSequenceTableSize());
+    module_decoder = vgflib::CreateModuleTableDecoder(
+        vgf_data + header_decoder->GetModuleTableOffset(),
+        header_decoder->GetModuleTableSize());
+    resource_decoder = vgflib::CreateModelResourceTableDecoder(
+        vgf_data + header_decoder->GetModelResourceTableOffset(),
+        header_decoder->GetModelResourceTableSize());
+    constant_decoder = vgflib::CreateConstantDecoder(
+        vgf_data + header_decoder->GetConstantsOffset(),
+        header_decoder->GetConstantsSize());
+    // Check the VGF decoders
+    if (not(header_decoder && module_decoder && sequence_decoder &&
+            resource_decoder && constant_decoder && header_decoder->IsValid() &&
+            header_decoder->CheckVersion())) {
+      ET_LOG(Error, "Failed to process VGF file internalsr");
+      return false;
+    }
   }
 
   // Parse the sequences in the VGF (there can be multiple segments).
@@ -2874,213 +3075,65 @@ bool VgfRepr::process_vgf(
     ET_LOG(Info, "  output[%zu] -> IO[%d]", i, model_output_io_index[i]);
   }
 
-  // Allocate command buffer
-  VkCommandBufferAllocateInfo buffer_allocate_info{
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-      .pNext = nullptr,
-      .commandPool = vk_command_pool,
-      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-      .commandBufferCount = 1};
-  result = vkAllocateCommandBuffers(
-      vk_device, &buffer_allocate_info, &vk_execute_cmd);
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "Failed to allocate command buffers");
-    return false;
-  }
-  // Populate command once with our dispatch information
-  VkCommandBufferBeginInfo beginInfo{
-      VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-  vkBeginCommandBuffer(vk_execute_cmd, &beginInfo);
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_COMMAND_BUFFER");
 
-  // Sync what will be the data coming in from host
-  VkMemoryBarrier2 barrier = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-      .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-      .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
-      .dstStageMask =
-          VK_PIPELINE_STAGE_2_TRANSFER_BIT | vgf_execution_stage_mask(),
-      .dstAccessMask =
-          VK_ACCESS_2_TRANSFER_READ_BIT | vgf_execution_read_access_mask(),
-  };
-  VkDependencyInfo dependency_info = {
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-      .memoryBarrierCount = 1,
-      .pMemoryBarriers = &barrier,
-  };
-  vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info);
-
-  bool has_input_image = false;
-  for (const auto& io : IOs) {
-    if (io.is_input &&
-        (io.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
-         io.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE ||
-         io.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
-      has_input_image = true;
-      const VkBufferImageCopy copy_region = {
-          .bufferOffset = 0,
-          .bufferRowLength = 0,
-          .bufferImageHeight = 0,
-          .imageSubresource =
-              {
-                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                  .mipLevel = 0,
-                  .baseArrayLayer = 0,
-                  .layerCount = 1,
-              },
-          .imageOffset = {0, 0, 0},
-          .imageExtent = io.image_extent,
-      };
-      vkCmdCopyBufferToImage(
-          vk_execute_cmd,
-          io.buffer,
-          io.image,
-          VK_IMAGE_LAYOUT_GENERAL,
-          1,
-          &copy_region);
+    // Allocate command buffer
+    VkCommandBufferAllocateInfo buffer_allocate_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .commandPool = vk_command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1};
+    result = vkAllocateCommandBuffers(
+        vk_device, &buffer_allocate_info, &vk_execute_cmd);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to allocate command buffers");
+      return false;
     }
   }
 
-  if (has_input_image) {
-    VkMemoryBarrier2 input_image_barrier = {
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_TIMESTAMP_QUERIES");
+
+    if (!init_timestamp_queries()) {
+      ET_LOG(Error, "Failed to initialize VGF timestamp queries");
+      return false;
+    }
+  }
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_RECORD_COMMAND_BUFFER");
+
+    // Populate command once with our dispatch information
+    VkCommandBufferBeginInfo beginInfo{
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    vkBeginCommandBuffer(vk_execute_cmd, &beginInfo);
+
+    // Sync what will be the data coming in from host
+    VkMemoryBarrier2 barrier = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        .dstStageMask = vgf_execution_stage_mask(),
-        .dstAccessMask = vgf_execution_read_access_mask() |
-            vgf_execution_write_access_mask(),
+        .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+        .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+        .dstStageMask =
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT | vgf_execution_stage_mask(),
+        .dstAccessMask =
+            VK_ACCESS_2_TRANSFER_READ_BIT | vgf_execution_read_access_mask(),
     };
-    VkDependencyInfo input_image_dependency = {
+    VkDependencyInfo dependency_info = {
         .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
         .memoryBarrierCount = 1,
-        .pMemoryBarriers = &input_image_barrier,
+        .pMemoryBarriers = &barrier,
     };
-    vkCmdPipelineBarrier2(vk_execute_cmd, &input_image_dependency);
-  }
+    vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info);
 
-  // Bind and dispatch each segment in order.
-  for (size_t seg_idx = 0; seg_idx < segments.size(); ++seg_idx) {
-    const auto& segment = segments[seg_idx];
-    unordered_map<uint32_t, VkImageLayout> desired_alias_layouts;
-    auto set_count =
-        sequence_decoder->getSegmentDescriptorSetInfosSize(segment.segment_id);
-    for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
-      auto descriptor_slots = sequence_decoder->getDescriptorBindingSlotsHandle(
-          segment.segment_id, d_idx);
-      auto descriptor_count =
-          sequence_decoder->getBindingsSize(descriptor_slots);
-      for (uint32_t i = 0; i < descriptor_count; i++) {
-        auto mrt_i =
-            sequence_decoder->getBindingSlotMrtIndex(descriptor_slots, i);
-        auto alias_group = get_resource_alias_group_id(resource_decoder, mrt_i);
-        if (!alias_group.has_value()) {
-          continue;
-        }
-        auto alias_state_it = alias_image_states.find(*alias_group);
-        if (alias_state_it == alias_image_states.end() ||
-            !alias_state_it->second.needs_tensor_aliasing) {
-          continue;
-        }
-        const auto descriptor_type = resource_bindings[mrt_i].descriptor_type;
-        const auto desired_layout = is_image_descriptor_type(descriptor_type)
-            ? VK_IMAGE_LAYOUT_GENERAL
-            : VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM;
-        auto desired_it = desired_alias_layouts.find(*alias_group);
-        if (desired_it == desired_alias_layouts.end()) {
-          desired_alias_layouts[*alias_group] = desired_layout;
-        } else if (desired_it->second != desired_layout) {
-          ET_LOG(
-              Error,
-              "Alias group %u mixes image and tensor-like descriptor use in segment %d",
-              *alias_group,
-              segment.segment_id);
-          return false;
-        }
-      }
-    }
-    for (auto& [alias_group, desired_layout] : desired_alias_layouts) {
-      auto& alias_state = alias_image_states[alias_group];
-      if (alias_state.current_layout == desired_layout) {
-        continue;
-      }
-      for (auto image : alias_state.images) {
-        record_image_layout_transition(
-            vk_execute_cmd, image, alias_state.current_layout, desired_layout);
-      }
-      alias_state.current_layout = desired_layout;
-    }
-
-    VkPipelineBindPoint bind_point = segment.use_data_graph_pipeline
-        ? VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM
-        : VK_PIPELINE_BIND_POINT_COMPUTE;
-    vkCmdBindPipeline(vk_execute_cmd, bind_point, segment.vk_pipeline);
-
-    vkCmdBindDescriptorSets(
-        vk_execute_cmd,
-        bind_point,
-        segment.vk_pipeline_layout,
-        0, // first set
-        1,
-        segment.descriptor_sets.data(),
-        0,
-        nullptr);
-
-    if (segment.use_data_graph_pipeline) {
-      vkCmdDispatchDataGraphARM(vk_execute_cmd, segment.vk_session, nullptr);
-    } else {
-      vkCmdDispatch(
-          vk_execute_cmd,
-          segment.dispatch_shape[0],
-          segment.dispatch_shape[1],
-          segment.dispatch_shape[2]);
-    }
-
-    if (seg_idx + 1 < segments.size()) {
-      VkMemoryBarrier2 segment_barrier = {
-          .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-          .srcStageMask = vgf_execution_stage_mask(),
-          .srcAccessMask = vgf_execution_write_access_mask(),
-          .dstStageMask = vgf_execution_stage_mask(),
-          .dstAccessMask = vgf_execution_read_access_mask() |
-              vgf_execution_write_access_mask(),
-      };
-      VkDependencyInfo segment_dep = {
-          .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-          .memoryBarrierCount = 1,
-          .pMemoryBarriers = &segment_barrier,
-      };
-      vkCmdPipelineBarrier2(vk_execute_cmd, &segment_dep);
-    }
-  }
-
-  // Sync data back
-  const bool has_output_image =
-      std::any_of(IOs.begin(), IOs.end(), [](const auto& io) {
-        return !io.is_input &&
-            (io.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
-             io.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
-             io.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-      });
-
-  if (has_output_image) {
-    VkMemoryBarrier2 output_image_barrier = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-        .srcStageMask = vgf_execution_stage_mask(),
-        .srcAccessMask = vgf_execution_write_access_mask(),
-        .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-    };
-    VkDependencyInfo output_image_dependency = {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .memoryBarrierCount = 1,
-        .pMemoryBarriers = &output_image_barrier,
-    };
-    vkCmdPipelineBarrier2(vk_execute_cmd, &output_image_dependency);
-
+    bool has_input_image = false;
     for (const auto& io : IOs) {
-      if (!io.is_input &&
-          (io.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
-           io.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
-           io.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)) {
+      if (io.is_input &&
+          (io.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
+           io.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE ||
+           io.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
+        has_input_image = true;
         const VkBufferImageCopy copy_region = {
             .bufferOffset = 0,
             .bufferRowLength = 0,
@@ -3095,57 +3148,289 @@ bool VgfRepr::process_vgf(
             .imageOffset = {0, 0, 0},
             .imageExtent = io.image_extent,
         };
-        vkCmdCopyImageToBuffer(
+        vkCmdCopyBufferToImage(
             vk_execute_cmd,
+            io.buffer,
             io.image,
             VK_IMAGE_LAYOUT_GENERAL,
-            io.buffer,
             1,
             &copy_region);
       }
     }
+
+    if (has_input_image) {
+      VkMemoryBarrier2 input_image_barrier = {
+          .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+          .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+          .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+          .dstStageMask = vgf_execution_stage_mask(),
+          .dstAccessMask = vgf_execution_read_access_mask() |
+              vgf_execution_write_access_mask(),
+      };
+      VkDependencyInfo input_image_dependency = {
+          .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+          .memoryBarrierCount = 1,
+          .pMemoryBarriers = &input_image_barrier,
+      };
+      vkCmdPipelineBarrier2(vk_execute_cmd, &input_image_dependency);
+    }
+
+    if (timestamp_queries_enabled &&
+        vk_timestamp_query_pool != VK_NULL_HANDLE) {
+      vkCmdResetQueryPool(vk_execute_cmd, vk_timestamp_query_pool, 0, 2);
+
+      if (vkCmdWriteTimestamp2) {
+        vkCmdWriteTimestamp2(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            vk_timestamp_query_pool,
+            0);
+      } else {
+        vkCmdWriteTimestamp(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            vk_timestamp_query_pool,
+            0);
+      }
+    }
+
+    // Bind and dispatch each segment in order.
+    for (size_t seg_idx = 0; seg_idx < segments.size(); ++seg_idx) {
+      const auto& segment = segments[seg_idx];
+      unordered_map<uint32_t, VkImageLayout> desired_alias_layouts;
+      auto set_count = sequence_decoder->getSegmentDescriptorSetInfosSize(
+          segment.segment_id);
+      for (uint32_t d_idx = 0; d_idx < set_count; d_idx++) {
+        auto descriptor_slots =
+            sequence_decoder->getDescriptorBindingSlotsHandle(
+                segment.segment_id, d_idx);
+        auto descriptor_count =
+            sequence_decoder->getBindingsSize(descriptor_slots);
+        for (uint32_t i = 0; i < descriptor_count; i++) {
+          auto mrt_i =
+              sequence_decoder->getBindingSlotMrtIndex(descriptor_slots, i);
+          auto alias_group =
+              get_resource_alias_group_id(resource_decoder, mrt_i);
+          if (!alias_group.has_value()) {
+            continue;
+          }
+          auto alias_state_it = alias_image_states.find(*alias_group);
+          if (alias_state_it == alias_image_states.end() ||
+              !alias_state_it->second.needs_tensor_aliasing) {
+            continue;
+          }
+          const auto descriptor_type = resource_bindings[mrt_i].descriptor_type;
+          const auto desired_layout = is_image_descriptor_type(descriptor_type)
+              ? VK_IMAGE_LAYOUT_GENERAL
+              : VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM;
+          auto desired_it = desired_alias_layouts.find(*alias_group);
+          if (desired_it == desired_alias_layouts.end()) {
+            desired_alias_layouts[*alias_group] = desired_layout;
+          } else if (desired_it->second != desired_layout) {
+            ET_LOG(
+                Error,
+                "Alias group %u mixes image and tensor-like descriptor use in segment %d",
+                *alias_group,
+                segment.segment_id);
+            return false;
+          }
+        }
+      }
+      for (auto& [alias_group, desired_layout] : desired_alias_layouts) {
+        auto& alias_state = alias_image_states[alias_group];
+        if (alias_state.current_layout == desired_layout) {
+          continue;
+        }
+        for (auto image : alias_state.images) {
+          record_image_layout_transition(
+              vk_execute_cmd,
+              image,
+              alias_state.current_layout,
+              desired_layout);
+        }
+        alias_state.current_layout = desired_layout;
+      }
+
+      VkPipelineBindPoint bind_point = segment.use_data_graph_pipeline
+          ? VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM
+          : VK_PIPELINE_BIND_POINT_COMPUTE;
+      vkCmdBindPipeline(vk_execute_cmd, bind_point, segment.vk_pipeline);
+
+      vkCmdBindDescriptorSets(
+          vk_execute_cmd,
+          bind_point,
+          segment.vk_pipeline_layout,
+          0, // first set
+          1,
+          segment.descriptor_sets.data(),
+          0,
+          nullptr);
+
+      if (segment.use_data_graph_pipeline) {
+        vkCmdDispatchDataGraphARM(vk_execute_cmd, segment.vk_session, nullptr);
+      } else {
+        vkCmdDispatch(
+            vk_execute_cmd,
+            segment.dispatch_shape[0],
+            segment.dispatch_shape[1],
+            segment.dispatch_shape[2]);
+      }
+
+      if (seg_idx + 1 < segments.size()) {
+        VkMemoryBarrier2 segment_barrier = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+            .srcStageMask = vgf_execution_stage_mask(),
+            .srcAccessMask = vgf_execution_write_access_mask(),
+            .dstStageMask = vgf_execution_stage_mask(),
+            .dstAccessMask = vgf_execution_read_access_mask() |
+                vgf_execution_write_access_mask(),
+        };
+        VkDependencyInfo segment_dep = {
+            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &segment_barrier,
+        };
+        vkCmdPipelineBarrier2(vk_execute_cmd, &segment_dep);
+      }
+    }
+
+    if (timestamp_queries_enabled &&
+        vk_timestamp_query_pool != VK_NULL_HANDLE) {
+      if (vkCmdWriteTimestamp2) {
+        vkCmdWriteTimestamp2(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            vk_timestamp_query_pool,
+            1);
+      } else {
+        vkCmdWriteTimestamp(
+            vk_execute_cmd,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            vk_timestamp_query_pool,
+            1);
+      }
+    }
+
+    // Sync data back
+    const bool has_output_image =
+        std::any_of(IOs.begin(), IOs.end(), [](const auto& io) {
+          return !io.is_input &&
+              (io.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
+               io.descriptor_type ==
+                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
+               io.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+        });
+
+    if (has_output_image) {
+      VkMemoryBarrier2 output_image_barrier = {
+          .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+          .srcStageMask = vgf_execution_stage_mask(),
+          .srcAccessMask = vgf_execution_write_access_mask(),
+          .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+          .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+      };
+      VkDependencyInfo output_image_dependency = {
+          .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+          .memoryBarrierCount = 1,
+          .pMemoryBarriers = &output_image_barrier,
+      };
+      vkCmdPipelineBarrier2(vk_execute_cmd, &output_image_dependency);
+
+      for (const auto& io : IOs) {
+        if (!io.is_input &&
+            (io.descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
+             io.descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
+             io.descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)) {
+          const VkBufferImageCopy copy_region = {
+              .bufferOffset = 0,
+              .bufferRowLength = 0,
+              .bufferImageHeight = 0,
+              .imageSubresource =
+                  {
+                      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                      .mipLevel = 0,
+                      .baseArrayLayer = 0,
+                      .layerCount = 1,
+                  },
+              .imageOffset = {0, 0, 0},
+              .imageExtent = io.image_extent,
+          };
+          vkCmdCopyImageToBuffer(
+              vk_execute_cmd,
+              io.image,
+              VK_IMAGE_LAYOUT_GENERAL,
+              io.buffer,
+              1,
+              &copy_region);
+        }
+      }
+    }
+
+    VkMemoryBarrier2 barrier_2 = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+        .srcStageMask =
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT | vgf_execution_stage_mask(),
+        .srcAccessMask =
+            VK_ACCESS_2_TRANSFER_WRITE_BIT | vgf_execution_write_access_mask(),
+        .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+        .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+    };
+    VkDependencyInfo dependency_info_2 = {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier_2,
+    };
+    vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info_2);
+
+    // end the command buffer
+    vkEndCommandBuffer(vk_execute_cmd);
   }
-
-  VkMemoryBarrier2 barrier_2 = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-      .srcStageMask =
-          VK_PIPELINE_STAGE_2_TRANSFER_BIT | vgf_execution_stage_mask(),
-      .srcAccessMask =
-          VK_ACCESS_2_TRANSFER_WRITE_BIT | vgf_execution_write_access_mask(),
-      .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
-      .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
-  };
-  VkDependencyInfo dependency_info_2 = {
-      .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-      .memoryBarrierCount = 1,
-      .pMemoryBarriers = &barrier_2,
-  };
-  vkCmdPipelineBarrier2(vk_execute_cmd, &dependency_info_2);
-
-  // end the command buffer
-  vkEndCommandBuffer(vk_execute_cmd);
 
   return true;
 }
 
-bool VgfRepr::execute_vgf() {
+bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
   ET_LOG(Info, "Executing vgf");
 
-  // Submit & wait for idle
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = 1;
   submit.pCommandBuffers = &vk_execute_cmd;
-  VkResult result = vkQueueSubmit(vk_queue, 1, &submit, VK_NULL_HANDLE);
+
+  VkResult result;
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_SUBMIT");
+
+    result = vkQueueSubmit(vk_queue, 1, &submit, VK_NULL_HANDLE);
+  }
+
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "VGF/VkCommandBuffer command submission failed");
     return false;
   }
-  vkQueueWaitIdle(vk_queue);
+
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_WAIT_IDLE");
+
+    result = vkQueueWaitIdle(vk_queue);
+  }
+
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "VGF/VkQueue wait idle failed");
+    return false;
+  }
+
+  read_timestamp_queries(event_tracer);
 
   return true;
 }
 
 void VgfRepr::free_vgf() {
+  if (vk_timestamp_query_pool != VK_NULL_HANDLE) {
+    vkDestroyQueryPool(vk_device, vk_timestamp_query_pool, nullptr);
+    vk_timestamp_query_pool = VK_NULL_HANDLE;
+  }
+
   vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
   vector<VkDeviceMemory> owned_memory;
   auto remember_owned_memory = [&](VkDeviceMemory memory) {
