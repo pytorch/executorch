@@ -100,9 +100,10 @@ jobs:
       timeout: 120
       script: |
         #!/bin/bash
-
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+      
+        # Zephyr minimum Python version is 3.12; since ExecuTorch supports 3.10, ensure we always use 3.12 independent of the base image
+        conda create -y -n conda_zephyr_test python=3.12 > /dev/null
+        conda activate conda_zephyr_test
 
         # Test zephyr backend
         set -e
