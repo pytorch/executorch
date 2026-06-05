@@ -142,4 +142,65 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
 
   target_compile_options(webgpu_rms_norm_test PRIVATE -fexceptions)
   set_property(TARGET webgpu_rms_norm_test PROPERTY CXX_STANDARD 17)
+  add_executable(webgpu_dispatch_order_test test/native/test_dispatch_order.cpp)
+
+  target_include_directories(
+    webgpu_dispatch_order_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+  )
+
+  target_link_libraries(
+    webgpu_dispatch_order_test
+    PRIVATE webgpu_backend
+            ${WEBGPU_GPU_LIB}
+            executorch_core
+            extension_module_static
+            extension_data_loader
+            extension_tensor
+            portable_kernels
+            portable_ops_lib
+  )
+
+  if(APPLE)
+    target_link_libraries(
+      webgpu_dispatch_order_test
+      PRIVATE "-framework Metal" "-framework QuartzCore"
+              "-framework CoreGraphics"
+    )
+  else()
+    target_link_libraries(webgpu_dispatch_order_test PRIVATE dl m pthread)
+  endif()
+
+  target_compile_options(webgpu_dispatch_order_test PRIVATE -fexceptions)
+  set_property(TARGET webgpu_dispatch_order_test PROPERTY CXX_STANDARD 17)
+
+  add_executable(webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp)
+
+  target_include_directories(
+    webgpu_scratch_buffer_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+  )
+
+  target_link_libraries(
+    webgpu_scratch_buffer_test
+    PRIVATE webgpu_backend
+            ${WEBGPU_GPU_LIB}
+            executorch_core
+            extension_module_static
+            extension_data_loader
+            extension_tensor
+            portable_kernels
+            portable_ops_lib
+  )
+
+  if(APPLE)
+    target_link_libraries(
+      webgpu_scratch_buffer_test
+      PRIVATE "-framework Metal" "-framework QuartzCore"
+              "-framework CoreGraphics"
+    )
+  else()
+    target_link_libraries(webgpu_scratch_buffer_test PRIVATE dl m pthread)
+  endif()
+
+  target_compile_options(webgpu_scratch_buffer_test PRIVATE -fexceptions)
+  set_property(TARGET webgpu_scratch_buffer_test PROPERTY CXX_STANDARD 17)
 endif()
