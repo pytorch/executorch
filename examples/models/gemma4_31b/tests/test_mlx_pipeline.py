@@ -20,7 +20,6 @@ import unittest
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
     DEFAULT_MLX_PACKERS,
@@ -368,7 +367,6 @@ class TestGgufLinearMlx(unittest.TestCase):
 
     def test_gguf_linear_delegates_to_mlx(self):
         from executorch.backends.mlx import MLXPartitioner
-
         from executorch.examples.models.gemma4_31b.mlx_gguf_linear import GGUFLinear
         from executorch.exir import to_edge_transform_and_lower
         from torch.export import Dim, export
@@ -431,7 +429,6 @@ class TestGgufEmbeddingMlx(unittest.TestCase):
 
     def test_gguf_embedding_delegates_to_mlx(self):
         from executorch.backends.mlx import MLXPartitioner
-
         from executorch.examples.models.gemma4_31b.mlx_gguf_linear import GGUFEmbedding
         from executorch.exir import to_edge_transform_and_lower
         from torch.export import Dim, export

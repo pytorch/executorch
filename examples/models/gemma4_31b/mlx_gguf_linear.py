@@ -17,7 +17,6 @@ from __future__ import annotations
 # Importing the op modules registers the custom ops.
 import executorch.backends.mlx.custom_kernel_ops.gguf.embedding  # noqa: F401
 import executorch.backends.mlx.custom_kernel_ops.gguf.linear  # noqa: F401
-
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import Q6K_BLOCK_BYTES, QK_K

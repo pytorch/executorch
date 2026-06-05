@@ -319,7 +319,6 @@ class TestQ6KRawBlob(unittest.TestCase):
         # Cross-check our dequant against gguf's own Q6_K dequantizer (gguf can
         # dequantize Q6_K even though it cannot quantize to it).
         import gguf
-
         from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import dequantize_q6_k
         from executorch.examples.models.gemma4_31b.quant.gguf import _raw_q6_k
 

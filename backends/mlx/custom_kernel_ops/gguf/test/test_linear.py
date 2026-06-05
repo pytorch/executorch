@@ -28,16 +28,13 @@ Usage::
 from typing import List, Tuple
 
 import executorch.backends.mlx.custom_kernel_ops.gguf.linear  # noqa: F401
-
 import torch
 import torch.nn as nn
-
 from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import (
     dequantize_q6_k,
     Q6K_BLOCK_BYTES,
     QK_K,
 )
-
 from executorch.backends.mlx.test.test_utils import OpTestCase
 
 
@@ -138,7 +135,10 @@ class GGUFLinearTest(OpTestCase):
         cfgs.append(cls(M=1, N=4096, K=5376, dtype=torch.bfloat16))  # attn_v
         cfgs.append(cls(M=1, N=5376, K=21504, dtype=torch.bfloat16))  # ffn_down
         cfgs.append(cls(M=8, N=5376, K=21504, dtype=torch.bfloat16))  # ffn_down prefill
-        cfgs.append(cls(M=1, N=262144, K=5376, dtype=torch.bfloat16))  # lm_head
+        # lm_head: real vocab is 262144, but N is capped so the packed weight
+        # fits CI-runner GPU buffer limits; the mat-vec N-tiling path is the
+        # same at any N.
+        cfgs.append(cls(M=1, N=16384, K=5376, dtype=torch.bfloat16))  # lm_head
         return cfgs
 
     def create_model(self) -> nn.Module:

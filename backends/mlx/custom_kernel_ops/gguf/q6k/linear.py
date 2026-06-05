@@ -29,6 +29,14 @@ Two kernels are emitted depending on the number of activation rows ``M``:
       both kernels are emitted into separate instruction chains and selected at
       runtime via an ``IfNode`` on ``M`` (``M > 1`` -> mat-mat, ``M == 1`` ->
       mat-vec).
+
+Attribution
+-----------
+The Q6_K Metal kernels and dequant routines here are ported from llama.cpp
+(``ggml/src/ggml-metal/ggml-metal.metal`` -- ``kernel_mul_mv_q6_K_f32_impl``,
+``kernel_mul_mm``, ``dequantize_q6_K``), which is MIT-licensed
+(Copyright (c) 2023-2024 The ggml authors). Inline ``ported from ...`` notes
+point at the specific upstream function for each kernel.
 """
 
 from __future__ import annotations

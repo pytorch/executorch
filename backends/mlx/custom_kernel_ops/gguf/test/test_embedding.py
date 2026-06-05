@@ -21,10 +21,8 @@ Usage::
 from typing import List, Tuple
 
 import executorch.backends.mlx.custom_kernel_ops.gguf.embedding  # noqa: F401
-
 import torch
 import torch.nn as nn
-
 from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
     make_q6_k_blob,
 )

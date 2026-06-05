@@ -30,6 +30,13 @@ Q6_K layout (per 256-element super-block, 210 bytes, see llama.cpp
 
 The dequantized value for a 6-bit code ``q`` (0..63) in sub-block ``s`` is
 ``d * scales[s] * (q - 32)``.
+
+Attribution
+-----------
+The Q6_K block layout, the Metal dequant helpers in ``_Q6K_HEADER``, and the
+pure-torch ``dequantize_q6_k`` reference follow llama.cpp
+(``ggml-common.h`` / ``ggml-metal.metal``: ``block_q6_K``, ``dequantize_q6_K``),
+which is MIT-licensed (Copyright (c) 2023-2024 The ggml authors).
 """
 
 from __future__ import annotations
