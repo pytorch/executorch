@@ -103,9 +103,10 @@ jobs:
 
         set -euo pipefail
 
-        # Zephyr minimum Python version is 3.12; since ExecuTorch supports 3.10, ensure we always use 3.12 independent of the base image
-        conda create -y -n conda_zephyr_test python=3.12 > /dev/null
-        conda activate conda_zephyr_test
+        # Zephyr requires a Python 3.12 venv; keep this independent of the
+        # base image's default ExecuTorch Python environment.
+        python3.12 -m venv zephyr_test_venv
+        source zephyr_test_venv/bin/activate
 
         # Test zephyr backend
         .ci/scripts/test_zephyr.sh \
