@@ -38,6 +38,8 @@ _SENTINEL = object()
 class GenStats:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Worker-reported stop reason ("stop" | "length"), or None if not reported.
+    finish_reason: Optional[str] = None
 
 
 class RunnerPool:
@@ -98,6 +100,7 @@ class RunnerPool:
         def stats_cb(s) -> None:
             out_stats.prompt_tokens = s.num_prompt_tokens
             out_stats.completion_tokens = s.num_generated_tokens
+            out_stats.finish_reason = getattr(s, "finish_reason", None)
 
         def run() -> None:
             try:

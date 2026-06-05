@@ -8,8 +8,8 @@
 
 // Model-agnostic Engine/Session interfaces. Model-specific execution lives in
 // adapters that implement these (TextLLMSession over TextLLMRunner today;
-// Gemma4Session etc. later); the server and pybind layer depend only on these
-// interfaces, never on a concrete runner.
+// Gemma4Session etc. later); the serving code (HTTP control plane + C++ worker
+// binaries) depends only on these interfaces, never on a concrete runner.
 
 #pragma once
 

@@ -45,6 +45,19 @@ set(link_libraries executorch gflags)
 list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
+# Custom + quantized kernels that export_llm models need, whole-archived so the
+# static op registrations survive the linker: llama::custom_sdpa (from
+# use_sdpa_with_kv_cache) and quantized_decomposed ops (from quantized exports).
+# Without these the model loads but execution fails with "Missing operator".
+if(TARGET custom_ops)
+  executorch_target_link_options_shared_lib(custom_ops)
+  list(APPEND link_libraries custom_ops)
+endif()
+if(TARGET quantized_ops_lib)
+  list(APPEND link_libraries quantized_kernels quantized_ops_lib)
+  executorch_target_link_options_shared_lib(quantized_ops_lib)
+endif()
+
 # Extensions (Engine/Session lives in extension_llm_runner)
 list(
   APPEND
