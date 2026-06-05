@@ -12,12 +12,8 @@
 
 namespace executorch::backends::webgpu {
 
-// WGSL shader source for rms_norm: y = x * w * rsqrt(mean(x^2) + eps)
-//
-// NOTE: This inline string is the runtime source of truth — it is what gets
-// passed to wgpuDeviceCreateShaderModule. The sibling `rms_norm.wgsl` file
-// exists only for editor/tooling support and must be kept identical to this
-// string by hand; there is no build-time sync.
+// @generated from rms_norm.wgsl - DO NOT EDIT.
+// wgsl-sha256: 340dcbf3c06dc311e70bef953c1e9cbbdf4121fe177eedd3253549e614b55069
 inline constexpr const char* kRmsNormWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_in: array<f32>;
@@ -93,6 +89,8 @@ fn main(
 }
 )";
 
-inline constexpr uint32_t kRmsNormWorkgroupSize = 64;
+inline constexpr uint32_t kRmsNormWorkgroupSizeX = 64;
+inline constexpr uint32_t kRmsNormWorkgroupSizeY = 1;
+inline constexpr uint32_t kRmsNormWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
