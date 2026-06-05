@@ -547,7 +547,6 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.split.Tensor,
     torch.ops.aten.split_with_sizes.default,
     torch.ops.aten.split_copy.Tensor,
-    torch.ops.aten.transpose.Dimname,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
     torch.ops.aten.t_copy.default,
