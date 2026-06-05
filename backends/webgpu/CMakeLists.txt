@@ -54,29 +54,10 @@ target_include_directories(
 
 target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 
-# Native build: link against wgpu-native
-set(WGPU_NATIVE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/third-party/wgpu-native"
-    CACHE PATH "Path to wgpu-native installation"
-)
-
-# Link the shared lib; the static .a carries LLVM bitcode that breaks LTO.
-# Suffix resolves per platform: .so on Linux, .dylib on macOS.
-set(WGPU_LIB_NAME "libwgpu_native${CMAKE_SHARED_LIBRARY_SUFFIX}")
-set(WGPU_LIB "${WGPU_NATIVE_DIR}/lib/${WGPU_LIB_NAME}")
-if(NOT EXISTS "${WGPU_LIB}")
-  message(FATAL_ERROR "wgpu-native not found at ${WGPU_NATIVE_DIR}. "
-                      "Run: bash backends/webgpu/scripts/setup-wgpu-native.sh"
-  )
-endif()
-
-add_library(wgpu_native SHARED IMPORTED)
-set_target_properties(wgpu_native PROPERTIES IMPORTED_LOCATION "${WGPU_LIB}")
-
-target_include_directories(
-  webgpu_backend PUBLIC $<BUILD_INTERFACE:${WGPU_NATIVE_DIR}/include>
-)
-target_link_libraries(webgpu_backend PRIVATE wgpu_native)
+# Native WebGPU backend: Dawn (Tint) + SwiftShader; deps script sets Dawn_DIR.
+find_package(Dawn REQUIRED)
+set(WEBGPU_GPU_LIB dawn::webgpu_dawn)
+target_link_libraries(webgpu_backend PUBLIC dawn::webgpu_dawn)
 
 if(APPLE)
   target_link_libraries(
@@ -106,13 +87,12 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
 
   target_include_directories(
     webgpu_native_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-                               "${WGPU_NATIVE_DIR}/include"
   )
 
   target_link_libraries(
     webgpu_native_test
     PRIVATE webgpu_backend
-            wgpu_native
+            ${WEBGPU_GPU_LIB}
             executorch_core
             extension_module_static
             extension_data_loader
@@ -137,13 +117,12 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
 
   target_include_directories(
     webgpu_rms_norm_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-                                 "${WGPU_NATIVE_DIR}/include"
   )
 
   target_link_libraries(
     webgpu_rms_norm_test
     PRIVATE webgpu_backend
-            wgpu_native
+            ${WEBGPU_GPU_LIB}
             executorch_core
             extension_module_static
             extension_data_loader

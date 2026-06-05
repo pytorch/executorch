@@ -101,7 +101,11 @@ WebGPUContext create_webgpu_context() {
   adapter_cb.callback = on_adapter_request;
   adapter_cb.userdata1 = &adapter_result;
 
-  wgpuInstanceRequestAdapter(ctx.instance, nullptr, adapter_cb);
+  // No bundled fallback adapter in the release; SwiftShader via the Vulkan ICD.
+  WGPURequestAdapterOptions adapter_opts = {};
+  adapter_opts.backendType = WGPUBackendType_Vulkan;
+  adapter_opts.forceFallbackAdapter = false;
+  wgpuInstanceRequestAdapter(ctx.instance, &adapter_opts, adapter_cb);
   while (!adapter_result.done) {
     wgpuInstanceProcessEvents(ctx.instance);
   }
