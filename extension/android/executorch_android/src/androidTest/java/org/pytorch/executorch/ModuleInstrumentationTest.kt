@@ -45,7 +45,7 @@ class ModuleInstrumentationTest {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
     try {
       val results = module.forward(EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
+      assertSingleTensorResultWithShape(results, expectedOutputShape)
     } finally {
       module.destroy()
     }
@@ -59,7 +59,7 @@ class ModuleInstrumentationTest {
       module.loadMethod(FORWARD_METHOD)
 
       val results = module.forward(EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
+      assertSingleTensorResultWithShape(results, expectedOutputShape)
     } finally {
       module.destroy()
     }
@@ -71,7 +71,7 @@ class ModuleInstrumentationTest {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME))
     try {
       val results = module.execute(FORWARD_METHOD, EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
+      assertSingleTensorResultWithShape(results, expectedOutputShape)
     } finally {
       module.destroy()
     }
@@ -94,7 +94,7 @@ class ModuleInstrumentationTest {
           }
       Assert.assertEquals(
           ExecutorchRuntimeException.INVALID_ARGUMENT,
-          exception.getErrorCode(),
+          exception.errorCode,
       )
     } finally {
       module.destroy()
@@ -177,7 +177,7 @@ class ModuleInstrumentationTest {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME), Module.LOAD_MODE_MMAP)
     try {
       val results = module.forward(EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
+      assertSingleTensorResultWithShape(results, expectedOutputShape)
     } finally {
       module.destroy()
     }
@@ -189,7 +189,7 @@ class ModuleInstrumentationTest {
     val module = Module.load(getTestFilePath(TEST_FILE_NAME), Module.LOAD_MODE_FILE)
     try {
       val results = module.forward(EValue.from(dummyInput()))
-      Assert.assertTrue(results[0].isTensor)
+      assertSingleTensorResultWithShape(results, expectedOutputShape)
     } finally {
       module.destroy()
     }
@@ -308,7 +308,16 @@ class ModuleInstrumentationTest {
     private const val FORWARD_METHOD = "forward"
     private const val NONE_METHOD = "none"
     private val inputShape = longArrayOf(1, 3, 224, 224)
+    private val expectedOutputShape = longArrayOf(1, 1000)
 
     private fun dummyInput(): Tensor = Tensor.ones(inputShape, DType.FLOAT)
+
+    private fun assertSingleTensorResultWithShape(
+        results: Array<EValue>,
+        expectedShape: LongArray,
+    ) {
+      Assert.assertTrue(results[0].isTensor)
+      Assert.assertArrayEquals(expectedShape, results[0].toTensor().shape())
+    }
   }
 }

@@ -845,11 +845,19 @@ def vkml_emulation_layer_installed() -> bool:
     existing_layers = set(vk_instance_layers.split(":"))
     layers_exists = required_layers.issubset(existing_layers)
 
-    # Check LD_LIBRARY_PATH for "emulation-layer/deploy"
+    # Check dynamic library search paths for the emulation layer deploy dir.
+    library_paths = []
     ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    dyld_library_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+    if ld_library_path:
+        library_paths.extend(ld_library_path.split(os.path.pathsep))
+    if dyld_library_path:
+        library_paths.extend(dyld_library_path.split(os.path.pathsep))
+
     deploy_exists = False
-    for path in ld_library_path.split(os.path.pathsep):
-        if "emulation-layer/deploy" in path and os.path.isdir(path):
+    deploy_markers = ("emulation-layer/deploy", "emulation_layer/deploy")
+    for path in library_paths:
+        if any(marker in path for marker in deploy_markers) and os.path.isdir(path):
             deploy_exists = True
 
     return layers_exists and deploy_exists

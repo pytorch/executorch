@@ -42,7 +42,7 @@ class ConstantPadNDConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
+        if neutron_target_spec.use_new_flow_neutron_c:
             # Requirements specified by the new Neutron flow documentation.
 
             if not NodeConverter.uses_quantization_type_for_io(

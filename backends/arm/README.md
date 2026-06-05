@@ -6,7 +6,7 @@ PyTorch models to a TOSA representation. This representation is used to
 deploy to the following targets:
 
 - **Arm&reg; Ethos&trade;-U55/65/85** - Compiled using the Ethos-U Vela compiler.
-- **VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan-capable devices.
+- **VKML using VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan Machine Learning (VKML) devices.
 
 The backend provides an ahead-of-time (AOT) flow, that produces a PTE file for your
 chosen target. The AOT flow supports the following development operating systems:
@@ -60,8 +60,6 @@ backends/arm/
 │   ├── ops/                       # Operator level unit tests
 │   ├── models/                    # Model level unit tests
 │   └── tester/                    # Testing harnesses and utilities
-│
-├── third-party/                   # External dependencies
 │
 ├── tosa/                          # Shared TOSA backend implementation and dialect
 │
@@ -138,8 +136,10 @@ The delegated Python API flow is:
 For complete examples of that flow, including quantization and target-specific
 compile specs, see:
 
-- `docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md`
-- `docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md`
+- [Arm Ethos-U tutorial](../../docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md)
+- [Arm VGF tutorial](../../docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md)
+- [Arm Cortex-M backend overview](../../docs/source/backends/arm-cortex-m/arm-cortex-m-overview.md)
+- [Ethos-U porting guide](../../examples/arm/ethos-u-porting-guide.md)
 
 Additional examples are available in `examples/arm`.
 
@@ -248,15 +248,16 @@ Below is an overview of some of the testing options this script provides:
 | `test_arm_backend.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
 | `test_arm_backend.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
 | `test_arm_backend.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
-| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VGF specific use-cases.         |
-| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VGF specific use-cases.            |
-| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VGF specific use-cases.       |
+| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VKML/VGF specific use-cases.    |
+| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VKML/VGF specific use-cases.       |
+| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VKML/VGF specific use-cases.  |
 | `test_arm_backend.sh test_model_smollm2_135M`      | Runs some models with Corstone FVP.                          |
 | `test_arm_backend.sh test_ootb_tests_ethos_u`      | Runs out-of-the-box tests for Ethos-U.                       |
 | `test_arm_backend.sh test_ootb_tests_tosa`         | Runs out-of-the-box tests for TOSA.                          |
-| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VGF.                           |
+| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VKML/VGF.                      |
 | `test_arm_backend.sh test_deit_e2e_ethos_u`        | Runs DEiT end-to-end tests on Ethos-U.                       |
-| `test_arm_backend.sh test_smaller_stories_llama`   | Runs E2E model tests on Corstone FVP.                        |
+| `test_arm_backend.sh test_smaller_stories_llama_tosa` | Runs Llama model tests for TOSA.                          |
+| `test_arm_backend.sh test_smaller_stories_llama_vkml` | Runs Llama model tests for VKML/VGF.                      |
 | `test_arm_backend.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
 
 For more information, please refer to the `backends/arm/test/test_arm_backend.sh` script.
@@ -378,6 +379,39 @@ List of model specific and optional passes:
     - `from executorch.exir.passes import ToDevicePass`
     - `graph_module = ToDevicePass("cpu")(graph_module).graph_module`
     - backends/arm/test/misc/test_post_quant_device_switch.py
+
+## Profiling of VGF Backend
+
+VGF profiling now emits both host-side ExecuTorch event tracer ranges and Vulkan timestamp-query measurements. The host ranges split init into `VGF_INIT_*` phases, including `VGF_INIT_CREATE_DATA_GRAPH_PIPELINE`, and split execute into `VGF_COPY_INPUTS`, `VGF_QUEUE_SUBMIT`, `VGF_QUEUE_WAIT_IDLE`, `VGF_TIMESTAMP_QUERY_READBACK`, `VGF_DISPATCH_AND_WAIT`, and `VGF_COPY_OUTPUTS`. Vulkan timestamp queries are inserted into the recorded VGF command buffer around `vkCmdDispatchDataGraphARM()`, producing `VGF_DATA_GRAPH_DEVICE_TIME`, which measures device-side elapsed time for the submitted data-graph command buffer region. To collect a profile, build the VGF runner with event tracing enabled, run the model with an ETDump path, then convert the ETDump to Chrome trace JSON:
+
+```bash
+mkdir -p etdumps traces
+
+./cmake-out-vgf/executor_runner \
+  --model_path vgf_mobilenetv2_out/mobilenet_v2_vgf_int8.pte \
+  --num_executions 10 \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --print_output none
+
+python ./backends/arm/scripts/etdump_to_chrome_trace.py \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --output ./etdumps/vgf_timestamps_trace.json
+```
+
+Open the result in Chrome by navigating to `chrome://tracing`, selecting **Load**, and choosing `./traces/vgf_timestamps_trace.json`. The key fields to inspect are `VGF_INIT_CREATE_DATA_GRAPH_PIPELINE` for pipeline creation/init cost, `VGF_QUEUE_SUBMIT` and `VGF_QUEUE_WAIT_IDLE` for host-side submission/wait overhead, and `VGF_DATA_GRAPH_DEVICE_TIME` for device-side data-graph execution time.
+
+VGF profiling can emit optional Vulkan timestamp-query measurements. Vulkan timestamp queries are controlled by the `EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES` environment variable. Set it to `1` to insert timestamp queries into the recorded VGF command buffer around `vkCmdDispatchDataGraphARM()`. When enabled, the backend emits `VGF_DATA_GRAPH_DEVICE_TIME`, which measures device-side elapsed time for the submitted data-graph command buffer region. If `EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES` is unset or set to `0`, only host-side ExecuTorch event tracer ranges are collected and no Vulkan timestamp-query readback is performed. Note that the timestamp-query measurements will be printed out and not included into `.etdp`.
+
+So, in this case the command is:
+
+```bash
+EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES=1 \
+./cmake-out-vgf/executor_runner \
+  --model_path vgf_mobilenetv2_out/mobilenet_v2_vgf_int8.pte \
+  --num_executions 10 \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --print_output none
+```
 
 ## Help & Improvements
 

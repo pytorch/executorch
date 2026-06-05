@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import copy
+import functools
 import os
 import random
 import statistics
@@ -88,6 +89,28 @@ EVENTS_SIZE = 10
 RAW_DATA_SIZE = 10
 ETDUMP_PATH = "unittest_etdump_path"
 ETRECORD_PATH = "unittest_etrecord_path"
+
+
+def disable_if(condition, reason):
+    """Disable a test when condition is true, still reporting it as executed.
+
+    Conditional analogue of unittest.skipIf that keeps disabled tests visible in
+    logs instead of producing a skipped result, which some test runners handle
+    inconsistently.
+    """
+
+    def decorator(fn):
+        if not condition:
+            return fn
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            print(f"DISABLED_TEST: {fn.__qualname__}: {reason}")
+            return None
+
+        return wrapper
+
+    return decorator
 
 
 # TODO: write an E2E test: create an inspector instance, mock just the file reads, and then verify the external correctness
@@ -1504,7 +1527,7 @@ class TestInspector(unittest.TestCase):
             self.assertIsInstance(df, pd.DataFrame)
             self.assertEqual(len(df), 1)
 
-    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
     def test_transformer_block_xnnpack_numeric_gap_within_tolerance(self):
         """
         Test that the numeric gap between AOT and runtime intermediate outputs
@@ -1693,7 +1716,7 @@ class TestInspector(unittest.TestCase):
                         f"Stack trace for {op_name} doesn't contain file info",
                     )
 
-    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
     def test_intermediate_tensor_comparison_with_torch_export(self):
         """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower.
 
@@ -1840,7 +1863,7 @@ class TestInspector(unittest.TestCase):
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
         return [torch.randn(RAW_DATA_SIZE)]
 
-    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    @disable_if(sys.platform.startswith("win"), "Skipping on Windows")
     def test_disable_debug_handle_validation_with_symbolic_shapes(self):
         """
         Test that demonstrates the issue with symbolic shape related nodes losing from_node info

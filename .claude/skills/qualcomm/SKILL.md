@@ -1,6 +1,6 @@
 ---
 name: qualcomm
-description: Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend. Use when working on backends/qualcomm/, building QNN (use backends/qualcomm/scripts/build.sh), adding new ops or passes, running QNN delegate tests, or exporting models for Qualcomm HTP/GPU targets. Also exposes a Buck-vs-CMake parity workflow — invoke as `/qualcomm buck-fix`, `/qualcomm buck-cmake fix`, `/qualcomm buck-parity`, or any user request to fix `test-qnn-buck-build-linux` CI failures or check buck/cmake drift in backends/qualcomm/.
+description: Build, test, or develop the QNN (Qualcomm AI Engine Direct) backend. Use when working on backends/qualcomm/, building QNN (use backends/qualcomm/scripts/build.sh), adding new ops or passes, running QNN delegate tests, or exporting models for Qualcomm HTP/GPU targets. Also exposes a Buck-vs-CMake parity workflow — invoke as `/qualcomm buck-fix`, `/qualcomm buck-cmake fix`, `/qualcomm buck-parity`, or any user request to fix `test-qnn-buck-build-linux` CI failures or check buck/cmake drift in backends/qualcomm/. Also covers QNN intermediate-output / per-layer accuracy debugging — trigger on phrases like "QNN accuracy issue", "QNN output doesn't match CPU", "debug per-layer for QNN", "find which QNN layer is wrong".
 ---
 
 # QNN (Qualcomm AI Engine Direct) Backend
@@ -25,6 +25,7 @@ When the user's request falls into one of these areas, read the corresponding fi
 | Model enablement | `model_enablement.md` | User asks to enable a new model end-to-end |
 | Buck vs CMake parity (pre-PR or fix red CI) | `buck_parity.md` | User changed BUCK / TARGETS / `targets.bzl` or `CMakeLists.txt` under `backends/qualcomm/`, added new `.cpp` / `.h` / `#include` there, is preparing to push a PR that touches QNN, **or** the `test-qnn-buck-build-linux` CI check on their PR is red and they want to fix it locally. Direct trigger: `/qualcomm buck-fix`. |
 | Profiling & debugging | `profiling.md` | User asks about profiling, optrace, QHAS, QAIRT Visualizer *(file TBD)* |
+| QNN intermediate-output / per-layer accuracy debugging | `qnn_intermediate_debugger.md` | User reports QNN-vs-CPU accuracy divergence, asks to debug per-layer / intermediate output for QNN, mentions `QNNIntermediateDebugger` / `QcomNumericalComparator`, or wants to find which layer causes a QNN accuracy drop. Workflow generates a new debug script from the user's existing example script. |
 
 ## Building
 

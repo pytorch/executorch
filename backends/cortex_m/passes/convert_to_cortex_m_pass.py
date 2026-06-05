@@ -13,8 +13,11 @@ import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 
-from executorch.backends.cortex_m.passes import CortexMPass
-from executorch.backends.cortex_m.passes.passes_utils import quantize_multiplier_aot
+from executorch.backends.cortex_m.passes.cortex_m_pass import CortexMPass
+from executorch.backends.cortex_m.passes.passes_utils import (
+    build_activation_lut,
+    quantize_multiplier_aot,
+)
 from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
     required_cmsis_nn_buffer_sizes,
 )
@@ -505,6 +508,38 @@ class ConvertToCortexMPass(CortexMPass):
         )
         return exir_ops.edge.cortex_m.quantized_batch_matmul.default, args
 
+    def _get_activation_replacement(self, node):
+        """Lower a standalone quantized sigmoid / tanh / silu to a single
+        cortex_m.quantized_activation call backed by an AoT-built 256-entry
+        int8 LUT. The kernel is shape-agnostic; the LUT encodes both the
+        activation function and the input/output qparams.
+        """
+        input_qparams = node.meta["input_qparams"][0]
+        output_qparams = node.meta["output_qparams"][0]
+        lut_tensor = build_activation_lut(
+            node.target,
+            float(input_qparams.scale),
+            int(input_qparams.zp),
+            float(output_qparams.scale),
+            int(output_qparams.zp),
+        )
+
+        # Constant placeholders must appear before user-input placeholders;
+        # anchor on the first existing placeholder so the new LUT lands in the
+        # constant-placeholder block at the top of the graph.
+        first_placeholder = next(n for n in node.graph.nodes if n.op == "placeholder")
+        with node.graph.inserting_before(first_placeholder):
+            lut_node = create_constant_placeholder(
+                self.exported_program,
+                node.graph,
+                node.name + "_lut",
+                InputKind.PARAMETER,
+                lut_tensor,
+            )
+
+        new_args = (node.args[0], lut_node)
+        return exir_ops.edge.cortex_m.quantized_activation.default, new_args
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
         for node in graph_module.graph.nodes:
@@ -528,6 +563,12 @@ class ConvertToCortexMPass(CortexMPass):
                         op, args = self._get_convolution_replacement(node)
                 case exir_ops.edge.aten.bmm.default:
                     op, args = self._get_bmm_replacement(node)
+                case (
+                    exir_ops.edge.aten.sigmoid.default
+                    | exir_ops.edge.aten.tanh.default
+                    | exir_ops.edge.aten.silu.default
+                ):
+                    op, args = self._get_activation_replacement(node)
                 case _:
                     continue
 

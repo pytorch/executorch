@@ -21,10 +21,7 @@ from pathlib import Path
 from typing import Callable, cast, List, Optional, Sequence, Tuple
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import (
-    get_cond_while_submodules_nested,
-    get_first_fake_tensor,
-)
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
@@ -43,6 +40,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -400,7 +398,7 @@ class TOSAPartitioner(Partitioner):
         tags: set[str] = set()
         if tag_iterator is None:
             tag_iterator = count(0)
-        for _, submodule, _ in get_cond_while_submodules_nested(module):
+        for _, submodule, _ in get_cond_while_submodules(module):
             submodule_tags = self._tag_module(
                 submodule, containing_program, reporter, tag_iterator
             )
@@ -552,7 +550,10 @@ class TOSAPartitioner(Partitioner):
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
-        if self.intermediate_path is not None and logger.level <= logging.INFO:
+        if (
+            self.intermediate_path is not None
+            and logger.getEffectiveLevel() <= logging.INFO
+        ):
             intermediate_path = Path(self.intermediate_path)
             intermediate_path.mkdir(parents=True, exist_ok=True)
             file_handler = logging.FileHandler(

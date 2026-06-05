@@ -177,6 +177,21 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "aten_to_dialect_pass",
+        srcs = [
+            "aten_to_dialect_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+            "//executorch/exir:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "rank_0_to_rank_1",
         srcs = [
             "rank_0_to_rank_1.py",
@@ -243,6 +258,16 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_test(
+        name = "test_aten_to_dialect_pass",
+        srcs = [
+            "test/test_aten_to_dialect_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":aten_to_dialect_pass",
+        ],
+    )
 
     runtime.python_test(
         name = "test_rank_0_to_rank_1",

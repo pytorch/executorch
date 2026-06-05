@@ -265,6 +265,35 @@ def quantized_mul_impl(
 
 
 # ===================================================================
+# QUANTIZED ACTIVATION (LUT) OPERATION DEFINITION
+# ===================================================================
+# Generic table-lookup activation. The 256-entry int8 LUT is precomputed AoT
+# from the input/output qparams and the activation function (sigmoid, tanh,
+# silu, ...), so the kernel is identical regardless of which activation it
+# evaluates: out[i] = lut[input[i] + 128].
+lib.define("quantized_activation(Tensor input, Tensor lut) -> Tensor")
+lib.define(
+    "quantized_activation.out(Tensor input, Tensor lut, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_activation")  # type: ignore[misc]
+def quantized_activation_meta(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    assert input.dtype == torch.int8, "quantized_activation input must be int8"
+    assert lut.dtype == torch.int8 and lut.numel() == 256, (
+        "quantized_activation lut must be int8 with 256 entries; "
+        f"got dtype={lut.dtype}, numel={lut.numel()}"
+    )
+    return torch.empty_like(input)
+
+
+@impl(lib, "quantized_activation", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_activation_impl(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    indices = input.to(torch.int32) + 128
+    return lut[indices].to(torch.int8)
+
+
+# ===================================================================
 # QUANTIZED BATCH MATMUL OPERATION DEFINITION
 # ===================================================================
 lib.define(
