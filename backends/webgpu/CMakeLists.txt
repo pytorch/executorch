@@ -55,6 +55,8 @@ target_include_directories(
 target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 
 # Native WebGPU backend: Dawn (Tint) + SwiftShader; deps script sets Dawn_DIR.
+# dawn::webgpu_dawn's link interface references Threads::Threads.
+find_package(Threads REQUIRED)
 find_package(Dawn REQUIRED)
 set(WEBGPU_GPU_LIB dawn::webgpu_dawn)
 target_link_libraries(webgpu_backend PUBLIC dawn::webgpu_dawn)
