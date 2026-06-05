@@ -13,6 +13,7 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
 #include <time.h>
+#include <algorithm>
 #include <cctype>
 #include <string>
 #include <vector>
@@ -96,6 +97,55 @@ ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
     i += len;
   }
   return i;
+}
+
+// How many leading bytes of `text` a streaming consumer may safely emit given a
+// set of `stops` strings, and whether a stop was hit (`stop_hit`).
+//   * If any stop occurs, returns the byte offset of the EARLIEST occurrence and
+//     sets stop_hit=true — text before it is safe; the stop and everything after
+//     are dropped (the stop is excluded from output).
+//   * Otherwise returns the length minus the longest possible partial-stop tail
+//     (max(len(stop))-1 bytes), snapped DOWN to a UTF-8 boundary so a multi-byte
+//     character is never split; stop_hit=false. Holding back that tail lets a
+//     stop that straddles the next piece still be caught.
+// `text` is expected to be complete-UTF-8 (e.g. the assembled output of
+// utf8_complete_prefix_len). Empty `stops` => emit everything, no hold-back.
+ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
+    const std::string& text,
+    const std::vector<std::string>& stops,
+    bool& stop_hit) {
+  stop_hit = false;
+  if (stops.empty()) {
+    return text.size();
+  }
+  size_t earliest = std::string::npos;
+  size_t max_len = 0;
+  for (const auto& s : stops) {
+    if (s.empty()) {
+      continue;
+    }
+    max_len = std::max(max_len, s.size());
+    const size_t p = text.find(s);
+    if (p != std::string::npos &&
+        (earliest == std::string::npos || p < earliest)) {
+      earliest = p;
+    }
+  }
+  if (earliest != std::string::npos) {
+    stop_hit = true;
+    return earliest;
+  }
+  const size_t hold = max_len > 0 ? max_len - 1 : 0;
+  if (text.size() <= hold) {
+    return 0;
+  }
+  size_t end = text.size() - hold;
+  // Don't cut in the middle of a UTF-8 character: back up over continuation
+  // bytes (10xxxxxx).
+  while (end > 0 && (static_cast<unsigned char>(text[end]) & 0xC0) == 0x80) {
+    --end;
+  }
+  return end;
 }
 
 // ----------------------------------------------------------------------------
