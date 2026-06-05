@@ -37,6 +37,17 @@ set(WEBGPU_SRCS
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
 
+# Verify committed *_wgsl.h match their *.wgsl (drift fails the build).
+resolve_python_executable()
+add_custom_target(
+  webgpu_wgsl_headers_check ALL
+  COMMAND "${PYTHON_EXECUTABLE}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_wgsl_headers.py" --check
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "Checking WebGPU embedded-WGSL headers are in sync"
+)
+add_dependencies(webgpu_backend webgpu_wgsl_headers_check)
+
 target_include_directories(
   webgpu_backend PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
 )
@@ -49,17 +60,18 @@ set(WGPU_NATIVE_DIR
     CACHE PATH "Path to wgpu-native installation"
 )
 
-if(NOT EXISTS "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a")
+# Link the shared lib; the static .a carries LLVM bitcode that breaks LTO.
+# Suffix resolves per platform: .so on Linux, .dylib on macOS.
+set(WGPU_LIB_NAME "libwgpu_native${CMAKE_SHARED_LIBRARY_SUFFIX}")
+set(WGPU_LIB "${WGPU_NATIVE_DIR}/lib/${WGPU_LIB_NAME}")
+if(NOT EXISTS "${WGPU_LIB}")
   message(FATAL_ERROR "wgpu-native not found at ${WGPU_NATIVE_DIR}. "
                       "Run: bash backends/webgpu/scripts/setup-wgpu-native.sh"
   )
 endif()
 
-add_library(wgpu_native STATIC IMPORTED)
-set_target_properties(
-  wgpu_native PROPERTIES IMPORTED_LOCATION
-                         "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a"
-)
+add_library(wgpu_native SHARED IMPORTED)
+set_target_properties(wgpu_native PROPERTIES IMPORTED_LOCATION "${WGPU_LIB}")
 
 target_include_directories(
   webgpu_backend PUBLIC $<BUILD_INTERFACE:${WGPU_NATIVE_DIR}/include>
