@@ -119,45 +119,59 @@ run_target_test_blocks_from_readme() {
 }
 
 run_west_sdk_install_with_proxy_fallback() {
-  local sdk_version proxy_port proxy_url proxy_cache_dir proxy_pid
+  local sdk_version proxy_port proxy_url proxy_cache_dir proxy_pid proxy_ready
 
-  # Try expected setup first.
-  if run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_sdk_install -->"; then
-    return 0
-  fi
-
-  echo "west sdk install failed; retrying through local release proxy"
-
-  sdk_version="1.0.1"
-  if [[ -f "zephyr/SDK_VERSION" ]]; then
-    sdk_version="$(<zephyr/SDK_VERSION)"
-  fi
+  sdk_version="$(python3 "${EXECUTORCH_PROJ_ROOT}/.ci/docker/common/zephyr_sdk_release_proxy.py" --print-version)"
 
   proxy_port="${ZEPHYR_SDK_RELEASE_PROXY_PORT:-8765}"
   proxy_url="http://127.0.0.1:${proxy_port}/releases"
-  proxy_cache_dir="${ZEPHYR_SDK_RELEASE_PROXY_CACHE_DIR:-${HOME}/.cache/zephyr-sdk/v${sdk_version}}"
+  proxy_cache_dir="${ZEPHYR_SDK_RELEASE_PROXY_CACHE_DIR:-}"
+  if [[ -z "${proxy_cache_dir}" ]]; then
+    if [[ -d "/opt/zephyr-sdk-cache/v${sdk_version}" ]]; then
+      proxy_cache_dir="/opt/zephyr-sdk-cache/v${sdk_version}"
+    else
+      proxy_cache_dir="${HOME}/.cache/zephyr-sdk/v${sdk_version}"
+    fi
+  fi
 
-  python3 "${EXECUTORCH_PROJ_ROOT}/.ci/scripts/zephyr_sdk_release_proxy.py" \
+  python3 "${EXECUTORCH_PROJ_ROOT}/.ci/docker/common/zephyr_sdk_release_proxy.py" \
     --version "${sdk_version}" \
     --cache-dir "${proxy_cache_dir}" \
     --port "${proxy_port}" &
   proxy_pid="$!"
   trap 'kill "${proxy_pid}" >/dev/null 2>&1 || true' RETURN
 
+  proxy_ready=0
   for _ in {1..30}; do
     if wget -qO- "${proxy_url}?page=1" >/dev/null 2>&1; then
+      proxy_ready=1
       break
     fi
     sleep 1
   done
 
-  west sdk install \
+  if [[ ${proxy_ready} -ne 1 ]]; then
+    echo "Zephyr SDK release proxy did not become reachable at ${proxy_url}; retrying direct install" >&2
+    kill "${proxy_pid}" >/dev/null 2>&1 || true
+    trap - RETURN
+    run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_sdk_install -->"
+    return
+  fi
+
+  if west sdk install \
     --version "${sdk_version}" \
     --api-url "${proxy_url}" \
-    --gnu-toolchains arm-zephyr-eabi
+    --gnu-toolchains arm-zephyr-eabi; then
+    kill "${proxy_pid}" >/dev/null 2>&1 || true
+    trap - RETURN
+    return 0
+  fi
 
   kill "${proxy_pid}" >/dev/null 2>&1 || true
   trap - RETURN
+
+  echo "west sdk install through local release proxy failed; retrying direct install"
+  run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_sdk_install -->"
 }
 
 setup_zephyr_workspace() {
@@ -193,9 +207,8 @@ setup_zephyr_workspace() {
 
   run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_packages_install -->"
 
-  # Sometimes west sdk install can fail due to network issues or problems with
-  # rate limiting on the Zephyr SDK download server. If it fails, retry through
-  # a temporary local proxy that serves the release files from a local cache.
+  # Install through a temporary local proxy so CI can use SDK release assets
+  # cached in the Docker image and avoid downloading them in every job.
   run_west_sdk_install_with_proxy_fallback
 
   # Setup git local user for Executorch git to allow

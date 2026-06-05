@@ -13,19 +13,19 @@ API locally. Asset requests are served from a cache directory and populated with
 Examples:
 
   # Prepopulate CI cache only.
-  .ci/scripts/zephyr_sdk_release_proxy.py \
-      --version 1.0.1 \
-      --cache-dir .cache/zephyr-sdk/v1.0.1 \
-      --download-only
+  .ci/docker/common/zephyr_sdk_release_proxy.py \
+      --version <version> \
+      --cache-dir .cache/zephyr-sdk/v<version> \
+      --populate-cache
 
   # Serve cached assets and release metadata.
-  .ci/scripts/zephyr_sdk_release_proxy.py \
-      --version 1.0.1 \
-      --cache-dir .cache/zephyr-sdk/v1.0.1 \
+  .ci/docker/common/zephyr_sdk_release_proxy.py \
+      --version <version> \
+      --cache-dir .cache/zephyr-sdk/v<version> \
       --port 8765
 
   west sdk install \
-      --version 1.0.1 \
+      --version <version> \
       --api-url http://127.0.0.1:8765/releases \
       --gnu-toolchains arm-zephyr-eabi
 """
@@ -45,8 +45,19 @@ import urllib.parse
 from pathlib import Path
 
 
+DEFAULT_SDK_VERSION = "1.0.1"
+
+
 class AssetVerificationError(Exception):
     pass
+
+
+def default_sdk_version() -> str:
+    return (
+        os.environ.get("ZEPHYR_SDK_VERSION")
+        or os.environ.get("SDK_VERSION")
+        or DEFAULT_SDK_VERSION
+    )
 
 
 def host_tuple() -> tuple[str, str]:
@@ -226,17 +237,33 @@ def default_cache_dir(version: str) -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", default=os.environ.get("SDK_VERSION", "1.0.1"))
+    parser.add_argument("--version", default=default_sdk_version())
     parser.add_argument("--toolchain", default="arm-zephyr-eabi")
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--download-only", action="store_true")
+    parser.add_argument(
+        "--print-version",
+        action="store_true",
+        help="Print the effective default SDK version and exit.",
+    )
+    parser.add_argument(
+        "--download-only",
+        "--populate-cache",
+        dest="download_only",
+        action="store_true",
+        help="Download and verify release assets, then exit without serving.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    if args.print_version:
+        print(args.version)
+        return
+
     cache_dir = args.cache_dir or default_cache_dir(args.version)
 
     if args.download_only:

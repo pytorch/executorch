@@ -9,8 +9,10 @@
 
 set -ex
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+source "${SCRIPT_DIR}/utils.sh"
 
 # Double check if the NDK version is set
 [ -n "${ZEPHYR_SDK}" ]
@@ -56,7 +58,7 @@ install_prerequiresites() {
     apt update
     test -f /usr/share/doc/kitware-archive-keyring/copyright || \
         wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-    "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/kitware.list > /dev/null
+    echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/kitware.list > /dev/null
     apt update
     apt install cmake
 
@@ -83,6 +85,17 @@ install_prerequiresites() {
         rm -f kitware-archive.sh
     pip_install --no-cache-dir west
     pip_install pyelftools
+
+    # Cache the Zephyr SDK release assets in the image. CI still runs
+    # `west sdk install` in its workspace, but the local proxy fallback can serve
+    # these files without downloading them on every job.
+    local zephyr_sdk_version
+    zephyr_sdk_version="$(python3 "${SCRIPT_DIR}/zephyr_sdk_release_proxy.py" --print-version)"
+    local zephyr_sdk_cache_dir="${ZEPHYR_SDK_RELEASE_PROXY_CACHE_DIR:-/opt/zephyr-sdk-cache/v${zephyr_sdk_version}}"
+    python3 "${SCRIPT_DIR}/zephyr_sdk_release_proxy.py" \
+        --version "${zephyr_sdk_version}" \
+        --cache-dir "${zephyr_sdk_cache_dir}" \
+        --populate-cache
 }
 
 install_prerequiresites

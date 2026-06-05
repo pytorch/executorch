@@ -100,14 +100,14 @@ jobs:
       timeout: 120
       script: |
         #!/bin/bash
-      
+
+        set -euo pipefail
+
         # Zephyr minimum Python version is 3.12; since ExecuTorch supports 3.10, ensure we always use 3.12 independent of the base image
         conda create -y -n conda_zephyr_test python=3.12 > /dev/null
         conda activate conda_zephyr_test
 
         # Test zephyr backend
-        set -e
-
         .ci/scripts/test_zephyr.sh \
           --targets "${TARGET_LIST:-${{ matrix.target }}}" \
           --zephyr-samples-readme-path "${{ matrix.readme }}"
