@@ -19,11 +19,9 @@
 
 namespace executorch::backends::webgpu {
 
-// Drive pending callbacks; callers loop until their done flag is set. The
-// native (Dawn) build pumps the instance event queue then briefly yields the
-// CPU so the caller's wait loop does not busy-spin a core at 100%
-// (wgpuInstanceProcessEvents is non-blocking); the browser yields to the JS
-// event loop.
+// Make progress on pending WebGPU callbacks; callers loop until their done flag
+// is set. Native (Dawn): pump the event queue + brief yield (no busy-spin).
+// Browser: yield to the JS event loop.
 inline void webgpu_poll(WGPUInstance instance, WGPUDevice device) {
 #if defined(__EMSCRIPTEN__)
   (void)instance;
