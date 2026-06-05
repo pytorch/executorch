@@ -248,7 +248,8 @@ class TestSoftmaxNewNeutronFlow:
             pytest.param((4096, 8), -1, id="2D_spatial_size_limit"),
             pytest.param((2040,), -1, id="1D_channels_limit"),
             pytest.param((4096, 128), -1, id="2D_total_size_limit"),
-            pytest.param((1, 64, 64, 8), -1, id="4D_spatial_size_limit"),
+            pytest.param((1, 64, 64, 8), -1, id="4D_spatial_size_limit_1x64x64"),
+            pytest.param((2, 32, 64, 8), -1, id="4D_spatial_size_limit_2x32x64"),
         ],
     )
     def test__limits(self, input_shape, dim, mocker):
@@ -266,7 +267,8 @@ class TestSoftmaxNewNeutronFlow:
             pytest.param((4097, 8), -1, id="2D_spatial_size_exceeded"),
             pytest.param((2048,), -1, id="1D_channels_exceeded"),
             pytest.param((4096, 129), -1, id="2D_total_size_exceeded"),
-            pytest.param((1, 64, 65, 8), -1, id="4D_spatial_size_exceeded"),
+            pytest.param((1, 64, 65, 8), -1, id="4D_spatial_size_exceeded_1x64x65"),
+            pytest.param((2, 32, 65, 8), -1, id="4D_spatial_size_exceeded_2x32x65"),
         ],
     )
     def test__limits_exceeded(self, input_shape, dim):

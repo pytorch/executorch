@@ -63,7 +63,7 @@ class SoftmaxConverter(NodeConverter):
             """New flow: Hardware constraints for the new flow:
             1. Input and Output must be INT8/UINT8
             2. Channels <= 2040
-            3. Total spatial size (H*W) <= 4096
+            3. Total spatial size <= 4096
             4. Total size (channels * spatial_size) <= 524288
             """
             # Constraint 1: Input and Output must be INT8/UINT8.
