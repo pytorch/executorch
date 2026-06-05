@@ -12,7 +12,11 @@ To build a minimal wheel from source, set
 `EXECUTORCH_BUILD_MINIMAL=1` when running `pip wheel` or `pip install`.
 That wheel contains the Python EXIR export path and `flatc` for `.pte`
 serialization, but omits runtime pybindings, kernels, backend packages, headers,
-examples, and devtools.
+examples, and devtools. It also declares only the Python dependencies the export
+path needs (no `coremltools`, `pandas`, `scikit-learn`, `hydra-core`, or
+`omegaconf`), so a normal install stays small. Like the full wheel it does not
+bundle PyTorch, so install a compatible `torch` separately. The wheel is still
+platform specific because it ships `flatc`.
 
 The prebuilt `executorch.runtime` module included in this package provides a way
 to run ExecuTorch `.pte` files, with some restrictions:

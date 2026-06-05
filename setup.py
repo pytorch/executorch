@@ -165,6 +165,75 @@ def _minimal_packages() -> List[str]:
     )
 
 
+def _base_dependencies() -> List[str]:
+    """Runtime dependencies for the full wheel.
+
+    Declared here rather than in pyproject.toml (where `dependencies` is marked
+    dynamic) so the minimal build can ship a slimmer set. Keep in sync with the
+    project's runtime needs.
+    """
+    return [
+        "expecttest",
+        "flatbuffers",
+        "hypothesis",
+        "kgb",
+        "mpmath==1.3.0",
+        "numpy>=2.0.0; python_version >= '3.10'",
+        "packaging",
+        "pandas>=2.2.2; python_version >= '3.10'",
+        "parameterized",
+        "pytorch-tokenizers",
+        "pyyaml",
+        "ruamel.yaml",
+        "sympy",
+        "tabulate",
+        # See also third-party/TARGETS for buck's typing-extensions version.
+        "typing-extensions>=4.10.0",
+        # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
+        "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
+        # scikit-learn is used to support palettization in the coreml backend.
+        "scikit-learn==1.7.1",
+        "hydra-core>=1.3.0",
+        "omegaconf>=2.3.0",
+    ]
+
+
+def _minimal_dependencies() -> List[str]:
+    """Runtime dependencies for the minimal (AOT export only) wheel.
+
+    Derived as the subset of _base_dependencies() that executorch.exir needs to
+    lower and serialize a .pte, so version pins and markers stay in sync with the
+    full set. torch is intentionally absent from both (consumers bring their own).
+    mpmath is intentionally dropped too: it is pulled transitively by sympy, whose
+    "mpmath<1.4" cap resolves to the same 1.3.0 the full wheel pins. Keep the name
+    set below in sync with the `expected` set in .ci/scripts/test_minimal_wheel.sh.
+    """
+    keep = {
+        "flatbuffers",
+        "numpy",
+        "packaging",
+        "pyyaml",
+        "ruamel-yaml",
+        "sympy",
+        "tabulate",
+        "typing-extensions",
+    }
+
+    def _name(dep: str) -> str:
+        # PEP 503 normalized distribution name, e.g. "ruamel.yaml" -> "ruamel-yaml".
+        return re.sub(
+            r"[-_.]+", "-", re.split(r"[ ;\[<>=!~(]", dep, maxsplit=1)[0]
+        ).lower()
+
+    minimal = [dep for dep in _base_dependencies() if _name(dep) in keep]
+    # Fail the build loudly if a name in `keep` no longer matches a full-wheel dep
+    # (e.g. renamed or removed in _base_dependencies()), instead of silently
+    # shipping a minimal wheel that is missing a required dependency.
+    unmatched = keep - {_name(dep) for dep in minimal}
+    assert not unmatched, f"minimal keep-set names not found in base deps: {unmatched}"
+    return minimal
+
+
 class Version:
     """Static strings that describe the version of the pip package."""
 
@@ -880,41 +949,45 @@ class CustomBuild(build):
         ]
 
         if minimal_build:
+            # The minimal wheel only needs flatc. Every other target is gated off
+            # by _minimal_cmake_flags(), so skip the entire non-minimal target
+            # list explicitly rather than relying on each flag being OFF.
             cmake_build_args += ["--target", "flatbuffers_ep"]
-        elif cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
-            cmake_build_args += ["--target", "portable_lib"]
-            cmake_build_args += ["--target", "data_loader"]
-            cmake_build_args += ["--target", "selective_build"]
+        else:
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
+                cmake_build_args += ["--target", "portable_lib"]
+                cmake_build_args += ["--target", "data_loader"]
+                cmake_build_args += ["--target", "selective_build"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
-            cmake_build_args += ["--target", "_llm_runner"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
+                cmake_build_args += ["--target", "_llm_runner"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
-            cmake_build_args += ["--target", "aoti_cuda_backend"]
-            cmake_build_args += ["--target", "aoti_common_shims_slim"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+                cmake_build_args += ["--target", "aoti_cuda_backend"]
+                cmake_build_args += ["--target", "aoti_common_shims_slim"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
-            cmake_build_args += ["--target", "extension_module"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
+                cmake_build_args += ["--target", "extension_module"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
-            cmake_build_args += ["--target", "_training_lib"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
+                cmake_build_args += ["--target", "_training_lib"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
-            cmake_build_args += ["--target", "executorchcoreml"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
+                cmake_build_args += ["--target", "executorchcoreml"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
-            cmake_build_args += ["--target", "mlxdelegate"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
+                cmake_build_args += ["--target", "mlxdelegate"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
-            cmake_build_args += ["--target", "custom_ops_aot_lib"]
-            cmake_build_args += ["--target", "quantized_ops_aot_lib"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
+                cmake_build_args += ["--target", "custom_ops_aot_lib"]
+                cmake_build_args += ["--target", "quantized_ops_aot_lib"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
-            cmake_build_args += ["--target", "qnn_executorch_backend"]
-            cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
+                cmake_build_args += ["--target", "qnn_executorch_backend"]
+                cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_OPENVINO"):
-            cmake_build_args += ["--target", "openvino_backend"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_OPENVINO"):
+                cmake_build_args += ["--target", "openvino_backend"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
@@ -931,6 +1004,9 @@ class CustomBuild(build):
 setup_kwargs = {}
 if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
+    setup_kwargs["install_requires"] = _minimal_dependencies()
+else:
+    setup_kwargs["install_requires"] = _base_dependencies()
 
 
 setup(
