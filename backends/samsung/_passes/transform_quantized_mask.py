@@ -40,7 +40,11 @@ class TransformQuantizedMaskPass(ExportPass):
                 break
         if mask_node is None:
             return None
+        max_depth = len(nodes_in_pattern)
+        depth = 0
         while node.target != exir_ops.edge.aten.mul.Tensor:
+            if depth >= max_depth:
+                return None
             find_next = False
             for successor in list(node.users.keys()):
                 if successor.target in nodes_in_pattern:
@@ -49,6 +53,7 @@ class TransformQuantizedMaskPass(ExportPass):
                     break
             if not find_next:
                 return None
+            depth += 1
         return node
 
     def transform(
@@ -87,15 +92,19 @@ class TransformQuantizedMaskPass(ExportPass):
                     (mask_mul.args[0], custom_attr),
                 )
                 new_mul.meta["quantize_attrs"] = div_quant_args
+                if "val" in mask_mul.meta:
+                    new_mul.meta["val"] = mask_mul.meta["val"]
                 add.replace_input_with(mask_mul, new_mul)
 
             rsub_in = rsub_node.args[1]
             with graph_module.graph.inserting_before(add):
-                new_mul = graph_module.graph.create_node(
+                new_mul2 = graph_module.graph.create_node(
                     "call_function", exir_ops.edge.aten.mul.Tensor, (div_node, rsub_in)
                 )
-                new_mul.meta["quantize_attrs"] = div_quant_args
-                add.replace_input_with(div_node, new_mul)
+                new_mul2.meta["quantize_attrs"] = div_quant_args
+                if "val" in div_node.meta:
+                    new_mul2.meta["val"] = div_node.meta["val"]
+                add.replace_input_with(div_node, new_mul2)
             manual_mul_idx += 1
 
     def call(self, graph_module: GraphModule):

@@ -50,9 +50,7 @@ class AnnotateScalarParametersPass(ExportPass):
                 continue
             param_tensor = get_param_tensor(self.edge_program, param_tensor_node)
             if not param_tensor.shape:
-                scale = (
-                    float(param_tensor) if param_tensor > 0 else -float(param_tensor)
-                )
+                scale = abs(float(param_tensor))
             else:
                 continue
             q_dtype = quantize_attrs[QuantConstants.QUANT_KEY.quant_dtype]

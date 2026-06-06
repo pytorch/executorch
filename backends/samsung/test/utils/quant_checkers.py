@@ -70,6 +70,7 @@ CHECKER_REGISTER = {}
 def checker_register(checker_name: str):
     def _wrapper(cls):
         CHECKER_REGISTER[checker_name] = cls
+        return cls
 
     return _wrapper
 
@@ -97,9 +98,9 @@ class ClassifierChecker(CheckerBase):
         assert min(self.topktol.keys()) > 0, "Topk number must be positive int"
         max_topk = max(self.topktol.keys())
 
-        print("Check Quantization Classifier...")
+        logging.info("Check Quantization Classifier...")
 
-        correct = torch.Tensor([0] * max_topk, device="cpu")
+        correct = torch.zeros(max_topk, device="cpu")
         total = 0
         for batch_data, _ in self.dataset:
             batch_size = batch_data.shape[0]
@@ -119,14 +120,14 @@ class ClassifierChecker(CheckerBase):
         for topk_num, topk_tol in self.topktol.items():
             correct_num = correct[topk_num - 1]
             accuracy_score = correct_num / total * 100
-            print(accuracy_score)
+            logging.info("Top%d accuracy: %.4f", topk_num, accuracy_score)
             if accuracy_score < topk_tol:
 
                 error_messages.append(
                     msg_template.format(topk_num, topk_tol, accuracy_score)
                 )
         assert not error_messages, "\n".join(["\n", *error_messages])
-        print("Check Quantization Classifier Finished.")
+        logging.info("Check Quantization Classifier Finished.")
 
 
 @checker_register("super_resolution")
@@ -158,7 +159,7 @@ class SRChecker(CheckerBase):
         ), "PSNR need to be larger than {:.2f}, but get {:.2f}. ".format(
             self.threshold, avg_psnr
         )
-        print("Check Quantization Super Resolution Finished.")
+        logging.info("Check Quantization Super Resolution Finished.")
 
 
 @checker_register("segmentation")
@@ -196,7 +197,7 @@ class SegChecker(CheckerBase):
         ), "MIOU need to be larger than {:.2f}%, but get {:.2f}%. ".format(
             self.threshold, avg_miou_percentage
         )
-        print("Check Quantization Segmentation  Finished.")
+        logging.info("Check Quantization Segmentation Finished.")
 
 
 @checker_register("wave2letter")

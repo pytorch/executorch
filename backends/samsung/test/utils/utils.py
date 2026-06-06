@@ -9,7 +9,7 @@ import torch
 
 
 class TestConfig:
-    host_ip: str = "111.111.111.111"
+    host_ip: str = "0.0.0.0"
     chipset: str = "E9955"
 
 

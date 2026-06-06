@@ -83,7 +83,7 @@ class MobileBertFinetune:
         try:
             loaded_datasets = load_dataset("csv", data_files=cvs_file_path)
             raw_labels = loaded_datasets["train"].unique("Conference")
-        except:
+        except Exception:
             print(f"Error: the file '{cvs_file_path}' was not avaiable.")
 
         # Creating ClassLabel
@@ -560,7 +560,7 @@ def main(args):
         try:
             loaded_model = torch.export.load(model_path)
             model = loaded_model.module().to(device)
-        except:
+        except Exception:
             print(f"Error: the file '{model_path}' was not avaiable.")
 
         quant_out = model(*example_inputs)
