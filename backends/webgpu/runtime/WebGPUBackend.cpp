@@ -106,6 +106,12 @@ Error WebGPUBackend::execute(
   }
   graph->copy_inputs(inputs);
 
+  // Populate live SymInts (dynamic input_pos) from inputs before execute.
+  graph->update_symints_from_inputs(inputs);
+
+  // Re-derive dispatch state for changed SymInts (Vulkan propagate_resize).
+  graph->propagate_resize();
+
   // Execute the compute graph
   graph->execute();
 
