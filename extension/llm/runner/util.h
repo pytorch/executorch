@@ -19,19 +19,33 @@
 #include <sys/resource.h>
 #endif
 
-// The internal result variable is named et_unwrap_result_##var__ rather than
-// a fixed name so that multiple ET_UNWRAP_TOKENIZER calls in the same scope
-// do not collide with each other.
-#define ET_UNWRAP_TOKENIZER(var__, result__)                      \
-  auto et_unwrap_result_##var__ = (result__);                     \
-  if (!et_unwrap_result_##var__.ok()) {                           \
-    ET_LOG(                                                       \
-        Error,                                                    \
-        "Tokenizers error code %d",                               \
-        static_cast<uint32_t>(et_unwrap_result_##var__.error())); \
-    return ::executorch::runtime::Error::InvalidArgument;         \
-  }                                                               \
-  auto var__ = std::move(*et_unwrap_result_##var__);
+#define ET_UNWRAP_TOKENIZER(result__)                       \
+  ({                                                        \
+    auto tk_result__ = (result__);                          \
+    if (!tk_result__.ok()) {                                \
+      ET_LOG(                                               \
+          Error,                                            \
+          "Tokenizers error code %d",                       \
+          static_cast<int>(tk_result__.error()));           \
+      return ::executorch::runtime::Error::InvalidArgument; \
+    }                                                       \
+    std::move(*tk_result__);                                \
+  })
+
+// Portable (MSVC-safe) statement form of ET_UNWRAP_TOKENIZER. Declares var__
+// in the current scope and assigns the unwrapped value to it. The internal
+// result variable is named et_assign_result_##var__ rather than a fixed name
+// so that multiple calls in the same scope do not collide with each other.
+#define ET_ASSIGN_OR_RETURN_TOKENIZER(var__, result__)       \
+  auto et_assign_result_##var__ = (result__);                \
+  if (!et_assign_result_##var__.ok()) {                      \
+    ET_LOG(                                                  \
+        Error,                                               \
+        "Tokenizers error code %d",                          \
+        static_cast<int>(et_assign_result_##var__.error())); \
+    return ::executorch::runtime::Error::InvalidArgument;    \
+  }                                                          \
+  auto var__ = std::move(*et_assign_result_##var__)
 
 #define ET_CHECK_TK_OK_OR_RETURN_ERROR(result__, ...)                        \
   do {                                                                       \
