@@ -27,7 +27,14 @@ EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.topk.default: triton.topk,
 }
 
-_SPLITK_LKV_THRESHOLD = 2048
+# Decode (L_q==1) routes to split-K flash-decoding once L_kv >= this threshold.
+# At decode, pack-GQA collapses the standard kernel grid to CTA = batch *
+# n_kv_heads, which under-occupies the SMs; split-K partitions the KV sequence
+# across many more CTAs to fill them. Under faithful CUDA-graph timing (the
+# deployed --cuda_graph path) split-K wins ~1.2-20x for L_kv >= 256. The earlier
+# 2048 value was overfit to a non-cuda-graph microbenchmark, which charged
+# split-K a ~140us per-call alloc+launch overhead that cuda-graph removes.
+_SPLITK_LKV_THRESHOLD = 256
 
 
 class ReplaceEdgeOpWithTritonOpPass(PassBase):
@@ -89,11 +96,13 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
     def _pick_sdpa_kernel(node: Node):
         """Choose between standard SDPA and split-K flash-decoding.
 
-        Split-K partitions the KV sequence across many CTAs for better GPU
-        utilization at decode time (L_q=1). It wins when L_kv is large
-        (full-attention KV caches) but loses to the standard kernel for
-        small L_kv (sliding-window ring buffers) due to the overhead of
-        allocating partial buffers and running the reduction kernel.
+        At decode (L_q==1) the standard pack-GQA kernel's grid collapses to
+        CTA = batch * n_kv_heads, under-occupying the SMs. Split-K partitions
+        the KV sequence across many CTAs to fill the GPU. Under CUDA-graph
+        timing (the deployed --cuda_graph path) split-K wins ~1.2-20x for
+        L_kv >= 256, so we route decode to split-K whenever
+        L_kv >= _SPLITK_LKV_THRESHOLD. Prefill (L_q>1) and non-power-of-2 head
+        dims always use the standard kernel.
         """
         q_shape = node.args[0].meta["val"].shape
         k_shape = node.args[1].meta["val"].shape
@@ -104,7 +113,7 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             isinstance(L_q, int)
             and L_q == 1
             and isinstance(L_kv, int)
-            and L_kv > _SPLITK_LKV_THRESHOLD
+            and L_kv >= _SPLITK_LKV_THRESHOLD
             and D > 0
             and (D & (D - 1)) == 0  # power of 2
         ):
