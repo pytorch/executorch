@@ -125,4 +125,7 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
   add_webgpu_native_test(
     webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
   )
+  add_webgpu_native_test(
+    webgpu_update_cache_test test/native/test_update_cache.cpp
+  )
 endif()
