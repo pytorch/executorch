@@ -39,6 +39,7 @@ PTE_MODEL="/tmp/webgpu_add_test.pte"
 PTE_CHAINED_MODEL="/tmp/webgpu_chained_add_test.pte"
 RMS_NORM_DIR="/tmp/rmsn"
 DISPATCH_ORDER_DIR="/tmp/dispatch_order"
+PTE_UPDATE_CACHE_MODEL="/tmp/webgpu_update_cache_test.pte"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
@@ -55,6 +56,37 @@ from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rm
 export_rms_norm_cases('${RMS_NORM_DIR}')
 " || { echo "WARN: rms_norm export failed; skipping rms_norm native test"; RMS_NORM_PYTEST_OK=0; }
 fi
+
+echo "=== Export update_cache model ==="
+UPDATE_CACHE_OK=1
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_update_cache import export_update_cache_model
+export_update_cache_model('${PTE_UPDATE_CACHE_MODEL}')
+" || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
+
+echo "=== Export SDPA sweep models (sdpa_<name>.pte + .golden.bin to /tmp) ==="
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_all_sdpa_models
+export_all_sdpa_models('/tmp')
+" || echo "WARN: sdpa export failed; the native test self-skips configs whose .pte is absent"
+
+echo "=== Export SDPA replay sequences (sdpa_<seq>_step<t>_S<S>_pos<p>.* to /tmp) ==="
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_replay_sequences
+export_replay_sequences('/tmp')
+" || echo "WARN: sdpa replay export failed; the native test self-skips absent sequences"
+
+echo "=== Export SDPA dynamic-input_pos decode (sdpa_dyn_<name>.* to /tmp) ==="
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_dynamic_decode
+export_dynamic_decode('/tmp')
+" || echo "WARN: sdpa dynamic export failed; the native test self-skips when absent"
+
+echo "=== Export SDPA in-graph-cache decode (sdpa_incache_<name>.* to /tmp) ==="
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_incache_decode
+export_incache_decode('/tmp')
+" || echo "WARN: sdpa in-graph-cache export failed; the native test self-skips when absent"
 
 # ── Step 3: Native build + test (Dawn + SwiftShader) ─────────────────────────
 
@@ -86,9 +118,17 @@ cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_dispatch_order_test -j${NPRO
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_scratch_buffer_test -j${NPROC}
 
 echo "=== Step 4: Run native tests ==="
+UPDATE_CACHE_ENV_VAR=""
+if [[ "${UPDATE_CACHE_OK}" == "1" && -f "${PTE_UPDATE_CACHE_MODEL}" ]]; then
+  UPDATE_CACHE_ENV_VAR="WEBGPU_TEST_UPDATE_CACHE_MODEL=${PTE_UPDATE_CACHE_MODEL}"
+else
+  echo "(skipping update_cache native test: export did not complete)"
+fi
 env \
     WEBGPU_TEST_MODEL="${PTE_MODEL}" \
     WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
+    ${UPDATE_CACHE_ENV_VAR} \
+    WEBGPU_TEST_SDPA_DIR=/tmp/ \
     "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_native_test"
 
 if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
