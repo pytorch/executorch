@@ -347,7 +347,7 @@ Result<int64_t> LhdTokenGenerator::generate(
       shifted_pos++;
 
       // print the token as string, decode it with the Tokenizer object
-      ET_UNWRAP_TOKENIZER(
+      ET_ASSIGN_OR_RETURN_TOKENIZER(
           decoded_token__, this->tokenizer_->decode(prev_token, cur_token));
       token_callback(decoded_token__);
 
