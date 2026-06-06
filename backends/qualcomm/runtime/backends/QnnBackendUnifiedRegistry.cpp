@@ -13,6 +13,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/gpu/GpuDevice.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackend.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpDevice.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackend.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiDevice.h>
 
 #include <string>
 
@@ -42,7 +44,8 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
 
   // Extract relevant parameters from options for creation and validation
   std::string current_lib_path = options->library_path()->str();
-  QnnExecuTorchLogLevel current_log_level = get_option(options->log_level());
+  QnnExecuTorchLogLevel current_log_level =
+      get_option(options->log_level(), QNN_RUNTIME_LOG_LEVEL);
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
 
@@ -54,6 +57,10 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
       }
       case QnnExecuTorchBackendType::kGpuBackend: {
         current_lib_path = gpu_library_name_;
+        break;
+      }
+      case QnnExecuTorchBackendType::kLpaiBackend: {
+        current_lib_path = lpai_library_name_;
         break;
       }
       case QnnExecuTorchBackendType::kDspBackend:
@@ -118,6 +125,16 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
       device = std::make_unique<GpuDevice>(implementation.get(), logger.get());
       break;
     }
+    case QnnExecuTorchBackendType::kLpaiBackend: {
+      auto lpai_options = options->backend_options()->lpai_options();
+      backend = std::make_unique<LpaiBackend>(
+          implementation.get(),
+          logger.get(),
+          options->soc_info(),
+          lpai_options);
+      device = std::make_unique<LpaiDevice>(implementation.get(), logger.get());
+      break;
+    }
     case QnnExecuTorchBackendType::kDspBackend:
     case QnnExecuTorchBackendType::kUndefinedBackend:
     default:
@@ -135,8 +152,15 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
   if (backend->VerifyQNNSDKVersion() != Error::Ok) {
     return Error::Internal;
   }
+  // 5. Create QnnSystemImplementation and load qnn library
+  std::unique_ptr<QnnSystemImplementation> system_implementation =
+      std::make_unique<QnnSystemImplementation>("libQnnSystem.so");
+  ret = system_implementation->Load();
+  ET_CHECK_OR_RETURN_ERROR(
+      ret == Error::Ok, Internal, "Fail to load Qnn system library");
 
   bundle->implementation = std::move(implementation);
+  bundle->system_implementation = std::move(system_implementation);
   bundle->qnn_logger_ptr = std::move(logger);
   bundle->qnn_backend_ptr = std::move(backend);
   bundle->qnn_device_ptr = std::move(device);

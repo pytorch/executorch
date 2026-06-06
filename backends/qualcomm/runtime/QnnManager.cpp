@@ -7,12 +7,12 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
-#include <executorch/extension/tensor/tensor.h>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
@@ -57,7 +57,7 @@ QnnManager::QnnManager(
   QnnExecuTorchBackendType backend_type =
       options->backend_options()->backend_type();
 
-  if (get_option(options_->log_level()) >=
+  if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
       QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
         "soc_model in soc_info: %s",
@@ -69,11 +69,12 @@ QnnManager::QnnManager(
     QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
         "log_level: %s",
-        EnumNameQnnExecuTorchLogLevel(get_option(options_->log_level())));
+        EnumNameQnnExecuTorchLogLevel(
+            get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL)));
     QNN_EXECUTORCH_LOG_INFO(
         "profile_level: %s",
         EnumNameQnnExecuTorchProfileLevel(
-            get_option(options_->profile_level())));
+            get_option(options_->profile_level(), QNN_RUNTIME_PROFILE_LEVEL)));
     QNN_EXECUTORCH_LOG_INFO(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
@@ -129,7 +130,7 @@ Error QnnManager::RegisterIonMem(
     return Error::Internal;
   } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
                  tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (get_option(options_->log_level()) >=
+    if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
         QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
@@ -159,7 +160,7 @@ Error QnnManager::RegisterCustomMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
           tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (get_option(options_->log_level()) >=
+    if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
         QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
@@ -183,7 +184,7 @@ Error QnnManager::RegisterCustomMem(
   // This applies when running llama in lookahead mode with the same AR-N model
   // handling both the prompt processor and the token generator.
   if (pre_registered_handle != nullptr) {
-    if (get_option(options_->log_level()) >=
+    if (get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL) >=
         QnnExecuTorchLogLevel::kLogLevelInfo) {
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s found a pre-registered memHandle.",
@@ -246,6 +247,7 @@ Error QnnManager::InitContext(
         options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
         backend_bundle_ptr_->implementation.get(),
+        backend_bundle_ptr_->system_implementation.get(),
         backend_bundle_ptr_->qnn_backend_ptr.get(),
         backend_bundle_ptr_->qnn_device_ptr.get(),
         qnn_context_blob_,
@@ -279,7 +281,10 @@ Error QnnManager::InitContext(
         BackendInitializeState::INITIALIZED;
   }
 
-  if (IsOnlinePrepare()) {
+  if (IsOnlinePrepare() &&
+      backend_params_ptr_->qnn_backend_cache_ptr_->GetCacheState() ==
+          QnnBackendCache::SERIALIZE) {
+    // Set up DLC environment at AOT time
     // Check whether the QNN version supports the DLC format.
     Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
     backend_bundle_ptr_->implementation->GetQnnInterface()
@@ -304,6 +309,7 @@ Error QnnManager::InitContextCache() {
         options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
         backend_bundle_ptr_->implementation.get(),
+        backend_bundle_ptr_->system_implementation.get(),
         backend_bundle_ptr_->qnn_backend_ptr.get(),
         backend_bundle_ptr_->qnn_device_ptr.get(),
         qnn_context_blob_,
@@ -376,8 +382,7 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
             mutable_buffer_id_to_memory_map.end()) {
       // Fill the same memory for I/O of mutable buffer
       tensor_wrapper->FillDataBuffer(
-          mutable_buffer_id_to_memory_map[mutable_buffer_id],
-          false /* copy_data */);
+          mutable_buffer_id_to_memory_map[mutable_buffer_id]);
     }
     output_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
@@ -427,11 +432,24 @@ Error QnnManager::Execute(
           QNN_TENSOR_VER_PTR(output_tensor)->dimensions +
               QNN_TENSOR_VER_PTR(output_tensor)->rank);
 
-      auto dump_tensor = executorch::extension::from_blob(
-          QNN_TENSOR_VER_PTR(output_tensor)->clientBuf.data,
-          sizes,
+      // Compute contiguous strides from sizes (e.g. [2,3,4] -> [12,4,1]).
+      std::vector<executorch::aten::StridesType> stride_size(sizes.size());
+      if (!sizes.empty()) {
+        stride_size.back() = 1;
+        for (int i = sizes.size() - 2; i >= 0; --i) {
+          stride_size[i] = stride_size[i + 1] * sizes[i + 1];
+        }
+      }
+      // Avoid using from_blob as it significantly increases shared library
+      // size.
+      executorch::aten::TensorImpl tensor_impl(
           qnn_dtype_to_scalar_type_[QNN_TENSOR_VER_PTR(output_tensor)
-                                        ->dataType]);
+                                        ->dataType],
+          sizes.size(),
+          sizes.data(),
+          QNN_TENSOR_VER_PTR(output_tensor)->clientBuf.data,
+          nullptr,
+          stride_size.data());
 
       executorch::runtime::event_tracer_log_output_delegate<
           executorch::aten::Tensor>(
@@ -439,7 +457,7 @@ Error QnnManager::Execute(
           QNN_TENSOR_VER_PTR(output_tensor)->name,
           /*delegate_debug_id=*/
           static_cast<executorch::runtime::DebugHandle>(-1),
-          *dump_tensor);
+          executorch::aten::Tensor(&tensor_impl));
     }
   }
 
@@ -450,7 +468,7 @@ Error QnnManager::ProfileExecuteData(
     const std::string& graph_name,
     executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  if (get_option(options_->profile_level()) !=
+  if (get_option(options_->profile_level(), QNN_RUNTIME_PROFILE_LEVEL) !=
       QnnExecuTorchProfileLevel::kProfileOff) {
     error = backend_params_ptr_->qnn_graph_ptr_->ProfileExecuteData(
         graph_name, event_tracer);
@@ -464,9 +482,9 @@ Error QnnManager::ProfileExecuteData(
 }
 
 void QnnManager::Destroy() {
+  qnn_dlc_manager_->Destroy();
   backend_params_ptr_.reset(new BackendConfigParameters());
   backend_bundle_ptr_.reset(new QnnBackendBundle());
-  qnn_dlc_manager_->Destroy();
 }
 
 void QnnManager::DestroyContext() {
@@ -527,12 +545,25 @@ Error QnnManager::GetContextBinary(
 
 Error QnnManager::CompileDlc() {
   Qnn_ErrorHandle_t error;
-  auto qnn_dlc_graph_info = qnn_dlc_manager_->GetQnnDlcGraphInfoPtr();
-  uint32_t qnn_dlc_graph_info_num = qnn_dlc_manager_->GetQnnDlcGraphInfoNum();
-  for (uint32_t i = 0; i < qnn_dlc_graph_info_num; ++i) {
-    auto& graphInfo = (*qnn_dlc_graph_info)[i];
+  auto graphs = qnn_dlc_manager_->GetQnnDlcGraphInfoPtr();
+  uint32_t num_graphs = qnn_dlc_manager_->GetQnnDlcGraphInfoNum();
+  for (uint32_t i = 0; i < num_graphs; ++i) {
+    auto& graphInfo = graphs[i].graphInfoV1;
+    Qnn_GraphHandle_t graphHandle;
+    error = backend_bundle_ptr_->implementation->GetQnnInterface()
+                .qnn_graph_retrieve(
+                    backend_params_ptr_->qnn_context_ptr_->GetHandle(),
+                    graphInfo.graphName,
+                    &graphHandle);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to retrieve graph %s. Error %d.",
+          graphInfo.graphName,
+          QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
     backend_params_ptr_->qnn_graph_ptr_->SetGraphHandle(
-        graphInfo.graphName, graphInfo.graph);
+        graphInfo.graphName, graphHandle);
     error =
         backend_params_ptr_->qnn_graph_ptr_->GraphFinalize(graphInfo.graphName);
     if (error != QNN_SUCCESS) {
@@ -547,9 +578,9 @@ Error QnnManager::CompileDlc() {
 
     // Mapping memory address for the input and output of mutable buffer
     std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
-    for (int i = 0; i < graphInfo.numInputTensors; ++i) {
-      auto tw = CreateTensorWrapper(graphInfo.inputTensors[i]);
-      tw->UpdateQnnTensorMeta(graphInfo.inputTensors[i]);
+    for (uint32_t i = 0; i < graphInfo.numGraphInputs; ++i) {
+      auto tw = CreateTensorWrapper(graphInfo.graphInputs[i]);
+      tw->UpdateQnnTensorMeta(graphInfo.graphInputs[i]);
 
       int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
       if (mutable_buffer_id != -1) {
@@ -560,17 +591,15 @@ Error QnnManager::CompileDlc() {
       }
       graph_inputs.push_back(tw);
     }
-    for (int i = 0; i < graphInfo.numOutputTensors; ++i) {
-      auto tw = CreateTensorWrapper(graphInfo.outputTensors[i]);
-      tw->UpdateQnnTensorMeta(graphInfo.outputTensors[i]);
+    for (uint32_t i = 0; i < graphInfo.numGraphOutputs; ++i) {
+      auto tw = CreateTensorWrapper(graphInfo.graphOutputs[i]);
+      tw->UpdateQnnTensorMeta(graphInfo.graphOutputs[i]);
       int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
       if (mutable_buffer_id != -1 &&
           mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=
               mutable_buffer_id_to_memory_map.end()) {
         // Fill the same memory for I/O of mutable buffer
-        tw->FillDataBuffer(
-            mutable_buffer_id_to_memory_map[mutable_buffer_id],
-            false /* copy_data */);
+        tw->FillDataBuffer(mutable_buffer_id_to_memory_map[mutable_buffer_id]);
       }
       graph_outputs.push_back(tw);
     }

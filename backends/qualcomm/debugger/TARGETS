@@ -15,7 +15,8 @@ runtime.python_library(
     name = "qnn_intermediate_debugger",
     srcs = [
         "format_outputs.py",
-        "metrics_evaluator.py",
+        "qcom_numerical_comparator_base.py",
+        "qcom_numerical_comparator_sample.py",
         "qnn_intermediate_debugger.py",
     ],
     deps = [

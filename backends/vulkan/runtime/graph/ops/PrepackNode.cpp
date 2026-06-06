@@ -44,6 +44,9 @@ PrepackNode::PrepackNode(
       push_constants_(push_constants) {
   graph.update_descriptor_counts(shader, /*execute = */ false);
   graph.update_descriptor_counts(noop_shader_, /*execute = */ false);
+  if (!graph.val_is_none(tref)) {
+    graph.get_tref(tref)->prepack_use_count++;
+  }
 }
 
 api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
@@ -100,9 +103,10 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
     }
   }
 
-  // Once the staging buffer is copied, if the TensorRef owns a FreeableBuffer,
-  // it can be freed.
-  tref->free_buffer();
+  if (--tref->prepack_use_count == 0) {
+    tref->free_buffer();
+  }
+
   return staging;
 }
 

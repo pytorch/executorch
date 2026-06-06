@@ -25,7 +25,7 @@ Our projection on the frequency of these use cases are:
 
 For level 1 uses cases (creating one-to-X mappings, performing forwards iterations,
 and looking at local node information), we can utilize a helper class called
-[`ExportPass`](https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/pass_base.py#L44).
+[`ExportPass`](https://github.com/pytorch/executorch/blob/main/exir/pass_base.py#L655).
 This is an
 [interpreter-based](https://pytorch.org/docs/stable/fx.html#the-interpreter-pattern)
 way where we execute each node and recreate the graph except with
@@ -35,7 +35,7 @@ metadata such as stack trace, FakeTensor values, and torch.nn.Module hierarchy
 are preserved and updated depending on the transformations made.
 
 To implement this pass, we can create a subclass of
-[`ExportPass`](https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/pass_base.py#L44)
+[`ExportPass`](https://github.com/pytorch/executorch/blob/main/exir/pass_base.py#L655)
 and implement the exposed functions.  When called with a graph module, it will
 run the graph module and create a new graph containing the changes specified by
 the pass. This means that the graph module passed in must be runnable on CPU,
@@ -171,7 +171,7 @@ class ScalarToTensorPass(ExportPass):
 ### Level 2
 
 For creating many-to-one mappings, we can utilize FX's [subgraph
-rewriter](https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/subgraph_rewriter.py#L77).
+rewriter](https://github.com/pytorch/pytorch/blob/main/torch/fx/subgraph_rewriter.py#L96).
 Given a `pattern`, it creates a subgraph of operators matching to the pattern,
 and then replaces each matched subgraph with the `replacement`.
 
@@ -229,7 +229,7 @@ class ReplacedPatterns:
 ### Level 3
 
 For the third way of creating a pass, we can utilize the most basic
-[`PassBase`](https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/infra/pass_base.py#L22).
+[`PassBase`](https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/infra/pass_base.py#L28).
 To create a pass, we can subclass this and implement the function `call` with
 the pass contents. Additionally, we can implement the functions `requires` and
 `ensures` which will be called before and after the function `call`. Note that
@@ -315,7 +315,7 @@ with IR Spec, so be careful when using them.
 
 For finding subgraphs within a graph that match a specific pattern, we can
 utilize FX's
-[`SubgraphMatcher`](https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/utils/matcher_utils.py#L51).
+[`SubgraphMatcher`](https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/utils/matcher_utils.py#L63).
 
 Class Attributes:
 
@@ -382,7 +382,7 @@ class InternalMatch():
 
 To find the largest subgraphs of nodes that support a specific invariant, we can
 utilize FX's
-[`CapabilityBasedPartitioner`](https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/infra/partitioner.py#L34C1-L34C1).
+[`CapabilityBasedPartitioner`](https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/infra/partitioner.py#L65).
 
 Class Attributes
 
@@ -399,14 +399,14 @@ Class Attributes
    that are allowed to be in a single node partition.
 
 The
-[`OperatorSupportBase`](https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/operator_support.py#L28)
+[`OperatorSupportBase`](https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/operator_support.py#L37)
 class is used by
 the partitioner to determine if a specific node in the graph belongs in the
 partition. This is done by overriding the `is_node_supported` function. You can
-chain multiple `OperatorSuppportBase` by using
-[`chain`](https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/operator_support.py#L150)(which
+chain multiple `OperatorSupportBase` by using
+[`chain`](https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/operator_support.py#L159)(which
 returns False if any of the OperatorSupportBase return False) and
-[`any_chain`](https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/operator_support.py#L164)
+[`any_chain`](https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/operator_support.py#L172)
 (which returns True if any of the OperatorSupportBase returns True).
 
 Consider the following example:
@@ -440,7 +440,7 @@ not allow `call_module` nodes.
 ### Combined
 
 We also provide a combined helper function:
-[`generate_pattern_op_partitions`](https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/canonical_partitioners/pattern_op_partitioner.py#L59)
+[`generate_pattern_op_partitions`](https://github.com/pytorch/executorch/blob/main/exir/backend/canonical_partitioners/pattern_op_partitioner.py#L107)
 
 Args:
 * `graph_module (fx.GraphModule)`: Module that we want to partition

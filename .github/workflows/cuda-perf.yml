@@ -1,20 +1,17 @@
 name: cuda-perf
 
 on:
-  schedule:
-    - cron: 0 8 * * *  # 12am / 1am PST (8am UTC)
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/cuda-perf/*
   pull_request:
     paths:
       - .github/workflows/cuda-perf.yml
       - .ci/scripts/cuda_benchmark.py
-      - .ci/scripts/export_model_artifact.sh
-      - .ci/scripts/test_model_e2e.sh
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/cuda-perf.yml
-      - .ci/scripts/cuda_benchmark.py
+      - .ci/scripts/cuda_perf_prompts/**
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
   workflow_dispatch:
@@ -23,29 +20,47 @@ on:
         description: Models to be benchmarked (comma-separated HuggingFace model IDs)
         required: false
         type: string
-        default: openai/whisper-small
       quantizations:
         description: Quantization types (comma-separated)
         required: false
         type: string
-        default: non-quantized
       num_runs:
         description: Number of benchmark runs per model
         required: false
         type: string
         default: "50"
-      run_all_models:
-        description: Run all available models (overrides models input)
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   set-parameters:
+    needs: [changed-files, run-decision]
+    # Path-filtered: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch perf-relevant paths skip
+    # this whole workflow on non-sampled commits. Sampling preserves
+    # perf time-series at every 4th commit (vs every commit pre-PR).
+    if: |
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     runs-on: ubuntu-22.04
     outputs:
       benchmark_configs: ${{ steps.set-parameters.outputs.benchmark_configs }}
@@ -60,48 +75,20 @@ jobs:
         id: set-parameters
         shell: bash
         env:
-          # All available models and quantizations
-          ALL_MODELS: 'mistralai/Voxtral-Mini-3B-2507,openai/whisper-small,openai/whisper-medium,openai/whisper-large-v3-turbo,google/gemma-3-4b-it,nvidia/parakeet-tdt'
+          ALL_MODELS: 'mistralai/Voxtral-Mini-3B-2507,openai/whisper-small,openai/whisper-medium,openai/whisper-large-v3-turbo,google/gemma-3-4b-it,nvidia/parakeet-tdt,SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4'
           ALL_QUANTIZATIONS: 'non-quantized,quantized-int4-tile-packed,quantized-int4-weight-only'
           NUM_RUNS: ${{ inputs.num_runs || '50' }}
-          RUN_ALL_MODELS: ${{ inputs.run_all_models || 'false' }}
-          RANDOM_MODEL: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'true' || 'false' }}
         run: |
           set -eux
 
           MODELS="${{ inputs.models }}"
           QUANTIZATIONS="${{ inputs.quantizations }}"
 
-          # If run_all_models is true, use all models
-          if [ "$RUN_ALL_MODELS" = "true" ]; then
-            MODELS="$ALL_MODELS"
-            echo "Running all available models: $MODELS"
-          # For non-schedule events (PR, manual trigger without inputs), randomly select one model and one quantization
-          elif [ -z "$MODELS" ] && [ "${{ github.event_name }}" != "schedule" ]; then
-            # Split all models into array
-            IFS=',' read -ra ALL_MODEL_ARRAY <<< "$ALL_MODELS"
-            # Randomly select one model
-            RANDOM_MODEL_INDEX=$((RANDOM % ${#ALL_MODEL_ARRAY[@]}))
-            MODELS="${ALL_MODEL_ARRAY[$RANDOM_MODEL_INDEX]}"
-            echo "Randomly selected model for PR/push: $MODELS"
-          elif [ -z "$MODELS" ]; then
-            # Schedule event: use all models
+          # Use all models/quantizations unless overridden by workflow_dispatch
+          if [ -z "$MODELS" ]; then
             MODELS="$ALL_MODELS"
           fi
-
-          # If run_all_models is true, use all quantizations
-          if [ "$RUN_ALL_MODELS" = "true" ]; then
-            QUANTIZATIONS="$ALL_QUANTIZATIONS"
-            echo "Running all available quantizations: $QUANTIZATIONS"
-          elif [ -z "$QUANTIZATIONS" ] && [ "${{ github.event_name }}" != "schedule" ]; then
-            # Split all quantizations into array
-            IFS=',' read -ra ALL_QUANT_ARRAY <<< "$ALL_QUANTIZATIONS"
-            # Randomly select one quantization
-            RANDOM_QUANT_INDEX=$((RANDOM % ${#ALL_QUANT_ARRAY[@]}))
-            QUANTIZATIONS="${ALL_QUANT_ARRAY[$RANDOM_QUANT_INDEX]}"
-            echo "Randomly selected quantization for PR/push: $QUANTIZATIONS"
-          elif [ -z "$QUANTIZATIONS" ]; then
-            # Schedule event: use all quantizations
+          if [ -z "$QUANTIZATIONS" ]; then
             QUANTIZATIONS="$ALL_QUANTIZATIONS"
           fi
 
@@ -109,19 +96,15 @@ jobs:
           IFS=',' read -ra MODEL_ARRAY <<< "$MODELS"
           IFS=',' read -ra QUANT_ARRAY <<< "$QUANTIZATIONS"
 
-          # If random model is requested (for main branch push), select one random model from the already selected models
-          if [ "$RANDOM_MODEL" = "true" ] && [ ${#MODEL_ARRAY[@]} -gt 1 ]; then
-            RANDOM_INDEX=$((RANDOM % ${#MODEL_ARRAY[@]}))
-            MODELS="${MODEL_ARRAY[$RANDOM_INDEX]}"
-            MODEL_ARRAY=("$MODELS")
-            echo "Random model selected for main branch push: $MODELS"
-          fi
-
-          # Generate benchmark configs
+          # Generate benchmark configs (skip invalid model/quant combinations)
           CONFIGS='{"include":['
           FIRST=true
           for MODEL in "${MODEL_ARRAY[@]}"; do
             for QUANT in "${QUANT_ARRAY[@]}"; do
+              # Qwen3.5 MoE only supports quantized-int4-tile-packed
+              if [[ "$MODEL" == *"Qwen3.5-35B-A3B"* ]] && [ "$QUANT" != "quantized-int4-tile-packed" ]; then
+                continue
+              fi
               if [ "$FIRST" = true ]; then
                 FIRST=false
               else
@@ -152,9 +135,9 @@ jobs:
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       upload-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}
@@ -162,14 +145,17 @@ jobs:
       script: |
         set -eux
         echo "::group::Setup ExecuTorch"
+        # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
+        export USE_MKL=OFF
         ./install_executorch.sh
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]<1.0" accelerate
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        pip install -U "huggingface_hub[cli]>=1.2.1,<2.0" accelerate "optimum~=2.0.0" "transformers==5.0.0rc1"
+        HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
+        hf auth login --token "$HF_AUTH_TOKEN"
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
         echo "::group::Exporting model ${{ matrix.model }} with quantization ${{ matrix.quant }}"
@@ -186,9 +172,26 @@ jobs:
   benchmark-cuda:
     name: benchmark-cuda
     needs:
+      - changed-files
+      - run-decision
       - set-parameters
       - export-models
-    if: always()
+    # Inherit the gate from set-parameters/export-models (they cascade-
+    # skip when the gate evaluates false). `always()` keeps benchmark-
+    # cuda running even when some export-models matrix cells fail —
+    # but only if the gate itself is open. Without the explicit gate
+    # here, `always()` would fire benchmark-cuda even when set-
+    # parameters was gated out.
+    if: |
+      always() &&
+      (
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -198,9 +201,9 @@ jobs:
       fail-fast: false
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
       gpu-arch-type: cuda
-      gpu-arch-version: "12.6"
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       download-artifact: model-${{ matrix.model_safe }}-${{ matrix.quant }}
@@ -299,6 +302,17 @@ jobs:
             RUNNER_CMD="$RUNNER --model_path model_artifacts/model.pte --data_path model_artifacts/aoti_cuda_blob.ptd --audio_path $AUDIO --tokenizer_path $TOKENIZER"
             MODEL_NAME="parakeet_${{ matrix.quant }}"
             ;;
+          SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
+            RUNNER="cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+            TOKENIZER="model_artifacts/tokenizer.json"
+            # Use a checked-in long prompt (>1000 tokens) for benchmarking. A
+            # static, meaningful prompt avoids the degenerate / repetitive
+            # outputs that can result from synthetic prompts built by
+            # repeating the same sentence.
+            PROMPT_FILE=".ci/scripts/cuda_perf_prompts/qwen3_5_moe_long_prompt.txt"
+            RUNNER_CMD="$RUNNER --model_path model_artifacts/model.pte --data_path model_artifacts/aoti_cuda_blob.ptd --tokenizer_path $TOKENIZER --prompt_file $PROMPT_FILE --max_new_tokens 512 --temperature 0"
+            MODEL_NAME="qwen3_5_moe_${{ matrix.quant }}"
+            ;;
           *)
             echo "Error: Unsupported model '${{ matrix.model }}'"
             exit 1
@@ -346,8 +360,21 @@ jobs:
 
   upload-benchmark-results:
     needs:
+      - changed-files
+      - run-decision
       - benchmark-cuda
-    if: always()
+    # Same gate as benchmark-cuda — skip the upload when the gate
+    # closed (no benchmarks ran).
+    if: |
+      always() &&
+      (
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-perf.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_benchmark.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/cuda_perf_prompts') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     runs-on: ubuntu-22.04
     environment: upload-benchmark-results
     permissions:

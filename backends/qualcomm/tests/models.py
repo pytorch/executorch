@@ -263,6 +263,31 @@ class Atan(torch.nn.Module):
         return torch.atan(x)
 
 
+class Atan2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.atan2(x, y)
+
+
+class Atan2MultiNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x1, y1, x2, y2):
+        return torch.atan2(x1, y1), torch.atan2(x2, y2)
+
+
+class AvgPool1D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pool = torch.nn.AvgPool1d(kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.pool(x)
+
+
 class AvgPool3d(torch.nn.Module):
     def __init__(self, kernel_size, stride, padding, ceil_mode, count_include_pad):
         super().__init__()
@@ -391,6 +416,15 @@ class Ceil(torch.nn.Module):
         return torch.ceil(x)
 
 
+class ChannelShuffle(torch.nn.Module):
+    def __init__(self, groups):
+        super().__init__()
+        self.channel_shuffle = torch.nn.ChannelShuffle(groups)
+
+    def forward(self, x):
+        return self.channel_shuffle(x)
+
+
 class Chunk(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -504,6 +538,25 @@ class ContextBinaryExample(torch.nn.Module):
             "x": torch.randn((1, 3, 3, 3)),
             "y": torch.randn((2, 1, 5, 5)),
         }
+
+
+class Conv1dBn(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(
+            in_channels=2048,
+            out_channels=2048,
+            kernel_size=15,
+            groups=2048,
+            bias=bias,
+        )
+        self.batch_norm = torch.nn.BatchNorm1d(2048)
+        self.eval()
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.batch_norm(x)
+        return x
 
 
 class Conv1dSequential(torch.nn.Module):
@@ -656,6 +709,16 @@ class Conv2dFlip(torch.nn.Module):
         return torch.flip(x, self.dims)
 
 
+class Conv2dLeakyReLU(torch.nn.Module):
+    def __init__(self, negative_slope=0.01):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        self.leaky_relu = torch.nn.LeakyReLU(negative_slope)
+
+    def forward(self, x):
+        return self.leaky_relu(self.conv(x))
+
+
 class Conv2dMaxPool2d(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -670,6 +733,16 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
     def forward(self, x):
         return self.pool(self.conv(x))
+
+
+class Conv2dReLU(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 32, kernel_size=3, padding=1)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.conv(x))
 
 
 class Conv2dSequential(torch.nn.Module):
@@ -800,6 +873,31 @@ class Conv3dSequential(torch.nn.Module):
 
     def forward(self, x):
         return self.second(self.first(x))
+
+
+class ConvFull(torch.nn.Module):
+    def __init__(self, fill, full_shape):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(8, 16, 3, padding=1)
+        self.fill = fill
+        self.full_shape = full_shape
+
+    def forward(self, x):
+        y = self.conv(x)
+        c = torch.full(self.full_shape, self.fill, dtype=y.dtype)
+        return torch.cat([y, c], dim=1)
+
+
+class ConvFullLike(torch.nn.Module):
+    def __init__(self, fill):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(8, 16, 3, padding=1)
+        self.fill = fill
+
+    def forward(self, x):
+        y = self.conv(x)
+        c = torch.full_like(y, self.fill)
+        return torch.cat([y, c], dim=1)
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
@@ -1015,6 +1113,15 @@ class ExpM1(torch.nn.Module):
 
     def forward(self, x):
         return torch.special.expm1(x)
+
+
+class Fill(torch.nn.Module):
+    def __init__(self, value):
+        super().__init__()
+        self.value = value
+
+    def forward(self, x):
+        return torch.add(x, torch.fill(x, self.value))
 
 
 class Flip(torch.nn.Module):
@@ -1462,6 +1569,16 @@ class Linear(torch.nn.Module):
         return self.linear(x)
 
 
+class LinearLeakyReLU(torch.nn.Module):
+    def __init__(self, negative_slope=0.01):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 32)
+        self.leaky_relu = torch.nn.LeakyReLU(negative_slope)
+
+    def forward(self, x):
+        return self.leaky_relu(self.linear(x))
+
+
 class LinearNonConstantWeight(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1811,6 +1928,15 @@ class PowTensorScalar(torch.nn.Module):
         return torch.pow(x, self.exponent)
 
 
+class PowScalar(torch.nn.Module):
+    def __init__(self, base=2.0):
+        super().__init__()
+        self._base = base
+
+    def forward(self, x):
+        return torch.ops.aten.pow.Scalar(self._base, x)
+
+
 class PReLUDefault(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1837,12 +1963,47 @@ class Rand(torch.nn.Module):
         return torch.rand_like(x) + x
 
 
+class Randn(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.randn_like(x) + x
+
+
 class Reciprocal(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
         return torch.reciprocal(x)
+
+
+class ReflectionPad1d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad1d(2)
+
+    def forward(self, x):
+        return self.pad(x)
+
+
+class ReflectionPad2d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad2d(2)
+
+    def forward(self, x):
+        return self.pad(x)
+
+
+class ReflectionPad2dAsymmetric(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad2d((1, 2, 3, 1))
+
+    def forward(self, x):
+        return self.pad(x)
 
 
 class Relu(torch.nn.Module):
@@ -1869,6 +2030,30 @@ class Repeat(torch.nn.Module):
 
     def forward(self, x):
         return x.repeat(1, 2, 3, 4)
+
+
+class RemainderScalar(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.remainder(x, 3.0)
+
+
+class RemainderTensor(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.remainder(x, y)
+
+
+class RemainderMultiNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.remainder(x, 3.0), torch.remainder(x, y)
 
 
 class ReWriteObs(torch.nn.Module):
@@ -2025,6 +2210,15 @@ class ScaledDotProductAttention(torch.nn.Module):
         return attn_output
 
 
+class ScatterSrc(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter(data, self.dim, index, src)
+
+
 class SelectCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2065,13 +2259,21 @@ class Sin(torch.nn.Module):
 
 
 class SimpleModel(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size=3):
         super().__init__()
         kernel_sz = 32
-        self.conv1 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
-        self.conv2 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
-        self.conv3 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
-        self.conv4 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
+        self.conv1 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=True
+        )
+        self.conv2 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=True
+        )
+        self.conv3 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=False
+        )
+        self.conv4 = torch.nn.Conv2d(
+            kernel_sz, kernel_sz, kernel_size, padding=1, bias=False
+        )
         self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
         self.relu = torch.nn.ReLU()
         self.batch_norm = torch.nn.BatchNorm2d(kernel_sz)
@@ -2132,6 +2334,16 @@ class SliceCopyWithStep(torch.nn.Module):
             x[:, : seq_length : self.step]
             + self.position_ids[:, : seq_length : self.step]
         )
+
+
+class SelectScatter(torch.nn.Module):
+    def __init__(self, dim, index):
+        super().__init__()
+        self.dim = dim
+        self.index = index
+
+    def forward(self, x, y):
+        return x.select_scatter(y, dim=self.dim, index=self.index)
 
 
 class SliceScatter(torch.nn.Module):
@@ -2280,6 +2492,14 @@ class SwapAxes(torch.nn.Module):
 
     def forward(self, x):
         return torch.swapaxes(x, axis0=self.axis0, axis1=self.axis1)
+
+
+class Tan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.tan(x)
 
 
 class Tanh(torch.nn.Module):

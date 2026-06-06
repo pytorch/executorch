@@ -6,13 +6,27 @@
 
 # pyre-strict
 
+import operator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
-from executorch.backends.cadence.aot.quantizer.utils import get_bias_qparams
-
+from executorch.backends.cadence.aot.compiler_utils import get_shape
+from executorch.backends.cadence.aot.pass_utils import get_arg, replace_with_op
+from executorch.backends.cadence.aot.quantizer.pattern_utils import (
+    DQ_PER_TENSOR,
+    find_quant_user,
+    fuse_conv,
+    fuse_linear,
+    fuse_matmul,
+    insert_node_with_meta,
+)
+from executorch.backends.cadence.aot.quantizer.utils import (
+    check_out_zero_point_is_min_range,
+    get_bias_qparams,
+    quantize_tensor_multiplier,
+)
 from torch import fx
 from torch._ops import OpOverload
 from torchao.quantization.pt2e.quantizer import (
@@ -78,6 +92,22 @@ class QuantizationPattern(ABC):
         """
         pass
 
+    def anchor_ops(self) -> tuple[OpOverload, ...]:
+        return tuple(self.partition_types())
+
+    def fuse(
+        self,
+        gm: fx.GraphModule,
+        anchor_node: fx.Node,
+    ) -> Optional[fx.Node]:
+        """Replace the dq→op→q subgraph around ``anchor_node`` with a fused op.
+
+        Called by ``QuantFusionPass`` for each node matching ``anchor_ops()``.
+        Returns the new fused node on success, or ``None`` to skip this match.
+        Subclasses override to implement pattern-specific fusion logic.
+        """
+        return None
+
 
 class AddmmPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
@@ -113,6 +143,41 @@ class AddmmPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_linear.per_tensor
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        assert anchor_node.target == torch.ops.aten.addmm.default
+        # addmm(bias, input, weight)
+        bias_node = anchor_node.args[0]
+        assert isinstance(bias_node, fx.Node)
+        dq_input = get_arg(anchor_node, "mat1", fx.Node)
+        if dq_input.target != DQ_PER_TENSOR:
+            return None
+        dq_weight = get_arg(anchor_node, "mat2", fx.Node)
+        if dq_weight.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        dq_bias = bias_node if bias_node.target == DQ_PER_TENSOR else None
+        weight_q = get_arg(dq_weight, "input", fx.Node)
+        transposed = insert_node_with_meta(
+            gm,
+            torch.ops.aten.transpose.int,
+            (weight_q, 0, 1),
+            None,
+            anchor_node,
+            weight_q,
+        )
+        return fuse_linear(
+            gm,
+            dq_input,
+            dq_weight,
+            dq_bias,
+            quant_node,
+            anchor_node,
+            self.replacement_op(),
+            weight_q=transposed,
+        )
 
 
 class AddPattern(QuantizationPattern):
@@ -152,6 +217,128 @@ class AddPattern(QuantizationPattern):
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_add.per_tensor
 
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        # Skip if alpha kwarg is present — changes add semantics.
+        if anchor_node.kwargs:
+            return None
+        dq0 = anchor_node.args[0]
+        if not isinstance(dq0, fx.Node) or dq0.target != DQ_PER_TENSOR:
+            return None
+        dq1 = anchor_node.args[1]
+        if not isinstance(dq1, fx.Node) or dq1.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        args = (
+            get_arg(dq0, "input", fx.Node),
+            get_arg(dq0, "scale", float),
+            get_arg(dq0, "zero_point", int),
+            get_arg(dq1, "input", fx.Node),
+            get_arg(dq1, "scale", float),
+            get_arg(dq1, "zero_point", int),
+            get_arg(quant_node, "scale", float),
+            get_arg(quant_node, "zero_point", int),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, quant_node
+        )
+
+
+# This is a base class for Add+ReLU fusion, since it can be used with two different relu aten ops
+class AddReluBasePattern(QuantizationPattern):
+    @abstractmethod
+    def partition_types(self) -> List[OpOverload]:
+        pass
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # The first node should be add, the second should be relu
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        add_node = fused_partition[0].nodes[-1]
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        relu_node = fused_partition[1].nodes[-1]
+
+        # Bail if:
+        #   - the add node is not a tensor add
+        #   - the add node has kwargs (e.g. alpha)
+        is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
+            add_node.args[1], fx.Node
+        )
+        if not is_tensor_add or len(add_node.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                add_node,
+            )
+
+        return (
+            PartitionAnchors(
+                inputs=[(add_node, 0), (add_node, 1)],
+                weights=[],
+                biases=[],
+                output=[(relu_node,)],  # Output is from the relu node
+            ),
+            relu_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_add.per_tensor
+
+    def anchor_ops(self) -> tuple[OpOverload, ...]:
+        return (torch.ops.aten.add.Tensor,)
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        add_users = list(anchor_node.users)
+        if len(add_users) != 1:
+            return None
+        relu_node = add_users[0]
+        if relu_node.target != self.partition_types()[1]:
+            return None
+        if len(anchor_node.kwargs) > 0:
+            return None
+        dq0 = anchor_node.args[0]
+        if not isinstance(dq0, fx.Node) or dq0.target != DQ_PER_TENSOR:
+            return None
+        dq1 = anchor_node.args[1]
+        if not isinstance(dq1, fx.Node) or dq1.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(relu_node)
+        if quant_node is None:
+            return None
+        if not check_out_zero_point_is_min_range(
+            get_arg(quant_node, "zero_point", int),
+            get_arg(quant_node, "dtype", torch.dtype),
+        ):
+            return None
+        args = (
+            get_arg(dq0, "input", fx.Node),
+            get_arg(dq0, "scale", float),
+            get_arg(dq0, "zero_point", int),
+            get_arg(dq1, "input", fx.Node),
+            get_arg(dq1, "scale", float),
+            get_arg(dq1, "zero_point", int),
+            get_arg(quant_node, "scale", float),
+            get_arg(quant_node, "zero_point", int),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, quant_node
+        )
+
+
+# Add + regular relu op fusion
+class AddReluPattern0(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu.default]
+
+
+# Add + alternate relu op fusion
+class AddReluPattern1(AddReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.add.Tensor, torch.ops.aten.relu_.default]
+
 
 class BmmPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
@@ -177,6 +364,18 @@ class BmmPattern(QuantizationPattern):
         # TODO: T240804887 This is actually a per-tensor variant,
         # we just need to change the name of the op
         return torch.ops.cadence.quantized_matmul.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq0 = anchor_node.args[0]
+        if not isinstance(dq0, fx.Node) or dq0.target != DQ_PER_TENSOR:
+            return None
+        dq1 = anchor_node.args[1]
+        if not isinstance(dq1, fx.Node) or dq1.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        return fuse_matmul(gm, anchor_node, dq0, dq1, quant_node, self.replacement_op())
 
 
 class CatPattern(QuantizationPattern):
@@ -227,6 +426,25 @@ class CatPattern(QuantizationPattern):
     def replacement_op(self) -> OpOverload:
         return torch.ops.aten.cat.default
 
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        cat_inputs = anchor_node.args[0]
+        if not isinstance(cat_inputs, (list, tuple)) or not cat_inputs:
+            return None
+        inputs_q = []
+        for inp in cat_inputs:
+            if not isinstance(inp, fx.Node) or inp.target != DQ_PER_TENSOR:
+                return None
+            inputs_q.append(get_arg(inp, "input", fx.Node))
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        dim = get_arg(anchor_node, "dim", int)
+        args = (inputs_q,)
+        kwargs = {"dim": dim}
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, kwargs, quant_node
+        )
+
 
 class Conv1dPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
@@ -268,6 +486,18 @@ class Conv1dPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_conv1d_ncl.per_tensor
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq_input = anchor_node.args[0]
+        if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
+            return None
+        dq_weight = anchor_node.args[1]
+        if not isinstance(dq_weight, fx.Node) or dq_weight.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        return fuse_conv(self, gm, anchor_node, dq_input, dq_weight, quant_node)
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -311,6 +541,18 @@ class Conv2dPattern(QuantizationPattern):
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq_input = anchor_node.args[0]
+        if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
+            return None
+        dq_weight = anchor_node.args[1]
+        if not isinstance(dq_weight, fx.Node) or dq_weight.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        return fuse_conv(self, gm, anchor_node, dq_input, dq_weight, quant_node)
+
 
 class LayerNormPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
@@ -348,6 +590,61 @@ class LayerNormPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_layer_norm.per_tensor
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq_input = anchor_node.args[0]
+        if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        scale = get_arg(dq_input, "scale", float)
+        zero_point = get_arg(dq_input, "zero_point", int)
+        normalized_shape = anchor_node.args[1]
+        assert isinstance(normalized_shape, list)
+        weight = (
+            anchor_node.args[2]
+            if len(anchor_node.args) > 2 and anchor_node.args[2]
+            else None
+        )
+        bias = (
+            anchor_node.args[3]
+            if len(anchor_node.args) > 3 and anchor_node.args[3]
+            else None
+        )
+        input_q = get_arg(dq_input, "input", fx.Node)
+        # Default weight=1 and bias=0 must be float32 — cadence::quantized_layer_norm
+        # expects float affine parameters, not quantized values.
+        if not weight:
+            weight = insert_node_with_meta(
+                gm,
+                torch.ops.aten.full.default,
+                (normalized_shape, 1),
+                {"dtype": torch.float32},
+                anchor_node,
+                input_q,
+            )
+        if not bias:
+            bias = insert_node_with_meta(
+                gm,
+                torch.ops.aten.full.default,
+                (normalized_shape, 0),
+                {"dtype": torch.float32},
+                anchor_node,
+                input_q,
+            )
+        args = (input_q, scale, zero_point)
+        kwargs = {
+            "normalized_shape": normalized_shape,
+            "weight": weight,
+            "bias": bias,
+            "eps": get_arg(anchor_node, "eps", float),
+            "output_scale": get_arg(quant_node, "scale", float),
+            "output_zero_point": get_arg(quant_node, "zero_point", int),
+        }
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, kwargs, quant_node
+        )
 
 
 class LinearPattern(QuantizationPattern):
@@ -391,6 +688,31 @@ class LinearPattern(QuantizationPattern):
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_linear.per_tensor
 
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq_input = anchor_node.args[0]
+        if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
+            return None
+        dq_weight = anchor_node.args[1]
+        if not isinstance(dq_weight, fx.Node) or dq_weight.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        dq_bias: fx.Node | None = None
+        if len(anchor_node.args) > 2:
+            bias_arg = anchor_node.args[2]
+            if isinstance(bias_arg, fx.Node) and bias_arg.target == DQ_PER_TENSOR:
+                dq_bias = bias_arg
+        return fuse_linear(
+            gm,
+            dq_input,
+            dq_weight,
+            dq_bias,
+            quant_node,
+            anchor_node,
+            self.replacement_op(),
+        )
+
 
 class MatmulPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
@@ -416,6 +738,18 @@ class MatmulPattern(QuantizationPattern):
         # TODO: T240804887 This is actually a per-tensor variant, we just need to change the name of the op
         return torch.ops.cadence.quantized_matmul.default
 
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq0 = anchor_node.args[0]
+        if not isinstance(dq0, fx.Node) or dq0.target != DQ_PER_TENSOR:
+            return None
+        dq1 = anchor_node.args[1]
+        if not isinstance(dq1, fx.Node) or dq1.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        return fuse_matmul(gm, anchor_node, dq0, dq1, quant_node, self.replacement_op())
+
 
 class MaxPool2dPattern(QuantizationPattern):
     """
@@ -438,7 +772,20 @@ class MaxPool2dPattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         max_pool_node = fused_partition[0].nodes[-1]
 
-        # Input and output share quantization parameters since max is order-preserving
+        # Since max_pool2d_with_indices returns a tuple, the output observer must be
+        # placed on getitem[0] rather than the tuple-returning op. Otherwise
+        # prepare_pt2e silently skips it.
+        # Expect exactly one user: getitem[0] extracting the values tensor. If indices
+        # are also used or the structure is unexpected, bail out.
+        users = list(max_pool_node.users)
+        if (
+            len(users) != 1
+            or users[0].target is not operator.getitem
+            or users[0].args[1] != 0
+        ):
+            return PartitionAnchors(empty=True), max_pool_node
+        getitem_0 = users[0]
+
         return (
             PartitionAnchors(
                 inputs=[(max_pool_node, 0)],
@@ -450,7 +797,7 @@ class MaxPool2dPattern(QuantizationPattern):
                 ],
                 output=[
                     (
-                        max_pool_node,
+                        getitem_0,
                         SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
                     )
                 ],
@@ -460,6 +807,40 @@ class MaxPool2dPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_max_pool2d_nchw.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        return _fuse_max_pool2d(gm, anchor_node)
+
+
+def _fuse_max_pool2d(gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+    """Shared fuse logic for both MaxPool2d variants."""
+    dq_input = anchor_node.args[0]
+    if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
+        return None
+    quant_node = find_quant_user(anchor_node)
+    if quant_node is None:
+        return None
+    kernel_size = get_arg(anchor_node, "kernel_size", list[int])
+    stride = get_arg(anchor_node, "stride", list[int])
+    padding = get_arg(anchor_node, "padding", list[int])
+    dilation = get_arg(anchor_node, "dilation", list[int])
+    ceil_mode = get_arg(anchor_node, "ceil_mode", bool)
+    args = (get_arg(dq_input, "input", fx.Node),)
+    kwargs = {
+        "kernel_size": kernel_size,
+        "stride": stride,
+        "padding": padding,
+        "dilation": dilation,
+        "ceil_mode": ceil_mode,
+    }
+    return replace_with_op(
+        gm,
+        anchor_node,
+        torch.ops.cadence.quantized_max_pool2d_nchw.default,
+        args,
+        kwargs,
+        quant_node,
+    )
 
 
 class MaxPool2dWithoutIndicesPattern(QuantizationPattern):
@@ -500,8 +881,8 @@ class MaxPool2dWithoutIndicesPattern(QuantizationPattern):
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_max_pool2d_nchw.default
 
-
-# This is a base class for ReLU
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        return _fuse_max_pool2d(gm, anchor_node)
 
 
 # This is a base class for ReLU, since it can be used with two different aten ops
@@ -528,6 +909,28 @@ class ReluBasePattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_relu.per_tensor
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq_input = anchor_node.args[0]
+        if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        input_scale = get_arg(dq_input, "scale", float)
+        requantize_scale = input_scale / get_arg(quant_node, "scale", float)
+        requantize_scale_t = torch.tensor([requantize_scale])
+        out_multiplier, out_shift = quantize_tensor_multiplier(requantize_scale_t)
+        args = (get_arg(dq_input, "input", fx.Node),)
+        kwargs = {
+            "X_zero_point": get_arg(dq_input, "zero_point", int),
+            "out_zero_point": get_arg(quant_node, "zero_point", int),
+            "out_multiplier": out_multiplier[0].item(),
+            "out_shift": out_shift[0].item(),
+        }
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, kwargs, quant_node
+        )
 
 
 # Regular relu op
@@ -588,6 +991,39 @@ class ConvReluBasePattern(QuantizationPattern):
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
+    def anchor_ops(self) -> tuple[OpOverload, ...]:
+        return (self.partition_types()[0],)
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        conv_users = list(anchor_node.users)
+        if len(conv_users) != 1:
+            return None
+        relu_node = conv_users[0]
+        if relu_node.target != self.partition_types()[1]:
+            return None
+        _arg0 = anchor_node.args[0]
+        dq_input = (
+            _arg0
+            if isinstance(_arg0, fx.Node) and _arg0.target == DQ_PER_TENSOR
+            else None
+        )
+        _arg1 = anchor_node.args[1]
+        dq_weight = (
+            _arg1
+            if isinstance(_arg1, fx.Node) and _arg1.target == DQ_PER_TENSOR
+            else None
+        )
+        if dq_input is None or dq_weight is None:
+            return None
+        quant_node = find_quant_user(relu_node)
+        if quant_node is None:
+            return None
+        check_out_zero_point_is_min_range(
+            get_arg(quant_node, "zero_point", int),
+            get_arg(quant_node, "dtype", torch.dtype),
+        )
+        return fuse_conv(self, gm, anchor_node, dq_input, dq_weight, quant_node)
+
 
 # Conv1d + regular relu op fusion
 class Conv1dReluPattern0(ConvReluBasePattern):
@@ -641,6 +1077,53 @@ class SoftmaxPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_softmax.per_tensor
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        dq_input = anchor_node.args[0]
+        if not isinstance(dq_input, fx.Node) or dq_input.target != DQ_PER_TENSOR:
+            return None
+        quant_node = find_quant_user(anchor_node)
+        if quant_node is None:
+            return None
+        input_q = get_arg(dq_input, "input", fx.Node)
+        quant_input = get_arg(quant_node, "input", fx.Node)
+        mask_shape = get_shape(gm, quant_input)
+        if not mask_shape:
+            return None
+        mask_shape = list(mask_shape)
+        # Softmax mask is packed 16 elements per int32 word.
+        mask_shape[-1] = mask_shape[-1] // 16
+        mask_tensor = insert_node_with_meta(
+            gm,
+            torch.ops.aten.full.default,
+            (mask_shape, 0.0),
+            {"dtype": torch.int32},
+            anchor_node,
+            input_q,
+        )
+        # Initial position for streaming softmax (unused, set to 0).
+        pos_tensor = insert_node_with_meta(
+            gm,
+            torch.ops.aten.full.default,
+            ([1], 0),
+            {"dtype": torch.int64},
+            anchor_node,
+            input_q,
+        )
+        args = (
+            input_q,
+            mask_tensor,
+            get_arg(anchor_node, "dim", int),
+            0,
+            pos_tensor,
+            get_arg(dq_input, "scale", float),
+            get_arg(dq_input, "zero_point", int),
+            get_arg(quant_node, "scale", float),
+            get_arg(quant_node, "zero_point", int),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, quant_node
+        )
 
 
 class MixedW8A32LinearPattern(QuantizationPattern):
@@ -696,6 +1179,36 @@ class MixedW8A32LinearPattern(QuantizationPattern):
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_w8a32_linear.default
 
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        if len(anchor_node.args) != 3 or len(anchor_node.kwargs) > 0:
+            return None
+        _arg1 = anchor_node.args[1]
+        dq_weight = (
+            _arg1
+            if isinstance(_arg1, fx.Node) and _arg1.target == DQ_PER_TENSOR
+            else None
+        )
+        _arg2 = anchor_node.args[2]
+        dq_bias = (
+            _arg2
+            if isinstance(_arg2, fx.Node) and _arg2.target == DQ_PER_TENSOR
+            else None
+        )
+        if dq_weight is None or dq_bias is None:
+            return None
+        input_node = anchor_node.args[0]
+        assert isinstance(input_node, fx.Node)
+        args = (
+            input_node,
+            get_arg(dq_weight, "input", fx.Node),
+            get_arg(dq_weight, "scale", float),
+            get_arg(dq_bias, "input", fx.Node),
+            get_arg(dq_bias, "scale", float),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, anchor_node
+        )
+
 
 class MixedW8A32ConvPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
@@ -718,7 +1231,7 @@ class MixedW8A32ConvPattern(QuantizationPattern):
             )
 
         cnn_weights = conv_layer.args[1]
-        if hasattr(cnn_weights.meta, "tensor_meta"):
+        if "tensor_meta" in cnn_weights.meta:
             cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
             # Bail if the channels are not multiple of 4 (SIMD)
             if cnn_weights_shape[0] % 4 != 0:
@@ -744,6 +1257,18 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                     conv_layer,
                 )
 
+            inputs = conv_layer.args[0]
+            if "tensor_meta" in inputs.meta:
+                inputs_shape = inputs.meta["tensor_meta"].shape
+                # Bail if length != kernel size - Not yet supported
+                if inputs_shape[-1] != cnn_weights_shape[2]:
+                    return (
+                        PartitionAnchors(
+                            empty=True,
+                        ),
+                        conv_layer,
+                    )
+
         return (
             PartitionAnchors(
                 inputs=[],
@@ -757,6 +1282,57 @@ class MixedW8A32ConvPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_w8a32_conv.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        if len(anchor_node.args) != 3 or len(anchor_node.kwargs) > 0:
+            return None
+        _arg1 = anchor_node.args[1]
+        dq_weight = (
+            _arg1
+            if isinstance(_arg1, fx.Node) and _arg1.target == DQ_PER_TENSOR
+            else None
+        )
+        _arg2 = anchor_node.args[2]
+        dq_bias = (
+            _arg2
+            if isinstance(_arg2, fx.Node) and _arg2.target == DQ_PER_TENSOR
+            else None
+        )
+        if dq_weight is None or dq_bias is None:
+            return None
+        input_node = anchor_node.args[0]
+        assert isinstance(input_node, fx.Node)
+        assert get_arg(anchor_node, "stride", list[int]) == [1]
+        assert get_arg(anchor_node, "padding", list[int]) == [0]
+        assert get_arg(anchor_node, "dilation", list[int]) == [1]
+        assert get_arg(anchor_node, "groups", int) == 1
+        weight_q = get_arg(dq_weight, "input", fx.Node)
+        transposed_inputs = insert_node_with_meta(
+            gm,
+            torch.ops.aten.permute.default,
+            (input_node, [0, 2, 1]),
+            None,
+            anchor_node,
+            input_node,
+        )
+        transposed_weights = insert_node_with_meta(
+            gm,
+            torch.ops.aten.permute.default,
+            (weight_q, [2, 0, 1]),
+            None,
+            anchor_node,
+            weight_q,
+        )
+        args = (
+            transposed_inputs,
+            transposed_weights,
+            get_arg(dq_weight, "scale", float),
+            get_arg(dq_bias, "input", fx.Node),
+            get_arg(dq_bias, "scale", float),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, anchor_node
+        )
 
 
 class MixedW8A32GruPattern(QuantizationPattern):
@@ -777,14 +1353,16 @@ class MixedW8A32GruPattern(QuantizationPattern):
             )
 
         # Bail if input or states are not multiple of 4 (SIMD)
-        if gru_layer.args[0].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_0 = gru_layer.args[0].meta.get("tensor_meta", None)
+        if tensor_meta_0 is None or tensor_meta_0.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
                 ),
                 gru_layer,
             )
-        if gru_layer.args[1].meta["tensor_meta"].shape[-1] % 4 != 0:
+        tensor_meta_1 = gru_layer.args[1].meta.get("tensor_meta", None)
+        if tensor_meta_1 is None or tensor_meta_1.shape[-1] % 4 != 0:
             return (
                 PartitionAnchors(
                     empty=True,
@@ -799,13 +1377,26 @@ class MixedW8A32GruPattern(QuantizationPattern):
 
         wrapper = Wrapper(tuple(gru_layer.args[2]), gru_layer.meta)
 
+        # Using SharedQuantizationSpec so that bias_hh has the same observer as bias_ih
+        # Both biases get the same quantization scale to match the cpp operator
+        bias_ih_node = wrapper.args[2]
+        bias_ih_edge = (bias_ih_node, gru_layer)
+        shared_bias_qspec = SharedQuantizationSpec(edge_or_node=bias_ih_edge)
+
         return (
             PartitionAnchors(
                 inputs=[],
                 # pyre-fixme[6]: Expected `List[Tuple[Node, int]]` but got `List[Tuple[Wrapper, int]]`.
                 weights=[(wrapper, 0), (wrapper, 1)],
                 # pyre-fixme[6]: Expected `List[Union[Tuple[Node, int], Tuple[Node, int, DerivedQuantizationSpec]]]` but got `List[Tuple[Wrapper, int]]`.
-                biases=[(wrapper, 2), (wrapper, 3)],
+                biases=[
+                    (wrapper, 2),  # bias_ih gets normal qspec
+                    (
+                        wrapper,
+                        3,
+                        shared_bias_qspec,
+                    ),  # bias_hh shares observer with bias_ih
+                ],
                 output=[],
                 others=[(gru_layer, 0), (gru_layer, 1)],
             ),
@@ -814,6 +1405,42 @@ class MixedW8A32GruPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_w8a32_gru.default
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        if len(anchor_node.kwargs) > 0:
+            return None
+        params = anchor_node.args[2]
+        # GRU requires 4 weight/bias params: w_ih, w_hh, b_ih, b_hh
+        if not isinstance(params, (list, tuple)) or len(params) < 4:
+            return None
+        dq_w_ih = params[0]
+        if not isinstance(dq_w_ih, fx.Node) or dq_w_ih.target != DQ_PER_TENSOR:
+            return None
+        dq_w_hh = params[1]
+        if not isinstance(dq_w_hh, fx.Node) or dq_w_hh.target != DQ_PER_TENSOR:
+            return None
+        dq_b_ih = params[2]
+        if not isinstance(dq_b_ih, fx.Node) or dq_b_ih.target != DQ_PER_TENSOR:
+            return None
+        dq_b_hh = params[3]
+        if not isinstance(dq_b_hh, fx.Node) or dq_b_hh.target != DQ_PER_TENSOR:
+            return None
+        input_node = anchor_node.args[0]
+        hidden_node = anchor_node.args[1]
+        args = (
+            input_node,
+            hidden_node,
+            get_arg(dq_w_ih, "input", fx.Node),
+            get_arg(dq_w_ih, "scale", float),
+            get_arg(dq_w_hh, "input", fx.Node),
+            get_arg(dq_w_hh, "scale", float),
+            get_arg(dq_b_ih, "input", fx.Node),
+            get_arg(dq_b_ih, "scale", float),
+            get_arg(dq_b_hh, "input", fx.Node),
+        )
+        return replace_with_op(
+            gm, anchor_node, self.replacement_op(), args, {}, anchor_node
+        )
 
 
 class RmsNormPattern(QuantizationPattern):

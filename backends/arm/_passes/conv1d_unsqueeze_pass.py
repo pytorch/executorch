@@ -8,7 +8,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
@@ -17,7 +17,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class Conv1dUnsqueezePass(ArmPass):
+class Conv1dUnsqueezePass(ArmOpTargetedPass):
     """This pass is used to change conv1d ops into conv2d since TOSA only
     supports 2d and 3d convolution.
 
@@ -34,9 +34,10 @@ class Conv1dUnsqueezePass(ArmPass):
         RewriteConvPass,
         SizeAdjustInputPass,
     }
+    target_ops = (exir_ops.edge.aten.convolution.default,)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.convolution.default:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
         stride = list(args[3])
         if len(stride) != 1:
@@ -47,7 +48,7 @@ class Conv1dUnsqueezePass(ArmPass):
         x_meta.data["output_qparams"] = {}
 
         x = args[0]
-        x_unsqueezed_shape = list(x.data.shape) + [1]
+        x_unsqueezed_shape = list(x.data.shape[:-1]) + [1] + [x.data.shape[-1]]
         x = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (x, x_unsqueezed_shape),
@@ -61,7 +62,7 @@ class Conv1dUnsqueezePass(ArmPass):
         w_meta.data["output_qparams"] = {}
 
         w = args[1]
-        w_unsqueezed_shape = list(w.data.shape) + [1]
+        w_unsqueezed_shape = list(w.data.shape[:-1]) + [1] + [w.data.shape[-1]]
         w = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (w, w_unsqueezed_shape),
@@ -74,11 +75,11 @@ class Conv1dUnsqueezePass(ArmPass):
             x,
             w,
             args[2],
-            args[3] + [1],  # stride
-            args[4] + [0],  # padding
-            args[5] + [1],  # dilation
+            [1] + args[3],  # stride
+            [0] + args[4],  # padding
+            [1] + args[5],  # dilation
             args[6],
-            args[7] + [0],
+            [0] + args[7],
             args[8],
         )
         x = super().call_operator(
@@ -88,7 +89,7 @@ class Conv1dUnsqueezePass(ArmPass):
         x_squeezed_meta = meta.copy()
         x_squeezed_meta.data["input_qparams"] = {}
         x_squeezed_meta.data["output_qparams"] = {}
-        x_squeezed_shape = list(x.data.shape)[:-1]
+        x_squeezed_shape = list(x.data.shape[:-2]) + [x.data.shape[-1]]
         x = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (x, x_squeezed_shape),

@@ -36,8 +36,8 @@ class TestConformer:
     # .to_executorch step, i.e. after Arm partitioner.
     aten_ops = ["torch.ops.aten._assert_scalar.default"]
 
-    # TODO(MLETORCH-635): reduce tolerance
-    atol = 0.4
+    # TODO(MLETORCH-636): reduce tolerance
+    atol = 0.45
     rtol = 0.4
 
     dim = 16

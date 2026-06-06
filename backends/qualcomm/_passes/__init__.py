@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .annotate_adaptive_avg_pool1d import AnnotateAdaptiveAvgPool1D
+from .annotate_avg_pool1d import AnnotateAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
@@ -15,20 +15,26 @@ from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
 from .decompose_any import DecomposeAny
+from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
+from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
+from .decompose_pad import DecomposePad
 from .decompose_reciprocal import DecomposeReciprocal
+from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
+from .decompose_select_scatter import DecomposeSelectScatter
 from .decompose_silu import DecomposeSilu
+from .decompose_tan import DecomposeTan
 from .decompose_threshold import DecomposeThreshold
 from .decompose_triu import DecomposeTriu
 from .decompose_trunc import DecomposeTrunc
@@ -39,6 +45,7 @@ from .fold_qdq import FoldQDQ
 from .fuse_consecutive_cast import FuseConsecutiveCast
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
+from .insert_cast_for_fp_act_quantized_weight import InsertCastForFpActQuantizedWeight
 from .insert_io_qdq import InsertIOQDQ
 from .insert_requantize import InsertRequantize
 from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
@@ -57,7 +64,7 @@ from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
 
 __all__ = [
-    AnnotateAdaptiveAvgPool1D,
+    AnnotateAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -68,20 +75,26 @@ __all__ = [
     ConvertSquareToPow,
     DecomposeAcos,
     DecomposeAny,
+    DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
     DecomposeLogVariants,
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
+    DecomposePad,
     DecomposeReciprocal,
+    DecomposeRemainder,
     DecomposeRoll,
+    DecomposeSelectScatter,
     DecomposeSilu,
+    DecomposeTan,
     DecomposeThreshold,
     DecomposeTriu,
     DecomposeTrunc,
@@ -92,6 +105,7 @@ __all__ = [
     FuseConsecutiveCast,
     FuseConsecutiveTranspose,
     I64toI32,
+    InsertCastForFpActQuantizedWeight,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     InsertRequantize,

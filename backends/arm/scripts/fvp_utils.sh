@@ -67,10 +67,9 @@ function install_fvp() {
             log_step "fvp" "Downloading FVP ${fvp}"
             url_variable=${fvp}_url
             fvp_url=${!url_variable}
-            curl --output "FVP_${fvp}.tgz" "${fvp_url}"
             md5_variable=${fvp}_md5_checksum
             fvp_md5_checksum=${!md5_variable}
-            verify_md5 ${fvp_md5_checksum} FVP_${fvp}.tgz || exit 1
+            download_with_retry "fvp" "${fvp_url}" "FVP_${fvp}.tgz" "${fvp_md5_checksum}" || exit 1
         fi
 
         log_step "fvp" "Installing FVP ${fvp}"

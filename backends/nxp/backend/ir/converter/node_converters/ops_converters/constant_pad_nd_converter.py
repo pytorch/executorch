@@ -7,6 +7,7 @@ import copy
 from typing import Collection
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 
@@ -41,19 +42,33 @@ class ConstantPadNDConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        paddings = node.args[1]
-        if node.meta[NXP_NODE_FORMAT].is_channels_first():
-            # Dim `1` will end up being the channels. It is padded by paddings[4:6].
-            if len(paddings) > 4 and paddings[4:6] != [0, 0]:
-                # Attempt to Pad channels dimension -> currently not supported
-                return False
-        else:
-            # Dim `-1` will end up being the channels. It is padded by paddings[:2].
-            if len(paddings) > 0 and paddings[:2] != [0, 0]:
-                # Attempt to Pad channels dimension -> currently not supported
+        if neutron_target_spec.use_new_flow_neutron_c:
+            # Requirements specified by the new Neutron flow documentation.
+
+            if not NodeConverter.uses_quantization_type_for_io(
+                node,
+                supported_types=[torch.int8, torch.uint8],
+                input_indices=[0],
+                output_indices=[0],
+            ):
                 return False
 
-        return True
+            return True
+
+        else:
+            paddings = node.args[1]
+            if node.meta[NXP_NODE_FORMAT].is_channels_first():
+                # Dim `1` will end up being the channels. It is padded by paddings[4:6].
+                if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                    # Attempt to Pad channels dimension -> currently not supported
+                    return False
+            else:
+                # Dim `-1` will end up being the channels. It is padded by paddings[:2].
+                if len(paddings) > 0 and paddings[:2] != [0, 0]:
+                    # Attempt to Pad channels dimension -> currently not supported
+                    return False
+
+            return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -110,7 +125,14 @@ class ConstantPadNDConverter(NodeConverter):
         return paddings
 
     def convert(self, node: Node):
-        """Convert the `aten.constant_pad_nd` operator to TFLite `PadV2`."""
+        """Convert the `aten.constant_pad_nd` operator to NeutronIR `PadV2`.
+        The ExecuTorch schema is:
+            constant_pad_nd(
+                Tensor self,
+                SymInt[] pad,
+                Scalar value=0
+            ) -> Tensor
+        """
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)

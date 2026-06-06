@@ -64,7 +64,27 @@ install_qnn() {
   mkdir -p "${QNN_INSTALLATION_DIR}"
 
   QNN_ZIP_FILE="v${QNN_VERSION}.zip"
-  curl --retry 3 -Lo "/tmp/${QNN_ZIP_FILE}" "${QNN_ZIP_URL}"
+  # softwarecenter.qualcomm.com intermittently aborts the download with
+  # HTTP/2 INTERNAL_ERROR mid-stream, and occasionally returns a tiny
+  # error body that curl treats as success — both cases get caught here:
+  # --fail rejects HTTP errors, --retry-all-errors retries transport
+  # errors, and `unzip -t` validates the archive before we proceed.
+  QNN_DOWNLOAD_MAX_ATTEMPTS=5
+  for attempt in $(seq 1 ${QNN_DOWNLOAD_MAX_ATTEMPTS}); do
+    rm -f "/tmp/${QNN_ZIP_FILE}"
+    if curl --fail --retry 3 --retry-delay 5 --retry-connrefused --retry-all-errors \
+         -Lo "/tmp/${QNN_ZIP_FILE}" "${QNN_ZIP_URL}" \
+       && unzip -tq "/tmp/${QNN_ZIP_FILE}"; then
+      break
+    fi
+    ls -l "/tmp/${QNN_ZIP_FILE}" 2>&1 || true
+    if [ "${attempt}" = "${QNN_DOWNLOAD_MAX_ATTEMPTS}" ]; then
+      echo "ERROR: QNN SDK download failed after ${attempt} attempts" >&2
+      exit 1
+    fi
+    echo "QNN SDK download attempt ${attempt} failed; retrying in $((attempt * 10))s..."
+    sleep $((attempt * 10))
+  done
   echo "Finishing downloading qnn sdk."
   unzip -qo "/tmp/${QNN_ZIP_FILE}" -d /tmp
   echo "Finishing unzip qnn sdk."

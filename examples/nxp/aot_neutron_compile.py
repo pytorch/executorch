@@ -12,7 +12,6 @@ from collections import defaultdict
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
-
 import torch
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
@@ -240,13 +239,22 @@ if __name__ == "__main__":  # noqa C901
         action="store_true",
         help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
     )
+    parser.add_argument(
+        "--use_new_flow_neutron_c",
+        required=False,
+        default=False,
+        action="store_true",
+        help="Enable experimental MLIR-based flow for Neutron-C with improves INT8 operator support.",
+    )
 
     args = parser.parse_args()
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    neutron_target_spec = NeutronTargetSpec(target=args.target)
+    neutron_target_spec = NeutronTargetSpec(
+        target=args.target, use_new_flow_neutron_c=args.use_new_flow_neutron_c
+    )
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
@@ -323,6 +331,7 @@ if __name__ == "__main__":  # noqa C901
         operators_not_to_delegate=args.operators_not_to_delegate,
         fetch_constants_to_sram=args.fetch_constants_to_sram,
         dump_kernel_selection_code=args.dump_kernel_selection_code,
+        use_new_flow_neutron_c=args.use_new_flow_neutron_c,
     )
     partitioners = (
         [

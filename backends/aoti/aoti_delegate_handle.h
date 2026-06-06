@@ -31,6 +31,20 @@ using AOTInductorModelContainerHandle = AOTInductorModelContainerOpaque*;
 using AOTInductorStreamHandle = void*;
 using AOTIProxyExecutorHandle = void*;
 
+// Opaque types for AOTI constant management.
+// AtenTensorOpaque wraps at::Tensor* in the AOTI runtime — distinct from
+// AOTITensorHandle which wraps executorch::runtime::etensor::Tensor*.
+struct AtenTensorOpaque;
+using AtenTensorHandle = AtenTensorOpaque*;
+
+struct AOTInductorConstantMap;
+using AOTInductorConstantMapHandle = AOTInductorConstantMap*;
+
+struct AOTInductorConstantMapEntry {
+  const char* name;
+  AtenTensorHandle handle;
+};
+
 // Function pointer types for AOT Inductor model container operations
 using AOTInductorModelContainerCreateWithDeviceFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle* container_handle,
@@ -77,6 +91,37 @@ using AOTInductorModelUpdateConstantsFromBlobFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     const uint8_t* weight_blob_ptr);
 
+// Retrieves a constant's AOTI internal name by index.
+using AOTInductorModelContainerGetConstantNameFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t idx,
+    const char** name);
+
+// Retrieves a constant's original fully-qualified name by index.
+using AOTInductorModelContainerGetConstantOriginalFQNFunc =
+    AOTIRuntimeError (*)(
+        AOTInductorModelContainerHandle container_handle,
+        size_t idx,
+        const char** original_fqn);
+
+// Extracts the constants map from the container (active or inactive buffer).
+// constant_map_handle should point to a
+// std::unordered_map<std::string, AtenTensorHandle>.
+using AOTInductorModelContainerExtractConstantsMapFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    AOTInductorConstantMapHandle constant_map_handle,
+    bool use_inactive);
+
+// Updates the container's constants with user-managed tensor handles.
+// DLL-boundary safe — uses a flat C array instead of std::unordered_map.
+using AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc =
+    AOTIRuntimeError (*)(
+        AOTInductorModelContainerHandle container_handle,
+        const AOTInductorConstantMapEntry* pairs,
+        size_t num_pairs,
+        bool use_inactive,
+        bool validate_full_update);
+
 } // extern "C"
 
 // AOTI Delegate Handle structure
@@ -93,6 +138,14 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerGetNumOutputsFunc get_num_outputs;
   AOTInductorModelContainerRunFunc run;
   AOTInductorModelUpdateConstantsFromBlobFunc update_constants_from_blob;
+
+  // Constant management function pointers (for cross-method buffer sharing)
+  AOTInductorModelContainerGetNumConstantsFunc get_num_constants;
+  AOTInductorModelContainerGetConstantNameFunc get_constant_name;
+  AOTInductorModelContainerGetConstantOriginalFQNFunc get_constant_original_fqn;
+  AOTInductorModelContainerExtractConstantsMapFunc extract_constants_map;
+  AOTInductorModelContainerUpdateUserManagedConstantBufferPairsFunc
+      update_user_managed_constant_buffer_pairs;
 };
 
 } // namespace aoti

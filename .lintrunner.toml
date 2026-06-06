@@ -107,6 +107,139 @@ init_command = [
 is_formatter = true
 
 [[linter]]
+code = 'CPPCHECK'
+include_patterns = [
+    '**/*.cpp',
+    '**/*.h',
+    '**/*.hpp',
+]
+exclude_patterns = [
+    # Third-party and vendored code.
+    'third-party/**',
+    'third_party/**',
+    '**/third-party/**',
+    '**/third_party/**',
+
+    # Mirrored sources under src/ (Python package layout). Prefer linting canonical paths.
+    'src/executorch/**',
+    # PyTorch compatibility code kept in sync with upstream.
+    'runtime/core/portable_type/c10/**',
+
+    # Generated sources, templates, and codegen tooling to onboard separately.
+    'codegen/templates/**',
+    'codegen/tools/selective_build.cpp',
+    'exir/_serialize/**',
+
+    # Backend-owned code to onboard separately.
+    'backends/aoti/**',
+    'backends/apple/**',
+    'backends/cadence/**',
+    'backends/cuda/**',
+    'backends/mediatek/**',
+    'backends/mlx/**',
+    'backends/nxp/**',
+    'backends/openvino/**',
+    'backends/qualcomm/**',
+    'backends/samsung/**',
+    'backends/test/**',
+    'backends/vulkan/**',
+    'backends/webgpu/**',
+    'backends/xnnpack/**',
+
+    # Backend-owned examples to onboard with those backends.
+    'examples/demo-apps/**',
+    'examples/mediatek/**',
+    'examples/nxp/**',
+    'examples/qualcomm/**',
+    'examples/samsung/**',
+
+    # Other examples to onboard separately.
+    'examples/devtools/**',
+    'examples/llm_manual/**',
+    'examples/models/**',
+    'examples/portable/**',
+    'examples/raspberry_pi/**',
+
+    # EXIR and devtools areas to onboard separately.
+    'devtools/bundled_program/**',
+    'devtools/etdump/**',
+    'exir/backend/test/**',
+    'exir/tests/**',
+    'exir/verification/**',
+
+    # Extension areas to onboard incrementally.
+    'extension/android/**',
+    'extension/apple/**',
+    'extension/asr/runner/transducer_runner.h',
+    'extension/aten_util/**',
+    'extension/benchmark/apple/**',
+    'extension/data_loader/**',
+    'extension/evalue_util/**',
+    'extension/flat_tensor/**',
+    'extension/kernel_util/make_boxed_from_unboxed_functor.h',
+    'extension/kernel_util/test/**',
+    'extension/llm/**',
+    'extension/memory_allocator/**',
+    'extension/module/**',
+    'extension/named_data_map/**',
+    'extension/pybindings/**',
+    'extension/pytree/**',
+    'extension/runner_util/**',
+    'extension/tensor/**',
+    'extension/testing_util/**',
+    'extension/threadpool/**',
+    'extension/training/**',
+    'extension/wasm/**',
+
+    # Kernel areas to onboard separately.
+    'kernels/aten/**',
+    'kernels/optimized/**',
+    'kernels/portable/**',
+    'kernels/prim_ops/**',
+    'kernels/quantized/**',
+    'kernels/test/**',
+
+    # Runtime areas to onboard incrementally.
+    'runtime/backend/**',
+    'runtime/core/**',
+    'runtime/executor/**',
+    'runtime/kernel/**',
+    'runtime/platform/**',
+
+    # Top-level test and platform integration areas.
+    'test/**',
+    'zephyr/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cppcheck_linter',
+    '--enable=warning,style,unusedFunction',
+    '--extra-arg=--check-level=exhaustive',
+    '--extra-arg=--std=c++17',
+    '--extra-arg=--language=c++',
+    '--extra-arg=--inline-suppr',
+    '--extra-arg=--inconclusive',
+    '--extra-arg=--suppress=unusedStructMember',
+    '--extra-arg=--suppress=toomanyconfigs',
+    '--extra-arg=--suppress=unusedFunction:*.h',
+    '--extra-arg=--suppress=unusedFunction:*.hpp',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
 code = 'CMAKE'
 include_patterns = [
     "**/*.cmake",
@@ -225,6 +358,7 @@ exclude_patterns = [
     'extension/llm/tokenizers/**',
     'backends/cadence/utils/FACTO',
     'examples/cuda',
+    'examples/qualcomm',
     'kernels/portable',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
@@ -360,6 +494,7 @@ include_patterns = [
     'devtools/visualization/**/*.py',
     'docs/**/*.py',
     # 'examples/**/*.py',
+    'examples/arm/**/*.py',
     'examples/openvino/**/*.py',
     # 'exir/**/*.py',
     # 'extension/**/*.py',

@@ -28,7 +28,7 @@ enum class ScalarType : int8_t {
   Short = 2, // int16_t
   Int = 3, // int32_t
   Long = 4, // int64_t
-  // Half = 5,     // float16 - not currently needed
+  Half = 5, // float16
   Float = 6, // float
   // Double = 7,   // double - not currently needed
   // ComplexHalf = 8,
@@ -48,6 +48,7 @@ constexpr ScalarType kChar = ScalarType::Char;
 constexpr ScalarType kShort = ScalarType::Short;
 constexpr ScalarType kInt = ScalarType::Int;
 constexpr ScalarType kLong = ScalarType::Long;
+constexpr ScalarType kHalf = ScalarType::Half;
 constexpr ScalarType kFloat = ScalarType::Float;
 constexpr ScalarType kBool = ScalarType::Bool;
 constexpr ScalarType kBFloat16 = ScalarType::BFloat16;
@@ -67,6 +68,8 @@ inline size_t elementSize(ScalarType t) {
       return sizeof(int32_t);
     case ScalarType::Long:
       return sizeof(int64_t);
+    case ScalarType::Half:
+      return 2; // sizeof(__half) = 2 bytes
     case ScalarType::Float:
       return sizeof(float);
     case ScalarType::Bool:
@@ -93,6 +96,8 @@ inline const char* toString(ScalarType t) {
       return "Int";
     case ScalarType::Long:
       return "Long";
+    case ScalarType::Half:
+      return "Half";
     case ScalarType::Float:
       return "Float";
     case ScalarType::Bool:
@@ -110,7 +115,8 @@ inline const char* toString(ScalarType t) {
 /// @param t The scalar type to check.
 /// @return true if the scalar type is floating point, false otherwise.
 inline bool isFloatingType(ScalarType t) {
-  return t == ScalarType::Float || t == ScalarType::BFloat16;
+  return t == ScalarType::Half || t == ScalarType::Float ||
+      t == ScalarType::BFloat16;
 }
 
 /// Checks if the scalar type is an integral type (including bool optionally).
@@ -149,6 +155,7 @@ inline bool isValidScalarType(ScalarType t) {
     case ScalarType::Short:
     case ScalarType::Int:
     case ScalarType::Long:
+    case ScalarType::Half:
     case ScalarType::Float:
     case ScalarType::Bool:
     case ScalarType::BFloat16:

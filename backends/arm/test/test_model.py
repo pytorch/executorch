@@ -148,7 +148,7 @@ def build_pte(
     command_list = [
         "python3",
         "-m",
-        "examples.arm.aot_arm_compiler",
+        "backends.arm.scripts.aot_arm_compiler",
         "--delegate",
         "--bundleio",
         f"--model_name={model_name}",

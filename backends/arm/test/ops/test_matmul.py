@@ -435,6 +435,22 @@ def test_matmul_vgf_quant(test_case: test_case_t):
 
 
 @common.parametrize("test_case", test_suite, xfails=xfails)
+@common.SkipIfNoModelConverter
+def test_matmul_vgf_quant_a16w8(test_case: test_case_t):
+    test_data = test_case()
+    pipeline = VgfPipeline[input_t](
+        test_data.module,
+        test_data.input_factory(),
+        [],
+        list(test_data.exir_ops),
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_case", test_suite, xfails=xfails)
 def test_matmul_tosa_INT_a16w8(test_case: test_case_t):
     """Test matmul with 16A8W quantization for TOSA INT."""
     test_data = test_case()

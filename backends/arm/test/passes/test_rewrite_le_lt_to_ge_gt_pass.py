@@ -26,7 +26,7 @@ class LtLe(torch.nn.Module):
 
 
 @common.parametrize("module", {"lt_le": LtLe()})
-def test_rewrite_le_lt_to_ge_gt_no_target(module: LtLe) -> None:
+def test_rewrite_le_lt_to_ge_gt(module: LtLe) -> None:
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),

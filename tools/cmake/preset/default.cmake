@@ -95,6 +95,9 @@ define_overridable_option(
   ON # Required by executor_runner
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_IMAGE "Build the Image extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
 )
 define_overridable_option(
@@ -169,6 +172,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_PORTABLE_OPS "Build portable_ops library" BOOL ON
 )
 define_overridable_option(EXECUTORCH_USE_DL "Use libdl library" BOOL ON)
@@ -217,6 +223,10 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." BOOL
   ${_default_executorch_build_cpuinfo}
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_SHARED "Build a consolidated ExecuTorch shared library" BOOL
+  OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default
@@ -398,6 +408,11 @@ check_required_options_on(
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
   EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_IMAGE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 

@@ -3,12 +3,15 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
 SCHEMA_NAME = "qc_compiler_spec"
 
-INPUT_SCHEMA = "serialization/" + SCHEMA_NAME + ".fbs"
+# In OSS, genrule srcs can't use cross-package relative paths, so use
+# an export_file target. In fbcode/xplat, relative path works and avoids
+# the srcs patching gap in _patch_executorch_references.
+INPUT_SCHEMA = "//backends/qualcomm/serialization:qc_compiler_spec.fbs" if runtime.is_oss else "serialization/" + SCHEMA_NAME + ".fbs"
 
 OUTPUT_SCHEMA_HEADER = SCHEMA_NAME + "_generated.h"
 
@@ -60,15 +63,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "schema",
         srcs = [],
-        visibility = [
-            # Lock this down as tightly as possible to ensure that flatbuffers
-            # are an implementation detail. Ideally this list would only include
-            # //executorch/runtime/executor/...
-            "//executorch/codegen/tools/...",
-            "//executorch/runtime/executor/...",
-            "//executorch/backends/qualcomm/...",
-            "//executorch/backends/qualcomm/runtime/...",
-        ],
+        visibility = ["PUBLIC"],
         exported_headers = {
             OUTPUT_SCHEMA_HEADER: ":{}[{}]".format(SCHEMA_GEN_RULE_NAME, OUTPUT_SCHEMA_HEADER),
         },
@@ -84,7 +79,7 @@ def define_common_targets():
         define_static_target = True,
         visibility = ["PUBLIC"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
+            qnn_third_party_dep("api"),
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//executorch/backends/qualcomm/runtime:runtime_android_build",

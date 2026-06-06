@@ -13,6 +13,32 @@
 // Always include this file (vma_api.h) instead.
 //
 
+#ifdef ETVK_USE_META_VMA
+
+// Match the config from the shared third-party
+// VulkanMemoryAllocatorInstantiated library so that struct layouts agree.
+// We do NOT define VMA_IMPLEMENTATION here; the third-party static lib
+// provides it.
+#undef VMA_STATIC_VULKAN_FUNCTIONS
+#undef VMA_DYNAMIC_VULKAN_FUNCTIONS
+#define VMA_STATIC_VULKAN_FUNCTIONS 0
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
+#define VMA_VULKAN_VERSION 1002000
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#pragma clang diagnostic ignored "-Wunused-variable"
+#endif /* __clang__ */
+
+#include <vk_mem_alloc.h>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif /* __clang__ */
+
+#else // !ETVK_USE_META_VMA
+
 #define VMA_VULKAN_VERSION 1000000
 
 #ifdef USE_VULKAN_WRAPPER
@@ -56,3 +82,5 @@
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif /* __clang__ */
+
+#endif // ETVK_USE_META_VMA

@@ -146,6 +146,8 @@ test_cmake_select_ops_in_model() {
     local example_dir=examples/selective_build/basic
     local build_dir=cmake-out/${example_dir}
     rm -rf ${build_dir}
+    # No -DMAX_KERNEL_NUM: selective build auto-right-sizes the registry from
+    # the .pte via gen_selected_max_kernel_num().
     retry cmake -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
             -DEXECUTORCH_SELECT_OPS_MODEL="./${model_export_name}" \
             -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON \
@@ -157,6 +159,17 @@ test_cmake_select_ops_in_model() {
 
     echo "Building ${example_dir}"
     cmake --build ${build_dir} -j9 --config $CMAKE_BUILD_TYPE
+
+    echo "Verifying auto-right-sized MAX_KERNEL_NUM header was generated"
+    local generated_header
+    generated_header=$(find "${build_dir}" -name selected_max_kernel_num.h -print -quit)
+    if [[ -z "${generated_header}" ]]; then
+      echo "ERROR: selected_max_kernel_num.h not generated"
+      exit 1
+    fi
+    grep -q "EXECUTORCH_SELECTED_MAX_KERNEL_NUM" "${generated_header}" \
+      || { echo "ERROR: header missing expected define"; exit 1; }
+    echo "Generated: $(cat ${generated_header} | tail -1)"
 
     echo 'Running selective build test'
     ${build_dir}/selective_build_test --model_path="./${model_export_name}"

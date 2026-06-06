@@ -48,7 +48,7 @@ from executorch.backends.arm.util._factory import create_quantizer
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir.pass_base import ExportPass
-from torch._export.pass_base import PassType
+from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
@@ -1184,6 +1184,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
         tosa_extensions: Optional[List[str]] = None,
         tosa_spec: TosaSpecification | str | None = None,
         fold_quantize: bool = True,
+        preserve_io_quantization: bool = False,
     ):
         if tosa_spec is None:
             if tosa_version is None:
@@ -1201,6 +1202,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
             compiler_flags=vgf_compiler_flags,
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
+            preserve_io_quantization=preserve_io_quantization,
         )
 
         super().__init__(

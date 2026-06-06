@@ -23,15 +23,15 @@ fbcode_target(_kind = runtime.python_library,
     ],
     visibility = ["PUBLIC"],
     deps = [
-        "//caffe2:torch",
         "//executorch/export:lib",
-        "//executorch/runtime:runtime",  # @manual
         "//executorch/backends/qualcomm/partition:partition",
         "//executorch/backends/qualcomm/serialization:serialization",
         "//executorch/backends/qualcomm/utils:utils",
         "//executorch/backends/qualcomm/_passes:passes",
         ":qnn_recipe_types",
-    ],
+    ] + ([] if runtime.is_oss else [
+        "//executorch/runtime:runtime",  # @manual
+    ]),
 )
 
 fbcode_target(_kind = runtime.python_library,

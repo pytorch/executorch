@@ -77,11 +77,12 @@ if(${ANDROID})
   find_library(android_log log)
 endif()
 
-add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
+add_compile_options("-Wall" "-Werror" "-fvisibility=hidden")
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
-# GNU emit wanring for ignored attributes Unfortunately, we use [[maybe_unused]]
-# which can be ignored by GNU. So we make it a warning, not an error in GNU.
+# GNU emits warning for ignored attributes Unfortunately, we use
+# [[maybe_unused]] which can be ignored by GNU. So we make it a warning, not an
+# error in GNU.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_compile_options("-Wno-error=attributes")
   add_link_options("-flto=auto")
@@ -89,15 +90,25 @@ endif()
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   # strip symbols
-  add_link_options("-s")
+  add_link_options(LINKER:-s,--gc-sections)
+  if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+    add_compile_options(
+      "-Os"
+      "-ffunction-sections"
+      "-fdata-sections"
+      "-frtti"
+      "-fno-exceptions"
+      "-fomit-frame-pointer"
+      "-fno-asynchronous-unwind-tables"
+    )
+  else()
 
-  # --gc-sections is added by torch.
-  add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti")
+    add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti")
+  endif()
 endif()
 
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
-  ${QNN_SDK_ROOT}/share/QNN/converter/jni
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
 
@@ -230,28 +241,37 @@ target_link_libraries(
                       qnn_schema shared_buffer qnn_dlc_manager
 )
 target_link_libraries(
-  qnn_executorch_backend
-  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
-          extension_tensor qnn_backend_options
+  qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
+                                 executorch_core qnn_backend_options
 )
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
   # Add macro here so we can dlopen the correct .so library.
-  if(DSP_TYPE STREQUAL "3")
-    string(TOUPPER ${DSP_VERSION} CAPITAL_DSP_VERSION)
-    set(HEXAGON_LIB "libQnnHtp${CAPITAL_DSP_VERSION}.so")
+  if(DSP_TYPE STREQUAL "0")
+    message(
+      STATUS
+        "aDSP direct and non-direct mode uses shared libraries under different folders but have the same name, skipping HEXAGON_LIB override."
+    )
+    # Just random string here since QnnBackendUnifiedRegistry.h will ignore this
+    # macro for aDSP case.
+    add_compile_definitions(HEXAGON_LIB="")
+  elseif(DSP_TYPE STREQUAL "3")
+    string(TOUPPER ${CDSP_VERSION} CAPITAL_CDSP_VERSION)
+    set(HEXAGON_LIB "libQnnHtp${CAPITAL_CDSP_VERSION}.so")
     add_compile_definitions(HEXAGON_LIB="${HEXAGON_LIB}")
     message(STATUS "For hexagon build, using HTP Library: ${HEXAGON_LIB}")
   else()
     message(FATAL_ERROR "Unknown DSP_TYPE ${DSP_TYPE}")
   endif()
 
+  # aDSP will also use cDSP c/c++ library since aDSP does not have these
+  # libraries.
   target_link_libraries(
     qnn_executorch_backend
     PRIVATE
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc.so
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++.so.1
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++abi.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc.so
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++abi.so.1
   )
 endif()
 

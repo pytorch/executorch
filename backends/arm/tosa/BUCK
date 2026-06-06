@@ -42,6 +42,17 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "resize_utils",
+    srcs = [
+        "resize_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":specification",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "tosa",
     srcs = [
         "__init__.py",

@@ -3,12 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 from typing import final, Optional, Sequence
 
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf import VgfBackend, VgfCompileSpec
 from executorch.exir.backend.partitioner import DelegationSpec
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch._ops import OpOverload
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 
@@ -33,3 +34,7 @@ class VgfPartitioner(TOSAPartitioner):
         )
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
+        self._custom_partition_ops: set[OpOverload] = set()
+        self.intermediate_path = compile_spec._get_intermediate_path()
+        # Preserve grid_sampler_2d for the VGF custom-lowering path only.
+        self.register_custom_partition_op(exir_ops.edge.aten.grid_sampler_2d.default)

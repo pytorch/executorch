@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -39,6 +39,14 @@ class AnyReduceAll(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         return torch.any(x)
+
+
+class ChainedAny(torch.nn.Module):
+    aten_op = "torch.ops.aten.any.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_any_default"
+
+    def forward(self, x: torch.Tensor):
+        return torch.any(torch.any(x, dim=1, keepdim=True))
 
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -145,6 +153,19 @@ def test_any_tosa_INT(test_data: input_t1):
         test_input(),
         op.aten_op,
         op.exir_op,
+        atol=0,
+        rtol=0,
+        qtol=0,
+    )
+    pipeline.run()
+
+
+def test_any_tosa_FP_chained_reduce_all() -> None:
+    pipeline = TosaPipelineFP[Tuple[torch.Tensor]](
+        ChainedAny(),
+        (torch.randint(0, 2, (2, 3, 4), dtype=torch.bool),),
+        ChainedAny.aten_op,
+        ChainedAny.exir_op,
         atol=0,
         rtol=0,
         qtol=0,

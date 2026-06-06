@@ -8,11 +8,13 @@
 
 import logging
 import operator
-from typing import Any, Optional, Union
+from collections.abc import Mapping, Sequence
+from typing import Any, cast, Optional, Union
 
 import torch
 from torch._inductor.decomposition import remove_decompositions
 from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -34,6 +36,7 @@ def trace(
         model.eval()
 
     decomp_table = torch.export.default_decompositions()
+    ops_to_keep = [*(ops_to_keep or []), torch.ops.aten._safe_softmax.default]
     # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
     remove_decompositions(decomp_table, ops_to_keep)
     program = torch.export.export(model, inputs, strict=strict).run_decompositions(
@@ -301,23 +304,27 @@ class QuantizedInputWrapper(torch.nn.Module):
                 "Warning: Using pre-quantized inputs. This should only be done when calibration has been confirmed."
                 "Incorrect quantization parameters can lead to significant accuracy degradation."
             )
-        if isinstance(input_args, list):
-            self.quant_args = extract_input_quant_params_from_graph(module, input_args)
-        elif isinstance(input_args, dict):
+        if isinstance(input_args, Sequence) and not isinstance(
+            input_args, (str, bytes)
+        ):
+            self.quant_args = extract_input_quant_params_from_graph(
+                module, list(input_args)
+            )
+        elif isinstance(input_args, Mapping):
             # dict[int, QuantArgs] — use directly
             # dict[int, list[str]] — extract quant params from graph, keyed by input index
             first_value = next(iter(input_args.values()), None)
             if (
-                isinstance(first_value, (list, tuple))
+                isinstance(first_value, (list, tuple, Sequence))
+                and not isinstance(first_value, (str, bytes))
                 and first_value
                 and isinstance(first_value[0], str)
             ):
                 # Values are lists of node names: extract quant params and map
                 # to the caller-specified input indices.
                 for input_idx, node_names in input_args.items():
-                    assert isinstance(node_names, list)
                     extracted = extract_input_quant_params_from_graph(
-                        module, node_names
+                        module, list(cast(Sequence[str], node_names))
                     )
                     # Use the first extracted quant params for this input index.
                     if extracted:
@@ -430,6 +437,7 @@ def _get_transparent_ops() -> set[Any]:
         torch.ops.aten.view.default,
         torch.ops.aten.reshape.default,
         torch.ops.aten.split.Tensor,
+        torch.ops.aten.chunk.default,
         torch.ops.aten.slice_copy.Tensor,
         torch.ops.aten.permute_copy.default,
         torch.ops.aten.permute.default,
@@ -600,3 +608,32 @@ def sink_input_dequant_through_transparent_ops(
         graph_module.recompile()
 
     return modified
+
+
+class QuantFusionPass(PassBase):
+    """
+    Iterates patterns, finds anchor ops in the converted graph, and calls
+    pattern.fuse() to replace dq-op-q subgraphs with fused ops.
+    """
+
+    def __init__(self, patterns: Sequence[object]) -> None:
+        super().__init__()
+        self.patterns = patterns
+
+    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+        changed = False
+        for pattern in self.patterns:
+            pattern_changed = False
+            for target in pattern.anchor_ops():  # pyre-ignore[16]
+                for node in graph_module.graph.find_nodes(
+                    op="call_function", target=target
+                ):
+                    result = pattern.fuse(graph_module, node)  # pyre-ignore[16]
+                    if result is not None:
+                        changed = True
+                        pattern_changed = True
+            if pattern_changed:
+                graph_module.graph.eliminate_dead_code()
+        if changed:
+            graph_module.recompile()
+        return PassResult(graph_module, changed)

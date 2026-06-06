@@ -403,3 +403,100 @@ class TestVulkanPasses(unittest.TestCase):
             1,
             "Expected non-aligned OC linear to fuse into q8ta_linear_gemv",
         )
+
+    def test_fuse_quantized_pixel_shuffle(self):
+        """An un-decomposed pixel_shuffle wrapped in dequantize/quantize_per_tensor
+        ops should fuse into a single et_vk.q8ta_pixel_shuffle.default node, and
+        none of the original quant/dequant nodes should remain.
+
+        The matcher relies on the partitioner's `ops_to_not_decompose()` hook
+        keeping `aten.pixel_shuffle.default` intact through edge lowering. We
+        replicate that behaviour here via `EdgeCompileConfig.preserve_ops` so
+        the test exercises the same graph shape that the partitioner produces
+        end-to-end.
+        """
+
+        class PixelShuffleModule(torch.nn.Module):
+            def forward(self, x):
+                x_dq = torch.ops.quantized_decomposed.dequantize_per_tensor(
+                    x, 0.1, 0, -128, 127, torch.int8
+                )
+                y = torch.nn.functional.pixel_shuffle(x_dq, 2)
+                return torch.ops.quantized_decomposed.quantize_per_tensor(
+                    y, 0.05, 1, -128, 127, torch.int8
+                )
+
+        # Use a non-square H/W and a W that is not a multiple of 4 so the
+        # geometry checks exercise the same shapes the model uses.
+        x = torch.randint(-128, 127, (1, 96, 16, 9), dtype=torch.int8)
+        program = torch.export.export(PixelShuffleModule(), (x,), strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.pixel_shuffle.default],
+            ),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 1)
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 0)
+        self.assertEqual(op_node_count(gm, "permute_copy.default"), 0)
+        self.assertEqual(op_node_count(gm, "pixel_shuffle.default"), 0)
+        self.assertEqual(op_node_count(gm, "dequantize_per_tensor.default"), 0)
+        self.assertEqual(op_node_count(gm, "quantize_per_tensor.default"), 0)
+
+        # Verify the fused op carries the correct args.
+        fused_node = next(
+            n
+            for n in gm.graph.nodes
+            if get_target_canonical_name(n) == "q8ta_pixel_shuffle.default"
+        )
+        # args = (input, input_scale, input_zp, inv_output_scale, output_zp, r)
+        self.assertEqual(fused_node.args[1], 0.1)
+        self.assertEqual(fused_node.args[2], 0)
+        # 1.0 / 0.05 == 20.0
+        self.assertEqual(fused_node.args[3], 20.0)
+        self.assertEqual(fused_node.args[4], 1)
+        self.assertEqual(fused_node.args[5], 2)
+
+    def test_quantized_pixel_shuffle_pattern_rejects_non_match(self):
+        """A `dq -> relu -> q` chain (no pixel_shuffle in between) must NOT be
+        fused. The new matcher only triggers when a single
+        `aten.pixel_shuffle.default` node sits between the dequant/quant pair.
+        """
+
+        class NonPixelShuffleModule(torch.nn.Module):
+            def forward(self, x):
+                x_dq = torch.ops.quantized_decomposed.dequantize_per_tensor(
+                    x, 0.1, 0, -128, 127, torch.int8
+                )
+                y = torch.nn.functional.relu(x_dq)
+                return torch.ops.quantized_decomposed.quantize_per_tensor(
+                    y, 0.1, 0, -128, 127, torch.int8
+                )
+
+        x = torch.randint(-128, 127, (1, 96, 16, 9), dtype=torch.int8)
+        program = torch.export.export(NonPixelShuffleModule(), (x,), strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.pixel_shuffle.default],
+            ),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        fuse_pass.call(ep.graph_module)
+
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)

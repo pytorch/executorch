@@ -433,6 +433,8 @@
 
 - op: var.correction_out
 
+- op: var_mean.correction_out
+
 - op: var.out
 
 - op: view_as_real_copy.out

@@ -1,0 +1,60 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "test_selectors",
+    srcs = ["test_selectors.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/intermediate_output_tap:selectors",
+    ],
+)
+
+python_unittest(
+    name = "test_reducers",
+    srcs = ["test_reducers.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/intermediate_output_tap:reducers",
+    ],
+)
+
+python_unittest(
+    name = "test_tap_pass",
+    srcs = ["test_tap_pass.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/intermediate_output_tap:reducers",
+        "//executorch/devtools/intermediate_output_tap:selectors",
+        "//executorch/devtools/intermediate_output_tap:tap_pass",
+    ],
+)
+
+python_unittest(
+    name = "test_strip_pass",
+    srcs = ["test_strip_pass.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools/intermediate_output_tap:reducers",
+        "//executorch/devtools/intermediate_output_tap:selectors",
+        "//executorch/devtools/intermediate_output_tap:strip_pass",
+        "//executorch/devtools/intermediate_output_tap:tap_pass",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
+    name = "test_xnnpack_e2e",
+    srcs = ["test_xnnpack_e2e.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/devtools/intermediate_output_tap:lib",
+        "//executorch/exir:lib",
+        "//executorch/runtime:runtime",
+        "//pytorch/ao:torchao",
+    ],
+)

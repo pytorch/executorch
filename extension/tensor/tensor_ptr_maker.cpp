@@ -10,6 +10,8 @@
 
 #include <random>
 
+#include <c10/util/safe_numerics.h>
+
 namespace executorch {
 namespace extension {
 namespace {
@@ -111,9 +113,22 @@ TensorPtr empty_strided(
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism) {
-  std::vector<uint8_t> data(
-      executorch::aten::compute_numel(sizes.data(), sizes.size()) *
+  auto numel_result = executorch::aten::safe_numel(sizes.data(), sizes.size());
+  ET_CHECK_MSG(
+      numel_result.ok(),
+      "safe_numel failed: %d",
+      static_cast<int>(numel_result.error()));
+  const ssize_t numel = numel_result.get();
+  size_t nbytes;
+  ET_CHECK_MSG(
+      !c10::mul_overflows(
+          static_cast<size_t>(numel),
+          executorch::aten::elementSize(type),
+          &nbytes),
+      "Overflow computing nbytes: numel=%zd element_size=%zu",
+      numel,
       executorch::aten::elementSize(type));
+  std::vector<uint8_t> data(nbytes);
   return make_tensor_ptr(
       std::move(sizes),
       std::move(data),

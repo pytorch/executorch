@@ -30,11 +30,25 @@ class IdSpace(Enum):
     Temp = auto()
 
 
-@dataclass(frozen=True)
+@dataclass(eq=False, frozen=True)
 class Slot:
+    """Represents an allocated tensor or symbolic int slot.
+
+    Uses identity-based equality and hashing (not field-based) so that
+    two Slots with the same (id_type, id_space, idx) — which can happen
+    when the delete-as-you-go allocator recycles an idx — remain distinct
+    in sets and dicts during build().
+    """
+
     id_type: IdType
     id_space: IdSpace
     idx: Optional[int] = None
+
+    def __eq__(self, other):
+        return self is other
+
+    def __hash__(self):
+        return id(self)
 
 
 class IdManager:

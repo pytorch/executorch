@@ -622,7 +622,7 @@ test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_shared_qspec_quantizer_no_target(test_case):
+def test_shared_qspec_quantizer(test_case):
     """Test that ops which does not change dynamic range are able to use int8
     portable kernels.
     """
@@ -655,7 +655,7 @@ float_test_cases = {
 
 
 @parametrize("test_case", float_test_cases)
-def test_shared_qspec_quantizer_no_qspecs_no_target(test_case):
+def test_shared_qspec_quantizer_no_qspecs(test_case):
     """Test that ops which does not change dynamic range are able to use int8
     portable kernels.
     """
@@ -671,7 +671,7 @@ def test_shared_qspec_quantizer_no_qspecs_no_target(test_case):
     _check_quant_params(pipeline, test_case.model.quant_params)
 
 
-def test_maximum_mixed_int8_int16_inputs_no_target():
+def test_maximum_mixed_int8_int16_inputs():
     model = MixedMaximumInt8Int16()
     inputs = (ramp_tensor(-2, 2, (2, 3, 4)),)
 

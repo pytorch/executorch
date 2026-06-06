@@ -139,20 +139,10 @@ class ConvolutionSupported(SupportedTOSAOperatorCheck):
         # For TransposeConv2D, the input tensor can only be 4D, hence we don't expect 3D input tensor.
         # In case of a 3D input tensor, the user should first unsqueeze the tensor and then pass it
         # to the TransposeConv2D, otherwise PyTorch throws an error.
-        if input_fake_tensor.dim_order() == (0, 1, 2, 3):
-            input_C = input_fake_tensor.shape[1]
-            input_H = input_fake_tensor.shape[2]
-            input_W = input_fake_tensor.shape[3]
-        elif input_fake_tensor.dim_order() == (0, 2, 3, 1):
-            input_C = input_fake_tensor.shape[3]
-            input_H = input_fake_tensor.shape[1]
-            input_W = input_fake_tensor.shape[2]
-        else:
-            self.reporter.report_reject(
-                node,
-                f"Unsupported dim order. Support dim orders (0,1,2,3) or (0,2,3,1) and got dim_order {input_fake_tensor.dim_order()}",
-            )
-            return False
+        input_C = input_fake_tensor.shape[1]
+        input_H = input_fake_tensor.shape[2]
+        input_W = input_fake_tensor.shape[3]
+
         kernel = cast(fx.Node, node.args[1]).meta["val"].shape
         kernel_h = kernel[2]
         kernel_w = kernel[3] if len(kernel) > 3 else 1

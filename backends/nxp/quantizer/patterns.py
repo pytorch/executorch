@@ -7,10 +7,16 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from functools import partial
 
 import torch
-
-from executorch.backends.nxp.quantizer.utils import get_bias_qparams
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
+    _is_convertible_to_relu,
+)
+from executorch.backends.nxp.quantizer.utils import (
+    get_bias_qparams,
+    get_bias_qparams_transp_conv,
+)
 from torch import fx
 from torch._ops import OpOverload
 from torch.fx import Node
@@ -111,8 +117,9 @@ class SharedSpecPattern(QuantizationPattern):
     def partition_types(self) -> list[torch.nn.Module]:
         pass
 
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    @staticmethod
+    def get_shared_spec_anchors(
+        gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
         assert len(fused_partition[0].input_nodes) == 1
@@ -133,15 +140,21 @@ class SharedSpecPattern(QuantizationPattern):
             ],
         )
 
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        return self.get_shared_spec_anchors(gm, fused_partition)
+
 
 class SingleInputBasicPattern(QuantizationPattern):
     @abstractmethod
     def partition_types(self) -> list[OpOverload]:
         pass
 
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors | None:
+    @staticmethod
+    def get_single_input_anchors(
+        gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ):
         node = fused_partition[0].nodes[-1]
 
         return PartitionAnchors(
@@ -151,11 +164,13 @@ class SingleInputBasicPattern(QuantizationPattern):
             output=[(node,)],
         )
 
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        return self.get_single_input_anchors(gm, fused_partition)
+
 
 class BatchNormPattern(QuantizationPattern):
-    def __init__(self, is_qat: bool):
-        super().__init__(is_qat=is_qat)
-
     def partition_types(self) -> list[OpOverload]:
         # BatchNorm quantization is needed only when in QAT mode
         return [torch.ops.aten.batch_norm.default] if self.is_qat else []
@@ -408,11 +423,28 @@ class CatPattern(QuantizationPattern):
         )
 
 
-class ClampPattern(SingleInputBasicPattern):
+class ClampPattern(QuantizationPattern):
     """Quantizer for the `aten.clamp.default` operator."""
+
+    def __init__(self, neutron_quantizer, is_qat=False):
+        super().__init__(is_qat)
+        self.neutron_quantizer = neutron_quantizer
 
     def partition_types(self):
         return [torch.ops.aten.clamp.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        if (
+            self.neutron_quantizer.neutron_target_spec.use_new_flow_neutron_c
+            and not _is_convertible_to_relu(node)
+        ):
+            return SharedSpecPattern.get_shared_spec_anchors(gm, fused_partition)
+        else:
+            return SingleInputBasicPattern.get_single_input_anchors(gm, fused_partition)
 
 
 def _is_batch_norm(node_: Node) -> bool:
@@ -482,16 +514,6 @@ class ConvPattern(QuantizationPattern):
         )
 
 
-class Conv1dPattern(ConvPattern):
-    def partition_types(self) -> list[OpOverload]:
-        return [torch.ops.aten.conv1d.default]
-
-
-class ConvTranspose1dPattern(ConvPattern):
-    def partition_types(self) -> list[OpOverload]:
-        return [torch.ops.aten.conv_transpose1d.default]
-
-
 class Conv2dPattern(ConvPattern):
     def __init__(self, neutron_quantizer, is_qat: bool = False):
         super().__init__(is_qat=is_qat)
@@ -543,6 +565,116 @@ class Conv2dPattern(ConvPattern):
 
         # If the following node is a fusable activation, quantize together with activation
         output = [(conv_node,)]
+        if len(conv_node.users) == 1 and (
+            self.neutron_target_info.is_supported_fused_activation__aten(
+                activation := next(iter(conv_node.users))
+            )
+            or (
+                self.is_qat
+                and _is_batch_norm(activation)
+                and self.neutron_target_info.is_supported_fused_activation__aten(
+                    activation := next(iter(activation.users))
+                )
+            )
+        ):
+            activation_quantizer = self.neutron_quantizer.op_to_quantizer[
+                activation.target
+            ]
+            activation_quantizer.annotate(gm)
+            output = []
+            activation.meta["quantization_annotation"].input_qspec_map = {}
+
+            if isinstance(bn := next(iter(conv_node.users)), Node) and _is_batch_norm(
+                bn
+            ):
+                bn_quantizer = self.neutron_quantizer.op_to_quantizer[bn.target]
+                bn_quantizer.annotate(gm)
+                bn.meta["quantization_annotation"].input_qspec_map = {}
+                bn.meta["quantization_annotation"].output_qspec = None
+
+        # In order for QAT to be numerically correct, there should be no quantization between
+        # convolution node and batch norm node.
+        if self.is_qat:
+            conv_users = conv_node.users
+            possibly_bn = list(conv_users.keys())[0] if len(conv_users) == 1 else None
+            if possibly_bn and _is_batch_norm(possibly_bn):
+                output = []
+
+        return PartitionAnchors(
+            inputs=[(conv_node, NodeArgsIdx(0))],
+            weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
+            biases=bias,
+            output=output,
+        )
+
+
+class ConvTranspose2dPattern(QuantizationPattern):
+    def __init__(self, neutron_quantizer, is_qat: bool = False):
+        super().__init__(is_qat=is_qat)
+
+        self.neutron_quantizer = neutron_quantizer
+        self.neutron_target_info = (
+            self.neutron_quantizer.neutron_target_spec.neutron_target_info
+        )
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.conv_transpose2d.input]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        conv_node = fused_partition[0].nodes[-1]
+
+        # When `groups` > 1, the per-channel weight qparams have shape (`out_channels` / `groups`),
+        # but bias qparams have shape (`out_channels`) - not divided by `groups`.
+        # So the weight qparams must be expanded to match the shape correctly.
+        groups = 1 if len(conv_node.args) < 7 else conv_node.args[6]
+        if groups > 1:
+            out_channels = conv_node.meta["val"].shape[1]
+            derive_qparams_fn = partial(
+                get_bias_qparams_transp_conv, out_channels=out_channels
+            )
+
+        else:
+            derive_qparams_fn = get_bias_qparams
+
+        bias_quantization_qspec = DerivedQuantizationSpec(
+            derived_from=[
+                (conv_node.args[0], conv_node),
+                (conv_node.args[1], conv_node),
+            ],
+            derive_qparams_fn=derive_qparams_fn,
+            dtype=torch.int32,
+            quant_min=-(2**31) + 1,
+            quant_max=2**31 - 1,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+        )
+
+        w_ch_axis = 1
+        weight_observer_or_fake_quant_ctr = (
+            FakeQuantize.with_args(
+                observer=MovingAveragePerChannelMinMaxObserver, ch_axis=w_ch_axis
+            )
+            if self.is_qat
+            else PerChannelMinMaxObserver.with_args(ch_axis=w_ch_axis)
+        )
+        weight_quantization_spec = QuantizationSpec(
+            dtype=torch.int8,
+            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
+            quant_min=-127,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=w_ch_axis,
+        )
+
+        # Keep bias empty if not supplied
+        bias = []
+        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
+            bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
+
+        # If the following node is a fusable activation, quantize together with activation
+        output = [(conv_node,)]
         if len(
             conv_node.users
         ) == 1 and self.neutron_target_info.is_supported_fused_activation__aten(
@@ -568,60 +700,6 @@ class Conv2dPattern(ConvPattern):
             weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
             biases=bias,
             output=output,
-        )
-
-
-class ConvTranspose2dPattern(QuantizationPattern):
-    def partition_types(self) -> list[OpOverload]:
-        return [torch.ops.aten.conv_transpose2d.input]
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors:
-        conv_node = fused_partition[0].nodes[-1]
-
-        bias_quantization_qspec = DerivedQuantizationSpec(
-            derived_from=[
-                (conv_node.args[0], conv_node),
-                (conv_node.args[1], conv_node),
-            ],
-            derive_qparams_fn=get_bias_qparams,
-            dtype=torch.int32,
-            quant_min=-(2**31) + 1,
-            quant_max=2**31 - 1,
-            qscheme=torch.per_channel_symmetric,
-            ch_axis=0,
-        )
-
-        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
-        weight_quantization_spec = QuantizationSpec(
-            dtype=torch.int8,
-            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
-            quant_min=-127,
-            quant_max=127,
-            qscheme=torch.per_channel_symmetric,
-            ch_axis=1,
-        )
-
-        # Keep bias empty if not supplied
-        bias = []
-        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
-            bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
-
-        output_specs = [(conv_node,)]
-        # In order for QAT to be numerically correct, there should be no quantization between
-        # convolution node and batch norm node.
-        if self.is_qat:
-            conv_users = conv_node.users
-            possibly_bn = list(conv_users.keys())[0] if len(conv_users) == 1 else None
-            if possibly_bn and _is_batch_norm(possibly_bn):
-                output_specs = []
-
-        return PartitionAnchors(
-            inputs=[(conv_node, NodeArgsIdx(0))],
-            weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
-            biases=bias,
-            output=output_specs,
         )
 
 
@@ -830,7 +908,7 @@ class MulTensorPattern(QuantizationPattern):
     Basic quantization for all inputs and output.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.mul.Tensor]
 
     def get_anchors(

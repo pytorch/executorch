@@ -85,6 +85,69 @@ function(gen_selected_ops)
       WORKING_DIRECTORY ${EXECUTORCH_ROOT}
     )
   endif()
+
+  # Expose the generated YAML path so callers can feed it into
+  # gen_selected_max_kernel_num().
+  set(gen_selected_ops_output_yaml
+      ${_oplist_yaml}
+      PARENT_SCOPE
+  )
+endfunction()
+
+# Generate selected_max_kernel_num.h from one or more selected_operators.yaml
+# files. operator_registry.cpp picks the header up via __has_include when the
+# user has not explicitly set -DMAX_KERNEL_NUM.
+#
+# Invoked as gen_selected_max_kernel_num( LIB_NAME lib_name OPLIST_YAMLS yaml1
+# [yaml2 ...] )
+#
+# Exposes ${LIB_NAME}_max_kernel_num_include_dir in the parent scope — add this
+# to target_include_directories() on whichever target compiles
+# operator_registry.cpp.
+function(gen_selected_max_kernel_num)
+  set(one_value_args LIB_NAME)
+  set(multi_value_args OPLIST_YAMLS)
+  cmake_parse_arguments(
+    GEN "" "${one_value_args}" "${multi_value_args}" ${ARGN}
+  )
+
+  if(NOT GEN_LIB_NAME)
+    message(FATAL_ERROR "gen_selected_max_kernel_num: LIB_NAME is required")
+  endif()
+  if(NOT GEN_OPLIST_YAMLS)
+    message(FATAL_ERROR "gen_selected_max_kernel_num: OPLIST_YAMLS is required")
+  endif()
+
+  set(_prim_ops_src ${EXECUTORCH_ROOT}/kernels/prim_ops/register_prim_ops.cpp)
+  set(_gen_script ${EXECUTORCH_ROOT}/codegen/tools/gen_max_kernel_num.py)
+  set(_include_root ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  set(_header
+      ${_include_root}/executorch/runtime/kernel/selected_max_kernel_num.h
+  )
+
+  set(_yaml_args "")
+  foreach(_yaml IN LISTS GEN_OPLIST_YAMLS)
+    list(APPEND _yaml_args --oplist-yaml=${_yaml})
+  endforeach()
+
+  set(_gen_command
+      "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_max_kernel_num ${_yaml_args}
+      --prim-ops-source=${_prim_ops_src} --output-path=${_header}
+  )
+
+  add_custom_command(
+    COMMENT "Computing right-sized MAX_KERNEL_NUM for ${GEN_LIB_NAME}"
+    OUTPUT ${_header}
+    COMMAND ${_gen_command}
+    DEPENDS ${GEN_OPLIST_YAMLS} ${_prim_ops_src} ${_gen_script}
+    WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  )
+  add_custom_target(${GEN_LIB_NAME}_max_kernel_num_header DEPENDS ${_header})
+
+  set(${GEN_LIB_NAME}_max_kernel_num_include_dir
+      ${_include_root}
+      PARENT_SCOPE
+  )
 endfunction()
 
 # Codegen for registering kernels. Kernels are defined in functions_yaml and

@@ -12,6 +12,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>
@@ -28,18 +29,21 @@ struct QnnBackendBundle {
   std::unique_ptr<QnnLogger> qnn_logger_ptr;
   std::unique_ptr<QnnBackend> qnn_backend_ptr;
   std::unique_ptr<QnnDevice> qnn_device_ptr;
+  std::unique_ptr<QnnSystemImplementation> system_implementation;
 
   // Default ctor
   QnnBackendBundle()
       : implementation(nullptr),
         qnn_logger_ptr(nullptr),
         qnn_backend_ptr(nullptr),
-        qnn_device_ptr(nullptr) {}
+        qnn_device_ptr(nullptr),
+        system_implementation{nullptr} {}
   // Default dtor
   ~QnnBackendBundle() {
     qnn_device_ptr.reset();
     qnn_backend_ptr.reset();
     qnn_logger_ptr.reset();
+    system_implementation.reset();
     implementation.reset();
   }
 };
@@ -79,6 +83,8 @@ class QnnBackendUnifiedRegistry {
 #endif
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
   static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
+  // Lpai library name is same for both traditional build and hexagon build.
+  static constexpr const char* lpai_library_name_ = "libQnnLpai.so";
 
   std::unique_ptr<const QnnSaver_Config_t*[]> GetImplementationConfig(
       const QnnExecuTorchOptions* options) {

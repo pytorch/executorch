@@ -7,7 +7,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -42,7 +42,7 @@ def _get_opset(op):
     raise RuntimeError(f"div.Tensor_mode not supported for op {op}")
 
 
-class DecomposeDivTensorModePass(ArmPass):
+class DecomposeDivTensorModePass(ArmOpTargetedPass):
     """Rewrites aten.div.Tensor_mode into.
 
     Example:
@@ -57,11 +57,11 @@ class DecomposeDivTensorModePass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}
+    target_ops = edge_div_mode_ops + aten_div_mode_ops
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            edge_div_mode_ops + aten_div_mode_ops
-        ) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         opset = _get_opset(op)

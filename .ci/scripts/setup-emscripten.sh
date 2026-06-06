@@ -9,7 +9,7 @@ set -ex
 
 # need version >= 17
 install_node() {
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+    curl --retry 3 --retry-all-errors -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
     source "$HOME/.nvm/nvm.sh"
     nvm install 22
 }

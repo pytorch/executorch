@@ -31,7 +31,9 @@ using optional = std::optional<T>;
  * operator need to be updated accordingly
  */
 
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
 enum datatype { Bits4u = 21, Bits4 = 22 };
+#endif
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
@@ -57,8 +59,10 @@ void check_dequantize_per_tensor_args(
           input.scalar_type() == ScalarType::Char ||
           input.scalar_type() == ScalarType::UInt16 ||
           input.scalar_type() == ScalarType::Short ||
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
           input.scalar_type() == (ScalarType)Bits4 ||
           input.scalar_type() == (ScalarType)Bits4u ||
+#endif
           input.scalar_type() == ScalarType::Int,
 
       "input.scalar_type() %" PRId8 " is not supported:",
@@ -183,6 +187,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
     } else if ((input.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
@@ -209,6 +214,7 @@ Tensor& dequantize_impl(
           axis,
           zero_point_data,
           scale_data);
+#endif
     } else {
       if (axis == NULL) {
 // calculate the dequantized output, cast scale to float to match fbgemm
@@ -391,6 +397,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
     } else if ((input.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       const uint8_t* input_data = input.const_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
@@ -415,6 +422,7 @@ Tensor& dequantize_impl(
           input.dim(),
           axis,
           scale_data);
+#endif
     } else {
       if (axis == NULL) {
 // calculate the dequantized output, cast scale to float to match fbgemm

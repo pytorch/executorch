@@ -389,6 +389,28 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_ncl",
+        srcs = ["op_quantized_depthwise_conv1d_ncl.cpp"],
+        platforms = CXX,
+        deps = COMMON_DEPS + [
+            "//executorch/backends/cadence/generic/operators:op_quantized_conv1d_ncl",
+        ],
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_depthwise_conv1d_nlc",
+        srcs = ["op_quantized_depthwise_conv1d_nlc.cpp"],
+        platforms = CXX,
+        deps = COMMON_DEPS + [
+            "//executorch/backends/cadence/generic/operators:op_quantized_conv1d_nlc",
+        ],
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
         name = "op_quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_out",
         srcs = ["op_quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_out.cpp"],
         exported_headers = ["operators.h"],

@@ -9,8 +9,13 @@
 // Generate tokens in a loop.
 #pragma once
 
+#include <atomic>
+#include <memory>
+#include <vector>
+
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/extension/llm/sampler/logit_processor.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
@@ -34,6 +39,20 @@ class ET_EXPERIMENTAL TextTokenGenerator {
 
   void set_ignore_eos(bool ignore_eos) {
     ignore_eos_ = ignore_eos;
+  }
+
+  void add_logit_processor(std::shared_ptr<LogitProcessor> processor) {
+    if (processor) {
+      logit_processors_.push_back(std::move(processor));
+    }
+  }
+
+  void clear_logit_processors() {
+    logit_processors_.clear();
+  }
+
+  size_t num_logit_processors() const {
+    return logit_processors_.size();
   }
 
   virtual ~TextTokenGenerator() = default;
@@ -95,7 +114,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
           resize_tensor_ptr(tokens_managed, token_shape));
     }
 
-    should_stop_ = false;
+    should_stop_.store(false, std::memory_order_relaxed);
 
     // Generate our tokens
     while (pos < start_pos + max_new_tokens) {
@@ -106,6 +125,10 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       executorch::aten::Tensor& logits_tensor = logits_res.get();
 
       prev_token = cur_token;
+
+      for (auto& processor : logit_processors_) {
+        ET_CHECK_OK_OR_RETURN_ERROR(processor->process(logits_tensor));
+      }
 
       stats_->on_sampling_begin();
       cur_token =
@@ -136,7 +159,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
       token_callback(std::move(*decode_result));
 
-      if (should_stop_) {
+      if (should_stop_.load(std::memory_order_relaxed)) {
         break;
       }
 
@@ -154,7 +177,7 @@ class ET_EXPERIMENTAL TextTokenGenerator {
    * Stop the generation loop.
    */
   inline void stop() {
-    should_stop_ = true;
+    should_stop_.store(true, std::memory_order_relaxed);
   }
 
   /**
@@ -187,8 +210,10 @@ class ET_EXPERIMENTAL TextTokenGenerator {
   bool use_kv_cache_;
   bool ignore_eos_ = false;
 
+  std::vector<std::shared_ptr<LogitProcessor>> logit_processors_;
+
   // state machine
-  bool should_stop_ = false;
+  std::atomic<bool> should_stop_{false};
 
   // stats
   Stats* stats_;

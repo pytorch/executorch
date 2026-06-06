@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -44,18 +45,18 @@ class OpSignTest : public OperatorTest {
 };
 
 TEST_F(OpSignTest, ETSanityCheckFloat) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen returns 0 on NAN input";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen returns 0 on NAN input");
 #define TEST_ENTRY(ctype, dtype) test_et_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_FLOATHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 TEST_F(OpSignTest, ATenSanityCheckFloat) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ET returns NAN on NAN input";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ET returns NAN on NAN input");
   TensorFactory<ScalarType::Float> tf;
 
   Tensor in = tf.make({1, 7}, {-INFINITY, -3., -1.5, 0., 1.5, NAN, INFINITY});

@@ -34,7 +34,7 @@ def _get_int8_quantizer() -> TOSAQuantizer:
     return quantizer
 
 
-def test_decompose_einsum_no_target_rewrites_export_graph() -> None:
+def test_decompose_einsum_rewrites_export_graph() -> None:
     module = EinsumPermuteModule().eval()
     exported_program = export(module, module.get_inputs())
 
