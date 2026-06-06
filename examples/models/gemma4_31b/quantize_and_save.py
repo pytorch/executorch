@@ -46,7 +46,9 @@ from executorch.examples.models.gemma4_31b.quant import (
 
 _INT4 = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
 _INT4_HQQ = QuantConfig(bits=4, group_size=32, symmetric=False, method="hqq")
+_INT4_HQQ_GS64 = QuantConfig(bits=4, group_size=64, symmetric=False, method="hqq")
 _INT8 = QuantConfig(bits=8, group_size=32, symmetric=True, method="min_max")
+_INT8_GS64 = QuantConfig(bits=8, group_size=64, symmetric=True, method="min_max")
 _INT8_PER_AXIS = QuantConfig(  # group_size = hidden_size (5376) for Gemma 4 31B
     bits=8, group_size=5376, symmetric=True, method="min_max"
 )
@@ -69,9 +71,39 @@ GEMMA4_31B_SENSITIVE_RECIPE = QuantRecipe(
     ]
 )
 
+# gs=64 variant of the sensitive recipe: INT4 HQQ weights move to group_size=64
+# (halves the int4 scale/zero metadata DRAM bytes, the only remaining decode
+# lever on this DRAM-byte-bound matvec kernel). The INT8 edge v_proj/down_proj
+# stay gs=32 -- they are INT8 precisely because they are the most quant-sensitive
+# layers, so coarsening them is poor risk/reward. asymmetric (symmetric=False)
+# and method=hqq are preserved; only group_size changes.
+GEMMA4_31B_SENSITIVE_GS64_RECIPE = QuantRecipe(
+    rules=[
+        QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
+        QuantRule(r".*norm\.weight", None),
+        QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8, layers=_EDGE_LAYERS),
+        QuantRule(r".*\.weight", _INT4_HQQ_GS64),
+    ]
+)
+
+# ALL-gs=64 variant: like sensitive_gs64, but the INT8 edge v_proj/down_proj also
+# move to group_size=64 (halves their scale/zero metadata too). More aggressive --
+# the edge layers are the most quant-sensitive -- so this MUST clear the same strict
+# accuracy gate (PPL within +3% of gs32 tip + coherent) before it can ship.
+GEMMA4_31B_SENSITIVE_ALLGS64_RECIPE = QuantRecipe(
+    rules=[
+        QuantRule(r"embed_tokens\.weight", _INT8_PER_AXIS),
+        QuantRule(r".*norm\.weight", None),
+        QuantRule(r".*\.(v_proj|down_proj)\.weight", _INT8_GS64, layers=_EDGE_LAYERS),
+        QuantRule(r".*\.weight", _INT4_HQQ_GS64),
+    ]
+)
+
 _RECIPES = {
     "default": GEMMA4_31B_DEFAULT_RECIPE,
     "sensitive": GEMMA4_31B_SENSITIVE_RECIPE,
+    "sensitive_gs64": GEMMA4_31B_SENSITIVE_GS64_RECIPE,
+    "sensitive_allgs64": GEMMA4_31B_SENSITIVE_ALLGS64_RECIPE,
 }
 
 
