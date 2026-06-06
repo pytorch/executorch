@@ -227,7 +227,7 @@ Error Runner::load() {
 
   ET_LOG(Info, "Reading metadata from model");
   // retrieve any method meta, can be either prefill or kv
-  ET_UNWRAP(num_layers_evalue__, module_->get("get_n_layers"));
+  ET_ASSIGN_OR_RETURN(num_layers_evalue__, module_->get("get_n_layers"));
   int64_t num_layers = num_layers_evalue__.toScalar().to<int64_t>();
 
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
@@ -270,7 +270,8 @@ Error Runner::load() {
   // attention
   int32_t sliding_window = context_len_;
   if (module_->method_names()->count("get_sliding_window") > 0) {
-    ET_UNWRAP(sliding_window_evalue__, module_->get("get_sliding_window"));
+    ET_ASSIGN_OR_RETURN(
+        sliding_window_evalue__, module_->get("get_sliding_window"));
     sliding_window = sliding_window_evalue__.toInt();
   }
   kv_manager_ = std::make_unique<KVManager>(
@@ -462,7 +463,7 @@ Error Runner::generate_from_prompt_or_file(
   // print the first token from prefill. No prev_token so use cur_token for
   // it.
   if (token_callback) {
-    ET_UNWRAP_TOKENIZER(
+    ET_ASSIGN_OR_RETURN_TOKENIZER(
         decoded_token__, tokenizer_->decode(cur_token, cur_token));
     token_callback(decoded_token__);
   }
@@ -473,7 +474,7 @@ Error Runner::generate_from_prompt_or_file(
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
-  ET_UNWRAP(
+  ET_ASSIGN_OR_RETURN(
       num_generated_tokens,
       token_generator_->generate(
           prompt_tokens,
