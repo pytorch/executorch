@@ -90,10 +90,9 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         """Choose between standard SDPA and split-K flash-decoding.
 
         Split-K partitions the KV sequence across many CTAs for better GPU
-        utilization at decode time (L_q=1). It wins when L_kv is large
-        (full-attention KV caches) but loses to the standard kernel for
-        small L_kv (sliding-window ring buffers) due to the overhead of
-        allocating partial buffers and running the reduction kernel.
+        utilization at decode time (L_q=1). It uses split-K for decode
+        whenever L_kv >= 2048 (both sliding-window ring buffers and full
+        caches); the standard kernel underfills the GPU at L_q=1.
         """
         q_shape = node.args[0].meta["val"].shape
         k_shape = node.args[1].meta["val"].shape
@@ -104,7 +103,7 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             isinstance(L_q, int)
             and L_q == 1
             and isinstance(L_kv, int)
-            and L_kv > _SPLITK_LKV_THRESHOLD
+            and L_kv >= _SPLITK_LKV_THRESHOLD  # >= so sliding L_kv=2048 uses split-K too
             and D > 0
             and (D & (D - 1)) == 0  # power of 2
         ):
