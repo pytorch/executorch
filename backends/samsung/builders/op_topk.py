@@ -67,8 +67,8 @@ class TopKVisitor(NodeVisitor):
                 raise AssertionError("Not supported largest = False.")
 
         if len(node.args) > 4:
-            sorted = cast(bool, node.args[4])
-            if not sorted:
+            is_sorted = cast(bool, node.args[4])
+            if not is_sorted:
                 raise AssertionError("Not supported sorted = False.")
 
         enn_graph.define_op(node.name, "TopK", [input_id], all_output_tensors, params)

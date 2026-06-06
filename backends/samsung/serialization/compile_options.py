@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 
 from importlib.resources import files
+from typing import Optional
 
 from executorch.exir._serialize._dataclass import _DataclassEncoder
 from executorch.exir._serialize._flatbuffer import _flatc_compile
@@ -73,7 +74,7 @@ def gen_samsung_backend_compile_spec_core(options: EnnExecuTorchOptions) -> Comp
 
 def gen_samsung_backend_compile_spec(
     chipset: str,
-    perf_mode: PerformanceMode = None,
+    perf_mode: Optional[PerformanceMode] = None,
 ):
     """
     A function to generate an ExecuTorch binary for Samsung Backend.

@@ -19,18 +19,38 @@ class RecomposeRmsNorm(ExportPass):
     def __init__(self):
         super().__init__()
 
+    _ADD_TARGETS = (
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.add.Scalar,
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.add.Scalar,
+    )
+
     def _get_eps_node(self, nodes):
         # eps: one of inputs of add node
-        add_node = [n for n in nodes if hasattr(n, "name") and "add" in n.name][0]
+        add_nodes = [
+            n
+            for n in nodes
+            if isinstance(n, torch.fx.Node)
+            and n.op == "call_function"
+            and n.target in self._ADD_TARGETS
+        ]
+        if not add_nodes:
+            raise RuntimeError("Failed to locate add node in RMSNorm partition")
+        add_node = add_nodes[0]
         for a in add_node.args:
-            if isinstance(a, float) or a.op != "call_function":
+            if isinstance(a, float) or (
+                isinstance(a, torch.fx.Node) and a.op != "call_function"
+            ):
                 return a
+        raise RuntimeError("Failed to locate eps argument in RMSNorm add node")
 
     def _get_gamma_node(self, output_node):
         # gamma: one of inputs of output node
         for a in output_node.args:
-            if a.op != "call_function":
+            if isinstance(a, torch.fx.Node) and a.op != "call_function":
                 return a
+        raise RuntimeError("Failed to locate gamma argument in RMSNorm output node")
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
