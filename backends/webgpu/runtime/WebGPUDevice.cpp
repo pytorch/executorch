@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
 #include <cstdio>
@@ -101,9 +102,18 @@ WebGPUContext create_webgpu_context() {
   adapter_cb.callback = on_adapter_request;
   adapter_cb.userdata1 = &adapter_result;
 
-  wgpuInstanceRequestAdapter(ctx.instance, nullptr, adapter_cb);
+  // Release Dawn has no bundled fallback adapter; pick the platform backend
+  // (Metal on Apple, Vulkan elsewhere -- SwiftShader via VK_ICD_FILENAMES).
+  WGPURequestAdapterOptions adapter_opts = {};
+#if defined(__APPLE__)
+  adapter_opts.backendType = WGPUBackendType_Metal;
+#else
+  adapter_opts.backendType = WGPUBackendType_Vulkan;
+#endif
+  adapter_opts.forceFallbackAdapter = false;
+  wgpuInstanceRequestAdapter(ctx.instance, &adapter_opts, adapter_cb);
   while (!adapter_result.done) {
-    wgpuInstanceProcessEvents(ctx.instance);
+    webgpu_poll(ctx.instance);
   }
 
   if (!adapter_result.adapter) {
@@ -133,7 +143,7 @@ WebGPUContext create_webgpu_context() {
 
   wgpuAdapterRequestDevice(ctx.adapter, &device_desc, device_cb);
   while (!device_result.done) {
-    wgpuInstanceProcessEvents(ctx.instance);
+    webgpu_poll(ctx.instance);
   }
 
   if (!device_result.device) {
