@@ -12,15 +12,13 @@
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <executorch/runtime/core/named_data_map.h>
 
+#include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
-#include <webgpu/wgpu.h>
 
 #include <cstring>
 #include <stdexcept>
 
-namespace executorch {
-namespace backends {
-namespace webgpu {
+namespace executorch::backends::webgpu {
 
 // vkgraph namespace is declared at global scope in the generated FlatBuffer
 // header
@@ -50,6 +48,87 @@ size_t vk_datatype_size(vkgraph::VkDataType dtype) {
 
 WebGPUGraph::WebGPUGraph() = default;
 
+WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
+  WGPUBufferDescriptor buf_desc = {};
+  buf_desc.size = nbytes > 0 ? nbytes : 4;
+  buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+      WGPUBufferUsage_CopySrc;
+  buf_desc.mappedAtCreation = false;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+  scratch_buffers_.push_back(buffer);
+  return buffer;
+}
+
+void WebGPUGraph::update_symints_from_inputs(
+    const std::vector<std::pair<const void*, size_t>>& inputs) {
+  for (const auto& src : symint_sources_) {
+    int pos = -1;
+    for (size_t i = 0; i < input_ids_.size(); i++) {
+      if (input_ids_[i] == src.input_tensor_id) {
+        pos = static_cast<int>(i);
+        break;
+      }
+    }
+    if (pos < 0 || pos >= static_cast<int>(inputs.size())) {
+      throw std::runtime_error(
+          "select_as_symint: source tensor is not a graph input");
+    }
+    const auto& dims = tensors_[src.input_tensor_id].dims;
+    int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
+    int index = src.index;
+    if (dim >= 0 && dim < static_cast<int>(dims.size()) && index < 0) {
+      index += static_cast<int>(dims[dim]);
+    }
+    int64_t numel = 1;
+    for (int64_t d : dims) {
+      numel *= d;
+    }
+    int64_t stride = 1;
+    for (size_t i = static_cast<size_t>(dim) + 1; i < dims.size(); i++) {
+      stride *= dims[i];
+    }
+    const int64_t offset = static_cast<int64_t>(index) * stride;
+    const void* host = inputs[pos].first;
+    const size_t elem_size =
+        numel > 0 ? inputs[pos].second / static_cast<size_t>(numel) : 0;
+    int32_t val;
+    if (elem_size == sizeof(int64_t)) {
+      val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
+    } else if (elem_size == sizeof(int32_t)) {
+      val = static_cast<const int32_t*>(host)[offset];
+    } else {
+      throw std::runtime_error(
+          "select_as_symint: unsupported input element size");
+    }
+    set_symint(src.symint_id, val);
+  }
+}
+
+void WebGPUGraph::set_symint(int id, int32_t val) {
+  auto it = symints_.find(id);
+  if (it == symints_.end()) {
+    throw std::runtime_error("WebGPUGraph::set_symint: id is not a SymInt");
+  }
+  if (it->second.value != val) {
+    it->second.value = val;
+    wgpuQueueWriteBuffer(
+        queue_, it->second.buffer, 0, &it->second.value, sizeof(int32_t));
+    dirty_symints_.insert(id);
+  }
+}
+
+void WebGPUGraph::propagate_resize() {
+  if (dirty_symints_.empty()) {
+    return;
+  }
+  for (auto& hook : resize_hooks_) {
+    if (dirty_symints_.count(hook.symint_id) != 0) {
+      hook.fn(*this);
+    }
+  }
+  dirty_symints_.clear();
+}
+
 WebGPUGraph::~WebGPUGraph() {
   for (size_t i = 0; i < tensors_.size(); i++) {
     if (tensors_[i].buffer &&
@@ -60,6 +139,21 @@ WebGPUGraph::~WebGPUGraph() {
   for (auto& buf : shared_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& buf : scratch_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& buf : owned_uniform_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& kv : symints_) {
+    if (kv.second.buffer) {
+      wgpuBufferRelease(kv.second.buffer);
     }
   }
   for (auto& buf : output_staging_buffers_) {
@@ -222,6 +316,27 @@ void WebGPUGraph::build(
         bools_[i] = val->value_as_Bool()->bool_val();
         break;
       }
+      case vkgraph::GraphTypes::SymInt: {
+        // Live scalar: small Uniform buffer the CPU rewrites per execute.
+        value_types_[i] = ValueType::SymInt;
+        SymIntSlot slot;
+        slot.value = static_cast<int32_t>(val->value_as_SymInt()->value());
+        // 16B satisfies the WGSL uniform min binding size; int32 in first 4.
+        constexpr size_t kSymIntUniformBytes = 16;
+        WGPUBufferDescriptor d = {};
+        d.size = kSymIntUniformBytes;
+        d.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+        d.mappedAtCreation = true;
+        slot.buffer = wgpuDeviceCreateBuffer(device_, &d);
+        void* mapped =
+            wgpuBufferGetMappedRange(slot.buffer, 0, kSymIntUniformBytes);
+        std::memset(mapped, 0, kSymIntUniformBytes);
+        std::memcpy(mapped, &slot.value, sizeof(int32_t));
+        wgpuBufferUnmap(slot.buffer);
+        symints_[i] = slot;
+        add_uniform_buffer_bytes(kSymIntUniformBytes);
+        break;
+      }
       default:
         value_types_[i] = ValueType::Null;
         break;
@@ -380,20 +495,19 @@ void WebGPUGraph::execute() {
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-    WGPUComputePassDescriptor pass_desc = {};
-    WGPUComputePassEncoder pass =
-        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-
+    // One pass per dispatch: enforces storage RAW ordering across deps.
     for (const auto& dispatch : dispatches_) {
+      WGPUComputePassDescriptor pass_desc = {};
+      WGPUComputePassEncoder pass =
+          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatch.bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
           pass, dispatch.workgroup_count_x, 1, 1);
+      wgpuComputePassEncoderEnd(pass);
+      wgpuComputePassEncoderRelease(pass);
     }
-
-    wgpuComputePassEncoderEnd(pass);
-    wgpuComputePassEncoderRelease(pass);
 
     for (const auto& copy : output_copies_) {
       wgpuCommandEncoderCopyBufferToBuffer(
@@ -423,20 +537,18 @@ void WebGPUGraph::execute() {
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-    WGPUComputePassDescriptor pass_desc = {};
-    WGPUComputePassEncoder pass =
-        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-
     for (size_t i = start; i < end; i++) {
+      WGPUComputePassDescriptor pass_desc = {};
+      WGPUComputePassEncoder pass =
+          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatches_[i].pipeline);
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatches_[i].bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
           pass, dispatches_[i].workgroup_count_x, 1, 1);
+      wgpuComputePassEncoderEnd(pass);
+      wgpuComputePassEncoderRelease(pass);
     }
-
-    wgpuComputePassEncoderEnd(pass);
-    wgpuComputePassEncoderRelease(pass);
 
     if (end == n) {
       for (const auto& copy : output_copies_) {
@@ -499,7 +611,17 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
         cb_info);
   }
 
-  wgpuDevicePoll(device_, true, nullptr);
+  bool all_mapped = false;
+  while (!all_mapped) {
+    webgpu_poll(instance_);
+    all_mapped = true;
+    for (size_t i = 0; i < count; i++) {
+      if (outputs[i].second != 0 && !cb_data[i].done) {
+        all_mapped = false;
+        break;
+      }
+    }
+  }
 
   for (size_t i = 0; i < count; i++) {
     if (outputs[i].second == 0) {
@@ -545,6 +667,4 @@ WebGPUMemoryStats WebGPUGraph::memory_stats() const {
   return stats;
 }
 
-} // namespace webgpu
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::webgpu
