@@ -604,10 +604,26 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "",
             "",
             "def _build_int_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:",
-            '    """Build a vector of int32."""',
+            '    """Pre-build a vector of int32 values (must be called before table Start)."""',
             "    builder.StartVector(4, len(vec), 4)",
             "    for v in reversed(vec):",
             "        builder.PrependInt32(v)",
+            "    return builder.EndVector()",
+            "",
+            "",
+            "def _build_int8_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:",
+            '    """Pre-build a vector of int8 values (must be called before table Start)."""',
+            "    builder.StartVector(1, len(vec), 1)",
+            "    for v in reversed(vec):",
+            "        builder.PrependInt8(v)",
+            "    return builder.EndVector()",
+            "",
+            "",
+            "def _build_uint8_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:",
+            '    """Pre-build a vector of uint8 values (must be called before table Start)."""',
+            "    builder.StartVector(1, len(vec), 1)",
+            "    for v in reversed(vec):",
+            "        builder.PrependUint8(v)",
             "    return builder.EndVector()",
             "",
             "",
@@ -694,6 +710,16 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "            builder.PrependUint32(tid.idx)",
             "        return builder.EndVector()",
             "",
+            "    def _build_string_vector(",
+            "        self, builder: flatbuffers.Builder, vec: List[str]",
+            "    ) -> int:",
+            '        """Pre-build a vector of strings (offsets must be created before table Start)."""',
+            "        offsets = [builder.CreateString(s) for s in vec]",
+            "        builder.StartVector(4, len(offsets), 4)",
+            "        for off in reversed(offsets):",
+            "            builder.PrependUOffsetTRelative(off)",
+            "        return builder.EndVector()",
+            "",
         ]
     )
 
@@ -766,8 +792,11 @@ def _generate_op_builder_method(table: FBSTable) -> str:
 
 _PY_PREBUILD_VECTOR = {
     "list_int": "_build_int_vector(builder, op.{name})",
+    "list_int8": "_build_int8_vector(builder, op.{name})",
+    "list_uint8": "_build_uint8_vector(builder, op.{name})",
     "list_int_or_vid": "self._build_int_or_vid_vector(builder, op.{name})",
     "list_tid": "self._build_tid_vector(builder, op.{name})",
+    "list_str": "self._build_string_vector(builder, op.{name})",
 }
 
 _PY_PREBUILD_OFFSET = {
@@ -818,7 +847,14 @@ def _emit_py_add(
     if kind in ("str", "int_or_vid", "float_or_vid", "vid_or_tid", "int_or_vid_or_tid"):
         return [f"        {add}(builder, {n}_off)"]
     # Pre-built vectors (required vs optional)
-    if kind in ("list_int", "list_int_or_vid", "list_tid"):
+    if kind in (
+        "list_int",
+        "list_int8",
+        "list_uint8",
+        "list_int_or_vid",
+        "list_tid",
+        "list_str",
+    ):
         if fld.required:
             return [f"        {add}(builder, {n}_vec)"]
         return [
@@ -859,11 +895,17 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
     if t.startswith("[") and t.endswith("]"):
         inner = t[1:-1]
         if inner in FBS_INTEGER_TYPES:
+            if inner == "int8":
+                return "list_int8"
+            if inner == "uint8":
+                return "list_uint8"
             return "list_int"
         if inner == "IntOrVid":
             return "list_int_or_vid"
         if inner == "Tid":
             return "list_tid"
+        if inner == "string":
+            return "list_str"
         raise ValueError(
             f"Unrecognized array element type '{inner}' for field '{fld.name}' in table '{table.name}'. "
             f"Add a handler in _get_field_kind()."
@@ -1140,7 +1182,7 @@ def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
             "      }",
         ]
     # Integer/bool vector via to_vector
-    if kind == "list_int":
+    if kind in ("list_int", "list_int8", "list_uint8"):
         return [f"      node.{name} = to_vector(fb->{fb_name}());"]
     # Int-or-vid vector (indexed access)
     if kind == "list_int_or_vid":
@@ -1157,6 +1199,15 @@ def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
             f"      if (fb->{fb_name}()) {{",
             f"        for (auto fb_tid : *fb->{fb_name}()) {{",
             f"          node.{name}.push_back(convert_tid(fb_tid));",
+            "        }",
+            "      }",
+        ]
+    # String vector
+    if kind == "list_str":
+        return [
+            f"      if (fb->{fb_name}()) {{",
+            f"        for (const auto* s : *fb->{fb_name}()) {{",
+            f"          node.{name}.push_back(s ? s->str() : std::string{{}});",
             "        }",
             "      }",
         ]
@@ -1258,6 +1309,9 @@ _INSPECTOR_KIND_MAP = {
     "list_int": "int_list",
     "list_int_or_vid": "int_or_vid_list",
     "list_tid": "tid_list",
+    "list_str": "string_list",
+    "list_int8": "int_list",
+    "list_uint8": "int_list",
     "int": "scalar",
     "optional_int": "scalar",
     "float": "scalar",
@@ -1290,7 +1344,7 @@ def generate_inspector(schema: "Schema") -> str:  # noqa: F821
             "# Field kinds and their extractors",
             "# Each field is a tuple of (display_name, accessor_name, kind)",
             "# where kind is one of: 'tid', 'vid', 'int_or_vid', 'float_or_vid',",
-            "# 'int_list', 'int_or_vid_list', 'tid_list', 'scalar', 'string'",
+            "# 'int_list', 'int_or_vid_list', 'tid_list', 'string_list', 'scalar', 'string'",
             "",
             "FieldSpec = Tuple[str, str, str]  # (display_name, accessor_name, kind)",
             "",

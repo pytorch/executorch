@@ -22,7 +22,7 @@ signature = "EthosUCompileSpec(target: str, system_config: str | None = None, me
 
 [python.EthosUCompileSpec.DebugMode]
 kind = "enum"
-signature = "EthosUCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
+signature = "EthosUCompileSpec.DebugMode(*values)"
 
 [python.EthosUCompileSpec.__eq__]
 kind = "function"
@@ -55,6 +55,10 @@ signature = "EthosUPartitioner.ops_to_not_decompose(self, ep: torch.export.expor
 [python.EthosUPartitioner.partition]
 kind = "function"
 signature = "EthosUPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult"
+
+[python.EthosUPartitioner.register_custom_partition_op]
+kind = "function"
+signature = "EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
 [python.EthosUQuantizer]
 kind = "class"
@@ -102,7 +106,7 @@ signature = "VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specificatio
 
 [python.VgfCompileSpec.DebugMode]
 kind = "enum"
-signature = "VgfCompileSpec.DebugMode(value, names=None, *, module=None, qualname=None, type=None, start=1)"
+signature = "VgfCompileSpec.DebugMode(*values)"
 
 [python.VgfCompileSpec.__eq__]
 kind = "function"
@@ -124,6 +128,10 @@ signature = "VgfCompileSpec.dump_intermediate_artifacts_to(self, output_path: st
 kind = "function"
 signature = "VgfCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None"
 
+[python.VgfCompileSpec.validate_environment]
+kind = "function"
+signature = "VgfCompileSpec.validate_environment(self, build_dir: str | None = None, *, require_runtime_build: bool = False) -> 'VgfEnvironmentReport'"
+
 [python.VgfPartitioner]
 kind = "class"
 signature = "VgfPartitioner(compile_spec: executorch.backends.arm.vgf.compile_spec.VgfCompileSpec, additional_checks: Optional[Sequence[torch.fx.passes.operator_support.OperatorSupportBase]] = None) -> None"
@@ -135,6 +143,10 @@ signature = "VgfPartitioner.ops_to_not_decompose(self, ep: torch.export.exported
 [python.VgfPartitioner.partition]
 kind = "function"
 signature = "VgfPartitioner.partition(self, exported_program: torch.export.exported_program.ExportedProgram) -> executorch.exir.backend.partitioner.PartitionResult"
+
+[python.VgfPartitioner.register_custom_partition_op]
+kind = "function"
+signature = "VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
 
 [python.VgfQuantizer]
 kind = "class"

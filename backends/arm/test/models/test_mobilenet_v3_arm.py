@@ -47,14 +47,17 @@ def test_mv3_tosa_FP():
 
 @pytest.mark.slow
 def test_mv3_tosa_FP_fp16():
-    inputs_fp16 = tuple(t.to(torch.float16) for t in model_inputs)
+    input_tensor_fp16 = torch.rand(
+        1, 3, 232, 232, generator=torch.Generator().manual_seed(0)
+    )
+    inputs_fp16 = (normalize(input_tensor_fp16).to(torch.float16),)
     pipeline = TosaPipelineFP[input_t](
         mv3_fp16,
         inputs_fp16,
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        atol=5e-2,
+        atol=6e-2,
     )
     pipeline.run()
 

@@ -17,6 +17,8 @@
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/backends/aoti/slim/util/array_ref_util.h>
 
 namespace executorch::backends::cuda {
 
@@ -312,6 +314,44 @@ inline void delete_slimtensor_vector(
     }
   }
   tensors.clear();
+}
+
+/**
+ * Creates a non-owning SlimTensor that wraps an external data pointer, using
+ * the shape, strides and dtype of the given ETensor as metadata.
+ *
+ * Common helper for the CUDA backend, where we frequently need to create a
+ * SlimTensor view of memory (e.g., a GPU buffer) that mirrors the layout of a
+ * CPU/GPU ETensor. The returned tensor does NOT own the data; the caller must
+ * keep it alive for the SlimTensor's lifetime.
+ *
+ * @param data_ptr Pointer to memory the SlimTensor should reference.
+ * @param etensor  ETensor whose sizes/strides/dtype define the SlimTensor's
+ *                 metadata.
+ * @param device   Device where data_ptr resides (defaults to the default
+ *                 CUDA device).
+ * @return A heap-allocated SlimTensor; the caller takes ownership.
+ */
+inline executorch::backends::aoti::slim::SlimTensor*
+make_slimtensor_from_blob_with_etensor_metadata(
+    void* data_ptr,
+    const executorch::runtime::etensor::Tensor* etensor,
+    const executorch::backends::aoti::slim::c10::Device& device =
+        executorch::backends::aoti::slim::DEFAULT_CUDA_DEVICE) {
+  auto sizes = etensor->sizes();
+  auto strides = etensor->strides();
+  std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
+  std::vector<int64_t> strides_vec(strides.begin(), strides.end());
+
+  return new executorch::backends::aoti::slim::SlimTensor(
+      executorch::backends::aoti::slim::from_blob(
+          data_ptr,
+          executorch::backends::aoti::slim::makeArrayRef(sizes_vec),
+          executorch::backends::aoti::slim::makeArrayRef(strides_vec),
+          static_cast<executorch::backends::aoti::slim::c10::ScalarType>(
+              etensor->scalar_type()),
+          device,
+          /*storage_offset=*/0));
 }
 
 } // namespace executorch::backends::cuda

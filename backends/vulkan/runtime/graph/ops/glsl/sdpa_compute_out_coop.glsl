@@ -15,8 +15,13 @@
 $if IO_STORAGE == "buffer":
   #define OUTPUT_BUFFER
   #define INPUT_BUFFER
+  #define ATTN_WEIGHTS_BUFFER
 $if V_CACHE_STORAGE == "buffer":
   #define V_CACHE_BUFFER
+
+#define V_LAYOUT DHSB
+#define OUT_LAYOUT DHSB
+#define SDPA_V_BUF t_v_cache
 
 #define TILE_K4 ${TILE_K4}
 #define TILE_N4 ${TILE_N4}
@@ -37,8 +42,8 @@ ${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=F
 ${layout_declare_tensor(B, "r", "t_attn_weights", DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_v_cache", DTYPE, V_CACHE_STORAGE, is_scalar_array=False)}
 
-${layout_declare_ubo(B, "ivec4", "q_projected_sizes")}
-${layout_declare_ubo(B, "ivec4", "v_cache_sizes")}
+${layout_declare_ubo(B, "ivec4", "q_sizes")}
+${layout_declare_ubo(B, "ivec4", "v_sizes")}
 ${layout_declare_ubo(B, "int", "input_pos")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -76,17 +81,17 @@ void main() {
   const int s = 0;
 
   // texel size of head_dim
-  const int D4 = div_up_4(q_projected_sizes.x);
+  const int D4 = div_up_4(q_sizes.x);
   // number of Q heads
-  const int Q_H = q_projected_sizes.y;
+  const int Q_H = q_sizes.y;
   // sequence length
-  const int S = q_projected_sizes.z;
+  const int S = q_sizes.z;
   const int S_aligned = align_up_4(S);
 
   // number of K/V heads
-  const int KV_H = v_cache_sizes.y;
+  const int KV_H = v_sizes.y;
   // Max context length
-  const int C = v_cache_sizes.z;
+  const int C = v_sizes.z;
   const int C4 = div_up_4(C);
 
   int kv_h = q_h;

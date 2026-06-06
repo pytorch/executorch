@@ -22,11 +22,11 @@ enable_baremetal_toolchain=1
 target_toolchain=""
 enable_fvps=1
 enable_vela=1
+enable_cortex_m=1
 enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
-enable_mlsdk_pip_install=1
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -49,14 +49,16 @@ OPTION_LIST=(
   "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl"
   "--enable-fvps Enable FVP setup"
   "--enable-vela Enable VELA setup"
+  "--disable-cortex-m-deps Do not setup what is needed for Cortex-M"
   "--enable-model-converter Enable MLSDK model converter setup"
   "--enable-vgf-lib Enable MLSDK vgf library setup"
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
-  "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPi package. This flag will be removed."
-  "--install-mlsdk-deps-from-src Build from source instead of using MLSDK PyPi packages"
-  "--mlsdk-manifest-url URL to the MLSDK manifest for vulkan."
+  "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPI packages"
+  "--install-mlsdk-deps-from-src Use the dedicated source-build script instead"
+  "--mlsdk-manifest-url Deprecated: use with the dedicated source-build script"
+  "--mlsdk-manifest-tag Deprecated: use with the dedicated source-build script"
   "--help Display help"
 )
 
@@ -123,6 +125,10 @@ function check_options() {
                 enable_vela=1
                 shift
                 ;;
+            --disable-cortex-m-deps)
+                enable_cortex_m=0
+                shift
+                ;;
             --enable-model-converter)
                 enable_model_converter=1
                 shift
@@ -146,12 +152,34 @@ function check_options() {
                 shift
                 ;;
             --install-mlsdk-deps-with-pip)
-                enable_mlsdk_pip_install=1
+                log_step "mlsdk" \
+                    "Option '--install-mlsdk-deps-with-pip' is now the default behavior"
                 shift
                 ;;
             --install-mlsdk-deps-from-src)
-                enable_mlsdk_pip_install=0
-                shift
+                log_step "mlsdk" \
+                    "Deprecated option '--install-mlsdk-deps-from-src' selected"
+                log_step "mlsdk" \
+                    "Source builds moved to ./backends/arm/scripts/setup-mlsdk-from-source.sh"
+                exit 1
+                ;;
+            --mlsdk-manifest-url)
+                if [[ $# -lt 2 ]]; then
+                    print_usage "$@"
+                    exit 1
+                fi
+                log_step "mlsdk" \
+                    "Deprecated option '--mlsdk-manifest-url' selected; use it with ./backends/arm/scripts/setup-mlsdk-from-source.sh instead"
+                shift 2
+                ;;
+            --mlsdk-manifest-tag)
+                if [[ $# -lt 2 ]]; then
+                    print_usage "$@"
+                    exit 1
+                fi
+                log_step "mlsdk" \
+                    "Deprecated option '--mlsdk-manifest-tag' selected; use it with ./backends/arm/scripts/setup-mlsdk-from-source.sh instead"
+                shift 2
                 ;;
             --enable-mlsdk-deps)
                 enable_model_converter=1
@@ -159,11 +187,6 @@ function check_options() {
                 enable_emulation_layer=1
                 enable_vulkan_sdk=1
                 shift
-                ;;
-            --setup-test-dependency)
-                log_step "deps" "Installing test dependency..."
-                source $et_dir/backends/arm/scripts/install_models_for_test.sh
-                exit 0
                 ;;
             --help)
                 print_usage "$@"
@@ -189,9 +212,35 @@ function setup_ethos_u_tools() {
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
 
+function setup_cortex_m_tools() {
+    log_step "cortex-m-tools" "Installing Cortex-M Python tooling"
+    pip install --no-dependencies -r $et_dir/backends/cortex_m/requirements-cortex-m.txt
+}
+
 function setup_mlsdk_dependencies() {
-    log_step "mlsdk" "Installing MLSDK dependencies from pip"
+    log_step "mlsdk" "Installing MLSDK dependencies"
     pip install -r $et_dir/backends/arm/requirements-arm-vgf.txt
+}
+
+function validate_mlsdk_pip_compatibility() {
+    if [[ "${enable_emulation_layer}" -eq 0 ]]; then
+        return
+    fi
+
+    local float_as_double=""
+    float_as_double="$(detect_emulation_layer_float_as_double)"
+    if [[ "${float_as_double}" == "ON" ]]; then
+        log_step "mlsdk" \
+            "Detected missing shaderFloat64 support. The pip-installed emulation layer does not include the required workaround."
+        log_step "mlsdk" \
+            "Use ./backends/arm/scripts/setup-mlsdk-from-source.sh to build the emulation layer from source."
+        exit 1
+    fi
+
+    if [[ "${float_as_double}" == "UNKNOWN" ]]; then
+        log_step "mlsdk" \
+            "Unable to detect shaderFloat64 support. If the emulation layer crashes, use ./backends/arm/scripts/setup-mlsdk-from-source.sh."
+    fi
 }
 
 function create_setup_path(){
@@ -206,11 +255,6 @@ function create_setup_path(){
         prepend_env_in_setup_path PATH "${et_dir}/env/bin"
     fi
 
-    local use_mlsdk_pip=0
-    if use_mlsdk_pip_package; then
-        use_mlsdk_pip=1
-    fi
-
     if [[ "${enable_fvps}" -eq 1 ]]; then
         setup_path_fvp
     fi
@@ -223,31 +267,11 @@ function create_setup_path(){
         setup_path_vulkan
     fi
 
-    if [[ "${enable_model_converter}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
-        setup_path_model_converter
-    fi
-
-    if [[ "${enable_vgf_lib}" -eq 1 && "${use_mlsdk_pip}" -eq 0 ]]; then
-        setup_path_vgf_lib
-    fi
-
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
-        if [[ "${use_mlsdk_pip}" -eq 0 ]]; then
-            setup_path_emulation_layer
-        else
-            setup_path_emulation_layer_from_pip
-        fi
+        setup_path_emulation_layer
     fi
 
    log_step "path" "Update PATH by sourcing ${setup_path_script}.{sh|fish}"
-}
-
-function use_mlsdk_pip_package() {
-    if [[ "${enable_mlsdk_pip_install}" -eq 0 ]]; then
-        return 1
-    fi
-
-    return 0
 }
 
 
@@ -277,14 +301,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
     setup_root_dir
     cd "${root_dir}"
 
-    if [[ "${mlsdk_manifest_dir}" != /* ]]; then
-        mlsdk_manifest_dir="${root_dir}/${mlsdk_manifest_dir}"
-    fi
-
     log_step "options" \
-             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}, mlsdk-dir=${mlsdk_manifest_dir}"
+             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}"
     log_step "options" \
              "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
+             "cortex-m: deps=${enable_cortex_m} | " \
              "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
                     "emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
@@ -310,21 +331,16 @@ if [[ $is_script_sourced -eq 0 ]]; then
         setup_vulkan_sdk
     fi
 
+    # Keep this after Vulkan SDK setup so vulkaninfo is available for the
+    # shaderFloat64 compatibility probe.
+    validate_mlsdk_pip_compatibility
+
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
         log_step "mlsdk" "Configuring MLSDK components (model-converter=${enable_model_converter}, " \
                          "vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer})"
-        if use_mlsdk_pip_package; then
-            setup_mlsdk_dependencies
-        else
-            log_step "mlsdk" "Installing MLSDK dependencies from source"
-            setup_mlsdk ${root_dir} \
-                        ${mlsdk_manifest_dir} \
-                        ${enable_model_converter} \
-                        ${enable_vgf_lib} \
-                        ${enable_emulation_layer}
-        fi
+        setup_mlsdk_dependencies
     fi
 
     # Create the setup_path.sh used to create the PATH variable for shell
@@ -335,39 +351,14 @@ if [[ $is_script_sourced -eq 0 ]]; then
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
         pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-tosa.txt"
 
-    pushd "$root_dir"
-    if [[ ! -d "tosa-tools" ]]; then
-        git clone https://git.gitlab.arm.com/tosa/tosa-tools.git
-    fi
-
-    pushd tosa-tools
-    git checkout v2025.11.2
-
-    if [[ ! -d "reference_model" ]]; then
-        log_step "main" "[error] Missing reference_model directory in tosa-tools repo."
-        exit 1
-    fi
-    if [[ ! -d "serialization" ]]; then
-        log_step "main" "[error] Missing serialization directory in tosa-tools repo."
-        exit 1
-    fi
-
-    export CMAKE_BUILD_PARALLEL_LEVEL="$(get_parallel_jobs)"
-
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        BUILD_PYBIND=1 \
-        BUILD_TOSA_REFERENCE_MODEL_TESTS=0 \
-        pip install --no-dependencies ./reference_model
-
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        BUILD_PYBIND=1 \
-        pip install --no-dependencies ./serialization
-    popd
-    popd
-
     if [[ "${enable_vela}" -eq 1 ]]; then
         log_step "deps" "Installing Ethos-U Vela compiler"
         setup_ethos_u_tools
+    fi
+
+    if [[ "${enable_cortex_m}" -eq 1 ]]; then
+        log_step "deps" "Installing Cortex-M CMSIS-NN tooling"
+        setup_cortex_m_tools
     fi
 
     log_step "main" "Setup complete"

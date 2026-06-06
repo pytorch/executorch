@@ -46,12 +46,13 @@ def TRANSPOSE_CONV2D(
         )
 
     N = x.shape[0]
-    C_out = weight.shape[1]
-    H_in, W_in = x.shape[2:]
-    kernel_h = weight.shape[2]
-    kernel_w = weight.shape[3]
+    # Weight format is [OC, KH, KW, IC].
+    C_out = weight.shape[0]
+    H_in, W_in = x.shape[1], x.shape[2]
+    kernel_h = weight.shape[1]
+    kernel_w = weight.shape[2]
 
     H_out = (H_in - 1) * stride[0] + out_pad[0] + out_pad[1] + kernel_h
     W_out = (W_in - 1) * stride[1] + out_pad[2] + out_pad[3] + kernel_w
-    output_shape = [N, C_out, H_out, W_out]
+    output_shape = [N, H_out, W_out, C_out]
     return torch.empty(size=output_shape, dtype=output_dtype)

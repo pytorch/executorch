@@ -21,3 +21,14 @@ runtime.python_test(
         "//executorch/devtools/etdump:serialize",
     ],
 )
+
+runtime.python_test(
+    name = "test_runtime_xnnpack",
+    srcs = ["test_runtime_xnnpack.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/runtime:runtime",
+    ],
+)

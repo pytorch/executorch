@@ -9,12 +9,9 @@ We have separated the example scripts into the following subfolders, please refe
 2. oss_scripts: OSS stands for Open Source Software. This folder contains python scripts for open source models. Some models under this folder might also have their own customized runner.
    For example, [llama](oss_scripts/llama/qnn_llama_runner.cpp) contains not only the python scripts to prepare the model but also a customized runner for executing the model.
 
-3. qaihub_scripts: QAIHub stands for [Qualcomm AI Hub](https://aihub.qualcomm.com/). On QAIHub, users can find pre-compiled context binaries, a format used by QNN to save its models. This provides users with a new option for model deployment. Different from oss_scripts & scripts, which the example scripts are converting a model from nn.Module to ExecuTorch .pte files, qaihub_scripts provides example scripts for converting pre-compiled context binaries to ExecuTorch .pte files. Additionally, users can find customized example runners specific to the QAIHub models for execution. For example [qaihub_llama2_7b](qaihub_scripts/llama/llama2/qaihub_llama2_7b.py) is a script converting context binaries to ExecuTorch .pte files, and [qaihub_llama2_7b_runner](qaihub_scripts/llama/llama2/qaihub_llama2_7b_runner.cpp) is a customized example runner to execute llama2 .pte files. Please be aware that context-binaries downloaded from QAIHub are tied to a specific QNN SDK version.
-Before executing the scripts and runner, please ensure that you are using the QNN SDK version that is matching the context binary. Please refer to [Check context binary version](#check-context-binary-version) for tutorial on how to check the QNN Version for a context binary.
+3. scripts: This folder contains scripts to build models provided by ExecuTorch.
 
-4. scripts: This folder contains scripts to build models provided by ExecuTorch.
-
-5. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
+4. util_scripts: This folder includes tutorial example scripts designed to showcase the utilities we've developed. For example, we provide a debugging tool [qnn_intermediate_debugger](./util_scripts/qnn_intermediate_debugger_demo.py) that allow users to compare the intermediate outputs of QNNs V.S. CPUs. By reviewing these scripts, we aim to help users smoothly integrate these utilities into their own projects.
 
 
 
@@ -42,7 +39,7 @@ Or, you could put QNN libraries to default search path of the dynamic linker.
 Please connect an Android phone to the workstation. We use `adb` to communicate with the device.
 
 If the device is in a remote host, you might want to add `-H` to the `adb`
-commands in the `SimpleADB` class inside [utils.py](utils.py).
+commands in the `SimpleADB` class inside [export_utils.py](../../backends/qualcomm/export_utils.py).
 
 ## Please use python xxx.py --help for information of each examples.
 
@@ -74,43 +71,32 @@ python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build-android/ 
 python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/build-android/ --download
 ```
 
-#### Check context binary version
-This is typically useful when users want to run any models under `qaihub_scripts`. When users retrieve context binaries from Qualcomm AI Hub, we need to ensure the QNN SDK used to run the `qaihub_scripts` is the same version as the QNN SDK that Qualcomm AI Hub used to compile the context binaries. To do so, please run the following script to retrieve the JSON file that contains the metadata about the context binary:
-```bash
-cd ${QNN_SDK_ROOT}/bin/x86_64-linux-clang
-./qnn-context-binary-utility --context_binary ${PATH_TO_CONTEXT_BINARY} --json_file ${OUTPUT_JSON_NAME}
-```
-After retrieving the json file, search in the json file for the field "buildId" and ensure it matches the `${QNN_SDK_ROOT}` you are using for the environment variable.
-If you run into the following error, that means the ${QNN_SDK_ROOT} that you are using is older than the context binary's QNN SDK version. In this case, please download a newer QNN SDK version.
-```
-Error: Failed to get context binary info.
-```
 ## Model Structure
-This section outlines the essential APIs and utilities provided to streamline the process of model conversion, deployment, and evaluation on Qualcomm hardware using ExecuTorch.
+This section outlines the essential APIs and utilities provided to streamline the process of model conversion, deployment, and evaluation on Qualcomm hardware using ExecuTorch. The official APIs can be found under [export_utils.py](../../backends/qualcomm/export_utils.py)
 
-1. `build_executorch_binary()`:
+1. `setup_common_args_and_variables()`:
 
-   build_executorch_binary is a high-level API used to convert a PyTorch model into a Qualcomm-compatible .pte binary format. This function streamlines the process of quantization, transformation, optimization, and export, enabling users to efficiently deploy models on Qualcomm hardware.
+   `setup_common_args_and_variables()` returns an `argparse.ArgumentParser`. This parser defines both required and optional arguments, which can later be passed into the ExecuTorch QNN API, `QnnConfig.load_config()`.
 
-2. `SimpleADB`:
+2. `QnnConfig.load_config()`:
 
-   SimpleADB is a Python class that provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands, retrieve device information, and manage files on the device.
+   `QnnConfig.load_config` accepts either:
+      1. An `argparse.ArgumentParser` created by `setup_common_args_and_variables()`
+      2. A `.json` configuration file. A sample file is provided under [sample_config.json](./sample_config.json) for reference.
 
-3. `get_imagenet_dataset`:
-   
-   If the model requires ImageNet, this function can be used to load the dataset and apply the necessary preprocessing steps to prepare it for inference or quantization calibration.
+   This function returns a `QnnConfig`, which serves as an input to some of the key APIs that will be covered below: `build_executorch_binary()`, `SimpleADB`.
 
-4. `topk_accuracy`:
+3. `build_executorch_binary()`:
 
-   Calculates the Top-K accuracy for classification models, used to evaluate model performance.
+   `build_executorch_binary` is a high-level API used to convert a PyTorch model into a Qualcomm-compatible .pte binary format. This function streamlines the process of quantization, transformation, optimization, and export, enabling users to efficiently deploy models on Qualcomm hardware.
 
-5. `parse_skip_delegation_node`:
+4. `SimpleADB`:
 
-   Parses command-line arguments to identify node IDs or operation types that should be skipped during model conversion.
+   `SimpleADB` provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands such as:     
+      1. Push necessary artifacts to device
+      2. Execute the runner
+      3. Pull the execution outputs/results
 
-6. `make_output_dir`:
-
-   Creates a clean directory for storing model outputs or intermediate results. If the directory already exists, it will be deleted and recreated to ensure a consistent environment for each run.
 
 ## Run Inference Using Shared Buffer
 This section shows how to use shared buffer for input/output tensors in QNN ExecuTorch, usually graph inputs and outputs on shared memory to reduce huge tensor copying time from CPU to HTP. This feature can accelerate inference speed. Users need to do shared memory resource management by themselves. The key idea is to use `QnnExecuTorchAllocCustomMem` to allocate a large chunk of memory on the device, then use `QnnExecuTorchFreeCustomMem` to free it after inference.
@@ -146,8 +132,7 @@ pip install scikit-learn pandas graphviz
 
 ## Limitation
 
-1. QNN 2.28 is used for all examples. Newer or older QNN might work,
-but the performance and accuracy number can differ.
+1. QNN 2.37 is used for all examples. Newer or older QNN might work, but the performance and accuracy number can differ.
 
 2. The mobilebert example is on QNN HTP fp16, which is only supported by a limited
 set of SoCs. Please check QNN documents for details.

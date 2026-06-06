@@ -8,8 +8,6 @@ on:
       - examples/**/*
       - pyproject.toml
       - setup.py
-    tags:
-      - ciflow/binaries/*
   push:
     branches:
       - nightly

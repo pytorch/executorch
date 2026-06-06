@@ -700,7 +700,7 @@ def dynamo_trace(
             ) from exc
         except Exception as exc:
             raise InternalError(
-                "torchdynamo internal error occured. Please see above stacktrace"
+                "torchdynamo internal error occurred. Please see above stacktrace"
             ) from exc
 
 

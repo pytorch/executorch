@@ -38,12 +38,16 @@ Commonly used hardware backends are listed below. For mobile, consider using XNN
 - [Vulkan (Android GPU)](backends/vulkan/vulkan-overview.md)
 - [Qualcomm NPU](backends-qualcomm.md)
 - [MediaTek NPU](backends-mediatek.md)
-- [Arm Ethos-U NPU](backends-arm-ethos-u.md)
+- [Arm Ethos-U NPU](backends/arm-ethos-u/arm-ethos-u-overview.md)
 - [Cadence DSP](backends-cadence.md)
 
 ## Model Preparation
 
 The export process takes in a standard PyTorch model, typically a `torch.nn.Module`. This can be an custom model definition, or a model from an existing source, such as TorchVision or HuggingFace. See [Getting Started with ExecuTorch](getting-started.md) for an example of lowering a TorchVision model.
+
+:::{tip}
+Exporting a model from the [Hugging Face Hub](https://huggingface.co/models)? Use the [Optimum ExecuTorch](llm/export-llm-optimum.md) integration. It wraps the export and lowering steps below in a single CLI invocation and supports a wide range of decoder, encoder, multimodal, and seq2seq architectures out of the box.
+:::
 
 Model export is done from Python. This is commonly done through a Python script or from an interactive Python notebook, such as Jupyter or Colab. The example below shows instantiation and inputs for a simple PyTorch model. The inputs are prepared as a tuple of torch.Tensors, and the model can run with these inputs.
 

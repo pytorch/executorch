@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -398,6 +398,154 @@ class CortexMLinearClamp(torch.nn.Module):
         return torch.clamp(self.linear(x), min=None, max=6.0)
 
 
+class CortexMStandaloneReLU(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def forward(self, x):
+        return torch.relu(x)
+
+
+class CortexMStandaloneHardtanh(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def forward(self, x):
+        return torch.nn.functional.hardtanh(x, -1.0, 1.0)
+
+
+class CortexMStandaloneClamp(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def forward(self, x):
+        return torch.clamp(x, -1.0, 1.0)
+
+
+class CortexMStandaloneClampTensor(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_clamp_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_aten_full_like_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 4,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def forward(self, x):
+        return torch.ops.aten.clamp.Tensor(
+            x, torch.full_like(x, -1.0), torch.full_like(x, 1.0)
+        )
+
+
+class CortexMMaxPool2DReLU(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_max_pool2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    ops_after_absent = ["executorch_exir_dialects_edge__ops_aten_relu_default"]
+
+    def __init__(self):
+        super().__init__()
+        self.pool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.pool(x))
+
+
+class CortexMMaxPool2DHardtanh(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_max_pool2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    ops_after_absent = ["executorch_exir_dialects_edge__ops_aten_hardtanh_default"]
+
+    def __init__(self, min_val=-0.5, max_val=0.5):
+        super().__init__()
+        self.pool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.min_val = min_val
+        self.max_val = max_val
+
+    def forward(self, x):
+        return torch.nn.functional.hardtanh(self.pool(x), self.min_val, self.max_val)
+
+
+class CortexMMaxPool2DClamp(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clamp_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_max_pool2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    ops_after_absent = ["executorch_exir_dialects_edge__ops_aten_clamp_default"]
+
+    def __init__(self, min_val=-0.25, max_val=0.75):
+        super().__init__()
+        self.pool = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.min_val = min_val
+        self.max_val = max_val
+
+    def forward(self, x):
+        return torch.clamp(self.pool(x), self.min_val, self.max_val)
+
+
 test_cases = {
     # Linear + activation tests with various data ranges
     "linear_relu_small_range": McuTestCase(
@@ -509,6 +657,40 @@ test_cases = {
         model=CortexMLinearClamp(in_features=4, out_features=3),
         example_inputs=(ramp_tensor(-10, 10, (1, 4)),),
     ),
+    "standalone_relu": McuTestCase(
+        model=CortexMStandaloneReLU(),
+        example_inputs=(ramp_tensor(-5, 5, (2, 3, 4, 5)),),
+    ),
+    "standalone_hardtanh": McuTestCase(
+        model=CortexMStandaloneHardtanh(),
+        example_inputs=(ramp_tensor(-5, 5, (2, 3, 4, 5)),),
+    ),
+    "standalone_clamp": McuTestCase(
+        model=CortexMStandaloneClamp(),
+        example_inputs=(ramp_tensor(-5, 5, (2, 3, 4, 5)),),
+    ),
+    "standalone_clamp_tensor": McuTestCase(
+        model=CortexMStandaloneClampTensor(),
+        example_inputs=(ramp_tensor(-5, 5, (2, 3, 4, 5)),),
+    ),
+    "maxpool_relu": McuTestCase(
+        model=CortexMMaxPool2DReLU(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "maxpool_hardtanh": McuTestCase(
+        model=CortexMMaxPool2DHardtanh(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "maxpool_clamp": McuTestCase(
+        model=CortexMMaxPool2DClamp(),
+        example_inputs=(
+            ramp_tensor(-10, 10, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
 }
 
 
@@ -520,6 +702,8 @@ def test_dialect_activation(test_case):
         test_case.model.ops_after_transforms,
         qtol=1,
     )
+    if hasattr(test_case.model, "ops_after_absent"):
+        tester.check_not(test_case.model.ops_after_absent)
 
 
 @parametrize("test_case", test_cases)

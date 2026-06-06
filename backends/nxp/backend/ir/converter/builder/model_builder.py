@@ -742,7 +742,10 @@ class ModelBuilder:
         return new_name
 
     def op_code_index_for_op_type(
-        self, op_type: BuiltinOperator, version: int = 1, custom_code: str = None
+        self,
+        op_type: BuiltinOperator | int,
+        version: int = 1,
+        custom_code: str | None = None,
     ):
         """
         Return the index to the 'operator_codes' vector in the TFLite model for the operator

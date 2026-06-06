@@ -93,14 +93,26 @@ def define_op_library(name, compiler_flags, deps):
             "{}.cpp".format(name),
         ],
         visibility = ["PUBLIC"],
-        compiler_flags = [
+        compiler_flags = (select({
             # kernels often have helpers with no prototypes just disabling the warning here as the headers
             # are codegend and linked in later
+            # -Wno-missing-prototypes is Clang-only for C++; GCC (used by
+            # Zephyr ARM cross-compilation) rejects it with -Werror, so
+            # exclude it for Zephyr. OSS bypasses the select since
+            # ovr_config//os:zephyr is not in the OSS buck2 prelude.
+            "DEFAULT": [
+                "-Wno-missing-prototypes",
+                # pragma unroll fails with -Os, don't need to warn us and
+                # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
+                "-Wno-pass-failed",
+            ],
+            "ovr_config//os:zephyr": [
+                "-Wno-pass-failed",
+            ],
+        }) if not runtime.is_oss else [
             "-Wno-missing-prototypes",
-            # pragma unroll fails with -Os, don't need to warn us and
-            # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
             "-Wno-pass-failed",
-        ] + compiler_flags + get_compiler_optimization_flags(),
+        ]) + compiler_flags + get_compiler_optimization_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
         # dependencies are not transitive
@@ -218,6 +230,21 @@ OPTIMIZED_ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_grid_sampler_2d",
+        deps = [
+            "//executorch/kernels/portable/cpu:op_grid_sampler_2d",
+            # Hardware fp16 path lives in a separate translation unit so the
+            # ARMv8.2-a+fp16 compile flag can be scoped locally. A runtime
+            # cpuinfo_has_arm_neon_fp16() check in op_grid_sampler_2d.cpp
+            # picks between it and the software-convert fp16 path. Named
+            # without the "op_" prefix so _enforce_deps doesn't reject it
+            # as an op_target-to-op_target edge.
+            ":grid_sampler_2d_fp16_hw_impl",
+            "fbsource//third-party/cpuinfo:cpuinfo",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
         name = "op_le",
         deps = [
             ":binary_ops",
@@ -280,6 +307,13 @@ OPTIMIZED_ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:dtype_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
+        name = "op_sum",
+        deps = [
+            "//executorch/kernels/portable/cpu:op_sum",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(

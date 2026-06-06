@@ -337,6 +337,24 @@ def dump_error_output(
     logger.error(f"{atol=}, {rtol=}, {qtol=}")
 
 
+def calculate_rel_frobenius_and_cosine_similarity(
+    reference_output: torch.Tensor,
+    test_output: torch.Tensor,
+) -> tuple[float, float]:
+    reference_output = reference_output.to(torch.float32)
+    test_output = test_output.to(torch.float32)
+
+    reference_frobenius_norm = torch.linalg.norm(reference_output).item()
+    error_frobenius_norm = torch.linalg.norm(test_output - reference_output).item()
+
+    relative_frobenius_error = error_frobenius_norm / (reference_frobenius_norm + 1e-8)
+    cosine_similarity = torch.nn.functional.cosine_similarity(
+        test_output.flatten(), reference_output.flatten(), dim=0
+    ).item()
+
+    return relative_frobenius_error, cosine_similarity
+
+
 def compare_rel_frobenius_and_cosine_similarity(
     reference_output: torch.Tensor,
     test_output: torch.Tensor,
@@ -394,15 +412,11 @@ def compare_rel_frobenius_and_cosine_similarity(
     if reference_all_zeros:
         return
 
-    reference_output = reference_output.to(torch.float32)
-    test_output = test_output.to(torch.float32)
-
-    reference_frobenius_norm = torch.linalg.norm(reference_output).item()
-    error_frobenius_norm = torch.linalg.norm(test_output - reference_output).item()
-
-    relative_frobenius_error = error_frobenius_norm / (reference_frobenius_norm + 1e-8)
-    cosine_similarity = torch.nn.functional.cosine_similarity(
-        test_output.flatten(), reference_output.flatten(), dim=0
+    relative_frobenius_error, cosine_similarity = (
+        calculate_rel_frobenius_and_cosine_similarity(reference_output, test_output)
+    )
+    reference_frobenius_norm = torch.linalg.norm(
+        reference_output.to(torch.float32)
     ).item()
 
     # Relative Frobenius is unstable when the reference norm is at quantization-noise scale.

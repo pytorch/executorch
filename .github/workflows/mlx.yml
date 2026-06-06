@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/mlx/*
   pull_request:
     paths:
       - .github/workflows/mlx.yml
@@ -13,14 +15,33 @@ on:
       - extension/audio/**
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
+      - examples/models/qwen3_5_moe/**
   workflow_dispatch:
 
-permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  # Emits is-full-run='true' for workflow_dispatch / ciflow tag /
+  # sampled-push commits (every 4th main/release commit by depth).
+  # Returns 'false' for pull_request events — PR jobs use the workflow-
+  # level `paths:` filter (above) for path-based gating instead.
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-mlx:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -39,6 +60,10 @@ jobs:
 
         ${CONDA_RUN} pip list
 
+        echo "::group::Install Python test requirements"
+        ${CONDA_RUN} pip install gguf
+        echo "::endgroup::"
+
         echo "::group::Build test runners"
         ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
@@ -52,6 +77,7 @@ jobs:
           backends/mlx/test/test_passes.py \
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
+          examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
 
@@ -63,13 +89,90 @@ jobs:
           ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
+        echo "::group::Run gated_delta_rule op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
+        echo "::endgroup::"
+
+        echo "::group::Run tq_norm op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq_norm run -v
+        echo "::endgroup::"
+
+        echo "::group::Run tq4_compress op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq4_compress run -v
+        echo "::endgroup::"
+
+        echo "::group::Run tq_dequant op tests"
+        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_tq_dequant run -v
+        echo "::endgroup::"
+
+  test-mlx-qwen35-moe:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-qwen35-moe
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Export Qwen 3.5 MoE (tiny model)"
+        ${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.export \
+          --tiny-test \
+          --backend mlx \
+          --qlinear 4w \
+          --qlinear-group-size 32 \
+          --output-dir /tmp/qwen35_moe_mlx_tiny
+        echo "::endgroup::"
+
+        echo "::group::Check AsType node count"
+        ASTYPE_COUNT=$(${CONDA_RUN} python -m executorch.backends.mlx.pte_inspector \
+          /tmp/qwen35_moe_mlx_tiny/model.pte --mlx-instructions 2>&1 | grep -c "AsTypeNode" || true)
+        echo "AsType nodes: ${ASTYPE_COUNT}"
+        if [ "$ASTYPE_COUNT" -gt 23 ]; then
+          echo "Failed: expected no more than 23 AsType nodes, got ${ASTYPE_COUNT}"
+          exit 1
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Run Qwen 3.5 MoE inference"
+        OUTPUT=$(${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.run \
+          --pte /tmp/qwen35_moe_mlx_tiny/model.pte \
+          --prompt-len 4 \
+          --max-new-tokens 5 2>&1)
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 94, 253, 88, 227\]"; then
+          echo "Success: Qwen 3.5 MoE MLX export + inference completed with expected output"
+        else
+          echo "Failed: unexpected output (expected [167, 94, 253, 88, 227])"
+          exit 1
+        fi
+        echo "::endgroup::"
+
   backend-tester:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     strategy:
       fail-fast: false
       matrix:
         suite: [models, operators]
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-backend-${{ matrix.suite }}
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -109,8 +212,13 @@ jobs:
         fi
 
   test-mlx-parakeet:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-parakeet
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -162,9 +270,17 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-voxtral:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label, which
+    # pushes a ciflow/mlx/<PR> tag that re-runs this workflow with secrets.
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-voxtral
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -219,9 +335,16 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-voxtral-realtime:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-voxtral-realtime
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -231,6 +354,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Disable HF Xet storage to avoid stalled downloads on CI runners
+        export HF_HUB_DISABLE_XET=1
 
         echo "::group::Install ExecuTorch"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -291,9 +416,16 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-whisper:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-whisper
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -303,6 +435,8 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Disable HF Xet storage to avoid stalled downloads on CI runners
+        export HF_HUB_DISABLE_XET=1
 
         echo "::group::Install ExecuTorch and configure MLX build"
         ${CONDA_RUN} python install_executorch.py > /dev/null
@@ -339,8 +473,13 @@ jobs:
 
 
   test-mlx-stories110m:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       job-name: test-mlx-stories110m
       runner: macos-14-xlarge
       python-version: "3.12"
@@ -402,6 +541,12 @@ jobs:
         echo "::endgroup::"
 
   test-mlx-llm:
+    # Requires HuggingFace secrets — skip on fork PRs.
+    # Maintainers can opt-in by applying the ciflow/mlx label.
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -414,11 +559,26 @@ jobs:
             name: "gemma3-1b"
         use-custom: [false, true]
         qconfig: ["4w", "nvfp4"]
+        runner: ["macos-14-xlarge"]
+        include:
+          - model:
+              id: "google/gemma-4-E2B-it"
+              name: "gemma4-e2b"
+            use-custom: true
+            qconfig: "4w"
+            runner: "macos-15-xlarge"
+          - model:
+              id: "google/gemma-4-E2B-it"
+              name: "gemma4-e2b"
+            use-custom: false
+            qconfig: "4w"
+            runner: "macos-15-xlarge"
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
-      runner: macos-14-xlarge
+      runner: ${{ matrix.runner }}
       python-version: "3.12"
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -426,15 +586,21 @@ jobs:
       timeout: 90
       script: |
         set -eux
+        # Disable HF Xet storage to avoid stalled downloads on CI runners
+        export HF_HUB_DISABLE_XET=1
 
         MODEL_ID="${{ matrix.model.id }}"
         MODEL_NAME="${{ matrix.model.name }}"
         USE_CUSTOM="${{ matrix.use-custom }}"
         QCONFIG="${{ matrix.qconfig }}"
-
         CUSTOM_ARGS=""
         if [ "${USE_CUSTOM}" = "true" ]; then
           CUSTOM_ARGS="--use-custom-sdpa --use-custom-kv-cache"
+        fi
+
+        QEMBEDDING_ARGS="--qembedding ${QCONFIG}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          QEMBEDDING_ARGS=""
         fi
 
         echo "::group::Install ExecuTorch and configure MLX build"
@@ -447,6 +613,13 @@ jobs:
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install transformers "optimum-executorch @ git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}"
+        if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
+          # Gemma 4 requires a newer Transformers build than the CI-wide
+          # optimum-executorch pin currently brings in. Keep this pinned to the
+          # locally validated commit instead of floating on Transformers HEAD.
+          GEMMA4_TRANSFORMERS_COMMIT=61461a7bcb458db7cf6eeea49678b9ab776a7821
+          ${CONDA_RUN} pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@${GEMMA4_TRANSFORMERS_COMMIT}"
+        fi
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list
@@ -456,7 +629,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}.pte \
           --qlinear ${QCONFIG} \
-          --qembedding ${QCONFIG} \
+          ${QEMBEDDING_ARGS} \
           ${CUSTOM_ARGS}
         echo "::endgroup::"
 

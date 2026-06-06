@@ -11,6 +11,9 @@
 from typing import Sequence, Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -82,6 +85,18 @@ test_data_suite_fp16 = {
         (torch.randn(1, 1, 2, 2, dtype=torch.float16),),
     ),
 }
+test_data_suite_fp8 = {
+    "2_x_2_fp8e4m3": lambda: (
+        Repeat((2, 1)),
+        (torch.randn(3, 4, dtype=torch.float32).to(torch.float8_e4m3fn),),
+        "fp8e4m3",
+    ),
+    "4_x_4_fp8e5m2": lambda: (
+        Repeat((1, 2, 3, 2)),
+        (torch.randn(1, 1, 2, 2, dtype=torch.float32).to(torch.float8_e5m2),),
+        "fp8e5m2",
+    ),
+}
 
 
 @common.parametrize(
@@ -95,6 +110,19 @@ def test_repeat_tosa_FP(test_data: Tuple):
         module.aten_op,
         exir_op=[],
         tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+def test_repeat_tosa_FP_fp8(test_data: Tuple):
+    module, test_data, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        module,
+        test_data,
+        module.aten_op,
+        exir_op=[],
+        tosa_extensions=[tosa_extension],
     )
     pipeline.run()
 
@@ -174,6 +202,21 @@ def test_repeat_vgf_quant(test_data: Tuple):
         module.aten_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_repeat_vgf_quant_a16w8(test_data: Tuple):
+    module, args = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        args,
+        module.aten_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
 
 

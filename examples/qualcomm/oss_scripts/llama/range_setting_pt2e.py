@@ -17,6 +17,8 @@ We implement the two main range setting methods:
 
 import torch
 import torch.nn as nn
+
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
     PerChannelParamObserverWithLossEvaluation,
 )
@@ -24,7 +26,6 @@ from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 
 from torchao.prototype.quantization.module_swap import (
     QuantizationRecipe,

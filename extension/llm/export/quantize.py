@@ -111,6 +111,9 @@ def _check_shape_compatible(m, fqn, config_name, group_size, skip_incompatible_s
     shape = m.weight.shape
     if config_name == "nvfp4":
         compatible = shape[-2] % group_size == 0 and shape[-1] % group_size == 0
+    elif config_name == "fpa4w":
+        # MPS UIntx kernel requires N % 4 == 0 when M > 1 (e.g. prefill)
+        compatible = shape[-1] % group_size == 0 and shape[-2] % 4 == 0
     elif group_size != 0:
         compatible = shape[-1] % group_size == 0
     else:

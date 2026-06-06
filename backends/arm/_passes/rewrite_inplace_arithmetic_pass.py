@@ -7,7 +7,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -23,10 +23,12 @@ OP_MAP = {
 }
 
 
-class RewriteInplaceArithmeticPass(ArmPass):
+class RewriteInplaceArithmeticPass(ArmOpTargetedPass):
     """Rewrite inplace arithmetic ops into functional equivalents."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = tuple(OP_MAP)
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
         if not self.allowed_to_transform(meta):

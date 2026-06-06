@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-25 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -191,6 +191,18 @@ def _parse_args() -> argparse.Namespace:
         help="Only installs necessary dependencies for core executorch and skips "
         " packages necessary for running example scripts.",
     )
+    allowed_optional_dependencies = ["cortex_m", "ethos_u", "vgf", "openvino"]
+    parser.add_argument(
+        "--optional-dependency",
+        action="append",
+        choices=allowed_optional_dependencies,
+        default=[],
+        metavar="EXTRA",
+        help="Install a named optional dependency from pyproject.toml. Can be "
+        "passed multiple times, for example "
+        "--optional-dependency ethos_u --optional-dependency openvino. "
+        f"Allowed values: {', '.join(allowed_optional_dependencies)}",
+    )
     return parser.parse_args()
 
 
@@ -213,7 +225,24 @@ def main(args):
     # Step 1: Install core dependencies first
     install_requirements(use_pytorch_nightly)
 
-    # Step 2: Install core package
+    # Step 2: Install build dependencies for optional dependencies
+    # They need to be installed before optional dependencies due to --no-build-isolation
+    optional_build_dependencies: list[str] = []
+    for optional_dep in args.optional_dependency:
+        match optional_dep:
+            case "cortex_m":
+                optional_build_dependencies.extend(
+                    ["pybind11>=2.10", "scikit-build-core>=0.7"]
+                )
+    if len(optional_build_dependencies) > 0:
+        cmd = [sys.executable, "-m", "pip", "install", *optional_build_dependencies]
+        subprocess.run(cmd, check=True)
+
+    # Step 3: Install core package
+    package_spec = "."
+    if args.optional_dependency:
+        extras = ",".join(dict.fromkeys(args.optional_dependency))
+        package_spec = f".[{extras}]"
     cmd = (
         [
             sys.executable,
@@ -223,14 +252,14 @@ def main(args):
         ]
         + (["--editable"] if args.editable else [])
         + [
-            ".",
+            package_spec,
             "--no-build-isolation",
             "-v",
         ]
     )
     subprocess.run(cmd, check=True)
 
-    # Step 3: Extra (optional) packages that is only useful for running examples.
+    # Step 4: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:
         install_optional_example_requirements(use_pytorch_nightly)
 

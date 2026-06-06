@@ -8,14 +8,13 @@
 from typing import Any, cast, List
 
 import torch
-
 import tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.utils import tosa_shape
+from executorch.backends.arm.tosa.utils import normalize_symint
 
 
 @register_node_visitor
@@ -34,8 +33,7 @@ class TosaConstShapeVisitor(NodeVisitor):
     ) -> None:
         shape_input = inputs[0].special
         rank = len(shape_input)
-        tosa_dim_order = output.dim_order
-        vals = tosa_shape(node.meta["val"], tosa_dim_order)
+        vals = normalize_symint(node.meta["val"])
         tosa_graph = cast(ts.TosaSerializer, tosa_graph)
         tosa_graph.addConst(
             [

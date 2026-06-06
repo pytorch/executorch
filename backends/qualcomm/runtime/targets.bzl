@@ -3,7 +3,7 @@ load(
     "ANDROID",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -24,12 +24,12 @@ def define_common_targets():
         platforms = [ANDROID],
         visibility = ["PUBLIC"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
+            qnn_third_party_dep("api"),
+            qnn_third_party_dep("app_sources"),
             "//executorch/runtime/backend:interface",
         ],
         exported_deps = [
-            "fbsource//third-party/toolchains:log",
+            qnn_third_party_dep("log"),
             "//executorch/backends/qualcomm:schema",
             "//executorch/runtime/core:core",
         ],
@@ -47,9 +47,11 @@ def define_common_targets():
                     "backends/gpu/*.cpp",
                     "backends/htp/*.cpp",
                     "backends/ir/*.cpp",
+                    "backends/lpai/*.cpp",
                 ] + (["backends/gpu/host/*.cpp"] if include_aot_qnn_lib else ["backends/gpu/target/*.cpp"]) + (
                     ["backends/htp/host/*.cpp"] if include_aot_qnn_lib else ["backends/htp/target/*.cpp"]) + (
-                    ["backends/ir/host/*.cpp"] if include_aot_qnn_lib else ["backends/ir/target/*.cpp"]
+                    ["backends/ir/host/*.cpp"] if include_aot_qnn_lib else ["backends/ir/target/*.cpp"]) + (
+                    ["backends/lpai/host/*.cpp"] if include_aot_qnn_lib else ["backends/lpai/target/*.cpp"]
                 ),
                 exclude = ["Logging.cpp"],
             ),
@@ -60,6 +62,7 @@ def define_common_targets():
                     "backends/gpu/*.h",
                     "backends/htp/*.h",
                     "backends/ir/*.h",
+                    "backends/lpai/*.h",
                 ],
                 exclude = ["Logging.h"],
             ),
@@ -68,12 +71,12 @@ def define_common_targets():
             platforms = [ANDROID],
             visibility = ["PUBLIC"],
             resources = ({
-                "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_version()),
+                "qnn_lib": qnn_third_party_dep("qnn_offline_compile_libs"),
                 } if include_aot_qnn_lib else {
             }),
             deps = [
-                "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-                "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
+                qnn_third_party_dep("api"),
+                qnn_third_party_dep("app_sources"),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",

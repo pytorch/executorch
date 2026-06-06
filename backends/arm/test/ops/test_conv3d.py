@@ -9,6 +9,7 @@ from typing import List, Tuple, Union
 import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
 )
 from executorch.backends.arm.test import common
@@ -206,6 +207,32 @@ class DepthwiseConv3d(torch.nn.Module):
 
     def get_inputs(self):
         return (torch.randn(1, 2, 3, 8, 8).to(self.dtype),)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class GroupedConv3d(torch.nn.Module):
+    """Non-depthwise grouped Conv3d (in_channels != groups).
+
+    Split into ``groups`` plain convolutions by DecomposeGroupedConvPass, so it
+    is delegated unlike the depthwise case.
+
+    """
+
+    def __init__(self, dtype=torch.float):
+        super().__init__()
+        self.dtype = dtype
+        self.conv = torch.nn.Conv3d(
+            in_channels=4,
+            out_channels=4,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            groups=2,
+        ).to(dtype)
+
+    def get_inputs(self):
+        return (torch.randn(1, 4, 8, 8, 8).to(self.dtype),)
 
     def forward(self, x):
         return self.conv(x)
@@ -622,19 +649,21 @@ def test_convolution_3d_tosa_INT_multi_op():
 
 
 def test_convolution_3d_tosa_FP_depthwise():
-    """Depthwise or Grouped Conv3d should be rejected until grouped support
-    exists.
+    """Depthwise Conv3d should be delegated, decomposed into groups==1
+    convolutions by DecomposeGroupedConvPass.
     """
     model = DepthwiseConv3d()
-    pipeline = TosaPipelineFP[input_t](
-        model,
-        model.get_inputs(),
-        aten_op,
-        exir_op,
-        run_on_tosa_ref_model=False,
-    )
-    with pytest.raises(RuntimeError, match="CONV3D with groups != 1"):
-        pipeline.run()
+    pipeline = TosaPipelineFP[input_t](model, model.get_inputs(), aten_op, exir_op)
+    pipeline.run()
+
+
+def test_convolution_3d_tosa_FP_grouped():
+    """Non-depthwise grouped Conv3d should be delegated, decomposed into
+    groups==1 convolutions by DecomposeGroupedConvPass.
+    """
+    model = GroupedConv3d()
+    pipeline = TosaPipelineFP[input_t](model, model.get_inputs(), aten_op, exir_op)
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_INT)
@@ -737,6 +766,26 @@ def test_convolution_3d_vgf_quant_a8w4(test_data):
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT16)
+@common.SkipIfNoModelConverter
+def test_convolution_3d_vgf_quant_a16w8(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        quantize=True,
+        tosa_extensions=["int16"],
+        qtol=1,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 

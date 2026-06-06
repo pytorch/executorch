@@ -612,6 +612,25 @@ def register_q8ta_relu():
 
 
 # =============================================================================
+# Q8taPixelShuffle.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.q8ta_pixel_shuffle.default)
+def register_q8ta_pixel_shuffle():
+    # The fused kernel is restricted to the channels-packed family
+    # (PACKED_INT8_4W4C, PACKED_INT8_4C1W, PACKED_INT8_CONV2D), all of which
+    # share packed_dim=C. See add_q8ta_pixel_shuffle_node in Q8taPixelShuffle.cpp
+    # for the runtime assertion. The surrounding q8ta_conv2d ops produce
+    # PACKED_INT8_4W4C on this model, so the partitioner can route through this
+    # op without inserting layout-transition q8ta_clone dispatches.
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_CHANNELS_PACKED_BUFFER,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # =============================================================================
 
 
@@ -1072,6 +1091,20 @@ def register_sdpa_cpp_ops():
 
 
 # =============================================================================
+# SDPA.cpp (fused SDPA entry point)
+# =============================================================================
+
+
+@update_features("et_vk::sdpa")
+def register_general_sdpa():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # RotaryEmbedding.cpp
 # =============================================================================
 
@@ -1090,6 +1123,22 @@ def register_apply_rotary_emb():
 def register_apply_rotary_emb_hf():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.apply_rotary_emb_interleaved.default)
+def register_apply_rotary_emb_interleaved():
+    return OpFeatures(
+        # freqs_cis is pinned to buffer storage so the shader can compute a
+        # flat [N, C] linear address regardless of the tensor's declared rank
+        # (callers commonly pass 4D [1, N, C/2, 2] without a preceding view).
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,  # x
+            utils.CONTIGUOUS_BUFFER,  # freqs_cis
+        ],
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1128,7 +1177,7 @@ def register_permute_copy():
 @update_features(exir_ops.edge.aten.view_copy.default)
 def register_view_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1183,7 +1232,7 @@ def register_unsqueeze_copy():
 @update_features(exir_ops.edge.aten.clone.default)
 def register_clone():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1193,7 +1242,7 @@ def register_clone():
 @update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
 def register_clone_dim_order():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1207,7 +1256,7 @@ def register_clone_dim_order():
 @update_features(exir_ops.edge.aten.alias_copy.default)
 def register_alias_copy():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
         supports_highdim=True,
@@ -1476,6 +1525,20 @@ def register_upsample_cpp_ops():
 
 
 # =============================================================================
+# PixelShuffle.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.pixel_shuffle.default)
+def register_pixel_shuffle():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
 # GridPriors.cpp
 # =============================================================================
 
@@ -1485,6 +1548,69 @@ def register_grid_priors():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_T,
+    )
+
+
+# =============================================================================
+# GridSampler2d.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.grid_sampler_2d.default)
+def register_grid_sampler_2d():
+    # The Vulkan implementation only supports the configuration used by RIFE's
+    # WarpModule: bilinear interpolation (0), border padding (1),
+    # align_corners=True. The C++ side has VK_CHECK_COND asserts for these,
+    # but those abort the whole inference at graph build — for any other model
+    # that contains a differently-configured grid_sampler_2d we want graceful
+    # CPU fallback, so we gate delegation here.
+    #
+    # Edge IR can hand us these scalar args as plain Python literals, SymInt /
+    # SymBool wrappers, or get_attr-style fx.Node references, so we unwrap
+    # each one defensively (mirrors the `isinstance(groups, int)` guard in
+    # check_conv_node / pick_conv_storage above). If we can't confidently pull
+    # a literal out of any arg, return False so the node stays on CPU instead
+    # of hitting a runtime VK_CHECK_COND.
+    def _unwrap_literal(arg: object) -> object:
+        # Plain Python literal (covers bool, since bool is a subclass of int).
+        if isinstance(arg, (bool, int, float)):
+            return arg
+        # get_attr / constant fx.Node — read the materialized value from meta.
+        if isinstance(arg, torch.fx.Node):
+            val = arg.meta.get("val", None)
+            if isinstance(val, (bool, int, float)):
+                return val
+            return None
+        # Symbolic int/bool (or anything else int-convertible) — try once.
+        try:
+            return int(arg)  # pyre-ignore[6]
+        except (TypeError, ValueError):
+            return None
+
+    def check_grid_sampler_2d_node(node: torch.fx.Node) -> bool:
+        # Schema: aten::grid_sampler_2d(input, grid, interpolation_mode,
+        #                               padding_mode, align_corners)
+        if len(node.args) < 5:
+            return False
+
+        interp = _unwrap_literal(node.args[2])
+        padding = _unwrap_literal(node.args[3])
+        align_corners = _unwrap_literal(node.args[4])
+
+        if interp is None or padding is None or align_corners is None:
+            return False
+
+        # mode: 0 = bilinear; padding: 1 = border; align_corners must be True.
+        return interp == 0 and padding == 1 and bool(align_corners) is True
+
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input  : [N, C, Hin, Win]
+            utils.CONTIGUOUS_BUFFER,  # grid   : [N, Hout, Wout, 2]
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_grid_sampler_2d_node,
     )
 
 
@@ -1600,6 +1726,21 @@ def register_native_group_norm():
 def register_native_layer_norm():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+        supports_resize=True,
+    )
+
+
+# =============================================================================
+# RmsNorm.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.rms_norm.default)
+def register_rms_norm():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,

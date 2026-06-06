@@ -9,7 +9,12 @@
 import unittest
 
 import torch
-from executorch.exir.operator.convert import _get_overload_schema, to_out_variant
+from executorch.exir.operator.convert import (
+    _get_overload_schema,
+    output_to_aliased_input_map,
+    to_out_variant,
+    unwrap_op_overload,
+)
 from executorch.exir.operator.util import gen_out_variant_schema
 from torch.library import _scoped_library, impl, impl_abstract
 
@@ -82,3 +87,86 @@ class TestOperator(unittest.TestCase):
                 schema.__str__(),
                 "DO_NOT_USE_TEST_ONLY::custom_mutator.out(Tensor x, Tensor(a!) y, *, Tensor(b!) out) -> Tensor(b!)",
             )
+
+
+class TestUnwrapOpOverload(unittest.TestCase):
+    def test_aten_overload_returned_as_is(self) -> None:
+        op = torch.ops.aten.add.Tensor
+        self.assertIs(unwrap_op_overload(op), op)
+
+    def test_wrapper_with_op_attr_peeled_to_aten(self) -> None:
+        # Mimic the structural shape of `EdgeOpOverload` /
+        # `BackendOpOverload`: a non-OpOverload wrapper that exposes
+        # the underlying aten op via `_op`.
+        class _FakeWrapper:  # noqa: B903
+            def __init__(self, op: torch._ops.OpOverload) -> None:
+                self._op = op
+
+        aten_op = torch.ops.aten.add.Tensor
+        wrapper = _FakeWrapper(aten_op)
+        self.assertIs(unwrap_op_overload(wrapper), aten_op)
+
+    def test_non_op_raises(self) -> None:
+        with self.assertRaises(TypeError):
+            unwrap_op_overload("not an op")
+        with self.assertRaises(TypeError):
+            unwrap_op_overload(None)
+        with self.assertRaises(TypeError):
+            unwrap_op_overload(42)
+
+    def test_wrapper_with_non_op_underlying_raises(self) -> None:
+        class _BadWrapper:
+            _op = "not an op overload"
+
+        with self.assertRaises(TypeError):
+            unwrap_op_overload(_BadWrapper())
+
+
+class TestOutputToAliasedInputMap(unittest.TestCase):
+    def test_functional_op_returns_empty(self) -> None:
+        # `aten::add.Tensor` is purely functional — no Tensor(a!) on
+        # any return.
+        schema = torch.ops.aten.add.Tensor._schema
+        self.assertEqual(output_to_aliased_input_map(schema), {})
+
+    def test_single_output_inplace_op(self) -> None:
+        # `aten::index_put_` mutates `self` (arg 0) and returns it
+        # (return 0).
+        schema = torch.ops.aten.index_put_.default._schema
+        self.assertEqual(output_to_aliased_input_map(schema), {0: 0})
+
+    def test_single_output_inplace_via_pybind_parse(self) -> None:
+        # Synthetic single-mutation schema parsed via the pybind
+        # FunctionSchema parser; mutates `self` at position 0 and
+        # returns it.
+        schema = torch._C.parse_schema(
+            "test::single(Tensor(a!) self, int n) -> Tensor(a!)"
+        )
+        self.assertEqual(output_to_aliased_input_map(schema), {0: 0})
+
+    def test_multi_output_inplace_via_pybind_parse(self) -> None:
+        # Synthetic multi-mutation schema: two write-aliased inputs
+        # `a` and `b`, each returned as its own aliased output.
+        schema = torch._C.parse_schema(
+            "test::multi(Tensor(x!) a, Tensor(y!) b, int n) "
+            "-> (Tensor(x!), Tensor(y!))"
+        )
+        # Output 0 (alias set {x}) → input 0 (a).
+        # Output 1 (alias set {y}) → input 1 (b).
+        self.assertEqual(output_to_aliased_input_map(schema), {0: 0, 1: 1})
+
+    def test_partial_aliasing_returns_only_matched(self) -> None:
+        # Two returns, only the first carries write-alias info.
+        schema = torch._C.parse_schema(
+            "test::partial(Tensor(z!) self, Tensor other) " "-> (Tensor(z!), Tensor)"
+        )
+        self.assertEqual(output_to_aliased_input_map(schema), {0: 0})
+
+    def test_tied_inputs_first_match_wins(self) -> None:
+        # Two inputs share the same write-alias set; per the docstring
+        # contract ("the first matching input wins"), the helper must
+        # map the single output back to input index 0, not 1.
+        schema = torch._C.parse_schema(
+            "test::tied(Tensor(a!) x, Tensor(a!) y) -> Tensor(a!)"
+        )
+        self.assertEqual(output_to_aliased_input_map(schema), {0: 0})

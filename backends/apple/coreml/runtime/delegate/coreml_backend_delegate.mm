@@ -336,7 +336,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
 
     std::error_code error;
     const char* function_name_cstr = functionName.empty() ? nullptr : functionName.c_str();
-    auto handle = impl_->init(std::move(buffer), specs_map, method_name, function_name_cstr);
+    auto handle = impl_->init(std::move(buffer), specs_map, method_name, function_name_cstr, runtime_specs);
     ET_CHECK_OR_RETURN_ERROR(handle != nullptr,
                              InvalidProgram,
                              "%s: Failed to init the model.", ETCoreMLStrings.delegateIdentifier.UTF8String);

@@ -164,3 +164,64 @@ backends/arm/scripts/run_fvp.sh --elf=build/arm_executor_runner --target=ethos-u
 ```
 
 For a complete end-to-end walkthrough including dataset setup, calibration, and result validation, see the [Cortex-M MobileNetV2 notebook](https://github.com/pytorch/executorch/blob/main/examples/arm/cortex_m_mv2_example.ipynb).
+
+## Testing with Bundled I/O
+
+The tutorial above produces a plain `.pte`. For programmatic testing,
+`aot_arm_compiler --bundleio` instead produces a bundled (`.bpte`) program
+that embeds reference inputs and expected outputs; the Cortex-M test runner
+loads the bundle via semihosting and self-checks its outputs against the
+embedded references, emitting `Test_result: PASS` or `Test_result: FAIL`
+on the UART.
+
+The driver for this flow is `examples/arm/run.sh`, which exports the model,
+builds the Cortex-M test runner, launches the Corstone-300 FVP with
+semihosting enabled, and checks the bundled output. Run it from the
+ExecuTorch repo root after `./install_executorch.sh`:
+
+```bash
+# One-time: install the Arm toolchain + FVP.
+examples/arm/setup.sh --i-agree-to-the-contained-eula
+source examples/arm/arm-scratch/setup_path.sh
+
+# Per model: export, build, and run on the FVP in one step.
+# (Quantization is the default for the cortex-m55+int8 target.)
+examples/arm/run.sh \
+    --model_name=<model> \
+    --target=cortex-m55+int8 \
+    --bundleio
+```
+
+Replace `<model>` with any of the validated-model names in the table
+below. Without `--calibration_data`, calibration falls back to the model's
+`get_example_inputs()` (random data) — enough for bundled-I/O numerical
+parity, but not for task-accuracy claims. On `Test_result: FAIL`, inspect
+the FVP UART log for the per-tensor diff; supplying a representative
+calibration dataset via `--calibration_data=<dir>` often resolves
+mismatches caused by random-input calibration.
+
+:::{important}
+Bundled I/O checks INT8 **numerical parity** between the exported `.bpte`
+and the eager-mode quantized model on reference inputs; it does not
+validate task accuracy (VWW / KWS / ImageNet).
+:::
+
+## Validated Models
+
+The following models are exported, INT8 quantized, lowered, and validated
+end-to-end on the Corstone-300 FVP:
+
+| Model              | Task                               | Input shape   | Source                                            | Test                                                     |
+|--------------------|------------------------------------|---------------|---------------------------------------------------|----------------------------------------------------------|
+| `mv2`              | Image classification               | `1x3x224x224` | `examples/models/mobilenet_v2/`                   | `backends/cortex_m/test/models/test_mobilenet_v2.py`     |
+| `mv3`              | Image classification               | `1x3x224x224` | `examples/models/mobilenet_v3/`                   | `backends/cortex_m/test/models/test_mobilenet_v3.py`     |
+| `ds_cnn`           | Keyword spotting (MLPerf Tiny)     | `1x1x49x10`   | `examples/models/mlperf_tiny/ds_cnn.py`           | `backends/cortex_m/test/models/test_ds_cnn.py`           |
+| `mobilenet_v1_025` | Visual Wake Words (MLPerf Tiny)    | `1x3x96x96`   | `examples/models/mlperf_tiny/mobilenet_v1_025.py` | `backends/cortex_m/test/models/test_mobilenet_v1_025.py` |
+| `resnet8`          | Image classification (MLPerf Tiny) | `1x3x32x32`   | `examples/models/mlperf_tiny/resnet8.py`          | `backends/cortex_m/test/models/test_resnet8.py`          |
+| `deep_autoencoder` | Anomaly detection (MLPerf Tiny)    | `1x640`       | `examples/models/mlperf_tiny/deep_autoencoder.py` | `backends/cortex_m/test/models/test_deep_autoencoder.py` |
+
+:::{note}
+`mobilenet_v1_025` is the MLPerf Tiny Visual Wake Words benchmark
+(MobileNetV1 with width multiplier 0.25) — the canonical person-detection
+reference model for TinyML.
+:::

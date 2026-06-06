@@ -54,6 +54,7 @@ using ::executorch::runtime::KernelRuntimeContext;
     int64_t output_zero_point,
     int64_t out_multiplier,
     int64_t out_shift,
+    const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out);
 
 } // namespace native

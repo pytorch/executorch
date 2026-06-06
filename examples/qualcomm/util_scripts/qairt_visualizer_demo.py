@@ -11,49 +11,47 @@ from multiprocessing.connection import Client
 import qairt_visualizer
 import torch
 from executorch.backends.qualcomm.debugger.utils import generate_optrace
-from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.tests.models import SimpleModel
-from executorch.backends.qualcomm.utils.utils import get_soc_to_chipset_map
-from executorch.examples.qualcomm.utils import (
+from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
+    QnnConfig,
     setup_common_args_and_variables,
     SimpleADB,
 )
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.backends.qualcomm.tests.models import SimpleModel
+from executorch.backends.qualcomm.utils.utils import get_soc_to_chipset_map
 
 
 def main(args) -> None:
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
     model = SimpleModel()
     example_inputs = [(torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))]
 
     pte_filename = "qnn_simple_model"
     os.makedirs(args.artifact, exist_ok=True)
 
+    assert (
+        qnn_config.profile_level == 3
+    ), "Please turn profile_level to 3 for the purpose of this tutorial."
+
     # lower to QNN
     build_executorch_binary(
-        model,
-        example_inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        example_inputs,
+        model=model,
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
+        dataset=example_inputs,
         quant_dtype=QuantDtype.use_8a8w,
-        online_prepare=args.online_prepare,
-        optrace=True,
     )
 
     # generate optrace and QHAS
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        target=args.target,
     )
     binaries_trace = generate_optrace(
         args.artifact,
-        get_soc_to_chipset_map()[args.model],
+        get_soc_to_chipset_map()[args.soc_model],
         adb,
         f"{args.artifact}/{pte_filename}.pte",
         example_inputs,

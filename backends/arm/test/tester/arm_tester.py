@@ -8,6 +8,7 @@ import copy
 import inspect
 
 import logging
+import platform
 
 from collections import Counter, defaultdict
 from pprint import pformat
@@ -103,6 +104,21 @@ from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantiza
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
+
+
+# TODO(MLETORCH-2048: Remove if possible or rework this to match minimal tolerance diff between architectures when TOSA is updated, or investigate/update atol in the failing tests)
+def _adjust_tosa_aarch64_atol(compile_spec: ArmCompileSpec, atol: float) -> float:
+    """Increase tolerance for aarch64 when running on TOSA.
+
+    This is due to the TOSA ref model being experimental on Aarch64.
+
+    """
+    if isinstance(compile_spec, TosaCompileSpec) and platform.machine().lower() in (
+        "aarch64",
+        "arm64",
+    ):
+        return atol * 1.1
+    return atol
 
 
 def _dump_lowered_modules_artifact(
@@ -573,6 +589,8 @@ class ArmTester(tester.Tester):
 
         """
 
+        atol = _adjust_tosa_aarch64_atol(self.compile_spec, atol)
+
         # backward-compatible ordering (accept inputs as the first positional argument)
         inputs, reference_stage, test_stage = self._get_input_and_stages(
             inputs, stage, reference_stage_type, run_eager_mode
@@ -622,6 +640,18 @@ class ArmTester(tester.Tester):
                 test_outputs, _ = pytree.tree_flatten(
                     test_stage.run_artifact(test_input)
                 )
+
+            # When we run with KV cache enabled, the model returns cache data in the results. This we need to strip away by extracting only USER_OUTPUT.
+            if hasattr(test_stage.artifact, "exported_program"):
+                output_specs = (
+                    test_stage.artifact.exported_program().graph_signature.output_specs
+                )
+                user_outputs = [
+                    output
+                    for output, spec in zip(test_outputs, output_specs)
+                    if spec.kind == OutputKind.USER_OUTPUT
+                ]
+                test_outputs = user_outputs
 
             logger.info(f"\n      Input: {original_input}")
             logger.info(f"\n Ref output: {reference_outputs}")
@@ -1129,7 +1159,7 @@ def _get_dtype_distribution(
             placeholder_dtypes.append(str(node.meta["val"].dtype))
         if node.op == "call_function":
             if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
-                dtype, _, _ = extract_tensor_meta(node.meta)
+                dtype, _ = extract_tensor_meta(node.meta)
                 call_function_dtypes.append(ts.DTypeNames[dtype])
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 

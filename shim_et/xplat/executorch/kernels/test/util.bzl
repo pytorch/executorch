@@ -37,18 +37,38 @@ def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False
 
     name_prefix = ""
     aten_suffix = ""
+
+    # On Android, fork() is unavailable so gtest auto-skips death tests
+    # (*Dies). Filter them out at discovery time so TestInfra stops
+    # reporting them as perpetually-skipped/failing. See T270699623.
+    #
+    # For portable/optimized kernels, *DynamicShapeUnbound tests are also
+    # filtered because output_resize=false for those kernels, so they
+    # GTEST_SKIP() at runtime today. For the ATen kernel, output_resize=true
+    # (see supported_features_def_aten.yaml), so DynamicShapeUnbound tests
+    # actually run and provide coverage on Android — keep them.
     if kernel_name == "aten":
         # For aten kernel, we need to use aten specific utils and types
         name_prefix = "aten_"
         aten_suffix = "_aten"
-    elif use_kernel_prefix:
-        name_prefix = kernel_name + "_"
+        android_gtest_filter = "-*Dies"
+    else:
+        if use_kernel_prefix:
+            name_prefix = kernel_name + "_"
+        android_gtest_filter = "-*Dies:*DynamicShapeUnbound"
+
     runtime.cxx_test(
         name = name_prefix + name,
         srcs = [
             "{}.cpp".format(name),
         ],
         visibility = ["//executorch/kernels/..."],
+        env = select({
+            "ovr_config//os:android": {
+                "GTEST_FILTER": android_gtest_filter,
+            },
+            "DEFAULT": {},
+        }),
         deps = [
             "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,

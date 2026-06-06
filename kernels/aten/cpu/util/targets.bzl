@@ -17,6 +17,12 @@ def define_common_targets():
         compiler_flags = select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
                 "ovr_config//os:windows": [],
+                # ovr_config//os:zephyr is fbsource-internal; OSS bypasses
+                # this branch via runtime.is_oss.
+                "ovr_config//os:zephyr": [],
+            }) if not runtime.is_oss else select({
+                "DEFAULT": ["-Wno-missing-prototypes"],
+                "ovr_config//os:windows": [],
             }),
         deps = [
             "//executorch/runtime/kernel:kernel_includes_aten",

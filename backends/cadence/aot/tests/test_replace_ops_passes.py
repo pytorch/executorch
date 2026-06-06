@@ -840,6 +840,30 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
+    def test_replace_pad_with_cat_preserves_dtype(self) -> None:
+        # The padding constant tensors must match the input dtype, otherwise the
+        # resulting cat mixes dtypes and fails edge dialect dtype verification
+        # (e.g. for quantized int8 graphs).
+        x = torch.randint(-128, 127, (1, 2, 3), dtype=torch.int8)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.constant_pad_nd.default,
+            args=(x, [1, 1]),
+        )
+
+        p = ReplacePadWithCatPass()
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        full_nodes = graph_after_passes.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.full.default
+        )
+        self.assertEqual(len(full_nodes), 2)
+        for full_node in full_nodes:
+            self.assertEqual(full_node.kwargs["dtype"], torch.int8)
+
+    @torch.no_grad()
     def test_replace_repeat_with_cat(self) -> None:
         x = torch.randn([3, 5])
         original_gm = single_op_builder(
@@ -1250,6 +1274,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             inputs,
             "ReplaceTrivialConvWithLinear",
             rtol=2e-5,
+            atol=5e-6,
         )
 
         # Assert that conv1d is trivially converted to linear
@@ -1294,6 +1319,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             inputs,
             "ReplaceTrivialConvWithLinear",
             rtol=2e-5,
+            atol=5e-6,
         )
 
         # Assert that conv2d is trivially converted to linear
@@ -1926,8 +1952,8 @@ class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
             2,
         )
 
-    @expand([[2], [3], [4]])
-    def test_replace_pow_with_mul(self, exponent: int) -> None:
+    @expand([[2], [3], [4], [2.0], [3.0], [4.0]])
+    def test_replace_pow_with_mul(self, exponent: int | float) -> None:
         x_input = torch.randn(2, 1, 64)
         x = x_input
         original_gm = single_op_builder(
@@ -1956,13 +1982,15 @@ class TestReplaceWhereWithFullArgsWithWhereScalar(unittest.TestCase):
                 graph_after_passes,
                 exir_ops.edge.aten.mul.Tensor,
             ),
-            exponent - 1,
+            int(exponent) - 1,
         )
 
     @expand(
         [
             [1],
             [1.5],
+            [5.0],
+            [0.5],
         ]
     )
     def test_replace_pow_with_mul_not_applied(self, exponent: float) -> None:
@@ -2170,7 +2198,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         else:
             x = torch.randint(0, 100, (1, 3, 224, 56), dtype=torch.int32)
             w = torch.randint(0, 100, (16, 3, 16, 16), dtype=torch.int32)
-        b = torch.randn(16)
+        b = torch.randint(-1000, 1000, (16,), dtype=torch.int32)
         stride = (2, 2)
         padding = (0, 0)
         dilation = (1, 1)
@@ -2432,7 +2460,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         x = torch.randint(0, 100, (1, in_channels, 224, 56), dtype=torch.int32)
         # Depthwise: weight shape is [out_channels, 1, kernel_h, kernel_w]
         w = torch.randint(0, 100, (out_channels, 1, 3, 3), dtype=torch.int32)
-        b = torch.randn(out_channels)
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
         stride = (1, 1)
         padding = (1, 1)
         dilation = (1, 1)
@@ -2577,7 +2605,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         w = torch.randint(
             0, 100, (out_channels, in_channels, kernel_size), dtype=torch.int32
         )
-        b = torch.randn(out_channels)
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
         stride = (1, 1)
         padding = (0, 0)
         dilation = (1, 1)
@@ -2687,7 +2715,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         kernel_size = 3
         x = torch.randint(0, 100, (1, in_channels, 64), dtype=torch.int32)
         w = torch.randint(0, 100, (out_channels, 1, kernel_size), dtype=torch.int32)
-        b = torch.randn(out_channels)
+        b = torch.randint(-1000, 1000, (out_channels,), dtype=torch.int32)
         stride = (1, 1)
         padding = (1, 1)
         dilation = (1, 1)

@@ -384,68 +384,30 @@ int main(int argc, char* argv[]) {
   torch::executor::MemoryManager memory_manager(
       &method_allocator, &planned_memory, &tmp_allocator);
 
-  Result<torch::executor::Method> method =
-      program->load_method(method_name, &memory_manager);
-  if (!method.ok()) {
-    fprintf(
-        stderr,
-        "Loading of method (%s) failed with status %" PRIu32 "...\n",
-        method_name,
-        (unsigned int)method.error());
-    exit(-1);
-  }
-  printf("Method loaded...\n");
-
-  Error status = Error::Ok;
-  if (!FLAGS_dataset.empty()) {
-    // Go through entire dataset for this model.
-    FLAGS_dataset += "/";
-    while (dataset = readdir(datasetDir)) {
-      if (!strcmp(dataset->d_name, ".") || !strcmp(dataset->d_name, ".."))
-        continue;
-
-      std::vector<std::string> inputsData;
-      inputsData.push_back(FLAGS_dataset + dataset->d_name);
-      // Set input and call inferrence.
-      setInputs(method.get(), inputsData);
-
-      status = method->execute();
-      if (status != Error::Ok) {
-        fprintf(
-            stderr,
-            "Execution of method %s failed with status %" PRIu32 "...\n",
-            method_name,
-            (unsigned int)status);
-        exit(-1);
-      } else {
-        printf("Method executed successfully...\n");
-      }
-
-      // Save outputs in binary files.
-      saveOutputs(method.get(), FLAGS_output, dataset->d_name);
-      // Print result with highest confidence.
-      printOutput(method.get(), FLAGS_output, dataset->d_name);
+  {
+    Result<torch::executor::Method> method =
+        program->load_method(method_name, &memory_manager);
+    if (!method.ok()) {
+      fprintf(
+          stderr,
+          "Loading of method (%s) failed with status %" PRIu32 "...\n",
+          method_name,
+          (unsigned int)method.error());
+      exit(-1);
     }
-    closedir(datasetDir);
-  } else if (!FLAGS_inputs.empty()) {
-    std::vector<std::string> inputPaths;
+    printf("Method loaded...\n");
 
-    // Validate and process inputs and separate into two lists.
-    processInputs(inputPaths, FLAGS_inputs);
+    Error status = Error::Ok;
+    if (!FLAGS_dataset.empty()) {
+      // Go through entire dataset for this model.
+      FLAGS_dataset += "/";
+      while (dataset = readdir(datasetDir)) {
+        if (!strcmp(dataset->d_name, ".") || !strcmp(dataset->d_name, ".."))
+          continue;
 
-    if (std::all_of(inputPaths.begin(), inputPaths.end(), isDirectory)) {
-      // Inputs are in directories - use files in each directory as the inputs.
-      std::vector<std::string> inputsData;
-      for (std::string& inputDir : inputPaths) {
-        datasetDir = opendir(inputDir.c_str());
-        while (dataset = readdir(datasetDir)) {
-          if (!strcmp(dataset->d_name, ".") || !strcmp(dataset->d_name, ".."))
-            continue;
-
-          inputsData.push_back(inputDir + "/" + dataset->d_name);
-        }
-        closedir(datasetDir);
-
+        std::vector<std::string> inputsData;
+        inputsData.push_back(FLAGS_dataset + dataset->d_name);
+        // Set input and call inferrence.
         setInputs(method.get(), inputsData);
 
         status = method->execute();
@@ -460,37 +422,81 @@ int main(int argc, char* argv[]) {
           printf("Method executed successfully...\n");
         }
 
-        if (inputDir.back() == '/')
-          inputDir.pop_back();
+        // Save outputs in binary files.
+        saveOutputs(method.get(), FLAGS_output, dataset->d_name);
+        // Print result with highest confidence.
+        printOutput(method.get(), FLAGS_output, dataset->d_name);
+      }
+      closedir(datasetDir);
+    } else if (!FLAGS_inputs.empty()) {
+      std::vector<std::string> inputPaths;
 
-        auto pos = inputDir.find_last_of('/');
-        if (pos != std::string::npos)
-          inputDir = inputDir.substr(pos + 1);
+      // Validate and process inputs and separate into two lists.
+      processInputs(inputPaths, FLAGS_inputs);
+
+      if (std::all_of(inputPaths.begin(), inputPaths.end(), isDirectory)) {
+        // Inputs are in directories - use files in each directory as the
+        // inputs.
+        std::vector<std::string> inputsData;
+        for (std::string& inputDir : inputPaths) {
+          datasetDir = opendir(inputDir.c_str());
+          while (dataset = readdir(datasetDir)) {
+            if (!strcmp(dataset->d_name, ".") || !strcmp(dataset->d_name, ".."))
+              continue;
+
+            inputsData.push_back(inputDir + "/" + dataset->d_name);
+          }
+          closedir(datasetDir);
+
+          // Sort inputsData to ensure correct input ordering
+          std::sort(inputsData.begin(), inputsData.end());
+
+          setInputs(method.get(), inputsData);
+
+          status = method->execute();
+          if (status != Error::Ok) {
+            fprintf(
+                stderr,
+                "Execution of method %s failed with status %" PRIu32 "...\n",
+                method_name,
+                (unsigned int)status);
+            exit(-1);
+          } else {
+            printf("Method executed successfully...\n");
+          }
+
+          if (inputDir.back() == '/')
+            inputDir.pop_back();
+
+          auto pos = inputDir.find_last_of('/');
+          if (pos != std::string::npos)
+            inputDir = inputDir.substr(pos + 1);
+
+          // Save outputs in binary files.
+          saveOutputs(method.get(), FLAGS_output, inputDir.c_str());
+          inputsData.clear();
+        }
+      } else {
+        // Inputs are files.
+        setInputs(method.get(), inputPaths);
+
+        status = method->execute();
+        if (status != Error::Ok) {
+          fprintf(
+              stderr,
+              "Execution of method %s failed with status %" PRIu32 "...\n",
+              method_name,
+              (unsigned int)status);
+          exit(-1);
+        } else {
+          printf("Method executed successfully...\n");
+        }
 
         // Save outputs in binary files.
-        saveOutputs(method.get(), FLAGS_output, inputDir.c_str());
-        inputsData.clear();
+        saveOutputs(method.get(), FLAGS_output);
       }
-    } else {
-      // Inputs are files.
-      setInputs(method.get(), inputPaths);
-
-      status = method->execute();
-      if (status != Error::Ok) {
-        fprintf(
-            stderr,
-            "Execution of method %s failed with status %" PRIu32 "...\n",
-            method_name,
-            (unsigned int)status);
-        exit(-1);
-      } else {
-        printf("Method executed successfully...\n");
-      }
-
-      // Save outputs in binary files.
-      saveOutputs(method.get(), FLAGS_output);
     }
-  }
+  } // Destruct the method object before destroying the Neutron Device.
 
   printf("Finished...\n");
 

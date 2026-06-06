@@ -21,7 +21,7 @@ std::size_t std::hash<CustomMemTensorInfo>::operator()(
   hash_val ^= std::hash<void*>()(info.custom_mem);
   hash_val ^= std::hash<size_t>()(info.pos);
   hash_val ^= std::hash<size_t>()(info.tensor_bytes);
-  for (int i = 0; i < info.rank; ++i) {
+  for (size_t i = 0; i < info.rank; ++i) {
     hash_val ^= std::hash<uint32_t>()(info.shape[i]);
   }
   hash_val ^= std::hash<uint32_t>()(info.rank);
@@ -36,7 +36,7 @@ bool operator==(
       (lhs.tensor_addr == rhs.tensor_addr && lhs.custom_mem == rhs.custom_mem &&
        lhs.pos == rhs.pos && lhs.tensor_bytes == rhs.tensor_bytes &&
        lhs.rank == rhs.rank && lhs.dtype == rhs.dtype);
-  for (int i = 0; i < lhs.rank; ++i) {
+  for (size_t i = 0; i < lhs.rank; ++i) {
     is_same &= lhs.shape[i] == rhs.shape[i];
   }
   return is_same;

@@ -5,7 +5,6 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
 #include <executorch/backends/qualcomm/runtime/backends/ir/IrBackend.h>
 
@@ -40,20 +39,23 @@ Error QnnDlcManager::Create() {
       backend_bundle_ptr_->qnn_logger_ptr.get());
 
   backend_params_ptr_->qnn_backend_cache_ptr_ =
-      std::make_unique<QnnBackendCache>(qnn_context_blob_);
+      std::make_unique<QnnBackendCache>(
+          qnn_context_blob_, backend_bundle_ptr_->system_implementation.get());
 
   backend_params_ptr_->qnn_context_ptr_ = std::make_unique<IrContext>(
       backend_bundle_ptr_->implementation.get(),
+      backend_bundle_ptr_->system_implementation.get(),
       backend_bundle_ptr_->qnn_backend_ptr.get(),
       backend_bundle_ptr_->qnn_device_ptr.get(),
       backend_params_ptr_->qnn_backend_cache_ptr_.get(),
-      nullptr);
+      this,
+      QnnExecuTorchProfileLevel::kProfileOff);
 
   backend_params_ptr_->qnn_graph_ptr_ = std::make_unique<QnnGraph>(
       backend_bundle_ptr_->implementation.get(),
       backend_bundle_ptr_->qnn_backend_ptr.get(),
       backend_params_ptr_->qnn_context_ptr_.get(),
-      get_option(options_->profile_level()));
+      get_option(options_->profile_level(), QNN_RUNTIME_PROFILE_LEVEL));
   backend_params_ptr_->backend_init_state_ =
       BackendInitializeState::INITIALIZED;
   return backend_bundle_ptr_->qnn_backend_ptr->VerifyQNNSDKVersion();
@@ -107,7 +109,7 @@ Error QnnDlcManager::SetUpDlcEnvironment(
   backend_bundle_ptr_->qnn_logger_ptr = std::make_unique<QnnLogger>(
       backend_bundle_ptr_->implementation.get(),
       LoggingCallback,
-      get_option(options_->log_level()));
+      get_option(options_->log_level(), QNN_RUNTIME_LOG_LEVEL));
 
   ET_CHECK_OR_RETURN_ERROR(
       Create() == Error::Ok, Internal, "Failed to load Qnn IR backend.");
@@ -117,14 +119,6 @@ Error QnnDlcManager::SetUpDlcEnvironment(
       Internal,
       "Fail to configure IR backend.");
 
-  return Error::Ok;
-}
-
-Error QnnDlcManager::RegisterGraphsFromDLC(
-    QnnImplementation* implementation,
-    QnnBackend* backend,
-    QnnContext* context,
-    QnnBackendCache* cache) {
   return Error::Ok;
 }
 

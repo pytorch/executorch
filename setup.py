@@ -599,7 +599,9 @@ class CustomBuildPy(build_py):
         # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
         for include_dir in [
             "runtime/core/",
+            "runtime/executor/",
             "runtime/kernel/",
+            "runtime/backend/",
             "runtime/platform/",
             "extension/kernel_util/",
             "extension/tensor/",

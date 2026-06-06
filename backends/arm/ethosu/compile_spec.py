@@ -48,7 +48,7 @@ class EthosUCompileSpec(ArmCompileSpec):
             return resolved_system_config, resolved_memory_mode
         if "ethos-u65" in target_lower:
             resolved_system_config = (
-                "Ethos_U65_SYS_DRAM_Mid" if system_config is None else system_config
+                "Ethos_U65_High_End" if system_config is None else system_config
             )
             resolved_memory_mode = "Sram_Only" if memory_mode is None else memory_mode
             return resolved_system_config, resolved_memory_mode

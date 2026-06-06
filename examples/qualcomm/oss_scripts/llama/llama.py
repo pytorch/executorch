@@ -15,8 +15,13 @@ from multiprocessing.connection import Client
 from typing import Dict
 
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    get_backend_type,
+    setup_common_args_and_variables,
+)
 
 from executorch.backends.qualcomm.utils.utils import (
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
@@ -53,10 +58,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.wrappers import (
     is_attention_sink_config_equal,
     MultiModalManager,
     next_power_of_two,
-)
-from executorch.examples.qualcomm.utils import (
-    get_backend_type,
-    setup_common_args_and_variables,
 )
 from torchao.quantization.utils import compute_error
 
@@ -97,17 +98,12 @@ def compile(
     pte_filenames: Dict[str, str],
     tokenizer,
     calibration_data,
+    is_multimodal,
 ):
     os.makedirs(args.artifact, exist_ok=True)
     multi_modal_mgr = MultiModalManager(control_args=args, config=decoder_model_config)
 
     skip_quantize = {}
-    is_multimodal = any(
-        [
-            hasattr(decoder_model_config, VISION_ENCODER),
-            hasattr(decoder_model_config, AUDIO_ENCODER),
-        ]
-    )
 
     # Prepare ptq option and compile spec
     compile_specs = {
@@ -124,11 +120,17 @@ def compile(
             # because the encoder is quite sensitive and quantization can make it harder for the model to distinguish
             # between images within the same conversation.
             to_skip = len(args.image_path) > 1
-            backend_options = generate_htp_compiler_spec(
-                use_fp16=to_skip,
-            )
+            if args.backend == "htp":
+                backend_options = generate_htp_compiler_spec(
+                    use_fp16=to_skip,
+                )
+            elif args.backend == "gpu":
+                backend_options = generate_gpu_compiler_spec()
+            else:
+                raise ValueError(f"Unsupported backend {args.backend}")
+
             encoder_compile_specs = generate_qnn_executorch_compiler_spec(
-                soc_model=get_soc_to_chipset_map()[args.model],
+                soc_model=get_soc_to_chipset_map()[args.soc_model],
                 backend_options=backend_options,
                 # x86 emulator does not support shared buffer
                 shared_buffer=not args.enable_x86_64,
@@ -136,34 +138,48 @@ def compile(
             skip_quantize[modality] = to_skip
             compile_specs[modality] = encoder_compile_specs
         elif is_multimodal and modality == TOK_EMBEDDING:
-            backend_options = generate_htp_compiler_spec(
-                use_fp16=False,
-                # x86 emulator does not support weight sharing
-                use_weight_sharing=not args.enable_x86_64,
-            )
+            if args.backend == "htp":
+                backend_options = generate_htp_compiler_spec(
+                    use_fp16=False,
+                    # x86 emulator does not support weight sharing
+                    use_weight_sharing=not args.enable_x86_64,
+                )
+            elif args.backend == "gpu":
+                backend_options = generate_gpu_compiler_spec()
+            else:
+                raise ValueError(f"Unsupported backend {args.backend}")
+
             compile_specs[modality] = [
                 generate_qnn_executorch_compiler_spec(
-                    soc_model=get_soc_to_chipset_map()[args.model],
+                    soc_model=get_soc_to_chipset_map()[args.soc_model],
                     backend_options=backend_options,
                     # x86 emulator does not support shared buffer
                     shared_buffer=not args.enable_x86_64,
+                    online_prepare=args.online_prepare,
                 )
             ] * len(TOK_EMBEDDING_GRAPH_NAMES)
         elif modality == TEXT_DECODER:
             # compile spec for text decoder
-            backend_options = generate_htp_compiler_spec(
-                use_fp16=False,
-                use_multi_contexts=decoder_model_config.num_sharding > 1,
-                # x86 emulator does not support weight sharing
-                use_weight_sharing=not args.enable_x86_64,
-            )
+            if args.backend == "htp":
+                backend_options = generate_htp_compiler_spec(
+                    use_fp16=args.use_fp16,
+                    use_multi_contexts=decoder_model_config.num_sharding > 1,
+                    # x86 emulator does not support weight sharing
+                    use_weight_sharing=not args.enable_x86_64,
+                )
+            elif args.backend == "gpu":
+                backend_options = generate_gpu_compiler_spec()
+            else:
+                raise ValueError(f"Unsupported backend {args.backend}")
+            skip_quantize[modality] = args.use_fp16
             compile_specs[modality] = [
                 generate_qnn_executorch_compiler_spec(
-                    soc_model=get_soc_to_chipset_map()[args.model],
+                    soc_model=get_soc_to_chipset_map()[args.soc_model],
                     backend_options=backend_options,
                     # x86 emulator does not support shared buffer
                     shared_buffer=not args.enable_x86_64,
                     use_mha2sha=True,
+                    online_prepare=args.online_prepare,
                 )
             ] * len(DECODER_GRAPH_NAMES)
 
@@ -173,11 +189,15 @@ def compile(
         skip_quantize=skip_quantize,
         tokenizer=tokenizer,
         backend=get_backend_type(args.backend),
-        soc_model=args.model,
+        soc_model=args.soc_model,
     )
 
     # perform compilation
-    multi_modal_mgr.compile(compile_specs=compile_specs, pte_filenames=pte_filenames)
+    multi_modal_mgr.compile(
+        compile_specs=compile_specs,
+        pte_filenames=pte_filenames,
+        skip_quantize=skip_quantize,
+    )
 
 
 def inference(
@@ -187,20 +207,15 @@ def inference(
     tokenizer,
     chat_template,
     text_decoder_pte_path: str,
-    encoder_pte_path: str,
+    encoder_pte_paths: Dict[str, str],
     tok_embedding_pte_path: str,
     attention_sink_evictor_pte_path: str,
     calibration_data,
+    is_multimodal,
 ):
 
     assert args.model_mode in EVAL_MODE, f"Unknown model_mode: {args.model_mode}."
 
-    is_multimodal = any(
-        [
-            hasattr(decoder_model_config, VISION_ENCODER),
-            hasattr(decoder_model_config, AUDIO_ENCODER),
-        ]
-    )
     pte_paths = {TEXT_DECODER: text_decoder_pte_path}
     eval_results = {
         "pte_size": os.path.getsize(text_decoder_pte_path),
@@ -219,16 +234,21 @@ def inference(
     if is_multimodal:
         eval_results.update(
             {
-                "encoder_pte_size": os.path.getsize(encoder_pte_path),
                 "tok_embedding_pte_size": os.path.getsize(tok_embedding_pte_path),
             }
         )
         pte_paths.update(
             {
-                VISION_ENCODER: encoder_pte_path,
                 TOK_EMBEDDING: tok_embedding_pte_path,
             }
         )
+        for modality, encoder_pte_path in encoder_pte_paths.items():
+            eval_results.update(
+                {f"{modality}_pte_size": os.path.getsize(encoder_pte_path)}
+            )
+            pte_paths.update(
+                {modality: encoder_pte_path},
+            )
 
     if PROMPT_EVAL in args.eval_methods:
         prompt_evaluator = DefaultEval(
@@ -485,6 +505,14 @@ def _build_parser():
     )
 
     parser.add_argument(
+        "--audio_path",
+        help="Path to the audio file for multimodal language models (MLLM). If not specified, the default audio from encoder/encoder_config.py will be used. The audio should be preprocessed and saved in raw binary format.",
+        default=[],
+        type=str,
+        nargs="+",
+    )
+
+    parser.add_argument(
         "--image_path",
         help="Path to the image file for multimodal language models (MLLM). If not specified, the default image from encoder/encoder_config.py will be used. The image should be preprocessed and saved in raw binary format.",
         default=[],
@@ -526,6 +554,14 @@ def _build_parser():
         help="Number of examples in few-shot context",
     )
 
+    parser.add_argument(
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
+        action="store_true",
+        default=False,
+    )
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     parser.add_argument(
@@ -533,6 +569,18 @@ def _build_parser():
         type=int,
         default=0,
         help="Thread count for calibration forward passes. 0 = auto-tune (default).",
+    )
+
+    parser.add_argument(
+        "--quant_recipe_suggestion",
+        action="store_true",
+        help="Enable automatic quant recipe suggestion in PTQ",
+    )
+
+    parser.add_argument(
+        "--skip_user_prompt_calibration",
+        action="store_true",
+        help="Skip using user prompt for calibration. Useful when only dataset-based calibration is desired.",
     )
 
     return parser
@@ -583,6 +631,12 @@ def export_llama(args) -> None:
         pte_filename = "lookahead_llama_qnn"
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
+
+    if args.model_mode == "hybrid" and args.online_prepare:
+        raise RuntimeError(
+            "Currently hybrid mode is not compatible with online_prepare."
+        )
+
     if args.decoder_model == "stories260k":
         pte_filename = f"{args.decoder_model}_" + pte_filename
     pte_filenames = {
@@ -610,28 +664,42 @@ def export_llama(args) -> None:
     )
     text_decoder_pte_path = f"{args.artifact}/{pte_filenames[TEXT_DECODER]}.pte"
     attention_sink_evictor_pte_path = f"{args.artifact}/{ATTENTION_SINK_EVICTOR}.pte"
-    encoder_pte_path = f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
     tok_embedding_pte_path = f"{args.artifact}/{pte_filenames[TOK_EMBEDDING]}.pte"
+    encoder_pte_paths = {}
+    for modality in [AUDIO_ENCODER, VISION_ENCODER]:
+        if hasattr(decoder_model_config, modality):
+            encoder_pte_paths[modality] = (
+                f"{args.artifact}/{pte_filenames[modality]}.pte"
+            )
 
+    is_multimodal = any(
+        [
+            hasattr(decoder_model_config, VISION_ENCODER),
+            hasattr(decoder_model_config, AUDIO_ENCODER),
+        ]
+    )
     # TODO: Implement attention sink support for multimodal models (vision/audio).
     assert (
-        not (
-            hasattr(decoder_model_config, VISION_ENCODER)
-            or hasattr(decoder_model_config, AUDIO_ENCODER)
-        )
-    ) or args.use_attention_sink is None, (
-        "Multimodal models currently do not support attention sink feature."
-    )
+        not is_multimodal or args.use_attention_sink is None
+    ), "Multimodal models currently do not support attention sink feature."
+    assert (
+        not is_multimodal or not args.skip_user_prompt_calibration
+    ), "--skip_user_prompt_calibration is not supported for multimodal models (VLM/ALM) as they do not support task-based calibration yet."
 
     if args.pre_gen_pte:
         text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
         attention_sink_evictor_pte_path = (
             f"{args.pre_gen_pte}/{ATTENTION_SINK_EVICTOR}.pte"
         )
-        encoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[VISION_ENCODER]}.pte"
         tok_embedding_pte_path = (
             f"{args.pre_gen_pte}/{pte_filenames[TOK_EMBEDDING]}.pte"
         )
+        encoder_pte_paths = {}
+        for modality in [AUDIO_ENCODER, VISION_ENCODER]:
+            if hasattr(decoder_model_config, modality):
+                encoder_pte_paths[modality] = (
+                    f"{args.pre_gen_pte}/{pte_filenames[modality]}.pte"
+                )
 
         if args.use_attention_sink:
             compile_attention_sink_evictor(
@@ -647,10 +715,11 @@ def export_llama(args) -> None:
             tokenizer,
             chat_template,
             text_decoder_pte_path,
-            encoder_pte_path,
+            encoder_pte_paths,
             tok_embedding_pte_path,
             attention_sink_evictor_pte_path,
             calibration_data,
+            is_multimodal,
         )
         print(f"Finish the running pre_gen_pte from {args.pre_gen_pte}")
         return
@@ -661,6 +730,7 @@ def export_llama(args) -> None:
         pte_filenames,
         tokenizer,
         calibration_data,
+        is_multimodal,
     )
     if args.use_attention_sink:
         compile_attention_sink_evictor(
@@ -678,26 +748,21 @@ def export_llama(args) -> None:
             validation_results = {
                 "pte_size": text_decoder_pte_path,
             }
-            if any(
-                [
-                    hasattr(decoder_model_config, VISION_ENCODER),
-                    hasattr(decoder_model_config, AUDIO_ENCODER),
-                ]
-            ):
-                encoder_pte_path = (
-                    f"{args.artifact}/{pte_filenames[VISION_ENCODER]}.pte"
-                )
+            if is_multimodal:
                 tok_embedding_pte_path = (
                     f"{args.artifact}/{pte_filenames[TOK_EMBEDDING]}.pte"
                 )
                 validation_results.update(
                     {
-                        "encoder_pte_size": os.path.getsize(encoder_pte_path),
                         "tok_embedding_pte_size": os.path.getsize(
                             tok_embedding_pte_path
                         ),
                     }
                 )
+                for modality, encoder_pte_path in encoder_pte_paths.items():
+                    validation_results.update(
+                        {f"{modality}_pte_size": os.path.getsize(encoder_pte_path)}
+                    )
 
             with Client((args.ip, args.port)) as conn:
                 conn.send(json.dumps(validation_results))
@@ -712,16 +777,18 @@ def export_llama(args) -> None:
         tokenizer,
         chat_template,
         text_decoder_pte_path,
-        encoder_pte_path,
+        encoder_pte_paths,
         tok_embedding_pte_path,
         attention_sink_evictor_pte_path,
         calibration_data,
+        is_multimodal,
     )
 
 
 def main():
     parser = _build_parser()
     args = parser.parse_args()
+    args.build_folder = os.path.realpath(args.build_folder)
     try:
         export_llama(args)
     except Exception as e:

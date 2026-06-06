@@ -44,24 +44,17 @@ class EncoderRunner {
   executorch::runtime::Error load();
 
   /**
-   * @brief Get the image sequence length from encoder output metadata
-   * @return Image sequence length
-   */
-  int32_t get_image_seq_len() const;
-
-  /**
-   * @brief Encode image tensor to hidden states
-   * @param image_tensor Input image tensor (B, C, H, W)
-   * @return Result containing the image hidden states tensor
+   * @brief Encode input tensor to hidden states
+   * @param input_tensor Input tensor
+   * @return Result containing the hidden states tensor
    */
   executorch::runtime::Result<executorch::aten::Tensor> encode(
-      executorch::extension::TensorPtr& image_tensor);
+      executorch::extension::TensorPtr& input_tensor);
 
  private:
   executorch::extension::Module* module_;
   inline static const std::string kEncoderForwardName = "forward";
-  std::list<std::vector<float>> output_buffers_;
-  std::list<executorch::extension::TensorPtr> output_tensors_;
+  std::vector<executorch::runtime::EValue> encoder_output_;
 };
 
 } // namespace example

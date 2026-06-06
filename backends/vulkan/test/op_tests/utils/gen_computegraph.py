@@ -286,7 +286,7 @@ class ComputeGraphGen:
     def create_aten_method_call(self) -> str:
         # For functions with only Method variant, we fallback to the function
         # declared in MethodOperators.h
-        cpp_sig = gen_static_dispatch_backend_call_signature(self.f_sig, self.f)
+        cpp_sig = gen_static_dispatch_backend_call_signature(self.f)
         exprs = translate_args(self.f_sig, cpp_sig)
         func_call = f"at::_ops::{self.f_sig.name()}::call({exprs});"
         return func_call

@@ -1,0 +1,85 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "spec",
+    srcs = ["_spec.py"],
+)
+
+runtime.python_library(
+    name = "custom_ops_lib",
+    srcs = ["custom_ops_lib.py"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "selectors",
+    srcs = ["_selectors.py"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "reducers",
+    srcs = ["_reducers.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "tap_pass",
+    srcs = ["_tap_pass.py"],
+    deps = [
+        "//caffe2:torch",
+        ":custom_ops_lib",
+        ":reducers",
+        ":selectors",
+        ":spec",
+    ],
+)
+
+runtime.python_library(
+    name = "strip_pass",
+    srcs = ["_strip_pass.py"],
+    deps = [
+        "//caffe2:torch",
+        ":reducers",
+        ":tap_pass",
+    ],
+)
+
+runtime.python_library(
+    name = "convenience",
+    srcs = ["_convenience.py"],
+    deps = [
+        "fbsource//third-party/pypi/pandas:pandas",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/runtime:runtime",
+        ":reducers",
+        ":selectors",
+        ":spec",
+        ":strip_pass",
+        ":tap_pass",
+    ],
+)
+
+runtime.python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":convenience",
+        ":custom_ops_lib",
+        ":reducers",
+        ":selectors",
+        ":spec",
+        ":strip_pass",
+        ":tap_pass",
+    ],
+)
