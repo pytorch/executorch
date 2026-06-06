@@ -55,6 +55,8 @@ target_include_directories(
 target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 
 # Native WebGPU backend: Dawn (Tint) + SwiftShader; deps script sets Dawn_DIR.
+# Native-only: browser/Emscripten builds use the system webgpu.h and never
+# reach this find_package (root CMake gates it via EXECUTORCH_BUILD_WEBGPU).
 # dawn::webgpu_dawn's link interface references Threads::Threads.
 find_package(Threads REQUIRED)
 find_package(Dawn REQUIRED)
