@@ -14,8 +14,89 @@ from executorch.backends.cortex_m.test.tester import (
 
 
 class CortexMConv1D(torch.nn.Module):
-    ops_before_transforms: dict[str, int] = {}
-    ops_after_transforms: dict[str, int] = {}
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(*args, **kwargs, bias=False)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class CortexMConv1DBias(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 2,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(*args, **kwargs, bias=True)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class CortexMConv1DReLU(torch.nn.Module):
+    """Conv1d + ReLU. The quantizer's `(aten.conv1d, aten.relu)` pattern
+    fuses the activation into the conv's output clamp, so the ReLU should
+    disappear and a single quantized_conv2d remains."""
+
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 1,
+    }
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_relu_default": 0,
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(*args, **kwargs, bias=False)
+
+    def forward(self, x):
+        return torch.nn.functional.relu(self.conv(x))
+
+
+class CortexMDepthwiseConv1D(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -204,8 +285,39 @@ test_cases = {
         example_inputs=(ramp_tensor(0, 10, (1, 5, 8, 8)),),
     ),
     "conv1d": McuTestCase(
-        model=CortexMConv1D(1, 1, 1),
-        example_inputs=(ramp_tensor(0, 10, (1, 3, 2)),),
+        model=CortexMConv1D(2, 4, 1),
+        example_inputs=(ramp_tensor(0, 10, (1, 2, 8)),),
+    ),
+    "conv1d_kernel3": McuTestCase(
+        model=CortexMConv1D(4, 8, 3, padding=1),
+        example_inputs=(ramp_tensor(-1, 1, (1, 4, 16)),),
+    ),
+    "conv1d_stride": McuTestCase(
+        model=CortexMConv1D(4, 8, 3, stride=2, padding=1),
+        example_inputs=(ramp_tensor(0, 10, (1, 4, 16)),),
+    ),
+    "conv1d_bias": McuTestCase(
+        model=CortexMConv1DBias(3, 6, 3, padding=1),
+        example_inputs=(ramp_tensor(-5, 5, (1, 3, 12)),),
+    ),
+    "conv1d_pointwise": McuTestCase(
+        model=CortexMConv1D(8, 4, 1),
+        example_inputs=(ramp_tensor(0, 10, (1, 8, 12)),),
+    ),
+    "conv1d_large_kernel_stride": McuTestCase(
+        # Mirrors Silero VAD's learned STFT: Conv1d(1, 258, k=256, s=128).
+        # in_channels == groups == 1 means the backend lowers via the depthwise
+        # path; use a smaller variant that's quick to test.
+        model=CortexMDepthwiseConv1D(1, 16, 16, stride=8),
+        example_inputs=(ramp_tensor(-1, 1, (1, 1, 64)),),
+    ),
+    "conv1d_relu": McuTestCase(
+        model=CortexMConv1DReLU(4, 8, 3, padding=1),
+        example_inputs=(ramp_tensor(-5, 5, (1, 4, 16)),),
+    ),
+    "depthwise_conv1d": McuTestCase(
+        model=CortexMDepthwiseConv1D(4, 4, 3, padding=1, groups=4),
+        example_inputs=(ramp_tensor(0, 10, (1, 4, 16)),),
     ),
     "conv3d": McuTestCase(
         model=CortexMConv3D(1, 1, 1),
@@ -314,7 +426,6 @@ test_cases = {
 
 xfails_dialect: dict[str, xfail_type] = {
     "conv2d_dilation": "NotImplementedError: 'slow_conv_dilated<>' not implemented for 'Int'",
-    "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
 }
 
@@ -330,7 +441,6 @@ def test_dialect_conv2d(test_case):
 
 
 xfails_implementation: dict[str, xfail_type] = {
-    "conv1d": "Currently not supported.",
     "conv3d": "Currently not supported.",
 }
 

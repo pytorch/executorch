@@ -87,6 +87,35 @@ class CortexMConv2DCheck(PatternCheck):
         return is_int8 and is_ch_axis_0
 
 
+class CortexMConv1DCheck(PatternCheck):
+    """Accepts aten.conv1d.default with rank-3 NCW inputs.
+
+    The conv1d is lowered to cortex_m.quantized_conv2d via AoT weight
+    reshape (O, I, K) -> (O, 1, K, I) and graph-level input unsqueeze +
+    channels_last conversion in ConvertToCortexMPass.
+    """
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        for node in pattern:
+            tensor = get_first_fake_tensor(node)
+            if tensor is None or tensor.ndim != 3:
+                return False
+        return True
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        is_int8 = cls.is_int8_activations(quantization_config)
+        conv_node = pattern[0] if pattern else None
+        weight_qspec = quantization_config.get_weight_qspec(conv_node)
+        if not isinstance(weight_qspec, QuantizationSpec):
+            return False
+        is_ch_axis_0 = weight_qspec.ch_axis == 0 or weight_qspec.ch_axis is None
+        return is_int8 and is_ch_axis_0
+
+
 class CortexMLinearCheck(PatternCheck):
     @classmethod
     def check_quantization_config(

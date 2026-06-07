@@ -9,6 +9,7 @@ from executorch.backends.cortex_m.quantizer.pattern_checkers import (
     CortexMAddMulCheck,
     CortexMAvgPool2DCheck,
     CortexMBmmCheck,
+    CortexMConv1DCheck,
     CortexMConv2DCheck,
     CortexMConvTranspose2DCheck,
     CortexMLinearCheck,
@@ -77,6 +78,27 @@ CONV_OP_PATTERNS = {
     ): CortexMConv2DCheck,
     (torch.ops.aten.conv2d.default, torch.ops.aten.clamp.default): CortexMConv2DCheck,
     (torch.ops.aten.conv2d.default, torch.ops.aten.clamp_.default): CortexMConv2DCheck,
+    (torch.ops.aten.conv1d.default,): CortexMConv1DCheck,
+    (torch.ops.aten.conv1d.default, torch.ops.aten.relu.default): CortexMConv1DCheck,
+    (torch.ops.aten.conv1d.default, torch.ops.aten.relu_.default): CortexMConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardtanh.default,
+    ): CortexMConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardtanh_.default,
+    ): CortexMConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardsigmoid.default,
+    ): CortexMConv1DCheck,
+    (
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.hardsigmoid_.default,
+    ): CortexMConv1DCheck,
+    (torch.ops.aten.conv1d.default, torch.ops.aten.clamp.default): CortexMConv1DCheck,
+    (torch.ops.aten.conv1d.default, torch.ops.aten.clamp_.default): CortexMConv1DCheck,
 }
 
 CONV_TRANSPOSE_OP_PATTERNS = {

@@ -36,31 +36,29 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
     "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 15,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 14,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default": 11,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 26,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 24,
 }
-# The final `sigmoid(final_conv(x))` now lowers to cortex_m.quantized_activation.
-# The 3 remaining sigmoids and 2 tanhs are LSTMCell gates: PyTorch export
-# captures nn.LSTMCell as a single high-level op, so the quantizer never sees
-# the gate activations and can't annotate them. They're decomposed only at
-# to_edge -- which runs after the quantizer, so by then the gates have no
-# qparams to fold and the lowering pass correctly skips them. The unblocker
-# is a pre-annotation decompose pass that splits nn.LSTMCell into linear +
-# split + sigmoid + tanh + add + mul *before* prepare_pt2e runs; tracked as
-# the LSTMCell verification follow-up.
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_abs_default": 2,
     "executorch_exir_dialects_edge__ops_aten_add_Tensor": 2,
     "executorch_exir_dialects_edge__ops_aten_arange_start_step": 1,
     "executorch_exir_dialects_edge__ops_aten_cat_default": 1,
-    "executorch_exir_dialects_edge__ops_aten_convolution_default": 6,
     "executorch_exir_dialects_edge__ops_aten_index_Tensor": 1,
     "executorch_exir_dialects_edge__ops_aten_linear_default": 2,
     "executorch_exir_dialects_edge__ops_aten_mean_dim": 1,
     "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 3,
     "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 2,
-    "executorch_exir_dialects_edge__ops_aten_relu_default": 5,
+    # 4 of the 5 ReLUs fuse into their preceding encoder Conv1d. The surviving
+    # one is the post-LSTM `F.relu(h)` -- its producer is an elementwise mul
+    # (not a fusible conv/linear tail) and there is no standalone quantized relu,
+    # so it stays in aten.
+    "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
     "executorch_exir_dialects_edge__ops_aten_select_copy_int": 2,
+    # The final `sigmoid(final_conv(x))` lowers to cortex_m.quantized_activation
+    # (one below); the 3 surviving sigmoids + 2 tanhs are the LSTMCell gates,
+    # which stay in aten until the pre-annotation LSTMCell decompose lands.
     "executorch_exir_dialects_edge__ops_aten_sigmoid_default": 3,
     "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 2,
     "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default": 1,
@@ -69,11 +67,23 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 2,
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
     "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
-    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 7,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 7,
+    # The conv1d lowering inserts view_copy wraps around each conv2d; the
+    # encoder's chained Conv1ds get their inter-layer view_copy <-> view_copy
+    # plus inverse _clone_dim_order pairs folded out. View_copy nodes here
+    # are: original model view (1) + boundary wraps that survive folding (6).
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 7,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 9,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 8,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_activation_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_conv2d_default": 5,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_depthwise_conv2d_default": 1,
+    # Five clone_dim_order survive: boundary wraps for the conv1ds whose
+    # neighbours aren't another conv1d (the STFT/magnitude-spectrum interface
+    # and the final-conv boundary). The STFT conv1d has in_channels==1, so its
+    # input NHWC clone is skipped (channels-last == contiguous) -- one fewer
+    # than the channelled boundaries would give.
+    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 5,
 }
 
 
@@ -94,7 +104,10 @@ test_cases = {
 
 @parametrize("test_case", test_cases)
 def test_dialect_silero_vad_16k(test_case):
-    """This model currently does largely not lower to accelerated kernels due to missing LSTM and conv1d support, this test is to track development progress."""
+    """Conv1d layers lower to cortex_m.quantized_conv2d via reshape and the
+    final-conv sigmoid lowers to cortex_m.quantized_activation. The LSTMCell
+    gates (3 sigmoid + 2 tanh + 2 linear) stay in aten until the pre-annotation
+    LSTMCell decompose lands. This test tracks progress."""
     inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_dialect(
