@@ -6,17 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""GGUF **Q6_K** embedding implementation.
+"""GGUF **Q6_K** embedding lowering for the MLX GGUF pattern handler.
 
-Provides the Q6_K embedding lowering used by the MLX GGUF pattern handler
-(:mod:`..patterns`):
-
-* :func:`emit_embedding` -- lowers a ``dequantize_gguf -> embedding`` pattern to
-  a fused Q6_K gather Metal kernel.
-
-This is the gather counterpart to :mod:`.linear` and exists because MLX's affine
-dequantize has no group_size=16 Metal kernel, so a Q6_K embedding (group_size 16)
-cannot use the generic quantized-embedding path.
+A custom gather Metal kernel is needed because MLX's affine dequantize has no
+group_size=16 kernel, so a Q6_K embedding (group_size 16) can't use the generic
+quantized-embedding path.
 """
 
 from __future__ import annotations

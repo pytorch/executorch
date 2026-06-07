@@ -123,6 +123,42 @@ class GGUFLinearModel(nn.Module):
         return self.linear(x)
 
 
+def _fp32_linear_reference(model: "GGUFLinearModel", x: torch.Tensor):
+    """fp32-accumulation reference matching the kernel.
+
+    The kernels accumulate in fp32 and cast to the I/O dtype only at the end, so
+    a bf16 eager matmul is too noisy an oracle over large K. Dequantize in fp32,
+    matmul in fp32, then cast back -- differences collapse to ~1 output ULP.
+
+    The reference weight must match the representation the kernel consumes:
+    Q6_K dequantizes the raw blob in-kernel at full precision (use the gguf-exact
+    dequant), while Q4_K is repacked into bf16 MLX qparams, so use that repacked
+    dequant (repack precision vs gguf is covered separately by test_gguf.py).
+    """
+    lin = model.linear
+    weight = lin.weight
+    if getattr(weight, "ggml_type", None) == "q4_k":
+        # Q4_K is repacked into bf16 MLX affine qparams (S, Q, B); reconstruct
+        # exactly what the kernel dequantizes so the oracle isolates kernel
+        # accumulation (repack precision vs gguf is covered by test_gguf.py).
+        from executorch.backends.mlx.builder.op_helpers import to_mlx_qparams
+
+        intx = weight.to_intx_unpacked_to_int8_tensor()
+        gs = int(intx.block_size[-1])
+        Q, B = to_mlx_qparams(intx.qdata, intx.scale, intx.zero_point, 4)
+        qb = Q.view(torch.uint8)
+        nibbles = torch.stack([(qb & 0xF).float(), ((qb >> 4) & 0xF).float()], dim=-1)
+        q_unsigned = nibbles.reshape(intx.qdata.shape[0], -1)
+        scale = intx.scale.float().repeat_interleave(gs, dim=1)
+        bias_b = B.float().repeat_interleave(gs, dim=1)
+        w = scale * q_unsigned + bias_b
+    else:
+        w = weight.dequantize(torch.float32)
+    bias = lin.bias.float() if lin.bias is not None else None
+    out = torch.nn.functional.linear(x.float(), w, bias)
+    return [out.to(x.dtype)]
+
+
 _DTYPE_TOL = {
     torch.bfloat16: (2e-2, 2e-2),
     # The mat-mat (prefill) kernel stores tiles in half precision (as in
@@ -210,6 +246,9 @@ class GGUFLinearTest(OpTestCase):
         torch.manual_seed(0)
         return (torch.randn(self.M, self.K, dtype=self.dtype),)
 
+    def compute_expected_outputs(self, model, test_inputs):
+        return _fp32_linear_reference(model, test_inputs[0])
+
 
 class GGUFLinearDynamicTest(OpTestCase):
     """Dynamic seqlen: export once with a symbolic M, run with M=1 (decode /
@@ -267,6 +306,9 @@ class GGUFLinearDynamicTest(OpTestCase):
     def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
         torch.manual_seed(0)
         return (torch.randn(self.test_M, self.K, dtype=self.dtype),)
+
+    def compute_expected_outputs(self, model, test_inputs):
+        return _fp32_linear_reference(model, test_inputs[0])
 
 
 def _eager_sanity() -> None:

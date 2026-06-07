@@ -12,13 +12,13 @@ Streams tensors one at a time via the shared loader in
 FQNs, handles the tied embed/lm_head, and converts each weight for the target
 backend:
 
-* **MLX**: linears keep the ``ExportableGGUFTensor`` (lowered by the MLX GGUF
-  pattern -- Q6_K custom kernels, Q4_K native 4-bit matmul); a Q6_K token
-  embedding keeps it too (fused gather), while a Q4_K embedding is converted to
-  ``IntxUnpackedToInt8Tensor`` (MLX quantized gather -- there is no Q4_K gather
-  kernel).
-* **CUDA**: Q4_K -> ``Int4Tensor``, Q6_K -> ``IntxUnpackedToInt8Tensor``; the
-  token embedding is dequantized to bf16 (``Int4Tensor`` can't gather).
+* **MLX**: every quantized weight stays an ``ExportableGGUFTensor`` and is lowered
+  by the MLX GGUF pattern (Q6_K custom kernels, Q4_K native affine ops) for both
+  linear and embedding. ``embed_tokens`` and ``lm_head`` stay tied -- they share
+  the one quantized tensor.
+* **CUDA**: Q4_K -> ``Int4Tensor``, Q6_K -> ``IntxUnpackedToInt8Tensor``;
+  ``lm_head`` keeps the quantized tensor but the token embedding is dequantized to
+  bf16 (``Int4Tensor`` can't gather), so they are untied.
 
 Usage:
     model, config = load_gguf_model("model.gguf", backend="cuda")
@@ -124,12 +124,11 @@ def load_gguf_model(
 ) -> tuple:
     """Load a GGUF file, remap keys, and convert weights for the target backend.
 
-    Streams tensors one at a time for low peak memory.
-
-    GGUF ties ``embed_tokens`` and ``lm_head`` into a single tensor. We untie
-    them so ``lm_head`` keeps its quantization: on MLX it lowers through the GGUF
-    linear pattern; on CUDA it stays a quantized ``Int4Tensor`` /
-    ``IntxUnpackedToInt8Tensor``, while the embedding is dequantized to bf16.
+    Streams tensors one at a time for low peak memory. GGUF ties ``embed_tokens``
+    and ``lm_head``: on MLX they stay tied (one shared quantized tensor); on CUDA
+    they are untied so the embedding can be dequantized for the gather while
+    ``lm_head`` keeps its quantization. See the module docstring for the
+    per-backend conversion details.
 
     Returns ``(model, config)``.
     """

@@ -16,8 +16,7 @@ than from each other:
 * ``_Q6K_HEADER`` -- the Metal header (the ``block_q6_K`` struct plus the
   per-element and vectorized dequant helpers) shared by all Q6_K Metal kernels.
 
-Adding another GGUF format (e.g. Q4_K) should mirror this module and the pattern
-handlers in :mod:`..patterns` dispatch on the GGUF quant type.
+Q6_K layout
 
 Q6_K layout (per 256-element super-block, 210 bytes, see llama.cpp
 ``block_q6_K`` in ``ggml-common.h``)::

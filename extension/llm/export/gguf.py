@@ -7,31 +7,22 @@
 
 """Export-time GGUF quantized weights.
 
-``ExportableGGUFTensor`` is the canonical **loading representation** for a
-GGUF-quantized weight: it wraps the *raw* GGUF block bytes for one tensor and
-defers all unpacking. The intended flow:
+``ExportableGGUFTensor`` wraps the *raw* GGUF block bytes for one tensor and
+defers all unpacking, serving as the canonical GGUF loading representation:
 
-1. **Load**: ``load_gguf(path)`` -> ``dict[name -> ExportableGGUFTensor | Tensor]``
-   (quantized tensors become ``ExportableGGUFTensor``; F32/F16 become plain
-   tensors). No unpacking happens at load.
-2. **Lower (dequantize)**: used as a weight, the subclass dequantizes via the
-   ``torchao::dequantize_gguf`` custom op (gguf-package eager body) and runs the
-   plain torch ``linear`` / ``embedding`` (NVFP4-style). A backend can
-   pattern-match ``dequantize_gguf`` -> linear/embedding to fuse.
-3. **Convert**: ``.to_int4_tensor()`` / ``.to_intx_unpacked_to_int8_tensor()``
-   unpack into torchao tensor subclasses (``Int4Tensor`` for Q4_K,
-   ``IntxUnpackedToInt8Tensor`` for Q4_K or Q6_K) to take the non-fused
-   (affine-dequant) path instead.
+* ``load_gguf(path)`` -> ``{name -> ExportableGGUFTensor | Tensor}`` (quantized
+  tensors become subclasses; F32/F16 stay plain). No unpacking at load.
+* As a weight, it dequantizes via the ``torchao::dequantize_gguf`` custom op
+  (gguf-package eager body) then a plain ``linear`` / ``embedding`` -- a backend
+  can pattern-match ``dequantize_gguf`` -> linear/embedding to fuse.
+* ``.to_int4_tensor()`` / ``.to_intx_unpacked_to_int8_tensor()`` convert into
+  torchao subclasses (``Int4Tensor`` / ``IntxUnpackedToInt8Tensor``) instead.
 
-The GGUF quant type is identified by a **string** (``"q4_k"``, ``"q6_k"``)
-everywhere user-facing (subclass attribute + ``dequantize_gguf`` op argument); the
-``gguf`` package's integer ``GGMLQuantizationType`` ids are an internal lookup
-detail.
+The quant type is a string (``"q4_k"`` / ``"q6_k"``); the ``gguf`` package's
+integer ``GGMLQuantizationType`` ids are an internal lookup detail. Which tensors
+to convert is the caller's policy.
 
-Backend-agnostic; depends on ``torch``, ``torchao``, ``numpy``, and the ``gguf``
-package. The *policy* of which tensors to convert is left to the caller.
-
-Attribution: the Q4_K / Q6_K block layouts follow llama.cpp / gguf-py
+Attribution: Q4_K / Q6_K block layouts follow llama.cpp / gguf-py
 (``ggml-common.h``), MIT-licensed (Copyright (c) 2023-2024 The ggml authors).
 """
 
@@ -46,9 +37,7 @@ from torchao.utils import TorchAOBaseTensor
 
 aten = torch.ops.aten
 
-# ---------------------------------------------------------------------------
 # GGUF k-quant constants
-# ---------------------------------------------------------------------------
 
 QK_K = 256  # super-block size for k-quants
 
@@ -94,9 +83,7 @@ def _dequantize_gguf(raw: Tensor, ggml_type: str, output_dtype: torch.dtype) -> 
     )
 
 
-# ---------------------------------------------------------------------------
 # Fused ops (eager = gguf.dequantize + torch op; a backend may lower to kernels)
-# ---------------------------------------------------------------------------
 
 
 @torch.library.custom_op("torchao::dequantize_gguf", mutates_args=())
@@ -115,9 +102,7 @@ def _(weight, ggml_type, output_dtype=torch.bfloat16):
     return torch.empty((weight.shape[0], K), dtype=output_dtype, device=weight.device)
 
 
-# ---------------------------------------------------------------------------
 # Per-type field extraction (used by the to_*_tensor conversions)
-# ---------------------------------------------------------------------------
 
 
 def _q4_k_fields(raw: Tensor, N: int, K: int) -> Tuple[Tensor, Tensor, Tensor]:
@@ -195,9 +180,7 @@ def _q6_k_fields(raw: Tensor, N: int, K: int) -> Tuple[Tensor, Tensor]:
     return q.reshape(N, K).to(torch.int8), eff_scale
 
 
-# ---------------------------------------------------------------------------
 # Tensor subclass
-# ---------------------------------------------------------------------------
 
 
 class ExportableGGUFTensor(TorchAOBaseTensor):
@@ -240,8 +223,6 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         self.orig_dtype = orig_dtype
         return self
 
-    # -- construction --------------------------------------------------------
-
     @classmethod
     def from_raw(
         cls,
@@ -252,15 +233,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         """Build from a ``(N, row_bytes)`` uint8 GGUF block blob."""
         return cls(raw.contiguous(), ggml_type, orig_dtype)
 
-    # -- dequant (via gguf package) ------------------------------------------
-
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> Tensor:
         """Dequantize to a plain float tensor using the ``gguf`` package."""
         return torch.ops.torchao.dequantize_gguf(
             self.raw, self.ggml_type, output_dtype or self.orig_dtype
         )
-
-    # -- conversions (unpack lives here) -------------------------------------
 
     def to_int4_tensor(self) -> Tensor:
         """Convert a Q4_K tensor to a torchao ``Int4Tensor``."""
@@ -365,9 +342,7 @@ def _(func, types, args, kwargs):
     return args[0].dequantize(output_dtype=kwargs.get("dtype", args[0].orig_dtype))
 
 
-# ---------------------------------------------------------------------------
 # Loader
-# ---------------------------------------------------------------------------
 
 
 def iter_gguf(

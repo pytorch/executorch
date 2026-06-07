@@ -10,8 +10,8 @@
 The reference oracle is the ``gguf`` package's own ``gguf.dequantize`` (which can
 dequantize Q4_K / Q6_K). We validate that:
 
-* ``ExportableGGUFTensor.dequantize`` (and the fused ``torchao::gguf_*`` ops,
-  whose eager bodies use ``gguf``) reproduce ``gguf.dequantize``;
+* ``ExportableGGUFTensor.dequantize`` (and the ``torchao::dequantize_gguf`` op,
+  whose eager body uses ``gguf``) reproduces ``gguf.dequantize``;
 * our hand-written ``to_int4_tensor`` / ``to_intx_unpacked_to_int8_tensor``
   unpack matches ``gguf.dequantize`` (within bf16 storage tolerance);
 * using the subclass as a weight dispatches linear/embedding to the fused ops.

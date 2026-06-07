@@ -6,19 +6,12 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""GGUF **Q6_K** format implementation.
+"""GGUF Q6_K format implementation (fused custom Metal kernels).
 
-* :mod:`.common`    -- shared primitives (constants + Metal header). Re-exported
-  here so ``from ...gguf.q6k import Q6K_BLOCK_BYTES`` stays lightweight (no MLX
-  builder import).
-* :mod:`.linear`    -- Q6_K mat-vec/mat-mat kernels + ``emit_linear`` lowering.
-* :mod:`.embedding` -- Q6_K gather kernel + ``emit_embedding`` lowering.
-
-The pattern handlers that match ``torchao::dequantize_gguf -> linear/embedding``
-and call these ``emit_*`` functions live one level up in
-``custom_kernel_ops.gguf.patterns``. ``.linear`` / ``.embedding`` are
-intentionally NOT imported here so importing :mod:`.common` for the pure-torch
-dequant does not pull in the builder.
+Re-exports the lightweight constants/header from :mod:`.common` so they can be
+imported without pulling in the MLX builder. The ``emit_*`` lowerings live in
+:mod:`.linear` / :mod:`.embedding` (called by ``custom_kernel_ops.gguf.patterns``)
+and are not imported here.
 """
 
 from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.common import (  # noqa: F401

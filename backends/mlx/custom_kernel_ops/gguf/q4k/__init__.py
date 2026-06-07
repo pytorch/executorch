@@ -6,15 +6,9 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""GGUF **Q4_K** format lowering for the MLX backend.
+"""GGUF Q4_K format lowering for the MLX backend (native affine 4-bit).
 
-Q4_K maps onto MLX's native affine 4-bit kernels (no custom Metal):
-
-* :mod:`.common`    -- repack a raw Q4_K blob into MLX qparams.
-* :mod:`.linear`    -- ``emit_linear`` (``QuantizedMatmulNode``).
-* :mod:`.embedding` -- ``emit_embedding`` (gather + ``DequantizeNode``).
-
-The pattern handlers in ``custom_kernel_ops.gguf.patterns`` call these ``emit_*``
-functions. ``.linear`` / ``.embedding`` are intentionally NOT imported here so
-the package import stays light.
+See :mod:`.linear` / :mod:`.embedding` for the ``emit_*`` lowerings (called by
+``custom_kernel_ops.gguf.patterns``); they are not imported here to keep the
+package import light.
 """
