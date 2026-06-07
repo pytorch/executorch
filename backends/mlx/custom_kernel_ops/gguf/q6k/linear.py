@@ -12,7 +12,7 @@ Provides the Q6_K linear pieces used by the MLX GGUF pattern handler
 (:mod:`..patterns`):
 
 * :func:`eager_linear` -- pure-torch reference (``x @ dequant(weight)^T``).
-* :func:`emit_linear`  -- lowers a ``gguf_dequantize -> linear`` pattern to fused
+* :func:`emit_linear`  -- lowers a ``dequantize_gguf -> linear`` pattern to fused
   Q6_K Metal kernels.
 
 Compute is keyed on the activation dtype (matching GGUF/llama.cpp): the Metal
@@ -431,7 +431,7 @@ def emit_linear(
     weight_node: Node,
     bias_node: Optional[Node],
 ) -> Slot:
-    """Lower a Q6_K ``gguf_dequantize`` -> ``linear`` pattern to fused kernels.
+    """Lower a Q6_K ``dequantize_gguf`` -> ``linear`` pattern to fused kernels.
 
     ``weight_node`` is the raw GGUF blob (the dequantize op's weight input) and
     ``head`` is the ``aten.linear`` node that owns the output slot.

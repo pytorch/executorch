@@ -14,7 +14,7 @@ Submodules:
   Metal header) and the fused mat-vec / mat-mat / gather kernels. Importing
   ``.q6k`` (or ``.q6k.common``) is lightweight and does not touch the registry.
 * :mod:`.patterns` -- registers MLX pattern handlers that match
-  ``torchao::gguf_dequantize -> linear/embedding`` (what ``ExportableGGUFTensor``
+  ``torchao::dequantize_gguf -> linear/embedding`` (what ``ExportableGGUFTensor``
   exports) and lower them to the Q6_K kernels.
 
 To enable GGUF lowering, import :mod:`.patterns` for its side effect::

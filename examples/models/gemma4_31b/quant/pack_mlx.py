@@ -6,11 +6,11 @@
 
 """MLX packer: convert quantized weights to MLX-compatible format.
 
-MLX's ``QuantizedLinearHandler`` matches ``dequantize_affine → linear``
-in the exported graph.  ``IntxUnpackedToInt8Tensor`` produces this
-pattern naturally, but ``Int4Tensor`` does not (its dispatch calls
-CUDA-specific mslk kernels).  So INT4 weights are converted to
-``IntxUnpackedToInt8Tensor(target_dtype=torch.int4)`` at pack time.
+``Int4Tensor`` weights are wrapped as ``ExportableInt4Tensor`` so they export to
+``dequantize_int4_tensor -> linear/embedding`` (matched by MLX's Int4 handlers).
+``IntxUnpackedToInt8Tensor`` (e.g. int8 / Q6_K) already exports to
+``dequantize_affine -> linear`` and is assigned directly, regrouped to an
+MLX-compatible group size when needed.
 
 The backend-agnostic ``pack_model`` dispatcher lives in ``pack.py``.
 """
@@ -23,45 +23,6 @@ import torch.nn as nn
 from .pack import ModulePackerFn, pack_model  # noqa: F401
 
 _MLX_SUPPORTED_GROUP_SIZES = (128, 64, 32, 16)
-
-
-# ---------------------------------------------------------------------------
-# Int4Tensor → IntxUnpackedToInt8Tensor conversion
-
-
-def _int4_to_intx_unpacked(w: torch.Tensor) -> torch.Tensor:
-    """Convert an ``Int4Tensor`` to ``IntxUnpackedToInt8Tensor``.
-
-    Int4Tensor stores qdata as nibble-packed uint8 ``(N, K/2)`` with
-    scale/zero transposed to ``(K//gs, N)``.  IntxUnpackedToInt8Tensor
-    stores qdata as int8 ``(N, K)`` with scale/zero as ``(N, K//gs)``.
-    """
-    from torchao.quantization import IntxUnpackedToInt8Tensor
-
-    # Unpack nibbles: packed = even | (odd << 4), unsigned [0, 15]
-    p = w.qdata.to(torch.uint8)
-    low = (p & 0x0F).to(torch.int8)
-    high = ((p >> 4) & 0x0F).to(torch.int8)
-    qdata = torch.stack([low, high], dim=-1).reshape(w.shape)
-
-    # Shift unsigned [0, 15] → signed [-8, 7]
-    qdata = qdata - 8
-
-    gs = w.block_size[-1]
-
-    # Transpose scale/zero from (K//gs, N) → (N, K//gs)
-    scale = w.scale.t().contiguous()
-    zero_point = (w.zero_point - 8).t().contiguous()
-
-    return IntxUnpackedToInt8Tensor(
-        qdata=qdata,
-        scale=scale,
-        zero_point=zero_point,
-        target_dtype=torch.int4,
-        block_size=(1, gs),
-        dtype=scale.dtype,
-        activation_quantization=None,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -130,13 +91,16 @@ def pack_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     Group sizes ≥ 32 use the fused ``QuantizedMatmulNode``; group_size=16
     (e.g. GGUF Q6_K) falls back to ``DequantizeNode`` + matmul at export.
     """
+    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     w = weights["weight"]
     if isinstance(w, Int4Tensor):
-        w = _int4_to_intx_unpacked(w)
-    if isinstance(w, IntxUnpackedToInt8Tensor):
+        # Int4 group is MLX-native (32); wrap so it exports to
+        # dequantize_int4_tensor -> linear/embedding.
+        w = ExportableInt4Tensor.from_int4_tensor(w)
+    elif isinstance(w, IntxUnpackedToInt8Tensor):
         gs = w.block_size[-1]
         K = w.qdata.shape[-1]
         target_gs = _mlx_group_size(gs, K)

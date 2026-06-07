@@ -364,14 +364,14 @@ class TestGgufLinearMlx(unittest.TestCase):
         self._assert_delegated(
             self._linear(256, 512, "q6_k"),
             (torch.randn(4, 512, dtype=torch.bfloat16),),
-            ("gguf_dequantize", "linear"),
+            ("dequantize_gguf", "linear"),
         )
 
     def test_q4k_linear_delegates(self):
         self._assert_delegated(
             self._linear(512, 512, "q4_k"),
             (torch.randn(4, 512, dtype=torch.bfloat16),),
-            ("gguf_dequantize", "linear"),
+            ("dequantize_gguf", "linear"),
         )
 
 
@@ -413,7 +413,7 @@ class TestGgufEmbeddingMlx(unittest.TestCase):
             str(n.target)
             for n in et.exported_program().graph.nodes
             if n.op == "call_function"
-            and any(t in str(n.target) for t in ("gguf_dequantize", "embedding"))
+            and any(t in str(n.target) for t in ("dequantize_gguf", "embedding"))
         ]
         self.assertEqual(remaining, [], f"not delegated to MLX: {remaining}")
 
@@ -422,6 +422,67 @@ class TestGgufEmbeddingMlx(unittest.TestCase):
 
     def test_q4k_embedding_delegates(self):
         self._assert_delegated("q4_k")
+
+
+class TestInt4Mlx(unittest.TestCase):
+    """ExportableInt4Tensor linear + embedding lower through the MLX Int4 pattern."""
+
+    def _make_int4(self, N, K, gs=32, seed=0):
+        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+        g = torch.Generator().manual_seed(seed)
+        q = torch.randint(0, 16, (N, K), generator=g, dtype=torch.int32)
+        packed = (q[:, 0::2] | (q[:, 1::2] << 4)).to(torch.uint8)
+        scale = (torch.randn(K // gs, N, generator=g) * 0.1).to(torch.bfloat16)
+        zero = torch.randint(0, 16, (K // gs, N), generator=g).to(torch.bfloat16)
+        it = Int4Tensor(
+            qdata=packed,
+            scale=scale,
+            zero_point=zero,
+            block_size=[1, gs],
+            shape=torch.Size([N, K]),
+        )
+        return ExportableInt4Tensor.from_int4_tensor(it)
+
+    def _assert_delegated(self, model, example, leftovers):
+        import executorch.backends.mlx.patterns  # noqa: F401
+        from executorch.backends.mlx import MLXPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from torch.export import Dim, export
+
+        seq = Dim("seq", min=1, max=8)
+        ep = export(model, example, dynamic_shapes=({0: seq},), strict=True)
+        et = to_edge_transform_and_lower(
+            ep,
+            partitioner=[MLXPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        remaining = [
+            str(n.target)
+            for n in et.exported_program().graph.nodes
+            if n.op == "call_function" and any(t in str(n.target) for t in leftovers)
+        ]
+        self.assertEqual(remaining, [], f"not delegated to MLX: {remaining}")
+
+    def test_int4_linear_delegates(self):
+        lin = nn.Linear(512, 256, bias=False).to(torch.bfloat16)
+        lin.weight = nn.Parameter(self._make_int4(256, 512), requires_grad=False)
+        self._assert_delegated(
+            lin.eval(),
+            (torch.randn(4, 512, dtype=torch.bfloat16),),
+            ("dequantize_int4_tensor", "linear"),
+        )
+
+    def test_int4_embedding_delegates(self):
+        vocab, K = 512, 256
+        emb = nn.Embedding(vocab, K)
+        emb.weight = nn.Parameter(self._make_int4(vocab, K), requires_grad=False)
+        self._assert_delegated(
+            emb.eval(),
+            (torch.randint(0, vocab, (4,), dtype=torch.int64),),
+            ("dequantize_int4_tensor", "embedding"),
+        )
 
 
 if __name__ == "__main__":

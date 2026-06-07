@@ -11,7 +11,7 @@
 Provides the Q6_K embedding lowering used by the MLX GGUF pattern handler
 (:mod:`..patterns`):
 
-* :func:`emit_embedding` -- lowers a ``gguf_dequantize -> embedding`` pattern to
+* :func:`emit_embedding` -- lowers a ``dequantize_gguf -> embedding`` pattern to
   a fused Q6_K gather Metal kernel.
 
 This is the gather counterpart to :mod:`.linear` and exists because MLX's affine
@@ -66,7 +66,7 @@ def emit_embedding(
     indices_node: Node,
     output_dtype: torch.dtype,
 ) -> Slot:
-    """Lower a Q6_K ``gguf_dequantize`` -> ``embedding`` pattern to a fused gather.
+    """Lower a Q6_K ``dequantize_gguf`` -> ``embedding`` pattern to a fused gather.
 
     ``weight_node`` is the raw GGUF blob (the dequantize op's weight input) and
     ``head`` is the ``aten.embedding`` node that owns the output slot.

@@ -14,7 +14,7 @@
 * :mod:`.linear`    -- Q6_K mat-vec/mat-mat kernels + ``emit_linear`` lowering.
 * :mod:`.embedding` -- Q6_K gather kernel + ``emit_embedding`` lowering.
 
-The pattern handlers that match ``torchao::gguf_dequantize -> linear/embedding``
+The pattern handlers that match ``torchao::dequantize_gguf -> linear/embedding``
 and call these ``emit_*`` functions live one level up in
 ``custom_kernel_ops.gguf.patterns``. ``.linear`` / ``.embedding`` are
 intentionally NOT imported here so importing :mod:`.common` for the pure-torch

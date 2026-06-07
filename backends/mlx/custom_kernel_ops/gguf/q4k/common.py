@@ -26,7 +26,9 @@ from torch.fx.node import Node
 _BITS = 4
 
 
-def _repack_mlx(P: MLXProgramBuilder, weight_node: Node) -> Tuple[Slot, Slot, Slot, int]:
+def _repack_mlx(
+    P: MLXProgramBuilder, weight_node: Node
+) -> Tuple[Slot, Slot, Slot, int]:
     """Unpack a raw Q4_K blob and repack into MLX qparam constants.
 
     Returns ``(packed_slot, scales_slot, biases_slot, group_size)``.

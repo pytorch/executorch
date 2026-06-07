@@ -9,7 +9,7 @@
 Tests for the GGUF Q6_K linear lowering.
 
 A linear whose weight is an ``ExportableGGUFTensor`` (extension/llm/export/gguf)
-exports to ``linear(x, torchao::gguf_dequantize(weight, "q6_k", ...), bias)``.
+exports to ``linear(x, torchao::dequantize_gguf(weight, "q6_k", ...), bias)``.
 The MLX ``GGUF_QUANTIZED_LINEAR`` pattern (custom_kernel_ops/gguf/patterns.py)
 matches that subgraph and lowers it to the fused Q6_K Metal kernels (mat-vec for
 decode, mat-mat for prefill). These tests compare the fused kernels against the
@@ -136,7 +136,7 @@ _DTYPE_TAG = {torch.bfloat16: "bf16", torch.float16: "fp16", torch.float32: "fp3
 def _edge_compile_config():
     from executorch.exir import EdgeCompileConfig
 
-    # The gguf_dequantize custom op isn't a core ATen op; skip IR validity.
+    # The dequantize_gguf custom op isn't a core ATen op; skip IR validity.
     return EdgeCompileConfig(_check_ir_validity=False)
 
 
@@ -270,7 +270,7 @@ class GGUFLinearDynamicTest(OpTestCase):
 
 
 def _eager_sanity() -> None:
-    """Quick CPU check: the subclass linear exports to gguf_dequantize."""
+    """Quick CPU check: the subclass linear exports to dequantize_gguf."""
     model = GGUFLinearModel(_make_gguf_linear_model(4, 512, torch.bfloat16, bias=True))
     x = torch.randn(3, 512, dtype=torch.bfloat16)
     out = model(x)
@@ -279,8 +279,8 @@ def _eager_sanity() -> None:
     )
     ep = torch.export.export(model, (x,)).run_decompositions({})
     targets = {str(n.target) for n in ep.graph.nodes if n.op == "call_function"}
-    assert "torchao.gguf_dequantize.default" in targets, targets
-    print("export contains torchao.gguf_dequantize: OK")
+    assert "torchao.dequantize_gguf.default" in targets, targets
+    print("export contains torchao.dequantize_gguf: OK")
 
 
 if __name__ == "__main__":  # noqa: C901

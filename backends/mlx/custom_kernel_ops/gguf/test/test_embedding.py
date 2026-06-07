@@ -9,7 +9,7 @@
 Tests for the GGUF Q6_K embedding lowering.
 
 An ``nn.Embedding`` whose weight is an ``ExportableGGUFTensor`` exports to
-``embedding(torchao::gguf_dequantize(weight, "q6_k", ...), indices)``. The MLX
+``embedding(torchao::dequantize_gguf(weight, "q6_k", ...), indices)``. The MLX
 ``GGUF_QUANTIZED_EMBEDDING`` pattern matches that subgraph and lowers it to the
 fused Q6_K gather Metal kernel. These tests compare the kernel against the eager
 reference (``gguf``-package dequant + ``F.embedding``) on the same packed table.
@@ -82,7 +82,7 @@ class GGUFEmbeddingTest(OpTestCase):
     def get_edge_compile_config(self):
         from executorch.exir import EdgeCompileConfig
 
-        # The gguf_dequantize custom op isn't a core ATen op; skip IR validity.
+        # The dequantize_gguf custom op isn't a core ATen op; skip IR validity.
         return EdgeCompileConfig(_check_ir_validity=False)
 
     def create_model(self) -> nn.Module:

@@ -142,11 +142,11 @@ class TestExportableGGUFTensor(unittest.TestCase):
             )
         )
 
-    def test_gguf_dequantize_op_matches_reference(self):
+    def test_dequantize_gguf_op_matches_reference(self):
         for ggml_type, make in (("q4_k", _make_q4k_raw), ("q6_k", _make_q6k_raw)):
             raw = make(N=3, nb=2)
             t = ExportableGGUFTensor.from_raw(raw, ggml_type)
-            out = torch.ops.torchao.gguf_dequantize(raw, ggml_type, torch.float32)
+            out = torch.ops.torchao.dequantize_gguf(raw, ggml_type, torch.float32)
             self.assertTrue(torch.equal(out, t.dequantize(torch.float32)))
 
     def test_subclass_linear_dispatches_to_dequant(self):
@@ -174,14 +174,14 @@ class TestExportableGGUFTensor(unittest.TestCase):
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
 class TestExportableGGUFTensorExport(unittest.TestCase):
     """Exporting a module whose weight is an ``ExportableGGUFTensor`` should
-    lower linear/embedding through the ``torchao::gguf_dequantize`` op after
+    lower linear/embedding through the ``torchao::dequantize_gguf`` op after
     ``run_decompositions`` (the subclass dispatch fires during decomposition)."""
 
     @staticmethod
     def _targets(ep):
         return {str(n.target) for n in ep.graph.nodes if n.op == "call_function"}
 
-    def test_linear_exports_with_gguf_dequantize(self):
+    def test_linear_exports_with_dequantize_gguf(self):
         t = ExportableGGUFTensor.from_raw(_make_q6k_raw(N=4, nb=1), "q6_k")
 
         class M(torch.nn.Module):
@@ -195,9 +195,9 @@ class TestExportableGGUFTensorExport(unittest.TestCase):
         ep = torch.export.export(
             M(), (torch.randn(2, 256, dtype=torch.bfloat16),)
         ).run_decompositions({})
-        self.assertIn("torchao.gguf_dequantize.default", self._targets(ep))
+        self.assertIn("torchao.dequantize_gguf.default", self._targets(ep))
 
-    def test_embedding_exports_with_gguf_dequantize(self):
+    def test_embedding_exports_with_dequantize_gguf(self):
         t = ExportableGGUFTensor.from_raw(_make_q6k_raw(N=8, nb=1), "q6_k")
 
         class M(torch.nn.Module):
@@ -211,7 +211,7 @@ class TestExportableGGUFTensorExport(unittest.TestCase):
         ep = torch.export.export(M(), (torch.tensor([0, 1, 2, 3]),)).run_decompositions(
             {}
         )
-        self.assertIn("torchao.gguf_dequantize.default", self._targets(ep))
+        self.assertIn("torchao.dequantize_gguf.default", self._targets(ep))
 
 
 if __name__ == "__main__":

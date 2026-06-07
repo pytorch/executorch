@@ -310,6 +310,7 @@ def _export_mlx(
     # weights lower to the fused Q6_K kernels / Q4_K quantized matmul.
     import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
     import executorch.extension.llm.export.gguf  # noqa: F401
+    import executorch.extension.llm.export.int4  # noqa: F401
 
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes

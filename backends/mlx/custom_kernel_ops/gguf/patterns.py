@@ -11,10 +11,10 @@
 ``ExportableGGUFTensor`` (extension/llm/export/gguf.py) lowers a quantized
 linear/embedding to::
 
-    linear(x, torchao::gguf_dequantize(weight, ggml_type, out_dtype), bias)
-    embedding(torchao::gguf_dequantize(weight, ggml_type, out_dtype), indices)
+    linear(x, torchao::dequantize_gguf(weight, ggml_type, out_dtype), bias)
+    embedding(torchao::dequantize_gguf(weight, ggml_type, out_dtype), indices)
 
-These handlers match that ``gguf_dequantize -> linear/embedding`` subgraph and
+These handlers match that ``dequantize_gguf -> linear/embedding`` subgraph and
 lower it without materializing the dequantized weight:
 
 * **Q6_K** -> fused custom Metal kernels in :mod:`.q6k` (linear + embedding).
@@ -46,20 +46,20 @@ _LINEAR_TYPES = {"q4_k", "q6_k"}
 _EMBEDDING_TYPES = {"q4_k", "q6_k"}
 
 
-def parse_gguf_dequantize_node(
+def parse_dequantize_gguf_node(
     node: Node,
 ) -> Optional[Tuple[Node, str, torch.dtype]]:
-    """Parse a ``torchao::gguf_dequantize`` node.
+    """Parse a ``torchao::dequantize_gguf`` node.
 
     Returns ``(weight_node, ggml_type, output_dtype)`` or ``None`` if ``node`` is
-    not a ``gguf_dequantize`` node (or the op isn't registered).
+    not a ``dequantize_gguf`` node (or the op isn't registered).
     """
     try:
         import executorch.extension.llm.export.gguf  # noqa: F401  registers the op
     except ImportError:
         return None
 
-    if get_aten_target(node.target) is not torch.ops.torchao.gguf_dequantize.default:
+    if get_aten_target(node.target) is not torch.ops.torchao.dequantize_gguf.default:
         return None
 
     weight = node.args[0]
@@ -74,9 +74,9 @@ def parse_gguf_dequantize_node(
 
 @REGISTRY.register_pattern(name="GGUF_QUANTIZED_LINEAR")
 class GGUFQuantizedLinearHandler(PatternHandler):
-    """Lower ``gguf_dequantize + linear`` to a fused quantized matmul.
+    """Lower ``dequantize_gguf + linear`` to a fused quantized matmul.
 
-    Matches ``linear(x, gguf_dequantize(weight, ggml_type, out_dtype), bias)``
+    Matches ``linear(x, dequantize_gguf(weight, ggml_type, out_dtype), bias)``
     and dispatches on ``ggml_type``: Q6_K -> custom Metal kernels, Q4_K -> MLX
     4-bit ``quantized_matmul``.
     """
@@ -96,7 +96,7 @@ class GGUFQuantizedLinearHandler(PatternHandler):
         dequant = head.args[1]
         if not has_single_user(dequant):
             return None
-        parsed = parse_gguf_dequantize_node(dequant)
+        parsed = parse_dequantize_gguf_node(dequant)
         if parsed is None:
             return None
         weight, ggml_type, output_dtype = parsed
@@ -121,11 +121,11 @@ class GGUFQuantizedLinearHandler(PatternHandler):
 
 @REGISTRY.register_pattern(name="GGUF_QUANTIZED_EMBEDDING")
 class GGUFQuantizedEmbeddingHandler(PatternHandler):
-    """Fuse ``gguf_dequantize + embedding`` into the Q6_K gather kernel.
+    """Fuse ``dequantize_gguf + embedding`` into the Q6_K gather kernel.
 
     Matches::
 
-        embedding(gguf_dequantize(weight, "q6_k", out_dtype), indices)
+        embedding(dequantize_gguf(weight, "q6_k", out_dtype), indices)
     """
 
     def __init__(self, head, body, weight, ggml_type, output_dtype):
@@ -143,7 +143,7 @@ class GGUFQuantizedEmbeddingHandler(PatternHandler):
         dequant = head.args[0]
         if not has_single_user(dequant):
             return None
-        parsed = parse_gguf_dequantize_node(dequant)
+        parsed = parse_dequantize_gguf_node(dequant)
         if parsed is None:
             return None
         weight, ggml_type, output_dtype = parsed
