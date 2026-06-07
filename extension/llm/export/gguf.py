@@ -264,9 +264,7 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
 
     def to_int4_tensor(self) -> Tensor:
         """Convert a Q4_K tensor to a torchao ``Int4Tensor``."""
-        from torchao.quantization.quantize_.workflows.int4.int4_tensor import (
-            Int4Tensor,
-        )
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
         if self.ggml_type != "q4_k":
             raise NotImplementedError(

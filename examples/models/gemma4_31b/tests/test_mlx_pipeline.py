@@ -323,131 +323,105 @@ class TestGgufMlxPipeline(unittest.TestCase):
 
 
 class TestGgufLinearMlx(unittest.TestCase):
-    """Q6_K weights route to the fused mlx::gguf_linear op (raw-blob path)."""
+    """GGUF-quantized linears (Q6_K + Q4_K) lower through the MLX GGUF pattern."""
 
-    def _make_blob(self, N: int, K: int) -> torch.Tensor:
+    def _linear(self, N: int, K: int, ggml_type: str) -> nn.Module:
         from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
+            make_q4_k_blob,
             make_q6_k_blob,
         )
+        from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
-        return make_q6_k_blob(N, K)
-
-    def test_replace_with_gguf_linear_swaps_module(self):
-        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
-            GGUFLinear,
-            replace_with_gguf_linear,
+        blob = (make_q6_k_blob if ggml_type == "q6_k" else make_q4_k_blob)(N, K)
+        lin = nn.Linear(K, N, bias=False).to(torch.bfloat16)
+        lin.weight = nn.Parameter(
+            ExportableGGUFTensor.from_raw(blob, ggml_type, torch.bfloat16),
+            requires_grad=False,
         )
+        return lin.eval()
 
-        model = build_random_tiny_model()
-        # Pick a Linear whose in_features is a multiple of 256 (Q6_K requires
-        # K % 256 == 0) -- e.g. down_proj (in = intermediate_size).
-        target_fqn = None
-        for name, mod in model.named_modules():
-            if isinstance(mod, nn.Linear) and mod.in_features % 256 == 0:
-                target_fqn = name
-                N, K = mod.out_features, mod.in_features
-                break
-        self.assertIsNotNone(target_fqn, "no Linear with in_features % 256 == 0")
-
-        blob = self._make_blob(N, K)
-        replace_with_gguf_linear(model, target_fqn + ".weight", blob, format="q6k")
-
-        swapped = model.get_submodule(target_fqn)
-        self.assertIsInstance(swapped, GGUFLinear)
-        self.assertEqual(swapped.in_features, K)
-        self.assertEqual(swapped.out_features, N)
-        self.assertEqual(swapped.weight.dtype, torch.uint8)
-
-        # Forward dispatches to the op (eager fallback) and matches it exactly.
-        x = torch.randn(2, K, dtype=torch.bfloat16)
-        y = swapped(x)
-        ref = torch.ops.mlx.gguf_linear(x, blob, "q6k", None)
-        self.assertEqual(y.shape, torch.Size([2, N]))
-        self.assertTrue(torch.equal(y, ref))
-
-    def test_gguf_linear_delegates_to_mlx(self):
+    def _assert_delegated(self, model, example, leftovers):
+        import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
         from executorch.backends.mlx import MLXPartitioner
-        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import GGUFLinear
-        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
         from torch.export import Dim, export
 
-        N, K = 256, 512
-        blob = self._make_blob(N, K)
-        # GGUFLinear passes bias=None, so the lowered node has 3 args (no bias);
-        # dynamic seq_len exercises the runtime-routed (IfNode) lowering path.
-        m = GGUFLinear(blob, format="q6k").eval()
         seq = Dim("seq", min=1, max=8)
-        ep = export(
-            m,
-            (torch.randn(4, K, dtype=torch.bfloat16),),
-            dynamic_shapes=({0: seq},),
-            strict=True,
+        ep = export(model, example, dynamic_shapes=({0: seq},), strict=True)
+        et = to_edge_transform_and_lower(
+            ep,
+            partitioner=[MLXPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
-        et = to_edge_transform_and_lower(ep, partitioner=[MLXPartitioner()])
         remaining = [
             str(n.target)
             for n in et.exported_program().graph.nodes
-            if n.op == "call_function" and "gguf_linear" in str(n.target)
+            if n.op == "call_function" and any(t in str(n.target) for t in leftovers)
         ]
-        self.assertEqual(remaining, [], "gguf_linear was not delegated to MLX")
+        self.assertEqual(remaining, [], f"not delegated to MLX: {remaining}")
+
+    def test_q6k_linear_delegates(self):
+        self._assert_delegated(
+            self._linear(256, 512, "q6_k"),
+            (torch.randn(4, 512, dtype=torch.bfloat16),),
+            ("gguf_dequantize", "linear"),
+        )
+
+    def test_q4k_linear_delegates(self):
+        self._assert_delegated(
+            self._linear(512, 512, "q4_k"),
+            (torch.randn(4, 512, dtype=torch.bfloat16),),
+            ("gguf_dequantize", "linear"),
+        )
 
 
 class TestGgufEmbeddingMlx(unittest.TestCase):
-    """Q6_K token embedding routes to the fused mlx::gguf_embedding op."""
+    """GGUF token embeddings (Q6_K + Q4_K) lower through the MLX GGUF pattern."""
 
-    def _make_blob(self, vocab: int, K: int) -> torch.Tensor:
+    def _assert_delegated(self, ggml_type: str):
+        import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+        from executorch.backends.mlx import MLXPartitioner
         from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
+            make_q4_k_blob,
             make_q6_k_blob,
         )
-
-        return make_q6_k_blob(vocab, K)
-
-    def test_replace_with_gguf_embedding_swaps_module(self):
-        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import (
-            GGUFEmbedding,
-            replace_with_gguf_embedding,
-        )
-
-        model = build_random_tiny_model()
-        # Q6_K needs embedding_dim % 256 == 0, so use a fixed valid dim (the
-        # tiny model's hidden_size is smaller); this test exercises the swapped
-        # module directly, not the full model forward.
-        vocab, K = 512, 256
-        blob = self._make_blob(vocab, K)
-        replace_with_gguf_embedding(model, "embed_tokens.weight", blob, format="q6k")
-
-        swapped = model.get_submodule("embed_tokens")
-        self.assertIsInstance(swapped, GGUFEmbedding)
-        self.assertEqual(swapped.num_embeddings, vocab)
-        self.assertEqual(swapped.embedding_dim, K)
-
-        idx = torch.randint(0, vocab, (2, 4), dtype=torch.int32)
-        y = swapped(idx)
-        ref = torch.ops.mlx.gguf_embedding(blob, idx, "q6k")
-        self.assertEqual(y.shape, torch.Size([2, 4, K]))
-        self.assertTrue(torch.equal(y, ref))
-
-    def test_gguf_embedding_delegates_to_mlx(self):
-        from executorch.backends.mlx import MLXPartitioner
-        from executorch.examples.models.gemma4_31b.mlx_gguf_linear import GGUFEmbedding
-        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.extension.llm.export.gguf import ExportableGGUFTensor
         from torch.export import Dim, export
 
-        m = GGUFEmbedding(self._make_blob(512, 256), format="q6k").eval()
+        vocab, K = 512, 256
+        blob = (make_q6_k_blob if ggml_type == "q6_k" else make_q4_k_blob)(vocab, K)
+        emb = nn.Embedding(vocab, K)
+        emb.weight = nn.Parameter(
+            ExportableGGUFTensor.from_raw(blob, ggml_type, torch.bfloat16),
+            requires_grad=False,
+        )
+        emb = emb.eval()
         seq = Dim("seq", min=1, max=8)
         ep = export(
-            m,
-            (torch.randint(0, 512, (4,), dtype=torch.int32),),
+            emb,
+            (torch.randint(0, vocab, (4,), dtype=torch.int64),),
             dynamic_shapes=({0: seq},),
             strict=True,
         )
-        et = to_edge_transform_and_lower(ep, partitioner=[MLXPartitioner()])
+        et = to_edge_transform_and_lower(
+            ep,
+            partitioner=[MLXPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
         remaining = [
             str(n.target)
             for n in et.exported_program().graph.nodes
-            if n.op == "call_function" and "gguf_embedding" in str(n.target)
+            if n.op == "call_function"
+            and any(t in str(n.target) for t in ("gguf_dequantize", "embedding"))
         ]
-        self.assertEqual(remaining, [], "gguf_embedding was not delegated to MLX")
+        self.assertEqual(remaining, [], f"not delegated to MLX: {remaining}")
+
+    def test_q6k_embedding_delegates(self):
+        self._assert_delegated("q6_k")
+
+    def test_q4k_embedding_delegates(self):
+        self._assert_delegated("q4_k")
 
 
 if __name__ == "__main__":

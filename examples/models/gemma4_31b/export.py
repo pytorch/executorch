@@ -306,6 +306,11 @@ def _export_mlx(
     """
     import gc
 
+    # Register the GGUF dequant op + MLX GGUF pattern handlers so quantized GGUF
+    # weights lower to the fused Q6_K kernels / Q4_K quantized matmul.
+    import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+    import executorch.extension.llm.export.gguf  # noqa: F401
+
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
 

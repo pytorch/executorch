@@ -50,7 +50,9 @@ def _fp16_bytes(x: float) -> torch.Tensor:
 def _make_q4k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
     """A ``(N, nb*144)`` uint8 Q4_K blob with sane, deterministic magnitudes."""
     g = torch.Generator().manual_seed(seed)
-    blk = torch.randint(0, 256, (N * nb, _Q4_K_BLOCK_BYTES), dtype=torch.uint8, generator=g)
+    blk = torch.randint(
+        0, 256, (N * nb, _Q4_K_BLOCK_BYTES), dtype=torch.uint8, generator=g
+    )
     blk[:, 0:2] = _fp16_bytes(0.01)  # d
     blk[:, 2:4] = _fp16_bytes(0.01)  # dmin
     blk[:, 4:16] = 0x21  # fixed mid-range 6-bit sub-scales/mins (non-zero)
@@ -60,7 +62,9 @@ def _make_q4k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
 def _make_q6k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
     """A ``(N, nb*210)`` uint8 Q6_K blob with sane, deterministic magnitudes."""
     g = torch.Generator().manual_seed(seed)
-    blk = torch.randint(0, 256, (N * nb, _Q6_K_BLOCK_BYTES), dtype=torch.uint8, generator=g)
+    blk = torch.randint(
+        0, 256, (N * nb, _Q6_K_BLOCK_BYTES), dtype=torch.uint8, generator=g
+    )
     blk[:, 192:208] = 0x10  # fixed int8 sub-scales (non-zero)
     blk[:, 208:210] = _fp16_bytes(0.01)  # d
     return blk.reshape(N, nb * _Q6_K_BLOCK_BYTES)
@@ -71,7 +75,12 @@ def _gguf_ref(raw: torch.Tensor, qtype) -> torch.Tensor:
 
 
 def _int4_to_float(w) -> torch.Tensor:
-    """Dequantize an ``Int4Tensor`` from its stored fields (no fbgemm needed)."""
+    """Dequantize an ``Int4Tensor`` from its stored fields.
+
+    ``Int4Tensor`` has no working ``dequantize()`` on CPU (``aten.dequantize`` is
+    unimplemented and the linear path needs fbgemm), so reconstruct directly
+    from its public fields (this still exercises our nibble-packing).
+    """
     N, K = int(w.shape[0]), int(w.shape[1])
     gs = w.block_size[1]
     q = torch.empty(N, K, dtype=torch.float32)
@@ -80,10 +89,6 @@ def _int4_to_float(w) -> torch.Tensor:
     scale = w.scale.t().float().repeat_interleave(gs, dim=1)
     zero = w.zero_point.t().float().repeat_interleave(gs, dim=1)
     return scale * (q - zero)
-
-
-def _rel_max(a: torch.Tensor, b: torch.Tensor) -> float:
-    return (a - b).abs().max().item() / (b.abs().max().item() + 1e-9)
 
 
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
@@ -109,8 +114,16 @@ class TestExportableGGUFTensor(unittest.TestCase):
             t = ExportableGGUFTensor.from_raw(raw, ggml_type)
             ix = t.to_intx_unpacked_to_int8_tensor()
             self.assertEqual(tuple(ix.shape), (3, 512))
-            rel = _rel_max(ix.dequantize().float(), t.dequantize(torch.float32))
-            self.assertLess(rel, 1e-2, f"{ggml_type} to_intx rel err {rel}")
+            # bf16 storage tolerance.
+            self.assertTrue(
+                torch.allclose(
+                    ix.dequantize().float(),
+                    t.dequantize(torch.float32),
+                    rtol=1e-2,
+                    atol=5e-2,
+                ),
+                ggml_type,
+            )
 
     def test_to_int4_tensor_matches_reference(self):
         raw = _make_q4k_raw(N=3, nb=2)
@@ -120,8 +133,14 @@ class TestExportableGGUFTensor(unittest.TestCase):
         self.assertEqual(list(w.block_size), [1, Q4_K_GROUP_SIZE])
         # Int4Tensor has no CPU dequantize(); reconstruct from its packed fields
         # (this still exercises our nibble-packing) against the gguf reference.
-        rel = _rel_max(_int4_to_float(w), t.dequantize(torch.float32))
-        self.assertLess(rel, 1e-2, f"Q4_K to_int4 rel err {rel}")
+        self.assertTrue(
+            torch.allclose(
+                _int4_to_float(w),
+                t.dequantize(torch.float32),
+                rtol=1e-2,
+                atol=5e-2,
+            )
+        )
 
     def test_gguf_dequantize_op_matches_reference(self):
         for ggml_type, make in (("q4_k", _make_q4k_raw), ("q6_k", _make_q6k_raw)):
@@ -189,9 +208,9 @@ class TestExportableGGUFTensorExport(unittest.TestCase):
             def forward(self, idx):
                 return torch.nn.functional.embedding(idx, self.w)
 
-        ep = torch.export.export(
-            M(), (torch.tensor([0, 1, 2, 3]),)
-        ).run_decompositions({})
+        ep = torch.export.export(M(), (torch.tensor([0, 1, 2, 3]),)).run_decompositions(
+            {}
+        )
         self.assertIn("torchao.gguf_dequantize.default", self._targets(ep))
 
 

@@ -6,19 +6,18 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""Shared GGUF **Q6_K** primitives for the MLX custom ops.
+"""Shared GGUF **Q6_K** primitives for the MLX backend.
 
 This module holds the pieces common to every Q6_K kernel (linear matmul/matvec
 and the embedding gather), so format-specific op modules import from here rather
 than from each other:
 
 * ``QK_K`` / ``Q6K_BLOCK_BYTES`` and the per-super-block byte layout constants.
-* ``dequantize_q6_k`` -- the pure-torch dequant oracle (eager fallback + tests).
 * ``_Q6K_HEADER`` -- the Metal header (the ``block_q6_K`` struct plus the
   per-element and vectorized dequant helpers) shared by all Q6_K Metal kernels.
 
-Adding another GGUF format (e.g. Q4_K) should mirror this module (``q4k.py``)
-and the op handlers in :mod:`.linear` / :mod:`.embedding` dispatch on ``format``.
+Adding another GGUF format (e.g. Q4_K) should mirror this module and the pattern
+handlers in :mod:`..patterns` dispatch on the GGUF quant type.
 
 Q6_K layout (per 256-element super-block, 210 bytes, see llama.cpp
 ``block_q6_K`` in ``ggml-common.h``)::
@@ -33,16 +32,13 @@ The dequantized value for a 6-bit code ``q`` (0..63) in sub-block ``s`` is
 
 Attribution
 -----------
-The Q6_K block layout, the Metal dequant helpers in ``_Q6K_HEADER``, and the
-pure-torch ``dequantize_q6_k`` reference follow llama.cpp
+The Q6_K block layout and the Metal dequant helpers in ``_Q6K_HEADER`` follow
+llama.cpp
 (``ggml-common.h`` / ``ggml-metal.metal``: ``block_q6_K``, ``dequantize_q6_K``),
 which is MIT-licensed (Copyright (c) 2023-2024 The ggml authors).
 """
 
 from __future__ import annotations
-
-import torch
-from torch import Tensor
 
 
 # ---------------------------------------------------------------------------
@@ -56,79 +52,6 @@ _Q6K_QH_BYTES = QK_K // 4  # 64
 _Q6K_SCALES = QK_K // 16  # 16
 _Q6K_D_BYTES = 2  # one fp16
 Q6K_BLOCK_BYTES = _Q6K_QL_BYTES + _Q6K_QH_BYTES + _Q6K_SCALES + _Q6K_D_BYTES  # 210
-
-
-# ---------------------------------------------------------------------------
-# Pure-torch dequant reference
-# ---------------------------------------------------------------------------
-
-
-def dequantize_q6_k(weight: Tensor, K: int) -> Tensor:
-    """Dequantize a GGUF Q6_K blob to float32.
-
-    Args:
-        weight: ``(N, n_blocks * 210)`` uint8, GGUF ``block_q6_K`` layout.
-        K: number of logical input features (``n_blocks * 256``).
-
-    Returns:
-        ``(N, K)`` float32 dequantized weight.
-    """
-    if weight.dtype != torch.uint8:
-        raise ValueError(f"gguf_linear: weight must be uint8; got {weight.dtype}")
-    N = weight.shape[0]
-    nb = K // QK_K
-    if weight.shape[-1] != nb * Q6K_BLOCK_BYTES:
-        raise ValueError(
-            f"gguf_linear: weight row bytes {weight.shape[-1]} != "
-            f"{nb} blocks * {Q6K_BLOCK_BYTES}"
-        )
-
-    blocks = weight.view(N, nb, Q6K_BLOCK_BYTES)
-    ql = blocks[..., 0:_Q6K_QL_BYTES].to(torch.int32)
-    qh = blocks[..., _Q6K_QL_BYTES : _Q6K_QL_BYTES + _Q6K_QH_BYTES].to(torch.int32)
-    sc_off = _Q6K_QL_BYTES + _Q6K_QH_BYTES
-    scales = (
-        blocks[..., sc_off : sc_off + _Q6K_SCALES]
-        .contiguous()
-        .view(torch.int8)
-        .to(torch.float32)
-    )
-    d = (
-        blocks[..., sc_off + _Q6K_SCALES : sc_off + _Q6K_SCALES + _Q6K_D_BYTES]
-        .contiguous()
-        .view(torch.float16)
-        .to(torch.float32)
-    )  # (N, nb, 1)
-
-    y = torch.empty(N, nb, QK_K, dtype=torch.float32, device=weight.device)
-    # is = l // 16 over l in 0..31 -> selects which of the 8 half-scales.
-    is_idx = (torch.arange(32, device=weight.device) // 16).long()  # (32,)
-
-    for h in range(2):  # two 128-element halves
-        ql_h = ql[..., h * 64 : h * 64 + 64]  # (N, nb, 64)
-        qh_h = qh[..., h * 32 : h * 32 + 32]  # (N, nb, 32)
-        sc_h = scales[..., h * 8 : h * 8 + 8]  # (N, nb, 8)
-
-        ql_lo = ql_h[..., 0:32]
-        ql_hi = ql_h[..., 32:64]
-
-        q1 = (ql_lo & 0xF) | ((qh_h & 0x3) << 4)
-        q2 = (ql_hi & 0xF) | (((qh_h >> 2) & 0x3) << 4)
-        q3 = (ql_lo >> 4) | (((qh_h >> 4) & 0x3) << 4)
-        q4 = (ql_hi >> 4) | (((qh_h >> 6) & 0x3) << 4)
-
-        sc0 = sc_h[..., is_idx + 0]
-        sc2 = sc_h[..., is_idx + 2]
-        sc4 = sc_h[..., is_idx + 4]
-        sc6 = sc_h[..., is_idx + 6]
-
-        base = h * 128
-        y[..., base + 0 : base + 32] = d * sc0 * (q1 - 32).to(torch.float32)
-        y[..., base + 32 : base + 64] = d * sc2 * (q2 - 32).to(torch.float32)
-        y[..., base + 64 : base + 96] = d * sc4 * (q3 - 32).to(torch.float32)
-        y[..., base + 96 : base + 128] = d * sc6 * (q4 - 32).to(torch.float32)
-
-    return y.reshape(N, K)
 
 
 # ---------------------------------------------------------------------------

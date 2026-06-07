@@ -6,38 +6,50 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for ``mlx::gguf_embedding`` (GGUF Q6_K embedding gather).
+Tests for the GGUF Q6_K embedding lowering.
 
-Compares the fused gather Metal kernel against the eager reference on the same
-packed Q6_K table. The kernel and reference run identical per-element float
-dequant, so the bf16 outputs match exactly.
+An ``nn.Embedding`` whose weight is an ``ExportableGGUFTensor`` exports to
+``embedding(torchao::gguf_dequantize(weight, "q6_k", ...), indices)``. The MLX
+``GGUF_QUANTIZED_EMBEDDING`` pattern matches that subgraph and lowers it to the
+fused Q6_K gather Metal kernel. These tests compare the kernel against the eager
+reference (``gguf``-package dequant + ``F.embedding``) on the same packed table.
 
 Usage::
 
     python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_embedding run
-    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_embedding run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_embedding list
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.custom_kernel_ops.gguf.embedding  # noqa: F401
+# Importing the patterns module registers GGUF_QUANTIZED_LINEAR / _EMBEDDING.
+import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
     make_q6_k_blob,
 )
 from executorch.backends.mlx.test.test_utils import OpTestCase
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
 
-class GGUFEmbeddingModel(nn.Module):
-    def forward(self, weight: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
-        return torch.ops.mlx.gguf_embedding(weight, indices, "q6k")
+def _make_gguf_embedding_model(vocab: int, K: int, seed: int = 0) -> nn.Module:
+    """An ``nn.Embedding`` whose weight is a Q6_K ``ExportableGGUFTensor``."""
+    emb = nn.Embedding(vocab, K)
+    blob = make_q6_k_blob(vocab, K, seed=seed)
+    emb.weight = nn.Parameter(
+        ExportableGGUFTensor.from_raw(blob, "q6_k", torch.bfloat16),
+        requires_grad=False,
+    )
+    return emb
 
 
 class GGUFEmbeddingTest(OpTestCase):
     name = "gguf_embedding"
-    rtol = 0.0
-    atol = 0.0
+    # Reference dequant runs in fp32 (gguf) then casts to bf16; the kernel
+    # dequantizes per element to bf16, so allow bf16 tolerance.
+    rtol = 2e-2
+    atol = 2e-2
 
     def __init__(
         self,
@@ -67,14 +79,19 @@ class GGUFEmbeddingTest(OpTestCase):
             cls(vocab=2048, K=5376, idx_shape=(8,)),
         ]
 
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        # The gguf_dequantize custom op isn't a core ATen op; skip IR validity.
+        return EdgeCompileConfig(_check_ir_validity=False)
+
     def create_model(self) -> nn.Module:
-        return GGUFEmbeddingModel()
+        return _make_gguf_embedding_model(self.vocab, self.K)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         torch.manual_seed(0)
-        weight = make_q6_k_blob(self.vocab, self.K)
-        indices = torch.randint(0, self.vocab, self.idx_shape, dtype=torch.int32)
-        return (weight, indices)
+        indices = torch.randint(0, self.vocab, self.idx_shape, dtype=torch.int64)
+        return (indices,)
 
 
 def _main() -> None:  # noqa: C901
@@ -83,7 +100,7 @@ def _main() -> None:  # noqa: C901
 
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
-    parser = argparse.ArgumentParser(description="Test mlx::gguf_embedding op")
+    parser = argparse.ArgumentParser(description="Test GGUF Q6_K embedding lowering")
     parser.add_argument("action", choices=["generate", "compare", "run", "list"])
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--rebuild", action="store_true")

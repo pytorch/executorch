@@ -6,36 +6,37 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for ``mlx::gguf_linear`` (GGUF Q6_K linear).
+Tests for the GGUF Q6_K linear lowering.
 
-Compares the fused Metal kernels (mat-vec for decode, mat-mat for prefill)
-against the eager pure-torch reference on the *same* packed Q6_K weight, so
-quantization quality is irrelevant -- only the kernel-vs-reference numerics
-are checked. Tolerances follow the activation dtype presets.
+A linear whose weight is an ``ExportableGGUFTensor`` (extension/llm/export/gguf)
+exports to ``linear(x, torchao::gguf_dequantize(weight, "q6_k", ...), bias)``.
+The MLX ``GGUF_QUANTIZED_LINEAR`` pattern (custom_kernel_ops/gguf/patterns.py)
+matches that subgraph and lowers it to the fused Q6_K Metal kernels (mat-vec for
+decode, mat-mat for prefill). These tests compare the fused kernels against the
+eager reference (``gguf``-package dequant + ``F.linear``) on the same packed
+weight, so quantization quality is irrelevant -- only kernel-vs-reference
+numerics are checked.
 
-``GGUFLinearDynamicTest`` additionally exports once with a symbolic seqlen and
-runs the same .pte with M=1 and M>1 to exercise both branches of the runtime
-``IfNode`` (decode mat-vec vs prefill mat-mat).
+``GGUFLinearDynamicTest`` exports once with a symbolic seqlen and runs the same
+.pte with M=1 and M>1 to exercise both branches of the runtime ``IfNode``
+(decode mat-vec vs prefill mat-mat).
 
 Usage::
 
     python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear run
     python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear run -v
-    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear run --rebuild
-    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear eager
+    python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear list
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.custom_kernel_ops.gguf.linear  # noqa: F401
+# Importing the patterns module registers GGUF_QUANTIZED_LINEAR / _EMBEDDING.
+import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
 import torch
 import torch.nn as nn
-from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import (
-    dequantize_q6_k,
-    Q6K_BLOCK_BYTES,
-    QK_K,
-)
+from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import Q6K_BLOCK_BYTES, QK_K
 from executorch.backends.mlx.test.test_utils import OpTestCase
+from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
 
 # ---------------------------------------------------------------------------
@@ -43,9 +44,9 @@ from executorch.backends.mlx.test.test_utils import OpTestCase
 #
 # The Python ``gguf`` package can dequantize Q6_K but does NOT implement Q6_K
 # quantization, so we build the packed weight here. Quantization quality is
-# irrelevant: the tests only compare the kernel against the eager op on the
-# *same* bytes, so we just emit valid random blocks (random ql/qh/scales plus a
-# small finite fp16 ``d`` -- the one field that must be finite).
+# irrelevant: the tests only compare the kernel against the eager reference on
+# the *same* bytes, so we just emit valid random blocks (random ql/qh/scales
+# plus a small finite fp16 ``d`` -- the one field that must be finite).
 # ---------------------------------------------------------------------------
 
 
@@ -72,19 +73,54 @@ def make_q6_k_blob(N: int, K: int, seed: int = 0) -> torch.Tensor:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Test cases
-# ---------------------------------------------------------------------------
+def make_q4_k_blob(N: int, K: int, seed: int = 0) -> torch.Tensor:
+    """Build a ``(N, (K/256)*144)`` uint8 tensor of valid GGUF Q4_K blocks."""
+    assert K % QK_K == 0, f"K={K} must be a multiple of {QK_K}"
+    nb = K // QK_K
+    block_bytes = 144  # Q4_K: d(2) + dmin(2) + scales(12) + qs(128)
+    g = torch.Generator().manual_seed(seed)
+    out = torch.empty(N, nb * block_bytes, dtype=torch.uint8)
+    blocks = out.view(N, nb, block_bytes)
+    # d (0:2) / dmin (2:4): small finite fp16 super-block scale + min, so
+    # dequantized magnitudes stay O(0.1) like real Q4_K weights.
+    blocks[..., 0:2] = torch.tensor([7e-4], dtype=torch.float16).view(torch.uint8)
+    blocks[..., 2:4] = torch.tensor([7e-4], dtype=torch.float16).view(torch.uint8)
+    # scales+mins (4:16, 6-bit packed) and qs (16:144, 4-bit): any bytes valid.
+    blocks[..., 4:144] = torch.randint(
+        0, 256, (N, nb, 140), dtype=torch.uint8, generator=g
+    )
+    return out
+
+
+_BLOB_MAKERS = {"q6_k": make_q6_k_blob, "q4_k": make_q4_k_blob}
+
+
+def _make_gguf_linear_model(
+    N: int,
+    K: int,
+    dtype: torch.dtype,
+    bias: bool,
+    ggml_type: str = "q6_k",
+    seed: int = 0,
+) -> nn.Module:
+    """An ``nn.Linear`` whose weight is a GGUF ``ExportableGGUFTensor``."""
+    linear = nn.Linear(K, N, bias=bias).to(dtype)
+    blob = _BLOB_MAKERS[ggml_type](N, K, seed=seed)
+    linear.weight = nn.Parameter(
+        ExportableGGUFTensor.from_raw(blob, ggml_type, dtype), requires_grad=False
+    )
+    return linear
 
 
 class GGUFLinearModel(nn.Module):
-    def forward(
-        self,
-        x: torch.Tensor,
-        weight: torch.Tensor,
-        bias: torch.Tensor,
-    ) -> torch.Tensor:
-        return torch.ops.mlx.gguf_linear(x, weight, "q6k", bias)
+    """Wrapper so the forward arg is named ``x`` (for dynamic-shape specs)."""
+
+    def __init__(self, linear: nn.Module):
+        super().__init__()
+        self.linear = linear
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
 
 
 _DTYPE_TOL = {
@@ -97,6 +133,13 @@ _DTYPE_TOL = {
 _DTYPE_TAG = {torch.bfloat16: "bf16", torch.float16: "fp16", torch.float32: "fp32"}
 
 
+def _edge_compile_config():
+    from executorch.exir import EdgeCompileConfig
+
+    # The gguf_dequantize custom op isn't a core ATen op; skip IR validity.
+    return EdgeCompileConfig(_check_ir_validity=False)
+
+
 class GGUFLinearTest(OpTestCase):
     name = "gguf_linear"
 
@@ -106,13 +149,18 @@ class GGUFLinearTest(OpTestCase):
         N: int = 256,
         K: int = 256,
         dtype: torch.dtype = torch.bfloat16,
+        bias: bool = True,
+        ggml_type: str = "q6_k",
     ):
         self.M = M
         self.N = N
         self.K = K
         self.dtype = dtype
+        self.bias = bias
+        self.ggml_type = ggml_type
         self.rtol, self.atol = _DTYPE_TOL[dtype]
-        self.name = f"gguf_linear_m{M}_n{N}_k{K}_{_DTYPE_TAG[dtype]}"
+        tag = f"gguf_linear_{ggml_type}_m{M}_n{N}_k{K}_{_DTYPE_TAG[dtype]}"
+        self.name = tag if bias else tag + "_nobias"
 
     @classmethod
     def get_test_configs(cls) -> List["GGUFLinearTest"]:
@@ -123,6 +171,7 @@ class GGUFLinearTest(OpTestCase):
                 cfgs.append(cls(M=1, N=N, K=K, dtype=torch.bfloat16))
         cfgs.append(cls(M=1, N=256, K=256, dtype=torch.float16))
         cfgs.append(cls(M=1, N=256, K=256, dtype=torch.float32))
+        cfgs.append(cls(M=1, N=256, K=256, dtype=torch.bfloat16, bias=False))
         # Prefill (mat-mat).
         for M in (8, 64, 128):
             cfgs.append(cls(M=M, N=512, K=512, dtype=torch.bfloat16))
@@ -130,8 +179,7 @@ class GGUFLinearTest(OpTestCase):
         # Ragged shapes (M and N not multiples of the 32-wide tile / row group).
         cfgs.append(cls(M=40, N=300, K=256, dtype=torch.bfloat16))
         cfgs.append(cls(M=1, N=300, K=256, dtype=torch.bfloat16))
-        # Real Gemma-4-31B shapes (hidden=5376, ffn=21504, vocab=262144) to
-        # exercise the kernels at production N/K (decode + prefill).
+        # Real Gemma-4-31B shapes (hidden=5376, ffn=21504) at production N/K.
         cfgs.append(cls(M=1, N=4096, K=5376, dtype=torch.bfloat16))  # attn_v
         cfgs.append(cls(M=1, N=5376, K=21504, dtype=torch.bfloat16))  # ffn_down
         cfgs.append(cls(M=8, N=5376, K=21504, dtype=torch.bfloat16))  # ffn_down prefill
@@ -139,17 +187,28 @@ class GGUFLinearTest(OpTestCase):
         # fits CI-runner GPU buffer limits; the mat-vec N-tiling path is the
         # same at any N.
         cfgs.append(cls(M=1, N=16384, K=5376, dtype=torch.bfloat16))  # lm_head
+        # Q4_K -> MLX native 4-bit quantized_matmul (group_size 32).
+        cfgs.append(cls(M=1, N=512, K=512, dtype=torch.bfloat16, ggml_type="q4_k"))
+        cfgs.append(cls(M=8, N=512, K=512, dtype=torch.bfloat16, ggml_type="q4_k"))
+        cfgs.append(cls(M=1, N=5376, K=5376, dtype=torch.bfloat16, ggml_type="q4_k"))
+        cfgs.append(
+            cls(M=1, N=512, K=512, dtype=torch.bfloat16, bias=False, ggml_type="q4_k")
+        )
         return cfgs
 
+    def get_edge_compile_config(self):
+        return _edge_compile_config()
+
     def create_model(self) -> nn.Module:
-        return GGUFLinearModel()
+        return GGUFLinearModel(
+            _make_gguf_linear_model(
+                self.N, self.K, self.dtype, self.bias, self.ggml_type
+            )
+        )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         torch.manual_seed(0)
-        x = torch.randn(self.M, self.K, dtype=self.dtype)
-        weight = make_q6_k_blob(self.N, self.K)
-        bias = torch.randn(self.N, dtype=self.dtype)
-        return (x, weight, bias)
+        return (torch.randn(self.M, self.K, dtype=self.dtype),)
 
 
 class GGUFLinearDynamicTest(OpTestCase):
@@ -169,7 +228,6 @@ class GGUFLinearDynamicTest(OpTestCase):
     ):
         self.export_M = export_M
         self.test_M = test_M
-        self.seq_len = export_M  # used by create_inputs (export tracing)
         self.N = N
         self.K = K
         self.dtype = dtype
@@ -191,47 +249,38 @@ class GGUFLinearDynamicTest(OpTestCase):
 
     def get_dynamic_shapes(self):
         seq_dim = torch.export.Dim("seq_len", min=1, max=64)
-        return {"x": {0: seq_dim}, "weight": None, "bias": None}
+        return {"x": {0: seq_dim}}
+
+    def get_edge_compile_config(self):
+        return _edge_compile_config()
 
     def create_model(self) -> nn.Module:
-        return GGUFLinearModel()
-
-    def _make_inputs(self, M: int) -> Tuple[torch.Tensor, ...]:
-        # Deterministic weight/bias so export-time and run-time (and the eager
-        # reference) all use the same quantized weight (it is a runtime input).
-        torch.manual_seed(0)
-        weight = make_q6_k_blob(self.N, self.K)
-        bias = torch.randn(self.N, dtype=self.dtype)
-        x = torch.randn(M, self.K, dtype=self.dtype)
-        return (x, weight, bias)
+        # Deterministic weight so export-time and run-time use the same model.
+        return GGUFLinearModel(
+            _make_gguf_linear_model(self.N, self.K, self.dtype, bias=True)
+        )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return self._make_inputs(self.export_M)
+        torch.manual_seed(0)
+        return (torch.randn(self.export_M, self.K, dtype=self.dtype),)
 
     def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return self._make_inputs(self.test_M)
+        torch.manual_seed(0)
+        return (torch.randn(self.test_M, self.K, dtype=self.dtype),)
 
 
 def _eager_sanity() -> None:
-    """Quick CPU check: dequant + matmul matches the eager op on the same bytes."""
-    torch.manual_seed(0)
-    N, K = 4, 512
-    packed = make_q6_k_blob(N, K)
-    w_deq = dequantize_q6_k(packed, K)
-    print(f"dequant finite: {torch.isfinite(w_deq).all().item()}")
-    x = torch.randn(3, K)
-    ref = x @ w_deq.t()
-    out = torch.ops.mlx.gguf_linear(x, packed, "q6k", None)
-    err = (out - ref).abs().max()
-    print(f"eager op vs reference max abs err: {err.item():.6e}")
-    assert err < 1e-3, err
-    # Unsupported format raises.
-    try:
-        torch.ops.mlx.gguf_linear(x, packed, "q4k", None)
-        raise AssertionError("expected NotImplementedError for q4k")
-    except RuntimeError as e:
-        print(f"q4k correctly rejected: {type(e).__name__}")
-    print("eager sanity OK")
+    """Quick CPU check: the subclass linear exports to gguf_dequantize."""
+    model = GGUFLinearModel(_make_gguf_linear_model(4, 512, torch.bfloat16, bias=True))
+    x = torch.randn(3, 512, dtype=torch.bfloat16)
+    out = model(x)
+    print(
+        f"eager forward finite: {torch.isfinite(out).all().item()}, shape {tuple(out.shape)}"
+    )
+    ep = torch.export.export(model, (x,)).run_decompositions({})
+    targets = {str(n.target) for n in ep.graph.nodes if n.op == "call_function"}
+    assert "torchao.gguf_dequantize.default" in targets, targets
+    print("export contains torchao.gguf_dequantize: OK")
 
 
 if __name__ == "__main__":  # noqa: C901
@@ -240,7 +289,7 @@ if __name__ == "__main__":  # noqa: C901
 
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
-    parser = argparse.ArgumentParser(description="Test mlx::gguf_linear op")
+    parser = argparse.ArgumentParser(description="Test GGUF Q6_K linear lowering")
     parser.add_argument(
         "action", choices=["generate", "compare", "run", "list", "eager"]
     )

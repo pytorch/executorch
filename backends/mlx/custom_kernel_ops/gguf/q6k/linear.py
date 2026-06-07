@@ -8,11 +8,12 @@
 
 """GGUF **Q6_K** linear implementation.
 
-Provides the two pieces the ``mlx::gguf_linear`` router dispatches to for the
-``"q6k"`` format:
+Provides the Q6_K linear pieces used by the MLX GGUF pattern handler
+(:mod:`..patterns`):
 
-* :func:`eager_linear` -- pure-torch reference (the custom-op eager body).
-* :func:`emit_linear`  -- lowers the op to fused Q6_K Metal kernels.
+* :func:`eager_linear` -- pure-torch reference (``x @ dequant(weight)^T``).
+* :func:`emit_linear`  -- lowers a ``gguf_dequantize -> linear`` pattern to fused
+  Q6_K Metal kernels.
 
 Compute is keyed on the activation dtype (matching GGUF/llama.cpp): the Metal
 kernels are templated on ``InT``, accumulate in ``float32``, read ``d`` as
@@ -43,7 +44,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_product,
     emit_shape,
@@ -53,7 +53,6 @@ from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
 from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.common import (
     _Q6K_HEADER,
-    dequantize_q6_k,
     Q6K_BLOCK_BYTES,
     QK_K,
 )
@@ -66,39 +65,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     MultiplyIntNode,
     SubtractIntNode,
 )
-from torch import Tensor
 from torch.fx.node import Node
-
-
-# ---------------------------------------------------------------------------
-# Eager reference
-# ---------------------------------------------------------------------------
-
-
-def eager_linear(x: Tensor, weight: Tensor, bias: Optional[Tensor]) -> Tensor:
-    """Eager ``x @ dequant(weight)^T (+ bias)`` for a Q6_K weight blob."""
-    if weight.dim() != 2:
-        raise ValueError(
-            f"mlx::gguf_linear: weight must be 2-D (N, row_bytes); got "
-            f"shape {tuple(weight.shape)}"
-        )
-    _N, row_bytes = weight.shape
-    if row_bytes % Q6K_BLOCK_BYTES != 0:
-        raise ValueError(
-            f"mlx::gguf_linear: weight row bytes {row_bytes} must be a multiple of "
-            f"{Q6K_BLOCK_BYTES} (one q6_K block per 256 features)"
-        )
-    K = (row_bytes // Q6K_BLOCK_BYTES) * QK_K
-    if x.shape[-1] != K:
-        raise ValueError(
-            f"mlx::gguf_linear: x last dim {x.shape[-1]} != K {K} implied by weight"
-        )
-
-    w_deq = dequantize_q6_k(weight, K)  # (N, K) float32
-    out = torch.matmul(x.to(torch.float32), w_deq.t())  # (..., N) float32
-    if bias is not None:
-        out = out + bias.to(torch.float32)
-    return out.to(x.dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +302,6 @@ _Q6K_MM_NR1 = 32  # activation rows (M dim) per threadgroup
 
 def _emit_q6k_matvec(
     P: MLXProgramBuilder,
-    n: Node,
     x_node: Node,
     x_slot: Slot,
     weight_slot: Slot,
@@ -393,7 +359,6 @@ def _emit_q6k_matvec(
 
 def _emit_q6k_matmul(
     P: MLXProgramBuilder,
-    n: Node,
     x_node: Node,
     x_slot: Slot,
     weight_slot: Slot,
@@ -459,37 +424,35 @@ def _emit_q6k_matmul(
     )
 
 
-def emit_linear(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Lower ``mlx::gguf_linear`` (q6k) to fused Q6_K Metal kernels."""
-    args = P.args(n)
-    if len(args) == 4:
-        x_slot, weight_slot, _fmt, bias_slot = args
-    elif len(args) == 3:
-        x_slot, weight_slot, _fmt = args
-        bias_slot = None
-    else:
-        raise ValueError(
-            f"mlx::gguf_linear: expected 3 or 4 args (x, weight, format[, bias]); "
-            f"got {len(args)}"
-        )
-    x_node = n.args[0]
-    weight_node = n.args[1]
+def emit_linear(
+    P: MLXProgramBuilder,
+    head: Node,
+    x_node: Node,
+    weight_node: Node,
+    bias_node: Optional[Node],
+) -> Slot:
+    """Lower a Q6_K ``gguf_dequantize`` -> ``linear`` pattern to fused kernels.
+
+    ``weight_node`` is the raw GGUF blob (the dequantize op's weight input) and
+    ``head`` is the ``aten.linear`` node that owns the output slot.
+    """
+    x_slot, weight_slot, bias_slot = P.slot_map([x_node, weight_node, bias_node])
 
     weight_meta = weight_node.meta["val"]
     if weight_meta.dim() != 2:
         raise NotImplementedError(
-            f"mlx::gguf_linear: weight must be 2-D (N, row_bytes); got "
+            f"gguf q6k linear: weight must be 2-D (N, row_bytes); got "
             f"shape {tuple(weight_meta.shape)}"
         )
     N = weight_meta.shape[0]
     row_bytes = weight_meta.shape[1]
     if not isinstance(N, int) or not isinstance(row_bytes, int):
         raise NotImplementedError(
-            "mlx::gguf_linear: weight shape must be statically known"
+            "gguf q6k linear: weight shape must be statically known"
         )
     if row_bytes % Q6K_BLOCK_BYTES != 0:
         raise ValueError(
-            f"mlx::gguf_linear: weight row bytes {row_bytes} must be a multiple of "
+            f"gguf q6k linear: weight row bytes {row_bytes} must be a multiple of "
             f"{Q6K_BLOCK_BYTES}"
         )
     K = (row_bytes // Q6K_BLOCK_BYTES) * QK_K
@@ -506,17 +469,16 @@ def emit_linear(P: MLXProgramBuilder, n: Node) -> Slot:
             M = None  # dynamic / symbolic
             break
 
-    out = P.make_or_get_slot(n)
+    out = P.make_or_get_slot(head)
     tile = _Q6K_MM_NR1  # M-dimension tile (activation rows per threadgroup)
     if M == 1:
         # Static decode -> mat-vec.
-        _emit_q6k_matvec(P, n, x_node, x_slot, weight_slot, bias_slot, N, K, out)
+        _emit_q6k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
     elif M is not None:
         # Static prefill -> tiled simdgroup mat-mat (literal grid).
         blocks_m = (M + tile - 1) // tile
         _emit_q6k_matmul(
             P,
-            n,
             x_node,
             x_slot,
             weight_slot,
@@ -565,7 +527,6 @@ def emit_linear(P: MLXProgramBuilder, n: Node) -> Slot:
         with P.new_chain() as then_idx:  # prefill / mat-mat
             _emit_q6k_matmul(
                 P,
-                n,
                 x_node,
                 x_slot,
                 weight_slot,
@@ -576,7 +537,7 @@ def emit_linear(P: MLXProgramBuilder, n: Node) -> Slot:
                 out,
             )
         with P.new_chain() as else_idx:  # decode / mat-vec
-            _emit_q6k_matvec(P, n, x_node, x_slot, weight_slot, bias_slot, N, K, out)
+            _emit_q6k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
 
         P.emit(
             IfNode(
