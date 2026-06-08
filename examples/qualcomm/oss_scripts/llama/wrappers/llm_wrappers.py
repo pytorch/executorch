@@ -591,7 +591,7 @@ class TextDecoder(Component):
         is_multimodal = tok_embedding is not None
 
         # Determine if task-based calibration is requested
-        has_task_calibration = self.control_args.tasks is not None
+        has_task_calibration = self.control_args.calib_tasks is not None
 
         # Task-based calibration: Only for text-only LLMs
         # Multimodal models (VLMs) cannot use task-based evaluation currently.
@@ -604,9 +604,9 @@ class TextDecoder(Component):
                 tokenizer=tokenizer,
                 ar_len=self.meta["get_ar_len"],
                 max_seq_len=self.meta["get_max_context_len"],
-                tasks=self.control_args.tasks,
-                tasks_limit=self.control_args.limit,
-                num_fewshot=self.control_args.num_fewshot,
+                tasks=self.control_args.calib_tasks,
+                tasks_limit=self.control_args.calib_limit,
+                num_fewshot=self.control_args.calib_num_fewshot,
                 use_i64_token=self.control_args.embedding_quantize is not None,
                 event_name=f"{event}_tasks",
                 seq_mse_candidates=self.config.seq_mse_candidates,
@@ -828,7 +828,12 @@ class HybridTextDecoder(Component):
 
         self.apply_embedding = apply_embedding
 
-    def _encoding_override(self, quantized_model, unquantized_model):  # noqa: C901
+    def _encoding_override(  # noqa: C901
+        self,
+        quantized_model,
+        unquantized_model,
+        override_kv_cache,
+    ):
         pbq_target = {
             torch.ops.torchao.dequantize_affine,
             torch.ops.torchao.quantize_affine,
@@ -920,51 +925,54 @@ class HybridTextDecoder(Component):
         for param_quantized, param_unquantized in zip(*[p.keys() for p in parameters]):
             parameter_override(param_quantized, param_unquantized)
 
-        k_input_cache_nodes = []
-        v_input_cache_nodes = []
-        for node in unquantized_model.graph.nodes:
-            if node.op != "placeholder":
-                continue
+        if override_kv_cache:
+            k_input_cache_nodes = []
+            v_input_cache_nodes = []
+            for node in unquantized_model.graph.nodes:
+                if node.op != "placeholder":
+                    continue
 
-            if "args_" in node.name:
-                args_idx = int(node.name.split("_")[-1])
+                if "args_" in node.name:
+                    args_idx = int(node.name.split("_")[-1])
 
-                if args_idx >= self.decode.meta["get_n_layers"]:
-                    v_input_cache_nodes.append(node)
-                else:
-                    k_input_cache_nodes.append(node)
+                    if args_idx >= self.decode.meta["get_n_layers"]:
+                        v_input_cache_nodes.append(node)
+                    else:
+                        k_input_cache_nodes.append(node)
 
-        if not k_input_cache_nodes or not v_input_cache_nodes:
-            raise RuntimeError(
-                "KV cache input detection failed. This likely means the model naming "
-                "does not match expected prefixes."
-            )
+            if not k_input_cache_nodes or not v_input_cache_nodes:
+                raise RuntimeError(
+                    "KV cache input detection failed. This likely means the model naming "
+                    "does not match expected prefixes."
+                )
 
-        k_output_cache_nodes = []
-        v_output_cache_nodes = []
-        for node in quantized_model.graph.nodes:
-            if not is_graph_output(node):
-                continue
-            cache_output_node = node.args[0].args[0]
-            if is_node_src_start_with_name(cache_output_node, kv_cache_prefix="k_"):
-                k_output_cache_nodes.append(cache_output_node)
-            elif is_node_src_start_with_name(cache_output_node, kv_cache_prefix="v_"):
-                v_output_cache_nodes.append(cache_output_node)
+            k_output_cache_nodes = []
+            v_output_cache_nodes = []
+            for node in quantized_model.graph.nodes:
+                if not is_graph_output(node):
+                    continue
+                cache_output_node = node.args[0].args[0]
+                if is_node_src_start_with_name(cache_output_node, kv_cache_prefix="k_"):
+                    k_output_cache_nodes.append(cache_output_node)
+                elif is_node_src_start_with_name(
+                    cache_output_node, kv_cache_prefix="v_"
+                ):
+                    v_output_cache_nodes.append(cache_output_node)
 
-        if not k_output_cache_nodes or not v_output_cache_nodes:
-            raise RuntimeError(
-                "KV cache detection failed. This likely means the model naming "
-                "does not match expected prefixes."
-            )
+            if not k_output_cache_nodes or not v_output_cache_nodes:
+                raise RuntimeError(
+                    "KV cache detection failed. This likely means the model naming "
+                    "does not match expected prefixes."
+                )
 
-        for input_k_cache_node, output_k_cache_node in zip(
-            k_input_cache_nodes, k_output_cache_nodes
-        ):
-            activation_override(output_k_cache_node, input_k_cache_node)
-        for input_v_cache_node, output_v_cache_node in zip(
-            v_input_cache_nodes, v_output_cache_nodes
-        ):
-            activation_override(output_v_cache_node, input_v_cache_node)
+            for input_k_cache_node, output_k_cache_node in zip(
+                k_input_cache_nodes, k_output_cache_nodes
+            ):
+                activation_override(output_k_cache_node, input_k_cache_node)
+            for input_v_cache_node, output_v_cache_node in zip(
+                v_input_cache_nodes, v_output_cache_nodes
+            ):
+                activation_override(output_v_cache_node, input_v_cache_node)
 
         unquantized_model.recompile()
 
@@ -1127,6 +1135,7 @@ class HybridTextDecoder(Component):
             self._encoding_override(
                 quantized_model=self.calibration_prefill.decoder,
                 unquantized_model=self.decode.decoder,
+                override_kv_cache=True,
             )
 
             # save logit's quantization attributes to meta
@@ -1139,6 +1148,7 @@ class HybridTextDecoder(Component):
                 self._encoding_override(
                     quantized_model=self.calibration_prefill.tok_embedding,
                     unquantized_model=self.decode.tok_embedding,
+                    override_kv_cache=False,
                 )
 
             # Saving Decode QDQ Model EP for SQNR evaluation
@@ -1157,12 +1167,14 @@ class HybridTextDecoder(Component):
                 self._encoding_override(
                     quantized_model=self.decode.decoder,
                     unquantized_model=self.prefill.decoder,
+                    override_kv_cache=True,
                 )
 
                 if self.apply_embedding:
                     self._encoding_override(
                         quantized_model=self.decode.tok_embedding,
                         unquantized_model=self.prefill.tok_embedding,
+                        override_kv_cache=False,
                     )
 
         # calibration_prefill is only used for encoding override

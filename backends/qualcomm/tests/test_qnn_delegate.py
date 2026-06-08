@@ -7580,6 +7580,7 @@ class TestExampleLLMScript(TestQNN):
             "1024",
             "--max_context_len",
             "1024",
+            "--skip_user_prompt_calibration",
         ]
 
         match self.static_llm_eval_method:
@@ -7588,9 +7589,13 @@ class TestExampleLLMScript(TestQNN):
                     [
                         "--eval_methods",
                         "tasks_eval",
-                        "--tasks",
+                        "--eval_tasks",
                         "wikitext",
-                        "--limit",
+                        "--eval_limit",
+                        "1",
+                        "--calib_tasks",
+                        "wikitext",
+                        "--calib_limit",
                         "1",
                     ]
                 )
@@ -7599,25 +7604,33 @@ class TestExampleLLMScript(TestQNN):
                     [
                         "--eval_methods",
                         "tasks_eval",
-                        "--tasks",
+                        "--eval_tasks",
                         "hellaswag",
-                        "--limit",
+                        "--eval_limit",
+                        "10",
+                        "--calib_tasks",
+                        "hellaswag",
+                        "--calib_limit",
                         "10",
                     ]
                 )
             case "sqnr":
                 cmds.extend(
                     [
-                        "--skip_user_prompt_calibration",
-                        "--tasks",
+                        "--eval_tasks",
                         "wikitext",
-                        "--limit",
+                        "--eval_limit",
                         "1",
                         "--eval_methods",
                         "sqnr_eval",
+                        "--calib_tasks",
+                        "wikitext",
+                        "--calib_limit",
+                        "1",
                     ]
                 )
             case _:
+                cmds.remove("--skip_user_prompt_calibration")
                 logging.warning(
                     "No llm eval method chosen. Only generate model output."
                 )
@@ -7883,9 +7896,13 @@ class TestExampleLLMScript(TestQNN):
             "1024",
             "--eval_methods",
             "tasks_eval",
-            "--tasks",
+            "--eval_tasks",
             "wikitext",
-            "--limit",
+            "--eval_limit",
+            "1",
+            "--calib_tasks",
+            "wikitext",
+            "--calib_limit",
             "1",
             "--use_attention_sink",
             "4,32",
