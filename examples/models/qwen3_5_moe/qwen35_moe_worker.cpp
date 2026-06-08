@@ -18,8 +18,10 @@
 // process segfaults in the int4 matmul (validated). Here the model runs in a
 // plain synchronous loop in its own process, which is reliable.
 //
-// V1: single-slot (one engine == one ~18GB weight allocation == one session);
-// the control plane queues concurrent requests on the resident session.
+// Single-slot serving: this worker creates one session and the control plane
+// queues concurrent requests on it. (The engine itself can host multiple
+// sessions on the one ~18GB weight allocation; exposing that over the worker
+// protocol is a follow-up.)
 
 #include <gflags/gflags.h>
 

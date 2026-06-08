@@ -134,9 +134,9 @@ int main(int argc, char** argv) {
   stats.num_prompt_tokens = num_prompt_tokens;
 
   // Warmup + timed iterations on one loaded session (reset between). The first
-  // FLAGS_warmup iterations are discarded; they trigger CUDA-graph capture,
-  // allocator growth, and GPU clock ramp so the timed iterations reflect steady
-  // state. Text is printed only on the first iteration (coherence check).
+  // FLAGS_warmup iterations are discarded; they let allocator growth and GPU
+  // clock ramp settle so the timed iterations reflect steady state. Text is
+  // printed only on the first iteration (coherence check).
   llm::SamplingConfig sampling;
   sampling.temperature = static_cast<float>(FLAGS_temperature);
   const int total_iters = FLAGS_warmup + std::max(1, FLAGS_num_iters);

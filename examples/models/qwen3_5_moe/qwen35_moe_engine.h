@@ -12,9 +12,10 @@
 //
 // The public surface is backend-agnostic: the server receives an LLMEngine and
 // never branches on CUDA vs MLX. Backend-specific execution (CUDA in-graph
-// sampling, weight-sharing/cuda-graph backend options, device sync) is isolated
-// behind EXECUTORCH_BUILD_CUDA inside the .cpp; those isolated points are where
-// an MLX runtime would slot in. MLX is NOT implemented or validated here.
+// sampling, the weight-sharing backend option, per-session mutable rebinding,
+// device sync) is isolated behind EXECUTORCH_BUILD_CUDA inside the .cpp; those
+// isolated points are where an MLX runtime would slot in. MLX is NOT
+// implemented or validated here.
 //
 // V2 (CUDA): the ENGINE is multi-session — one shared Module (weights loaded
 // once); create_session() hands out multiple logical sessions, each rebinding

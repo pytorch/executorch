@@ -73,10 +73,11 @@ Result<uint64_t> read_sampled_token(
 #endif
 }
 
-// Build a Qwen Module with shared mutable arenas (so prefill and decode share
-// KV/conv/recurrent state) and, on CUDA, the weight-sharing/cuda-graph backend
-// options that MUST be set before load_method. Loads the prefill+decode methods
-// (this is the heavy ~weights load). Shared by create_session() and reset().
+// Build the one shared Qwen Module: shared mutable arenas (so prefill and
+// decode share KV/conv/recurrent state) and, on CUDA, the weight-sharing
+// backend option that MUST be set before load_method. Loads the prefill+decode
+// methods once (the heavy ~weights load). Called once when the engine is
+// created.
 Result<std::unique_ptr<Module>> build_qwen_module(
     const Qwen35MoEConfig& config) {
   std::vector<std::string> data_files;
@@ -187,8 +188,8 @@ class Qwen35MoESession : public LLMSession {
         tokenizer_(tokenizer),
         metadata_(std::move(metadata)),
         eos_ids_(std::move(eos_ids)) {
-    // Persistent single-step decode buffers: stable addresses are required so
-    // CUDA-graph capture (which records buffer pointers) can replay each step.
+    // Persistent single-step decode buffers, reused (updated in place) across
+    // decode steps to avoid per-step reallocation.
     decode_tokens_ = from_blob(
         decode_token_data_, {1, 1}, executorch::aten::ScalarType::Long);
     decode_pos_ =
@@ -457,7 +458,7 @@ class Qwen35MoESession : public LLMSession {
   float temperature_ = -1.0f;
   std::atomic<bool> stop_{false};
 
-  // Persistent single-step decode buffers (stable addresses for CUDA graph).
+  // Persistent single-step decode buffers (reused across decode steps).
   int64_t decode_token_data_[1] = {0};
   int64_t decode_pos_data_[1] = {0};
   TensorPtr decode_tokens_;
