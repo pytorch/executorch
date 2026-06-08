@@ -170,11 +170,28 @@ __global__ void __launch_bounds__(MV8_THREADS) int8_w8a8_matvec_kernel(
 }
 
 // ---------------------------------------------------------------------------
-// Persistent Q8 buffer (lazy init, not thread-safe — single-stream only)
+// Persistent Q8 buffer (lazy init, not thread-safe — single-stream only).
+// Freed at process exit via a static guard so leak detectors stay quiet; the
+// CUDA runtime would otherwise reclaim it on teardown anyway.
 // ---------------------------------------------------------------------------
 
 static Q8BlockNat* g_q8_buf_i8 = nullptr;
 static size_t g_q8_buf_i8_size = 0;
+
+namespace {
+struct Q8BufferGuardI8 {
+  ~Q8BufferGuardI8() {
+    if (g_q8_buf_i8) {
+      // Ignore errors: during process teardown the CUDA context may already be
+      // gone (cudaErrorCudartUnloading), which is harmless here.
+      cudaFree(g_q8_buf_i8);
+      g_q8_buf_i8 = nullptr;
+      g_q8_buf_i8_size = 0;
+    }
+  }
+};
+Q8BufferGuardI8 g_q8_buf_i8_guard;
+} // namespace
 
 static Q8BlockNat* get_q8_buffer_i8(size_t needed) {
   if (g_q8_buf_i8_size < needed) {
@@ -226,9 +243,10 @@ inline void _int8_plain_mm_cuda(
       gs,
       Q8_NAT_BLOCK_SIZE);
   ET_CHECK_MSG(
-      K >= 16 && K % 16 == 0,
-      "K=%d must be a positive multiple of 16 for dp4a int8 kernel",
-      K);
+      K >= Q8_NAT_BLOCK_SIZE && K % Q8_NAT_BLOCK_SIZE == 0,
+      "K=%d must be a positive multiple of %d for dp4a int8 kernel",
+      K,
+      Q8_NAT_BLOCK_SIZE);
 
   int32_t n_groups = K / gs;
 
