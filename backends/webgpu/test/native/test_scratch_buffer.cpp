@@ -14,6 +14,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -25,8 +26,8 @@ using namespace executorch::backends::webgpu;
 namespace {
 
 struct MapCb {
-  bool done = false;
-  WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
+  std::atomic<bool> done{false};
+  std::atomic<WGPUMapAsyncStatus> status{WGPUMapAsyncStatus_Error};
 };
 
 void map_cb(
@@ -35,8 +36,8 @@ void map_cb(
     void* userdata1,
     void* /*userdata2*/) {
   auto* d = static_cast<MapCb*>(userdata1);
-  d->status = status;
-  d->done = true;
+  d->status.store(status, std::memory_order_release);
+  d->done.store(true, std::memory_order_release);
 }
 
 // Copy `src` (must carry CopySrc) into a staging buffer and read it back.
@@ -68,12 +69,14 @@ std::vector<float> readback(
   wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, nbytes, ci);
   // Bounded poll so a never-delivered callback fails the test instead of
   // hanging forever (~5s at 50us/spin).
-  for (int spins = 0; !cb.done && spins < 100000; ++spins) {
+  for (int spins = 0;
+       !cb.done.load(std::memory_order_acquire) && spins < 100000;
+       ++spins) {
     webgpu_poll(instance);
   }
 
   std::vector<float> out(nbytes / sizeof(float));
-  if (cb.status == WGPUMapAsyncStatus_Success) {
+  if (cb.status.load(std::memory_order_acquire) == WGPUMapAsyncStatus_Success) {
     const void* m = wgpuBufferGetConstMappedRange(staging, 0, nbytes);
     std::memcpy(out.data(), m, nbytes);
     wgpuBufferUnmap(staging);

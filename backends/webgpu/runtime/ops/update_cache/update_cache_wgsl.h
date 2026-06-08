@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from update_cache.wgsl - DO NOT EDIT.
-// wgsl-sha256: 4a8cf6bf45bab3f3718dc3505e8f16bfea7130da2749010e3d0dffa631f84d8e
+// wgsl-sha256: 994cac9bab0ed25c9c82d54af77d9bbbe34e49419e916d0164c9cf0e5b199c6a
 inline constexpr const char* kUpdateCacheWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_cache: array<f32>;
 @group(0) @binding(1) var<storage, read> t_value: array<f32>;
@@ -26,7 +26,7 @@ struct Params {
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
-override wg_size: u32 = 64;
+override wg_size: u32 = 256;
 
 @compute @workgroup_size(wg_size, 1, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -41,7 +41,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 )";
 
-inline constexpr uint32_t kUpdateCacheWorkgroupSizeX = 64;
+inline constexpr uint32_t kUpdateCacheWorkgroupSizeX = 256;
 inline constexpr uint32_t kUpdateCacheWorkgroupSizeY = 1;
 inline constexpr uint32_t kUpdateCacheWorkgroupSizeZ = 1;
 
