@@ -65,10 +65,9 @@ class RunnerPool:
         self._executor = ThreadPoolExecutor(max_workers=n)
 
     @asynccontextmanager
-    async def acquire(self, prompt: str = ""):
-        # `prompt` is accepted for call-site compatibility but unused: with no
-        # prefix cache there is no affinity routing — any idle worker will do.
-        del prompt
+    async def acquire(self):
+        # No prefix cache, so no affinity routing — any idle worker will do.
+        # (V2 routes by session_id, not by prompt.)
         async with self._cond:
             while all(self._busy):
                 await self._cond.wait()
