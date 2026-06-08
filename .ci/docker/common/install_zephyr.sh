@@ -53,14 +53,13 @@ install_prerequiresites() {
 
     # Upgrade cmake ot 3.24
     apt update
-    apt install cmake
-    apt install software-properties-common lsb-release
+    apt install -y software-properties-common lsb-release
     apt update
     test -f /usr/share/doc/kitware-archive-keyring/copyright || \
         wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
     echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/kitware.list > /dev/null
     apt update
-    apt install cmake
+    apt install -y cmake
 
     # Install additional required software for Zephyr
     apt install --no-install-recommends -y ccache \
