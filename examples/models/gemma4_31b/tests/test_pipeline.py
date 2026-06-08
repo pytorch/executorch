@@ -232,6 +232,16 @@ def build_gguf_checkpoint(path: str, config: Gemma4_31BConfig = GGUF_CONFIG) -> 
         else:
             arr = (torch.randn(tuple(p.shape), dtype=torch.float32) * 0.1).numpy()
             writer.add_tensor(gguf_key, arr)
+    # Per-layer scalars are buffers (not parameters) but are stored in real
+    # GGUFs (e.g. blk.N.layer_output_scale.weight). Write the ones that have a
+    # GGUF mapping so they load as bf16; runtime buffers (RoPE, KV cache, ...)
+    # map to None and are skipped.
+    for fqn, b in model.named_buffers():
+        gguf_key = _model_to_gguf_key(fqn)
+        if gguf_key is None:
+            continue
+        arr = torch.ones(tuple(b.shape), dtype=torch.float32).numpy()
+        writer.add_tensor(gguf_key, arr)
     writer.write_header_to_file()
     writer.write_kv_data_to_file()
     writer.write_tensors_to_file()
