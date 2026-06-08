@@ -36,12 +36,13 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
     def _is_dynamic_padding(
         self, padding: ProxyValue | list[int] | tuple[int, ...]
     ) -> bool:
-        return (isinstance(padding, ProxyValue) and is_shape_op_node(padding.node)) or (
-            (
-                isinstance(padding, (list, tuple))
-                and any(isinstance(p, torch.SymInt) for p in padding)
+        if isinstance(padding, ProxyValue) and is_shape_op_node(padding.node):
+            return True
+        if isinstance(padding, (list, tuple)):
+            return any(
+                isinstance(p, (torch.SymInt, ProxyValue)) for p in padding
             )
-        )
+        return False
 
     def call_operator(self, op, args, kwargs, meta, updated=False) -> ProxyValue:
         if op not in self.target_ops:

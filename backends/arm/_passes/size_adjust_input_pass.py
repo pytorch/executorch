@@ -233,10 +233,29 @@ class SizeAdjustInputPass(ArmPass):
 
             parent_node = node.args[0]
             with graph_module.graph.inserting_before(node):
+                # ``Graph.create_node`` rejects raw SymInts in
+                # call_function args. Aggregate every slice arg across
+                # all entries and lift via a single ``materialize_symints``
+                # call -- the helper walks the graph once for producer
+                # discovery, so a single call amortises that cost and lets
+                # symints with shared sub-expressions get hash-consed into
+                # one subgraph. Plain ints pass through unchanged.
+                flat = [a for args in slice_args for a in args]
+                materialized = iter(graph.materialize_symints(flat))
+                # Pop exactly len(args) values from the materialized iterator
+                # and pack them back into a tuple -- regroups the flat list
+                # of lifted values into the original (dim, start, end) shape.
+                lifted_slice_args = [
+                    tuple(next(materialized) for _ in args) for args in slice_args
+                ]
+
                 last_node = cast(torch.fx.Node, parent_node)
-                for args in slice_args:
+                for args in lifted_slice_args:
                     slice_node = create_node(
-                        graph, slice_op, (last_node,) + args, from_node=node
+                        graph,
+                        slice_op,
+                        (last_node,) + args,
+                        from_node=node,
                     )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
