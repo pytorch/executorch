@@ -10,12 +10,13 @@
 #pragma once
 
 #include <c10/util/irange.h>
+#include <c10/util/overflows.h>
+#include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <numeric>
 #include <type_traits>
 /**
  * @file
@@ -168,7 +169,25 @@ inline void vec_addmm(
 /// Returns the sum of all elements in `x`, which must have `size` elements.
 template <typename T>
 inline float reduce_add(const T* x, size_t size) {
-  return std::accumulate(x, x + size, 0.f);
+  float sum = 0.f;
+  for (const auto i : c10::irange(size)) {
+    if constexpr (std::is_arithmetic_v<T>) {
+      ET_CHECK_MSG(
+          !c10::overflows<float>(x[i]),
+          "Float conversion overflow in reduce_add at index %zu",
+          static_cast<size_t>(i));
+    }
+    const float value = static_cast<float>(x[i]);
+    const float next = sum + value;
+    if (std::isfinite(sum) && std::isfinite(value)) {
+      ET_CHECK_MSG(
+          std::isfinite(next),
+          "Float addition overflow in reduce_add at index %zu",
+          static_cast<size_t>(i));
+    }
+    sum = next;
+  }
+  return sum;
 }
 
 /// Returns the sum of the squares of all elements in `x`, which must have

@@ -66,6 +66,26 @@ TEST(VecScalefTest, Smoke) {
   EXPECT_EQ(out[4], 32);
 }
 
+TEST(ReduceAddTest, Smoke) {
+  constexpr size_t kNumVals = 5;
+  int64_t in[kNumVals] = {-2, -1, 0, 3, 7};
+
+  EXPECT_EQ(torch::executor::reduce_add(in, kNumVals), 7);
+}
+
+#if GTEST_HAS_DEATH_TEST
+TEST(ReduceAddTest, AdditionOverflowDies) {
+  float in[] = {
+      std::numeric_limits<float>::max(),
+      std::numeric_limits<float>::max(),
+  };
+
+  EXPECT_DEATH(
+      torch::executor::reduce_add(in, /*size=*/2),
+      "Float addition overflow");
+}
+#endif // GTEST_HAS_DEATH_TEST
+
 TEST(VecPowerfTest, Smoke) {
   constexpr size_t kNumVals = 5;
   float in[kNumVals] = {-2, -1, 0, 1, 2};

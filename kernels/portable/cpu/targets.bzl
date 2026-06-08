@@ -44,6 +44,7 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/core/portable_type/c10/c10:c10",
             "//executorch/runtime/platform:compiler",
+            "//executorch/runtime/platform:platform",
         ],
         srcs = [],
         exported_headers = ["vec_ops.h"],
