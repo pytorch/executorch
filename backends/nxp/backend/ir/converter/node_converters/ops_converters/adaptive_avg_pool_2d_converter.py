@@ -78,22 +78,19 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
             AdaptiveAvgPool2dConverter._get_equivalent_avg_pool_parameters(node)
         )
 
-        if neutron_target_spec.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
-            if not NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            ):
-                return False
+        if any(k > 4096 for k in kernel_size):
+            return False
 
-            if any(k > 4096 for k in kernel_size):
-                return False
-
-            if any(s > 4096 for s in stride):
-                return False
+        if any(s > 4096 for s in stride):
+            return False
 
         return True
 

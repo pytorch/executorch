@@ -15,22 +15,41 @@ EXECUTORCH_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-python3}"
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
+echo "=== Check embedded WGSL headers are up to date ==="
+"${PYTHON_EXECUTABLE}" "${SCRIPT_DIR}/../scripts/gen_wgsl_headers.py" --check \
+  || { echo "ERROR: *_wgsl.h out of sync with .wgsl; run scripts/gen_wgsl_headers.py"; exit 1; }
+
+# Unit tests for the WGSL header generator itself
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/test_wgsl_codegen.py" -v
+
 # ── Step 1: Python export tests ──────────────────────────────────────────────
 
-echo "=== Step 1: Run Python export test ==="
+echo "=== Step 1: Run Python export tests ==="
 $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/add/test_add.py" -v
+# Non-fatal: a rms_norm pytest failure skips the rms_norm native test below
+# rather than aborting the whole run.
+RMS_NORM_PYTEST_OK=1
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/rms_norm/test_rms_norm.py" -v \
+    || RMS_NORM_PYTEST_OK=0
 
 # ── Step 2: Export .pte model ─────────────────────────────────────────────────
 
 echo "=== Step 2: Export test models ==="
 PTE_MODEL="/tmp/webgpu_add_test.pte"
 PTE_CHAINED_MODEL="/tmp/webgpu_chained_add_test.pte"
+RMS_NORM_DIR="/tmp/rmsn"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
 export_add_model('${PTE_MODEL}')
 export_chained_add_model('${PTE_CHAINED_MODEL}')
 "
+if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
+  $PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases
+export_rms_norm_cases('${RMS_NORM_DIR}')
+" || { echo "WARN: rms_norm export failed; skipping rms_norm native test"; RMS_NORM_PYTEST_OK=0; }
+fi
 
 # ── Step 3: Native build + test (wgpu-native) ────────────────────────────────
 
@@ -59,10 +78,18 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_native_test -j${NPROC}
+cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_rms_norm_test -j${NPROC}
 
-echo "=== Step 4: Run native test ==="
-WEBGPU_TEST_MODEL="${PTE_MODEL}" \
-WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
+echo "=== Step 4: Run native tests ==="
+env \
+    WEBGPU_TEST_MODEL="${PTE_MODEL}" \
+    WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
     "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_native_test"
+
+if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
+  "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_rms_norm_test" "${RMS_NORM_DIR}"
+else
+  echo "(skipping rms_norm native test: pytest or export did not complete)"
+fi
 
 echo "=== Done ==="

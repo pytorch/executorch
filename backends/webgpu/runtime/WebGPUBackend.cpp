@@ -76,7 +76,7 @@ Result<DelegateHandle*> WebGPUBackend::init(
   }
 
   try {
-    graph->build(flatbuffer_data, constant_data);
+    graph->build(flatbuffer_data, constant_data, context.get_named_data_map());
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
