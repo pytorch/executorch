@@ -9,7 +9,7 @@ struct Params {
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
-override wg_size: u32 = 64;
+override wg_size: u32 = 256;
 
 @compute @workgroup_size(wg_size, 1, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
