@@ -24,6 +24,7 @@ def define_common_targets():
             ],
             visibility = ["PUBLIC"],
             deps = [
+                "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],

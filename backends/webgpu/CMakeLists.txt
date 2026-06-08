@@ -37,6 +37,17 @@ set(WEBGPU_SRCS
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
 
+# Verify committed *_wgsl.h match their *.wgsl (drift fails the build).
+resolve_python_executable()
+add_custom_target(
+  webgpu_wgsl_headers_check ALL
+  COMMAND "${PYTHON_EXECUTABLE}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_wgsl_headers.py" --check
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "Checking WebGPU embedded-WGSL headers are in sync"
+)
+add_dependencies(webgpu_backend webgpu_wgsl_headers_check)
+
 target_include_directories(
   webgpu_backend PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
 )
