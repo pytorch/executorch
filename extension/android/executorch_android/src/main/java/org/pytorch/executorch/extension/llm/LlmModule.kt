@@ -376,6 +376,11 @@ private constructor(
    * @param llmCallback callback object to receive results
    */
   fun generate(prompt: String, config: LlmGenerationConfig, llmCallback: LlmCallback) {
+    if (config.audioFilePath != null) {
+      prefillAudioFromFile(config.audioFilePath)
+    } else if (config.audioData != null) {
+      prefillAudio(config.audioData, config.audioBatchSize, config.audioNBins, config.audioNFrames)
+    }
     generate(
         null,
         0,
@@ -804,6 +809,260 @@ private constructor(
   ): Int
 
   /**
+   * Prefill the KV cache with pre-processed audio data from a direct [ByteBuffer] (uint8).
+   *
+   * This is the zero-copy counterpart to [prefillAudio] with [ByteArray]. For large audio inputs
+   * (e.g., multi-minute clips), using a direct ByteBuffer avoids the JNI array copy overhead.
+   *
+   * @param audio Direct ByteBuffer containing uint8 audio data (e.g., quantized mel spectrogram)
+   * @param batchSize Input batch size
+   * @param nBins Input number of frequency bins
+   * @param nFrames Input number of time frames
+   * @throws ExecutorchRuntimeException if the prefill failed
+   * @throws IllegalArgumentException if the buffer is not direct or too small
+   */
+  @Experimental
+  fun prefillAudio(audio: ByteBuffer, batchSize: Int, nBins: Int, nFrames: Int) {
+    mLock.lock()
+    try {
+      checkNotReentrant()
+      checkNotDestroyed()
+      require(audio.isDirect) { "Input ByteBuffer must be direct." }
+      val expectedBytes: Long
+      try {
+        val frames = Math.multiplyExact(batchSize.toLong(), nBins.toLong())
+        expectedBytes = Math.multiplyExact(frames, nFrames.toLong())
+      } catch (ex: ArithmeticException) {
+        throw IllegalArgumentException(
+            "batchSize*nBins*nFrames is too large and overflows the allowed range.", ex)
+      }
+      require(
+          batchSize > 0 && nBins > 0 && nFrames > 0 &&
+              expectedBytes <= Int.MAX_VALUE.toLong() &&
+              audio.remaining().toLong() >= expectedBytes
+      ) {
+        "ByteBuffer remaining (${audio.remaining()}) must be at least batchSize*nBins*nFrames ($expectedBytes)."
+      }
+      val nativeResult = prefillAudioInputBuffer(audio.slice(), batchSize, nBins, nFrames)
+      if (nativeResult != 0) {
+        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
+      }
+    } finally {
+      mLock.unlock()
+    }
+  }
+
+  private external fun prefillAudioInputBuffer(
+      audio: ByteBuffer,
+      batchSize: Int,
+      nBins: Int,
+      nFrames: Int,
+  ): Int
+
+  /**
+   * Prefill the KV cache with pre-processed float audio data from a direct [ByteBuffer].
+   *
+   * This is the zero-copy counterpart to [prefillAudio] with [FloatArray]. The buffer must contain
+   * float32 values in native byte order. Mirrors [prefillNormalizedImage] for image inputs.
+   *
+   * @param audio Direct ByteBuffer containing float32 audio data (e.g., mel spectrogram)
+   * @param batchSize Input batch size
+   * @param nBins Input number of frequency bins
+   * @param nFrames Input number of time frames
+   * @throws ExecutorchRuntimeException if the prefill failed
+   * @throws IllegalArgumentException if the buffer is not direct, wrong byte order, or too small
+   */
+  @Experimental
+  fun prefillNormalizedAudio(audio: ByteBuffer, batchSize: Int, nBins: Int, nFrames: Int) {
+    mLock.lock()
+    try {
+      checkNotReentrant()
+      checkNotDestroyed()
+      require(audio.isDirect) { "Input ByteBuffer must be direct." }
+      require(audio.order() == ByteOrder.nativeOrder()) {
+        "Input ByteBuffer must use native byte order (ByteOrder.nativeOrder())."
+      }
+      require(audio.position() % Float.SIZE_BYTES == 0) {
+        "Input ByteBuffer position (${audio.position()}) must be 4-byte aligned."
+      }
+      val expectedBytes: Long
+      try {
+        val bins = Math.multiplyExact(batchSize, nBins)
+        val elements = Math.multiplyExact(bins.toLong(), nFrames.toLong())
+        val totalBytes = Math.multiplyExact(elements, Float.SIZE_BYTES.toLong())
+        if (totalBytes > Int.MAX_VALUE.toLong()) {
+          throw IllegalArgumentException(
+              "ByteBuffer size (batchSize*nBins*nFrames*4) exceeds Integer.MAX_VALUE bytes: $totalBytes")
+        }
+        expectedBytes = totalBytes
+      } catch (e: ArithmeticException) {
+        throw IllegalArgumentException(
+            "Overflow while computing batchSize*nBins*nFrames*4 for ByteBuffer size.", e)
+      }
+      require(
+          batchSize > 0 && nBins > 0 && nFrames > 0 &&
+              audio.remaining().toLong() >= expectedBytes
+      ) {
+        "ByteBuffer remaining (${audio.remaining()}) must be at least batchSize*nBins*nFrames*4 ($expectedBytes)."
+      }
+      require(audio.remaining() % Float.SIZE_BYTES == 0) {
+        "ByteBuffer remaining (${audio.remaining()}) must be a multiple of 4 (float size)."
+      }
+      val nativeResult =
+          prefillNormalizedAudioInputBuffer(audio.slice(), batchSize, nBins, nFrames)
+      if (nativeResult != 0) {
+        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
+      }
+    } finally {
+      mLock.unlock()
+    }
+  }
+
+  private external fun prefillNormalizedAudioInputBuffer(
+      audio: ByteBuffer,
+      batchSize: Int,
+      nBins: Int,
+      nFrames: Int,
+  ): Int
+
+  /**
+   * Prefill the KV cache with raw PCM-16 audio samples.
+   *
+   * @param audio Input audio as 16-bit signed PCM samples
+   * @param batchSize Input batch size
+   * @param nChannels Input number of channels (1 for mono, 2 for stereo)
+   * @param nSamples Input number of samples per channel
+   * @throws ExecutorchRuntimeException if the prefill failed
+   */
+  @Experimental
+  fun prefillRawAudio(audio: ShortArray, batchSize: Int, nChannels: Int, nSamples: Int) {
+    mLock.lock()
+    try {
+      checkNotReentrant()
+      checkNotDestroyed()
+      val nativeResult = prefillRawAudioInputShort(audio, batchSize, nChannels, nSamples)
+      if (nativeResult != 0) {
+        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
+      }
+    } finally {
+      mLock.unlock()
+    }
+  }
+
+  private external fun prefillRawAudioInputShort(
+      audio: ShortArray,
+      batchSize: Int,
+      nChannels: Int,
+      nSamples: Int,
+  ): Int
+
+  /**
+   * Prefill the KV cache with raw float32 audio samples.
+   *
+   * @param audio Input audio as 32-bit float samples (typically normalized to [-1.0, 1.0])
+   * @param batchSize Input batch size
+   * @param nChannels Input number of channels (1 for mono, 2 for stereo)
+   * @param nSamples Input number of samples per channel
+   * @throws ExecutorchRuntimeException if the prefill failed
+   */
+  @Experimental
+  fun prefillRawAudio(audio: FloatArray, batchSize: Int, nChannels: Int, nSamples: Int) {
+    mLock.lock()
+    try {
+      checkNotReentrant()
+      checkNotDestroyed()
+      val nativeResult = prefillRawAudioInputFloat(audio, batchSize, nChannels, nSamples)
+      if (nativeResult != 0) {
+        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
+      }
+    } finally {
+      mLock.unlock()
+    }
+  }
+
+  private external fun prefillRawAudioInputFloat(
+      audio: FloatArray,
+      batchSize: Int,
+      nChannels: Int,
+      nSamples: Int,
+  ): Int
+
+  /**
+   * Prefill the KV cache with raw audio data from a direct [ByteBuffer].
+   *
+   * @param audio Direct ByteBuffer containing raw PCM audio bytes
+   * @param batchSize Input batch size
+   * @param nChannels Input number of channels
+   * @param nSamples Input number of samples
+   * @throws ExecutorchRuntimeException if the prefill failed
+   * @throws IllegalArgumentException if the buffer is not direct or too small
+   */
+  @Experimental
+  fun prefillRawAudio(audio: ByteBuffer, batchSize: Int, nChannels: Int, nSamples: Int) {
+    mLock.lock()
+    try {
+      checkNotReentrant()
+      checkNotDestroyed()
+      require(audio.isDirect) { "Input ByteBuffer must be direct." }
+      val expectedBytes: Long
+      try {
+        val channels = Math.multiplyExact(batchSize.toLong(), nChannels.toLong())
+        expectedBytes = Math.multiplyExact(channels, nSamples.toLong())
+      } catch (ex: ArithmeticException) {
+        throw IllegalArgumentException(
+            "batchSize*nChannels*nSamples is too large and overflows the allowed range.", ex)
+      }
+      require(
+          batchSize > 0 && nChannels > 0 && nSamples > 0 &&
+              expectedBytes <= Int.MAX_VALUE.toLong() &&
+              audio.remaining().toLong() >= expectedBytes
+      ) {
+        "ByteBuffer remaining (${audio.remaining()}) must be at least batchSize*nChannels*nSamples ($expectedBytes)."
+      }
+      val nativeResult =
+          prefillRawAudioInputBuffer(audio.slice(), batchSize, nChannels, nSamples)
+      if (nativeResult != 0) {
+        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
+      }
+    } finally {
+      mLock.unlock()
+    }
+  }
+
+  private external fun prefillRawAudioInputBuffer(
+      audio: ByteBuffer,
+      batchSize: Int,
+      nChannels: Int,
+      nSamples: Int,
+  ): Int
+
+  /**
+   * Prefill the KV cache with audio loaded from a WAV file.
+   *
+   * The WAV file is decoded natively (supports 16-bit PCM, 32-bit PCM, and 32-bit IEEE float).
+   * Audio samples are normalized to float and fed through the model's audio encoder.
+   *
+   * @param path Absolute path to a WAV file on disk
+   * @throws ExecutorchRuntimeException if the prefill failed or WAV decoding failed
+   */
+  @Experimental
+  fun prefillAudioFromFile(path: String) {
+    mLock.lock()
+    try {
+      checkNotReentrant()
+      checkNotDestroyed()
+      val nativeResult = prefillAudioFromFileNative(path)
+      if (nativeResult != 0) {
+        throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
+      }
+    } finally {
+      mLock.unlock()
+    }
+  }
+
+  private external fun prefillAudioFromFileNative(path: String): Int
+
+  /**
    * Prefill the KV cache with the given text prompt.
    *
    * @param prompt The text prompt to prefill.
@@ -874,6 +1133,7 @@ private constructor(
     const val MODEL_TYPE_TEXT = 1
     const val MODEL_TYPE_TEXT_VISION = 2
     const val MODEL_TYPE_MULTIMODAL = 2
+    const val MODEL_TYPE_TEXT_AUDIO = 5
 
     private const val DEFAULT_SEQ_LEN = 128
     private const val DEFAULT_ECHO = true
