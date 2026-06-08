@@ -885,6 +885,91 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = ExpM1()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_fp16a8w_conv2d(self):
+        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1]
+        modules = [
+            Conv2dSingle(  # noqa: F405
+                in_channel=2, out_channel=4, kernel_size=1, padding=0
+            ),
+            Conv2dSingle(  # noqa: F405
+                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+            ),
+        ]
+        sample_input = (torch.randn([1, 2, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    module, sample_input, quant_dtype=QuantDtype.use_fp16a8w
+                )
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_fp16a8w_conv2d_qat(self):
+        # fp16a8w QAT: FP16 activation + INT8 weight; weight kernel must be [1,1]
+        # QAT fake quantize (FusedMovingAvgObsFakeQuantize) requires float32 tensors,
+        modules = [
+            Conv2dSingle(  # noqa: F405
+                in_channel=2, out_channel=4, kernel_size=1, padding=0
+            ),
+            Conv2dSingle(  # noqa: F405
+                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+            ),
+        ]
+        sample_input = (torch.randn([1, 2, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                # QAT in float32
+                prepared = self.get_prepared_qat_module(
+                    module, sample_input, quant_dtype=QuantDtype.use_fp16a8w
+                )
+                module = self.get_converted_sgd_trained_module(
+                    module, prepared, sample_input
+                )
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_fp16a8w_linear(self):
+        # fp16a8w: FP16 activation + INT8 weight for linear (per-channel weight quantization)
+        modules = [Linear(), Linear(use_bias=False)]  # noqa: F405
+        sample_input = (torch.randn([1, 512]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=QuantDtype.use_fp16a8w,
+                    is_linear_per_channel=True,
+                )
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_fp16a8w_simple_model(self):
+        module = SimpleModel(kernel_size=1)  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_fp16a8w,
+            is_linear_per_channel=True,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_fp16a8w_fp16_simple_model(self):
+        module = SimpleModel(kernel_size=1).to(torch.float16)  # noqa: F405
+        sample_input = (
+            torch.ones(1, 32, 28, 28, dtype=torch.float16),
+            torch.ones(1, 32, 28, 28, dtype=torch.float16),
+        )
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_fp16a8w,
+            is_linear_per_channel=True,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_fill(self):
+        module = Fill(3.14)  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_flip(self):
         sample_input = (torch.randn(3, 4, 5, 6),)
         module = Flip()  # noqa: F405
@@ -2547,6 +2632,47 @@ class TestQNNQuantizedOperator(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.41"),
+        "UT pass after QNN 2.41.",
+    )
+    def test_qnn_backend_16a2w_conv2d(self):
+        modules = [Conv2dSingle(), Conv2dSingle(bias=False)]  # noqa: F405
+        torch.manual_seed(8)
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    is_linear_per_channel=True,
+                    quant_dtype=QuantDtype.use_16a2w,
+                )
+                self.lower_module_and_test_output(qdq_module, sample_input)
+
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.41"),
+        "UT pass after QNN 2.41.",
+    )
+    def test_qnn_backend_16a2w_linear(self):
+        torch.manual_seed(8)
+        sample_input = (torch.randn([3, 512]),)
+        for i, (per_channel, use_bias) in enumerate(
+            [
+                (True, False),
+                (True, True),
+            ]
+        ):
+            with self.subTest(i=i):
+                module = Linear(use_bias=use_bias)  # noqa: F405
+                qdq_module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    is_linear_per_channel=per_channel,
+                    quant_dtype=QuantDtype.use_16a2w,
+                )
+                self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_16a4w_conv2d(self):
         modules = [Conv2dSingle(), Conv2dSingle(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
@@ -3503,6 +3629,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
         module = ExpM1()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_fill(self):
+        module = Fill(3.14)  # noqa: F405
+        sample_input = (torch.randn(1, 2, 3, 4),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -7517,6 +7649,11 @@ class TestExampleLLMScript(TestQNN):
             case "sqnr":
                 cmds.extend(
                     [
+                        "--skip_user_prompt_calibration",
+                        "--tasks",
+                        "wikitext",
+                        "--limit",
+                        "1",
                         "--eval_methods",
                         "sqnr_eval",
                     ]

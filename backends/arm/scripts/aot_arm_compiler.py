@@ -531,6 +531,51 @@ def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
         )
         with open(delegation_file_path, "w") as file:
             file.write(delegation_info_string)
+    print_delegation_summary(delegation_info, intermediate_files_folder)
+
+
+def print_delegation_summary(
+    delegation_info,
+    intermediate_files_folder: Optional[str] = None,
+) -> None:
+    non_delegated_ops = sorted(
+        (
+            (breakdown.op_type, breakdown.non_delegated)
+            for breakdown in delegation_info.delegation_by_operator.values()
+            if breakdown.non_delegated > 0
+        ),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+    summary_lines = ["Delegation summary:"]
+    if delegation_info.num_delegated_nodes == 0:
+        summary_lines.append("  Model was not delegated.")
+    elif delegation_info.num_non_delegated_nodes == 0:
+        summary_lines.append("  Model was fully delegated.")
+    else:
+        summary_lines.append("  Model was partially delegated.")
+
+    summary_lines.append(
+        f"  Delegated partitions for silicon acceleration: {delegation_info.num_delegated_subgraphs}"
+    )
+    summary_lines.append(
+        f"  Non-delegated ops: {delegation_info.num_non_delegated_nodes}"
+    )
+
+    if non_delegated_ops:
+        summary_lines.append("  Non-delegated operators:")
+        for op_type, count in non_delegated_ops:
+            summary_lines.append(f"    - {op_type}: {count}")
+
+    if intermediate_files_folder is not None:
+        delegation_file_path = os.path.join(
+            intermediate_files_folder, "delegation_info.txt"
+        )
+        summary_lines.append("")
+        summary_lines.append("Full delegation report:")
+        summary_lines.append(f"  {delegation_file_path}")
+
+    print("\n".join(summary_lines))
 
 
 def _get_args():

@@ -426,6 +426,7 @@ fbcode_target(_kind = runtime.python_library,
     typing = True,
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/transforms:permute_pass_utils",
         "//pytorch/ao:torchao",
     ],
 )

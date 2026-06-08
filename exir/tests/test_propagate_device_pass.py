@@ -7,102 +7,30 @@
 import operator
 import unittest
 from copy import deepcopy
-from typing import Dict, final, List, NamedTuple, Optional
+from typing import List, NamedTuple, Optional
 
 # Import to register et_copy ops
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
 
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
-from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
-    generate_pattern_op_partitions,
-)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.backend.partitioner import (
-    DelegationSpec,
-    Partitioner,
-    PartitionResult,
-)
-from executorch.exir.backend.test.backend_with_compiler_demo import (
-    BackendWithCompilerDemo,
+from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.backend.test.device_util import (
+    CpuOnlyPartitioner,
+    DeviceAwarePartitioner,
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
+    PropagateDeviceConfig,
     TARGET_DEVICE_COMPILE_SPEC_KEY,
 )
 from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import TensorSpec
 from torch.export import export
-from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
-
-
-class AddOperatorSupport(OperatorSupportBase):
-    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        return node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.add.Tensor,
-        ]
-
-
-@final
-class DeviceAwarePartitioner(Partitioner):
-    def __init__(self, target_device: str = "cuda:0") -> None:
-        super().__init__()
-        self.op_support = any_chain(AddOperatorSupport())
-        self.delegation_spec = DelegationSpec(
-            BackendWithCompilerDemo.__name__,
-            [
-                CompileSpec("max_value", bytes([4])),
-                CompileSpec(
-                    TARGET_DEVICE_COMPILE_SPEC_KEY,
-                    target_device.encode("utf-8"),
-                ),
-            ],
-        )
-
-    def partition(self, exported_program) -> PartitionResult:
-        partition_tags: Dict[str, DelegationSpec] = {}
-        partition_list = generate_pattern_op_partitions(
-            exported_program.graph_module, op_support=self.op_support
-        )
-        for partition in partition_list:
-            for node in partition.nodes:
-                delegation_tag = f"tag{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
-                partition_tags[delegation_tag] = self.delegation_spec
-        return PartitionResult(
-            tagged_exported_program=exported_program,
-            partition_tags=partition_tags,
-        )
-
-
-@final
-class CpuOnlyPartitioner(Partitioner):
-    def __init__(self) -> None:
-        super().__init__()
-        self.op_support = any_chain(AddOperatorSupport())
-        self.delegation_spec = DelegationSpec(
-            BackendWithCompilerDemo.__name__,
-            [CompileSpec("max_value", bytes([4]))],
-        )
-
-    def partition(self, exported_program) -> PartitionResult:
-        partition_tags: Dict[str, DelegationSpec] = {}
-        partition_list = generate_pattern_op_partitions(
-            exported_program.graph_module, op_support=self.op_support
-        )
-        for partition in partition_list:
-            for node in partition.nodes:
-                delegation_tag = f"tag{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
-                partition_tags[delegation_tag] = self.delegation_spec
-        return PartitionResult(
-            tagged_exported_program=exported_program,
-            partition_tags=partition_tags,
-        )
 
 
 class DeviceCopyNodes(NamedTuple):
@@ -121,6 +49,7 @@ def _lower_model_to_executorch(
     """Lower model all the way through to_executorch for E2E tests."""
     if et_config is None:
         et_config = ExecutorchBackendConfig(emit_stacktrace=False)
+
     ep = export(model, inputs)
     ep_copied = deepcopy(ep)
 
@@ -314,7 +243,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 nodes = _collect_device_copy_nodes(gm)
@@ -371,7 +303,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 nodes = _collect_device_copy_nodes(gm)
@@ -444,6 +379,24 @@ class TestPropagateDevicePass(unittest.TestCase):
                     0,
                     f"[{pipeline}] Unexpected D2H copy nodes when no target_device is set",
                 )
+
+    def test_copy_nodes_require_non_cpu_memory_planning(self):
+        """Default lowering keeps legacy device tags without runtime copy ops."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model, inputs, DeviceAwarePartitioner("cuda:0")
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(device_copy_nodes.h2d_nodes), 0)
+                self.assertEqual(len(device_copy_nodes.d2h_nodes), 0)
 
         # ---- Integration tests: device consistency after to_executorch ----
 
@@ -523,7 +476,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 for node in gm.graph.nodes:
@@ -738,7 +694,9 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
             enable_non_cpu_memory_planning=True,
         )
 
@@ -794,7 +752,9 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_d2h_for_method_outputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_d2h_for_method_outputs=True
+            ),
             enable_non_cpu_memory_planning=True,
         )
 
@@ -848,8 +808,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
-            skip_d2h_for_method_outputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True,
+                skip_d2h_for_method_outputs=True,
+            ),
             enable_non_cpu_memory_planning=True,
         )
 
@@ -924,7 +886,9 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            skip_h2d_for_method_inputs=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
             enable_non_cpu_memory_planning=True,
         )
 

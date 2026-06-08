@@ -577,6 +577,12 @@ def _build_parser():
         help="Enable automatic quant recipe suggestion in PTQ",
     )
 
+    parser.add_argument(
+        "--skip_user_prompt_calibration",
+        action="store_true",
+        help="Skip using user prompt for calibration. Useful when only dataset-based calibration is desired.",
+    )
+
     return parser
 
 
@@ -676,6 +682,9 @@ def export_llama(args) -> None:
     assert (
         not is_multimodal or args.use_attention_sink is None
     ), "Multimodal models currently do not support attention sink feature."
+    assert (
+        not is_multimodal or not args.skip_user_prompt_calibration
+    ), "--skip_user_prompt_calibration is not supported for multimodal models (VLM/ALM) as they do not support task-based calibration yet."
 
     if args.pre_gen_pte:
         text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
