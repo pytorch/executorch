@@ -42,6 +42,7 @@
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -466,6 +467,10 @@ class ET_EXPERIMENTAL CudaBackend final
           kCudaGraphWarmupSteps);
     }
 
+    // Record whether this AOTI build exposes the constant-management symbols
+    // needed for per-session mutable-buffer rebinding (CUDA V2 multi-session).
+    mutable_state_note_handle(handle);
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -513,6 +518,12 @@ class ET_EXPERIMENTAL CudaBackend final
           i,
           static_cast<int>(device_type));
     }
+
+    // CUDA V2 multi-session: if a logical session is active on this thread,
+    // rebind this container's mutable constants (KV/conv/recurrent) to the
+    // session's own GPU buffers before running. No-op for
+    // single-session/legacy.
+    ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
 
     // ---------------------------------------------------------------
     // CUDA graph REPLAY path — skip all tensor setup and just replay

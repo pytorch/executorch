@@ -67,7 +67,7 @@ list(APPEND link_libraries tokenizers::tokenizers)
 
 add_executable(qwen3_5_moe_runner main.cpp qwen35_moe_engine.cpp)
 target_include_directories(
-  qwen3_5_moe_runner PUBLIC ${_common_include_directories}
+  qwen3_5_moe_runner PUBLIC ${_common_include_directories} ${_json_include}
 )
 target_link_libraries(qwen3_5_moe_runner PUBLIC ${link_libraries})
 

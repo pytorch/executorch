@@ -33,7 +33,6 @@
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for the CUDA backend.");
-DEFINE_bool(cuda_graph, false, "Enable CUDA graph for the decode method.");
 
 namespace {
 namespace llm = ::executorch::extension::llm;
@@ -53,7 +52,6 @@ int main(int argc, char** argv) {
   config.model_path = FLAGS_model_path;
   config.data_path = FLAGS_data_path;
   config.tokenizer_path = FLAGS_tokenizer_path;
-  config.cuda_graph = FLAGS_cuda_graph;
 
   auto engine_result = llm::Qwen35MoEEngine::create(config);
   if (engine_result.error() != Error::Ok) {

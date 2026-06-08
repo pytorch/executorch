@@ -145,12 +145,14 @@ Visual and MTP keys are skipped. `lm_head.weight` is cloned from
 any harness) drive the model without knowing it is Qwen-MoE or CUDA.
 
 - **`Qwen35MoEEngine`** owns immutable resources (tokenizer, metadata, EOS ids,
-  config). `create_session()` builds a `Module` with `share_memory_arenas=true`
-  and, on CUDA, sets the backend options that must precede `load_method`
-  (`weight_sharing_across_methods`, optional `enable_cuda_graph_for_method`),
-  then loads the `prefill`/`decode` methods. `serving_capacity()` reports a
-  single physical session — cross-session weight sharing is not yet proven, so
-  it fails closed to 1.
+  config) and one shared `Module` (`share_memory_arenas=true`, plus on CUDA the
+  `weight_sharing_across_methods` backend option set before `load_method`), then
+  loads the `prefill`/`decode` methods once. `create_session()` returns a session
+  that shares that one model but owns its own per-session mutable state
+  (KV/conv/recurrent), rebound before execute under the engine lock.
+  `serving_capacity()` reports how many such sessions fit without duplicating
+  weights (or 1 if the backend can't rebind). The serving path is still
+  single-slot until the worker exposes multi-session.
 - **`Qwen35MoESession`** owns the mutable conversation state (KV / conv /
   recurrent arenas via the Module, position cursor, pending token).
   `prefill_tokens` dispatches to `prefill` (T≥2) or `decode` (T==1);

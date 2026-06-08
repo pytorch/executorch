@@ -105,9 +105,11 @@ runtime.cxx_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.cpp",
+        "cuda_mutable_state.cpp",
     ],
     headers = [
         "cuda_delegate_handle.h",
+        "cuda_mutable_state.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,
