@@ -28,6 +28,7 @@ from executorch.examples.models.gemma4_31b.export import (
     export_and_lower,
     load_prequantized_model,
 )
+from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
 from executorch.examples.models.gemma4_31b.inference import _move_to_cuda, generate
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
@@ -36,8 +37,10 @@ from executorch.examples.models.gemma4_31b.quant import (
     quantize_model,
 )
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
+    build_gguf_checkpoint,
     build_hf_checkpoint,
     DEFAULT_RECIPE,
+    GGUF_CONFIG,
     MockTokenizer,
     save_checkpoint,
     TINY_CONFIG,
@@ -223,6 +226,57 @@ class TestInt4Inference(unittest.TestCase):
         tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
         emb = self.model.embed_tokens(tok)
         self.assertFalse(emb.isnan().any())
+
+
+class TestGgufCudaPipeline(unittest.TestCase):
+    """GGUF -> CUDA load -> inference -> export (mirrors TestGgufLinearMlx)."""
+
+    def setUp(self):
+        _require_cuda(self)
+        try:
+            import gguf  # noqa: F401
+        except ImportError:
+            self.skipTest("gguf package required")
+
+    def _load(self, tmp):
+        path = os.path.join(tmp, "tiny.gguf")
+        build_gguf_checkpoint(path)
+        return load_gguf_model(path, backend="cuda", config=GGUF_CONFIG)
+
+    def test_load_converts_weights(self):
+        """GGUF -> CUDA: Q4_K -> Int4Tensor, Q6_K -> IntxUnpacked, embedding bf16."""
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model, _ = self._load(tmp)
+
+        self.assertIsInstance(model.layers[0].self_attn.q_proj.weight.data, Int4Tensor)
+        self.assertIsInstance(
+            model.layers[0].mlp.down_proj.weight.data, IntxUnpackedToInt8Tensor
+        )
+        # Token embedding is dequantized to bf16 (Int4/Intx can't gather).
+        self.assertEqual(model.embed_tokens.weight.dtype, torch.bfloat16)
+
+    def test_generate(self):
+        """GGUF -> CUDA -> eager generate produces valid tokens (inference.py)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            model, config = self._load(tmp)
+        _move_to_cuda(model, config)
+        model.eval()
+        tokenizer = MockTokenizer(GGUF_CONFIG.vocab_size)
+
+        torch.manual_seed(0)
+        out = generate(model, tokenizer, prompt="hi", max_new_tokens=3, temperature=1.0)
+        self.assertIsInstance(out, str)
+        self.assertGreater(len(out), 0)
+
+    def test_export(self):
+        """GGUF -> CUDA -> export_and_lower produces a .pte (export.py)."""
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as out_dir:
+            model, config = self._load(tmp)
+            export_and_lower(model, config, out_dir)
+            self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
 
 if __name__ == "__main__":

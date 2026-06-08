@@ -13,6 +13,7 @@ on:
       - backends/mlx/**
       - extension/llm/export/**
       - extension/audio/**
+      - examples/models/gemma4_31b/**
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
@@ -78,6 +79,7 @@ jobs:
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
           backends/mlx/test/test_serialization_dedup.py \
+          examples/models/gemma4_31b/quant/tests/test_pack_mlx.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"

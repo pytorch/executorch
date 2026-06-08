@@ -87,11 +87,6 @@ def _validate_no_meta(model):
         p.requires_grad_(False)
 
 
-def _is_embedding(model, model_key: str) -> bool:
-    parent = model.get_submodule(model_key.rsplit(".", 1)[0])
-    return isinstance(parent, torch.nn.Embedding)
-
-
 def _convert_weight(model, model_key: str, gtensor, backend: str):
     """Convert an ``ExportableGGUFTensor`` to the per-backend module weight."""
     if backend == "mlx":
@@ -121,6 +116,7 @@ def load_gguf_model(
     gguf_path: str,
     max_seq_len: int = 4096,
     backend: str = "cuda",
+    config=None,
 ) -> tuple:
     """Load a GGUF file, remap keys, and convert weights for the target backend.
 
@@ -129,6 +125,9 @@ def load_gguf_model(
     they are untied so the embedding can be dequantized for the gather while
     ``lm_head`` keeps its quantization. See the module docstring for the
     per-backend conversion details.
+
+    ``config`` defaults to the full Gemma 4 31B config; pass a smaller
+    ``Gemma4_31BConfig`` (e.g. in tests) to load a GGUF for a tiny model.
 
     Returns ``(model, config)``.
     """
@@ -147,7 +146,8 @@ def load_gguf_model(
     else:
         raise ValueError(f"Unsupported backend: {backend!r}. Supported: 'cuda', 'mlx'.")
 
-    config = Gemma4_31BConfig(max_seq_len=max_seq_len)
+    if config is None:
+        config = Gemma4_31BConfig(max_seq_len=max_seq_len)
 
     print("Building model on meta device...")
     with torch.device("meta"):

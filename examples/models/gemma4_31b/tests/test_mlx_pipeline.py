@@ -30,8 +30,10 @@ from executorch.examples.models.gemma4_31b.quant import (
     QuantRule,
 )
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
+    build_gguf_checkpoint,
     build_random_tiny_model,
     config_dict,
+    GGUF_CONFIG,
     save_checkpoint,
     TINY_CONFIG,
 )
@@ -483,6 +485,46 @@ class TestInt4Mlx(unittest.TestCase):
             (torch.randint(0, vocab, (4,), dtype=torch.int64),),
             ("dequantize_int4_tensor", "embedding"),
         )
+
+
+class TestGgufLoadMlx(unittest.TestCase):
+    """GGUF file -> load_gguf_model(mlx) -> export (parity with the CUDA test)."""
+
+    def setUp(self):
+        try:
+            import gguf  # noqa: F401
+        except ImportError:
+            self.skipTest("gguf package required")
+
+    def _load(self, tmp):
+        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+
+        path = os.path.join(tmp, "tiny.gguf")
+        build_gguf_checkpoint(path)
+        return load_gguf_model(path, backend="mlx", config=GGUF_CONFIG)
+
+    def test_load_keeps_gguf_tensors_and_ties_lm_head(self):
+        """MLX keeps weights as ExportableGGUFTensor; lm_head stays tied."""
+        from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model, _ = self._load(tmp)
+
+        self.assertIsInstance(
+            model.layers[0].self_attn.q_proj.weight.data, ExportableGGUFTensor
+        )
+        self.assertIsInstance(model.embed_tokens.weight.data, ExportableGGUFTensor)
+        # GGUF ties embed/lm_head; on MLX they share the one quantized tensor.
+        self.assertIs(model.lm_head.weight.data, model.embed_tokens.weight.data)
+
+    def test_export(self):
+        """GGUF -> MLX load -> export_and_lower produces a .pte (export.py)."""
+        from executorch.examples.models.gemma4_31b.export import export_and_lower
+
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as out_dir:
+            model, config = self._load(tmp)
+            export_and_lower(model, config, out_dir, backend="mlx")
+            self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
 
 if __name__ == "__main__":

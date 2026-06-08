@@ -158,6 +158,86 @@ def build_hf_checkpoint(output_dir: str) -> None:
         json.dump(config_dict(), f)
 
 
+# GGUF-friendly tiny config: Q4_K/Q6_K need in-features that are multiples of 256,
+# so hidden/intermediate are 256. Two layers exercises a sliding + a global layer.
+GGUF_CONFIG = Gemma4_31BConfig(
+    vocab_size=256,
+    hidden_size=256,
+    intermediate_size=256,
+    num_hidden_layers=2,
+    num_attention_heads=2,
+    num_key_value_heads=1,
+    head_dim=256,
+    global_head_dim=512,
+    sliding_window=16,
+    max_seq_len=64,
+)
+
+
+def _model_to_gguf_key(fqn: str):
+    """Invert ``gguf_loader._KEY_MAP`` (model FQN -> GGUF tensor name)."""
+    from executorch.examples.models.gemma4_31b.gguf_loader import _KEY_MAP
+
+    for gguf_pat, model_pat in _KEY_MAP.items():
+        if "{}" not in model_pat:
+            if fqn == model_pat:
+                return gguf_pat
+            continue
+        prefix, suffix = model_pat.split("{}")
+        if fqn.startswith(prefix) and fqn.endswith(suffix):
+            idx = fqn[len(prefix) : len(fqn) - len(suffix)]
+            if idx.isdigit():
+                return gguf_pat.replace("{}", idx)
+    return None
+
+
+def build_gguf_checkpoint(path: str, config: Gemma4_31BConfig = GGUF_CONFIG) -> None:
+    """Write a tiny GGUF file matching ``config``.
+
+    Linears are Q4_K; ``ffn_down`` / ``token_embd`` are Q6_K (to exercise both
+    GGUF unpack paths); norms / scalars are F32. Tensor shapes are derived from
+    the instantiated model so per-layer-type differences (e.g. global layers
+    having no v_proj / q_norm) are handled automatically. ``output.weight`` is
+    omitted -- GGUF ties lm_head to the token embedding. Requires the ``gguf``
+    package.
+    """
+    import gguf
+    from executorch.extension.llm.export.gguf import QK_K
+    from executorch.extension.llm.export.test.test_gguf import (
+        _make_q4k_raw,
+        _make_q6k_raw,
+    )
+
+    with torch.device("meta"):
+        model = Gemma4_31B(config)
+
+    writer = gguf.GGUFWriter(path, "gemma")
+    for fqn, p in model.named_parameters():
+        gguf_key = _model_to_gguf_key(fqn)
+        if gguf_key is None:
+            continue
+        if p.dim() == 2:
+            N, K = int(p.shape[0]), int(p.shape[1])
+            nb = K // QK_K
+            use_q6 = gguf_key == "token_embd.weight" or gguf_key.endswith(
+                "ffn_down.weight"
+            )
+            blob = (_make_q6k_raw(N, nb) if use_q6 else _make_q4k_raw(N, nb)).numpy()
+            raw_dtype = (
+                gguf.GGMLQuantizationType.Q6_K
+                if use_q6
+                else gguf.GGMLQuantizationType.Q4_K
+            )
+            writer.add_tensor(gguf_key, blob, raw_dtype=raw_dtype)
+        else:
+            arr = (torch.randn(tuple(p.shape), dtype=torch.float32) * 0.1).numpy()
+            writer.add_tensor(gguf_key, arr)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+
+
 # ---------------------------------------------------------------------------
 # Tests (CPU only, no backend dependency)
 

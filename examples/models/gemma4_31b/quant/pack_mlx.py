@@ -83,13 +83,12 @@ def _regroup_intx(w: torch.Tensor, new_gs: int) -> torch.Tensor:
 def pack_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     """Pack a quantized weight for MLX.
 
-    ``Int4Tensor`` is converted to ``IntxUnpackedToInt8Tensor`` so the
-    default dispatch produces the ``dequantize_affine → linear`` pattern
-    MLX expects.  Regroups to a compatible group_size when needed (e.g.
-    per-axis group_size=5376 → group_size=128) since MLX's
-    ``parse_dequant_node`` only accepts group_size in {16, 32, 64, 128}.
-    Group sizes ≥ 32 use the fused ``QuantizedMatmulNode``; group_size=16
-    (e.g. GGUF Q6_K) falls back to ``DequantizeNode`` + matmul at export.
+    ``Int4Tensor`` is wrapped as ``ExportableInt4Tensor`` (exports to
+    ``dequantize_int4_tensor → linear/embedding``). ``IntxUnpackedToInt8Tensor``
+    is assigned directly, regrouped to a compatible group_size when needed (e.g.
+    per-axis group_size=5376 → 128) since MLX accepts group_size in
+    {16, 32, 64, 128}. Group sizes ≥ 32 use the fused ``QuantizedMatmulNode``;
+    group_size=16 (e.g. GGUF Q6_K) falls back to ``DequantizeNode`` + matmul.
     """
     from executorch.extension.llm.export.int4 import ExportableInt4Tensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
