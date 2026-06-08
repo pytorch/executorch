@@ -632,6 +632,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
         value = 0 if len(node.args) == 2 else node.args[2]
 
         arg_shape = input_node.meta["val"].shape
+        dtype = input_node.meta["val"].dtype
 
         # Convert orig_padding to a list for manipulation
         # pyre-ignore[6]: Argument type
@@ -663,7 +664,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         left_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 left_padding_node.meta = node.meta
             cat_tensors.append(left_padding_node)
@@ -683,7 +684,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         right_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 right_padding_node.meta = node.meta
             cat_tensors.append(right_padding_node)
