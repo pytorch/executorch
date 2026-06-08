@@ -167,6 +167,10 @@ test_run_ethos_u55() {
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py --bundleio
 
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U65"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py --bundleio
+
     # Cortex-M op tests
     echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U55)"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
