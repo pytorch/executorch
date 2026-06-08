@@ -116,8 +116,8 @@ class Gemma4KVCache(nn.Module):
             Tuple of (full_k, full_v) - returns entire cache
         """
         if self.use_index_copy:
-            self.k_cache.index_copy_(2, input_pos, k_val)
-            self.v_cache.index_copy_(2, input_pos, v_val)
+            self.k_cache.index_copy_(2, input_pos, k_val.to(self.k_cache.dtype))
+            self.v_cache.index_copy_(2, input_pos, v_val.to(self.v_cache.dtype))
         else:
             seq_len = k_val.size(2)
             start_pos = input_pos[0].item()

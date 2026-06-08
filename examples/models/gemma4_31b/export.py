@@ -182,7 +182,10 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     # Register Int4Tensor dispatch → executorch_cuda::int4_plain_mm shim
     import executorch.backends.cuda.int4_dispatch  # noqa: F401
 
-    materialize_runtime_buffers(model, dtype=torch.bfloat16)
+    # KV cache stored as fp8 (e5m2) to halve attention KV DRAM traffic on
+    # decode. e5m2 is the only Triton-computable fp8 on sm_80 (A100); e4m3fn
+    # requires sm_89+. SDPA kernels cast e5m2->bf16 on load (no math change).
+    materialize_runtime_buffers(model, dtype=torch.float8_e5m2)
 
     # Int4Tensor weights are used directly — no format conversion.
     # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).

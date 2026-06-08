@@ -199,6 +199,10 @@ int32_t aoti_torch_dtype_int64() {
   return 4; // PyTorch's int64 dtype code
 }
 
+int32_t aoti_torch_dtype_float8_e5m2() {
+  return 23; // PyTorch's float8_e5m2 dtype code
+}
+
 // Dtype utility function needed by Metal backend.
 // Returns the size of the dtype in bytes.
 size_t aoti_torch_dtype_element_size(int32_t dtype) {

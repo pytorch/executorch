@@ -688,12 +688,17 @@ def _validate_sdpa_inputs(
     """Validate SDPA input tensors and unsupported feature flags."""
     if not (query.is_cuda and key.is_cuda and value.is_cuda):
         raise RuntimeError("Q, K, V must be CUDA tensors.")
-    if (
-        query.dtype != torch.bfloat16
-        or key.dtype != torch.bfloat16
-        or value.dtype != torch.bfloat16
-    ):
-        raise RuntimeError("Expected bfloat16 inputs")
+    if query.dtype != torch.bfloat16:
+        raise RuntimeError("Expected bfloat16 query")
+    # K/V may be fp8 (KV-cache compression): kernels load them and cast to
+    # bf16 on the fly, so only the storage dtype differs. e5m2 is the only
+    # Triton-computable fp8 on sm_80 (A100); e4m3fn needs sm_89+.
+    _allowed_kv_dtypes = (torch.bfloat16, torch.float8_e5m2, torch.float8_e4m3fn)
+    if key.dtype not in _allowed_kv_dtypes or value.dtype not in _allowed_kv_dtypes:
+        raise RuntimeError(
+            f"Expected key/value dtype in {_allowed_kv_dtypes}; "
+            f"got key.dtype={key.dtype}, value.dtype={value.dtype}"
+        )
     if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
         raise RuntimeError(
             f"Expected 4D tensors shaped [B, H, L, D]; got "
@@ -1042,7 +1047,7 @@ def _sdpa_abstract(
     This just returns an empty tensor with the correct shape/dtype/device.
     """
     # Validate dtypes match
-    assert query.dtype == key.dtype == value.dtype, "Q, K, V must have the same dtype"
+    assert key.dtype == value.dtype, "K and V must have the same dtype"
     # Validate kqv's shape and get the output shape
     B, H_q, _H_kv, L_q, _, D_q, _ = _validate_qkv_shapes(query, key, value, enable_gqa)
 
@@ -1443,6 +1448,6 @@ def _sdpa_decode_splitk_abstract(
     enable_gqa: bool = False,
     phi: float = 5.0,
 ) -> torch.Tensor:
-    assert query.dtype == key.dtype == value.dtype, "Q, K, V must have the same dtype"
+    assert key.dtype == value.dtype, "K and V must have the same dtype"
     B, H_q, L_q, D = query.shape
     return torch.empty(B, H_q, L_q, D, dtype=query.dtype, device=query.device)

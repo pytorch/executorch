@@ -93,8 +93,8 @@ class RingKVCache(nn.Module):
             input_pos.shape[0] <= self.buf_size
         ), f"seq_len {input_pos.shape[0]} > buf_size {self.buf_size}"
         wrapped = input_pos % self.buf_size
-        self.k_cache.index_copy_(2, wrapped, k_val)
-        self.v_cache.index_copy_(2, wrapped, v_val)
+        self.k_cache.index_copy_(2, wrapped, k_val.to(self.k_cache.dtype))
+        self.v_cache.index_copy_(2, wrapped, v_val.to(self.v_cache.dtype))
         return self.k_cache, self.v_cache
 
 
@@ -338,6 +338,15 @@ class Gemma4Attention(nn.Module):
         # 1/sqrt(d) factor into their trained weights, so the standard SDPA
         # default of 1/sqrt(head_dim) would over-divide. enable_gqa lets the
         # kernel handle the head ratio without us materializing expanded K/V.
+        #
+        # KV may be stored as fp8 (cache compression). aten SDPA requires q/k/v
+        # to share a dtype at export, so cast K/V up to Q's dtype here. On the
+        # CUDA backend the Triton-replacement pass rewires the kernel to read the
+        # fp8 cache directly and DCE's this cast, so it adds no runtime DRAM
+        # traffic. For bf16 KV this is a no-op (dtypes already match).
+        if k.dtype != q.dtype:
+            k = k.to(q.dtype)
+            v = v.to(q.dtype)
         y = F.scaled_dot_product_attention(
             q,
             k,

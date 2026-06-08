@@ -78,6 +78,7 @@ AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_uint8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float8_e5m2();
 
 // ============================================================
 // Device Type Constants - Declarations

@@ -39,6 +39,7 @@ enum class ScalarType : int8_t {
   // QUInt8 = 13,
   // QInt32 = 14,
   BFloat16 = 15, // bfloat16
+  Float8_e5m2 = 23, // float8_e5m2 (1-byte)
   Undefined = -1,
 };
 
@@ -76,6 +77,8 @@ inline size_t elementSize(ScalarType t) {
       return sizeof(bool);
     case ScalarType::BFloat16:
       return sizeof(BFloat16);
+    case ScalarType::Float8_e5m2:
+      return 1; // 1 byte
     default:
       ET_CHECK_MSG(false, "Unknown ScalarType: %d", static_cast<int>(t));
   }
@@ -104,6 +107,8 @@ inline const char* toString(ScalarType t) {
       return "Bool";
     case ScalarType::BFloat16:
       return "BFloat16";
+    case ScalarType::Float8_e5m2:
+      return "Float8_e5m2";
     case ScalarType::Undefined:
       return "Undefined";
     default:
@@ -116,7 +121,7 @@ inline const char* toString(ScalarType t) {
 /// @return true if the scalar type is floating point, false otherwise.
 inline bool isFloatingType(ScalarType t) {
   return t == ScalarType::Half || t == ScalarType::Float ||
-      t == ScalarType::BFloat16;
+      t == ScalarType::BFloat16 || t == ScalarType::Float8_e5m2;
 }
 
 /// Checks if the scalar type is an integral type (including bool optionally).
@@ -159,6 +164,7 @@ inline bool isValidScalarType(ScalarType t) {
     case ScalarType::Float:
     case ScalarType::Bool:
     case ScalarType::BFloat16:
+    case ScalarType::Float8_e5m2:
       return true;
     default:
       return false;

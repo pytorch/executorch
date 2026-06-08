@@ -144,6 +144,10 @@ int32_t aoti_torch_dtype_bool() {
   return 11; // ScalarType::Bool
 }
 
+int32_t aoti_torch_dtype_float8_e5m2() {
+  return 23; // ScalarType::Float8_e5m2
+}
+
 // ============================================================
 // Device Type Constants - Implementations
 // ============================================================

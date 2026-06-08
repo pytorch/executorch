@@ -85,6 +85,40 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
     # for rows larger than this threshold.
     _TOPK_MAX_N = 4096
 
+    # fp8 dtypes a KV cache may be stored in (read by the SDPA kernels, which
+    # cast to bf16 on load). When the model feeds fp8 K/V through a bf16 cast to
+    # satisfy aten SDPA's same-dtype export check, we rewire the triton kernel to
+    # read the fp8 source directly (and DCE the now-dead cast).
+    _FP8_DTYPES = (torch.float8_e5m2, torch.float8_e4m3fn)
+
+    @staticmethod
+    def _unwrap_fp8_cast(arg):
+        """If ``arg`` is an fp8->bf16 dtype-conversion node, return its fp8
+        source; otherwise return ``arg`` unchanged.
+
+        The model casts fp8 KV up to bf16 only to pass aten SDPA's same-dtype
+        meta check during export. The triton SDPA kernels read fp8 natively, so
+        we point them at the fp8 source and let the bf16 cast become dead code.
+        """
+        if not isinstance(arg, Node) or arg.op != "call_function":
+            return arg
+        val = arg.meta.get("val")
+        if val is None or getattr(val, "dtype", None) != torch.bfloat16:
+            return arg
+        if not arg.args:
+            return arg
+        src = arg.args[0]
+        if not isinstance(src, Node):
+            return arg
+        src_val = src.meta.get("val")
+        if (
+            src_val is not None
+            and getattr(src_val, "dtype", None)
+            in ReplaceEdgeOpWithTritonOpPass._FP8_DTYPES
+        ):
+            return src
+        return arg
+
     @staticmethod
     def _pick_sdpa_kernel(node: Node):
         """Choose between standard SDPA and split-K flash-decoding.
@@ -157,8 +191,26 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
 
         triton_kernel_fn = EDGE_TO_TRITON_KERNELS[target]
 
+        args = node.args
+        dead_casts = []
         if target == exir_ops.edge.aten.scaled_dot_product_attention.default:
             triton_kernel_fn = self._pick_sdpa_kernel(node)
+            # Rewire fp8 K/V: read the fp8 cache directly instead of the bf16
+            # cast the model inserted to satisfy aten SDPA's export dtype check.
+            new_args = list(node.args)
+            for i in (1, 2):  # key, value
+                if i < len(new_args):
+                    src = self._unwrap_fp8_cast(new_args[i])
+                    if src is not new_args[i]:
+                        dead_casts.append(new_args[i])
+                        new_args[i] = src
+            args = tuple(new_args)
+            if dead_casts:
+                print(
+                    f"[FP8KV_REWIRE] {triton_kernel_fn}: rewired "
+                    f"{len(dead_casts)} K/V arg(s) to fp8 source",
+                    flush=True,
+                )
 
         # Create a new node with the Triton kernel
         with graph_module.graph.inserting_before(node):
@@ -166,7 +218,7 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             # We can call it directly
             new_node = graph_module.graph.call_function(
                 triton_kernel_fn,
-                args=node.args,
+                args=args,
                 kwargs=node.kwargs,
             )
 
@@ -178,3 +230,9 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
 
         # Remove the old node
         graph_module.graph.erase_node(node)
+
+        # Erase the now-dead bf16 casts we bypassed (only if fully unused), so
+        # they don't get codegen'd into a full-cache fp8->bf16 copy each step.
+        for cast in dead_casts:
+            if isinstance(cast, Node) and len(cast.users) == 0:
+                graph_module.graph.erase_node(cast)
