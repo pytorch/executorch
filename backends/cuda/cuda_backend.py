@@ -321,7 +321,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 ],
             }
         except AttributeError:
-            # int4_dispatch.py not imported — op not registered, skip C shim mapping
+            # quantize_op_dispatch not imported — op not registered, skip C shim mapping
             pass
 
         # Parse compile_specs to check for platform
