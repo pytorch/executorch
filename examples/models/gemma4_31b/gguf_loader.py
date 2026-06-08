@@ -131,7 +131,11 @@ def load_gguf_model(
 
     Returns ``(model, config)``.
     """
-    from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
+    from executorch.examples.models.gemma4_31b.model import (
+        Gemma4_31B,
+        Gemma4_31BConfig,
+        materialize_runtime_buffers,
+    )
     from executorch.examples.models.gemma4_31b.quant import dequantize_weight, pack_one
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf
 
@@ -181,6 +185,11 @@ def load_gguf_model(
             print(f"  Processed {n_processed} tensors...")
 
     _resolve_tied_lm_head(model, lm_head_weight, packers)
+
+    # Fill RoPE tables / KV caches / scalar constants (left on meta by the
+    # streaming load), matching load_prequantized_model so the CUDA and eager
+    # forward paths get bf16 runtime buffers instead of float32 defaults.
+    materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
     _validate_no_meta(model)
     model.eval()
