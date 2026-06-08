@@ -107,9 +107,13 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelMethodMetaReportsCudaBuffer) {
   ASSERT_EQ(meta->num_memory_planned_buffers(), 2);
 
   {
+    // After turn on on-device memory planning, the output cpu tensor shares
+    // the same buffer with the input cpu tensor. So the memory planned buffer
+    // only needs 2 * 16 = 32 bytes.
+
     auto size = meta->memory_planned_buffer_size(0);
     ASSERT_TRUE(size.ok());
-    EXPECT_EQ(size.get(), 48);
+    EXPECT_EQ(size.get(), 32);
 
     auto device = meta->memory_planned_buffer_device(0);
     ASSERT_TRUE(device.ok());
