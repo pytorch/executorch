@@ -840,6 +840,30 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
+    def test_replace_pad_with_cat_preserves_dtype(self) -> None:
+        # The padding constant tensors must match the input dtype, otherwise the
+        # resulting cat mixes dtypes and fails edge dialect dtype verification
+        # (e.g. for quantized int8 graphs).
+        x = torch.randint(-128, 127, (1, 2, 3), dtype=torch.int8)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.constant_pad_nd.default,
+            args=(x, [1, 1]),
+        )
+
+        p = ReplacePadWithCatPass()
+        result = cast(PassResult, p(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        full_nodes = graph_after_passes.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.full.default
+        )
+        self.assertEqual(len(full_nodes), 2)
+        for full_node in full_nodes:
+            self.assertEqual(full_node.kwargs["dtype"], torch.int8)
+
+    @torch.no_grad()
     def test_replace_repeat_with_cat(self) -> None:
         x = torch.randn([3, 5])
         original_gm = single_op_builder(
