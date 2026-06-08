@@ -464,6 +464,28 @@ class SlimTensor {
     // Case 2: At least one tensor is non-contiguous, perform element-wise copy
     // that respects both source and destination strides.
     const size_t elem_size = c10::elementSize(dtype_);
+    size_t dst_storage_offset_bytes = 0;
+    size_t src_storage_offset_bytes = 0;
+    ET_CHECK_MSG(
+        this->storage_offset_ >= 0 && other.storage_offset_ >= 0 &&
+            !::c10::mul_overflows(
+                static_cast<size_t>(this->storage_offset_),
+                elem_size,
+                &dst_storage_offset_bytes) &&
+            !::c10::mul_overflows(
+                static_cast<size_t>(other.storage_offset_),
+                elem_size,
+                &src_storage_offset_bytes),
+        "copy_: storage offset overflow");
+    ET_CHECK_MSG(
+        dst_storage_offset_bytes <= storage_->nbytes() &&
+            src_storage_offset_bytes <= other.storage_->nbytes(),
+        "copy_: storage offset exceeds storage size");
+
+    const size_t dst_available_nbytes =
+        storage_->nbytes() - dst_storage_offset_bytes;
+    const size_t src_available_nbytes =
+        other.storage_->nbytes() - src_storage_offset_bytes;
     char* dst_data = static_cast<char*>(this->data_ptr());
     const char* src_data = static_cast<const char*>(other.data_ptr());
 
@@ -496,6 +518,17 @@ class SlimTensor {
               !::c10::mul_overflows(
                   static_cast<size_t>(dst_offset), elem_size, &dst_byte_offset),
           "copy_: byte offset overflow");
+      size_t src_copy_end = 0;
+      size_t dst_copy_end = 0;
+      ET_CHECK_MSG(
+          !::c10::add_overflows(src_byte_offset, elem_size, &src_copy_end) &&
+              !::c10::add_overflows(
+                  dst_byte_offset, elem_size, &dst_copy_end),
+          "copy_: byte range overflow");
+      ET_CHECK_MSG(
+          src_copy_end <= src_available_nbytes &&
+              dst_copy_end <= dst_available_nbytes,
+          "copy_: copy range exceeds storage size");
 
       // Copy elem_size bytes from src to dst
       if (this->device().is_cpu() && other.device().is_cpu()) {
