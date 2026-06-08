@@ -329,7 +329,7 @@ class ServingChat:
         self, req: ChatCompletionRequest, prompt: str, config: GenConfig
     ) -> ChatCompletionResponse:
         stats = GenStats()
-        async with self._pool.acquire(prompt) as runner:
+        async with self._pool.acquire() as runner:
             try:
                 # Collect raw text (markers intact for tool parsing), halting early
                 # at a stop boundary (special token or request stop).
@@ -383,7 +383,7 @@ class ServingChat:
         stats = GenStats()
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
         stops = self._stops + self._request_stops(req)
-        async with self._pool.acquire(prompt) as runner:
+        async with self._pool.acquire() as runner:
             try:
                 if use_tools:
                     # v1: buffer the (usually short) tool response, parse once.
