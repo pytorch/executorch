@@ -80,6 +80,9 @@ class AtenToCortexMPass(AtenToDialectPass):
                 )
 
             scratch_arg.args = (((scratch_buffer_size,), torch.uint8),)
+            scratch_arg.meta["val"] = torch.empty(
+                (scratch_buffer_size,), dtype=torch.uint8, device="meta"
+            )
 
 
 def _create_uninitialized_alloc_node(

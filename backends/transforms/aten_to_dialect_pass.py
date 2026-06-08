@@ -34,7 +34,7 @@ SubstitutionFn: TypeAlias = Callable[
 
 class AtenToDialectPass(ExportPass):
     """
-    General pass to convert ops 1-1 from ATen to a specific dialect.
+    General pass to convert ops from ATen to a specific dialect.
 
     Usage:
         1. Subclass the pass for a specific dialect
