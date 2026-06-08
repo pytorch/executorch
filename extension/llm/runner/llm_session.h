@@ -90,9 +90,11 @@ class ET_EXPERIMENTAL LLMSession {
   virtual ::executorch::runtime::Result<DecodeResult> decode_one(
       const SamplingConfig& sampling) = 0;
 
-  /// Rewind the KV cache to `pos` (prefix reuse). Valid for full-KV models;
-  /// sliding-window KV may reject a seek past its window (the caller falls back
-  /// to a fresh prefill).
+  /// Rewind the KV cache to `pos` (prefix reuse). Valid for full-KV models.
+  /// Returns InvalidArgument if `pos` is outside [0, position()]. Returns
+  /// NotSupported for models whose state cannot be safely rewound (for example,
+  /// non-KV-cache, sliding-window, or recurrent-state models); callers should
+  /// fall back to reset() + full prefill.
   virtual ::executorch::runtime::Error seek(int64_t pos) = 0;
 
   /// Number of tokens with resident KV (upper bound for seek()).

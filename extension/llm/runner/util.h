@@ -101,13 +101,14 @@ ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
 
 // How many leading bytes of `text` a streaming consumer may safely emit given a
 // set of `stops` strings, and whether a stop was hit (`stop_hit`).
-//   * If any stop occurs, returns the byte offset of the EARLIEST occurrence and
-//     sets stop_hit=true — text before it is safe; the stop and everything after
-//     are dropped (the stop is excluded from output).
+//   * If any stop occurs, returns the byte offset of the EARLIEST occurrence
+//   and
+//     sets stop_hit=true — text before it is safe; the stop and everything
+//     after are dropped (the stop is excluded from output).
 //   * Otherwise returns the length minus the longest possible partial-stop tail
-//     (max(len(stop))-1 bytes), snapped DOWN to a UTF-8 boundary so a multi-byte
-//     character is never split; stop_hit=false. Holding back that tail lets a
-//     stop that straddles the next piece still be caught.
+//     (max(len(stop))-1 bytes), snapped DOWN to a UTF-8 boundary so a
+//     multi-byte character is never split; stop_hit=false. Holding back that
+//     tail lets a stop that straddles the next piece still be caught.
 // `text` is expected to be complete-UTF-8 (e.g. the assembled output of
 // utf8_complete_prefix_len). Empty `stops` => emit everything, no hold-back.
 ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
