@@ -13,6 +13,11 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.tests.models import TopKandIndex
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
+    QCOM_ENCODING,
+    QCOM_SCALE,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -101,6 +106,49 @@ class TestPasses(unittest.TestCase):
         # AddModule with one input and one output should insert exactly
         # one quantize (input) and one dequantize (output) = +2 nodes.
         self.assertEqual(node_count_after, node_count_before + 2)
+
+    def test_insert_io_qdq_per_channel_group_no_key_error(self):
+        """InsertIOQDQ must not KeyError for per_channel_group encoded nodes."""
+        from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
+
+        gm, ep = self._build_quantized_graph()
+
+        # Find an existing weight-like node to reuse its meta["val"]
+        output_node = next(n for n in gm.graph.nodes if n.op == "output")
+        any_node = next(n for n in gm.graph.nodes if n.op == "placeholder")
+
+        # Inject per_channel_group quant attrs on the placeholder,
+        # simulating a pre-quantized weight with group quantization.
+        scales = torch.ones(4, 1)
+        any_node.meta[QCOM_QUANT_ATTRS] = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+            QCOM_SCALE: scales,
+            QCOM_DTYPE: torch.int8,
+            "scales": scales,
+            "zero_points": None,
+            "quant_min": -8,
+            "quant_max": 7,
+            "dtype": torch.int8,
+            "group_size": 1,
+            "output_dtype": torch.float32,
+        }
+
+        # Wire that placeholder into output so InsertIOQDQ hits line 155
+        old_out_args = output_node.args[0]
+        if not isinstance(old_out_args, tuple):
+            old_out_args = (old_out_args,)
+        output_node.args = (old_out_args + (any_node,),)
+        gm.graph.lint()
+        gm.recompile()
+
+        # Should not raise KeyError
+        pass_instance = InsertIOQDQ(ep)
+        try:
+            pass_instance._insert(gm)
+        except KeyError as e:
+            self.fail(
+                f"InsertIOQDQ raised KeyError for per_channel_group encoding: {e}"
+            )
 
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):

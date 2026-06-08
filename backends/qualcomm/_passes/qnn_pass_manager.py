@@ -175,6 +175,12 @@ class QnnPassManager(PassManager):
 
         node_visitor.q_ops.add(exir_ops.edge.torchao.quantize_affine.default)
         node_visitor.dq_ops.add(exir_ops.edge.torchao.dequantize_affine.default)
+        node_visitor.q_ops.add(
+            exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default
+        )
+        node_visitor.dq_ops.add(
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+        )
 
         passes_job = (
             passes_job if passes_job is not None else get_capture_program_passes()

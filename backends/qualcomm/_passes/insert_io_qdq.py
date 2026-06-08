@@ -42,6 +42,10 @@ class InsertIOQDQ(ExportPass):
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         # per channel (dequantize -> dequantize, for pre-quantized params)
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        # per channel group (quantize -> dequantize)
+        exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+        # per channel group (dequantize -> dequantize, for pre-quantized weight params)
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
     }
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
