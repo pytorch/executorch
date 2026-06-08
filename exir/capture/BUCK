@@ -47,6 +47,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:pass_manager",
         "//executorch/exir:tracer",
         "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:propagate_device_config",
         "//executorch/exir/passes:sym_shape_eval_pass",
     ],
 )
