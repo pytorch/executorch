@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2022 Arm Limited. All rights reserved.
+# Copyright (c) 2020-2022,2026 Arm Limited. All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -57,10 +57,10 @@ add_compile_definitions("$<$<NOT:$<CONFIG:DEBUG>>:NDEBUG>")
 # Link options
 add_link_options(-mcpu=${GCC_CPU} -mthumb)
 
+# Zephyr SDK GCC defaults to Picolibc and does not ship GNU Arm's
+# nosys.specs/rdimon.specs files.
 if(SEMIHOSTING)
-  add_link_options(--specs=rdimon.specs)
-else()
-  add_link_options(--specs=nosys.specs)
+  add_link_options(-lsemihost)
 endif()
 
 # Set floating point unit
