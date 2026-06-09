@@ -10,6 +10,8 @@ from executorch.backends.cortex_m.test.tester import (
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class CortexMAvgPool2d(torch.nn.Module):
@@ -88,6 +90,34 @@ def test_dialect_avg_pool2d(test_case):
         ops_after,
         qtol=1,
     )
+
+    import cmsis_nn  # type: ignore[import-not-found, import-untyped]
+
+    from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+
+    target_config = CortexMTargetConfig(cpu=CortexM.M55)
+    module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
+    pool_target = exir_ops.edge.cortex_m.quantized_avg_pool2d.default
+    [pool_node] = [
+        n
+        for n in module.graph.nodes
+        if n.op == "call_function" and n.target == pool_target
+    ]
+    scratch_arg = pool_node.args[-1]
+    scratch_size = scratch_arg.args[0][0][0]
+
+    input_node = pool_node.args[0]
+    input_shape = input_node.meta["val"].shape
+    output_shape = pool_node.meta["val"].shape
+    expected_size = cmsis_nn.avgpool_buffer_size(
+        target_config.backend,
+        cmsis_nn.DataType.A8W8,
+        dim_dst_width=int(output_shape[3]),
+        ch_src=int(input_shape[1]),
+    )
+    assert (
+        scratch_size == expected_size
+    ), f"scratch buffer size mismatch: got {scratch_size}, expected {expected_size}"
 
 
 @parametrize("test_case", fallback_test_cases)

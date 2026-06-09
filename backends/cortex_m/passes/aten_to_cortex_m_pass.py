@@ -629,19 +629,18 @@ def _get_avg_pool2d_replacement(
     if not _has_qparams(node):
         return None
 
-    kernel_size = [int(v) for v in node.args[1]]
-    stride_arg = node.args[2] if len(node.args) > 2 else None
-    stride = [int(v) for v in stride_arg] if stride_arg else list(kernel_size)
-    padding_arg = node.args[3] if len(node.args) > 3 else None
-    padding = [int(v) for v in padding_arg] if padding_arg else [0, 0]
-    ceil_mode = bool(node.args[4]) if len(node.args) > 4 else False
-    count_include_pad = bool(node.args[5]) if len(node.args) > 5 else True
-    divisor_override = node.args[6] if len(node.args) > 6 else None
+    pool_args = node.args
+    kernel_size = cast(list[int], pool_args[1])
+    stride = cast(list[int], pool_args[2]) if len(pool_args) > 2 else list(kernel_size)
+    padding = cast(list[int], pool_args[3]) if len(pool_args) > 3 else [0, 0]
+    ceil_mode = cast(bool, pool_args[4]) if len(pool_args) > 4 else False
+    count_include_pad = cast(bool, pool_args[5]) if len(pool_args) > 5 else True
+    divisor_override = pool_args[6] if len(pool_args) > 6 else None
 
     if ceil_mode or divisor_override is not None:
         return None
 
-    input_node = node.args[0]
+    input_node = cast(Node, pool_args[0])
     input_zp = node.meta["input_qparams"][0].zp
     input_scale = node.meta["input_qparams"][0].scale
     output_mult, output_shift = quantize_multiplier_aot(input_scale)
