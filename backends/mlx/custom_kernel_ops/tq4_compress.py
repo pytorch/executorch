@@ -20,7 +20,7 @@ Constraints:
 
 Usage::
 
-    import executorch.backends.mlx.model_ops.tq4_compress  # noqa: F401
+    import executorch.backends.mlx.custom_kernel_ops.tq4_compress  # noqa: F401
 
     packed = torch.ops.mlx.tq4_compress(rotated, boundaries)
     # rotated:    (..., D)   float

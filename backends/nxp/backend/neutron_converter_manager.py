@@ -25,8 +25,6 @@ def _build_compilation_context(compilation_opts):
     cctx.compilationOpts.dumpKernelSelectionCode = compilation_opts[
         "dumpKernelSelectionCode"
     ]
-    if hasattr(cctx.compilationOpts, "useNewFlowNeutronC"):
-        cctx.compilationOpts.useNewFlowNeutronC = compilation_opts["useNewFlowNeutronC"]
     return cctx
 
 
@@ -83,7 +81,6 @@ class NeutronConverterManager:
         target: str,
         delegation_tag: str,
         fetch_constants_to_sram: bool = False,
-        use_new_flow_neutron_c: bool = False,
     ) -> bytes:
         """
         Call Neutron Converter.
@@ -92,7 +89,6 @@ class NeutronConverterManager:
         :param target: The target platform.
         :param delegation_tag: The delegation tag of model partition.
         :param fetch_constants_to_sram: Add microcode that fetches weights from external memory.
-        :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
         This allows running models which do not fit into SRAM. Applies to Neutron-C only (microcontrollers).
 
         :return: TFLite model with Neutron microcode as bytes.
@@ -106,7 +102,6 @@ class NeutronConverterManager:
             "excludeGraphPasses": "HoistSliceAboveTranspose,MergeTranspose",
             "fetchConstantsToSRAM": fetch_constants_to_sram,
             "dumpKernelSelectionCode": self.dump_kernel_selection_code,
-            "useNewFlowNeutronC": use_new_flow_neutron_c,
         }
 
         # Try to use multiprocessing for isolation, but fall back to direct execution

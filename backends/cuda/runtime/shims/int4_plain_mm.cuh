@@ -51,7 +51,8 @@ __host__ __forceinline__ int32_t log2_pow2(int32_t v) {
 }
 
 // ---------------------------------------------------------------------------
-// Activation quantization: bf16 → int8 (warp-cooperative, per-32-element blocks)
+// Activation quantization: bf16 → int8 (warp-cooperative, per-32-element
+// blocks)
 // ---------------------------------------------------------------------------
 
 struct Q8Block {
@@ -100,16 +101,15 @@ __global__ void quantize_activations_q8_kernel(
 // W4A8 dp4a matvec kernel
 // ---------------------------------------------------------------------------
 
-__global__ void __launch_bounds__(MV_THREADS)
-    int4_w4a8_matvec_kernel(
-        const uint8_t* __restrict__ qdata,
-        const __nv_bfloat16* __restrict__ w_scale,
-        const __nv_bfloat16* __restrict__ w_zero,
-        const Q8Block* __restrict__ q8,
-        __nv_bfloat16* __restrict__ out,
-        int32_t N,
-        int32_t K,
-        int32_t gs_shift) {
+__global__ void __launch_bounds__(MV_THREADS) int4_w4a8_matvec_kernel(
+    const uint8_t* __restrict__ qdata,
+    const __nv_bfloat16* __restrict__ w_scale,
+    const __nv_bfloat16* __restrict__ w_zero,
+    const Q8Block* __restrict__ q8,
+    __nv_bfloat16* __restrict__ out,
+    int32_t N,
+    int32_t K,
+    int32_t gs_shift) {
   const int32_t n = blockIdx.x * MV_NWARPS + threadIdx.y;
   const int32_t m = blockIdx.y;
   if (n >= N)
@@ -157,10 +157,10 @@ __global__ void __launch_bounds__(MV_THREADS)
       int32_t q8_half_offset = (k_word % Q8_BLOCK_SIZE) / 2;
       const Q8Block* qb = &q8_row[q8_block_idx];
 
-      int32_t a_even = *reinterpret_cast<const int32_t*>(
-          qb->qs_even + q8_half_offset);
-      int32_t a_odd = *reinterpret_cast<const int32_t*>(
-          qb->qs_odd + q8_half_offset);
+      int32_t a_even =
+          *reinterpret_cast<const int32_t*>(qb->qs_even + q8_half_offset);
+      int32_t a_odd =
+          *reinterpret_cast<const int32_t*>(qb->qs_odd + q8_half_offset);
 
       int32_t dp = __dp4a(vi_lo, a_even, 0);
       dp = __dp4a(vi_hi, a_odd, dp);
@@ -183,11 +183,28 @@ __global__ void __launch_bounds__(MV_THREADS)
 }
 
 // ---------------------------------------------------------------------------
-// Persistent Q8 buffer (lazy init, not thread-safe — single-stream only)
+// Persistent Q8 buffer (lazy init, not thread-safe — single-stream only).
+// Freed at process exit via a static guard so leak detectors stay quiet; the
+// CUDA runtime would otherwise reclaim it on teardown anyway.
 // ---------------------------------------------------------------------------
 
 static Q8Block* g_q8_buf = nullptr;
 static size_t g_q8_buf_size = 0;
+
+namespace {
+struct Q8BufferGuard {
+  ~Q8BufferGuard() {
+    if (g_q8_buf) {
+      // Ignore errors: during process teardown the CUDA context may already be
+      // gone (cudaErrorCudartUnloading), which is harmless here.
+      cudaFree(g_q8_buf);
+      g_q8_buf = nullptr;
+      g_q8_buf_size = 0;
+    }
+  }
+};
+Q8BufferGuard g_q8_buf_guard;
+} // namespace
 
 static Q8Block* get_q8_buffer(size_t needed) {
   if (g_q8_buf_size < needed) {
@@ -234,9 +251,7 @@ void _int4_plain_mm_cuda(
 
   int32_t gs = static_cast<int32_t>(group_size);
   ET_CHECK_MSG(
-      gs > 0 && (gs & (gs - 1)) == 0,
-      "group_size=%d must be a power of 2",
-      gs);
+      gs > 0 && (gs & (gs - 1)) == 0, "group_size=%d must be a power of 2", gs);
   ET_CHECK_MSG(
       K >= Q8_BLOCK_SIZE && K % Q8_BLOCK_SIZE == 0,
       "K=%d must be a positive multiple of %d for dp4a kernel",
@@ -259,9 +274,7 @@ void _int4_plain_mm_cuda(
   dim3 q8_grid(blocks_per_m, M);
   dim3 q8_block(MV_WARP_SIZE, Q8_WARPS);
   quantize_activations_q8_kernel<<<q8_grid, q8_block, 0, stream>>>(
-      reinterpret_cast<const __nv_bfloat16*>(A.data_ptr()),
-      q8_buf,
-      K);
+      reinterpret_cast<const __nv_bfloat16*>(A.data_ptr()), q8_buf, K);
 
   // dp4a matvec
   dim3 grid((N + MV_NWARPS - 1) / MV_NWARPS, M);
@@ -272,7 +285,9 @@ void _int4_plain_mm_cuda(
       reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
       q8_buf,
       reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
-      N, K, gs_shift);
+      N,
+      K,
+      gs_shift);
 }
 
 } // namespace executorch::backends::cuda

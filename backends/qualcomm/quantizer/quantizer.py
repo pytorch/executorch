@@ -19,7 +19,9 @@ except:
     )
     del logging
 import torch
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 
 from executorch.backends.qualcomm.quantizer.backend_opinfo_adapter import (
     constraints_loader,
@@ -44,6 +46,7 @@ from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
+    get_16a2w_qnn_ptq_config,
     get_16a4w_qnn_ptq_config,
     get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
@@ -69,6 +72,7 @@ get_default_16bit_qnn_ptq_config = get_16a16w_qnn_ptq_config
 __all__ = [
     "QnnQuantizer",
     "QuantDtype",
+    "get_16a2w_qnn_ptq_config",
     "get_16a4w_qnn_ptq_config",
     "get_16a8w_qnn_ptq_config",
     "get_16a8w_qnn_qat_config",
@@ -94,6 +98,7 @@ class QuantDtype(IntEnum):
     use_8a8w = 4
     use_8a4w = 5
     use_fp16a8w = 6
+    use_16a2w = 7
 
 
 QUANT_CONFIG_DICT = {
@@ -122,6 +127,15 @@ QUANT_CONFIG_DICT = {
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
             weight_dtype=torch.int4,
+        ),
+        None,
+    ),
+    (QuantDtype.use_16a2w, False): (
+        get_16a2w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int2,
         ),
         None,
     ),
@@ -352,18 +366,18 @@ class QnnQuantizer(Quantizer):
     ):
         super().__init__()
         self.strict = strict
-        self.backend = str(backend)
+        self.backend = backend
         self.soc_info = _soc_info_table[soc_model]
 
         # Lazy load rules and constraints of current backend
         self._rules_map, self._constraint_cache = load_backend_rules_and_constraints(
-            self.backend
+            str(backend)
         )
         self.supported_ops: Set[OpOverload] = set(self._rules_map.keys())
         self.quant_ops: Set[OpOverload] = self.supported_ops.copy()
 
         # Load backend_opinfo of current backend and soc_model
-        self.backend_opinfo = get_backend_opinfo(self.backend, soc_model)
+        self.backend_opinfo = get_backend_opinfo(str(backend), soc_model)
 
         self.default_quant_config = ModuleQConfig()
         self.submodule_qconfig_list: List[
@@ -410,7 +424,9 @@ class QnnQuantizer(Quantizer):
         Returns:
             GraphModule: The transformed model.
         """
-        return QnnPassManager().transform_for_annotation_pipeline(model)
+        return get_qnn_pass_manager_cls(
+            self.backend
+        )().transform_for_annotation_pipeline(model)
 
     def validate(self, model: GraphModule) -> None:
         # Validate: only for mapped nodes (qnn_op present); unmapped → skip validation
