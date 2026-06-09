@@ -51,8 +51,15 @@ if [[ "$FLOW" == *qnn* ]]; then
 fi
 
 if [[ "$FLOW" == *vulkan* ]]; then
-    # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate.
-    source .ci/scripts/setup-vulkan-linux-deps.sh
+    # Setup the Vulkan SDK and select an ICD: use the real system GPU ICD when one
+    # is present (real-GPU runner), otherwise fall back to SwiftShader (CPU
+    # runner). The Vulkan loader searches both standard ICD directories.
+    if ls /etc/vulkan/icd.d/*.json /usr/share/vulkan/icd.d/*.json \
+        >/dev/null 2>&1; then
+        source .ci/scripts/setup-vulkan-linux-deps.sh "real-gpu"
+    else
+        source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
+    fi
 
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi

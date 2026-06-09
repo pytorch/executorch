@@ -97,3 +97,31 @@ else()
     FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for pybind: ${CMAKE_SYSTEM_NAME}"
   )
 endif()
+
+# Opt-in Vulkan backend for Linux/Windows wheels. Enabled ONLY when the build
+# requests it via the EXECUTORCH_BUILD_VULKAN env var AND glslc (Vulkan SDK) is
+# available to compile the shaders. This keeps the default wheel (and
+# macOS/Android) byte-for-byte unchanged: GPU backends are opt-in rather than
+# bundled into the universal wheel.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   OR CMAKE_SYSTEM_NAME STREQUAL "Windows"
+   OR CMAKE_SYSTEM_NAME STREQUAL "WIN32"
+)
+  if(DEFINED ENV{EXECUTORCH_BUILD_VULKAN}
+     AND NOT "$ENV{EXECUTORCH_BUILD_VULKAN}" STREQUAL "0"
+     AND NOT "$ENV{EXECUTORCH_BUILD_VULKAN}" STREQUAL "OFF"
+  )
+    find_program(
+      GLSLC_PATH glslc HINTS $ENV{VULKAN_SDK}/bin $ENV{VULKAN_SDK}/Bin
+    )
+    if(GLSLC_PATH)
+      set_overridable_option(EXECUTORCH_BUILD_VULKAN ON)
+      message(STATUS "Enabling Vulkan backend for wheel; glslc: ${GLSLC_PATH}")
+    else()
+      message(
+        STATUS "EXECUTORCH_BUILD_VULKAN requested but glslc was not found; "
+               "the Vulkan backend will not be included."
+      )
+    endif()
+  endif()
+endif()

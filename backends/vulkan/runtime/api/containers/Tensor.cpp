@@ -680,10 +680,23 @@ vkapi::VulkanBuffer allocate_buffer(
       return vkapi::VulkanBuffer();
   }
 
+  // Round the underlying allocation up to a whole number of 16-byte texels.
+  // Shaders may read a buffer-backed tensor as vec4/ivec4 (e.g. the
+  // per-output-channel weight scales/sums/bias in the tiled quantized kernels);
+  // when a dimension is not a multiple of 4, the final vec4 load would
+  // otherwise read past the end of the buffer, which silently zeroes the value
+  // on NVIDIA GPUs. This only grows the allocation; the tensor's
+  // physical_numel() is unchanged.
+  const size_t alloc_nbytes =
+      utils::align_up(element_size(dtype) * numel, static_cast<size_t>(16));
+
+  // TODO: this check is incorrect. max_buffer_numel() returns
+  // maxStorageBufferRange, which is a size in bytes, so the comparison should
+  // use the buffer's byte size (alloc_nbytes), not the element count.
   VK_CHECK_COND(numel <= context_ptr->adapter_ptr()->max_buffer_numel());
 
   return adapter_ptr->vma().create_storage_buffer(
-      element_size(dtype) * numel, allocate_memory);
+      alloc_nbytes, allocate_memory);
 }
 
 vTensorStorage::vTensorStorage(
