@@ -7402,3 +7402,158 @@ class NVFP4QuantizedLinearTest(OpTestCase):
             self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
         )
         return (x,)
+
+
+def _make_int4_quantized_weight(weight: torch.Tensor, group_size: int) -> torch.Tensor:
+    """Groupwise affine 4-bit quantize a ``(N, K)`` weight into an
+    ``ExportableInt4Tensor`` (torchao ``Int4Tensor`` packed layout)."""
+    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+    N, K = weight.shape
+    dtype = weight.dtype
+    w = weight.float().reshape(N, K // group_size, group_size)
+    wmin = w.amin(dim=-1)
+    wmax = w.amax(dim=-1)
+    scale = ((wmax - wmin) / 15.0).clamp(min=1e-8)
+    # Fractional zero-point (HQQ-style), exercises the float zero_point repack path.
+    zero = (-wmin / scale).clamp(0, 15)
+    q = torch.round(w / scale.unsqueeze(-1) + zero.unsqueeze(-1)).clamp(0, 15)
+    q = q.reshape(N, K).to(torch.uint8)
+    # Two nibbles/byte: even index -> low nibble.
+    packed = (q[:, 0::2] | (q[:, 1::2] << 4)).to(torch.uint8)
+    it = Int4Tensor(
+        qdata=packed,
+        scale=scale.t().contiguous().to(dtype),
+        zero_point=zero.t().contiguous().to(dtype),
+        block_size=[1, group_size],
+        shape=torch.Size([N, K]),
+    )
+    return ExportableInt4Tensor.from_int4_tensor(it)
+
+
+class Int4QuantizedLinearModel(nn.Module):
+    """Linear layer whose weight is an ``ExportableInt4Tensor``."""
+
+    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
+
+
+@register_test
+class Int4QuantizedLinearTest(OpTestCase):
+    """ExportableInt4Tensor nn.Linear -> MLX 4-bit affine quantized matmul."""
+
+    name = "int4_quantized_linear"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        in_features: int = 64,
+        out_features: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        bias: bool = True,
+        group_size: int = 32,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.bias = bias
+        self.group_size = group_size
+        self.dtype = dtype
+
+        parts = ["int4_quantized_linear", f"g{group_size}"]
+        if not bias:
+            parts.append("no_bias")
+        if dtype != torch.bfloat16:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["Int4QuantizedLinearTest"]:
+        return [
+            cls(),
+            cls(bias=False),
+            cls(group_size=64),
+            cls(dtype=torch.float32),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = Int4QuantizedLinearModel(
+            self.in_features, self.out_features, bias=self.bias
+        ).to(self.dtype)
+        model.linear.weight = nn.Parameter(
+            _make_int4_quantized_weight(model.linear.weight.data, self.group_size),
+            requires_grad=False,
+        )
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
+        )
+        return (x,)
+
+
+@register_test
+class Int4QuantizedEmbeddingTest(OpTestCase):
+    """ExportableInt4Tensor nn.Embedding -> MLX 4-bit affine quantized gather."""
+
+    name = "int4_quantized_embedding"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        num_embeddings: int = 1000,
+        embedding_dim: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        group_size: int = 32,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.group_size = group_size
+        self.dtype = dtype
+        self.name = f"int4_quantized_embedding_g{group_size}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["Int4QuantizedEmbeddingTest"]:
+        return [
+            cls(),
+            cls(group_size=64),
+            cls(group_size=128),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = EmbeddingModel(self.num_embeddings, self.embedding_dim)
+        model = model.to(self.dtype)
+        model.embedding.weight = nn.Parameter(
+            _make_int4_quantized_weight(model.embedding.weight.data, self.group_size),
+            requires_grad=False,
+        )
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
+        return (x,)
