@@ -1,0 +1,49 @@
+name: Test WebGPU Native (Dawn)
+
+# The substantive WebGPU op-coverage gate. The shared operators suite only
+# delegates add.Tensor to WebGPU (everything else is CPU fallback), so the real
+# Dawn coverage comes from the native test executables (rms_norm, multi-dispatch
+# ordering, scratch). This runs them on Dawn (Tint) + SwiftShader, headless, on a
+# CPU runner -- separate from _test_backend.yml so that reusable template stays
+# untouched.
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-webgpu-native:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: recursive
+      timeout: 120
+      script: |
+        set -eux
+
+        # The generic Linux job uses the base conda env, not the image's; activate
+        # the image env (it has the pinned from-source torch). Mirrors
+        # test-vulkan-operators-linux in pull.yml.
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Install the python package + runtime deps (the .pte exporters).
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+
+        # Vendor Dawn (Tint) + SwiftShader, then build + run the native executables.
+        source .ci/scripts/setup-webgpu-linux-deps.sh
+        bash backends/webgpu/scripts/test_webgpu_native_ci.sh
