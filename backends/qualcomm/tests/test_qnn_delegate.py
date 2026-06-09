@@ -20,12 +20,7 @@ from pathlib import Path
 
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-    QnnPassManager,
-)
-
-from executorch.backends.qualcomm._passes.utils import (
-    get_passes_dependency_for_capture_program,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.debugger.utils import generate_optrace
 
@@ -5926,10 +5921,13 @@ class TestQNNFloatingPointUtils(TestQNN):
             soc_model=self.chipset_table[TestQNN.soc_model],
             backend_options=backend_options,
         )
-        pass_jobs = get_capture_program_passes()
+        htp_pass_manager_cls = get_qnn_pass_manager_cls(
+            QnnExecuTorchBackendType.kHtpBackend
+        )
+        pass_jobs = htp_pass_manager_cls.get_capture_program_passes()
         split_graph_pass, setting = self.split_graph(4)
         pass_jobs[split_graph_pass] = setting
-        dep_table = get_passes_dependency_for_capture_program()
+        dep_table = htp_pass_manager_cls.get_passes_dependency_for_capture_program()
         dep_table[split_graph_pass] = [FoldQDQ]
         edge_prog = to_edge_transform_and_lower_to_qnn(
             module,
@@ -6037,10 +6035,13 @@ class TestQNNFloatingPointUtils(TestQNN):
             profile_level=2,  # if 0 for closing heap profiling
         )
 
-        pass_jobs = get_capture_program_passes()
+        htp_pass_manager_cls = get_qnn_pass_manager_cls(
+            QnnExecuTorchBackendType.kHtpBackend
+        )
+        pass_jobs = htp_pass_manager_cls.get_capture_program_passes()
         split_graph_pass, setting = self.split_graph(4)
         pass_jobs[split_graph_pass] = setting
-        dep_table = get_passes_dependency_for_capture_program()
+        dep_table = htp_pass_manager_cls.get_passes_dependency_for_capture_program()
         dep_table[split_graph_pass] = [FoldQDQ]
 
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -6358,7 +6359,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         This piece of code simulates the behavior of the final preprocessing step to obtain the op wrapper list.
         In practice, users need to set a breakpoint in the preprocessing step and use the DrawGraph tool to visualize the graph.
         """
-        graph_module = QnnPassManager().transform_for_preprocess_pipeline(
+        graph_module = get_qnn_pass_manager_cls()().transform_for_preprocess_pipeline(
             delegated_program.exported_program
         )
         nodes_to_wrappers = defaultdict(dict)
@@ -6566,7 +6567,7 @@ class TestQNNQuantizedUtils(TestQNN):
         )
         # only few ops with 16bit are supported with dynamic shape now
         # strip unsupported quantize / dequantize ops generated in preprocess
-        pass_jobs = get_capture_program_passes()
+        pass_jobs = get_qnn_pass_manager_cls().get_capture_program_passes()
         pass_jobs[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         pass_jobs[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
             "get_quant_io_dtype_fn"
@@ -6851,10 +6852,13 @@ class TestQNNQuantizedUtils(TestQNN):
             soc_model=self.chipset_table[TestQNN.soc_model],
             backend_options=backend_options,
         )
-        pass_jobs = get_capture_program_passes()
+        htp_pass_manager_cls = get_qnn_pass_manager_cls(
+            QnnExecuTorchBackendType.kHtpBackend
+        )
+        pass_jobs = htp_pass_manager_cls.get_capture_program_passes()
         split_graph_pass, setting = self.split_graph(4)
         pass_jobs[split_graph_pass] = setting
-        dep_table = get_passes_dependency_for_capture_program()
+        dep_table = htp_pass_manager_cls.get_passes_dependency_for_capture_program()
         dep_table[split_graph_pass] = [FoldQDQ]
         edge_prog = to_edge_transform_and_lower_to_qnn(
             module,
@@ -6973,10 +6977,13 @@ class TestQNNQuantizedUtils(TestQNN):
             profile_level=2,  # if 0 for closing heap profiling
         )
 
-        pass_jobs = get_capture_program_passes()
+        htp_pass_manager_cls = get_qnn_pass_manager_cls(
+            QnnExecuTorchBackendType.kHtpBackend
+        )
+        pass_jobs = htp_pass_manager_cls.get_capture_program_passes()
         split_graph_pass, setting = self.split_graph(4)
         pass_jobs[split_graph_pass] = setting
-        dep_table = get_passes_dependency_for_capture_program()
+        dep_table = htp_pass_manager_cls.get_passes_dependency_for_capture_program()
         dep_table[split_graph_pass] = [FoldQDQ]
 
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -7322,7 +7329,7 @@ class TestQNNQuantizedUtils(TestQNN):
         This piece of code simulates the behavior of the final preprocessing step to obtain the op wrapper list.
         In practice, users need to set a breakpoint in the preprocessing step and use the DrawGraph tool to visualize the graph.
         """
-        graph_module = QnnPassManager().transform_for_preprocess_pipeline(
+        graph_module = get_qnn_pass_manager_cls()().transform_for_preprocess_pipeline(
             delegated_program.exported_program
         )
         nodes_to_wrappers = defaultdict(dict)

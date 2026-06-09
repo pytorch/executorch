@@ -22,10 +22,7 @@ import torch
 from executorch.backends.qualcomm._passes import FoldQDQ, I64toI32, TagQuantIO
 from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
-from executorch.backends.qualcomm._passes.utils import (
-    get_passes_dependency_for_capture_program,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
@@ -158,8 +155,11 @@ class TextDecoder(Component):
         self.control_args = control_args
         self.config = config
         self.mode = mode
-        self.passes_job = get_capture_program_passes()
-        self.dep_table = get_passes_dependency_for_capture_program()
+        self.pass_manager_cls = get_qnn_pass_manager_cls()
+        self.passes_job = self.pass_manager_cls.get_capture_program_passes()
+        self.dep_table = (
+            self.pass_manager_cls.get_passes_dependency_for_capture_program()
+        )
         self.meta = {}
         self.quant_recipe: StaticLLMQuantRecipe = (
             self.config.quant_recipe(mode == Mode.CALIBRATE)
@@ -170,10 +170,14 @@ class TextDecoder(Component):
         # For multimodal embedding
         self.apply_embedding = apply_embedding
         self.tok_embedding_passes_job = (
-            get_capture_program_passes() if apply_embedding else None
+            self.pass_manager_cls.get_capture_program_passes()
+            if apply_embedding
+            else None
         )
         self.tok_embedding_dep_table = (
-            get_passes_dependency_for_capture_program() if apply_embedding else None
+            self.pass_manager_cls.get_passes_dependency_for_capture_program()
+            if apply_embedding
+            else None
         )
 
         # load static llama model args
@@ -1312,8 +1316,11 @@ class Modality(Component):
             # metadata
             self.config = config
 
-        self.passes_job = get_capture_program_passes()
-        self.dep_table = get_passes_dependency_for_capture_program()
+        self.pass_manager_cls = get_qnn_pass_manager_cls()
+        self.passes_job = self.pass_manager_cls.get_capture_program_passes()
+        self.dep_table = (
+            self.pass_manager_cls.get_passes_dependency_for_capture_program()
+        )
 
     def _tag_ios(self, node, fixed_point_type):
         quant_io_type = None
