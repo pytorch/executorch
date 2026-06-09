@@ -18,7 +18,9 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace executorch::backends::webgpu {
+namespace executorch {
+namespace backends {
+namespace webgpu {
 
 // vkgraph namespace is declared at global scope in the generated FlatBuffer
 // header
@@ -503,19 +505,20 @@ void WebGPUGraph::execute() {
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-    // One pass per dispatch: enforces storage RAW ordering across deps.
+    WGPUComputePassDescriptor pass_desc = {};
+    WGPUComputePassEncoder pass =
+        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+
     for (const auto& dispatch : dispatches_) {
-      WGPUComputePassDescriptor pass_desc = {};
-      WGPUComputePassEncoder pass =
-          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatch.bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
           pass, dispatch.workgroup_count_x, 1, 1);
-      wgpuComputePassEncoderEnd(pass);
-      wgpuComputePassEncoderRelease(pass);
     }
+
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
 
     for (const auto& copy : output_copies_) {
       wgpuCommandEncoderCopyBufferToBuffer(
@@ -545,18 +548,20 @@ void WebGPUGraph::execute() {
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
+    WGPUComputePassDescriptor pass_desc = {};
+    WGPUComputePassEncoder pass =
+        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+
     for (size_t i = start; i < end; i++) {
-      WGPUComputePassDescriptor pass_desc = {};
-      WGPUComputePassEncoder pass =
-          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatches_[i].pipeline);
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatches_[i].bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
           pass, dispatches_[i].workgroup_count_x, 1, 1);
-      wgpuComputePassEncoderEnd(pass);
-      wgpuComputePassEncoderRelease(pass);
     }
+
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
 
     if (end == n) {
       for (const auto& copy : output_copies_) {
@@ -668,4 +673,6 @@ WebGPUMemoryStats WebGPUGraph::memory_stats() const {
   return stats;
 }
 
-} // namespace executorch::backends::webgpu
+} // namespace webgpu
+} // namespace backends
+} // namespace executorch
