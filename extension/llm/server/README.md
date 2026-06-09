@@ -25,9 +25,10 @@ Hugging Face chat templates (`--hf-tokenizer`), `temperature` / `max_tokens` /
 `max_completion_tokens` / `stop`, Hermes tool calling by default
 (`<tool_call>...</tool_call>` JSON, complete calls only; model-specific launchers
 may select the Qwen XML format) with `tool_choice="none"`,
-structured API errors, and best-effort cancellation. V1 serving is single-slot
-(one worker, one session) with no prefix cache; KV prefix reuse, if it returns,
-lives inside the worker/session, not the control plane. Unsupported params (including `top_p`,
+structured API errors, and best-effort cancellation. One worker process with
+serialized execution; it hosts many isolated sessions on one weight load (warm
+append-only resume across turns). KV/prefix state lives inside the
+worker/session, not the control plane. Unsupported params (including `top_p`,
 `seed`, `n>1`, `reasoning_effort`, penalties, `logit_bias`, `response_format`,
 `logprobs`, and `tool_choice="required"`) are rejected with a structured 400
 rather than silently ignored. See `python/README.md` to run it and
