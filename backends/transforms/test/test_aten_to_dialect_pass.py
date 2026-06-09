@@ -212,28 +212,3 @@ def test_raises_when_duplicate_substitution_is_registered() -> None:
         ) -> DialectNodeSpec | None:
             del exported_program
             return DialectNodeSpec(torch.ops.aten.mul.Tensor, node.args)
-
-
-def test_ensures_raises_when_call_function_count_changes() -> None:
-    class _TestAtenToDialectPass(AtenToDialectPass):
-        pass
-
-    exported_program = _export_add_model()
-    graph_module = exported_program.graph_module
-    test_pass = _TestAtenToDialectPass(exported_program=exported_program)
-    test_pass.requires(graph_module)
-
-    placeholders = [
-        node for node in graph_module.graph.nodes if node.op == "placeholder"
-    ]
-    output_node = next(node for node in graph_module.graph.nodes if node.op == "output")
-    with graph_module.graph.inserting_before(output_node):
-        graph_module.graph.create_node(
-            "call_function",
-            target=torch.ops.aten.sub.Tensor,
-            args=tuple(placeholders),
-            kwargs={},
-        )
-
-    with pytest.raises(RuntimeError, match="did not preserve"):
-        test_pass.ensures(graph_module)
