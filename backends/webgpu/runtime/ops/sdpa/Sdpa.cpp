@@ -189,7 +189,10 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int k_cache_id = args.at(3);
   const int v_cache_id = args.at(4);
   const int input_pos_id = args.at(5);
-  // args 6-9 unused: is_causal assumed; mask computed in the QK shader.
+  // arg 6 (seq_len) is derived from q; args 7-9 validated below.
+  const int attn_mask_id = args.at(7);
+  const int drop_p_id = args.at(8);
+  const int is_causal_id = args.at(9);
   const int scale_id = args.at(10);
   const int out_id = args.at(11);
 
@@ -225,7 +228,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (S <= 0 || Hq <= 0 || D <= 0 || Hkv <= 0 || Cmax <= 0) {
     throw std::runtime_error("WebGPU sdpa: non-positive dimension");
   }
-  if (Hkv == 0 || Hq % Hkv != 0) {
+  if (Hq % Hkv != 0) {
     throw std::runtime_error("WebGPU sdpa: Hq must be a multiple of Hkv (GQA)");
   }
   const int64_t g = Hq / Hkv;
@@ -277,6 +280,23 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     scale = static_cast<float>(graph.get_double(scale_id));
   } else if (scale_type != WebGPUGraph::ValueType::Null) {
     throw std::runtime_error("WebGPU sdpa: scale must be None or a Double");
+  }
+
+  // Unsupported attention args must be absent/default; mirrors Vulkan
+  // SDPA.cpp:587-593 (scale is handled above as an intentional extension).
+  using VT = WebGPUGraph::ValueType;
+  if (graph.get_value_type(attn_mask_id) != VT::Null) {
+    throw std::runtime_error("WebGPU sdpa: attn_mask is not supported");
+  }
+  const auto drop_type = graph.get_value_type(drop_p_id);
+  if (!(drop_type == VT::Null ||
+        (drop_type == VT::Double && graph.get_double(drop_p_id) == 0.0))) {
+    throw std::runtime_error("WebGPU sdpa: only dropout_p=0 is supported");
+  }
+  const auto causal_type = graph.get_value_type(is_causal_id);
+  if (!(causal_type == VT::Null ||
+        (causal_type == VT::Bool && graph.get_bool(is_causal_id)))) {
+    throw std::runtime_error("WebGPU sdpa: only is_causal=true is supported");
   }
 
   // KV cache written in place; only attn_weights/softmax need scratch.

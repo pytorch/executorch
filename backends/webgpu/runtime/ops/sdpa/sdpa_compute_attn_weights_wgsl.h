@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_compute_attn_weights.wgsl - DO NOT EDIT.
-// wgsl-sha256: f46e4439df1a1dcc9570ba762d799dac114ba865821bcb80c50ecf500fb78fce
+// wgsl-sha256: 7410869c1c35f09777851bf49b835dc8fecaff3f327aa64a9c900ac0cc3445e1
 inline constexpr const char* kSdpaComputeAttnWeightsWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
 @group(0) @binding(1) var<storage, read> t_q: array<f32>;
@@ -31,7 +31,7 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-// WGSL forbids literal -inf; large finite negative stands in (mirrors Vulkan).
+// WGSL forbids literal -inf; large finite negative is a WGSL-safe stand-in.
 const NEG_INF: f32 = -1.0e30;
 
 override wg_size: u32 = 64;
