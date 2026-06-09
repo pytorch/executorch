@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cstdlib>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
@@ -128,6 +130,11 @@ static bool can_use_q4gsw_coopmat(
     const ValueRef fp_input,
     int64_t group_size,
     const ValueRef bias) {
+  // Benchmark toggle: force the tiled fallback so a buffer PTE can serve as the
+  // apples-to-apples baseline without re-exporting (see ET_VK_DISABLE_COOPMAT).
+  if (std::getenv("ET_VK_DISABLE_COOPMAT") != nullptr) {
+    return false;
+  }
   // The coopmat shaders only build HAS_BIAS=false variants, so they would
   // silently drop a bias. Fall back to the tiled path (which applies bias at
   // runtime via the apply_bias spec constant) whenever a bias is present.
@@ -457,9 +464,11 @@ void add_linear_qw_node(
   }
 
   int32_t K4_per_group = 0;
+  int32_t num_groups = 0;
   if (weight_quant_config.nbits == 4) {
     int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
     K4_per_group = utils::div_up(group_size_val, int32_t(4));
+    num_groups = graph.size_at<int32_t>(-1, fp_input) / group_size_val;
   }
 
   const ValueRef is_4bit_flag =
@@ -479,7 +488,7 @@ void add_linear_qw_node(
       // Push Constants
       {},
       // Specialization Constants
-      {apply_bias, K4_per_group},
+      {apply_bias, K4_per_group, num_groups},
       // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
       {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic
@@ -602,9 +611,14 @@ void add_linear_dqa_qw_node(
   }
 
   int32_t K4_per_group = 0;
+  int32_t coopmat_k_iters = 0;
+  const int32_t K_dim = graph.size_at<int32_t>(-1, fp_input);
   if (weight_quant_config.nbits == 4) {
     int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
     K4_per_group = utils::div_up(group_size_val, int32_t(4));
+    coopmat_k_iters = K_dim / group_size_val;
+  } else {
+    coopmat_k_iters = K_dim / static_cast<int32_t>(kCoopmatTileK);
   }
 
   const ValueRef is_4bit_flag =
@@ -632,7 +646,7 @@ void add_linear_dqa_qw_node(
       // Push Constants
       {},
       // Specialization Constants
-      {apply_bias, K4_per_group},
+      {apply_bias, K4_per_group, coopmat_k_iters},
       // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
       {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic

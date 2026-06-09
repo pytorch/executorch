@@ -499,7 +499,9 @@ class TagMemoryMetaPass(ExportPass):
 
         self.constrain_op_repsets(op_repsets)
 
-        args_repr_list, outs_repr_list = op_repsets.pick_representations()
+        args_repr_list, outs_repr_list = op_repsets.pick_representations(
+            self.default_storage
+        )
 
         if len(outs_repr_list) == 1:
             utils.set_node_repr(op_node, outs_repr_list[0])

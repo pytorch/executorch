@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <cstdlib>
+
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace vkcompute {
@@ -42,6 +44,11 @@ inline bool is_coopmat_eligible(
     int64_t M,
     int64_t N,
     int64_t K) {
+  // Benchmark toggle: force the tiled fallback so a buffer PTE can serve as the
+  // apples-to-apples baseline without re-exporting (see ET_VK_DISABLE_COOPMAT).
+  if (std::getenv("ET_VK_DISABLE_COOPMAT") != nullptr) {
+    return false;
+  }
   if (graph.dim_of(out) > 2) {
     return false;
   }

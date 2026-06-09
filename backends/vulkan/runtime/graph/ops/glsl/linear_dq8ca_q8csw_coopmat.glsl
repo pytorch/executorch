@@ -82,6 +82,7 @@ ${layout_declare_spec_const(C, "int", "apply_bias",   "0")}
 // passes {apply_bias, K4_per_group} unconditionally) lines up.  Per-channel
 // weight has no groups; the shader ignores this value.
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
+${layout_declare_spec_const(C, "int", "k_chunks_arg", "0")}
 
 // Tile geometry
 const uint MMA_M = ${MMA_M};
@@ -159,7 +160,7 @@ void main() {
   const uint N = uint(output_sizes.x);
   const uint N4 = (N + 3u) / 4u;
   const uint K4 = (K + 3u) / 4u;
-  const uint NUM_K_CHUNKS = K / WG_TILE_K;
+  const uint NUM_K_CHUNKS = uint(k_chunks_arg);
 
   const uint tile_m_start = WG_TILE_M * tileID.y;
   const uint tile_n_start = WG_TILE_N * tileID.x;

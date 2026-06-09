@@ -81,6 +81,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias",   "0")}
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
+${layout_declare_spec_const(C, "int", "num_groups_arg", "0")}
 
 // Tile geometry
 const uint MMA_M = ${MMA_M};
@@ -137,7 +138,7 @@ void main() {
   const uint N4 = (N + 3u) / 4u;
 
   const uint K_per_group = uint(K4_per_group) * 4u;
-  const uint num_groups = K / K_per_group;
+  const uint num_groups = uint(num_groups_arg);
   const uint CHUNKS_PER_GROUP = K_per_group / WG_TILE_K;
 
   const uint tile_m_start = WG_TILE_M * tileID.y;
