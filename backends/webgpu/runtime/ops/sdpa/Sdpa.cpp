@@ -67,6 +67,63 @@ struct ComputeOutParams {
 };
 static_assert(sizeof(ComputeOutParams) == 32, "ComputeOutParams must be 32B");
 
+// Param-struct builder helpers — used in both initial build and resize hook.
+static UpdateCacheParams make_update_cache_params(
+    uint64_t kv_numel,
+    uint32_t dst_offset,
+    uint64_t cache_numel) {
+  UpdateCacheParams p = {};
+  p.numel = static_cast<uint32_t>(kv_numel);
+  p.dst_offset = dst_offset;
+  p.cache_numel = static_cast<uint32_t>(cache_numel);
+  return p;
+}
+
+static AttnWeightsParams make_attn_weights_params(
+    int64_t S,
+    int64_t Hq,
+    int64_t Hkv,
+    int64_t D,
+    int64_t ctx,
+    int64_t pos,
+    int64_t g,
+    float scale) {
+  AttnWeightsParams p = {};
+  p.S = static_cast<uint32_t>(S);
+  p.Hq = static_cast<uint32_t>(Hq);
+  p.Hkv = static_cast<uint32_t>(Hkv);
+  p.D = static_cast<uint32_t>(D);
+  p.context_len = static_cast<uint32_t>(ctx);
+  p.input_pos = static_cast<uint32_t>(pos);
+  p.g = static_cast<uint32_t>(g);
+  p.scale = scale;
+  return p;
+}
+
+static SoftmaxParams make_softmax_params(int64_t Hq, int64_t S, int64_t ctx) {
+  SoftmaxParams p = {};
+  p.num_rows = static_cast<uint32_t>(Hq * S);
+  p.row_width = static_cast<uint32_t>(ctx);
+  return p;
+}
+
+static ComputeOutParams make_compute_out_params(
+    int64_t S,
+    int64_t Hq,
+    int64_t Hkv,
+    int64_t D,
+    int64_t ctx,
+    int64_t g) {
+  ComputeOutParams p = {};
+  p.S = static_cast<uint32_t>(S);
+  p.Hq = static_cast<uint32_t>(Hq);
+  p.Hkv = static_cast<uint32_t>(Hkv);
+  p.D = static_cast<uint32_t>(D);
+  p.context_len = static_cast<uint32_t>(ctx);
+  p.g = static_cast<uint32_t>(g);
+  return p;
+}
+
 // Create a uniform buffer initialized with the given bytes.
 WGPUBuffer
 make_uniform_buffer(WebGPUGraph& graph, const void* data, size_t size) {
@@ -111,6 +168,9 @@ void build_dispatch(
 
   // Bind group layout: storage entries then the uniform.
   constexpr uint32_t kMaxEntries = 8;
+  if (n_storage + 1 > kMaxEntries) {
+    throw std::runtime_error("WebGPU sdpa: n_storage exceeds kMaxEntries");
+  }
   WGPUBindGroupLayoutEntry bgl_entries[kMaxEntries] = {};
   const uint32_t uniform_binding = n_storage;
   for (uint32_t i = 0; i < n_storage; i++) {
@@ -181,6 +241,38 @@ void build_dispatch(
   }
 }
 
+// Dispatch one update_cache (K or V); returns the retained uniform buffer.
+static WGPUBuffer record_update_cache_dispatch(
+    WebGPUGraph& graph,
+    WGPUDevice device,
+    const WebGPUTensor& cache,
+    const WebGPUTensor& src,
+    uint64_t kv_numel,
+    uint32_t kv_dst_offset,
+    uint64_t cache_numel,
+    uint32_t uc_wg,
+    bool dynamic_pos,
+    const char* label) {
+  const uint32_t wgc = utils::compute_1d_workgroup_count(
+      device, static_cast<uint32_t>(kv_numel), uc_wg, label);
+  UpdateCacheParams uc =
+      make_update_cache_params(kv_numel, kv_dst_offset, cache_numel);
+  WGPUBuffer ubuf = make_uniform_buffer(graph, &uc, sizeof(uc));
+  BufferBinding bindings[2] = {
+      {cache.buffer, cache.nbytes}, {src.buffer, src.nbytes}};
+  build_dispatch(
+      graph,
+      kUpdateCacheWGSL,
+      bindings,
+      2,
+      ubuf,
+      sizeof(uc),
+      wgc,
+      uc_wg,
+      dynamic_pos);
+  return ubuf;
+}
+
 // llama.sdpa_with_kv_cache.default args mirror the Vulkan impl.
 void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int q_id = args.at(0);
@@ -203,8 +295,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& v_cache = graph.get_tensor(v_cache_id);
   const auto& out = graph.get_tensor(out_id);
 
-  if (q.dims.size() < 3 || k.dims.size() < 3 || k_cache.dims.size() < 3) {
-    throw std::runtime_error("WebGPU sdpa: q/k/k_cache must be rank >= 3");
+  if (q.dims.size() < 3 || k.dims.size() < 3 || v.dims.size() < 3 ||
+      k_cache.dims.size() < 3) {
+    throw std::runtime_error("WebGPU sdpa: q/k/v/k_cache must be rank >= 3");
   }
 
   // q [1, S, Hq, D]; k/v [1, S, Hkv, D]; caches [1, Cmax, Hkv, D].
@@ -232,6 +325,11 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU sdpa: Hq must be a multiple of Hkv (GQA)");
   }
   const int64_t g = Hq / Hkv;
+
+  // k/v seq-len must match q's S.
+  if (k.dims[kn - 3] != S || v.dims[v.dims.size() - 3] != S) {
+    throw std::runtime_error("WebGPU sdpa: k/v seq_len must match q");
+  }
 
   // Mirrors Vulkan SDPA: q/k_cache head_dim + k_cache/v_cache shape must match.
   if (D != k_cache.dims[cn - 1]) {
@@ -307,6 +405,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<uint64_t>(S) *
       static_cast<uint64_t>(dynamic_pos ? Cmax : context_len);
   const uint64_t aw_bytes = aw_cap_floats * sizeof(float);
+  // Prefill scratch scales as Hq·S·Cmax; can be large for long-context prefill.
   WGPUBuffer attn_weights = graph.create_scratch_buffer(aw_bytes);
   WGPUBuffer attn_weights_softmax = graph.create_scratch_buffer(aw_bytes);
 
@@ -329,64 +428,35 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const uint32_t kv_dst_offset = static_cast<uint32_t>(
       static_cast<uint64_t>(input_pos) * static_cast<uint64_t>(Hkv) *
       static_cast<uint64_t>(D));
-  {
-    const uint32_t wgc = utils::compute_1d_workgroup_count(
-        device, static_cast<uint32_t>(kv_numel), uc_wg, "update_cache(K)");
-    UpdateCacheParams uc = {};
-    uc.numel = static_cast<uint32_t>(kv_numel);
-    uc.dst_offset = kv_dst_offset;
-    uc.cache_numel = static_cast<uint32_t>(numel(k_cache));
-    WGPUBuffer ubuf = make_uniform_buffer(graph, &uc, sizeof(uc));
-    BufferBinding bindings[2] = {
-        {k_cache.buffer, k_cache.nbytes}, {k.buffer, k.nbytes}};
-    build_dispatch(
-        graph,
-        kUpdateCacheWGSL,
-        bindings,
-        2,
-        ubuf,
-        sizeof(uc),
-        wgc,
-        uc_wg,
-        dynamic_pos);
-    uc_k_buf = ubuf;
-  }
-  {
-    const uint32_t wgc = utils::compute_1d_workgroup_count(
-        device, static_cast<uint32_t>(kv_numel), uc_wg, "update_cache(V)");
-    UpdateCacheParams uc = {};
-    uc.numel = static_cast<uint32_t>(kv_numel);
-    uc.dst_offset = kv_dst_offset;
-    uc.cache_numel = static_cast<uint32_t>(numel(v_cache));
-    WGPUBuffer ubuf = make_uniform_buffer(graph, &uc, sizeof(uc));
-    BufferBinding bindings[2] = {
-        {v_cache.buffer, v_cache.nbytes}, {v.buffer, v.nbytes}};
-    build_dispatch(
-        graph,
-        kUpdateCacheWGSL,
-        bindings,
-        2,
-        ubuf,
-        sizeof(uc),
-        wgc,
-        uc_wg,
-        dynamic_pos);
-    uc_v_buf = ubuf;
-  }
+  uc_k_buf = record_update_cache_dispatch(
+      graph,
+      device,
+      k_cache,
+      k,
+      kv_numel,
+      kv_dst_offset,
+      numel(k_cache),
+      uc_wg,
+      dynamic_pos,
+      "update_cache(K)");
+  uc_v_buf = record_update_cache_dispatch(
+      graph,
+      device,
+      v_cache,
+      v,
+      kv_numel,
+      kv_dst_offset,
+      numel(v_cache),
+      uc_wg,
+      dynamic_pos,
+      "update_cache(V)");
 
   // --- Dispatch 3: QK -> attn_weights. One thread per (h,s,c) element.
   {
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(aw_floats), qk_wg, "QK");
-    AttnWeightsParams p = {};
-    p.S = static_cast<uint32_t>(S);
-    p.Hq = static_cast<uint32_t>(Hq);
-    p.Hkv = static_cast<uint32_t>(Hkv);
-    p.D = static_cast<uint32_t>(D);
-    p.context_len = static_cast<uint32_t>(context_len);
-    p.input_pos = static_cast<uint32_t>(input_pos);
-    p.g = static_cast<uint32_t>(g);
-    p.scale = scale;
+    AttnWeightsParams p = make_attn_weights_params(
+        S, Hq, Hkv, D, context_len, input_pos, g, scale);
     WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
     BufferBinding bindings[3] = {
         {attn_weights, aw_bytes},
@@ -411,9 +481,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     // One workgroup per (h,s) row; wg_size 1 keeps the device dispatch check.
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(Hq * S), 1, "softmax");
-    SoftmaxParams p = {};
-    p.num_rows = wgc;
-    p.row_width = static_cast<uint32_t>(context_len);
+    SoftmaxParams p = make_softmax_params(Hq, S, context_len);
     WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
     BufferBinding bindings[2] = {
         {attn_weights_softmax, aw_bytes}, {attn_weights, aw_bytes}};
@@ -436,13 +504,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         static_cast<uint64_t>(Hq) * static_cast<uint64_t>(D);
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(out_floats), av_wg, "AV");
-    ComputeOutParams p = {};
-    p.S = static_cast<uint32_t>(S);
-    p.Hq = static_cast<uint32_t>(Hq);
-    p.Hkv = static_cast<uint32_t>(Hkv);
-    p.D = static_cast<uint32_t>(D);
-    p.context_len = static_cast<uint32_t>(context_len);
-    p.g = static_cast<uint32_t>(g);
+    ComputeOutParams p =
+        make_compute_out_params(S, Hq, Hkv, D, context_len, g);
     WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
     BufferBinding bindings[3] = {
         {out.buffer, out.nbytes},
@@ -491,27 +554,18 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
               static_cast<uint64_t>(D));
           const uint64_t aw_floats = static_cast<uint64_t>(Hq) *
               static_cast<uint64_t>(S) * static_cast<uint64_t>(ctx);
+          const uint64_t kv_numel = static_cast<uint64_t>(S) *
+              static_cast<uint64_t>(Hkv) * static_cast<uint64_t>(D);
+          const uint64_t k_cache_numel = static_cast<uint64_t>(Cmax) *
+              static_cast<uint64_t>(Hkv) * static_cast<uint64_t>(D);
 
-          UpdateCacheParams uc = {};
-          uc.numel = static_cast<uint32_t>(
-              static_cast<uint64_t>(S) * static_cast<uint64_t>(Hkv) *
-              static_cast<uint64_t>(D));
-          uc.dst_offset = kv_off;
-          uc.cache_numel = static_cast<uint32_t>(
-              static_cast<uint64_t>(Cmax) * static_cast<uint64_t>(Hkv) *
-              static_cast<uint64_t>(D));
+          UpdateCacheParams uc =
+              make_update_cache_params(kv_numel, kv_off, k_cache_numel);
           wgpuQueueWriteBuffer(gr.queue(), uc_k_buf, 0, &uc, sizeof(uc));
           wgpuQueueWriteBuffer(gr.queue(), uc_v_buf, 0, &uc, sizeof(uc));
 
-          AttnWeightsParams qp = {};
-          qp.S = static_cast<uint32_t>(S);
-          qp.Hq = static_cast<uint32_t>(Hq);
-          qp.Hkv = static_cast<uint32_t>(Hkv);
-          qp.D = static_cast<uint32_t>(D);
-          qp.context_len = static_cast<uint32_t>(ctx);
-          qp.input_pos = static_cast<uint32_t>(pos);
-          qp.g = static_cast<uint32_t>(g);
-          qp.scale = scale;
+          AttnWeightsParams qp =
+              make_attn_weights_params(S, Hq, Hkv, D, ctx, pos, g, scale);
           wgpuQueueWriteBuffer(gr.queue(), qk_buf, 0, &qp, sizeof(qp));
           const uint32_t qk_wgc = utils::compute_1d_workgroup_count(
               gr.device(),
@@ -520,18 +574,10 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
               "QK(resize)");
           gr.dispatch_at(qk_idx).workgroup_count_x = qk_wgc;
 
-          SoftmaxParams sp = {};
-          sp.num_rows = static_cast<uint32_t>(Hq * S);
-          sp.row_width = static_cast<uint32_t>(ctx);
+          SoftmaxParams sp = make_softmax_params(Hq, S, ctx);
           wgpuQueueWriteBuffer(gr.queue(), softmax_buf, 0, &sp, sizeof(sp));
 
-          ComputeOutParams op = {};
-          op.S = static_cast<uint32_t>(S);
-          op.Hq = static_cast<uint32_t>(Hq);
-          op.Hkv = static_cast<uint32_t>(Hkv);
-          op.D = static_cast<uint32_t>(D);
-          op.context_len = static_cast<uint32_t>(ctx);
-          op.g = static_cast<uint32_t>(g);
+          ComputeOutParams op = make_compute_out_params(S, Hq, Hkv, D, ctx, g);
           wgpuQueueWriteBuffer(gr.queue(), av_buf, 0, &op, sizeof(op));
         });
   }

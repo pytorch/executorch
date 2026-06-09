@@ -82,6 +82,9 @@ void WebGPUGraph::update_symints_from_inputs(
     if (index < 0) {
       index += static_cast<int>(dims[dim]);
     }
+    if (index < 0 || index >= static_cast<int>(dims[dim])) {
+      throw std::runtime_error("select_as_symint: index out of range");
+    }
     int64_t numel = 1;
     for (int64_t d : dims) {
       numel *= d;
@@ -93,10 +96,9 @@ void WebGPUGraph::update_symints_from_inputs(
     for (size_t i = static_cast<size_t>(dim) + 1; i < dims.size(); i++) {
       stride *= dims[i];
     }
+    // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
     const int64_t offset = static_cast<int64_t>(index) * stride;
-    if (offset < 0 || offset >= numel) {
-      throw std::runtime_error("select_as_symint: index out of range");
-    }
+    // elem_size back-derived from build-time numel (sources are static-shaped).
     const void* host = inputs[pos].first;
     const size_t elem_size = inputs[pos].second / static_cast<size_t>(numel);
     int32_t val;
