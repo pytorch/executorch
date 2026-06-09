@@ -4,13 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""/v1/chat/completions handler: builds prompts, drives the runner, and emits
-OpenAI-shaped responses (streaming and non-streaming)."""
+"""/v1/chat/completions OpenAI adapter: validates requests, renders the chat
+template, parses tool calls, and formats OpenAI responses. It owns no model or
+session state -- generation goes through SessionRuntime, and the token-ID warm-
+resume transcript lives in OpenAITranscriptState."""
 
 import json
 import logging
 import math
-from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
 from .chat_template import ChatTemplate
@@ -28,27 +29,10 @@ from .protocol import (
     ToolCall,
     Usage,
 )
-from .runner_pool import GenStats, RunnerPool
+from .session_runtime import GenerationOptions, GenStats, PromptInput, SessionRuntime
 from .tool_parsers import HermesDetector, ToolCallItem
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class GenConfig:
-    """Generation parameters the control plane forwards to a worker.
-
-    A plain dataclass (no runtime/pybind dependency): the control plane never
-    loads a model. The worker reads these fields off the JSONL request; only the
-    knobs we honor today are here (max_new_tokens, temperature, stop).
-    -1 max_new_tokens means "unset / let the worker pick from model metadata".
-    `stop` lets the worker terminate at a stop sequence instead of running to EOS
-    (the server still re-applies stops as a backstop).
-    """
-
-    max_new_tokens: int
-    temperature: float = 0.0
-    stop: list[str] = field(default_factory=list)
 
 
 def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
@@ -64,13 +48,13 @@ def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
 class ServingChat:
     def __init__(
         self,
-        pool: RunnerPool,
+        runtime: SessionRuntime,
         template: ChatTemplate,
         model_id: str,
         max_context: Optional[int] = None,
         tool_detector_cls: Optional[type[HermesDetector]] = None,
     ):
-        self._pool = pool
+        self._runtime = runtime
         self._template = template
         self._model_id = model_id
         self._max_context = max_context
@@ -131,20 +115,19 @@ class ServingChat:
         boundary is neither parsed nor emitted."""
         return self._apply_stop(text, self._stops + self._request_stops(req))
 
-    @staticmethod
-    async def _collect_until_stop(stream: AsyncIterator[str], runner, stops: list[str]):
+    async def _collect_until_stop(self, stream: AsyncIterator[str], stops: list[str]):
         """Accumulate a buffered (non-streamed) generation into one string,
-        halting the runner early once a stop string (special token or request
+        halting the runtime early once a stop string (special token or request
         stop) appears, then draining so stats finalize. Returns (text, stopped):
         `stopped` lets the caller force finish_reason="stop" even when tokens
-        queued before the runner observed stop() pushed the count to max_tokens."""
+        queued before the runtime observed stop() pushed the count to max_tokens."""
         text = ""
         stopped = False
         async for tok in stream:
             text += tok
             if stops and _earliest_stop(text, stops) is not None:
                 stopped = True
-                runner.stop()
+                self._runtime.stop()
                 async for _ in stream:  # drain so stats_cb fires
                     pass
                 break
@@ -193,8 +176,8 @@ class ServingChat:
         if buf:
             yield buf
 
-    def _config(self, req: ChatCompletionRequest) -> GenConfig:
-        return GenConfig(
+    def _options(self, req: ChatCompletionRequest) -> GenerationOptions:
+        return GenerationOptions(
             max_new_tokens=req.resolved_max_tokens(),
             temperature=req.temperature if req.temperature is not None else 0.0,
             # Let the worker terminate at the same boundary the control plane
@@ -320,26 +303,28 @@ class ServingChat:
                 requested = req.resolved_max_tokens()
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
-        config = self._config(req)
+        options = self._options(req)
+        prompt_input = PromptInput(text=prompt)
         if req.stream:
-            return self._stream(req, prompt, config)
-        return await self._complete(req, prompt, config)
+            return self._stream(req, prompt_input, options)
+        return await self._complete(req, prompt_input, options)
 
     async def _complete(
-        self, req: ChatCompletionRequest, prompt: str, config: GenConfig
+        self,
+        req: ChatCompletionRequest,
+        prompt: PromptInput,
+        options: GenerationOptions,
     ) -> ChatCompletionResponse:
         stats = GenStats()
-        async with self._pool.acquire() as runner:
-            try:
-                # Collect raw text (markers intact for tool parsing), halting early
-                # at a stop boundary (special token or request stop).
-                text, stopped = await self._collect_until_stop(
-                    self._pool.generate_stream(runner, prompt, config, stats),
-                    runner,
-                    self._stops + self._request_stops(req),
-                )
-            except Exception as e:  # noqa: BLE001 - surface as a structured API error
-                raise GenerationError(str(e))
+        try:
+            # Collect raw text (markers intact for tool parsing), halting early
+            # at a stop boundary (special token or request stop).
+            text, stopped = await self._collect_until_stop(
+                self._runtime.generate_stream(None, prompt, options, stats),
+                self._stops + self._request_stops(req),
+            )
+        except Exception as e:  # noqa: BLE001 - surface as a structured API error
+            raise GenerationError(str(e))
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, content = self._extract_tools(req, self._truncate_raw(text, req))
@@ -362,7 +347,10 @@ class ServingChat:
         )
 
     async def _stream(
-        self, req: ChatCompletionRequest, prompt: str, config: GenConfig
+        self,
+        req: ChatCompletionRequest,
+        prompt: PromptInput,
+        options: GenerationOptions,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -383,37 +371,35 @@ class ServingChat:
         stats = GenStats()
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
         stops = self._stops + self._request_stops(req)
-        async with self._pool.acquire() as runner:
-            try:
-                if use_tools:
-                    # v1: buffer the (usually short) tool response, parse once.
-                    # Halt early at a stop boundary, and bound the raw output
-                    # BEFORE parsing so post-stop tool calls / text don't leak.
-                    raw, stop_hit[0] = await self._collect_until_stop(
-                        self._pool.generate_stream(runner, prompt, config, stats),
-                        runner,
-                        stops,
-                    )
-                    tool_calls, content = self._extract_tools(
-                        req, self._truncate_raw(raw, req)
-                    )
-                else:
-                    # Plain chat: stream tokens live (best UX), cutting at special
-                    # tokens or request stop sequences and halting early on a hit.
-                    def on_stop():
-                        stop_hit[0] = True
-                        runner.stop()
+        try:
+            if use_tools:
+                # v1: buffer the (usually short) tool response, parse once.
+                # Halt early at a stop boundary, and bound the raw output
+                # BEFORE parsing so post-stop tool calls / text don't leak.
+                raw, stop_hit[0] = await self._collect_until_stop(
+                    self._runtime.generate_stream(None, prompt, options, stats),
+                    stops,
+                )
+                tool_calls, content = self._extract_tools(
+                    req, self._truncate_raw(raw, req)
+                )
+            else:
+                # Plain chat: stream tokens live (best UX), cutting at special
+                # tokens or request stop sequences and halting early on a hit.
+                def on_stop():
+                    stop_hit[0] = True
+                    self._runtime.stop()
 
-                    async for token in self._clean(
-                        self._pool.generate_stream(runner, prompt, config, stats),
-                        stops,
-                        on_stop=on_stop,
-                    ):
-                        yield chunk(DeltaMessage(content=token))
-            except (
-                Exception
-            ) as e:  # noqa: BLE001 - emit a structured error event, never drop the socket
-                error = e
+                async for token in self._clean(
+                    self._runtime.generate_stream(None, prompt, options, stats),
+                    stops,
+                    on_stop=on_stop,
+                ):
+                    yield chunk(DeltaMessage(content=token))
+        except (
+            Exception
+        ) as e:  # noqa: BLE001 - emit a structured error event, never drop the socket
+            error = e
 
         if error is not None:
             err = {
