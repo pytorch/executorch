@@ -52,7 +52,7 @@ LlmModuleConfig config = LlmModuleConfig.create()
 LlmModule module = new LlmModule(config);
 ```
 
-Available load modes are `LOAD_MODE_FILE`, `LOAD_MODE_MMAP` (default), `LOAD_MODE_MMAP_USE_MLOCK`, and `LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS`. Available model types are `MODEL_TYPE_TEXT`, `MODEL_TYPE_TEXT_VISION`, and `MODEL_TYPE_MULTIMODAL`.
+Available load modes are `LOAD_MODE_FILE`, `LOAD_MODE_MMAP` (default), `LOAD_MODE_MMAP_USE_MLOCK`, and `LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS`. Available model types are `MODEL_TYPE_TEXT` and `MODEL_TYPE_TEXT_VISION` (the `MODEL_TYPE_MULTIMODAL` constant is currently an alias for `MODEL_TYPE_TEXT_VISION` and selects the same runtime path).
 
 Construction itself is lightweight and does not load the program data immediately.
 
