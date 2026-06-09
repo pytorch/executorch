@@ -95,6 +95,14 @@ class OpenAITranscriptState:
         stored = self._turns.get(session_id or "")
         if not stored:
             return PromptInput(text=rendered_prompt)
+        # ORDINAL ASSUMPTION: stored[k] is the k-th assistant turn WE generated
+        # for this session, matched positionally against the k-th assistant
+        # message in the request. A client-injected assistant turn we did not
+        # generate -- a few-shot exemplar, a pre-seeded turn, or any reused
+        # session -- shifts that alignment, so the fingerprint at k mismatches and
+        # we stop splicing from there. This is always SAFE (text fallback +
+        # worker exact-prefix backstop); it only lowers the warm-resume hit rate,
+        # silently, for such conversations.
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
         splice: dict[int, list[int]] = {}  # message index -> exact ids
         diverged_at = None

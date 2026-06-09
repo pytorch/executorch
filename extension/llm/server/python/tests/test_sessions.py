@@ -359,3 +359,69 @@ def test_divergence_truncates_stale_tail():
     )
     assert out.text == "X"  # diverged -> plain text fallback
     assert t._turns["s"] == []  # stale tail pruned from the first mismatch
+
+
+class _HFToolSpecials:
+    # Tokenizer that marks a turn terminator AND tool/structural delimiters special.
+    all_special_tokens = ["<|im_end|>", "<tool_call>", "</tool_call>", "<|box_start|>"]
+    eos_token = "<|im_end|>"
+
+
+def test_stop_set_narrow_but_strip_set_broad():
+    # Two-set split (work item 1): the generation/pre-parse-truncation set is
+    # NARROW (turn terminators only) so a <tool_call> is never halted or cut
+    # before the parser sees it; the final content-strip set stays BROAD so stray
+    # specials can't leak into visible content.
+    from types import SimpleNamespace
+
+    template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
+    template._hf = _HFToolSpecials()
+    serving = ServingChat(_RaisingRuntime(), template, "test-model")
+
+    assert "<|im_end|>" in serving._stops  # terminator kept
+    assert "<tool_call>" not in serving._stops  # delimiter excluded
+    assert "</tool_call>" not in serving._stops
+    assert "<|box_start|>" not in serving._stops
+
+    assert "<tool_call>" in serving._content_specials  # broad strip keeps it
+    assert "<|box_start|>" in serving._content_specials
+
+    # The insidious site: _truncate_raw must NOT cut at <tool_call> (it uses the
+    # narrow set), so the full tool-call markup survives to the parser.
+    raw = (
+        "sure<tool_call>\n<function=f>\n<parameter=x>\n1\n"
+        "</parameter>\n</function>\n</tool_call>"
+    )
+    assert serving._truncate_raw(raw, SimpleNamespace(stop=None)) == raw
+
+
+def test_injected_assistant_exemplar_falls_back_to_text():
+    # 5d: a client-injected assistant turn we never generated (few-shot exemplar /
+    # pre-seeded turn) shifts the ordinal alignment -> fingerprint mismatch ->
+    # safe text fallback (no stale ids spliced).
+    from executorch.extension.llm.server.python.openai_transcript import (
+        OpenAITranscriptState,
+    )
+    from executorch.extension.llm.server.python.protocol import ChatMessage
+
+    t = OpenAITranscriptState(ChatTemplate(hf_tokenizer_path=None, allow_fallback=True))
+    t.record_assistant_turn(
+        session_id="s",
+        content="a0",
+        tool_calls=None,
+        generated_token_ids=[1, 2],
+        prior_turns=0,
+    )
+    msgs = [
+        ChatMessage(role="user", content="u0"),
+        ChatMessage(role="assistant", content="INJECTED EXEMPLAR"),  # not ours
+        ChatMessage(role="user", content="u1"),
+    ]
+    out = t.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt="X",
+        tools=None,
+        template_kwargs=None,
+    )
+    assert out.text == "X" and out.segments is None  # safe text fallback
