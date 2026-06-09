@@ -30,5 +30,6 @@ def define_common_targets():
             deps = [
                 "//executorch/extension/tensor:tensor",
                 "//executorch/runtime/core:device_allocator",
+                "//executorch/runtime/core/test:mock_cuda_allocator",
             ],
         )

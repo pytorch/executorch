@@ -17,7 +17,7 @@ const NEG_INF: f32 = -1.0e30;
 var<workgroup> shared_max: array<f32, WG_SIZE>;
 var<workgroup> shared_sum: array<f32, WG_SIZE>;
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(WG_SIZE, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>) {

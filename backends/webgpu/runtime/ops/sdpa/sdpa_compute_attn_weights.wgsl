@@ -14,7 +14,7 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-// WGSL forbids literal -inf; large finite negative stands in (mirrors Vulkan).
+// WGSL forbids literal -inf; large finite negative is a WGSL-safe stand-in.
 const NEG_INF: f32 = -1.0e30;
 
 override wg_size: u32 = 64;

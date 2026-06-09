@@ -75,22 +75,30 @@ void WebGPUGraph::update_symints_from_inputs(
     }
     const auto& dims = tensors_[src.input_tensor_id].dims;
     int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
+    if (dim < 0 || dim >= static_cast<int>(dims.size())) {
+      throw std::runtime_error("select_as_symint: dim out of range");
+    }
     int index = src.index;
-    if (dim >= 0 && dim < static_cast<int>(dims.size()) && index < 0) {
+    if (index < 0) {
       index += static_cast<int>(dims[dim]);
     }
     int64_t numel = 1;
     for (int64_t d : dims) {
       numel *= d;
     }
+    if (numel <= 0) {
+      throw std::runtime_error("select_as_symint: empty input tensor");
+    }
     int64_t stride = 1;
     for (size_t i = static_cast<size_t>(dim) + 1; i < dims.size(); i++) {
       stride *= dims[i];
     }
     const int64_t offset = static_cast<int64_t>(index) * stride;
+    if (offset < 0 || offset >= numel) {
+      throw std::runtime_error("select_as_symint: index out of range");
+    }
     const void* host = inputs[pos].first;
-    const size_t elem_size =
-        numel > 0 ? inputs[pos].second / static_cast<size_t>(numel) : 0;
+    const size_t elem_size = inputs[pos].second / static_cast<size_t>(numel);
     int32_t val;
     if (elem_size == sizeof(int64_t)) {
       val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
@@ -321,7 +329,7 @@ void WebGPUGraph::build(
         value_types_[i] = ValueType::SymInt;
         SymIntSlot slot;
         slot.value = static_cast<int32_t>(val->value_as_SymInt()->value());
-        // 16B satisfies the WGSL uniform min binding size; int32 in first 4.
+        // 16B matches the backend uniform-struct alignment; int32 in first 4.
         constexpr size_t kSymIntUniformBytes = 16;
         WGPUBufferDescriptor d = {};
         d.size = kSymIntUniformBytes;
@@ -572,7 +580,6 @@ void WebGPUGraph::execute() {
 namespace {
 
 struct MapCallbackData {
-  bool done = false;
   WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
 };
 
@@ -583,7 +590,6 @@ void buffer_map_callback(
     void* /*userdata2*/) {
   auto* data = static_cast<MapCallbackData*>(userdata1);
   data->status = status;
-  data->done = true;
 }
 
 } // namespace
@@ -592,18 +598,18 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
 
   std::vector<MapCallbackData> cb_data(count);
+  std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
 
   for (size_t i = 0; i < count; i++) {
     if (outputs[i].second == 0) {
-      cb_data[i].done = true;
       cb_data[i].status = WGPUMapAsyncStatus_Success;
       continue;
     }
     WGPUBufferMapCallbackInfo cb_info = {};
-    cb_info.mode = WGPUCallbackMode_AllowSpontaneous;
+    cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
     cb_info.callback = buffer_map_callback;
     cb_info.userdata1 = &cb_data[i];
-    wgpuBufferMapAsync(
+    map_futures[i] = wgpuBufferMapAsync(
         output_staging_buffers_[i],
         WGPUMapMode_Read,
         0,
@@ -611,15 +617,10 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
         cb_info);
   }
 
-  bool all_mapped = false;
-  while (!all_mapped) {
-    webgpu_poll(instance_);
-    all_mapped = true;
-    for (size_t i = 0; i < count; i++) {
-      if (outputs[i].second != 0 && !cb_data[i].done) {
-        all_mapped = false;
-        break;
-      }
+  for (size_t i = 0; i < count; i++) {
+    if (outputs[i].second != 0 &&
+        webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
+      throw std::runtime_error("WebGPU: WaitAny failed for output map");
     }
   }
 
