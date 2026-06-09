@@ -10,8 +10,8 @@
 #   * Dawn  : Google's official nightly prebuilt, downloaded directly from
 #             github.com/google/dawn/releases (pinned tag+rev+sha256) -- the same
 #             "fetch a pinned upstream prebuilt" pattern used for other CI deps.
-#   * SwiftShader : reuse the prebuilt ALREADY on the ossci-android bucket (the one
-#             setup-vulkan-linux-deps.sh uses). No new S3 uploads anywhere.
+#   * SwiftShader : built from source at a pinned rev compatible with the Dawn
+#             above (the ossci prebuilt is from 2020, too old for current Dawn). No S3.
 # Dawn (Chrome's WebGPU impl; its WGSL compiler Tint is the spec reference) on
 # SwiftShader gives a headless, deterministic, spec-faithful CLI backend.
 #
@@ -24,7 +24,9 @@ set -ex
 DAWN_TAG="${DAWN_TAG:-v20260423.175430}"
 DAWN_REV="${DAWN_REV:-31e25af254ab572c77054edec4946d2244e184dd}"
 DAWN_SHA256="${DAWN_SHA256:-ac76fac090162dc1ecea5ed0f28a557bb8f49efc47faab01886105ace82b7b64}"
-SWIFTSHADER_ARCHIVE="${SWIFTSHADER_ARCHIVE:-swiftshader-abe07b943-prebuilt.tar.gz}"
+# SwiftShader rev verified compatible with DAWN_REV (the old ossci prebuilt is
+# from 2020 and is incompatible with current Dawn -> no adapter / zero compute).
+SWIFTSHADER_REV="${SWIFTSHADER_REV:-9898204d91d6a60b6a08ad74fe4ac52a6913111b}"
 
 _dawn_dir="${DAWN_PREBUILT_DIR:-/tmp/dawn-ci}"
 _ss_dir=/tmp/swiftshader
@@ -68,16 +70,28 @@ if [[ ! -d "${_dawn_dir}/lib64/cmake/Dawn" ]]; then
   tar -C "${_dawn_dir}" --strip-components=1 -xzf "${_dawn_tar}"
 fi
 
-# --- SwiftShader: reuse the existing ossci prebuilt (no new upload) -----------
-if [[ ! -f "${_ss_dir}/swiftshader/build/Linux/vk_swiftshader_icd.json" ]]; then
-  _ss_aws=https://ossci-android.s3.amazonaws.com
-  mkdir -p "${_ss_dir}"
-  curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
-    --output "/tmp/${SWIFTSHADER_ARCHIVE}" "${_ss_aws}/${SWIFTSHADER_ARCHIVE}"
-  tar -C "${_ss_dir}" -xzf "/tmp/${SWIFTSHADER_ARCHIVE}"
+# --- SwiftShader: build from source at a pinned rev (no S3) -------------------
+# The old ossci prebuilt (swiftshader-abe07b943, 2020) is incompatible with the
+# current Dawn; build a matching modern SwiftShader instead. Self-contained
+# cmake build (vendored LLVM); the ICD lands under build/<OS>/.
+if [[ ! -d "${_ss_dir}/build" ]]; then
+  if [[ ! -d "${_ss_dir}/.git" ]]; then
+    git clone https://github.com/google/swiftshader "${_ss_dir}"
+  fi
+  git -C "${_ss_dir}" checkout "${SWIFTSHADER_REV}"
+  # vk_swiftshader's deps are vendored in-tree; tolerate unreachable
+  # disabled-feature submodules (angle, test-only) failing to fetch.
+  git -C "${_ss_dir}" submodule update --init --recursive || true
+  cmake -S "${_ss_dir}" -B "${_ss_dir}/build" -DCMAKE_BUILD_TYPE=Release \
+    -DSWIFTSHADER_BUILD_TESTS=OFF -DSWIFTSHADER_BUILD_PVR=OFF \
+    -DSWIFTSHADER_BUILD_BENCHMARKS=OFF
+  cmake --build "${_ss_dir}/build" --parallel "$(nproc)" --target vk_swiftshader
 fi
+_ss_icd="$(find "${_ss_dir}/build" -name vk_swiftshader_icd.json 2>/dev/null | head -1)"
+[[ -n "${_ss_icd}" ]] || { echo "ERROR: SwiftShader ICD not found after build" >&2; exit 1; }
 
+_ss_libdir="$(dirname "${_ss_icd}")"
 export Dawn_DIR="${_dawn_dir}/lib64/cmake/Dawn"
-export VK_ICD_FILENAMES="${_ss_dir}/swiftshader/build/Linux/vk_swiftshader_icd.json"
-export LD_LIBRARY_PATH="${_ss_dir}/swiftshader/build/Linux/:${LD_LIBRARY_PATH:-}"
+export VK_ICD_FILENAMES="${_ss_icd}"
+export LD_LIBRARY_PATH="${_ss_libdir}:${LD_LIBRARY_PATH:-}"
 export WEBGPU_USING_SWIFTSHADER=1
