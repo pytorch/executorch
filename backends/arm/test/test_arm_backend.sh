@@ -167,6 +167,10 @@ test_run_ethos_u55() {
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py --bundleio
 
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U65"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py --bundleio
+
     # Cortex-M op tests
     echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U55)"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
@@ -299,7 +303,7 @@ test_deit_e2e_ethos_u() {
 # ------------------------------------
 # -------- Miscellaneous tests -------
 # ------------------------------------
-test_model_smollm2_135M() {
+test_model_smollm2_135M_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
 
     backends/arm/scripts/build_executorch.sh
@@ -309,7 +313,7 @@ test_model_smollm2_135M() {
         base.model_class=smollm2 \
         base.params=examples/models/smollm2/135M_config.json \
         debug.verbose=True model.enable_dynamic_shape=False quantization.pt2e_quantize="ethosu_8a8w" \
-        backend.ethosu.enabled=True backend.ethosu.target="ethos-u85-256" backend.ethosu.memory_mode=Dedicated_Sram_384KB
+        backend.ethosu.enabled=True backend.ethosu.target="ethos-u85-256" backend.ethosu.memory_mode=Dedicated_Sram_384KB export.max_seq_length=32
 
     # Build the arm_executor_runner application, pre-loading the pte in the DDR for faster linking
     local pte_addr="0x76000000"
@@ -322,8 +326,8 @@ test_model_smollm2_135M() {
       --memory_mode=Dedicated_Sram_384KB \
       --ethosu_tools_dir="${scratch_dir}" \
       --toolchain=arm-none-eabi-gcc \
-      --extra_build_flags="-DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0x20000" \
-      --select_ops_list="dim_order_ops::_to_dim_order_copy.out" 
+      --extra_build_flags="-DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0x100000" \
+      --select_ops_list="dim_order_ops::_to_dim_order_copy.out"
 
 
     # Deploy the application on the FVP in fast mode
