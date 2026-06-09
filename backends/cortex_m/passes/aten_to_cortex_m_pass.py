@@ -53,12 +53,6 @@ class AtenToCortexMPass(AtenToDialectPass):
     ) -> None:
         super().__init__(exported_program=exported_program)
         self.target_config = target_config
-        self._DIALECT_SUBSTITUTIONS = {  # type: ignore[misc]
-            **type(self)._DIALECT_SUBSTITUTIONS,
-            exir_ops.edge.aten.linear.default: lambda node, ep: _get_linear_replacement(
-                node, ep, target_config
-            ),
-        }
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
@@ -153,7 +147,7 @@ def _has_qparams(node: Node) -> bool:
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.tanh.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.silu.default)
 def _get_activation_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     """Lower a standalone quantized sigmoid / tanh / silu to a single
     cortex_m.quantized_activation call backed by an AoT-built 256-entry
@@ -163,6 +157,7 @@ def _get_activation_replacement(
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     input_qparams = node.meta["input_qparams"][0]
     output_qparams = node.meta["output_qparams"][0]
     lut_tensor = build_activation_lut(
@@ -192,10 +187,9 @@ def _get_activation_replacement(
     )
 
 
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.linear.default)
 def _get_linear_replacement(
-    node: Node,
-    exported_program: ExportedProgram,
-    target_config: CortexMTargetConfig,
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     """
     Let
@@ -216,6 +210,10 @@ def _get_linear_replacement(
     """
     if not _has_qparams(node):
         return None
+
+    assert isinstance(dialect_pass, AtenToCortexMPass)
+    exported_program = dialect_pass.exported_program
+    target_config = dialect_pass.target_config
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zp = node.meta["input_qparams"][0].zp
@@ -286,11 +284,12 @@ def _get_linear_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.convolution.default)
 def _get_convolution_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     conv_args = node.args
     (
         x,
@@ -315,7 +314,7 @@ def _get_convolution_replacement(
     )
 
     if transposed:
-        return _get_transpose_conv2d_replacement(node, exported_program)
+        return _get_transpose_conv2d_replacement(node, dialect_pass)
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zero_point = node.meta["input_qparams"][0].zp
@@ -460,7 +459,7 @@ def _get_convolution_replacement(
 
 
 def _get_transpose_conv2d_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     """
     Transform aten.convolution with transposed=True to cortex_m.quantized_transpose_conv2d.
@@ -468,6 +467,7 @@ def _get_transpose_conv2d_replacement(
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     conv_t_args = node.args
     (
         x,
@@ -585,11 +585,12 @@ def _get_transpose_conv2d_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.bmm.default)
 def _get_bmm_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     lhs_scale = node.meta["input_qparams"][0].scale
     lhs_zp = node.meta["input_qparams"][0].zp
     rhs_scale = node.meta["input_qparams"][1].scale

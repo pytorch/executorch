@@ -28,7 +28,7 @@ class DialectNodeSpec:
 
 # Expected type to be used for substitution functions
 SubstitutionFn: TypeAlias = Callable[
-    [torch.fx.Node, torch.export.ExportedProgram], DialectNodeSpec | None
+    [torch.fx.Node, "AtenToDialectPass"], DialectNodeSpec | None
 ]
 
 
@@ -86,7 +86,7 @@ class AtenToDialectPass(ExportPass):
             if substitution_func is None:
                 continue
 
-            dialect_node_spec = substitution_func(node, self.exported_program)
+            dialect_node_spec = substitution_func(node, self)
             if dialect_node_spec is None:
                 continue
 

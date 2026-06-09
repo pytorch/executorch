@@ -198,10 +198,11 @@ class _SmallMagnitudeVariant:
     case: McuTestCase
     target_config: CortexMTargetConfig
     uses_kernel_sum: bool
+    has_bias: bool
 
 
 def _small_magnitude_variant(
-    model_cls, cpu: CortexM, uses_kernel_sum: bool
+    model_cls, cpu: CortexM, *, uses_kernel_sum: bool, has_bias: bool
 ) -> _SmallMagnitudeVariant:
     return _SmallMagnitudeVariant(
         case=McuTestCase(
@@ -210,6 +211,7 @@ def _small_magnitude_variant(
         ),
         target_config=CortexMTargetConfig(cpu=cpu),
         uses_kernel_sum=uses_kernel_sum,
+        has_bias=has_bias,
     )
 
 
@@ -218,22 +220,22 @@ def _small_magnitude_variant(
 # missing on the non-MVE paths.
 small_magnitude_variants = {
     "mve_bias": _small_magnitude_variant(
-        _SmallMagnitudeLinear, CortexM.M55, uses_kernel_sum=True
+        _SmallMagnitudeLinear, CortexM.M55, uses_kernel_sum=True, has_bias=True
     ),
     "dsp_bias": _small_magnitude_variant(
-        _SmallMagnitudeLinear, CortexM.M4, uses_kernel_sum=False
+        _SmallMagnitudeLinear, CortexM.M4, uses_kernel_sum=False, has_bias=True
     ),
     "scalar_bias": _small_magnitude_variant(
-        _SmallMagnitudeLinear, CortexM.M0PLUS, uses_kernel_sum=False
+        _SmallMagnitudeLinear, CortexM.M0PLUS, uses_kernel_sum=False, has_bias=True
     ),
     "mve_nobias": _small_magnitude_variant(
-        _SmallMagnitudeLinearNoBias, CortexM.M55, uses_kernel_sum=True
+        _SmallMagnitudeLinearNoBias, CortexM.M55, uses_kernel_sum=True, has_bias=False
     ),
     "dsp_nobias": _small_magnitude_variant(
-        _SmallMagnitudeLinearNoBias, CortexM.M4, uses_kernel_sum=False
+        _SmallMagnitudeLinearNoBias, CortexM.M4, uses_kernel_sum=False, has_bias=False
     ),
     "scalar_nobias": _small_magnitude_variant(
-        _SmallMagnitudeLinearNoBias, CortexM.M0PLUS, uses_kernel_sum=False
+        _SmallMagnitudeLinearNoBias, CortexM.M0PLUS, uses_kernel_sum=False, has_bias=False
     ),
 }
 
@@ -269,8 +271,9 @@ def test_dialect_linear_small_magnitude(variant: _SmallMagnitudeVariant):
         assert bias_arg is None
     else:
         assert kernel_sum_arg is None
-        assert isinstance(variant.case.model, _SmallMagnitudeLinear)
-        if variant.case.model.fc.bias is None:
+        if variant.has_bias:
+            assert bias_arg is not None
+        else:
             assert bias_arg is None
 
 
