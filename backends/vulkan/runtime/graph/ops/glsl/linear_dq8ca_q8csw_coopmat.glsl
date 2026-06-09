@@ -83,6 +83,10 @@ ${layout_declare_spec_const(C, "int", "apply_bias",   "0")}
 // weight has no groups; the shader ignores this value.
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 ${layout_declare_spec_const(C, "int", "k_chunks_arg", "0")}
+// Output width N for coopMatStore: the Xclipse compiler MISCOMPILES
+// coopMatStore whose offset/stride derive from a UBO value (only the first
+// store per subgroup lands correctly; standalone repro cm_acc2).
+${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
 
 // Tile geometry
 const uint MMA_M = ${MMA_M};
@@ -271,21 +275,22 @@ void main() {
 
     // --- Inner K loop: coopmat<int8> x coopmat<int8> -> coopmat<int32> ---
     // Address LDS slabs. Each k iter consumes one slab of MMA_K=16
-    // K-rows. coopMatLoad offset/stride are in int8 element units. matA
-    // is RowMajor with stride MMA_K=16 (16-byte aligned). matB is
-    // ColumnMajor with stride B_STRIDE_INT8=20 (16 useful + 4 skew),
-    // which is coprime-to-32-banks on the LDS port side.
+    // K-rows. coopMatLoad offset/stride are in units of the backing
+    // array's element type (uint = 4 packed int8), NOT int8 elements.
+    // matA is RowMajor with stride A_STRIDE_U32=4 uints (16 int8,
+    // 16-byte aligned). matB is ColumnMajor with stride B_STRIDE_U32=5
+    // uints (4 useful + 1 skew), coprime-to-32-banks on the LDS port side.
     [[unroll]] for (uint k = 0; k < NUM_K_SLABS; ++k) {
-      const uint slab_a_base_int8 = k * A_SLAB_INT8;
-      const uint slab_b_base_int8 = k * (B_SLAB_U32 * 4u);   // uints → int8
+      const uint slab_a_base_u32 = k * A_SLAB_U32;
+      const uint slab_b_base_u32 = k * B_SLAB_U32;
 
       coopmat<int8_t, gl_ScopeSubgroup, MMA_M, MMA_K, gl_MatrixUseA> matA[MMAS_PER_SG_M];
       [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
         const uint row_a = MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
         coopMatLoad(
             matA[i], Ash_int8,
-            slab_a_base_int8 + row_a * A_STRIDE_INT8,
-            A_STRIDE_INT8,
+            slab_a_base_u32 + row_a * A_STRIDE_U32,
+            A_STRIDE_U32,
             gl_CooperativeMatrixLayoutRowMajor);
       }
 
@@ -294,8 +299,8 @@ void main() {
         const uint col_b = MMA_N * (MMAS_PER_SG_N * warpInTile.x + j);
         coopMatLoad(
             matB, Bsh_int8,
-            slab_b_base_int8 + col_b * B_STRIDE_INT8,
-            B_STRIDE_INT8,
+            slab_b_base_u32 + col_b * B_STRIDE_U32,
+            B_STRIDE_U32,
             gl_CooperativeMatrixLayoutColumnMajor);
         [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
           accum_int32[i][j] = coopMatMulAdd(matA[i], matB, accum_int32[i][j]);
@@ -366,6 +371,9 @@ void main() {
 #endif
 
   // --- Store result tile ---
+  // N for the store address math MUST come from the spec constant, not the
+  // sizes UBO (see out_N_arg above).
+  const uint N_out = uint(out_N_arg);
   [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
     [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
       const uint gi = tile_m_start + MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
@@ -384,7 +392,7 @@ void main() {
           coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(result[i][j]);
       coopMatStore(
           out_tile, t_output,
-          gi * N + gj, N,
+          gi * N_out + gj, N_out,
           gl_CooperativeMatrixLayoutRowMajor);
     }
   }

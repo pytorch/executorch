@@ -75,6 +75,10 @@ ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 // the Xclipse/AMD-PAL shader compiler crashes (null deref in vkCreateComputePipelines)
 // when a loop containing coopMatMulAdd has a UBO-derived trip count.
 ${layout_declare_spec_const(C, "int", "num_groups_arg", "0")}
+// Output width N for coopMatStore, as a spec constant: the same compiler
+// MISCOMPILES coopMatStore whose offset/stride derive from a UBO value (only
+// the first store per subgroup lands correctly; standalone repro cm_acc2).
+${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
 
 // --- Tile geometry (from yaml; defaults match coopmat_mm) ---
 const uint MMA_M = ${MMA_M};
@@ -152,8 +156,9 @@ void main() {
   const uint b_col = gl_LocalInvocationID.x % INVS_PER_ROW_B;
   const uint b_row_offset = gl_LocalInvocationID.x / INVS_PER_ROW_B;
 
-  // Number of INT4 N-blocks across the full output width N (each block = 8 N values).
-  const uint nblocks_x = N >> 3u;
+  // INT4 weight block grid (see pack_q4_linear_weight.glsl): block (k4, n8)
+  // covers K=[k4*4, k4*4+3] x N=[n8*8, n8*8+7]; buffer pitch = K4 blocks per
+  // n8 row, texture coord = ivec2(x=k4, y=n8).
 
   for (uint group_i = 0; group_i < num_groups; ++group_i) {
     // --- Stage per-group weight scales for this WG's N-tile into shared mem.
@@ -188,24 +193,21 @@ void main() {
       //   K-row = chunkK + b_row_offset
       //   N range = tile_n_start + b_col*8 .. + b_col*8 + 7
       //
-      // INT4 weight block layout (from prepack_quantized_linear_weight):
-      //   t_packed_int4_weight[(block_y * nblocks_x) + block_x] = ivec4
-      //   covering K=[block_y*4, block_y*4+3] and N=[block_x*8, block_x*8+7].
-      //   Within the ivec4, int32[r] packs 8 nibbles for 2 N values:
-      //     col=2*k_in_block      -> N = block_x*8 + r, K = block_y*4 + k_in_block
-      //     col=2*k_in_block + 1  -> N = block_x*8 + r + 4, K = block_y*4 + k_in_block
+      // Within a packed ivec4 block, int32[r] packs 8 nibbles for 2 N values:
+      //   col=2*k_in_block      -> N = n8_blk*8 + r,     K = k4_blk*4 + k_in_block
+      //   col=2*k_in_block + 1  -> N = n8_blk*8 + r + 4, K = k4_blk*4 + k_in_block
       {
         const uint k_row = chunkK + b_row_offset;
         const uint n_start = tile_n_start + b_col * 8u;
-        const uint block_y = k_row >> 2u;
+        const uint k4_blk = k_row >> 2u;
         const uint k_in_block = k_row & 3u;
-        const uint block_x = n_start >> 3u;
+        const uint n8_blk = n_start >> 3u;
 
         ivec4 wblock;
 #ifdef WEIGHT_BUFFER
-        wblock = t_packed_int4_weight[(block_y * nblocks_x) + block_x];
+        wblock = t_packed_int4_weight[(n8_blk * K4) + k4_blk];
 #else
-        wblock = texelFetch(t_packed_int4_weight, ivec2(block_x, block_y), 0);
+        wblock = texelFetch(t_packed_int4_weight, ivec2(k4_blk, n8_blk), 0);
 #endif
 
         const uint col_lo = 2u * k_in_block;
@@ -284,6 +286,9 @@ void main() {
 #endif
 
   // --- Store result tile ---
+  // N for the store address math MUST come from the spec constant, not the
+  // sizes UBO (see out_N_arg above).
+  const uint N_out = uint(out_N_arg);
   [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
     [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
       const uint gi = tile_m_start + MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
@@ -305,7 +310,7 @@ void main() {
           coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(result[i][j]);
       coopMatStore(
           out_tile, t_output,
-          gi * N + gj, N,
+          gi * N_out + gj, N_out,
           gl_CooperativeMatrixLayoutRowMajor);
     }
   }

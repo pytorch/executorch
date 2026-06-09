@@ -207,6 +207,22 @@ vkapi::ShaderInfo pick_linear_qw_shader(
     }
   }
 
+  // 8-bit per-channel weight-only (q8csw) coopmat. group_size doesn't apply,
+  // so K is passed (it satisfies group_size % kCoopmatTileK == 0 when K does).
+  // KNOWN ISSUE: shares the unresolved j>0 N-subtile correctness bug with the
+  // other coopmat shaders (under investigation via the consolidated bench).
+  if (!weight_is_4bit && !is_gemv_case) {
+    const int64_t K = graph->size_at<int64_t>(-1, fp_input);
+    if (can_use_q4gsw_coopmat(graph, output, fp_input, K, resize_args.at(2))) {
+      std::string kernel_name = "linear_q8csw_coopmat";
+      add_storage_type_suffix(kernel_name, graph->storage_type_of(output));
+      add_storage_type_suffix(
+          kernel_name, graph->storage_type_of(packed_int_weight));
+      add_dtype_suffix(kernel_name, graph->dtype_of(output));
+      return VK_KERNEL_FROM_STR(kernel_name);
+    }
+  }
+
   std::string kernel_name = "linear_";
   if (weight_is_4bit) {
     kernel_name += "q4gsw";
@@ -464,11 +480,17 @@ void add_linear_qw_node(
   }
 
   int32_t K4_per_group = 0;
+  // 3rd coopmat spec const: num_groups (4-bit q4gsw) or K-chunk count (8-bit
+  // q8csw). Either way it is the trip count of the coopmat loop, passed as a
+  // spec constant to avoid the Xclipse driver crash on UBO-derived bounds.
   int32_t num_groups = 0;
   if (weight_quant_config.nbits == 4) {
     int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
     K4_per_group = utils::div_up(group_size_val, int32_t(4));
     num_groups = graph.size_at<int32_t>(-1, fp_input) / group_size_val;
+  } else {
+    num_groups = graph.size_at<int32_t>(-1, fp_input) /
+        static_cast<int32_t>(kCoopmatTileK);
   }
 
   const ValueRef is_4bit_flag =
@@ -488,7 +510,13 @@ void add_linear_qw_node(
       // Push Constants
       {},
       // Specialization Constants
-      {apply_bias, K4_per_group, num_groups},
+      // 4th spec const: output width N. The coopmat shaders must take N for
+      // coopMatStore address math from a spec constant, not the sizes UBO
+      // (Xclipse driver miscompiles UBO-derived store offsets/strides).
+      {apply_bias,
+       K4_per_group,
+       num_groups,
+       graph.size_at<int32_t>(-1, output)},
       // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
       {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic
@@ -646,7 +674,11 @@ void add_linear_dqa_qw_node(
       // Push Constants
       {},
       // Specialization Constants
-      {apply_bias, K4_per_group, coopmat_k_iters},
+      // 4th spec const: output width N for coopMatStore (see add_linear_qw_node).
+      {apply_bias,
+       K4_per_group,
+       coopmat_k_iters,
+       graph.size_at<int32_t>(-1, output)},
       // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
       {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic

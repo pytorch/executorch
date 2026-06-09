@@ -82,6 +82,10 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "apply_bias",   "0")}
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 ${layout_declare_spec_const(C, "int", "num_groups_arg", "0")}
+// Output width N for coopMatStore: the Xclipse compiler MISCOMPILES
+// coopMatStore whose offset/stride derive from a UBO value (only the first
+// store per subgroup lands correctly; standalone repro cm_acc2).
+${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
 
 // Tile geometry
 const uint MMA_M = ${MMA_M};
@@ -211,25 +215,28 @@ void main() {
       }
 
       // --- Stage B: INT4 -> sign-extended int8 in Bsh_int8 ---
+      // INT4 weight block grid (see pack_q4_linear_weight.glsl): block
+      // (k4, n8) covers K=[k4*4, k4*4+3] x N=[n8*8, n8*8+7]; buffer pitch =
+      // K4 blocks per n8 row, texture coord = ivec2(x=k4, y=n8).
       {
         const uint total_uints = WG_TILE_K * (WG_TILE_N / 4u);
-        const uint nblocks_x_B = N >> 3u;
+        const uint nblocks_K_w = (K + 3u) >> 2u;
         for (uint slot = gl_LocalInvocationID.x; slot < total_uints; slot += WG_SIZE) {
           const uint k_row_in_chunk = slot / B_STRIDE_U32;
           const uint n_uint_col     = slot % B_STRIDE_U32;
           const uint k_row_global   = chunkK + k_row_in_chunk;
           const uint n_start_global = tile_n_start + n_uint_col * 4u;
 
-          const uint block_y_w     = k_row_global >> 2u;
+          const uint k4_blk        = k_row_global >> 2u;
           const uint k_in_blk      = k_row_global & 3u;
-          const uint block_x_w     = n_start_global >> 3u;
+          const uint n8_blk        = n_start_global >> 3u;
           const uint n_within_block = n_start_global & 7u;
 
           ivec4 wblk;
 #ifdef WEIGHT_BUFFER
-          wblk = t_packed_int4_weight[(block_y_w * nblocks_x_B) + block_x_w];
+          wblk = t_packed_int4_weight[(n8_blk * nblocks_K_w) + k4_blk];
 #else
-          wblk = texelFetch(t_packed_int4_weight, ivec2(block_x_w, block_y_w), 0);
+          wblk = texelFetch(t_packed_int4_weight, ivec2(k4_blk, n8_blk), 0);
 #endif
           const uint col_x = (n_within_block == 0u) ? (2u * k_in_blk) : (2u * k_in_blk + 1u);
           int v0 = (int(((wblk[0] >> int(4u * col_x)) & 0xF)) - 8) & 0xFF;
@@ -243,6 +250,8 @@ void main() {
       barrier();
 
       // --- Inner K loop: coopmat<int8> x coopmat<int8> -> coopmat<int32> ---
+      // coopMatLoad offset/stride are in units of the backing array's element
+      // type (uint = 4 packed int8), NOT int8 elements.
       [[unroll]] for (uint k = 0; k < WG_TILE_K / MMA_K; ++k) {
         const uint k_start = MMA_K * k;
 
@@ -251,8 +260,8 @@ void main() {
           const uint row_a = MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
           coopMatLoad(
               matA[i], Ash_int8,
-              row_a * WG_TILE_K + k_start,
-              WG_TILE_K,
+              row_a * A_STRIDE_U32 + k_start / 4u,
+              A_STRIDE_U32,
               gl_CooperativeMatrixLayoutRowMajor);
         }
 
@@ -261,8 +270,8 @@ void main() {
           const uint col_b = MMA_N * (MMAS_PER_SG_N * warpInTile.x + j);
           coopMatLoad(
               matB, Bsh_int8,
-              k_start * WG_TILE_N + col_b,
-              WG_TILE_N,
+              k_start * B_STRIDE_U32 + col_b / 4u,
+              B_STRIDE_U32,
               gl_CooperativeMatrixLayoutRowMajor);
           [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
             accum_int32[i][j] = coopMatMulAdd(matA[i], matB, accum_int32[i][j]);
@@ -339,6 +348,9 @@ void main() {
 #endif
 
   // --- Store result tile ---
+  // N for the store address math MUST come from the spec constant, not the
+  // sizes UBO (see out_N_arg above).
+  const uint N_out = uint(out_N_arg);
   [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
     [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
       const uint gi = tile_m_start + MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
@@ -357,7 +369,7 @@ void main() {
           coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(result[i][j]);
       coopMatStore(
           out_tile, t_output,
-          gi * N + gj, N,
+          gi * N_out + gj, N_out,
           gl_CooperativeMatrixLayoutRowMajor);
     }
   }
