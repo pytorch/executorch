@@ -18,6 +18,7 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import (
+    PermuteCopyConverter,
     ViewCopyConverter,
 )
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
@@ -339,7 +340,11 @@ class TestEdgePasses(unittest.TestCase):
             compile_spec, neutron_target_spec, custom_delegation_options
         )
 
-        edge_program_manager = edge_program_manager.to_backend(partitioner)
+        # Make sure the `permute_copy` is not delegated.
+        with OverrideTargetSupportCheck(
+            PermuteCopyConverter, new_target_support_check=lambda *_: False
+        ):
+            edge_program_manager = edge_program_manager.to_backend(partitioner)
 
         # Make sure QDQ cluster for permute_copy is present.
         edge_program_with_qdq_cluster = copy.deepcopy(
