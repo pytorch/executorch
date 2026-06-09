@@ -25,9 +25,10 @@
 // rebind. The per-session rebind machinery is CUDA-backend-private (see
 // backends/cuda/runtime/cuda_mutable_state).
 //
-// The SERVING path (qwen3_5_moe_worker + control plane) is still single-slot:
-// it creates one session and queues requests on it. Exposing the engine's
-// multi-session capability over the worker protocol is a follow-up.
+// The SERVING path (qwen3_5_moe_worker + control plane) exposes this over the
+// worker protocol: the worker routes requests to per-session_id state (V2a) and
+// reuses each session's resident context across requests (warm append-only
+// resume, V2b.1). Execution stays serialized (one in-flight request).
 
 #pragma once
 

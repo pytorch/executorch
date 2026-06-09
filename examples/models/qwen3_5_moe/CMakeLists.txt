@@ -78,8 +78,8 @@ endif()
 
 # Process-isolated serving worker (qwen3_5_moe_worker): constructs
 # Qwen35MoEEngine directly and speaks the JSONL worker protocol that the Python
-# control plane drives via WorkerClient (no pybind, no Python model code). Used
-# by the qwen3_5_moe-cuda-serve flow.
+# control plane drives via WorkerClient (no pybind, no Python model code). Built
+# alongside the runner by the qwen3-5-moe-cuda preset.
 add_executable(qwen3_5_moe_worker qwen35_moe_worker.cpp qwen35_moe_engine.cpp)
 target_include_directories(
   qwen3_5_moe_worker PUBLIC ${_common_include_directories} ${_json_include}

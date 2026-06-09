@@ -14,9 +14,10 @@ templating, tool parsing, request validation. It runs NO model code and imports
 no runtime pybind. Model execution lives in a separate C++ worker process
 (``text_llm_worker``) driven over JSONL via WorkerClient.
 
-V1 is single-slot: one worker hosts one session, so concurrent requests queue.
-There is no prefix cache in V1 serving; caching, if it returns, lives inside the
-worker/session, not the control plane.
+One worker process, serialized execution (one in-flight request; concurrent
+requests queue). Session capacity is set by the worker/engine -- a single worker
+hosts many isolated sessions on one weight load; extra worker processes would
+duplicate the weights, so `--num-runners` accepts 1.
 
 Example:
     python -m executorch.extension.llm.server.python.server \\
@@ -35,8 +36,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .chat_template import ChatTemplate
 from .errors import APIError
 from .protocol import ChatCompletionRequest, ModelCard, ModelList
-from .runner_pool import RunnerPool
 from .serving_chat import ServingChat
+from .session_runtime import SessionRuntime
 from .tool_parsers import HermesDetector
 from .worker_client import spawn_worker
 
@@ -143,7 +144,8 @@ def main() -> None:
         "--num-runners",
         type=int,
         default=1,
-        help="V1 supports 1 only (single-slot: one worker serves one session).",
+        help="Worker processes. 1 only: one worker hosts many isolated sessions "
+        "on a single weight load; more workers would duplicate the weights.",
     )
     p.add_argument(
         "--worker-bin",
@@ -158,7 +160,8 @@ def main() -> None:
 
     if args.num_runners != 1:
         p.error(
-            "V1 is single-slot: one worker serves one session; concurrent requests queue."
+            "Only 1 worker process is supported (it hosts many isolated sessions "
+            "on one weight load); more workers would duplicate the weights."
         )
 
     default_template_kwargs = {"enable_thinking": False} if args.no_think else None
@@ -168,10 +171,10 @@ def main() -> None:
         default_template_kwargs=default_template_kwargs,
         allow_fallback=args.allow_chatml_fallback,
     )
-    worker = _spawn(args)  # one worker == one session (single-slot V1)
-    pool = RunnerPool([worker])
+    worker = _spawn(args)  # one worker hosting many isolated sessions
+    runtime = SessionRuntime(worker)
     serving = ServingChat(
-        pool,
+        runtime,
         template,
         args.model_id,
         max_context=args.max_context,
@@ -184,7 +187,7 @@ def main() -> None:
 
     @app.on_event("shutdown")
     def _stop_worker():
-        pool.close()
+        runtime.close_worker()
 
     import uvicorn  # imported here so build_app() is usable without the ASGI server
 

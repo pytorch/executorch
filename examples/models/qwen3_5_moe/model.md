@@ -151,8 +151,9 @@ any harness) drive the model without knowing it is Qwen-MoE or CUDA.
   that shares that one model but owns its own per-session mutable state
   (KV/conv/recurrent), rebound before execute under the engine lock.
   `serving_capacity()` reports how many such sessions fit without duplicating
-  weights (or 1 if the backend can't rebind). The serving path is still
-  single-slot until the worker exposes multi-session.
+  weights (or 1 if the backend can't rebind). The serving worker exposes this
+  over its protocol: requests route by session_id and warm-resume their context
+  across turns, serialized to one in-flight request.
 - **`Qwen35MoESession`** owns the mutable conversation state (KV / conv /
   recurrent arenas via the Module, position cursor, pending token).
   `prefill_tokens` dispatches to `prefill` (T≥2) or `decode` (T==1);

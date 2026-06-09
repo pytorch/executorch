@@ -100,14 +100,16 @@ It can be uploaded to HuggingFace Hub for easy sharing.
 
 ExecuTorch must be installed from source first (see
 [Prerequisites](#prerequisites)). The `make` target handles building
-core libraries and the runner binary.
+core libraries and the binaries.
 
 ```bash
 make qwen3_5_moe-cuda
 ```
 
 This builds ExecuTorch with CUDA backend support, then the runner binary
-at `cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner`.
+at `cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner` and the
+serving worker at `cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_worker`
+(see [Serving](#serving-openai-compatible)).
 
 ## Run
 
@@ -144,10 +146,10 @@ cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
 Run an OpenAI-compatible HTTP server so an agent harness (pi, opencode, …) can
 use the model for local tool-use. Point your client at `http://<host>:<port>/v1`.
 
-Build the runner **and** the serving worker:
+The CUDA build produces the runner **and** the serving worker:
 
 ```bash
-make qwen3_5_moe-cuda-serve
+make qwen3_5_moe-cuda
 ```
 
 Launch (the `LD_LIBRARY_PATH` shim is forwarded to the worker for the CUDA blob):

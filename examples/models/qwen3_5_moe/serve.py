@@ -40,8 +40,8 @@ import os
 from pathlib import Path
 
 from executorch.extension.llm.server.python.chat_template import ChatTemplate
-from executorch.extension.llm.server.python.runner_pool import RunnerPool
 from executorch.extension.llm.server.python.serving_chat import ServingChat
+from executorch.extension.llm.server.python.session_runtime import SessionRuntime
 from executorch.extension.llm.server.python.tool_parsers import QwenFunctionCallDetector
 from executorch.extension.llm.server.python.worker_client import spawn_worker
 
@@ -89,9 +89,9 @@ def build_app_from_args(args):
     )
 
     worker = _spawn(args)  # one worker == one session (single-slot V1)
-    pool = RunnerPool([worker])
+    runtime = SessionRuntime(worker)
     serving = ServingChat(
-        pool,
+        runtime,
         template,
         args.model_id,
         max_context=args.max_context,
@@ -105,7 +105,7 @@ def build_app_from_args(args):
 
     @app.on_event("shutdown")
     def _stop_worker():
-        pool.close()
+        runtime.close_worker()
 
     return app, args.model_id
 

@@ -163,6 +163,7 @@ Error build_descriptors(Context& c, CudaDelegateHandle* h) {
               tpl, t->data_ptr(), t->nbytes(), cudaMemcpyDeviceToDevice) !=
           cudaSuccess) {
         ET_LOG(Error, "mutable_state: cudaMemcpy template '%s'", fqn.c_str());
+        cudaFree(tpl);
         return Error::Internal;
       }
       c.template_ptr[fqn] = tpl;
@@ -194,6 +195,7 @@ Error ensure_session_buffers(Context& c, int token) {
     if (cudaMemcpy(p, tpl, nbytes, cudaMemcpyDeviceToDevice) != cudaSuccess) {
       ET_LOG(
           Error, "mutable_state: cudaMemcpy session buffer '%s'", fqn.c_str());
+      cudaFree(p);
       return Error::Internal;
     }
     buf[fqn] = p;

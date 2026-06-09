@@ -113,9 +113,9 @@ def test_mixed_valid_and_undefined_tool_degrades_to_text(make_client):
 
 def test_tool_choice_none_omits_tools_from_prompt():
     from executorch.extension.llm.server.python.chat_template import ChatTemplate
-    from executorch.extension.llm.server.python.runner_pool import RunnerPool
     from executorch.extension.llm.server.python.server import build_app
     from executorch.extension.llm.server.python.serving_chat import ServingChat
+    from executorch.extension.llm.server.python.session_runtime import SessionRuntime
     from executorch.extension.llm.server.python.tool_parsers import HermesDetector
 
     # tool_choice="none" must NOT inject tool schemas into the chat template; if it
@@ -152,9 +152,9 @@ def test_tool_choice_none_omits_tools_from_prompt():
     rec = _RecordingTok()
     template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
     template._hf = rec
-    pool = RunnerPool([_Runner()])
+    runtime = SessionRuntime(_Runner())
     serving = ServingChat(
-        pool, template, "test-model", tool_detector_cls=HermesDetector
+        runtime, template, "test-model", tool_detector_cls=HermesDetector
     )
     client = TestClient(build_app(serving, "test-model"))
     body = {

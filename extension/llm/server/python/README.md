@@ -69,7 +69,7 @@ Key flags:
 | `--allow-chatml-fallback` | opt into approximate ChatML when no HF tokenizer |
 | `--no-think` | default `enable_thinking=False` (e.g. Qwen3) |
 | `--max-context N` | reject over-long prompts with 400 instead of failing mid-gen |
-| `--num-runners N` | V1 supports **1 only** (single-slot: one worker serves one session; concurrent requests queue) |
+| `--num-runners N` | Worker processes — **1 only** (one worker hosts many isolated sessions on one weight load; more would duplicate weights) |
 | `--worker-bin PATH` | path to the `text_llm_worker` binary (default: `cmake-out/extension/llm/server/cpp/text_llm_worker`) |
 
 ## Use from an agent harness
@@ -101,16 +101,19 @@ pytest tests/
 OPENAI_BASE_URL=http://127.0.0.1:8000/v1 pytest ../conformance/test_openai_contract.py
 ```
 
-`tests/` builds a `RunnerPool` over a single `FakeRunner` worker handle, so the
+`tests/` builds a `SessionRuntime` over a single `FakeRunner` worker, so the
 real server/protocol/streaming code is tested over HTTP without a `.pte`. The
 worker JSONL protocol is covered separately by `tests/test_worker_client.py`.
 
 ## Architecture
 
-Control plane (this dir, Python): server, OpenAI protocol, chat templating,
-streaming bridge, tool parsing — no CUDA, no model, no pybind. Data plane (C++):
-a worker process (`text_llm_worker`) owns one model session and does all token
-stepping and KV mutation; it speaks one JSON object per line on stdin/stdout.
+Control plane (this dir, Python): an OpenAI adapter (`serving_chat`) over a
+stateful `SessionRuntime` over one `WorkerClient` — server, protocol, chat
+templating, streaming bridge, tool parsing — no CUDA, no model, no pybind. Data
+plane (C++): a worker process (`text_llm_worker`) that owns all model state
+(many isolated sessions on one weight load, warm-resume prefix logic) and does
+all token stepping and KV mutation; it speaks one JSON object per line on
+stdin/stdout.
 
 JSONL protocol (stdout carries protocol JSON only; logs go to stderr):
 
@@ -132,9 +135,9 @@ does blocking pipe I/O on its executor thread.
 | `server.py` | FastAPI app, routes, CLI entrypoint, worker spawn |
 | `protocol.py` | OpenAI request/response schemas |
 | `chat_template.py` | messages (+tools) → prompt string |
-| `worker_client.py` | spawn a worker process + drive it over JSONL |
-| `runner_pool.py` | worker pool (one in-flight request per worker) + async streaming bridge |
-| `serving_chat.py` | `/v1/chat/completions` (streaming + non-streaming, stop, tools) |
+| `worker_client.py` | spawn a worker process + drive it over JSONL (raw transport) |
+| `session_runtime.py` | stateful runtime over one worker: open/generate/reset/close + streaming bridge |
+| `serving_chat.py` | `/v1/chat/completions` OpenAI adapter (streaming + non-streaming, stop, tools) |
 | `tool_parsers/` | Hermes/Qwen `<tool_call>` parser only |
 | `cpp/text_llm_worker.cpp` | the generic C++ worker binary |
 
@@ -151,11 +154,11 @@ imports an example. Backend specifics (CUDA/AOTI, Metal) stay inside the worker.
 ## Scope & caveats
 
 Deliberately narrow (reliability-first): Hermes/Qwen tool calling only;
-unsupported sampling params are rejected, not ignored. V1 is **single-slot**: one
-worker hosts one session, so `--num-runners` accepts 1 and concurrent requests
-queue. Serving capacity is worker capacity, chosen by the launcher (each worker
-is its own process with its own weights, so N workers cost N × the weight memory)
-— an operator decision, not something the pool infers.
+unsupported sampling params are rejected, not ignored. **One worker process,
+serialized execution** (one in-flight request; concurrent requests queue).
+Session capacity is determined by the worker/engine — a single worker hosts many
+isolated sessions on one weight load — so `--num-runners` accepts 1; extra worker
+processes would each carry their own copy of the weights.
 
 Cancellation is best-effort: a worker request runs to completion and is not
 interruptible mid-generation in V1, so `runner.stop()` means "the control plane
