@@ -109,7 +109,6 @@ def test_clip_text_with_projection_tosa_INT():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=0.8,
             frobenius_threshold=None,
             cosine_threshold=None,
         )
@@ -132,7 +131,6 @@ def test_clip_text_with_projection_vgf_no_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=4,
             transform_passes=[
                 ConvertInt64ConstOpsToInt32Pass(),
                 ConvertInt64OutputOpsToInt32Pass(),
@@ -159,7 +157,6 @@ def test_clip_text_with_projection_vgf_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=0.8,
             quantize=True,
         )
         pipeline.change_args(

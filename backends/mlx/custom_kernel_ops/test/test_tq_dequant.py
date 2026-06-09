@@ -6,21 +6,23 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for ``mlx::tq4_compress``.
+Tests for ``mlx::tq_dequant``.
 
-Verifies the fused Metal kernel produces byte-exact output vs the
-eager Python implementation across head_dim values used by TurboQuant.
+Verifies the fused unpack + gather + multiply Metal kernel matches
+the eager reference at head_dim values used by TurboQuant
+(D ∈ {128, 256, 512}). Output is byte-exact — no fp32 promotion in
+either path.
 
 Usage::
 
-    python -m executorch.backends.mlx.model_ops.test_tq4_compress run
-    python -m executorch.backends.mlx.model_ops.test_tq4_compress run -v
-    python -m executorch.backends.mlx.model_ops.test_tq4_compress run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_tq_dequant run
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_tq_dequant run -v
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_tq_dequant run --rebuild
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.model_ops.tq4_compress  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.tq_dequant  # noqa: F401
 
 import torch
 import torch.nn as nn
@@ -28,29 +30,22 @@ import torch.nn as nn
 from executorch.backends.mlx.test.test_utils import OpTestCase
 
 
-class TQ4CompressModel(nn.Module):
-    """``values → packed`` via ``mlx::tq4_compress``.
+class TQDequantModel(nn.Module):
+    """``packed, norms, centroids → unrotated``."""
 
-    Boundaries are stored as a buffer so the model is exportable
-    without feeding them as a graph input.
-    """
-
-    def __init__(self, head_dim: int, dtype: torch.dtype = torch.bfloat16):
-        super().__init__()
-        # 15 sorted thresholds (4-bit codebook).
-        self.register_buffer(
-            "boundaries",
-            torch.linspace(-0.2, 0.2, 15, dtype=dtype),
-        )
-
-    def forward(self, values: torch.Tensor) -> torch.Tensor:
-        return torch.ops.mlx.tq4_compress(values, self.boundaries)
+    def forward(
+        self,
+        packed: torch.Tensor,
+        norms: torch.Tensor,
+        centroids: torch.Tensor,
+    ) -> torch.Tensor:
+        return torch.ops.mlx.tq_dequant(packed, norms, centroids)
 
 
-class TQ4CompressTest(OpTestCase):
-    """Byte-exact comparison vs eager bucketize + nibble-pack."""
+class TQDequantTest(OpTestCase):
+    """Byte-exact comparison vs eager unpack + gather + multiply."""
 
-    name = "tq4_compress"
+    name = "tq_dequant"
     rtol = 0.0
     atol = 0.0
 
@@ -60,27 +55,16 @@ class TQ4CompressTest(OpTestCase):
         n_heads: int = 8,
         seq_len: int = 4,
         head_dim: int = 128,
-        dtype: torch.dtype = torch.bfloat16,
     ):
         self.batch_size = batch_size
         self.n_heads = n_heads
         self.seq_len = seq_len
         self.head_dim = head_dim
-        self.dtype = dtype
-
-        parts = [
-            "tq4_compress",
-            f"b{batch_size}",
-            f"h{n_heads}",
-            f"t{seq_len}",
-            f"d{head_dim}",
-        ]
-        if dtype != torch.bfloat16:
-            parts.append(str(dtype).split(".")[-1])
-        self.name = "_".join(parts)
+        self.half_dim = head_dim // 2
+        self.name = f"tq_dequant_b{batch_size}_h{n_heads}_t{seq_len}_d{head_dim}"
 
     @classmethod
-    def get_test_configs(cls) -> List["TQ4CompressTest"]:
+    def get_test_configs(cls) -> List["TQDequantTest"]:
         return [
             # head_dim=128 (Qwen3.5 MoE / Gemma 4 sliding)
             cls(seq_len=1, head_dim=128),
@@ -88,30 +72,37 @@ class TQ4CompressTest(OpTestCase):
             cls(seq_len=64, head_dim=128),
             cls(n_heads=1, seq_len=1, head_dim=128),
             # head_dim=256 (Gemma 4 sliding-attention)
-            cls(head_dim=256),
+            cls(seq_len=4, head_dim=256),
             cls(seq_len=16, head_dim=256),
             # head_dim=512 (Gemma 4 31B full-attention)
             cls(n_heads=4, seq_len=4, head_dim=512),
             cls(n_heads=4, seq_len=64, head_dim=512),
-            # Smaller D for sanity
-            cls(head_dim=64, n_heads=2, seq_len=4),
         ]
 
     def create_model(self) -> nn.Module:
-        return TQ4CompressModel(head_dim=self.head_dim, dtype=self.dtype).to(self.dtype)
+        return TQDequantModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        # Activation-scale values; the kernel is byte-exact regardless
-        # of magnitude as long as values fall within the bucketize
-        # comparison range.
-        values = torch.randn(
-            self.batch_size,
-            self.n_heads,
-            self.seq_len,
-            self.head_dim,
-            dtype=self.dtype,
-        ) * (1.0 / (self.head_dim**0.5))
-        return (values,)
+        # Random packed bytes exercise every codebook entry.
+        packed = torch.randint(
+            0,
+            256,
+            (self.batch_size, self.n_heads, self.seq_len, self.half_dim),
+            dtype=torch.uint8,
+        )
+        norms = (
+            torch.randn(
+                self.batch_size,
+                self.n_heads,
+                self.seq_len,
+                1,
+                dtype=torch.bfloat16,
+            ).abs()
+            + 0.1
+        )
+        # Deterministic codebook covering [-1, 1].
+        centroids = torch.linspace(-1.0, 1.0, 16, dtype=torch.bfloat16)
+        return (packed, norms, centroids)
 
 
 if __name__ == "__main__":  # noqa: C901
@@ -120,25 +111,17 @@ if __name__ == "__main__":  # noqa: C901
 
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
-    parser = argparse.ArgumentParser(description="Test mlx::tq4_compress op")
-    parser.add_argument(
-        "action",
-        choices=["generate", "compare", "run", "list"],
-        help="Action: generate (export), compare (check outputs), run (full), list (show configs)",
-    )
+    parser = argparse.ArgumentParser(description="Test mlx::tq_dequant op")
+    parser.add_argument("action", choices=["generate", "compare", "run", "list"])
     parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument(
-        "--rebuild", action="store_true", help="Rebuild C++ runner first"
-    )
-    parser.add_argument(
-        "--config", type=str, default=None, help="Run specific config by name"
-    )
+    parser.add_argument("--rebuild", action="store_true")
+    parser.add_argument("--config", type=str, default=None)
     args = parser.parse_args()
 
     if args.rebuild and not rebuild_op_test_runner(verbose=args.verbose):
         sys.exit(1)
 
-    configs = TQ4CompressTest.get_test_configs()
+    configs = TQDequantTest.get_test_configs()
 
     if args.action == "list":
         for cfg in configs:

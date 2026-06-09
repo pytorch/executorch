@@ -31,6 +31,10 @@ static_assert((int)ExecuTorchImageResizeModeStretch == (int)ResizeMode::STRETCH,
 static_assert((int)ExecuTorchImageResizeModeLetterbox == (int)ResizeMode::LETTERBOX, "ExecuTorchImageResizeModeLetterbox must match ResizeMode::LETTERBOX");
 static_assert((int)ExecuTorchImageLetterboxAnchorCenter == (int)LetterboxAnchor::CENTER, "ExecuTorchImageLetterboxAnchorCenter must match LetterboxAnchor::CENTER");
 static_assert((int)ExecuTorchImageLetterboxAnchorTopLeft == (int)LetterboxAnchor::TOP_LEFT, "ExecuTorchImageLetterboxAnchorTopLeft must match LetterboxAnchor::TOP_LEFT");
+static_assert((int)ExecuTorchImageOrientationUp == (int)Orientation::UP, "ExecuTorchImageOrientationUp must match Orientation::UP");
+static_assert((int)ExecuTorchImageOrientationDown == (int)Orientation::DOWN, "ExecuTorchImageOrientationDown must match Orientation::DOWN");
+static_assert((int)ExecuTorchImageOrientationRight == (int)Orientation::RIGHT, "ExecuTorchImageOrientationRight must match Orientation::RIGHT");
+static_assert((int)ExecuTorchImageOrientationLeft == (int)Orientation::LEFT, "ExecuTorchImageOrientationLeft must match Orientation::LEFT");
 
 // MARK: - Private interfaces
 
@@ -178,17 +182,36 @@ static ExecuTorchTensor *tensorFromResult(
 
 - (nullable ExecuTorchTensor *)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
                                             error:(NSError **)error {
+  return [self processPixelBuffer:pixelBuffer
+                      orientation:ExecuTorchImageOrientationUp
+                            error:error];
+}
+
+- (BOOL)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
+                intoTensor:(ExecuTorchTensor *)tensor
+                     error:(NSError **)error {
+  return [self processPixelBuffer:pixelBuffer
+                      orientation:ExecuTorchImageOrientationUp
+                       intoTensor:tensor
+                            error:error];
+}
+
+- (nullable ExecuTorchTensor *)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
+                                      orientation:(ExecuTorchImageOrientation)orientation
+                                            error:(NSError **)error {
   if (!pixelBuffer) {
     if (error) {
       *error = ExecuTorchErrorWithCode(ExecuTorchErrorCodeInvalidArgument);
     }
     return nil;
   }
-  auto result = process_pixelbuffer(*_processor, pixelBuffer);
+  auto result = process_pixelbuffer(
+      *_processor, pixelBuffer, static_cast<Orientation>(orientation));
   return tensorFromResult(result, error);
 }
 
 - (BOOL)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
+               orientation:(ExecuTorchImageOrientation)orientation
                 intoTensor:(ExecuTorchTensor *)tensor
                      error:(NSError **)error {
   if (!pixelBuffer || !tensor) {
@@ -199,7 +222,8 @@ static ExecuTorchTensor *tensorFromResult(
   }
   auto* tensorPtr = reinterpret_cast<TensorPtr*>(tensor.nativeInstance);
   auto err = process_pixelbuffer_into(
-      *_processor, pixelBuffer, Orientation::UP, **tensorPtr);
+      *_processor, pixelBuffer, static_cast<Orientation>(orientation),
+      **tensorPtr);
   if (err != executorch::runtime::Error::Ok) {
     if (error) {
       *error = ExecuTorchErrorWithCode((ExecuTorchErrorCode)err);
@@ -211,8 +235,17 @@ static ExecuTorchTensor *tensorFromResult(
 
 - (ExecuTorchImageLetterboxPadding)computeLetterboxPaddingForInputWidth:(NSInteger)inputWidth
                                                                 height:(NSInteger)inputHeight {
+  return [self computeLetterboxPaddingForInputWidth:inputWidth
+                                             height:inputHeight
+                                        orientation:ExecuTorchImageOrientationUp];
+}
+
+- (ExecuTorchImageLetterboxPadding)computeLetterboxPaddingForInputWidth:(NSInteger)inputWidth
+                                                                height:(NSInteger)inputHeight
+                                     orientation:(ExecuTorchImageOrientation)orientation {
   const auto padding = _processor->compute_letterbox_padding(
-      static_cast<int32_t>(inputWidth), static_cast<int32_t>(inputHeight));
+      static_cast<int32_t>(inputWidth), static_cast<int32_t>(inputHeight),
+      static_cast<Orientation>(orientation));
   return {padding.first, padding.second};
 }
 

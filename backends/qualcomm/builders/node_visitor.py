@@ -248,16 +248,19 @@ class NodeVisitor:
             quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
 
         quant_config[QCOM_SCALE_OFFSET] = scale_offset_arr
-        # special case for 4 bits
-        if (
-            quant_config[QCOM_DTYPE] == torch.int8
-            and quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15
-        ):
-            quant_config[QCOM_BITWIDTH] = 4
-            return (
-                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
-                quant_config,
-            )
+        if quant_config[QCOM_DTYPE] == torch.int8:
+            if quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 3:
+                quant_config[QCOM_BITWIDTH] = 2
+                return (
+                    PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+                    quant_config,
+                )
+            elif quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15:
+                quant_config[QCOM_BITWIDTH] = 4
+                return (
+                    PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+                    quant_config,
+                )
         return (
             PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
             quant_config,
@@ -272,6 +275,11 @@ class NodeVisitor:
         }
         # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
         quant_config[QCOM_OFFSET] = -quant_attrs[QCOM_ZERO_POINT]
+        range_ = quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN]
+        assert range_ > 3, (
+            f"2-bit quantization (range={range_}) does not support per-tensor encoding. "
+            "Use per-channel quantization instead."
+        )
         # special case for 4 bits
         if (
             quant_config[QCOM_DTYPE] == torch.int8
@@ -337,6 +345,9 @@ class NodeVisitor:
         # Make the backends access data correctly
         if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
+            tensor = torch.bitwise_and(mask, tensor)
+        elif quant_configs.get(QCOM_BITWIDTH) == 2:
+            mask = torch.full(tensor.size(), 0x03, dtype=torch.int8)
             tensor = torch.bitwise_and(mask, tensor)
         return tensor
 

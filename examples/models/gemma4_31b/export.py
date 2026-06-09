@@ -28,7 +28,6 @@ import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
     Gemma4_31BConfig,
@@ -164,7 +163,6 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     import gc
 
     import torch._inductor.config as inductor_config
-
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
@@ -179,8 +177,8 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Register Int4Tensor dispatch → executorch_cuda::int4_plain_mm shim
-    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+    # Register Int4/Int8 dispatch → executorch_cuda::int{4,8}_plain_mm shims
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
@@ -296,7 +294,7 @@ def _export_mlx(
 
     Unlike CUDA (which exports separate decode/prefill methods with an
     Int4Tensor dispatch override), MLX uses a single method with dynamic
-    sequence length.  No int4_dispatch import — IntxUnpackedToInt8Tensor's
+    sequence length.  No quantize_op_dispatch import — IntxUnpackedToInt8Tensor's
     default dispatch produces the ``dequantize_affine → linear`` pattern
     that MLX's QuantizedLinearHandler matches.
 
@@ -306,9 +304,14 @@ def _export_mlx(
     """
     import gc
 
+    # Register the GGUF dequant op + MLX GGUF pattern handlers so quantized GGUF
+    # weights lower to the fused Q6_K kernels / Q4_K quantized matmul.
+    import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+    import executorch.extension.llm.export.gguf  # noqa: F401
+    import executorch.extension.llm.export.int4  # noqa: F401
+
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
-
     from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
         mlx_source_transformations,
     )
@@ -471,18 +474,13 @@ def main() -> None:
             backend=args.backend,
         )
 
-    if args.gguf and args.backend == "mlx":
-        os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
-    try:
-        export_and_lower(
-            model,
-            config,
-            args.output_dir,
-            backend=args.backend,
-            use_turboquant=args.turboquant,
-        )
-    finally:
-        os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
+    export_and_lower(
+        model,
+        config,
+        args.output_dir,
+        backend=args.backend,
+        use_turboquant=args.turboquant,
+    )
 
 
 if __name__ == "__main__":

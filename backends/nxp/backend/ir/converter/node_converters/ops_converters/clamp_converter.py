@@ -109,21 +109,18 @@ class ClampConverter(NodeConverter):
         if all(b is None or math.isinf(b) for b in bounds):
             return False
 
-        if neutron_target_spec.use_new_flow_neutron_c:
-            io_quant_consistent = ClampConverter._io_quant_is_same(node)
-            quant_supported = NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            )
+        io_quant_consistent = ClampConverter._io_quant_is_same(node)
+        quant_supported = NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        )
 
-            # We either convert to ReLU -> SingleInputQuantization pattern
-            # or we convert to Min/Max, which requires same quantization on
-            # both input and output.
-            return (relu_compatible | io_quant_consistent) and quant_supported
-
-        return relu_compatible
+        # We either convert to ReLU -> SingleInputQuantization pattern
+        # or we convert to Min/Max, which requires same quantization on
+        # both input and output.
+        return (relu_compatible | io_quant_consistent) and quant_supported
 
     @classmethod
     def supports_partitioning_result(
@@ -183,7 +180,7 @@ class ClampConverter(NodeConverter):
         t_op = self._create_tflite_op_with_io_tensors(node)
 
         # Clamp convertible to some variant of ReLU
-        if not self.neutron_target_spec.use_new_flow_neutron_c or to_relu:
+        if to_relu:
             # noinspection PyTypeChecker,PyUnboundLocalVariable
             t_op.opcode_index = self.builder.op_code_index_for_op_type(
                 self.BOUNDS_TO_RELU_NEUTRON_IR_OP[bounds]

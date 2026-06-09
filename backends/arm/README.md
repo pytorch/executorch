@@ -251,7 +251,7 @@ Below is an overview of some of the testing options this script provides:
 | `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VKML/VGF specific use-cases.    |
 | `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VKML/VGF specific use-cases.       |
 | `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VKML/VGF specific use-cases.  |
-| `test_arm_backend.sh test_model_smollm2_135M`      | Runs some models with Corstone FVP.                          |
+| `test_arm_backend.sh test_model_smollm2_135M_ethos_u85`      | Runs smollm2_135M for Ethos-U85 specific use-cases.                          |
 | `test_arm_backend.sh test_ootb_tests_ethos_u`      | Runs out-of-the-box tests for Ethos-U.                       |
 | `test_arm_backend.sh test_ootb_tests_tosa`         | Runs out-of-the-box tests for TOSA.                          |
 | `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VKML/VGF.                      |

@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Tests for Int4Tensor F.linear dispatch via int4_dispatch.
+"""Tests for Int4Tensor F.linear dispatch via quantize_op_dispatch.int4_dispatch.
 
 These tests validate the eager / trace-time dispatch path — the same code
 that torch.export traces through when building the AOTI graph. They do NOT
@@ -26,8 +26,7 @@ Usage:
 
 import unittest
 
-import executorch.backends.cuda.int4_dispatch  # noqa: F401
-
+import executorch.backends.cuda.quantize_op_dispatch.int4_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

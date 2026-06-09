@@ -357,6 +357,51 @@ def get_8a4w_qnn_ptq_config(
     return quantization_config
 
 
+# 2 bits weight quantization only supports per channel and symmetric.
+def get_16a2w_qnn_ptq_config(
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
+) -> QuantizationConfig:
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
+
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
+        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+    )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-2,
+        quant_max=1,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
+
+
 # 4 bits quantization only supports specific ops.
 def get_16a4w_qnn_ptq_config(
     act_symmetric: bool = False,
@@ -573,7 +618,7 @@ def get_ptq_per_channel_quant_config(
         torch.int8,
         torch.int16,
     }
-    supported_weight_dtypes = {torch.int4, torch.int8, torch.int16}
+    supported_weight_dtypes = {torch.int2, torch.int4, torch.int8, torch.int16}
     assert (
         act_dtype in supported_act_types
     ), f"act_dtype, {act_dtype} is not one of supported types, {supported_act_types}"
@@ -606,12 +651,23 @@ def get_ptq_per_channel_quant_config(
             observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
         )
 
+    q_dtype = weight_dtype
+    if weight_dtype == torch.int4:
+        q_dtype = torch.int8
+        q_min = -7
+        q_max = 7
+    elif weight_dtype == torch.int2:
+        q_dtype = torch.int8
+        q_min = -2
+        q_max = 1
+    else:
+        q_min = torch.iinfo(weight_dtype).min + 1
+        q_max = torch.iinfo(weight_dtype).max
+
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
-        quant_min=(
-            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
-        ),
-        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
+        dtype=q_dtype,
+        quant_min=q_min,
+        quant_max=q_max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
         observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),
