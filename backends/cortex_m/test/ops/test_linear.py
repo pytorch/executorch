@@ -269,6 +269,8 @@ def test_dialect_linear_small_magnitude(variant: _SmallMagnitudeVariant):
         assert bias_arg is None
     else:
         assert kernel_sum_arg is None
+        if variant.case.model.fc.bias is None:
+            assert bias_arg is None
 
 
 def test_implementation_linear_small_magnitude():
