@@ -34,6 +34,30 @@ from .chat_template import ChatTemplate
 from .protocol import ChatMessage
 from .session_runtime import PromptInput
 
+# The assistant header that precedes a turn's generation scaffold + content.
+_ASSIST_HDR = "<|im_start|>assistant\n"
+# A scaffold region is exactly empty (history strips it before the last user) or
+# one of the Qwen3 think scaffolds (history preserves the empty block after the
+# last user; the open form is the think-mode generation preamble). Anything else
+# in that region is unrecognized -> the splice falls back to plain text.
+_THINK_SCAFFOLD_RE = re.compile(r"\A(?:<think>\n\n</think>\n\n|<think>\n)?\Z")
+
+
+def _normalize_tool_args(args):
+    """OpenAI tool-call ``arguments`` are JSON strings a client may reserialize
+    with different whitespace or key order while preserving the same value (e.g.
+    a server-emitted ``{"command": "x"}`` echoed back compact as
+    ``{"command":"x"}``). Parse to an object so the fingerprint compares the
+    semantic payload, not bytes -- the outer sort_keys dump then canonicalizes
+    it. A non-JSON string (or already-structured args) is returned unchanged, so
+    it stays byte-sensitive."""
+    if isinstance(args, str):
+        try:
+            return json.loads(args)
+        except (ValueError, TypeError):
+            return args
+    return args
+
 
 class OpenAITranscriptState:
     def __init__(self, template: ChatTemplate):
@@ -52,24 +76,64 @@ class OpenAITranscriptState:
         for tc in tool_calls or []:
             fn = getattr(tc, "function", None)
             if fn is not None:
-                norm.append([getattr(fn, "name", None), getattr(fn, "arguments", None)])
+                name, args = getattr(fn, "name", None), getattr(fn, "arguments", None)
             elif isinstance(tc, dict):
                 f = tc.get("function", {})
-                norm.append([f.get("name"), f.get("arguments")])
+                name, args = f.get("name"), f.get("arguments")
+            else:
+                continue
+            norm.append([name, _normalize_tool_args(args)])
         blob = json.dumps([content or "", norm], sort_keys=True, ensure_ascii=False)
         return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def _split_on_sentinels(rendered: str, sub: dict[str, list[int]]) -> list[dict]:
+    def _normalize_scaffold(text_chunk: str, preamble: str) -> Optional[str]:
+        """Force the scaffold region -- the text between the last assistant header
+        in `text_chunk` and its end -- to equal `preamble`, so the worker
+        re-tokenizes the exact generation scaffold it made resident for this turn.
+        The region (the content was replaced by a sentinel) is empty when history
+        stripped the scaffold (insert) or a think scaffold when history preserved
+        it (replace, possibly with a different form than `preamble`). Returns the
+        adjusted text, or None if the region is not a recognized scaffold
+        (ambiguous -> caller falls back to plain text)."""
+        # No scaffold for this turn's mode/template: nothing to reproduce, so
+        # leave the chunk untouched -- and don't require the Qwen/ChatML header,
+        # so token-id splicing still works for templates with a different
+        # assistant header (the fix stays a true no-op for non-think models).
+        if not preamble:
+            return text_chunk
+        h = text_chunk.rfind(_ASSIST_HDR)
+        if h == -1:
+            return None
+        base = h + len(_ASSIST_HDR)
+        region = text_chunk[base:]
+        if region == preamble:
+            return text_chunk
+        if not _THINK_SCAFFOLD_RE.match(region):
+            return None
+        return text_chunk[:base] + preamble
+
+    @staticmethod
+    def _split_on_sentinels(
+        rendered: str, sub: dict[str, dict]
+    ) -> Optional[list[dict]]:
         """Split `rendered` on the sentinels into alternating {"text"} chunks and
-        {"ids"} runs (each sentinel -> its stored id list)."""
+        {"ids"} runs (each sentinel -> sub[sentinel] = {"ids", "preamble"}). The
+        {text} chunk before each {ids} run has its assistant scaffold normalized
+        to that turn's stored preamble. Returns None if any pre-sentinel scaffold
+        region is ambiguous (caller falls back to plain text)."""
         pattern = re.compile("|".join(re.escape(s) for s in sub))
         segments: list[dict] = []
         pos = 0
         for mobj in pattern.finditer(rendered):
-            if mobj.start() > pos:
-                segments.append({"text": rendered[pos : mobj.start()]})
-            segments.append({"ids": sub[mobj.group()]})
+            norm = OpenAITranscriptState._normalize_scaffold(
+                rendered[pos : mobj.start()], sub[mobj.group()]["preamble"]
+            )
+            if norm is None:
+                return None
+            if norm:
+                segments.append({"text": norm})
+            segments.append({"ids": sub[mobj.group()]["ids"]})
             pos = mobj.end()
         if pos < len(rendered):
             segments.append({"text": rendered[pos:]})
@@ -104,7 +168,7 @@ class OpenAITranscriptState:
         # worker exact-prefix backstop); it only lowers the warm-resume hit rate,
         # silently, for such conversations.
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
-        splice: dict[int, list[int]] = {}  # message index -> exact ids
+        splice: dict[int, dict] = {}  # message index -> {"ids", "preamble"}
         diverged_at = None
         for k, pos in enumerate(positions):
             if k >= len(stored):
@@ -114,7 +178,10 @@ class OpenAITranscriptState:
                 diverged_at = k  # this stored turn and every later one are stale
                 break
             if stored[k]["ids"] is not None:
-                splice[pos] = stored[k]["ids"]
+                splice[pos] = {
+                    "ids": stored[k]["ids"],
+                    "preamble": stored[k].get("preamble", ""),
+                }
         if diverged_at is not None:
             # Drop the stale tail from the first mismatch so an edited/branched
             # earlier turn can't keep shadowing future requests; the matched
@@ -129,7 +196,7 @@ class OpenAITranscriptState:
             return PromptInput(text=rendered_prompt)
         token = uuid.uuid4().hex
         sentinel_at = {pos: f"<<ETSEG{j}_{token}>>" for j, pos in enumerate(splice)}
-        sub = {sentinel_at[pos]: ids for pos, ids in splice.items()}
+        sub = {sentinel_at[pos]: splice[pos] for pos in splice}
         # A sentinel must not already occur in the rendered output.
         if any(s in rendered_prompt for s in sub):
             return PromptInput(text=rendered_prompt)
@@ -147,7 +214,11 @@ class OpenAITranscriptState:
         # Each sentinel must survive templating exactly once, else fall back.
         if any(rendered.count(s) != 1 for s in sub):
             return PromptInput(text=rendered_prompt)
-        return PromptInput(segments=self._split_on_sentinels(rendered, sub))
+        # Splice ids and normalize each turn's scaffold; None => ambiguous region.
+        segments = self._split_on_sentinels(rendered, sub)
+        if segments is None:
+            return PromptInput(text=rendered_prompt)
+        return PromptInput(segments=segments)
 
     def record_assistant_turn(
         self,
@@ -157,14 +228,18 @@ class OpenAITranscriptState:
         tool_calls,
         generated_token_ids: list,
         prior_turns: int,
+        preamble: str = "",
     ) -> None:
-        """Record this turn's {fingerprint, exact generated ids} at position
-        `prior_turns` -- the count of assistant turns in the request this
-        response answers. Stored records at/after that index are dropped first, so
-        a regenerated or branched turn under the same session_id replaces stale
-        records instead of leaving them to shadow future warm-resume hits with a
-        stale fingerprint. ids is None when the worker omitted them (stop-trimmed
-        turn) -- recorded as non-resumable but kept for positional alignment."""
+        """Record this turn's {fingerprint, exact generated ids, generation
+        preamble} at position `prior_turns` -- the count of assistant turns in the
+        request this response answers. Stored records at/after that index are
+        dropped first, so a regenerated or branched turn under the same session_id
+        replaces stale records instead of leaving them to shadow future
+        warm-resume hits with a stale fingerprint. ids is None when the worker
+        omitted them (stop-trimmed turn) -- recorded as non-resumable but kept for
+        positional alignment. `preamble` is the generation scaffold resident ahead
+        of these ids (mode-specific, e.g. Qwen3 `<think>` block), reproduced ahead
+        of the spliced ids on the next request so the prefix stays exact."""
         if not session_id:
             return
         turns = self._turns.setdefault(session_id, [])
@@ -173,6 +248,7 @@ class OpenAITranscriptState:
             {
                 "fp": self._assistant_fingerprint(content, tool_calls),
                 "ids": list(generated_token_ids) if generated_token_ids else None,
+                "preamble": preamble,
             }
         )
 

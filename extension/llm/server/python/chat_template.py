@@ -91,6 +91,9 @@ class ChatTemplate:
         # Server-level defaults (e.g. {"enable_thinking": False}); per-request
         # chat_template_kwargs override these.
         self._defaults = default_template_kwargs or {}
+        # Cache of the (deterministic) generation scaffold per resolved mode, so
+        # warm-resume bookkeeping doesn't re-render a probe prompt every request.
+        self._preamble_cache: dict[tuple, str] = {}
         self._hf = None
         if hf_tokenizer_path:
             from transformers import AutoTokenizer
@@ -135,6 +138,36 @@ class ChatTemplate:
                 **kwargs,
             )
         return self._fallback(messages)
+
+    def generation_preamble(
+        self, template_kwargs: Optional[dict[str, Any]] = None
+    ) -> str:
+        """The deterministic text the generation prompt appends after the final
+        ``<|im_start|>assistant\\n`` for this mode (Qwen3 no-think:
+        ``<think>\\n\\n</think>\\n\\n``; think: ``<think>\\n``; ``""`` for
+        templates that add no scaffold). The worker prefills this into resident
+        KV, so warm-resume splicing must reproduce it ahead of a turn's generated
+        ids. Computed by rendering a trivial prompt with the same mode resolution
+        as :meth:`render` and taking the text after the final assistant header.
+        Returns ``""`` for the fallback / no-scaffold templates (fix is a no-op).
+        """
+        if self._hf is None:
+            return ""
+        merged = {**self._defaults, **(template_kwargs or {})}
+        key = tuple(sorted((k, repr(v)) for k, v in merged.items()))
+        cached = self._preamble_cache.get(key)
+        if cached is not None:
+            return cached
+        rendered = self.render(
+            [ChatMessage(role="user", content="")],
+            tools=None,
+            template_kwargs=template_kwargs,
+        )
+        marker = "<|im_start|>assistant\n"
+        idx = rendered.rfind(marker)
+        preamble = rendered[idx + len(marker) :] if idx != -1 else ""
+        self._preamble_cache[key] = preamble
+        return preamble
 
     def chat_template_str(self) -> Optional[str]:
         """Raw chat-template string (for tool-format auto-detection), if available."""

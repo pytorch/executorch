@@ -399,19 +399,25 @@ class ServingChat:
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
         options = self._options(req)
+        # The generation scaffold the worker will prefill ahead of this turn's
+        # tokens (e.g. Qwen3 <think> block), resolved with the same per-request
+        # mode as the render; recorded per turn so warm-resume splicing reproduces
+        # the exact resident scaffold even if the mode changes between requests.
+        preamble = self._template.generation_preamble(req.chat_template_kwargs)
         # Admit the session up front (before the stream's first chunk) so a
         # capacity refusal is an HTTP status, not a mid-stream error event.
         if req.session_id is not None:
             await self._preflight_session(req.session_id)
         if req.stream:
-            return self._stream(req, prompt_input, options)
-        return await self._complete(req, prompt_input, options)
+            return self._stream(req, prompt_input, options, preamble)
+        return await self._complete(req, prompt_input, options, preamble)
 
     async def _complete(
         self,
         req: ChatCompletionRequest,
         prompt: PromptInput,
         options: GenerationOptions,
+        preamble: str = "",
     ) -> ChatCompletionResponse:
         stats = GenStats()
         try:
@@ -435,6 +441,7 @@ class ServingChat:
             tool_calls=tool_calls,
             generated_token_ids=stats.generated_token_ids,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
+            preamble=preamble,
         )
         finish = self._finish_reason(
             req, stats.completion_tokens, tool_calls, stopped, stats.finish_reason
@@ -459,6 +466,7 @@ class ServingChat:
         req: ChatCompletionRequest,
         prompt: PromptInput,
         options: GenerationOptions,
+        preamble: str = "",
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -531,6 +539,7 @@ class ServingChat:
             tool_calls=tool_calls,
             generated_token_ids=stats.generated_token_ids,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
+            preamble=preamble,
         )
 
         if use_tools:
