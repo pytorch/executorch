@@ -15,6 +15,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -496,18 +497,48 @@ void WebGPUGraph::copy_inputs(
   }
 }
 
+namespace {
+// Bench gate: WEBGPU_TIMESTAMP_QUERY enables per-pass GPU timestamp queries.
+bool should_timestamp_query() {
+  static const bool enabled = std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
+  return enabled;
+}
+} // namespace
+
 void WebGPUGraph::execute() {
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
 
   if (chunk == 0 || n <= chunk) {
+    // Bench: timestamp-query pool, null unless env-gated + feature present.
+    WebGPUQueryPool* qp = nullptr;
+    if (should_timestamp_query() && n > 0) {
+      if (auto* ctx = get_default_webgpu_context()) {
+        if (ctx->timestamp_supported) {
+          if (!ctx->querypool || ctx->querypool->capacity() < n) {
+            ctx->querypool = std::make_unique<WebGPUQueryPool>();
+            ctx->querypool->initialize(device_, static_cast<uint32_t>(n));
+          }
+          qp = ctx->querypool.get();
+          qp->reset(static_cast<uint32_t>(n));
+        }
+      }
+    }
+
     WGPUCommandEncoderDescriptor enc_desc = {};
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     // One pass per dispatch: enforces storage RAW ordering across deps.
-    for (const auto& dispatch : dispatches_) {
+    for (size_t i = 0; i < n; i++) {
+      const auto& dispatch = dispatches_[i];
+      // tw must outlive BeginComputePass (the descriptor points at it).
+      WGPUComputePassTimestampWrites tw = {};
       WGPUComputePassDescriptor pass_desc = {};
+      if (qp) {
+        tw = qp->writes_for(static_cast<uint32_t>(i));
+        pass_desc.timestampWrites = &tw;
+      }
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
@@ -517,11 +548,22 @@ void WebGPUGraph::execute() {
           pass, dispatch.workgroup_count_x, 1, 1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
+      if (qp) {
+        qp->record(
+            static_cast<uint32_t>(i),
+            dispatch.kernel_name,
+            {dispatch.workgroup_count_x, 1, 1},
+            {1, 1, 1});
+      }
     }
 
     for (const auto& copy : output_copies_) {
       wgpuCommandEncoderCopyBufferToBuffer(
           encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
+    }
+
+    if (qp) {
+      qp->resolve(encoder);
     }
 
     WGPUCommandBufferDescriptor cmd_desc = {};
@@ -530,7 +572,19 @@ void WebGPUGraph::execute() {
 
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
+
+    if (qp) {
+      qp->extract_results(instance_);
+      qp->print_results();
+    }
     return;
+  }
+
+  // GPU timestamp queries assume one submit; chunked execute is multi-submit.
+  if (should_timestamp_query()) {
+    throw std::runtime_error(
+        "WebGPU: WEBGPU_TIMESTAMP_QUERY is incompatible with chunked execute "
+        "(multi-submit); disable chunking to use GPU timestamp queries");
   }
 
   const size_t first_chunk = execute_config_.initial_chunk_size > 0
