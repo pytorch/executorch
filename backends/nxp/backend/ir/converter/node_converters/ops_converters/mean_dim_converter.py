@@ -5,8 +5,6 @@
 
 import torch
 
-from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
-
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_last_to_channels_first_permutation,
 )
@@ -38,22 +36,17 @@ class MeanDimConverter(NodeConverter):
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
-        if neutron_target_spec.use_new_flow_neutron_c:
-            dim, keepdim = MeanDimConverter._get_attrs(node)
-            input_shape = node.args[0].meta["val"].shape
+        dim, keepdim = MeanDimConverter._get_attrs(node)
+        input_shape = node.args[0].meta["val"].shape
 
-            is_alone_in_partition = cls.is_node_alone_in_partition(
-                node, partition_list, filter_fn=is_not_qdq_node
-            )
+        is_alone_in_partition = cls.is_node_alone_in_partition(
+            node, partition_list, filter_fn=is_not_qdq_node
+        )
 
-            if (
-                is_alone_in_partition
-                and keepdim
-                and all(input_shape[d] == 1 for d in dim)
-            ):
-                # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the
-                #  partition, the graph would end up empty.
-                return False
+        if is_alone_in_partition and keepdim and all(input_shape[d] == 1 for d in dim):
+            # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the
+            #  partition, the graph would end up empty.
+            return False
 
         return True
 
@@ -64,49 +57,15 @@ class MeanDimConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if neutron_target_spec.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
-            if not NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            ):
-                return False
-
-            return True
-
-        else:
-            # Requirements of the old Neutron flow.
-            rank = len(node.args[0].meta["val"].shape)
-            dim, keepdim = MeanDimConverter._get_attrs(node)
-            dim = [MeanDimConverter._to_pos_dim(d, rank) for d in dim]
-
-            if rank != 4 or not keepdim:
-                # neutron-converter/src/OperatorC/GlobalAvgPoolPlugin.cpp#74-77
-                return False
-
-            # The `mean.dim` gets converted to AveragePool by the NeutronConverter, so the channels must be a
-            #  multiple of `num_macs`.
-            # neutron-converter/src/OperatorC/GlobalAvgPoolPlugin.cpp#59-85
-            num_macs = neutron_target_spec.get_num_macs()
-            channels_dim = 1 if node.meta[NXP_NODE_FORMAT].is_channels_first() else -1
-            if (node.meta["val"].shape[channels_dim] % num_macs) != 0:
-                return False
-
-            # Neutron only supports reduction over the spatial dimensions H, W.
-            if node.meta[NXP_NODE_FORMAT].is_channels_first():
-                # The input is NCHW. H and W are at indices 2 and 3.
-                if dim not in [[2, 3], [3, 2]]:
-                    return False
-            else:
-                # The input is formatless. It can be considered as NHWC, as this is the way Neutron will look at
-                #  the dimensions. So H and W are the middle dimensions.
-                if dim not in [[1, 2], [2, 1]]:
-                    return False
-
-            return True
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
