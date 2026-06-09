@@ -37,12 +37,14 @@ fi
 cd "${EXECUTORCH_ROOT}"
 
 # ── Exports for the model-driven executables (best-effort) ───────────────────
-# native_test + rms_norm read .pte/golden inputs via WEBGPU_TEST_* env and
-# self-skip if absent; dispatch_order + scratch are standalone (no exports).
+# native_test + rms_norm + dispatch_order read .pte/golden inputs via env/dir and
+# self-skip if absent; scratch is standalone (generates its own inputs).
 PTE_MODEL="/tmp/webgpu_add_test.pte"
 PTE_CHAINED_MODEL="/tmp/webgpu_chained_add_test.pte"
 RMS_NORM_DIR="/tmp/rmsn"
 RMS_NORM_OK=1
+DISPATCH_ORDER_DIR="/tmp/dispatch_order"
+DISPATCH_ORDER_OK=1
 UPDATE_CACHE_DIR="/tmp/update_cache"
 UPDATE_CACHE_OK=1
 
@@ -56,6 +58,11 @@ $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases
 export_rms_norm_cases('${RMS_NORM_DIR}')
 " || { echo "WARN: rms_norm export failed; skipping rms_norm native test"; RMS_NORM_OK=0; }
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
+export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
+" || { echo "WARN: dispatch_order export failed; skipping dispatch_order native test"; DISPATCH_ORDER_OK=0; }
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.sdpa.test_update_cache import (
@@ -131,7 +138,9 @@ fi
 if [[ "${UPDATE_CACHE_OK}" == "1" && -x "${BIN_DIR}/webgpu_update_cache_test" ]]; then
   "${BIN_DIR}/webgpu_update_cache_test" "${UPDATE_CACHE_DIR}"
 fi
-[[ -x "${BIN_DIR}/webgpu_dispatch_order_test" ]] && "${BIN_DIR}/webgpu_dispatch_order_test"
+if [[ "${DISPATCH_ORDER_OK}" == "1" && -x "${BIN_DIR}/webgpu_dispatch_order_test" ]]; then
+  "${BIN_DIR}/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
+fi
 [[ -x "${BIN_DIR}/webgpu_scratch_buffer_test" ]] && "${BIN_DIR}/webgpu_scratch_buffer_test"
 
 echo "=== WebGPU native tests on Dawn: all run targets passed ==="
