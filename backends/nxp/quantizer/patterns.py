@@ -438,10 +438,7 @@ class ClampPattern(QuantizationPattern):
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
 
-        if (
-            self.neutron_quantizer.neutron_target_spec.use_new_flow_neutron_c
-            and not _is_convertible_to_relu(node)
-        ):
+        if not _is_convertible_to_relu(node):
             return SharedSpecPattern.get_shared_spec_anchors(gm, fused_partition)
         else:
             return SingleInputBasicPattern.get_single_input_anchors(gm, fused_partition)

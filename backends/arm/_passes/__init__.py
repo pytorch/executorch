@@ -149,6 +149,7 @@ from .remove_permutes_around_elementwise_tosa_ops import (  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
 )
+from .rewrite_adaptive_avg_pool2d import RewriteAdaptiveAvgPool2dPass  # noqa
 from .rewrite_avg_pool2d_pass import RewriteAvgPool2dPass  # noqa
 from .rewrite_bool_bitwise_to_logical_pass import (  # noqa
     RewriteBoolBitwiseToLogicalPass,
@@ -165,7 +166,6 @@ from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noq
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_max_pool2d_pass import RewriteMaxPool2dPass  # noqa
-from .rewrite_mxfp_linear import RewriteMXFPLinearPass  # noqa
 from .rewrite_pad import RewritePadPass  # noqa
 from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa

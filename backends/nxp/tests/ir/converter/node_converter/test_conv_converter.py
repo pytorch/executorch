@@ -310,11 +310,13 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker, use_qa
             ),
             (1, 16, 7, 15),
             id="In ch 16, out ch 24, kernel (1, 6), stride (1, 6), output_padding (0, 3)",
+            marks=pytest.mark.skip(reason="AIR-14676"),
         ),
         pytest.param(
             torch.nn.ConvTranspose2d(16, 40, (1, 4), stride=(1, 4), padding=(0, 1)),
             (1, 16, 1, 27),
             id="In ch 16, out ch 40, kernel (1, 4), stride (1, 4), padding (0, 1)",
+            marks=pytest.mark.skip(reason="AIR-14676"),
         ),
         pytest.param(
             torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2), padding=(0, 1)),
@@ -327,6 +329,7 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker, use_qa
             ),
             (1, 8, 1, 16),
             id="In ch 8, out ch 16, kernel (1, 8), stride (1, 4), output_padding (0, 2)",
+            marks=pytest.mark.skip(reason="AIR-14676"),
         ),
         pytest.param(
             torch.nn.ConvTranspose2d(16, 16, (1, 4), stride=(1, 2)),

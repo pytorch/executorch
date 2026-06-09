@@ -21,7 +21,7 @@ import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
 
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import (
@@ -182,7 +182,8 @@ class Whisper:
             .to("cpu")
             .eval()
         )
-        self.encoder_passes_job = get_capture_program_passes()
+        self.pass_manager_cls = get_qnn_pass_manager_cls()
+        self.encoder_passes_job = self.pass_manager_cls.get_capture_program_passes()
 
         self.whisper_decoder = (
             QnnSeq2SeqLMDecoderExportableModuleWithStaticCache(
@@ -195,7 +196,7 @@ class Whisper:
         )
         # To improve the performance
         self.whisper_decoder = convert_linear_to_conv2d(self.whisper_decoder)
-        self.decoder_passes_job = get_capture_program_passes()
+        self.decoder_passes_job = self.pass_manager_cls.get_capture_program_passes()
         self.exported_whisper_encoder = None
         self.exported_whisper_decoder = None
         self.has_quant_io = False
@@ -343,7 +344,7 @@ class Whisper:
                 {ENCODER: compiler_specs, DECODER: compiler_specs},
                 constant_methods=self.whisper_decoder.get_metadata(),
                 passes_job={
-                    ENCODER: get_capture_program_passes(),
+                    ENCODER: self.pass_manager_cls.get_capture_program_passes(),
                     DECODER: self.decoder_passes_job,
                 },
                 skip_node_id_set=skip_node_id_set,

@@ -54,7 +54,7 @@ help() {
     echo "  --et_build_root=<FOLDER>             Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>          Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
     echo "  --toolchain=<TOOLCHAIN>              Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc). Default: ${toolchain}"
-    echo "  --select_ops_list=<OPS>              Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
+    echo "  --select_ops_list=<OPS>              Comma separated list of portable (non-delegated) kernels to include Default: ${select_ops_list}"
     echo "                                         NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                         See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     exit 0
