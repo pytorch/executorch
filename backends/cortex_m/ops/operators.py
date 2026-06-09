@@ -1217,7 +1217,8 @@ lib.define(
     "int[] padding, "
     "int zero_point, "
     "int multiplier, "
-    "int shift"
+    "int shift, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 lib.define(
@@ -1229,6 +1230,7 @@ lib.define(
     "int zero_point, "
     "int multiplier, "
     "int shift, "
+    "Tensor scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -1242,6 +1244,7 @@ def quantized_avg_pool2d_meta(
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
@@ -1271,6 +1274,7 @@ def quantized_avg_pool2d_impl(
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
 

@@ -17,6 +17,7 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,
     quantize_multiplier_aot,
+    to_physical_order,
 )
 from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
     required_cmsis_nn_buffer_sizes,
@@ -643,3 +644,56 @@ def _get_bmm_replacement(
         scratch,
     )
     return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_batch_matmul.default, args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.avg_pool2d.default)
+def _get_avg_pool2d_replacement(
+    node: Node, exported_program: ExportedProgram
+) -> DialectNodeSpec | None:
+    if not _has_qparams(node):
+        return None
+
+    pool_args = node.args
+    kernel_size = cast(list[int], pool_args[1])
+    stride = cast(list[int], pool_args[2]) if len(pool_args) > 2 else list(kernel_size)
+    padding = cast(list[int], pool_args[3]) if len(pool_args) > 3 else [0, 0]
+    ceil_mode = cast(bool, pool_args[4]) if len(pool_args) > 4 else False
+    count_include_pad = cast(bool, pool_args[5]) if len(pool_args) > 5 else True
+    divisor_override = pool_args[6] if len(pool_args) > 6 else None
+
+    if ceil_mode or divisor_override is not None:
+        return None
+
+    input_node = cast(Node, pool_args[0])
+    input_zp = node.meta["input_qparams"][0].zp
+    input_scale = node.meta["input_qparams"][0].scale
+    output_mult, output_shift = quantize_multiplier_aot(input_scale)
+
+    avg_padding = padding
+    if count_include_pad:
+        pad_h, pad_w = padding
+        input_tensor = get_first_fake_tensor(input_node)
+        pre_pad = post_pad = to_physical_order([0, 0, pad_h, pad_w], input_tensor)
+        with node.graph.inserting_before(node):
+            input_node = node.graph.create_node(
+                "call_function",
+                target=exir_ops.edge.cortex_m.pad.default,
+                args=(input_node, pre_pad, post_pad, int(input_zp)),
+            )
+        avg_padding = [0, 0]
+
+    scratch = _create_uninitialized_alloc_node(node, exported_program)
+
+    new_args = (
+        input_node,
+        kernel_size,
+        stride,
+        avg_padding,
+        int(input_zp),
+        int(output_mult),
+        int(output_shift),
+        scratch,
+    )
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.quantized_avg_pool2d.default, new_args
+    )
