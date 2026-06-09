@@ -27,12 +27,6 @@ class DialectNodeSpec:
     kwargs: dict = None
 
 
-# Expected type to be used for substitution functions
-SubstitutionFn: TypeAlias = Callable[
-    [torch.fx.Node, AtenToDialectPass], DialectNodeSpec | None
-]
-
-
 class AtenToDialectPass(ExportPass):
     """
     General pass to convert ops from ATen to a specific dialect.
@@ -117,3 +111,11 @@ class AtenToDialectPass(ExportPass):
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
+
+
+# Defined after the class so AtenToDialectPass is available at runtime.
+# Class-body references to SubstitutionFn are annotation-only and resolve
+# via __future__.annotations.
+SubstitutionFn: TypeAlias = Callable[
+    [torch.fx.Node, AtenToDialectPass], DialectNodeSpec | None
+]
