@@ -15,8 +15,14 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_cf_extension,
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa.mapping import (
+    map_dtype,
+    TOSA_CONTROL_FLOW_REGION_NAME_META,
+    TOSA_TENSOR_NAME_META,
+    TosaArg,
+)
 from executorch.backends.arm.tosa.utils import normalize_symint
+
 from torch.fx import Node
 
 
@@ -46,7 +52,12 @@ class WhileLoopVisitor(NodeVisitor):
             )
 
         attr = ts.TosaSerializerAttribute()
-        cond_graph, body_graph = (str(cast(Node, arg).target) for arg in node.args[:2])
+        cond_graph, body_graph = (
+            cast(Node, arg).meta.get(
+                TOSA_CONTROL_FLOW_REGION_NAME_META, str(cast(Node, arg).target)
+            )
+            for arg in node.args[:2]
+        )
         attr.WhileLoopAttribute(cond_graph, body_graph)
 
         input_names: list[str] = []
@@ -55,7 +66,9 @@ class WhileLoopVisitor(NodeVisitor):
                 raise ValueError(
                     f"{self.target}: Unsupported carried input type {type(loop_input)}."
                 )
-            input_names.append(loop_input.name)
+            input_names.append(
+                loop_input.name + loop_input.meta.get(TOSA_TENSOR_NAME_META, "")
+            )
 
         num_inputs = len(input_names)
         num_outputs = len(output.multiple_output_names)

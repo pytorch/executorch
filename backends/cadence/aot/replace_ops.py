@@ -162,14 +162,31 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         ns = exir_ops.edge if isinstance(node.target, EdgeOpOverload) else torch.ops
+        out_dtype = node.kwargs.get("out_dtype")
+        kwargs = {k: v for k, v in node.kwargs.items() if k != "out_dtype"}
         with node.graph.inserting_before(node):
             new_node = node.graph.call_function(
                 ns.cadence.dequantize_per_tensor.default,
                 args=node.args,
-                kwargs=node.kwargs,
+                kwargs=kwargs,
             )
-            new_node.meta = node.meta
-        node.replace_all_uses_with(new_node)
+            new_node.meta = node.meta.copy()
+            if (
+                out_dtype is not None
+                and out_dtype != torch.float32
+                and "val" in new_node.meta
+            ):
+                new_node.meta["val"] = new_node.meta["val"].to(torch.float32)
+        if out_dtype is not None and out_dtype != torch.float32:
+            with node.graph.inserting_after(new_node):
+                cast_node = node.graph.call_function(
+                    ns.aten.to.dtype,
+                    args=(new_node, out_dtype),
+                )
+                cast_node.meta = node.meta.copy()
+            node.replace_all_uses_with(cast_node)
+        else:
+            node.replace_all_uses_with(new_node)
         return True
 
 
@@ -615,6 +632,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
         value = 0 if len(node.args) == 2 else node.args[2]
 
         arg_shape = input_node.meta["val"].shape
+        dtype = input_node.meta["val"].dtype
 
         # Convert orig_padding to a list for manipulation
         # pyre-ignore[6]: Argument type
@@ -646,7 +664,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         left_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 left_padding_node.meta = node.meta
             cat_tensors.append(left_padding_node)
@@ -666,7 +684,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         right_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 right_padding_node.meta = node.meta
             cat_tensors.append(right_padding_node)

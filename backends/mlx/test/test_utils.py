@@ -44,6 +44,7 @@ DTYPE_INT32 = 2
 DTYPE_INT64 = 3
 DTYPE_BFLOAT16 = 4
 DTYPE_BOOL = 5
+DTYPE_UINT8 = 6
 
 
 # Default tolerance presets for different data types.
@@ -110,6 +111,7 @@ def torch_dtype_to_bin_dtype(dtype: torch.dtype) -> int:
         torch.int64: DTYPE_INT64,
         torch.bfloat16: DTYPE_BFLOAT16,
         torch.bool: DTYPE_BOOL,
+        torch.uint8: DTYPE_UINT8,
     }
     if dtype not in mapping:
         raise ValueError(f"Unsupported dtype: {dtype}")
@@ -125,6 +127,7 @@ def bin_dtype_to_torch_dtype(dtype_val: int) -> torch.dtype:
         DTYPE_INT64: torch.int64,
         DTYPE_BFLOAT16: torch.bfloat16,
         DTYPE_BOOL: torch.bool,
+        DTYPE_UINT8: torch.uint8,
     }
     if dtype_val not in mapping:
         raise ValueError(f"Unknown dtype value: {dtype_val}")
@@ -208,6 +211,7 @@ def load_tensors_from_bin(path: Union[str, Path]) -> List[torch.Tensor]:
         torch.int32: np.int32,
         torch.int64: np.int64,
         torch.bool: np.bool_,
+        torch.uint8: np.uint8,
         # bfloat16 needs special handling - read as uint16
     }
 
@@ -219,6 +223,7 @@ def load_tensors_from_bin(path: Union[str, Path]) -> List[torch.Tensor]:
         torch.int64: 8,
         torch.bfloat16: 2,
         torch.bool: 1,
+        torch.uint8: 1,
     }
 
     tensors = []
@@ -878,6 +883,16 @@ class OpTestCase:
         test_dir.mkdir(parents=True, exist_ok=True)
         return test_dir
 
+    def compute_expected_outputs(self, model, test_inputs):
+        """Reference outputs the device result is compared against.
+
+        Defaults to the eager ``model`` forward. Override to supply a
+        higher-precision reference -- e.g. fp32 accumulation matching a kernel
+        that accumulates in fp32, so bf16 reference noise doesn't dominate the
+        comparison.
+        """
+        return model(*test_inputs)
+
     def generate_test_files(self, verbose: bool = False) -> Tuple[Path, Path, Path]:
         """
         Generate .pte, input.bin, and expected_output.bin files.
@@ -910,7 +925,7 @@ class OpTestCase:
         with torch.no_grad():
             if isinstance(test_inputs, torch.Tensor):
                 test_inputs = (test_inputs,)
-            expected_outputs = model(*test_inputs)
+            expected_outputs = self.compute_expected_outputs(model, test_inputs)
             if isinstance(expected_outputs, torch.Tensor):
                 expected_outputs = [expected_outputs]
             else:

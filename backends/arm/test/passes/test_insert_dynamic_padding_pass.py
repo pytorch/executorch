@@ -69,5 +69,6 @@ def test_insert_dynamic_padding():
         assert padding_node is not None
         pad_list = padding_node.args[1].meta["val"]
         assert len(pad_list) == 8
-        assert pad_list[:4] == [0, 0, 0, 0]  # NC-padding
-        assert pad_list[4:] == initial_padding  # HW-padding
+        assert pad_list[:2] == [0, 0]  # N-padding
+        assert pad_list[2:6] == initial_padding  # HW-padding in NHWC order
+        assert pad_list[6:] == [0, 0]  # C-padding

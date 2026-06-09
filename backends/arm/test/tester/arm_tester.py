@@ -641,6 +641,18 @@ class ArmTester(tester.Tester):
                     test_stage.run_artifact(test_input)
                 )
 
+            # When we run with KV cache enabled, the model returns cache data in the results. This we need to strip away by extracting only USER_OUTPUT.
+            if hasattr(test_stage.artifact, "exported_program"):
+                output_specs = (
+                    test_stage.artifact.exported_program().graph_signature.output_specs
+                )
+                user_outputs = [
+                    output
+                    for output, spec in zip(test_outputs, output_specs)
+                    if spec.kind == OutputKind.USER_OUTPUT
+                ]
+                test_outputs = user_outputs
+
             logger.info(f"\n      Input: {original_input}")
             logger.info(f"\n Ref output: {reference_outputs}")
             logger.info(f"\nTest output: {test_outputs}")

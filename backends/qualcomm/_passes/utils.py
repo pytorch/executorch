@@ -48,87 +48,6 @@ def get_quant_attrs(
     return quant_attrs
 
 
-def get_passes_dependency_for_capture_program():
-    """
-    This function records the dependencies for passes used in the to_edge_transform_and_lower_to_qnn.
-
-    It returns a dictionary where the keys are pass classes and the values are lists of
-    dependencies required by each pass. This helps in managing and organizing the sequence
-    of passes needed for the to_edge_transform_and_lower_to_qnn to function correctly.
-
-    Returns:
-        dict: A dictionary mapping each pass to its corresponding list of dependencies.
-    """
-    from executorch.backends.qualcomm._passes import (
-        AnnotateAvgPool1D,
-        AnnotateQuantAttrs,
-        AnnotateStack,
-        AnnotateUnbind,
-        ConvertBmmToMatmul,
-        DecomposeAcos,
-        DecomposeAny,
-        DecomposeAtan2,
-        DecomposeColIm,
-        DecomposeLinalgVectorNorm,
-        DecomposeLogVariants,
-        DecomposeMaxPool3d,
-        DecomposePad,
-        DecomposeRemainder,
-        DecomposeTan,
-        DecomposeTrunc,
-        ExpandBroadcastTensorShape,
-        FixedLinearKeepDim,
-        FoldQDQ,
-        I64toI32,
-        LayoutTransform,
-        RecomposePadMaxPool2d,
-        RecomposePixelUnshuffle,
-        RecomposeRmsNorm,
-        RemoveRedundancy,
-        ResolveDebugHandle,
-        TagQuantIO,
-    )
-
-    return {
-        AnnotateAvgPool1D: [RemoveRedundancy],
-        AnnotateQuantAttrs: [
-            ConvertBmmToMatmul,
-            RecomposePixelUnshuffle,
-            RemoveRedundancy,
-        ],
-        AnnotateStack: [RemoveRedundancy],
-        AnnotateUnbind: [RemoveRedundancy],
-        ConvertBmmToMatmul: [RecomposePixelUnshuffle],
-        DecomposeAcos: [RemoveRedundancy],
-        DecomposeAny: [RemoveRedundancy],
-        DecomposeAtan2: [RemoveRedundancy],
-        DecomposeColIm: [FoldQDQ],
-        DecomposeLinalgVectorNorm: [RemoveRedundancy],
-        DecomposeLogVariants: [RemoveRedundancy],
-        DecomposeMaxPool3d: [RemoveRedundancy],
-        DecomposePad: [RemoveRedundancy],
-        DecomposeRemainder: [RemoveRedundancy],
-        DecomposeTan: [RemoveRedundancy],
-        DecomposeTrunc: [RemoveRedundancy],
-        ExpandBroadcastTensorShape: [FoldQDQ],
-        FixedLinearKeepDim: [FoldQDQ],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
-        I64toI32: [RemoveRedundancy],
-        LayoutTransform: [
-            AnnotateQuantAttrs,
-            ExpandBroadcastTensorShape,
-            FixedLinearKeepDim,
-        ],
-        RecomposePadMaxPool2d: [DecomposeMaxPool3d, FoldQDQ],
-        RecomposePixelUnshuffle: [RemoveRedundancy],
-        RecomposeRmsNorm: [RemoveRedundancy],
-        TagQuantIO: [LayoutTransform],
-        ResolveDebugHandle: [
-            TagQuantIO
-        ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
-    }
-
-
 def copy_nn_module_stack(src, target):
     """
     Copy meta["nn_module_stack"] from src node to target node if existing.
@@ -137,7 +56,23 @@ def copy_nn_module_stack(src, target):
         target.meta["nn_module_stack"] = value
 
 
-def merge_decomposed_graph(
+def _unify_fake_mode(node: torch.fx.Node, fake_mode) -> None:
+    val = node.meta.get("val")
+    if val is None:
+        return
+    if isinstance(val, FakeTensor) and val.fake_mode is not fake_mode:
+        node.meta["val"] = fake_mode.from_tensor(val)
+    elif isinstance(val, (list, tuple)):
+        unified = []
+        for v in val:
+            if isinstance(v, FakeTensor) and v.fake_mode is not fake_mode:
+                unified.append(fake_mode.from_tensor(v))
+            else:
+                unified.append(v)
+        node.meta["val"] = type(val)(unified)
+
+
+def merge_decomposed_graph(  # noqa: C901
     remap: Dict[str, torch.fx.Node],
     target_node: torch.fx.Node,
     target_graph: torch.fx.GraphModule,
@@ -148,6 +83,16 @@ def merge_decomposed_graph(
         [torch.fx.Node, torch.fx.Node, Dict[str, torch.fx.Node]], None
     ] = None,
 ) -> None:
+    target_fake_mode = None
+    target_val = target_node.meta.get("val")
+    if isinstance(target_val, FakeTensor):
+        target_fake_mode = target_val.fake_mode
+    elif isinstance(target_val, (list, tuple)):
+        for v in target_val:
+            if isinstance(v, FakeTensor):
+                target_fake_mode = v.fake_mode
+                break
+
     def default_output_process(node):
         for user in node.users.copy():
             # remap
@@ -170,10 +115,13 @@ def merge_decomposed_graph(
                 # replace node map from string to graph node
                 remap[decomposed_node] = remap.pop(decomposed_node.name)
             else:
-                remap[decomposed_node] = target_graph.node_copy(
+                copied = target_graph.node_copy(
                     decomposed_node,
                     arg_transform=lambda x, remap=remap: remap[x],
                 )
+                if target_fake_mode is not None:
+                    _unify_fake_mode(copied, target_fake_mode)
+                remap[decomposed_node] = copied
 
 
 def is_float_tensor(node: torch.fx.Node) -> bool:

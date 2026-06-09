@@ -9,7 +9,6 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     _get_default_passes,
     NeutronAtenPassManager,
 )
-
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.quantizer.patterns import (
     AbsPattern,
@@ -264,7 +263,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(BatchNormPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(BMMPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(CatPattern(is_qat=is_qat), static_qconfig),
-                OpQuantizer(ClampPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ClampPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv2dPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(
                     ConvTranspose2dPattern(self, is_qat=is_qat), static_qconfig

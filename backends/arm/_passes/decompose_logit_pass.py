@@ -7,7 +7,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -50,7 +50,7 @@ def get_ops(op):
         raise ValueError(f"Unsupported operator: {op}")
 
 
-class DecomposeLogitPass(ArmPass):
+class DecomposeLogitPass(ArmOpTargetedPass):
     """Decomposes the `logit` operator into a sequence of primitive operations.
 
     If `eps` is provided, the input tensor `x` is first clamped to the range
@@ -78,15 +78,13 @@ class DecomposeLogitPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
     }
 
-    _TARGET_OPS = {
+    target_ops = {
         edge_logit,
         aten_logit,
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in DecomposeLogitPass._TARGET_OPS or not self.allowed_to_transform(
-            meta
-        ):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         X = args[0]
