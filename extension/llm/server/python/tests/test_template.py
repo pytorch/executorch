@@ -181,3 +181,71 @@ def test_tool_call_non_json_arguments_left_as_string():
     )
     asst = next(m for m in fake.seen_messages if m["role"] == "assistant")
     assert asst["tool_calls"][0]["function"]["arguments"] == "not json"
+
+
+class _HFSpecials:
+    """Minimal fake HF tokenizer exposing all_special_tokens / eos_token."""
+
+    def __init__(self, all_special_tokens, eos_token="<|im_end|>"):
+        self.all_special_tokens = list(all_special_tokens)
+        self.eos_token = eos_token
+
+
+def _template_with_specials(all_special_tokens, eos_token="<|im_end|>"):
+    t = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
+    t._hf = _HFSpecials(all_special_tokens, eos_token)
+    return t
+
+
+def test_turn_stop_excludes_tool_delimiters():
+    # A tokenizer that marks BOTH a turn terminator and tool/structural delimiters
+    # as special: the stop set must keep the terminator and drop the delimiters,
+    # else generation halts at <tool_call> before the parser sees the call.
+    t = _template_with_specials(
+        ["<|im_end|>", "<tool_call>", "</tool_call>", "<|box_start|>"],
+        eos_token="<|im_end|>",
+    )
+    stops = t.turn_stop_sequences()
+    assert "<|im_end|>" in stops
+    assert "<tool_call>" not in stops
+    assert "</tool_call>" not in stops
+    assert "<|box_start|>" not in stops
+
+
+def test_turn_stop_includes_eos_and_known_terminators():
+    t = _template_with_specials(
+        ["<|endoftext|>", "<|eot_id|>", "<tool_call>"], eos_token="<|endoftext|>"
+    )
+    stops = t.turn_stop_sequences()
+    assert "<|endoftext|>" in stops  # the tokenizer EOS
+    assert "<|eot_id|>" in stops  # allowlisted terminator registered as special
+    assert "<tool_call>" not in stops
+
+
+def test_turn_stop_drops_whitespace_only_specials():
+    t = _template_with_specials(["<|im_end|>", "  ", "\n", ""], eos_token="<|im_end|>")
+    stops = t.turn_stop_sequences()
+    assert all(s.strip() for s in stops)
+    assert "  " not in stops and "\n" not in stops
+
+
+def test_turn_stop_fallback_without_hf_is_narrow():
+    t = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)  # no _hf
+    stops = t.turn_stop_sequences()
+    assert "<|im_end|>" in stops
+    assert "<tool_call>" not in stops
+
+
+def test_fallback_extracts_text_parts_not_repr():
+    # 5e: the ChatML fallback renders list-content text parts, not a Python repr.
+    t = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)  # no _hf
+    msg = ChatMessage(
+        role="user",
+        content=[
+            {"type": "text", "text": "hello"},
+            {"type": "image_url", "image_url": {}},
+        ],
+    )
+    out = t.render([msg])
+    assert "hello" in out
+    assert "image_url" not in out and "{'type'" not in out  # no repr leak

@@ -61,9 +61,16 @@ class ServingChat:
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
-        # Special tokens (e.g. <|im_end|>) the runner decodes to text; we cut the
-        # visible content at the first one so they don't leak into responses.
-        self._stops = template.special_tokens()
+        # Two distinct sets (see chat_template):
+        #  * _stops: NARROW turn terminators (e.g. <|im_end|>) used as generation
+        #    stops AND for pre-parse truncation (_options/_collect_until_stop/
+        #    _truncate_raw/_clean). Excludes structural/tool delimiters so a
+        #    <tool_call> is never halted or cut before _extract_tools sees it.
+        #  * _content_specials: BROAD all-special-tokens set, used ONLY by
+        #    _strip_specials for final cleanup of the already-parsed visible
+        #    content, so a stray special token can't leak to the user.
+        self._stops = template.turn_stop_sequences()
+        self._content_specials = template.special_tokens()
 
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
@@ -80,7 +87,9 @@ class ServingChat:
         return schemas
 
     def _strip_specials(self, text: str) -> str:
-        cut = _earliest_stop(text, self._stops)
+        # Broad set: scrub ANY special token that leaked into already-parsed
+        # visible content (not the narrow generation-stop set).
+        cut = _earliest_stop(text, self._content_specials)
         return text[:cut] if cut is not None else text
 
     @staticmethod
