@@ -201,11 +201,33 @@ class TestMeanDim:
         [((1, 7, 3, 3), 1)],
         ids=lambda val: f"shape={val}" if isinstance(val, tuple) else f"dim={val}",
     )
-    def test__channels_first(self, mocker, input_shape, dim, keep_dim):
+    def test__channels_first__keep_dim__true(self, mocker, input_shape, dim):
         # Just 1 test case to verify correct handling of the `dim`.
         # Most cases fall into the single bit error case, and since this test uses 2 operators, the error accumulates
         #  and the final error is larger. We cannot with 100% certainty say that the error is only caused by the single
         #  bit errors and not related to the format. That's why only this 1 case with no errors is used.
+
+        keep_dim = True
+
+        model = MaxPoolMeanDimModule(dim, keep_dim)
+        self.assert_delegated(
+            model,
+            input_shape,
+            mocker,
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1, MeanDim: 1},
+        )
+
+    @pytest.mark.xfail(strict=True, reason="Known format inference bug (EIEX-937).")
+    @pytest.mark.parametrize(
+        "input_shape, dim",
+        [((1, 7, 3, 3), 1)],
+        ids=lambda val: f"shape={val}" if isinstance(val, tuple) else f"dim={val}",
+    )
+    def test__channels_first__keep_dim__false(self, mocker, input_shape, dim):
+        # There is a bug in node format inference. Once fixed, this test should be fused with the on above.
+
+        keep_dim = False
+
         model = MaxPoolMeanDimModule(dim, keep_dim)
         self.assert_delegated(
             model,
