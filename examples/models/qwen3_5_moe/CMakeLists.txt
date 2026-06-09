@@ -90,3 +90,19 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(qwen3_5_moe_worker)
   target_link_options(qwen3_5_moe_worker PRIVATE "LINKER:-s")
 endif()
+
+# GPU no-bleed integration proof (per-execute interleaving of two sessions on
+# one physical model). Self-asserting; skips cleanly without a device/model.
+# Real guard for V2 mutable-state isolation -- run on the nightly/manual GPU
+# job: QWEN_MODEL_PATH=... QWEN_DATA_PATH=... QWEN_TOKENIZER_PATH=... ctest -R
+# qwen_nobleed
+enable_testing()
+add_executable(
+  test_qwen35_moe_nobleed test_qwen35_moe_nobleed.cpp qwen35_moe_engine.cpp
+)
+target_include_directories(
+  test_qwen35_moe_nobleed PUBLIC ${_common_include_directories}
+                                 ${_json_include}
+)
+target_link_libraries(test_qwen35_moe_nobleed PUBLIC ${link_libraries})
+add_test(NAME qwen_nobleed COMMAND test_qwen35_moe_nobleed)

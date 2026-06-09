@@ -160,6 +160,14 @@ Session capacity is determined by the worker/engine — a single worker hosts ma
 isolated sessions on one weight load — so `--num-runners` accepts 1; extra worker
 processes would each carry their own copy of the weights.
 
+The **generic `text_llm_worker` is scratch-only (V1)**: `TextLLMEngine::serving_capacity()`
+is a conservative 1, so `max_named = max(0, capacity-1) = 0` — the default
+`server.py` serves only the anonymous scratch session (no named `session_id`s, no
+warm resume). The named-session / warm-resume / token-ID machinery is exercised
+by a model-specific worker whose engine reports capacity > 1 (the Qwen3.5-MoE CUDA
+worker). This is intentional; the generic worker stays minimal until a backend is
+proven to host multiple physical sessions without duplicating weights.
+
 Cancellation is best-effort: a worker request runs to completion and is not
 interruptible mid-generation in V1, so `runner.stop()` means "the control plane
 stops consuming and the worker finishes the current request" rather than a hard
