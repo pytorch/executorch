@@ -471,7 +471,6 @@ void WebGPUGraph::execute() {
 namespace {
 
 struct MapCallbackData {
-  bool done = false;
   WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
 };
 
@@ -482,7 +481,6 @@ void buffer_map_callback(
     void* /*userdata2*/) {
   auto* data = static_cast<MapCallbackData*>(userdata1);
   data->status = status;
-  data->done = true;
 }
 
 } // namespace
@@ -491,18 +489,18 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
 
   std::vector<MapCallbackData> cb_data(count);
+  std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
 
   for (size_t i = 0; i < count; i++) {
     if (outputs[i].second == 0) {
-      cb_data[i].done = true;
       cb_data[i].status = WGPUMapAsyncStatus_Success;
       continue;
     }
     WGPUBufferMapCallbackInfo cb_info = {};
-    cb_info.mode = WGPUCallbackMode_AllowSpontaneous;
+    cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
     cb_info.callback = buffer_map_callback;
     cb_info.userdata1 = &cb_data[i];
-    wgpuBufferMapAsync(
+    map_futures[i] = wgpuBufferMapAsync(
         output_staging_buffers_[i],
         WGPUMapMode_Read,
         0,
@@ -510,15 +508,10 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
         cb_info);
   }
 
-  bool all_mapped = false;
-  while (!all_mapped) {
-    webgpu_poll(instance_);
-    all_mapped = true;
-    for (size_t i = 0; i < count; i++) {
-      if (outputs[i].second != 0 && !cb_data[i].done) {
-        all_mapped = false;
-        break;
-      }
+  for (size_t i = 0; i < count; i++) {
+    if (outputs[i].second != 0 &&
+        webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
+      throw std::runtime_error("WebGPU: WaitAny failed for output map");
     }
   }
 
