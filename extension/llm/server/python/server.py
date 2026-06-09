@@ -30,7 +30,9 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from typing import Optional
+
+from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from .chat_template import ChatTemplate
@@ -87,10 +89,27 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
         return ModelList(data=[ModelCard(id=model_id)])
 
     @app.post("/v1/chat/completions")
-    async def chat_completions(req: ChatCompletionRequest):
+    async def chat_completions(
+        req: ChatCompletionRequest,
+        # FastAPI dependency: the Header() call in the default is required.
+        x_executorch_session_id: Optional[str] = Header(default=None),  # noqa: B008
+        # Aliases so clients that already emit a stable per-conversation id for
+        # cache affinity (e.g. pi's sendSessionAffinityHeaders) route to a session
+        # with no extra config. `session_id` is matched verbatim (underscore).
+        session_id_header: Optional[str] = Header(  # noqa: B008
+            default=None, alias="session_id"
+        ),
+        x_session_affinity: Optional[str] = Header(default=None),  # noqa: B008
+    ):
         # Typed param → FastAPI validates the body and returns 422 on bad input.
         # APIError (e.g. context_length_exceeded) → structured 4xx/5xx, never a
         # dropped connection. Mid-stream failures are handled inside the stream.
+        # Session id precedence: body field, then the X-ExecuTorch-Session-ID /
+        # session_id / x-session-affinity headers (body wins if set).
+        if req.session_id is None:
+            req.session_id = (
+                x_executorch_session_id or session_id_header or x_session_affinity
+            )
         try:
             result = await serving.create(req)
         except APIError as e:
@@ -98,6 +117,15 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
         if req.stream:
             return StreamingResponse(result, media_type="text/event-stream")
         return JSONResponse(result.model_dump(exclude_none=True))
+
+    @app.delete("/v1/sessions/{session_id}")
+    async def close_session(session_id: str):
+        # Free a named session's state + capacity slot (vendor extension; idempotent).
+        try:
+            await serving.close_session(session_id)
+        except APIError as e:
+            return JSONResponse(e.body(), status_code=e.status)
+        return JSONResponse({"closed": True, "session_id": session_id})
 
     return app
 

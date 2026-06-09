@@ -15,7 +15,13 @@ import math
 from typing import AsyncIterator, Optional
 
 from .chat_template import ChatTemplate
-from .errors import APIError, ContextLengthExceeded, GenerationError
+from .errors import (
+    APIError,
+    ContextLengthExceeded,
+    GenerationError,
+    InvalidSessionId,
+    SessionCapacity,
+)
 from .protocol import (
     _new_id,
     ChatCompletionChunk,
@@ -31,8 +37,11 @@ from .protocol import (
 )
 from .session_runtime import GenerationOptions, GenStats, PromptInput, SessionRuntime
 from .tool_parsers import HermesDetector, ToolCallItem
+from .worker_client import WorkerError
 
 logger = logging.getLogger(__name__)
+
+_SESSION_ID_MAX_LEN = 128
 
 
 def _earliest_stop(text: str, stops: list[str]) -> Optional[int]:
@@ -189,6 +198,31 @@ class ServingChat:
             stop=self._stops + self._request_stops(req),
         )
 
+    @staticmethod
+    def _validate_session_id(session_id: str) -> None:
+        # Keep it boring: non-empty printable ASCII (no spaces/control), <=128.
+        if not session_id or len(session_id) > _SESSION_ID_MAX_LEN:
+            raise InvalidSessionId(f"must be 1-{_SESSION_ID_MAX_LEN} characters")
+        if not all(0x21 <= ord(c) <= 0x7E for c in session_id):
+            raise InvalidSessionId("must be printable ASCII with no spaces")
+
+    async def _preflight_session(self, session_id: str) -> None:
+        """Reserve the session before any response bytes are emitted so a
+        capacity refusal becomes an HTTP status, not an SSE error event."""
+        try:
+            await self._runtime.open(session_id)
+        except WorkerError as e:
+            if e.code in ("capacity_exhausted", "unsupported_session"):
+                raise SessionCapacity(e.code)
+            raise GenerationError(str(e))
+
+    async def close_session(self, session_id: str) -> None:
+        self._validate_session_id(session_id)
+        try:
+            await self._runtime.close(session_id)
+        except WorkerError as e:
+            raise GenerationError(str(e))
+
     def _finish_reason(
         self,
         req: ChatCompletionRequest,
@@ -283,6 +317,8 @@ class ServingChat:
     async def create(self, req: ChatCompletionRequest):
         self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
+        if req.session_id is not None:
+            self._validate_session_id(req.session_id)
         # tool_choice="none" must hide tools from the model: if we still render
         # the tool schemas, the model can emit a <tool_call> that we'd surface as
         # plain text (parsing is disabled), instead of a normal answer.
@@ -305,6 +341,10 @@ class ServingChat:
                     raise ContextLengthExceeded(count, self._max_context, requested)
         options = self._options(req)
         prompt_input = PromptInput(text=prompt)
+        # Admit the session up front (before the stream's first chunk) so a
+        # capacity refusal is an HTTP status, not a mid-stream error event.
+        if req.session_id is not None:
+            await self._preflight_session(req.session_id)
         if req.stream:
             return self._stream(req, prompt_input, options)
         return await self._complete(req, prompt_input, options)
@@ -320,7 +360,7 @@ class ServingChat:
             # Collect raw text (markers intact for tool parsing), halting early
             # at a stop boundary (special token or request stop).
             text, stopped = await self._collect_until_stop(
-                self._runtime.generate_stream(None, prompt, options, stats),
+                self._runtime.generate_stream(req.session_id, prompt, options, stats),
                 self._stops + self._request_stops(req),
             )
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
@@ -377,7 +417,9 @@ class ServingChat:
                 # Halt early at a stop boundary, and bound the raw output
                 # BEFORE parsing so post-stop tool calls / text don't leak.
                 raw, stop_hit[0] = await self._collect_until_stop(
-                    self._runtime.generate_stream(None, prompt, options, stats),
+                    self._runtime.generate_stream(
+                        req.session_id, prompt, options, stats
+                    ),
                     stops,
                 )
                 tool_calls, content = self._extract_tools(
@@ -391,7 +433,9 @@ class ServingChat:
                     self._runtime.stop()
 
                 async for token in self._clean(
-                    self._runtime.generate_stream(None, prompt, options, stats),
+                    self._runtime.generate_stream(
+                        req.session_id, prompt, options, stats
+                    ),
                     stops,
                     on_stop=on_stop,
                 ):

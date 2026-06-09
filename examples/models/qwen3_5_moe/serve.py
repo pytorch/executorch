@@ -17,9 +17,14 @@ process segfaults in the int4 matmul (validated by elimination — the trigger i
 CUDA execution while a live asyncio loop is resident). Isolating CUDA in a plain
 (no-asyncio) C++ worker process is the reliable shape, and it loads weights once.
 
-V1 constraints:
-  * single-slot: one worker, one session; concurrent HTTP requests queue.
-  * prefix cache off (Qwen seek() is NotSupported).
+Sessions and constraints:
+  * One worker hosts many isolated sessions on a single ~18GB weight load (CUDA
+    per-session mutable rebinding); requests route by session_id (anonymous
+    requests share a scratch session). See --max-sessions.
+  * Execution is synchronous: one in-flight request at a time, concurrent HTTP
+    requests queue. Sessions provide isolation, not concurrent throughput.
+  * No warm context reuse yet: each request resets its session (Qwen seek() is
+    NotSupported; append-only reuse is a follow-up).
   * The control plane only does blocking pipe I/O on its executor thread (no
     CUDA), which is safe under asyncio.
 
@@ -77,6 +82,7 @@ def _spawn(args):
     ]
     if args.data_path:
         cmd += ["--data_path", args.data_path]
+    cmd += ["--max_sessions", str(args.max_sessions)]
     logger.info("Starting Qwen worker subprocess (loads the model once)...")
     return spawn_worker(cmd, env=env)
 
@@ -88,7 +94,7 @@ def build_app_from_args(args):
         args.hf_tokenizer, default_template_kwargs=default_template_kwargs
     )
 
-    worker = _spawn(args)  # one worker == one session (single-slot V1)
+    worker = _spawn(args)  # one worker, weights once, many isolated sessions
     runtime = SessionRuntime(worker)
     serving = ServingChat(
         runtime,
@@ -144,7 +150,17 @@ def main() -> None:
         "--num-runners",
         type=int,
         default=1,
-        help="V1 supports 1 only (single-slot).",
+        help="Workers (processes). 1 only: a worker hosts many isolated sessions "
+        "on one weight load; more workers would duplicate the ~18GB weights.",
+    )
+    p.add_argument(
+        "--max-sessions",
+        type=int,
+        default=1,
+        help="Isolated sessions the one worker hosts on a single weight load "
+        "(CUDA per-session mutable rebinding); clamped to 1 if the backend "
+        "cannot rebind. One slot is reserved for anonymous requests, so the "
+        "number of addressable session_ids is max-sessions - 1.",
     )
     p.add_argument(
         "--worker-bin",
@@ -157,8 +173,8 @@ def main() -> None:
 
     if args.num_runners != 1:
         p.error(
-            "Qwen3.5 MoE V1 is single-slot: one worker serves one session; "
-            "concurrent requests queue."
+            "Only 1 worker process is supported (it hosts many isolated sessions "
+            "on one ~18GB weight load); more workers would duplicate the weights."
         )
 
     app, _ = build_app_from_args(args)

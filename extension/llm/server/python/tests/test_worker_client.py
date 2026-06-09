@@ -63,6 +63,7 @@ class _Cfg:
     max_new_tokens: int = 64
     temperature: float = 0.0
     stop: list = field(default_factory=list)
+    session_id: str = None
 
 
 def _lines(*objs):
@@ -143,12 +144,44 @@ def test_generate_on_dead_worker_raises():
         WorkerClient(proc).generate("hi", _Cfg())
 
 
+def test_generate_includes_session_id_when_set():
+    proc = _FakeProc(_lines({"done": True, "prompt_tokens": 1, "completion_tokens": 0}))
+    WorkerClient(proc).generate("hi", _Cfg(session_id="abc"))
+    assert json.loads(proc.stdin.written[0])["session_id"] == "abc"
+
+
+def test_generate_omits_session_id_when_unset():
+    proc = _FakeProc(_lines({"done": True, "prompt_tokens": 1, "completion_tokens": 0}))
+    WorkerClient(proc).generate("hi", _Cfg())
+    assert "session_id" not in json.loads(proc.stdin.written[0])
+
+
+def test_open_session_sends_op_and_acks():
+    proc = _FakeProc(_lines({"opened": True, "session_id": "abc"}))
+    WorkerClient(proc).open_session("abc")
+    assert json.loads(proc.stdin.written[0]) == {"op": "open", "session_id": "abc"}
+
+
+def test_open_session_capacity_error_carries_code():
+    proc = _FakeProc(_lines({"error": "full", "code": "capacity_exhausted"}))
+    with pytest.raises(WorkerError) as ei:
+        WorkerClient(proc).open_session("abc")
+    assert ei.value.code == "capacity_exhausted"
+
+
+def test_close_session_sends_op_and_acks():
+    proc = _FakeProc(_lines({"closed": True, "session_id": "abc"}))
+    WorkerClient(proc).close_session("abc")
+    assert json.loads(proc.stdin.written[0]) == {"op": "close", "session_id": "abc"}
+
+
 def test_spawn_worker_waits_for_ready():
-    proc = _FakeProc(_lines({"ready": True}))
+    proc = _FakeProc(_lines({"ready": True, "max_named_sessions": 3}))
     client = spawn_worker(
         ["/fake/worker", "--model_path", "m"], popen=lambda *a, **k: proc
     )
     assert isinstance(client, WorkerClient)
+    assert client.max_named_sessions == 3
 
 
 def test_spawn_worker_not_ready_raises():

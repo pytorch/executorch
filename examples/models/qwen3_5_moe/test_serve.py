@@ -8,7 +8,7 @@
 
 Hermetic: no model, GPU, or worker subprocess. Covers layering (Qwen stays an
 example; the control plane runs no CUDA and imports no model pybind), the worker
-spawn command, and the single-slot CLI guard. The generic JSONL protocol is
+spawn command, and the single-worker CLI guard. The generic JSONL protocol is
 covered by extension/llm/server/python/tests/test_worker_client.py; the live
 HTTP smoke test is documented in README.md and run on a CUDA box.
 """
@@ -75,6 +75,7 @@ def test_spawn_builds_worker_command(monkeypatch):
             model_path="m.pte",
             tokenizer_path="t.json",
             data_path="d.ptd",
+            max_sessions=4,
         )
     )
     assert captured["cmd"] == [
@@ -85,6 +86,8 @@ def test_spawn_builds_worker_command(monkeypatch):
         "t.json",
         "--data_path",
         "d.ptd",
+        "--max_sessions",
+        "4",
     ]
 
 
@@ -95,7 +98,11 @@ def test_spawn_defaults_worker_bin_and_omits_empty_data_path(monkeypatch):
     )
     serve._spawn(
         SimpleNamespace(
-            worker_bin=None, model_path="m.pte", tokenizer_path="t.json", data_path=None
+            worker_bin=None,
+            model_path="m.pte",
+            tokenizer_path="t.json",
+            data_path=None,
+            max_sessions=4,
         )
     )
     cmd = captured["cmd"]

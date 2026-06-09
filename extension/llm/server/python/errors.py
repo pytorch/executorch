@@ -60,3 +60,36 @@ class GenerationError(APIError):
         super().__init__(
             status=500, message=f"Generation failed: {detail}", err_type="server_error"
         )
+
+
+class InvalidSessionId(APIError):
+    def __init__(self, detail: str):
+        super().__init__(
+            status=400,
+            message=f"Invalid session_id: {detail}",
+            err_type="invalid_request_error",
+            code="invalid_session_id",
+        )
+
+
+class SessionCapacity(APIError):
+    """A worker rejected an explicit session_id: the backend hosts no named
+    sessions (unsupported_session -> 400) or all session slots are taken
+    (capacity_exhausted -> 429)."""
+
+    def __init__(self, code: str):
+        if code == "unsupported_session":
+            super().__init__(
+                status=400,
+                message="This server hosts a single session; omit session_id.",
+                err_type="invalid_request_error",
+                code=code,
+            )
+        else:
+            super().__init__(
+                status=429,
+                message="Session capacity exhausted; reuse an existing session_id "
+                "or retry later.",
+                err_type="capacity_error",
+                code="capacity_exhausted",
+            )
