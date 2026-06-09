@@ -58,14 +58,10 @@ def get_supported_transpositions(
     perm = list(node.args[1])
 
     to_nchw_perm = list(
-        translator.create_channels_last_to_channels_first_permutation(
-            len(input_shape), True
-        )
+        translator.create_channels_last_to_channels_first_permutation(len(input_shape))
     )
     to_nhwc_perm = list(
-        translator.create_channels_first_to_channels_last_permutation(
-            len(input_shape), True
-        )
+        translator.create_channels_first_to_channels_last_permutation(len(input_shape))
     )
     channels_last_input_shape = translator.apply_permutation_to(
         input_shape, to_nhwc_perm
@@ -148,7 +144,7 @@ class PermuteCopyFormatHandler:
     def builder(self):
         return self.context.tflite_builder
 
-    def _handle_channels_first_input_and_formatless_output(
+    def _get_perm_and_handle_channels_first_input_and_formatless_output(
         self, perm_dict, node, t_op, ops
     ) -> Permutation:
         # The input must be permuted.
@@ -183,7 +179,7 @@ class PermuteCopyFormatHandler:
 
         return perm
 
-    def _handle_formatless_input_and_channels_first_output(
+    def _get_perm_and_handle_formatless_input_and_channels_first_output(
         self, perm_dict, node, t_op, ops
     ) -> Permutation:
         # The output must be permuted.
@@ -218,7 +214,7 @@ class PermuteCopyFormatHandler:
 
         return perm
 
-    def _handle_channels_first_input_and_output(
+    def _get_perm_and_handle_channels_first_input_and_output(
         self, perm_dict, node, t_op, ops
     ) -> Permutation:
         """This method is currently far more complex than necessary, as Neutron C supports all permutations.
@@ -289,7 +285,7 @@ class PermuteCopyFormatHandler:
 
         return perm
 
-    def _handle_formatless_input_and_output(
+    def _get_perm_and_handle_formatless_input_and_output(
         self, perm_dict, node, t_op, ops
     ) -> Permutation:
         # Neither the input nor the output have to be permuted.
@@ -323,22 +319,24 @@ class PermuteCopyFormatHandler:
             node.meta[NXP_NODE_FORMAT],
         )
         if input_format.is_channels_first() and (not output_format.is_channels_first()):
-            perm = self._handle_channels_first_input_and_formatless_output(
+            perm = self._get_perm_and_handle_channels_first_input_and_formatless_output(
                 perm_dict, node, t_op, ops
             )
 
         elif not input_format.is_channels_first() and output_format.is_channels_first():
-            perm = self._handle_formatless_input_and_channels_first_output(
+            perm = self._get_perm_and_handle_formatless_input_and_channels_first_output(
                 perm_dict, node, t_op, ops
             )
 
         elif input_format.is_channels_first() and output_format.is_channels_first():
-            perm = self._handle_channels_first_input_and_output(
+            perm = self._get_perm_and_handle_channels_first_input_and_output(
                 perm_dict, node, t_op, ops
             )
 
         else:
-            perm = self._handle_formatless_input_and_output(perm_dict, node, t_op, ops)
+            perm = self._get_perm_and_handle_formatless_input_and_output(
+                perm_dict, node, t_op, ops
+            )
 
         perm_tensor = self.builder.create_tensor_for_data(
             np.array(perm, "int32"), "perm"
