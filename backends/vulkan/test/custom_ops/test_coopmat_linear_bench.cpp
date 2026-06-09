@@ -8,7 +8,7 @@
 // types at Llama 3.1 8B prefill shapes:
 //   4w    = linear_q4gsw          (weight-only int4)
 //   8da4w = linear_dq8ca_q4gsw    (dyn-act int8 x int4 weight)
-//   8w    = linear_q8csw          (weight-only int8)  -- TILED ONLY (no coopmat shader)
+//   8w    = linear_q8csw          (weight-only int8)
 //   8da8w = linear_dq8ca_q8csw    (dyn-act int8 x int8 weight)
 //
 // Baseline (tiled) is selected by Texture3D+Half output storage; coopmat is
@@ -267,10 +267,20 @@ std::vector<TestCase> generate_cases() {
   // 8..22) and the fp32 reference is valid. fp16~=fp32 throughout, so a tight
   // tolerance validates shader structure (catches zero-subtile bugs) while
   // ignoring benign fp16 noise. Texture3D = tiled, Buffer = coopmat.
-  // Second shape {128,256,128} dispatches a 2x2 workgroup grid, covering the
-  // gl_WorkGroupID-derived tile offsets in the coopmat store address math.
+  // Shapes align to BOTH coopmat geometries (64x64x32 legacy, 128x128x16
+  // double-buffered); the second shape dispatches a multi-workgroup grid for
+  // both, covering the gl_WorkGroupID-derived tile offsets in the store
+  // address math.
   static const std::vector<LinearConfig> kCorrectnessShapes = {
-      {64, 128, 64, 64, ""}, {128, 256, 128, 64, ""}};
+      {64, 128, 64, 64, ""},
+      {128, 256, 128, 64, ""},
+      {128, 128, 128, 64, ""},
+      {256, 256, 256, 64, ""},
+      // Discriminators for the tiled-texture cube-shape failure:
+      {128, 128, 256, 64, ""}, // M == K only
+      {256, 128, 128, 64, ""}, // K == N only
+      {64, 128, 256, 64, ""}, // K > M, K < N
+      {256, 128, 64, 64, ""}}; // K < M, K > N
   for (const auto& op : kOps) {
     for (const auto& shape : kCorrectnessShapes) {
     LinearConfig cfg{shape.M, shape.K, shape.N, shape.group_size, op};

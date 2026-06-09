@@ -11,9 +11,7 @@
  *
  * Performs: out[M,N] = dequant(int8_act) * dequant(int8_w_perchannel) (+ bias)
  *
- * Uses coopmat<int8> × coopmat<int8> → coopmat<int32> on the matrix unit
- * (RDNA3 V_WMMA_I32_16X16X16_IU8 — verified exposed via
- * queryCooperativeMatrixProperties on Radeon 780M, Mesa RADV).
+ * Uses coopmat<int8> × coopmat<int8> → coopmat<int32> on the matrix unit.
  *
  * Math (per output tile element):
  *   accum_int32 = sum_k(int8_in_k * int8_weight_k)        // coopMatMulAdd
@@ -24,15 +22,28 @@
  *   1. B-stage loads int8 weight directly (no nibble unpack, no -8 bias).
  *   2. No per-group loop — per-channel weight quant has no groups, so a
  *      single K loop runs the full accumulation, then one epilog dequant.
- *   3. wsum / wsc / izp / ifs are all loaded ONCE per WG tile (not per-group).
+ *   3. wsum / wsc / izp / ifs are all loaded ONCE per WG tile (no group
+ *      ping-pong).
  *
- * Tile hierarchy (mirrors linear_dq8ca_q4gsw_coopmat for direct comparison):
- *   MMA 16x16x16 int8, WG_TILE 64x64, WG_TILE_K = 32,
- *   4 subgroups × 64 threads = 256/WG.
+ * Loop structure follows the NVIDIA double-buffered GEMM reference
+ * (shmem_double_buf4.comp "store-first" variant; see gemm_double_buf.glsl in
+ * test/custom_ops): prologue register prefetch, one barrier per K-chunk,
+ * ping-pong LDS slices; the prefetch is pure loads, in flight during the MMA.
+ *
+ * LDS layout for the MMA operands: K-slab split + ColumnMajor B + per-col
+ * skew padding (see the comments in the staging blocks; the source int8
+ * weight block already packs 4 K-contiguous bytes per N-col, so the
+ * ColumnMajor LDS write is a straight uint copy).
+ *
+ * Tile hierarchy (yaml): MMA 16x16x16 int8, WG_TILE 128x64, WG_TILE_K = 32,
+ * 4 subgroups × 64 threads. The double-buffered reference's subgroup-32
+ * layout is NOT used: the Xclipse PAL compiler crashes in
+ * vkCreateComputePipelines when int8 WMMA is compiled at forced subgroup
+ * size 32 (fp16 WMMA at 32 is fine; see linear_q4gsw_coopmat).
  *
  * Hard preconditions:
- *   M % 64 == 0, N % 64 == 0, K % 32 == 0,
- *   subgroup_size == 64, device exposes coopmat<int8>×<int8>→<int32> at 16x16x16.
+ *   M % WG_TILE_M == 0, N % WG_TILE_N == 0, K % WG_TILE_K == 0,
+ *   device exposes coopmat<int8>×<int8>→<int32> at 16x16x16.
  */
 
 #version 450 core
@@ -108,37 +119,26 @@ const uint SG_TILE_N = WG_TILE_N / SG_GRID_X;
 const uint MMAS_PER_SG_M = SG_TILE_M / MMA_M;
 const uint MMAS_PER_SG_N = SG_TILE_N / MMA_N;
 
-// LDS layout: K-slab split + ColumnMajor B + per-col skew padding on B.
-//
-// The WMMA wave64 lane layout for matrix B wants 4 K-contiguous bytes per lane
-// (not 4 N-contiguous), so a RowMajor B in LDS forces one byte load per
-// (lane, K-row) pair (a chain of ds_load_u8_d16 + v_perm_b32 repack). The
-// layout below avoids that:
-//  1. matA stays RowMajor (its lane layout wants 4 K-contiguous bytes per
-//     lane — already what RowMajor gives us). Per-row stride 16B (no
-//     skew needed: 2-way bank conflict, the wave64 minimum).
-//  2. matB switches to ColumnMajor LDS — each N-col is 16 K-rows packed
-//     contiguously. Stride between cols = 5 uints = 20 bytes (4 useful +
-//     1 pad). The +1 uint skew makes col-stride coprime to 32 banks,
-//     eliminating bank conflicts on both reads (coopMatLoad) and writes
-//     (Stage B). Each lane still reads 4 K-contiguous bytes per
-//     ds_load_b32, no v_perm_b32 repack.
-//  3. Split LDS into MMA_K-sized K-slabs (WG_TILE_K=32 → 2 slabs) so each
-//     slab's strides are short and 16-byte aligned for the A side.
-const uint A_SLAB_INT8     = WG_TILE_M * MMA_K;          // 64 * 16 = 1024 int8/slab
-const uint B_USEFUL_U32    = MMA_K / 4u;                 // 4 uints of K data per N-col
-const uint B_STRIDE_U32    = B_USEFUL_U32 + 1u;          // 5 uints per col (4 useful + 1 skew)
-const uint B_SLAB_U32      = WG_TILE_N * B_STRIDE_U32;   // 64 cols × 5 uints/col = 320 uints/slab
-const uint NUM_K_SLABS     = WG_TILE_K / MMA_K;          // 2
+// LDS layout: K-slab split + ColumnMajor B + per-col skew padding on B (see
+// the pre-dbuf revision of this file for the full rationale: matB lane
+// layout wants 4 K-contiguous bytes per lane; ColumnMajor + a +1-uint skew
+// per col gives one ds_load_b32 per lane, bank-conflict-free).
+const uint A_SLAB_INT8     = WG_TILE_M * MMA_K;
+const uint B_USEFUL_U32    = MMA_K / 4u;
+const uint B_STRIDE_U32    = B_USEFUL_U32 + 1u;
+const uint B_SLAB_U32      = WG_TILE_N * B_STRIDE_U32;
+const uint NUM_K_SLABS     = WG_TILE_K / MMA_K;
 
-const uint A_STRIDE_INT8   = MMA_K;                      // 16 int8 per A row (M-row stride)
-const uint B_STRIDE_INT8   = B_STRIDE_U32 * 4u;          // 20 int8 per B col (incl. skew)
+const uint A_SLAB_U32      = A_SLAB_INT8 / 4u;
+const uint A_STRIDE_U32    = MMA_K / 4u;
 
-const uint A_SLAB_U32      = A_SLAB_INT8 / 4u;           // 256 uints/slab
-const uint A_STRIDE_U32    = A_STRIDE_INT8 / 4u;         // 4 uints per A row
+// One ping-pong slice covers all K-slabs of one chunk.
+const uint ASH_SLICE_U32 = NUM_K_SLABS * A_SLAB_U32;
+const uint BSH_SLICE_U32 = NUM_K_SLABS * B_SLAB_U32;
 
-shared uint Ash_int8[NUM_K_SLABS * A_SLAB_U32];          // 512 uints = 2048 bytes
-shared uint Bsh_int8[NUM_K_SLABS * B_SLAB_U32];          // 640 uints = 2560 bytes
+// Double-buffered MMA operand staging.
+shared uint Ash_int8[2u * ASH_SLICE_U32];
+shared uint Bsh_int8[2u * BSH_SLICE_U32];
 
 // Per-WG-tile-row activation params (loaded ONCE at WG start).
 shared int   izp_sh[WG_TILE_M];   // int32 (cast from int8 source)
@@ -160,11 +160,10 @@ void main() {
       gl_SubgroupID / SG_GRID_X);
 
   const uint K = uint(input_sizes.x);
-  const uint M = uint(input_sizes.y);
   const uint N = uint(output_sizes.x);
   const uint N4 = (N + 3u) / 4u;
-  const uint K4 = (K + 3u) / 4u;
-  const uint NUM_K_CHUNKS = uint(k_chunks_arg);
+  const uint nblocks_x_A = (K + 3u) >> 2u;
+  const uint num_chunks = uint(k_chunks_arg);
 
   const uint tile_m_start = WG_TILE_M * tileID.y;
   const uint tile_n_start = WG_TILE_N * tileID.x;
@@ -203,86 +202,103 @@ void main() {
     }
   }
 
-  for (uint chunk_i = 0; chunk_i < NUM_K_CHUNKS; ++chunk_i) {
-    const uint chunkK = chunk_i * WG_TILE_K;
+  // --- A staging thread map: one (m4, k4) ivec4 block per active thread ---
+  // (4 M-rows x 4 K-positions; each block expands to 4 slab-major LDS uints.)
+  const uint K_BLOCKS_PER_CHUNK = WG_TILE_K >> 2u;
+  const uint A_ACTIVE_THREADS = (WG_TILE_M >> 2u) * K_BLOCKS_PER_CHUNK;
+  const uint a_m_block = gl_LocalInvocationID.x / K_BLOCKS_PER_CHUNK;
+  const uint a_k_block = gl_LocalInvocationID.x % K_BLOCKS_PER_CHUNK;
+  const bool a_active = gl_LocalInvocationID.x < A_ACTIVE_THREADS;
 
-    // --- Stage A: 4H4W packed int8 -> slab-major int8 in Ash_int8 ---
-    // LDS layout: [slab][m_row][k_uint_in_slab] where slab is the
-    // K-chunk of MMA_K=16 int8 (=4 uints). Each thread fetches one ivec4
-    // (4 M-rows × 4 K-positions) and writes 4 uints, one per M-row, to
-    // the appropriate slab + k_uint position.
-    {
-      const uint nblocks_x_A = (K + 3u) >> 2u;
-      if (gl_LocalInvocationID.x < (WG_TILE_M >> 2u) * (WG_TILE_K >> 2u)) {
-        const uint m_block_in_tile = gl_LocalInvocationID.x >> 3u;
-        const uint k_block_in_chunk = gl_LocalInvocationID.x & 7u;
-        const uint m4_global = (tile_m_start >> 2u) + m_block_in_tile;
-        const uint k4_global = (chunkK >> 2u) + k_block_in_chunk;
-        const ivec4 blk = t_packed_int8_input[m4_global * nblocks_x_A + k4_global];
-        const uint base_row = m_block_in_tile * 4u;
-        // k_block_in_chunk (0..7) splits across NUM_K_SLABS=2 slabs of 4 K-uints each.
-        const uint slab_idx        = k_block_in_chunk >> 2u;        // 0 or 1
-        const uint k_uint_in_slab  = k_block_in_chunk & 3u;         // 0..3
-        const uint slab_base       = slab_idx * A_SLAB_U32;
-        [[unroll]] for (uint m4i = 0; m4i < 4u; ++m4i) {
-          Ash_int8[slab_base + (base_row + m4i) * A_STRIDE_U32 + k_uint_in_slab] = uint(blk[m4i]);
-        }
-      }
-    }
+  // --- B staging thread map: one (k4, n4) ivec4 block per active thread ---
+  // wblk[n_in_blk] packs 4 K-contiguous bytes for N-col (n4*4 + n_in_blk) —
+  // exactly one ColumnMajor LDS uint, written as-is (no byte repack).
+  const uint B_FETCH_SLOTS = K_BLOCKS_PER_CHUNK * (WG_TILE_N >> 2u);
+  const uint N4_PER_TILE = WG_TILE_N >> 2u;
+  const uint b_k4_in_chunk = gl_LocalInvocationID.x / N4_PER_TILE;
+  const uint b_n_uint_col = gl_LocalInvocationID.x % N4_PER_TILE;
+  const bool b_active = gl_LocalInvocationID.x < B_FETCH_SLOTS;
 
-    // --- Stage B: int8 weight -> ColumnMajor slab in Bsh_int8 ---
-    // Source weight layout: each ivec4 at [k4, n4] packs 16 int8s as
-    //   wblk[n_in_blk] = (K0, K1, K2, K3) packed (4 K-positions for one N-col).
-    // ColumnMajor LDS layout: Bsh[slab][n_col][k_uint_in_col] where
-    //   k_uint_in_col ∈ [0, 4) holds 4 packed K-bytes.
-    // Critically, wblk[n_in_blk] IS exactly the 4-packed-K-bytes for one
-    // N-col — we write it AS-IS to LDS with no byte unpack/repack. The
-    // matB coopMatLoad then reads 4 K-contiguous bytes per lane in one
-    // ds_load_b32 (no v_perm_b32 chain).
-    {
-      const uint fetch_slots = (WG_TILE_K >> 2u) * (WG_TILE_N >> 2u); // 8 * 16 = 128
-      const uint n4_blocks_per_tile  = WG_TILE_N >> 2u;               // 16
-      const uint nblocks_x_B = N4;
-      if (gl_LocalInvocationID.x < fetch_slots) {
-        const uint k4_in_chunk = gl_LocalInvocationID.x / n4_blocks_per_tile;
-        const uint n_uint_col  = gl_LocalInvocationID.x % n4_blocks_per_tile;
+  // Prefetch temp registers.
+  ivec4 temp_A;
+  ivec4 temp_B;
 
-        const uint block_y_w  = (chunkK >> 2u) + k4_in_chunk;
-        const uint n_start_global = tile_n_start + n_uint_col * 4u;
-        const uint block_x_w  = n_start_global >> 2u;
-
-        ivec4 wblk;
+  // =========================================================
+  // PROLOGUE: prefetch chunk 0 into temp registers, then store to slice 0
+  // (no barrier; the first loop iteration's barrier publishes it).
+  // =========================================================
+  if (a_active) {
+    const uint m4_global = (tile_m_start >> 2u) + a_m_block;
+    temp_A = t_packed_int8_input[m4_global * nblocks_x_A + a_k_block];
+  }
+  if (b_active) {
+    const uint block_x_w = (tile_n_start >> 2u) + b_n_uint_col;
 #ifdef WEIGHT_BUFFER
-        wblk = t_packed_int8_weight[(block_y_w * nblocks_x_B) + block_x_w];
+    temp_B = t_packed_int8_weight[(b_k4_in_chunk * N4) + block_x_w];
 #else
-        wblk = texelFetch(t_packed_int8_weight, ivec2(block_x_w, block_y_w), 0);
+    temp_B = texelFetch(t_packed_int8_weight, ivec2(block_x_w, b_k4_in_chunk), 0);
 #endif
-        // ColumnMajor write: 4 N-cols at offsets [n_uint_col*4 .. n_uint_col*4+3],
-        // each gets ONE uint (wblk[n_in_blk]) at slab position k4_in_slab.
-        const uint slab_idx       = k4_in_chunk >> 2u;        // 0 or 1
-        const uint k4_in_slab     = k4_in_chunk & 3u;         // 0..3 (which K4-block within slab)
-        const uint slab_base      = slab_idx * B_SLAB_U32;
-        const uint n_col_base     = n_uint_col * 4u;
-        [[unroll]] for (uint n_in_blk = 0u; n_in_blk < 4u; ++n_in_blk) {
-          const uint n_col = n_col_base + n_in_blk;
-          // Bsh_int8[slab][n_col][k4_in_slab]; each entry = 4 packed K-bytes.
-          Bsh_int8[slab_base + n_col * B_STRIDE_U32 + k4_in_slab] = uint(wblk[n_in_blk]);
-        }
+  }
+  {
+    if (a_active) {
+      const uint slab_idx       = a_k_block / (MMA_K >> 2u);
+      const uint k_uint_in_slab = a_k_block % (MMA_K >> 2u);
+      const uint base_row = a_m_block * 4u;
+      [[unroll]] for (uint m4i = 0; m4i < 4u; ++m4i) {
+        Ash_int8[slab_idx * A_SLAB_U32 + (base_row + m4i) * A_STRIDE_U32 + k_uint_in_slab] =
+            uint(temp_A[m4i]);
       }
     }
+    if (b_active) {
+      const uint slab_idx   = b_k4_in_chunk / (MMA_K >> 2u);
+      const uint k4_in_slab = b_k4_in_chunk % (MMA_K >> 2u);
+      const uint n_col_base = b_n_uint_col * 4u;
+      [[unroll]] for (uint n_in_blk = 0u; n_in_blk < 4u; ++n_in_blk) {
+        Bsh_int8[slab_idx * B_SLAB_U32 + (n_col_base + n_in_blk) * B_STRIDE_U32 + k4_in_slab] =
+            uint(temp_B[n_in_blk]);
+      }
+    }
+  }
+
+  // =========================================================
+  // MAIN LOOP — one barrier per chunk. Iteration `chunk`:
+  //   1. barrier   — slice (chunk%2) fully written
+  //   2. prefetch  — chunk+1 into temp (skipped on the final chunk)
+  //   3. int8 MMA  — on slice (chunk%2) into accum_int32
+  //   4. store     — temp -> slice ((chunk+1)%2)
+  // =========================================================
+  for (uint chunk = 0; chunk < num_chunks; ++chunk) {
+    const bool has_next = chunk + 1u < num_chunks;
+    const uint cur_a = (chunk % 2u) * ASH_SLICE_U32;
+    const uint cur_b = (chunk % 2u) * BSH_SLICE_U32;
+    const uint nxt_a = ((chunk + 1u) % 2u) * ASH_SLICE_U32;
+    const uint nxt_b = ((chunk + 1u) % 2u) * BSH_SLICE_U32;
 
     barrier();
 
-    // --- Inner K loop: coopmat<int8> x coopmat<int8> -> coopmat<int32> ---
-    // Address LDS slabs. Each k iter consumes one slab of MMA_K=16
-    // K-rows. coopMatLoad offset/stride are in units of the backing
-    // array's element type (uint = 4 packed int8), NOT int8 elements.
-    // matA is RowMajor with stride A_STRIDE_U32=4 uints (16 int8,
-    // 16-byte aligned). matB is ColumnMajor with stride B_STRIDE_U32=5
-    // uints (4 useful + 1 skew), coprime-to-32-banks on the LDS port side.
+    // --- 2. prefetch chunk+1 -> temp ---
+    if (has_next) {
+      const uint chunkK_nxt = (chunk + 1u) * WG_TILE_K;
+      if (a_active) {
+        const uint m4_global = (tile_m_start >> 2u) + a_m_block;
+        const uint k4_global = (chunkK_nxt >> 2u) + a_k_block;
+        temp_A = t_packed_int8_input[m4_global * nblocks_x_A + k4_global];
+      }
+      if (b_active) {
+        const uint block_y_w = (chunkK_nxt >> 2u) + b_k4_in_chunk;
+        const uint block_x_w = (tile_n_start >> 2u) + b_n_uint_col;
+#ifdef WEIGHT_BUFFER
+        temp_B = t_packed_int8_weight[(block_y_w * N4) + block_x_w];
+#else
+        temp_B = texelFetch(t_packed_int8_weight, ivec2(block_x_w, block_y_w), 0);
+#endif
+      }
+    }
+
+    // --- 3. int8 MMA on the cur slice ---
     [[unroll]] for (uint k = 0; k < NUM_K_SLABS; ++k) {
-      const uint slab_a_base_u32 = k * A_SLAB_U32;
-      const uint slab_b_base_u32 = k * B_SLAB_U32;
+      const uint slab_a_base_u32 = cur_a + k * A_SLAB_U32;
+      const uint slab_b_base_u32 = cur_b + k * B_SLAB_U32;
 
       coopmat<int8_t, gl_ScopeSubgroup, MMA_M, MMA_K, gl_MatrixUseA> matA[MMAS_PER_SG_M];
       [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
@@ -308,7 +324,27 @@ void main() {
       }
     }
 
-    barrier();
+    // --- 4. store temp (chunk+1) -> nxt slice ---
+    if (has_next) {
+      if (a_active) {
+        const uint slab_idx       = a_k_block / (MMA_K >> 2u);
+        const uint k_uint_in_slab = a_k_block % (MMA_K >> 2u);
+        const uint base_row = a_m_block * 4u;
+        [[unroll]] for (uint m4i = 0; m4i < 4u; ++m4i) {
+          Ash_int8[nxt_a + slab_idx * A_SLAB_U32 + (base_row + m4i) * A_STRIDE_U32 + k_uint_in_slab] =
+              uint(temp_A[m4i]);
+        }
+      }
+      if (b_active) {
+        const uint slab_idx   = b_k4_in_chunk / (MMA_K >> 2u);
+        const uint k4_in_slab = b_k4_in_chunk % (MMA_K >> 2u);
+        const uint n_col_base = b_n_uint_col * 4u;
+        [[unroll]] for (uint n_in_blk = 0u; n_in_blk < 4u; ++n_in_blk) {
+          Bsh_int8[nxt_b + slab_idx * B_SLAB_U32 + (n_col_base + n_in_blk) * B_STRIDE_U32 + k4_in_slab] =
+              uint(temp_B[n_in_blk]);
+        }
+      }
+    }
   }  // K chunks
 
   // --- Single epilog: coopmat-only dequant of accum_int32 -> fp result ---

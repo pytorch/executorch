@@ -12,28 +12,45 @@
  * Performs: out[M,N] = activation[M,K] * weight^T[N,K] (+ bias)
  *   where weight is INT4 group-symmetric quantized (group_size = 4 * K4_per_group).
  *
- * Inner-loop math is pure fp16 -> fp32 MMA via coopMatMulAdd. The per-group
- * weight scale is applied at SHARED-MEMORY STAGE TIME during the B-tile load:
- * each nibble is unpacked, sign-shifted by -8, cast to fp16, and multiplied
- * by the per-(group, output-channel) scale before it lands in Bsh. This keeps
- * the K-loop a clean fp16 MMA with no per-K-element scale fma.
+ * Loop structure follows the NVIDIA double-buffered GEMM reference
+ * (shmem_double_buf4.comp, "store-first" variant; see gemm_double_buf.glsl in
+ * test/custom_ops — measured 1.5x faster than the previous single-buffered
+ * skeleton at fp16 on Xclipse 970):
+ *   - PROLOGUE: prefetch tile 0 from global memory into temp registers, then
+ *     store it to shared-memory slice 0 (no barrier).
+ *   - Each iteration: barrier -> global prefetch of the NEXT tile into temp
+ *     -> MMA math on the CURRENT slice -> store temp into the OTHER slice.
+ *     One barrier per iteration; the prefetch loads are in flight during the
+ *     math and are only consumed at the store stage.
+ *   - Ping-pong shared-memory slices make the overlap safe.
  *
- * Tile hierarchy (mirrors coopmat_mm defaults):
+ * INT4 dequant happens at the STORE stage (temp registers hold the raw packed
+ * weight blocks; the prefetch stays pure loads): each nibble is unpacked,
+ * sign-shifted by -8, cast to fp16, and multiplied by the per-(group,
+ * output-channel) scale before it lands in Bsh. The 8 scales each thread
+ * needs are kept in 2 registers and reloaded from global only when the
+ * K-chunk crosses a group boundary (a workgroup-uniform branch); there is no
+ * scales staging in shared memory and no extra barrier.
+ *
+ * Tile hierarchy (yaml; mirrors the double-buffered reference):
  *   MMA_*         per-MMA-instruction shape (16x16x16 fp16)
- *   WG_TILE_*     output tile per workgroup (64x64; K-step 32)
- *   SG_GRID_*     subgroup grid inside workgroup (2x2 = 4 subgroups)
- *   SUBGROUP_SIZE hardware subgroup width (64 on RDNA3 / Adreno)
+ *   WG_TILE_*     output tile per workgroup (128x128)
+ *   SG_GRID_*     subgroup grid inside workgroup (4x2 = 8 subgroups)
+ *   SUBGROUP_SIZE 32, forced at pipeline creation via the
+ *                 REQUIRED_SUBGROUP_SIZE annotation below
  *
  * Storage: activation/output forced to buffer; INT4 weight = texture2d or
  * buffer (yaml variant). DTYPE = half only.
  *
  * Hard preconditions (no shape/alignment checks inside the shader):
- *   M % WG_TILE_M == 0   (= 64)
- *   N % WG_TILE_N == 0   (= 64)
- *   K % WG_TILE_K == 0   (= 32)
+ *   M % WG_TILE_M == 0
+ *   N % WG_TILE_N == 0
+ *   K % WG_TILE_K == 0
  *   group_size % WG_TILE_K == 0   (so each group is an integer number of chunks)
  * Misaligned shapes silently miscompute / overrun — gate at dispatch time.
  */
+
+// REQUIRED_SUBGROUP_SIZE = 32
 
 #version 450 core
 
@@ -80,7 +97,7 @@ ${layout_declare_spec_const(C, "int", "num_groups_arg", "0")}
 // the first store per subgroup lands correctly; standalone repro cm_acc2).
 ${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
 
-// --- Tile geometry (from yaml; defaults match coopmat_mm) ---
+// --- Tile geometry (from yaml; defaults match gemm_double_buf) ---
 const uint MMA_M = ${MMA_M};
 const uint MMA_N = ${MMA_N};
 const uint MMA_K = ${MMA_K};
@@ -105,16 +122,51 @@ const uint FP16_PER_VEC4 = 8;
 const uint A_STRIDE_VEC4 = (WG_TILE_K + FP16_PER_VEC4) / FP16_PER_VEC4;
 const uint B_STRIDE_VEC4 = (WG_TILE_N + FP16_PER_VEC4) / FP16_PER_VEC4;
 
-shared uvec4 Ash[WG_TILE_M * A_STRIDE_VEC4];
-shared uvec4 Bsh[WG_TILE_K * B_STRIDE_VEC4];
-shared float16_t scales_sh[WG_TILE_N];
+// One ping-pong slice of each shared-memory buffer (in uvec4 units).
+const uint ASH_SLICE = WG_TILE_M * A_STRIDE_VEC4;
+const uint BSH_SLICE = WG_TILE_K * B_STRIDE_VEC4;
+
+// Double-buffered shared memory.
+shared uvec4 Ash[2 * ASH_SLICE];
+shared uvec4 Bsh[2 * BSH_SLICE];
 #ifdef HAS_BIAS
 shared float bias_sh[WG_TILE_N];
 #endif
 
+// Staging thread maps: each thread covers one uvec4 (8 fp16) per pass.
+const uint INVS_PER_ROW_A = WG_TILE_K / FP16_PER_VEC4;
+const uint A_ROWS_PER_PASS = WG_SIZE / INVS_PER_ROW_A;
+const uint A_PASSES = WG_TILE_M / A_ROWS_PER_PASS;
+const uint INVS_PER_ROW_B = WG_TILE_N / FP16_PER_VEC4;
+const uint B_ROWS_PER_PASS = WG_SIZE / INVS_PER_ROW_B;
+const uint B_PASSES = WG_TILE_K / B_ROWS_PER_PASS;
+
 // Fp32 accumulator coopmats (MMAS_PER_SG_M x MMAS_PER_SG_N per thread)
 coopmat<float, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>
     result[MMAS_PER_SG_M][MMAS_PER_SG_N];
+
+// Dequant one packed INT4 block column-pair into 8 scaled fp16 weights
+// (one Bsh uvec4). col_lo/col_hi select the K row within the block.
+uvec4 dequant_block(
+    const ivec4 wb,
+    const uint col_lo,
+    const uint col_hi,
+    const f16vec4 s0,
+    const f16vec4 s1) {
+  f16vec4 v0;
+  v0.x = float16_t(int(((wb[0] >> (4 * col_lo)) & 0xF)) - 8) * s0.x;
+  v0.y = float16_t(int(((wb[1] >> (4 * col_lo)) & 0xF)) - 8) * s0.y;
+  v0.z = float16_t(int(((wb[2] >> (4 * col_lo)) & 0xF)) - 8) * s0.z;
+  v0.w = float16_t(int(((wb[3] >> (4 * col_lo)) & 0xF)) - 8) * s0.w;
+  f16vec4 v1;
+  v1.x = float16_t(int(((wb[0] >> (4 * col_hi)) & 0xF)) - 8) * s1.x;
+  v1.y = float16_t(int(((wb[1] >> (4 * col_hi)) & 0xF)) - 8) * s1.y;
+  v1.z = float16_t(int(((wb[2] >> (4 * col_hi)) & 0xF)) - 8) * s1.z;
+  v1.w = float16_t(int(((wb[3] >> (4 * col_hi)) & 0xF)) - 8) * s1.w;
+  return uvec4(
+      packFloat2x16(v0.xy), packFloat2x16(v0.zw),
+      packFloat2x16(v1.xy), packFloat2x16(v1.zw));
+}
 
 void main() {
   const uvec2 tileID = uvec2(gl_WorkGroupID.xy);
@@ -123,14 +175,11 @@ void main() {
       gl_SubgroupID / SG_GRID_X);
 
   const uint K = uint(input_sizes.x);
-  const uint M = uint(input_sizes.y);
-  const uint N = uint(output_sizes.x);
   const uint K4 = (K + 3u) / 4u;
-  const uint N4 = (N + 3u) / 4u;
+  const uint N4 = (uint(output_sizes.x) + 3u) / 4u;
 
-  const uint K_per_group = uint(K4_per_group) * 4u;
-  const uint num_groups = uint(num_groups_arg);
-  const uint CHUNKS_PER_GROUP = K_per_group / WG_TILE_K;
+  const uint CHUNKS_PER_GROUP = uint(K4_per_group) * 4u / WG_TILE_K;
+  const uint num_chunks = uint(num_groups_arg) * CHUNKS_PER_GROUP;
 
   const uint tile_m_start = WG_TILE_M * tileID.y;
   const uint tile_n_start = WG_TILE_N * tileID.x;
@@ -142,135 +191,188 @@ void main() {
     }
   }
 
-  // Thread assignment for A tile staging (each thread writes one uvec4 = 8 fp16).
-  // WG_TILE_K = 32 -> 4 uvec4 columns of A.  WG_SIZE = 256, WG_TILE_M = 64 ->
-  // each thread handles exactly (256/64)=4 A-rows × (4/4)=1 col per outer K iter
-  // ... actually 256 threads / 4 cols = 64 rows, matches WG_TILE_M=64. One pass.
-  const uint INVS_PER_ROW_A = WG_TILE_K / FP16_PER_VEC4;  // = 4
   const uint a_col = gl_LocalInvocationID.x % INVS_PER_ROW_A;
   const uint a_row_offset = gl_LocalInvocationID.x / INVS_PER_ROW_A;
-
-  // Thread assignment for B tile staging.  WG_TILE_N = 64 -> 8 uvec4 columns of B.
-  // WG_SIZE = 256, 256/8 = 32 rows = WG_TILE_K, one pass.
-  const uint INVS_PER_ROW_B = WG_TILE_N / FP16_PER_VEC4;  // = 8
   const uint b_col = gl_LocalInvocationID.x % INVS_PER_ROW_B;
   const uint b_row_offset = gl_LocalInvocationID.x / INVS_PER_ROW_B;
 
   // INT4 weight block grid (see pack_q4_linear_weight.glsl): block (k4, n8)
   // covers K=[k4*4, k4*4+3] x N=[n8*8, n8*8+7]; buffer pitch = K4 blocks per
-  // n8 row, texture coord = ivec2(x=k4, y=n8).
+  // n8 row, texture coord = ivec2(x=k4, y=n8). This thread's 8 N-values at
+  // any K-row live in column n8_blk of the block grid:
+  const uint n8_blk = (tile_n_start + b_col * 8u) >> 3u;
 
-  for (uint group_i = 0; group_i < num_groups; ++group_i) {
-    // --- Stage per-group weight scales for this WG's N-tile into shared mem.
-    //     WG_TILE_N=64 scales; WG_SIZE=256 threads — first 64 lanes load.
-    if (gl_LocalInvocationID.x < WG_TILE_N) {
-      const uint n_idx = tile_n_start + gl_LocalInvocationID.x;
-      const uint n4_idx = n_idx >> 2u;
-      const uint n4_off = n_idx & 3u;
-      f16vec4 sv = t_weight_scales[group_i * N4 + n4_idx];
-      scales_sh[gl_LocalInvocationID.x] = sv[n4_off];
+  // The K row within a block depends only on (b_row_offset & 3): chunkK and
+  // the pass offset are both multiples of 4.
+  const uint col_lo = 2u * (b_row_offset & 3u);
+  const uint col_hi = col_lo + 1u;
+
+  // Per-thread per-group weight scales (8 consecutive N), kept in registers
+  // and reloaded only when the prefetched chunk crosses a group boundary.
+  const uint sc_n4 = (tile_n_start + b_col * 8u) >> 2u;
+  uint cached_group = 0xFFFFFFFFu;
+  f16vec4 sc0;
+  f16vec4 sc1;
+
+  // Temp registers holding the prefetched (next) tile.
+  uvec4 temp_A[A_PASSES];
+  ivec4 temp_B[B_PASSES]; // raw packed INT4 blocks; dequant at the store stage
+
+  // =========================================================
+  // PROLOGUE: prefetch chunk 0 into temp registers, then store to slice 0.
+  // =========================================================
+  {
+    [[unroll]] for (uint p = 0; p < A_PASSES; ++p) {
+      const uint row = tile_m_start + p * A_ROWS_PER_PASS + a_row_offset;
+      const uint k_hv4 = (a_col * FP16_PER_VEC4) / 4u;
+      f16vec4 v0 = t_input[row * K4 + k_hv4];
+      f16vec4 v1 = t_input[row * K4 + k_hv4 + 1u];
+      temp_A[p] = uvec4(
+          packFloat2x16(v0.xy), packFloat2x16(v0.zw),
+          packFloat2x16(v1.xy), packFloat2x16(v1.zw));
     }
-    memoryBarrierShared();
+    [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+      const uint k_row = p * B_ROWS_PER_PASS + b_row_offset;
+#ifdef WEIGHT_BUFFER
+      temp_B[p] = t_packed_int4_weight[n8_blk * K4 + (k_row >> 2u)];
+#else
+      temp_B[p] = texelFetch(t_packed_int4_weight, ivec2(k_row >> 2u, n8_blk), 0);
+#endif
+    }
+    cached_group = 0u;
+    sc0 = t_weight_scales[sc_n4];
+    sc1 = t_weight_scales[sc_n4 + 1u];
+  }
+  {
+    [[unroll]] for (uint p = 0; p < A_PASSES; ++p) {
+      Ash[(p * A_ROWS_PER_PASS + a_row_offset) * A_STRIDE_VEC4 + a_col] = temp_A[p];
+    }
+    [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+      Bsh[(p * B_ROWS_PER_PASS + b_row_offset) * B_STRIDE_VEC4 + b_col] =
+          dequant_block(temp_B[p], col_lo, col_hi, sc0, sc1);
+    }
+  }
+
+  // =========================================================
+  // MAIN LOOP — one barrier per iteration. Iteration `chunk` does:
+  //   1. barrier      — slice (chunk%2) fully written
+  //   2. prefetch     — chunk+1 from global into temp (in flight during math)
+  //   3. MMA math     — on slice (chunk%2)
+  //   4. store        — temp (chunk+1, dequantized) into slice ((chunk+1)%2)
+  // =========================================================
+  uint chunk;
+  for (chunk = 0; chunk + 1u < num_chunks; ++chunk) {
+    const uint cur_base_A = (chunk % 2u) * ASH_SLICE;
+    const uint cur_base_B = (chunk % 2u) * BSH_SLICE;
+    const uint nxt_base_A = ((chunk + 1u) % 2u) * ASH_SLICE;
+    const uint nxt_base_B = ((chunk + 1u) % 2u) * BSH_SLICE;
+
     barrier();
 
-    for (uint inner = 0; inner < CHUNKS_PER_GROUP; ++inner) {
-      const uint chunkK = group_i * K_per_group + inner * WG_TILE_K;
+    // --- prefetch chunk+1 -> temp ---
+    {
+      const uint chunkK_nxt = (chunk + 1u) * WG_TILE_K;
 
-      // --- Stage A tile (fp16 activations) -> Ash ---
-      {
-        const uint row = tile_m_start + a_row_offset;
-        const uint k_elem = chunkK + a_col * FP16_PER_VEC4;
-        const uint k_hv4 = k_elem / 4u;
+      [[unroll]] for (uint p = 0; p < A_PASSES; ++p) {
+        const uint row = tile_m_start + p * A_ROWS_PER_PASS + a_row_offset;
+        const uint k_hv4 = (chunkK_nxt + a_col * FP16_PER_VEC4) / 4u;
         f16vec4 v0 = t_input[row * K4 + k_hv4];
         f16vec4 v1 = t_input[row * K4 + k_hv4 + 1u];
-        Ash[a_row_offset * A_STRIDE_VEC4 + a_col] = uvec4(
+        temp_A[p] = uvec4(
             packFloat2x16(v0.xy), packFloat2x16(v0.zw),
             packFloat2x16(v1.xy), packFloat2x16(v1.zw));
       }
-
-      // --- Stage B tile from INT4 -> fp16 (with per-group scale) -> Bsh ---
-      // Each thread fills one uvec4 = 8 fp16 weights at:
-      //   K-row = chunkK + b_row_offset
-      //   N range = tile_n_start + b_col*8 .. + b_col*8 + 7
-      //
-      // Within a packed ivec4 block, int32[r] packs 8 nibbles for 2 N values:
-      //   col=2*k_in_block      -> N = n8_blk*8 + r,     K = k4_blk*4 + k_in_block
-      //   col=2*k_in_block + 1  -> N = n8_blk*8 + r + 4, K = k4_blk*4 + k_in_block
-      {
-        const uint k_row = chunkK + b_row_offset;
-        const uint n_start = tile_n_start + b_col * 8u;
-        const uint k4_blk = k_row >> 2u;
-        const uint k_in_block = k_row & 3u;
-        const uint n8_blk = n_start >> 3u;
-
-        ivec4 wblock;
+      [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+        const uint k_row = chunkK_nxt + p * B_ROWS_PER_PASS + b_row_offset;
 #ifdef WEIGHT_BUFFER
-        wblock = t_packed_int4_weight[(n8_blk * K4) + k4_blk];
+        temp_B[p] = t_packed_int4_weight[n8_blk * K4 + (k_row >> 2u)];
 #else
-        wblock = texelFetch(t_packed_int4_weight, ivec2(k4_blk, n8_blk), 0);
+        temp_B[p] = texelFetch(t_packed_int4_weight, ivec2(k_row >> 2u, n8_blk), 0);
 #endif
+      }
+      const uint group_nxt = (chunk + 1u) / CHUNKS_PER_GROUP;
+      if (group_nxt != cached_group) {
+        cached_group = group_nxt;
+        sc0 = t_weight_scales[group_nxt * N4 + sc_n4];
+        sc1 = t_weight_scales[group_nxt * N4 + sc_n4 + 1u];
+      }
+    }
 
-        const uint col_lo = 2u * k_in_block;
-        const uint col_hi = col_lo + 1u;
+    // --- MMA math on the cur slice ---
+    [[unroll]] for (uint k = 0; k < WG_TILE_K / MMA_K; ++k) {
+      const uint k_start = MMA_K * k;
 
-        // Dequant + apply per-group scale: w_fp = (nibble - 8) * scale
-        f16vec4 v0;
-        v0.x = float16_t(int(((wblock[0] >> (4 * col_lo)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 0u];
-        v0.y = float16_t(int(((wblock[1] >> (4 * col_lo)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 1u];
-        v0.z = float16_t(int(((wblock[2] >> (4 * col_lo)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 2u];
-        v0.w = float16_t(int(((wblock[3] >> (4 * col_lo)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 3u];
-
-        f16vec4 v1;
-        v1.x = float16_t(int(((wblock[0] >> (4 * col_hi)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 4u];
-        v1.y = float16_t(int(((wblock[1] >> (4 * col_hi)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 5u];
-        v1.z = float16_t(int(((wblock[2] >> (4 * col_hi)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 6u];
-        v1.w = float16_t(int(((wblock[3] >> (4 * col_hi)) & 0xF)) - 8)
-             * scales_sh[b_col * 8u + 7u];
-
-        Bsh[b_row_offset * B_STRIDE_VEC4 + b_col] = uvec4(
-            packFloat2x16(v0.xy), packFloat2x16(v0.zw),
-            packFloat2x16(v1.xy), packFloat2x16(v1.zw));
+      coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_K, gl_MatrixUseA> matA[MMAS_PER_SG_M];
+      [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
+        const uint row_a = MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
+        coopMatLoad(
+            matA[i], Ash,
+            cur_base_A + row_a * A_STRIDE_VEC4 + k_start / FP16_PER_VEC4,
+            A_STRIDE_VEC4,
+            gl_CooperativeMatrixLayoutRowMajor);
       }
 
-      barrier();
+      coopmat<float16_t, gl_ScopeSubgroup, MMA_K, MMA_N, gl_MatrixUseB> matB;
+      [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
+        const uint col_b = MMA_N * (MMAS_PER_SG_N * warpInTile.x + j) / FP16_PER_VEC4;
+        coopMatLoad(
+            matB, Bsh,
+            cur_base_B + k_start * B_STRIDE_VEC4 + col_b,
+            B_STRIDE_VEC4,
+            gl_CooperativeMatrixLayoutRowMajor);
 
-      // --- Cooperative matrix MMA over WG_TILE_K ---
-      [[unroll]] for (uint k = 0; k < WG_TILE_K / MMA_K; ++k) {
-        const uint k_start = MMA_K * k;
-
-        coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_K, gl_MatrixUseA> matA[MMAS_PER_SG_M];
         [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
-          const uint row_a = MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
-          coopMatLoad(
-              matA[i], Ash,
-              row_a * A_STRIDE_VEC4 + k_start / FP16_PER_VEC4,
-              A_STRIDE_VEC4,
-              gl_CooperativeMatrixLayoutRowMajor);
-        }
-
-        coopmat<float16_t, gl_ScopeSubgroup, MMA_K, MMA_N, gl_MatrixUseB> matB;
-        [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
-          const uint col_b = MMA_N * (MMAS_PER_SG_N * warpInTile.x + j) / FP16_PER_VEC4;
-          coopMatLoad(
-              matB, Bsh,
-              k_start * B_STRIDE_VEC4 + col_b,
-              B_STRIDE_VEC4,
-              gl_CooperativeMatrixLayoutRowMajor);
-
-          [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
-            result[i][j] = coopMatMulAdd(matA[i], matB, result[i][j]);
-          }
+          result[i][j] = coopMatMulAdd(matA[i], matB, result[i][j]);
         }
       }
+    }
 
-      barrier();
+    // --- store temp (chunk+1) -> nxt slice, dequantizing B ---
+    {
+      [[unroll]] for (uint p = 0; p < A_PASSES; ++p) {
+        Ash[nxt_base_A + (p * A_ROWS_PER_PASS + a_row_offset) * A_STRIDE_VEC4 + a_col] =
+            temp_A[p];
+      }
+      [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
+        Bsh[nxt_base_B + (p * B_ROWS_PER_PASS + b_row_offset) * B_STRIDE_VEC4 + b_col] =
+            dequant_block(temp_B[p], col_lo, col_hi, sc0, sc1);
+      }
+    }
+  }
+
+  // --- exit from MAIN LOOP: math on the last chunk ---
+  {
+    const uint cur_base_A = (chunk % 2u) * ASH_SLICE;
+    const uint cur_base_B = (chunk % 2u) * BSH_SLICE;
+
+    barrier();
+
+    [[unroll]] for (uint k = 0; k < WG_TILE_K / MMA_K; ++k) {
+      const uint k_start = MMA_K * k;
+
+      coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_K, gl_MatrixUseA> matA[MMAS_PER_SG_M];
+      [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
+        const uint row_a = MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
+        coopMatLoad(
+            matA[i], Ash,
+            cur_base_A + row_a * A_STRIDE_VEC4 + k_start / FP16_PER_VEC4,
+            A_STRIDE_VEC4,
+            gl_CooperativeMatrixLayoutRowMajor);
+      }
+
+      coopmat<float16_t, gl_ScopeSubgroup, MMA_K, MMA_N, gl_MatrixUseB> matB;
+      [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
+        const uint col_b = MMA_N * (MMAS_PER_SG_N * warpInTile.x + j) / FP16_PER_VEC4;
+        coopMatLoad(
+            matB, Bsh,
+            cur_base_B + k_start * B_STRIDE_VEC4 + col_b,
+            B_STRIDE_VEC4,
+            gl_CooperativeMatrixLayoutRowMajor);
+
+        [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
+          result[i][j] = coopMatMulAdd(matA[i], matB, result[i][j]);
+        }
+      }
     }
   }
 

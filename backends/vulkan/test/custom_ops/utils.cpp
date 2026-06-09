@@ -2009,6 +2009,15 @@ void print_valuespec_data(
       break;
     }
     case vkapi::kHalf: {
+      if (print_ref_data) {
+        const auto& ref = spec.get_ref_float_data();
+        for (size_t i = 0; i < print_count; ++i) {
+          std::cout << ref[i];
+          if (i < print_count - 1)
+            std::cout << ", ";
+        }
+        break;
+      }
       const auto& data = spec.get_half_data();
       for (size_t i = 0; i < print_count; ++i) {
         // Convert IEEE 754 half-precision bit pattern back to float.

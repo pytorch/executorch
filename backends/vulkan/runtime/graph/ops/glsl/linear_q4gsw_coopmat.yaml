@@ -8,6 +8,8 @@
 # Forces buffer storage for activation/output (coopMatLoad/Store on buffers);
 # INT4 weight storage can be texture2d or buffer (matches the tiled path).
 # DTYPE = half only; fp32 activations are not supported.
+# Geometry follows the double-buffered reference (gemm_double_buf): 128x128
+# tile, K-step 16, 8 subgroups x 32 threads (subgroup size 32 forced).
 
 linear_q4gsw_coopmat:
   parameter_names_with_default_values:
@@ -17,12 +19,12 @@ linear_q4gsw_coopmat:
     MMA_M: 16
     MMA_N: 16
     MMA_K: 16
-    WG_TILE_M: 64
-    WG_TILE_N: 64
-    WG_TILE_K: 32
-    SG_GRID_X: 2
+    WG_TILE_M: 128
+    WG_TILE_N: 128
+    WG_TILE_K: 16
+    SG_GRID_X: 4
     SG_GRID_Y: 2
-    SUBGROUP_SIZE: 64
+    SUBGROUP_SIZE: 32
   shader_variants:
     - NAME: linear_q4gsw_coopmat_buffer_texture2d_half
       WEIGHT_STORAGE: texture2d

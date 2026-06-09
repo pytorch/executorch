@@ -53,6 +53,44 @@ void resize_linear_qw_node(
   graph->virtual_resize(output, new_out_sizes);
 }
 
+// Per-shader coopmat tile geometry (must match each shader's yaml). The
+// shaders restructured to the double-buffered reference (gemm_double_buf)
+// use larger tiles and K-step 16; the rest keep the GemmCoopmat.h 64x64x32
+// geometry. All use 256-thread workgroups.
+//   linear_q4gsw_coopmat       128x128x16, 8 subgroups x 32 (forced)
+//   linear_q8csw_coopmat       128x128x16, 8 subgroups x 32 (forced)
+//   linear_dq8ca_q4gsw_coopmat 128x64x32,  4 subgroups x 64
+//   linear_dq8ca_q8csw_coopmat 128x64x32,  4 subgroups x 64
+// (The int8-MMA shaders stay on wave64: int8 WMMA at forced subgroup 32
+// crashes the Xclipse PAL compiler.)
+struct CoopmatTileDims {
+  uint32_t m;
+  uint32_t n;
+  uint32_t k;
+};
+constexpr CoopmatTileDims kQ4gswCoopmatDims = {128, 128, 16};
+constexpr CoopmatTileDims kQ8cswCoopmatDims = {128, 128, 16};
+constexpr CoopmatTileDims kDq8caQ4gswCoopmatDims = {128, 64, 32};
+constexpr CoopmatTileDims kDq8caQ8cswCoopmatDims = {128, 64, 32};
+
+static CoopmatTileDims coopmat_tile_dims(const std::string& kernel_name) {
+  // Exact prefix matches (the "linear_dq8ca_*" names must not match the
+  // weight-only entries).
+  if (kernel_name.rfind("linear_q4gsw_coopmat", 0) == 0) {
+    return kQ4gswCoopmatDims;
+  }
+  if (kernel_name.rfind("linear_q8csw_coopmat", 0) == 0) {
+    return kQ8cswCoopmatDims;
+  }
+  if (kernel_name.rfind("linear_dq8ca_q4gsw_coopmat", 0) == 0) {
+    return kDq8caQ4gswCoopmatDims;
+  }
+  if (kernel_name.rfind("linear_dq8ca_q8csw_coopmat", 0) == 0) {
+    return kDq8caQ8cswCoopmatDims;
+  }
+  return {kCoopmatTileM, kCoopmatTileN, kCoopmatTileK};
+}
+
 utils::uvec3 quantized_linear_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -71,8 +109,9 @@ utils::uvec3 quantized_linear_global_wg_size(
   // by kCoopmatInvocations cancels the framework's div_up, since
   // local_wg = {256, 1, 1}.
   if (shader.kernel_name.find("_coopmat") != std::string::npos) {
-    const uint32_t num_tiles_n = utils::div_up(N, kCoopmatTileN);
-    const uint32_t num_tiles_m = utils::div_up(M, kCoopmatTileM);
+    const CoopmatTileDims dims = coopmat_tile_dims(shader.kernel_name);
+    const uint32_t num_tiles_n = utils::div_up(N, dims.n);
+    const uint32_t num_tiles_m = utils::div_up(M, dims.m);
     return {num_tiles_n * kCoopmatInvocations, num_tiles_m, 1};
   }
 
@@ -129,7 +168,10 @@ static bool can_use_q4gsw_coopmat(
     const ValueRef output,
     const ValueRef fp_input,
     int64_t group_size,
-    const ValueRef bias) {
+    const ValueRef bias,
+    int64_t tile_m = kCoopmatTileM,
+    int64_t tile_n = kCoopmatTileN,
+    int64_t tile_k = kCoopmatTileK) {
   // Benchmark toggle: force the tiled fallback so a buffer PTE can serve as the
   // apples-to-apples baseline without re-exporting (see ET_VK_DISABLE_COOPMAT).
   if (std::getenv("ET_VK_DISABLE_COOPMAT") != nullptr) {
@@ -161,16 +203,16 @@ static bool can_use_q4gsw_coopmat(
   const std::vector<int64_t> in_sizes = graph->sizes_of(fp_input);
   const int64_t K = utils::val_at(-1, in_sizes);
 
-  if (M % static_cast<int64_t>(kCoopmatTileM) != 0) {
+  if (M % tile_m != 0) {
     return false;
   }
-  if (N % static_cast<int64_t>(kCoopmatTileN) != 0) {
+  if (N % tile_n != 0) {
     return false;
   }
-  if (K % static_cast<int64_t>(kCoopmatTileK) != 0) {
+  if (K % tile_k != 0) {
     return false;
   }
-  if (group_size % static_cast<int64_t>(kCoopmatTileK) != 0) {
+  if (group_size % tile_k != 0) {
     return false;
   }
   return true;
@@ -195,7 +237,14 @@ vkapi::ShaderInfo pick_linear_qw_shader(
     const int64_t group_size =
         graph->extract_scalar<int64_t>(resize_args.at(0));
     if (can_use_q4gsw_coopmat(
-            graph, output, fp_input, group_size, resize_args.at(2))) {
+            graph,
+            output,
+            fp_input,
+            group_size,
+            resize_args.at(2),
+            kQ4gswCoopmatDims.m,
+            kQ4gswCoopmatDims.n,
+            kQ4gswCoopmatDims.k)) {
       std::string kernel_name = "linear_q4gsw_coopmat";
       // Output storage is buffer (gated above); weight storage matches the
       // existing variants.
@@ -213,7 +262,15 @@ vkapi::ShaderInfo pick_linear_qw_shader(
   // other coopmat shaders (under investigation via the consolidated bench).
   if (!weight_is_4bit && !is_gemv_case) {
     const int64_t K = graph->size_at<int64_t>(-1, fp_input);
-    if (can_use_q4gsw_coopmat(graph, output, fp_input, K, resize_args.at(2))) {
+    if (can_use_q4gsw_coopmat(
+            graph,
+            output,
+            fp_input,
+            K,
+            resize_args.at(2),
+            kQ8cswCoopmatDims.m,
+            kQ8cswCoopmatDims.n,
+            kQ8cswCoopmatDims.k)) {
       std::string kernel_name = "linear_q8csw_coopmat";
       add_storage_type_suffix(kernel_name, graph->storage_type_of(output));
       add_storage_type_suffix(
@@ -264,7 +321,14 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
     const int64_t group_size =
         graph->extract_scalar<int64_t>(resize_args.at(0));
     if (can_use_q4gsw_coopmat(
-            graph, out, fp_input, group_size, resize_args.at(2))) {
+            graph,
+            out,
+            fp_input,
+            group_size,
+            resize_args.at(2),
+            kDq8caQ4gswCoopmatDims.m,
+            kDq8caQ4gswCoopmatDims.n,
+            kDq8caQ4gswCoopmatDims.k)) {
       std::string kernel_name = "linear_dq8ca_q4gsw_coopmat";
       add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
       add_storage_type_suffix(kernel_name, graph->storage_type_of(int_weight));
@@ -279,7 +343,15 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
   // group_size % kCoopmatTileK == 0 when K does).
   if (!weight_is_4bit && !is_gemv_case) {
     const int64_t K = graph->size_at<int64_t>(-1, fp_input);
-    if (can_use_q4gsw_coopmat(graph, out, fp_input, K, resize_args.at(2))) {
+    if (can_use_q4gsw_coopmat(
+            graph,
+            out,
+            fp_input,
+            K,
+            resize_args.at(2),
+            kDq8caQ8cswCoopmatDims.m,
+            kDq8caQ8cswCoopmatDims.n,
+            kDq8caQ8cswCoopmatDims.k)) {
       std::string kernel_name = "linear_dq8ca_q8csw_coopmat";
       add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
       add_storage_type_suffix(kernel_name, graph->storage_type_of(int_weight));
@@ -490,7 +562,7 @@ void add_linear_qw_node(
     num_groups = graph.size_at<int32_t>(-1, fp_input) / group_size_val;
   } else {
     num_groups = graph.size_at<int32_t>(-1, fp_input) /
-        static_cast<int32_t>(kCoopmatTileK);
+        static_cast<int32_t>(kQ8cswCoopmatDims.k);
   }
 
   const ValueRef is_4bit_flag =
@@ -646,7 +718,7 @@ void add_linear_dqa_qw_node(
     K4_per_group = utils::div_up(group_size_val, int32_t(4));
     coopmat_k_iters = K_dim / group_size_val;
   } else {
-    coopmat_k_iters = K_dim / static_cast<int32_t>(kCoopmatTileK);
+    coopmat_k_iters = K_dim / static_cast<int32_t>(kDq8caQ8cswCoopmatDims.k);
   }
 
   const ValueRef is_4bit_flag =
