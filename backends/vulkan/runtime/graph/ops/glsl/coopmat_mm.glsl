@@ -80,6 +80,16 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+// K-chunk trip count passed as a spec constant (not derived from the runtime
+// sizes UBO): the Xclipse/AMD-PAL shader compiler crashes (null deref in
+// vkCreateComputePipelines) when a loop containing coopMatMulAdd has a
+// UBO-derived trip count.
+${layout_declare_spec_const(C, "int", "num_k_chunks_arg", "0")}
+// Output width N for coopMatStore, as a spec constant: the same compiler
+// MISCOMPILES coopMatStore whose offset/stride derive from a UBO value (only
+// the first store per subgroup lands correctly; standalone repro cm_acc2).
+${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
+
 // Cooperative-matrix instruction shape (must match a property enumerated by
 // vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR for this device).
 const uint MMA_M = ${MMA_M};
@@ -174,7 +184,8 @@ void main() {
     const uint a_row_base = WG_TILE_M * tileID.y;
     const uint b_col_base = WG_TILE_N * tileID.x;
 
-    for (uint chunkK = 0; chunkK < K; chunkK += WG_TILE_K) {
+    for (uint chunk = 0; chunk < uint(num_k_chunks_arg); ++chunk) {
+        const uint chunkK = chunk * WG_TILE_K;
 
         // --- Load A tile -> shared (single pass) ---
         {
@@ -279,6 +290,7 @@ void main() {
 #endif
 
     // --- Store result (with bias folded in pre-store, if present) ---
+    const uint out_N = uint(out_N_arg);
     [[unroll]] for (uint i = 0; i < MMAS_PER_SG_M; ++i) {
         [[unroll]] for (uint j = 0; j < MMAS_PER_SG_N; ++j) {
             uint gi = WG_TILE_M * tileID.y + MMA_M * (MMAS_PER_SG_M * warpInTile.y + i);
@@ -301,12 +313,12 @@ void main() {
                 coopmat<float16_t, gl_ScopeSubgroup, MMA_M, MMA_N, gl_MatrixUseAccumulator>(result[i][j]);
             coopMatStore(
                 out_tile, t_output,
-                gi * N + gj, N,
+                gi * out_N + gj, out_N,
                 gl_CooperativeMatrixLayoutRowMajor);
 #else
             coopMatStore(
                 result[i][j], t_output,
-                gi * N + gj, N,
+                gi * out_N + gj, out_N,
                 gl_CooperativeMatrixLayoutRowMajor);
 #endif
         }

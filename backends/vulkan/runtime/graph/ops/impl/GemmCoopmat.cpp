@@ -96,6 +96,13 @@ void add_linear_coopmat_node(
   ValueRef orig_N_ref = graph.add_scalar(static_cast<int64_t>(orig_N));
   ValueRef has_bias_ref = graph.add_scalar(has_bias);
 
+  // K-chunk trip count and output width N as spec constants — the Xclipse
+  // driver crashes on UBO-derived coopmat loop bounds and miscompiles
+  // UBO-derived coopMatStore offsets/strides (see coopmat_mm.glsl).
+  const int32_t K = graph.size_at<int32_t>(-1, input);
+  VK_CHECK_COND(K % static_cast<int32_t>(kCoopmatTileK) == 0);
+  const int32_t num_k_chunks = K / static_cast<int32_t>(kCoopmatTileK);
+
   std::vector<ValueRef> read_inputs = {input, packed_weight};
   if (has_bias) {
     read_inputs.push_back(packed_bias);
@@ -113,7 +120,7 @@ void add_linear_coopmat_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {num_k_chunks, orig_N},
       // Resize Args
       {orig_N_ref, has_bias_ref},
       // Resizing Logic
@@ -187,6 +194,12 @@ void add_matmul_coopmat_node(
 
   ValueRef has_bias_ref = graph.add_scalar(false);
 
+  // Same Xclipse spec-constant workarounds as the linear node above.
+  const int32_t K = graph.size_at<int32_t>(-1, mat1);
+  VK_CHECK_COND(K % static_cast<int32_t>(kCoopmatTileK) == 0);
+  const int32_t num_k_chunks = K / static_cast<int32_t>(kCoopmatTileK);
+  const int32_t out_N = graph.size_at<int32_t>(-1, out);
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_matmul_coopmat_shader,
@@ -199,7 +212,7 @@ void add_matmul_coopmat_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {num_k_chunks, out_N},
       // Resize Args
       {has_bias_ref},
       // Resizing Logic
