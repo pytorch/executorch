@@ -152,10 +152,12 @@ Modules in `quant/`:
 - **Pack** (`pack.py` + `pack_cuda.py` + `pack_mlx.py`): `pack_model` groups
   weights by parent module, `pack_one` handles single weights. Per-module
   packers dispatch by module type (`nn.Linear`, `nn.Embedding`). CUDA passes
-  Int4Tensor through (dispatch handled by `int4_dispatch.py`); MLX converts
+  Int4Tensor through (dispatch handled by `quantize_op_dispatch`); MLX converts
   Int4Tensor → IntxUnpackedToInt8Tensor and regroups per-axis embeddings.
-- **GGUF** (`gguf.py`): `unpack_gguf_tensor` / `iter_gguf_tensors` for
-  loading community-quantized GGUF files (Q4_K, Q6_K).
+- **GGUF**: community-quantized GGUF files (Q4_K, Q6_K) are loaded by the
+  shared, backend-agnostic `extension/llm/export/gguf.py` (`load_gguf` /
+  `iter_gguf` → `ExportableGGUFTensor`); `gguf_loader.py` remaps GGUF names to
+  model FQNs and picks the per-backend weight representation.
 
 The quantize-once flow:
 
@@ -169,7 +171,7 @@ quantize_and_save.py                    export.py / inference.py
   Int4Tensor / IntxUnpacked             pack for backend:
      |                                       |
   save (torchao safetensors)            CUDA: Int4Tensor passed through
-     |                                    → int4_dispatch → dp4a / dequant+cuBLAS
+     |                                    → quantize_op_dispatch → dp4a / dequant+cuBLAS
   model.safetensors                     MLX:  Int4Tensor → IntxUnpacked(int4)
                                           → dequantize_affine → QuantizedMatmulNode
 ```
