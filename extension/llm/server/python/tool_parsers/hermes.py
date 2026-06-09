@@ -9,20 +9,26 @@
 Used by Qwen2.5/Qwen3 (and Hermes models); the Qwen XML format is handled
 separately by QwenFunctionCallDetector. The server buffers a model's full output
 and parses it once into complete OpenAI tool_calls (no partial-fragment
-streaming). Parse failures fall back to visible text — never a crash or a silent
-drop.
+streaming).
+
+Malformed-call policy (explicit): ALL-OR-NOTHING. If any <tool_call> block is
+malformed, names an undefined tool, or is truncated/unclosed, the WHOLE response
+degrades -- no partial call set is emitted. When it degrades, the raw
+<tool_call>...</tool_call> markup is NOT leaked into visible content: only the
+leading text before the first marker is returned. Never crashes.
 """
 
 import json
 import logging
-import re
 from typing import Any, Optional
 
 from .types import ParseResult, ToolCallItem
 
 logger = logging.getLogger(__name__)
 
-_CALL_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
+_BOT = "<tool_call>"
+_EOT = "</tool_call>"
+_DECODER = json.JSONDecoder()
 
 
 class _UndefinedToolCall(Exception):
@@ -41,40 +47,60 @@ class HermesDetector:
         self._next_index = 0
 
     def detect_and_parse(self, text: str, tools: dict[str, dict]) -> ParseResult:
-        """Return leading text + any complete tool calls. On no call or a parse
-        failure, return the original text unchanged (kept visible to the client)."""
-        if self.bot_token not in text:
+        """Return leading text + any complete tool calls. On no/undefined/
+        malformed call, degrade to the leading text BEFORE the first marker --
+        never leak the raw <tool_call> markup into visible content."""
+        if _BOT not in text:
             return ParseResult(normal_text=text)
-        normal = text[: text.find(self.bot_token)].strip()
+        # Leading text before the first marker; this is what we show if parsing
+        # degrades, so the structural markup is never surfaced to the client.
+        normal = text[: text.find(_BOT)].strip()
         try:
             calls = self._parse_calls(text, tools)
         except _UndefinedToolCall as e:
-            # Degrade the whole response to visible text so the undefined call
-            # isn't silently dropped (and its valid siblings aren't executed in
-            # isolation, losing the model's full intent).
+            # Well-formed call to an undefined tool: degrade the WHOLE response to
+            # visible text (surface the model's intent; never emit a partial set).
             logger.debug("undefined tool %s; returning raw text (no partial calls)", e)
             return ParseResult(normal_text=text)
-        except Exception as e:  # noqa: BLE001 - never crash; fall back to visible text
-            logger.debug("tool parse failed (%s); returning raw text", e)
-            return ParseResult(normal_text=text)
+        except Exception as e:  # noqa: BLE001 - never crash
+            # Genuinely malformed / truncated / unclosed markup: degrade to the
+            # leading text so the partial <tool_call> garbage is NOT surfaced.
+            logger.debug("malformed tool call (%s); degrading to leading text", e)
+            return ParseResult(normal_text=normal)
         if not calls:
             return ParseResult(normal_text=text)
         return ParseResult(normal_text=normal, calls=calls)
 
     def _parse_calls(self, text: str, tools: dict[str, dict]) -> list[ToolCallItem]:
+        """All-or-nothing: any malformed/unclosed block raises (caller degrades).
+
+        Each block's JSON is parsed with raw_decode rather than a non-greedy
+        regex, so a string value that itself contains '</tool_call>' does not
+        truncate the captured JSON. The block must be closed by '</tool_call>'.
+        """
         calls = []
-        for raw in _CALL_RE.findall(text):
-            if not raw.strip():
-                continue
-            obj = json.loads(raw.strip())
+        pos = 0
+        while True:
+            start = text.find(_BOT, pos)
+            if start == -1:
+                break
+            s = start + len(_BOT)
+            while s < len(text) and text[s].isspace():
+                s += 1
+            obj, end = _DECODER.raw_decode(text, s)  # JSONDecodeError -> degrade
+            close = text.find(_EOT, end)
+            if close == -1 or text[end:close].strip():
+                raise ValueError("unclosed or trailing-garbage <tool_call> block")
+            pos = close + len(_EOT)
             for entry in obj if isinstance(obj, list) else [obj]:
-                calls.append(
-                    self._make_item(
-                        entry.get("name"),
-                        entry.get("arguments", entry.get("parameters")),
-                        tools,
-                    )
-                )
+                if not isinstance(entry, dict):
+                    raise ValueError("tool call entry is not an object")
+                # `parameters` is the fallback ONLY when `arguments` is absent or
+                # explicitly null (get-with-default misses the explicit-null case).
+                args = entry.get("arguments")
+                if args is None:
+                    args = entry.get("parameters")
+                calls.append(self._make_item(entry.get("name"), args, tools))
         return calls
 
     def _make_item(
