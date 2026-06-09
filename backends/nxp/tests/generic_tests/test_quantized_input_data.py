@@ -29,7 +29,6 @@ def test__single_quantized_inputs(mocker):
         model,
         [input_spec],
         graph_verifier,
-        use_new_flow_neutron_c=True,
         remove_quant_io_ops=True,
     )
 
@@ -55,7 +54,6 @@ def test__single_quantized_inputs_edge_python_reference(mocker):
         [input_spec],
         graph_verifier,
         reference_model=ReferenceModel.QUANTIZED_EDGE_PYTHON,
-        use_new_flow_neutron_c=True,
         remove_quant_io_ops=True,
     )
 
@@ -83,7 +81,6 @@ def test__multiple_quantized_inputs(mocker):
         model,
         [x_input_spec, x_input_spec],
         graph_verifier,
-        use_new_flow_neutron_c=True,
         remove_quant_io_ops=True,
     )
 
@@ -113,7 +110,6 @@ def test__multiple_quantized_inputs_edge_python_reference(mocker):
         [x_input_spec, x_input_spec],
         graph_verifier,
         reference_model=ReferenceModel.QUANTIZED_EDGE_PYTHON,
-        use_new_flow_neutron_c=True,
         remove_quant_io_ops=True,
     )
 

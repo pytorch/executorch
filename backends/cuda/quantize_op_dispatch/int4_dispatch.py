@@ -21,21 +21,23 @@ Dispatch strategy (determines what gets captured in the export graph):
   Decode (M<=4): Custom op ``executorch_cuda::int4_plain_mm``
   Prefill (M>4): Inline dequant + F.linear (standard PyTorch ops)
 
-Import this module before using nn.Linear with Int4Tensor weights::
+Importing the parent ``quantize_op_dispatch`` package registers this dispatch
+override (along with the INT8 one) before using nn.Linear with Int4Tensor
+weights::
 
-    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 """
 
 import torch
 import torch.nn.functional as F
-from torch.library import impl, Library
+from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
+from torch.library import impl
 from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
 # ---------------------------------------------------------------------------
 # Custom op for decode (M=1): dp4a matvec in C shim, dequant+F.linear in eager
 # ---------------------------------------------------------------------------
 
-_lib = Library("executorch_cuda", "DEF")
 _lib.define(
     "int4_plain_mm(Tensor self, Tensor qdata, Tensor scale, Tensor zero, int group_size) -> Tensor"
 )

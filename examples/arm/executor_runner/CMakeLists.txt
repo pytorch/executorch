@@ -249,20 +249,31 @@ target_sources(
 # Check for "U55" in SYSTEM_CONFIG
 string(FIND "${SYSTEM_CONFIG}" "U55" U55_FOUND)
 
+# Check for "U65" in SYSTEM_CONFIG
+string(FIND "${SYSTEM_CONFIG}" "U65" U65_FOUND)
+
 # Check for "U85" in SYSTEM_CONFIG
 string(FIND "${SYSTEM_CONFIG}" "U85" U85_FOUND)
 
-# Check if neither "U55" nor "U85" was found
-if(U55_FOUND EQUAL -1 AND U85_FOUND EQUAL -1)
+# Check if neither "U55", "U65" nor "U85" was found
+if(U55_FOUND EQUAL -1
+   AND U65_FOUND EQUAL -1
+   AND U85_FOUND EQUAL -1
+)
   message(
     FATAL_ERROR
-      "SYSTEM_CONFIG does not contain 'U55' or 'U85'. Configuration aborting."
+      "SYSTEM_CONFIG does not contain 'U55', 'U65' or 'U85'. Configuration aborting."
   )
 endif()
 
 # Proceed with specific actions if either is found
 if(NOT U55_FOUND EQUAL -1)
   message(STATUS "SYSTEM_CONFIG contains 'U55'.")
+  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
+endif()
+
+if(NOT U65_FOUND EQUAL -1)
+  message(STATUS "SYSTEM_CONFIG contains 'U65'.")
   set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
 endif()
 

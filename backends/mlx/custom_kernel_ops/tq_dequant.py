@@ -23,7 +23,7 @@ Constraints:
 
 Usage::
 
-    import executorch.backends.mlx.model_ops.tq_dequant  # noqa: F401
+    import executorch.backends.mlx.custom_kernel_ops.tq_dequant  # noqa: F401
 
     out = torch.ops.mlx.tq_dequant(packed, norms, centroids)
     # packed:    (..., D/2) uint8
