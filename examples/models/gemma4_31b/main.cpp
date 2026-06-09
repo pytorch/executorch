@@ -363,7 +363,7 @@ int main(int argc, char** argv) {
       decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
 
   uint64_t prev_token = cur_token;
-  bool hit_eos = eos_ids.find(cur_token) != eos_ids.end();
+  bool hit_eos = eos_ids.contains(cur_token);
   for (int32_t step = 0; step < FLAGS_max_new_tokens && !hit_eos; step++) {
     decode_token_data[0] = static_cast<int64_t>(cur_token);
     decode_pos_data[0] = pos;
@@ -399,7 +399,7 @@ int main(int argc, char** argv) {
       fflush(stdout);
     }
 
-    hit_eos = eos_ids.find(cur_token) != eos_ids.end();
+    hit_eos = eos_ids.contains(cur_token);
   }
   printf("\n");
 
