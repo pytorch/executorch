@@ -25,10 +25,6 @@ from executorch.backends.nxp.tests.ops_aliases import (
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
-def _normalized_dim(dim, rank):
-    return dim if dim >= 0 else dim + rank
-
-
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
     torch.manual_seed(23)
@@ -64,7 +60,7 @@ class TestCat:
         input_shape = (2, 3, 5)
         num_inputs = 2
 
-        input_shapes = [ModelInputSpec(input_shape)] * num_inputs
+        input_shapes = [ModelInputSpec(input_shape) for _ in range(num_inputs)]
         model = CatModule(1)
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={Cat: 1}, expected_non_delegated_ops={}
@@ -76,7 +72,7 @@ class TestCat:
     @pytest.mark.parametrize("num_inputs", [2, 5], ids=lambda n: f"n={n}")
     def test__same_shapes(self, mocker, dim, num_inputs):
         input_shape = (2, 3, 5)
-        input_shapes = [ModelInputSpec(input_shape)] * num_inputs
+        input_shapes = [ModelInputSpec(input_shape) for _ in range(num_inputs)]
 
         model = CatModule(dim)
         graph_verifier = DetailedGraphVerifier(
@@ -89,7 +85,7 @@ class TestCat:
     @pytest.mark.parametrize("num_inputs", [2, 5], ids=lambda n: f"n={n}")
     def test__same_shapes__channels_first(self, mocker, dim, num_inputs):
         input_shape = (2, 3, 4, 5)
-        input_shapes = [ModelInputSpec(input_shape)] * num_inputs
+        input_shapes = [ModelInputSpec(input_shape) for _ in range(num_inputs)]
 
         model = CatMaxPoolModule(dim)
         graph_verifier = DetailedGraphVerifier(
