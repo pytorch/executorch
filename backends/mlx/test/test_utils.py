@@ -883,6 +883,16 @@ class OpTestCase:
         test_dir.mkdir(parents=True, exist_ok=True)
         return test_dir
 
+    def compute_expected_outputs(self, model, test_inputs):
+        """Reference outputs the device result is compared against.
+
+        Defaults to the eager ``model`` forward. Override to supply a
+        higher-precision reference -- e.g. fp32 accumulation matching a kernel
+        that accumulates in fp32, so bf16 reference noise doesn't dominate the
+        comparison.
+        """
+        return model(*test_inputs)
+
     def generate_test_files(self, verbose: bool = False) -> Tuple[Path, Path, Path]:
         """
         Generate .pte, input.bin, and expected_output.bin files.
@@ -915,7 +925,7 @@ class OpTestCase:
         with torch.no_grad():
             if isinstance(test_inputs, torch.Tensor):
                 test_inputs = (test_inputs,)
-            expected_outputs = model(*test_inputs)
+            expected_outputs = self.compute_expected_outputs(model, test_inputs)
             if isinstance(expected_outputs, torch.Tensor):
                 expected_outputs = [expected_outputs]
             else:
