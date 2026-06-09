@@ -23,8 +23,10 @@ Sessions and constraints:
     requests share a scratch session). See --max-sessions.
   * Execution is synchronous: one in-flight request at a time, concurrent HTTP
     requests queue. Sessions provide isolation, not concurrent throughput.
-  * No warm context reuse yet: each request resets its session (Qwen seek() is
-    NotSupported; append-only reuse is a follow-up).
+  * Warm append-only resume is on by default (--warm-resume): a named session
+    reuses its resident context across turns when the prompt is an exact-token
+    extension, including tool-call turns via token-ID prompt segments. Anonymous
+    (scratch) requests always reset.
   * The control plane only does blocking pipe I/O on its executor thread (no
     CUDA), which is safe under asyncio.
 
@@ -83,6 +85,7 @@ def _spawn(args):
     if args.data_path:
         cmd += ["--data_path", args.data_path]
     cmd += ["--max_sessions", str(args.max_sessions)]
+    cmd += [f"--warm_resume={'true' if args.warm_resume else 'false'}"]
     logger.info("Starting Qwen worker subprocess (loads the model once)...")
     return spawn_worker(cmd, env=env)
 
@@ -161,6 +164,14 @@ def main() -> None:
         "(CUDA per-session mutable rebinding); clamped to 1 if the backend "
         "cannot rebind. One slot is reserved for anonymous requests, so the "
         "number of addressable session_ids is max-sessions - 1.",
+    )
+    p.add_argument(
+        "--warm-resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Warm append-only resume for named sessions: a request whose tokens "
+        "extend the session's resident context prefills only the suffix. "
+        "--no-warm-resume resets every request (for A/B measurement).",
     )
     p.add_argument(
         "--worker-bin",

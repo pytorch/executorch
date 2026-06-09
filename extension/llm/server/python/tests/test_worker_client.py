@@ -175,6 +175,37 @@ def test_close_session_sends_op_and_acks():
     assert json.loads(proc.stdin.written[0]) == {"op": "close", "session_id": "abc"}
 
 
+def test_reset_session_sends_op_and_acks():
+    proc = _FakeProc(_lines({"reset": True, "session_id": "abc"}))
+    WorkerClient(proc).reset_session("abc")
+    assert json.loads(proc.stdin.written[0]) == {"op": "reset", "session_id": "abc"}
+
+
+def test_generate_parses_warm_resume_metrics():
+    proc = _FakeProc(
+        _lines(
+            {"token": "hi"},
+            {
+                "done": True,
+                "prompt_tokens": 100,
+                "completion_tokens": 1,
+                "finish_reason": "stop",
+                "reused_prompt_tokens": 90,
+                "prefilled_prompt_tokens": 10,
+                "session_reset_reason": "exact_prefix",
+            },
+        )
+    )
+    seen = {}
+    WorkerClient(proc).generate(
+        "hi", _Cfg(session_id="s"), stats_callback=lambda s: seen.update(s=s)
+    )
+    st = seen["s"]
+    assert st.reused_prompt_tokens == 90
+    assert st.prefilled_prompt_tokens == 10
+    assert st.session_reset_reason == "exact_prefix"
+
+
 def test_spawn_worker_waits_for_ready():
     proc = _FakeProc(_lines({"ready": True, "max_named_sessions": 3}))
     client = spawn_worker(

@@ -17,18 +17,26 @@
 // V2a (isolation): the worker owns one LLMEngine (weights loaded once) and
 // hands out multiple isolated LLMSessions keyed by session_id, each with its
 // own KV/recurrent state, up to the engine's serving capacity. Execution is
-// still synchronous -- one in-flight request at a time, the control plane
-// serializes -- so this proves "one model, many isolated contexts without
-// duplicating weights", NOT concurrent streaming. It also does NOT yet reuse
-// context across requests: worker_handle_request() resets the session at the
-// top of every request (warm append-only resume is a follow-up).
+// synchronous -- one in-flight request at a time, the control plane serializes.
+//
+// V2b.1 (warm append-only resume): a named session keeps its decoded context
+// across requests. On the next request the worker compares the new prompt's
+// token ids against the session's resident token ids; if the resident ids are
+// an exact prefix, it prefills ONLY the suffix (continuing the KV/recurrent
+// state at pos>0) instead of resetting and re-prefilling the whole prompt. The
+// check is exact-token (never string/retokenized text) and falls back to a full
+// reset+prefill whenever exact reuse can't be proven, so it is always correct;
+// the win is when the prompt is a genuine token extension of the prior turn.
+// See plan_prefill().
 //
 // Sessions:
-//   - Named: an explicit session_id -> LLMSession, created on first use (or via
-//     an `open` op), capped at max_named_sessions = capacity - 1 (the scratch
-//     slot is reserved). 0 when the backend can host only one session.
-//   - Scratch: one session for anonymous requests (no session_id), reset each
-//     request -- preserves the original single-session behavior.
+//   - Named: an explicit session_id -> session + resident token ids, created on
+//     first use (or via an `open` op), capped at max_named_sessions = capacity
+//     - 1 (the scratch slot is reserved). 0 when the backend hosts one session.
+//     Warm resume applies to named sessions (unless disabled).
+//   - Scratch: one session for anonymous requests (no session_id), reset every
+//     request -- distinct anonymous callers must never reuse each other's
+//     state.
 //
 // Protocol (one JSON object per line; matches worker_client.py):
 //   worker -> stdout, once:    {"ready": true, "max_sessions": int,
@@ -38,12 +46,19 @@
 //                  "stop": [str, ...], "session_id"?: str}
 //     open:       {"op": "open",  "session_id": str}
 //     close:      {"op": "close", "session_id": str}
+//     reset:      {"op": "reset", "session_id": str}  // clear context, keep
+//     slot
 //   worker -> stdout:
 //     generate:   {"token": str} *   (streamed)
-//                 {"done": true, "prompt_tokens": int,
-//                  "completion_tokens": int, "finish_reason": "stop"|"length"}
+//                 {"done": true, "prompt_tokens": int, "completion_tokens":
+//                 int,
+//                  "finish_reason": "stop"|"length",
+//                  "reused_prompt_tokens": int, "prefilled_prompt_tokens": int,
+//                  "session_reset_reason": "new"|"exact_prefix"|"dirty"|
+//                                          "mismatch"|"equal"}
 //     open:       {"opened": true, "session_id": str}
 //     close:      {"closed": true, "session_id": str}
+//     reset:      {"reset": true,  "session_id": str}
 //     error:      {"error": str, "code"?: str}  // code: "capacity_exhausted",
 //                                               // "unsupported_session"
 //
@@ -55,6 +70,7 @@
 #include <executorch/extension/llm/runner/constants.h>
 #include <executorch/extension/llm/runner/llm_session.h>
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/extension/llm/server/cpp/worker_prefill_plan.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
 #include <algorithm>
@@ -80,15 +96,32 @@ inline void worker_emit(const nlohmann::json& obj) {
   std::cout.flush();
 }
 
-// One generation request: reset the session, encode the prompt, prefill, then
-// loop decode_one() streaming complete-UTF-8 text pieces. A terminal step (EOS
-// or cooperative stop) ends generation and is not emitted or counted. Throws
-// std::runtime_error on failure; the caller reports it as {"error": ...}.
+// A named session plus the warm-resume bookkeeping the worker maintains for it.
+// Invariant (while not mid-mutation): resident_token_ids.size() ==
+// session->position() -- the resident ids are exactly the tokens currently in
+// the session's KV/recurrent state, in order.
+struct WorkerSessionState {
+  std::unique_ptr<LLMSession> session;
+  std::vector<uint64_t> resident_token_ids;
+  // Set when the resident state can no longer be trusted as an exact token
+  // prefix (e.g. a stop-string trimmed the emitted text mid-token, or a
+  // prefill/decode failed after mutating state). Forces a reset next request.
+  bool dirty = false;
+};
+
+// One generation request against a session. Encodes the prompt, chooses a
+// prefill plan (warm suffix reuse for named sessions, or a full reset+prefill),
+// then streams complete-UTF-8 text pieces from decode_one(). A terminal step
+// (EOS or cooperative stop) ends generation and is not emitted or counted.
+// Maintains st.resident_token_ids / st.dirty. Throws std::runtime_error on
+// failure; the caller reports it as {"error": ...}.
 inline void worker_handle_request(
-    LLMSession& session,
+    WorkerSessionState& st,
+    bool warm,
     ::tokenizers::Tokenizer& tokenizer,
     const std::unordered_map<std::string, int64_t>& metadata,
     const nlohmann::json& req) {
+  LLMSession& session = *st.session;
   const std::string prompt = req.at("prompt").get<std::string>();
   int64_t max_new = req.value("max_new_tokens", static_cast<int64_t>(-1));
   const float temperature = req.value("temperature", 0.0f);
@@ -98,9 +131,6 @@ inline void worker_handle_request(
   const std::vector<std::string> stops =
       req.value("stop", std::vector<std::string>{});
 
-  if (session.reset() != ::executorch::runtime::Error::Ok) {
-    throw std::runtime_error("session reset failed");
-  }
   // No special tokens: the prompt is already rendered (the control plane
   // applied the chat template), matching the runner's own encode path.
   auto encode_result = tokenizer.encode(prompt, /*bos=*/0, /*eos=*/0);
@@ -115,7 +145,9 @@ inline void worker_handle_request(
 
   // Bound generation to the context window: default to filling the remaining
   // room, and clamp an explicit max_new_tokens too, so decode never steps past
-  // the window (which would error mid-generation after partial output).
+  // the window (which would error mid-generation after partial output). The
+  // bound is on the FULL prompt length (= pos after prefill), regardless of how
+  // much is reused.
   const auto ctx_it = metadata.find(kMaxContextLen);
   if (ctx_it != metadata.end()) {
     const int64_t room = ctx_it->second - num_prompt;
@@ -130,12 +162,37 @@ inline void worker_handle_request(
     max_new = 2048;
   }
 
+  // Decide full vs warm-suffix prefill. Anonymous (scratch) and warm-disabled
+  // sessions always full-prefill from a clean state.
+  PrefillPlan plan = warm ? plan_prefill(st.resident_token_ids, ids, st.dirty)
+                          : PrefillPlan{PrefillPlan::kFull, 0, "new"};
+  int64_t reused = 0;
+  std::vector<uint64_t> to_prefill;
+  if (plan.action == PrefillPlan::kSuffix) {
+    reused = static_cast<int64_t>(plan.suffix_start);
+    to_prefill.assign(ids.begin() + plan.suffix_start, ids.end());
+  } else {
+    if (session.reset() != ::executorch::runtime::Error::Ok) {
+      st.dirty = true;
+      throw std::runtime_error("session reset failed");
+    }
+    st.resident_token_ids.clear();
+    st.dirty = false;
+    to_prefill = ids;
+  }
+  const int64_t prefilled = static_cast<int64_t>(to_prefill.size());
+
   SamplingConfig sampling;
   sampling.temperature = temperature;
-  if (session.prefill_tokens(std::move(ids), &sampling) !=
+  if (session.prefill_tokens(std::move(to_prefill), &sampling) !=
       ::executorch::runtime::Error::Ok) {
+    st.dirty = true; // state may be partially mutated; force a reset next time
     throw std::runtime_error("prefill failed");
   }
+  // The resident state now equals the full prompt (resident prefix + prefilled
+  // suffix, or the whole prompt). Keep the invariant
+  // resident.size()==position().
+  st.resident_token_ids = ids;
 
   std::string buf; // bytes not yet forming a complete UTF-8 prefix
   std::string pending; // complete-UTF-8 text held back for stop-string matching
@@ -145,6 +202,7 @@ inline void worker_handle_request(
   for (int64_t step = 0; step < max_new; ++step) {
     auto step_result = session.decode_one(sampling);
     if (step_result.error() != ::executorch::runtime::Error::Ok) {
+      st.dirty = true;
       throw std::runtime_error("decode failed");
     }
     const auto& d = step_result.get();
@@ -152,6 +210,10 @@ inline void worker_handle_request(
       finish = "stop";
       break; // terminal step (EOS / cooperative stop): not emitted or counted
     }
+    // The token was forwarded into the cache (pos advanced); track it so the
+    // resident-ids/position invariant holds. EOS/terminal tokens are not
+    // forwarded, so they are not appended (above).
+    st.resident_token_ids.push_back(d.token_id);
     ++num_generated;
     buf += d.text_piece;
     const size_t cut = utf8_complete_prefix_len(buf);
@@ -168,6 +230,10 @@ inline void worker_handle_request(
     if (stop_hit) {
       finish = "stop"; // reached a stop string: drop it and everything after
       stop_string = true;
+      // The emitted text was trimmed at the stop string, so the next turn's
+      // rendered prompt won't be an exact token extension of resident: force a
+      // reset rather than risk a false prefix match.
+      st.dirty = true;
       break;
     }
   }
@@ -181,11 +247,16 @@ inline void worker_handle_request(
   }
   // finish_reason: "stop" if the model emitted EOS or hit a stop string, else
   // "length" -- it ran to max_new (possibly clamped to the context window).
+  // reused/prefilled sum to prompt_tokens; session_reset_reason explains the
+  // prefill plan (for measuring warm-resume hit rate).
   worker_emit(
       {{"done", true},
        {"prompt_tokens", num_prompt},
        {"completion_tokens", num_generated},
-       {"finish_reason", finish}});
+       {"finish_reason", finish},
+       {"reused_prompt_tokens", reused},
+       {"prefilled_prompt_tokens", prefilled},
+       {"session_reset_reason", plan.reason}});
 }
 
 // Owns the engine's sessions for one worker: named sessions keyed by id plus a
@@ -211,10 +282,10 @@ class WorkerSessions {
   // Resolve (and admit, creating on first use) a named session. Returns nullptr
   // and sets code on failure: "unsupported_session" when the backend hosts no
   // named sessions, "capacity_exhausted" when all named slots are taken.
-  LLMSession* open_named(const std::string& id, std::string& code) {
+  WorkerSessionState* open_named(const std::string& id, std::string& code) {
     auto it = named_.find(id);
     if (it != named_.end()) {
-      return it->second.get(); // idempotent open / reuse across requests
+      return &it->second; // idempotent open / reuse across requests
     }
     if (max_named_ == 0) {
       code = "unsupported_session";
@@ -229,9 +300,9 @@ class WorkerSessions {
       code = "capacity_exhausted"; // engine-side capacity backstop
       return nullptr;
     }
-    auto* session = result.get().get();
-    named_.emplace(id, std::move(result.get()));
-    return session;
+    WorkerSessionState& st = named_[id];
+    st.session = std::move(result.get());
+    return &st;
   }
 
   // Destroy a named session (freeing its per-session state); idempotent.
@@ -239,33 +310,56 @@ class WorkerSessions {
     named_.erase(id);
   }
 
+  // Clear a named session's context (reset KV/recurrent + resident ids) while
+  // keeping its capacity slot allocated. No-op if the session doesn't exist.
+  // Returns Ok (including the absent no-op); on a failed reset returns the
+  // session's error and leaves resident state intact, so the control plane
+  // keeps its transcript in lockstep instead of clearing it after a failed
+  // reset.
+  ::executorch::runtime::Error reset_named(const std::string& id) {
+    auto it = named_.find(id);
+    if (it == named_.end()) {
+      return ::executorch::runtime::Error::Ok;
+    }
+    auto err = it->second.session->reset();
+    if (err != ::executorch::runtime::Error::Ok) {
+      return err;
+    }
+    it->second.resident_token_ids.clear();
+    it->second.dirty = false;
+    return ::executorch::runtime::Error::Ok;
+  }
+
   // The scratch session for anonymous requests, created on first use. Throws if
   // the engine cannot create it.
-  LLMSession* scratch() {
-    if (!scratch_) {
+  WorkerSessionState* scratch() {
+    if (!scratch_.session) {
       auto result = engine_.create_session();
       if (result.error() != ::executorch::runtime::Error::Ok) {
         throw std::runtime_error("failed to create scratch session");
       }
-      scratch_ = std::move(result.get());
+      scratch_.session = std::move(result.get());
     }
-    return scratch_.get();
+    return &scratch_;
   }
 
  private:
   LLMEngine& engine_;
   int32_t max_named_;
-  std::unordered_map<std::string, std::unique_ptr<LLMSession>> named_;
-  std::unique_ptr<LLMSession> scratch_;
+  std::unordered_map<std::string, WorkerSessionState> named_;
+  WorkerSessionState scratch_;
 };
 
 // Emit {"ready": true, ...}, then read JSONL requests from stdin and dispatch
-// each (generate / open / close), reporting exceptions as {"error": ...} and
-// continuing to serve. Returns 0 when stdin closes.
+// each (generate / open / close / reset), reporting exceptions as
+// {"error": ...} and continuing to serve. Returns 0 when stdin closes.
+// enable_warm_resume gates V2b.1 warm suffix reuse for named sessions (off ->
+// every request resets, the V2a behavior; useful for A/B measurement).
 inline int run_worker_stdio_loop(
     LLMEngine& engine,
     ::tokenizers::Tokenizer& tokenizer,
-    const std::unordered_map<std::string, int64_t>& metadata) {
+    const std::unordered_map<std::string, int64_t>& metadata,
+    bool enable_warm_resume = true) {
   WorkerSessions sessions(engine);
   worker_emit(
       {{"ready", true},
@@ -283,7 +377,7 @@ inline int run_worker_stdio_loop(
       const nlohmann::json req = nlohmann::json::parse(line);
       const std::string op = req.value("op", std::string{});
 
-      if (op == "open" || op == "close") {
+      if (op == "open" || op == "close" || op == "reset") {
         const std::string id = req.at("session_id").get<std::string>();
         if (id.empty()) {
           throw std::runtime_error("session_id required for op");
@@ -291,38 +385,49 @@ inline int run_worker_stdio_loop(
         if (op == "close") {
           sessions.close_named(id);
           worker_emit({{"closed", true}, {"session_id", id}});
-          continue;
-        }
-        std::string code;
-        if (sessions.open_named(id, code) == nullptr) {
-          worker_emit(
-              {{"error", "cannot open session"},
-               {"code", code},
-               {"session_id", id}});
-        } else {
-          worker_emit({{"opened", true}, {"session_id", id}});
+        } else if (op == "reset") {
+          // idempotent (no-op if absent); only acks success if the reset took
+          if (sessions.reset_named(id) != ::executorch::runtime::Error::Ok) {
+            worker_emit(
+                {{"error", "session reset failed"}, {"session_id", id}});
+          } else {
+            worker_emit({{"reset", true}, {"session_id", id}});
+          }
+        } else { // open
+          std::string code;
+          if (sessions.open_named(id, code) == nullptr) {
+            worker_emit(
+                {{"error", "cannot open session"},
+                 {"code", code},
+                 {"session_id", id}});
+          } else {
+            worker_emit({{"opened", true}, {"session_id", id}});
+          }
         }
         continue;
       }
 
       // Generation. A session_id routes to its named session (admitted on first
-      // use); its absence uses the shared scratch session.
+      // use, warm-resumable); its absence uses the shared scratch session,
+      // which is always reset per request.
       const std::string id = req.value("session_id", std::string{});
-      LLMSession* session = nullptr;
+      WorkerSessionState* st = nullptr;
+      bool warm = false;
       if (id.empty()) {
-        session = sessions.scratch();
+        st = sessions.scratch();
       } else {
         std::string code;
-        session = sessions.open_named(id, code);
-        if (session == nullptr) {
+        st = sessions.open_named(id, code);
+        if (st == nullptr) {
           worker_emit(
               {{"error", "cannot open session"},
                {"code", code},
                {"session_id", id}});
           continue;
         }
+        warm = enable_warm_resume;
       }
-      worker_handle_request(*session, tokenizer, metadata, req);
+      worker_handle_request(*st, warm, tokenizer, metadata, req);
     } catch (const std::exception& e) { // report and keep serving
       worker_emit({{"error", std::string(e.what())}});
     }

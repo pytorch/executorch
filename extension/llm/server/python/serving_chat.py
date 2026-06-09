@@ -223,6 +223,13 @@ class ServingChat:
         except WorkerError as e:
             raise GenerationError(str(e))
 
+    async def reset_session(self, session_id: str) -> None:
+        self._validate_session_id(session_id)
+        try:
+            await self._runtime.reset(session_id)
+        except WorkerError as e:
+            raise GenerationError(str(e))
+
     def _finish_reason(
         self,
         req: ChatCompletionRequest,

@@ -127,6 +127,17 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
             return JSONResponse(e.body(), status_code=e.status)
         return JSONResponse({"closed": True, "session_id": session_id})
 
+    @app.post("/v1/sessions/{session_id}/reset")
+    async def reset_session(session_id: str):
+        # Clear a named session's context but keep its slot (vendor extension;
+        # idempotent). Lets an agent reuse a slot for a new conversation without
+        # freeing/reopening it.
+        try:
+            await serving.reset_session(session_id)
+        except APIError as e:
+            return JSONResponse(e.body(), status_code=e.status)
+        return JSONResponse({"reset": True, "session_id": session_id})
+
     return app
 
 

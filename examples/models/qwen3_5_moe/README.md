@@ -197,6 +197,7 @@ is safe under asyncio.
 | `--max-context` | (none) | Reject prompts that exceed it with 400 |
 | `--no-think` | off | Default reasoning off (`enable_thinking=False`) |
 | `--max-sessions` | `1` | Isolated sessions on one weight load (see Sessions) |
+| `--warm-resume` / `--no-warm-resume` | on | Reuse a session's KV across turns (see Sessions) |
 
 ### Sessions
 
@@ -211,24 +212,41 @@ aliases, the `X-ExecuTorch-Session-ID` / `session_id` / `x-session-affinity`
 headers (body wins, then that header order). The header aliases let a client that
 already emits a stable per-conversation affinity id (e.g. pi's
 `sendSessionAffinityHeaders`) route with no extra config. Requests without any
-share a transient scratch session. Free a session with `DELETE /v1/sessions/{id}`.
+share a transient scratch session.
 
 ```bash
 curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3.5-moe","session_id":"alice",
        "messages":[{"role":"user","content":"hi"}]}'
+
+curl -X POST   http://127.0.0.1:8000/v1/sessions/alice/reset  # clear context, keep the slot
+curl -X DELETE http://127.0.0.1:8000/v1/sessions/alice        # free context + slot (VRAM)
 ```
 
 Admission is up front: an explicit `session_id` on a single-session server
 returns **400** (`unsupported_session`); past capacity it returns **429**
 (`capacity_exhausted`) before any response bytes.
 
-This is **isolation, not concurrency or warm resume**: execution is still
+**Warm append-only resume** (on by default): when a named session's next request
+is an exact-token extension of its resident context (e.g. the same conversation
+plus a new turn), the worker prefills **only the new suffix** instead of
+re-prefilling the whole prompt — continuing the KV/recurrent state in place. The
+check is exact-token (never re-tokenized text), so it is always correct: anything
+that can't be proven an exact extension (token mismatch, a stop-string trim, a
+prior error) falls back to a full reset + prefill. This is **per-session** warm
+append-only resume, **not** global prefix caching: there is no cross-session
+prefix sharing, so a system prompt common to two different `session_id`s is
+prefilled independently for each (unlike vLLM/llama.cpp global prefix reuse).
+Each `done` event reports
+`reused_prompt_tokens`, `prefilled_prompt_tokens`, and `session_reset_reason`
+(`new`/`exact_prefix`/`dirty`/`mismatch`/`equal`) for measuring the hit rate.
+`--no-warm-resume` forces a full prefill every request (for A/B comparison).
+
+This is **isolation + warm resume, not concurrency**: execution is still
 synchronous (one in-flight request; `--num-runners > 1` is rejected since more
-workers would duplicate the weights), and each request resets its session — the
-recurrent/conv state cannot be rewound by position (`seek()` is NotSupported), so
-turn-to-turn KV reuse (append-only warm resume) is a follow-up.
+workers would duplicate the weights). Fair interleaving across in-flight requests
+is a follow-up.
 
 ### Other limitations
 
