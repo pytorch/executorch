@@ -1198,9 +1198,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm._passes.qnn_pass_manager`
         from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-            get_capture_program_passes,
-            get_passes_dependency_for_capture_program,
-            QnnPassManager,
+            get_qnn_pass_manager_cls,
         )
 
         # pyre-ignore
@@ -1230,8 +1228,9 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
 
         # TODO: Use to_edge_lower_and_transform for QNN
-        passes_job = get_capture_program_passes()
-        dep_table = get_passes_dependency_for_capture_program()
+        pass_manager_cls = get_qnn_pass_manager_cls()
+        passes_job = pass_manager_cls.get_capture_program_passes()
+        dep_table = pass_manager_cls.get_passes_dependency_for_capture_program()
         passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[ConvertBmmToMatmul][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
@@ -1246,7 +1245,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
             passes_job[SplitGraph] = setting
             dep_table[SplitGraph] = [FoldQDQ]
             dep_table[TagQuantIO] = [SplitGraph]
-        QnnPassManager().transform_for_to_edge_pipeline(
+        pass_manager_cls().transform_for_to_edge_pipeline(
             builder_exported_to_edge.edge_manager.exported_program(),
             dep_table=dep_table,
             passes_job=passes_job,

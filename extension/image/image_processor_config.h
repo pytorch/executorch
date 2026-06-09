@@ -56,8 +56,14 @@ enum class LetterboxAnchor : uint8_t {
   TOP_LEFT,
 };
 
+// EXIF orientation codes describing how to rotate the source so it displays
+// upright. Only the four rotation values are supported (no mirrored variants);
+// these match the codes Core Image's imageByApplyingOrientation: applies.
 enum class Orientation : uint8_t {
-  UP = 1,
+  UP = 1, // no rotation
+  DOWN = 3, // 180 degrees
+  RIGHT = 6, // 90 degrees clockwise
+  LEFT = 8, // 90 degrees counter-clockwise
 };
 
 struct Normalization {
@@ -193,6 +199,27 @@ inline std::pair<int32_t, int32_t> compute_letterbox_offset(
     return {0, 0};
   }
   return {(final_width - width) / 2, (final_height - height) / 2};
+}
+
+// True if `orientation` is one of the supported rotation codes.
+inline bool is_supported_orientation(Orientation orientation) {
+  return orientation == Orientation::UP || orientation == Orientation::DOWN ||
+      orientation == Orientation::RIGHT || orientation == Orientation::LEFT;
+}
+
+// True for the 90-degree rotations (RIGHT/LEFT), which swap width and height.
+inline bool is_transposed(Orientation orientation) {
+  return orientation == Orientation::RIGHT || orientation == Orientation::LEFT;
+}
+
+// Source dimensions after applying `orientation`: width/height are swapped for
+// the 90-degree rotations, unchanged otherwise.
+inline std::pair<int32_t, int32_t>
+oriented_dims(int32_t width, int32_t height, Orientation orientation) {
+  if (is_transposed(orientation)) {
+    return {height, width};
+  }
+  return {width, height};
 }
 
 } // namespace image

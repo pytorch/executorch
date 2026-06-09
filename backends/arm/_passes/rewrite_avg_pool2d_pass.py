@@ -65,9 +65,11 @@ class RewriteAvgPool2dPass(ArmOpTargetedPass):
         # Materialize output zero-point as a scalar tensor
         output_zp = super().call_scalar(out_zp_val, meta)
 
-        # Determine accumulator dtype for AVG_POOL2D: INT32 for integer inputs, FP32 otherwise
+        # Determine accumulator dtype for AVG_POOL2D.
         if x.data.dtype in (torch.int8, torch.int16):
             acc_type = torch.int32
+        elif x.data.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+            acc_type = torch.float16
         else:
             acc_type = torch.float32
 

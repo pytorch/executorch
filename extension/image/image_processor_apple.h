@@ -46,13 +46,10 @@ namespace image {
 /// fallback's separate force-CPU processor). Repeated calls on the
 /// same processor reuse the same allocations.
 ///
-/// @param orientation Orientation of the pixel-buffer contents. Currently
-/// only `Orientation::UP` is supported: the buffer is treated as already
-/// upright. The parameter reserves the slot for future orientation correction
-/// and is forwarded to the underlying pipeline. Orientation cannot be derived
-/// from a CVPixelBuffer, so the caller must supply an upright buffer (e.g. by
-/// configuring the capture connection) until non-UP orientations are
-/// supported.
+/// @param orientation EXIF orientation of the pixel-buffer contents
+/// (UP/DOWN/RIGHT/LEFT); the pipeline rotates the image upright before
+/// resizing. Orientation cannot be derived from a CVPixelBuffer, so the caller
+/// supplies it (e.g. from capture metadata). Defaults to UP (already upright).
 runtime::Result<TensorPtr> process_pixelbuffer(
     const ImageProcessor& processor,
     CVPixelBufferRef pixelBuffer,
