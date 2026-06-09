@@ -493,13 +493,49 @@ static std::vector<TestCase> generate_conv2d_test_cases() {
        true},
   };
 
-  // Two implementation variants: direct sliding-window (default) and im2col.
-  const std::vector<std::string> impls = {"", "im2col"};
+  // Boundary pair straddling the should_use_conv2d_im2col() c_out >= 128
+  // routing threshold. Spatial dims are tiny (8x8) so the FP32 float reference
+  // stays cheap, but c_out = 64 / 128 are both >= kRefDimSizeLimit, so these
+  // get the PERF label. FP32 PERF cases are still numerically VERIFIED (the
+  // reference's invalid_argument throw that skips the check only fires for
+  // half), so both implementations are cross-checked against the float
+  // reference at the boundary. Run all three impls: at c_out = 64 the heuristic
+  // ("") picks direct on Adreno / im2col on Mali; at c_out = 128 it picks
+  // im2col on both — and "direct"/"im2col" force each path regardless, proving
+  // the two implementations agree at the boundary on either device.
+  std::vector<Conv2dTestConfig> boundary_configs = {
+      // c_out = 64 (< 128): below the threshold
+      {InputDims(1, 16, 8, 8),
+       64,
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       false},
+      // c_out = 128 (== 128): at/above the threshold
+      {InputDims(1, 16, 8, 8),
+       128,
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       false},
+  };
+
+  // Implementation variants exercised for every small ACCU shape:
+  //   ""       -> heuristic-routed (should_use_conv2d_im2col picks direct on
+  //               Adreno for small c_out, im2col on Mali)
+  //   "im2col" -> forced im2col/GEMM path
+  //   "direct" -> forced direct sliding-window path (force_direct=true)
+  // Including "direct" guarantees the direct shader gets reference-checked on
+  // BOTH devices — without it, Mali would always route "" to im2col and never
+  // exercise the direct path.
+  const std::vector<std::string> impls = {"", "im2col", "direct"};
   // Forced-storage im2col variants for the per-variant ACCU coverage.
   const std::vector<std::string> forced_storage_impls = {
       "im2col_buffer", "im2col_tex2d", "im2col_tex3d"};
 
-  // Generate accuracy test cases for both impls and both dtypes. FP16 small
+  // Generate accuracy test cases for all impls and both dtypes. FP16 small
   // shapes get a real reference check (gated in conv2d_reference_impl); we run
   // both dtypes so we catch correctness regressions in either path. Large-K
   // half stays timing-only via the reference's PERF-shape throw.
@@ -530,7 +566,19 @@ static std::vector<TestCase> generate_conv2d_test_cases() {
     }
   }
 
-  // Generate performance test cases (float and half) for both impls.
+  // Generate the c_out boundary pair (FP32 only) through all three impls.
+  // FP32 PERF cases are reference-VERIFIED, so the direct and im2col paths are
+  // both cross-checked against the float reference at the routing threshold.
+  for (const auto& config : boundary_configs) {
+    for (auto st : storage_types) {
+      for (const auto& impl : impls) {
+        test_cases.push_back(
+            create_conv2d_test_case(config, vkapi::kFloat, st, layout, impl));
+      }
+    }
+  }
+
+  // Generate performance test cases (float and half) for all impls.
   for (const auto& config : perf_configs) {
     std::vector<vkapi::ScalarType> dtypes = {vkapi::kFloat, vkapi::kHalf};
     for (auto dtype : dtypes) {
