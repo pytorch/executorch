@@ -53,7 +53,7 @@ class AtenToCortexMPass(AtenToDialectPass):
     ) -> None:
         super().__init__(exported_program=exported_program)
         self.target_config = target_config
-        self._DIALECT_SUBSTITUTIONS = {
+        self._DIALECT_SUBSTITUTIONS = {  # type: ignore[misc]
             **type(self)._DIALECT_SUBSTITUTIONS,
             exir_ops.edge.aten.linear.default: lambda node, ep: _get_linear_replacement(
                 node, ep, target_config
