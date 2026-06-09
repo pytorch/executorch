@@ -172,9 +172,9 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  // One workgroup per row (kRmsNormWorkgroupSize threads cooperate per row)
+  // One workgroup per row (kRmsNormWorkgroupSizeX threads cooperate per row)
   static_assert(
-      kRmsNormWorkgroupSize == 64,
+      kRmsNormWorkgroupSizeX == 64,
       "must match @workgroup_size and WG_SIZE in rms_norm.wgsl");
   graph.add_dispatch({pipeline, bind_group, num_rows});
 

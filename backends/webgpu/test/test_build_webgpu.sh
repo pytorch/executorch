@@ -15,6 +15,13 @@ EXECUTORCH_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-python3}"
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
+echo "=== Check embedded WGSL headers are up to date ==="
+"${PYTHON_EXECUTABLE}" "${SCRIPT_DIR}/../scripts/gen_wgsl_headers.py" --check \
+  || { echo "ERROR: *_wgsl.h out of sync with .wgsl; run scripts/gen_wgsl_headers.py"; exit 1; }
+
+# Unit tests for the WGSL header generator itself
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/test_wgsl_codegen.py" -v
+
 # ── Step 1: Python export tests ──────────────────────────────────────────────
 
 echo "=== Step 1: Run Python export tests ==="
