@@ -711,13 +711,14 @@ private constructor(
   ): Int
 
   /**
-   * Prefill the KV cache with the given preprocessed audio input.
+   * Prefill the KV cache with pre-processed audio data (uint8 mel spectrogram).
    *
-   * @param audio Input preprocessed audio as a byte array
-   * @param batchSize Input batch size
-   * @param nBins Input number of bins
-   * @param nFrames Input number of frames
+   * @param audio Input audio as a byte array (uint8 values)
+   * @param batchSize Input batch size (must be positive)
+   * @param nBins Input number of frequency bins (must be positive)
+   * @param nFrames Input number of time frames (must be positive)
    * @throws ExecutorchRuntimeException if the prefill failed
+   * @throws IllegalArgumentException if dimensions are non-positive or array is too small
    */
   @Experimental
   fun prefillAudio(audio: ByteArray, batchSize: Int, nBins: Int, nFrames: Int) {
@@ -725,6 +726,19 @@ private constructor(
     try {
       checkNotReentrant()
       checkNotDestroyed()
+      require(batchSize > 0 && nBins > 0 && nFrames > 0) {
+        "batchSize, nBins, and nFrames must all be positive"
+      }
+      val expected: Long
+      try {
+        val partial = Math.multiplyExact(batchSize.toLong(), nBins.toLong())
+        expected = Math.multiplyExact(partial, nFrames.toLong())
+      } catch (ex: ArithmeticException) {
+        throw IllegalArgumentException("batchSize*nBins*nFrames overflows", ex)
+      }
+      require(audio.size.toLong() == expected) {
+        "audio.size (${audio.size}) must equal batchSize*nBins*nFrames ($expected)"
+      }
       val nativeResult = prefillAudioInput(audio, batchSize, nBins, nFrames)
       if (nativeResult != 0) {
         throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
@@ -742,13 +756,14 @@ private constructor(
   ): Int
 
   /**
-   * Prefill the KV cache with the given preprocessed audio input.
+   * Prefill the KV cache with pre-processed audio data (float32 mel spectrogram).
    *
-   * @param audio Input preprocessed audio as a float array
-   * @param batchSize Input batch size
-   * @param nBins Input number of bins
-   * @param nFrames Input number of frames
+   * @param audio Input audio as a float array (float32 values)
+   * @param batchSize Input batch size (must be positive)
+   * @param nBins Input number of frequency bins (must be positive)
+   * @param nFrames Input number of time frames (must be positive)
    * @throws ExecutorchRuntimeException if the prefill failed
+   * @throws IllegalArgumentException if dimensions are non-positive or array is too small
    */
   @Experimental
   fun prefillAudio(audio: FloatArray, batchSize: Int, nBins: Int, nFrames: Int) {
@@ -756,6 +771,19 @@ private constructor(
     try {
       checkNotReentrant()
       checkNotDestroyed()
+      require(batchSize > 0 && nBins > 0 && nFrames > 0) {
+        "batchSize, nBins, and nFrames must all be positive"
+      }
+      val expected: Long
+      try {
+        val partial = Math.multiplyExact(batchSize.toLong(), nBins.toLong())
+        expected = Math.multiplyExact(partial, nFrames.toLong())
+      } catch (ex: ArithmeticException) {
+        throw IllegalArgumentException("batchSize*nBins*nFrames overflows", ex)
+      }
+      require(audio.size.toLong() == expected) {
+        "audio.size (${audio.size}) must equal batchSize*nBins*nFrames ($expected)"
+      }
       val nativeResult = prefillAudioInputFloat(audio, batchSize, nBins, nFrames)
       if (nativeResult != 0) {
         throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")
@@ -773,13 +801,14 @@ private constructor(
   ): Int
 
   /**
-   * Prefill the KV cache with the given raw audio input.
+   * Prefill the KV cache with raw audio data.
    *
    * @param audio Input raw audio as a byte array
-   * @param batchSize Input batch size
-   * @param nChannels Input number of channels
-   * @param nSamples Input number of samples
+   * @param batchSize Input batch size (must be positive)
+   * @param nChannels Input number of channels (must be positive)
+   * @param nSamples Input number of samples (must be positive)
    * @throws ExecutorchRuntimeException if the prefill failed
+   * @throws IllegalArgumentException if dimensions are non-positive or array is too small
    */
   @Experimental
   fun prefillRawAudio(audio: ByteArray, batchSize: Int, nChannels: Int, nSamples: Int) {
@@ -787,6 +816,19 @@ private constructor(
     try {
       checkNotReentrant()
       checkNotDestroyed()
+      require(batchSize > 0 && nChannels > 0 && nSamples > 0) {
+        "batchSize, nChannels, and nSamples must all be positive"
+      }
+      val expected: Long
+      try {
+        val partial = Math.multiplyExact(batchSize.toLong(), nChannels.toLong())
+        expected = Math.multiplyExact(partial, nSamples.toLong())
+      } catch (ex: ArithmeticException) {
+        throw IllegalArgumentException("batchSize*nChannels*nSamples overflows", ex)
+      }
+      require(audio.size.toLong() == expected) {
+        "audio.size (${audio.size}) must equal batchSize*nChannels*nSamples ($expected)"
+      }
       val nativeResult = prefillRawAudioInput(audio, batchSize, nChannels, nSamples)
       if (nativeResult != 0) {
         throw ExecutorchRuntimeException.makeExecutorchException(nativeResult, "Prefill failed")

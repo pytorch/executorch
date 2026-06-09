@@ -474,22 +474,20 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (!runner_) {
       return static_cast<jint>(Error::InvalidState);
     }
-    if (data == nullptr) {
+    if (data == nullptr || batch_size <= 0 || n_bins <= 0 || n_frames <= 0) {
       return static_cast<jint>(Error::InvalidArgument);
     }
     auto data_size = data->size();
-    if (data_size == 0) {
-      return 0;
+    size_t expected = static_cast<size_t>(batch_size) *
+        static_cast<size_t>(n_bins) * static_cast<size_t>(n_frames);
+    if (static_cast<size_t>(data_size) != expected) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
-    std::vector<jbyte> data_jbyte(data_size);
     std::vector<uint8_t> data_u8(data_size);
-    data->getRegion(0, data_size, data_jbyte.data());
-    for (int i = 0; i < data_size; i++) {
-      data_u8[i] = data_jbyte[i];
-    }
+    data->getRegion(0, data_size, reinterpret_cast<jbyte*>(data_u8.data()));
     llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
     std::vector<llm::MultimodalInput> inputs;
-    inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
+    inputs.emplace_back(std::move(audio));
     int32_t bos = needs_bos_ ? num_bos_ : 0;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
@@ -499,7 +497,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  // Returns status_code
   jint prefill_audio_input_float(
       facebook::jni::alias_ref<jfloatArray> data,
       jint batch_size,
@@ -508,22 +505,20 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (!runner_) {
       return static_cast<jint>(Error::InvalidState);
     }
-    if (data == nullptr) {
+    if (data == nullptr || batch_size <= 0 || n_bins <= 0 || n_frames <= 0) {
       return static_cast<jint>(Error::InvalidArgument);
     }
     auto data_size = data->size();
-    if (data_size == 0) {
-      return 0;
+    size_t expected = static_cast<size_t>(batch_size) *
+        static_cast<size_t>(n_bins) * static_cast<size_t>(n_frames);
+    if (static_cast<size_t>(data_size) != expected) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
-    std::vector<jfloat> data_jfloat(data_size);
     std::vector<float> data_f(data_size);
-    data->getRegion(0, data_size, data_jfloat.data());
-    for (int i = 0; i < data_size; i++) {
-      data_f[i] = data_jfloat[i];
-    }
+    data->getRegion(0, data_size, data_f.data());
     llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
     std::vector<llm::MultimodalInput> inputs;
-    inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
+    inputs.emplace_back(std::move(audio));
     int32_t bos = needs_bos_ ? num_bos_ : 0;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
@@ -533,7 +528,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  // Returns status_code
   jint prefill_raw_audio_input(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
@@ -542,22 +536,21 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (!runner_) {
       return static_cast<jint>(Error::InvalidState);
     }
-    if (data == nullptr) {
+    if (data == nullptr || batch_size <= 0 || n_channels <= 0 ||
+        n_samples <= 0) {
       return static_cast<jint>(Error::InvalidArgument);
     }
     auto data_size = data->size();
-    if (data_size == 0) {
-      return 0;
+    size_t expected = static_cast<size_t>(batch_size) *
+        static_cast<size_t>(n_channels) * static_cast<size_t>(n_samples);
+    if (static_cast<size_t>(data_size) != expected) {
+      return static_cast<jint>(Error::InvalidArgument);
     }
-    std::vector<jbyte> data_jbyte(data_size);
     std::vector<uint8_t> data_u8(data_size);
-    data->getRegion(0, data_size, data_jbyte.data());
-    for (int i = 0; i < data_size; i++) {
-      data_u8[i] = data_jbyte[i];
-    }
+    data->getRegion(0, data_size, reinterpret_cast<jbyte*>(data_u8.data()));
     llm::RawAudio audio{std::move(data_u8), batch_size, n_channels, n_samples};
     std::vector<llm::MultimodalInput> inputs;
-    inputs.emplace_back(llm::MultimodalInput{std::move(audio)});
+    inputs.emplace_back(std::move(audio));
     int32_t bos = needs_bos_ ? num_bos_ : 0;
     auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
     if (!result.ok()) {
