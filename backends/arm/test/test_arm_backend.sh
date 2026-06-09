@@ -45,7 +45,7 @@ fi
 
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
 
-EXCLUDE_TARGET_EXPR="(not u55) and (not u85) and (not tosa) and (not _vgf_)"
+EXCLUDE_TARGET_EXPR="(not u55) and (not u65) and (not u85) and (not tosa) and (not _vgf_)"
 PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
 
 all() { # Run all tests
