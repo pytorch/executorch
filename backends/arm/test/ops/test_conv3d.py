@@ -483,6 +483,38 @@ test_data_FP = {
     "5x5_3x2x24x24_st1": lambda: conv3d_5x5_3x2x24x24_st1,
     "3x3_1x3x28x28_st2_pd1": lambda: conv3d_3x3_1x3x28x28_st2_pd1,
 }
+test_data_FP_fp8 = {
+    "basic_fp8e4m3": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "basic_fp8e5m2": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 
 test_data_FP_bf16 = {
     "bf16_3x3": lambda: Conv3d(
@@ -573,6 +605,21 @@ def test_convolution_3d_tosa_FP(test_data):
         exir_op,
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP_fp8)
+def test_convolution_3d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_tosa_ref_model=False,  # torch.conv3d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"CONV3D": 1, "CAST": 1})
     pipeline.run()
 
 
