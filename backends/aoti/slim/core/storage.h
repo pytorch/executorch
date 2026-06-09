@@ -177,7 +177,18 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
           static_cast<int>(dst_device.index()));
     }
 
-    ET_CUDA_CHECK(cudaMemcpy(dst, src, nbytes, direction));
+    // Plain cudaMemcpy is host-synchronous on the default stream, which a
+    // green context would not confine. When a caller stream is active, copy
+    // on it asynchronously and synchronize it to preserve blocking
+    // semantics; otherwise fall back to the plain synchronous copy.
+    const auto caller_stream = executorch::backends::cuda::getCallerStream();
+    if (caller_stream) {
+      ET_CUDA_CHECK(
+          cudaMemcpyAsync(dst, src, nbytes, direction, *caller_stream));
+      ET_CUDA_CHECK(cudaStreamSynchronize(*caller_stream));
+    } else {
+      ET_CUDA_CHECK(cudaMemcpy(dst, src, nbytes, direction));
+    }
   }
 };
 #else
