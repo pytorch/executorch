@@ -48,6 +48,10 @@ def _get_supported_avg_pool2d_acc_types(
         supported_acc_types[torch.float32] = (torch.float32,)
         if tosa_spec.support_extension("bf16"):
             supported_acc_types[torch.bfloat16] = (torch.float32,)
+        if tosa_spec.support_extension("fp8e4m3"):
+            supported_acc_types[torch.float8_e4m3fn] = (torch.float16,)
+        if tosa_spec.support_extension("fp8e5m2"):
+            supported_acc_types[torch.float8_e5m2] = (torch.float16,)
 
     return supported_acc_types
 

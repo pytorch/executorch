@@ -10,6 +10,8 @@ from executorch.backends.cortex_m.test.tester import (
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class CortexMAvgPool2d(torch.nn.Module):
@@ -66,6 +68,17 @@ test_cases = {
 }
 
 
+# ceil_mode=True is not supported by the CMSIS-NN avg_pool kernel; the convert
+# pass leaves aten.avg_pool2d in the graph for a portable kernel to handle. The
+# Cortex-M runner does not register aten.avg_pool2d, so this is dialect-only.
+fallback_test_cases = {
+    "avgpool_2x2_ceil_mode": McuTestCase(
+        CortexMAvgPool2d(kernel_size=2, stride=2, ceil_mode=True),
+        (ramp_tensor(0, 24, (1, 1, 5, 5)),),
+    ),
+}
+
+
 @parametrize("test_case", test_cases)
 def test_dialect_avg_pool2d(test_case, cortex_m_target):
     tester = CortexMTester(
@@ -77,6 +90,52 @@ def test_dialect_avg_pool2d(test_case, cortex_m_target):
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         ops_after,
+        qtol=1,
+    )
+
+    import cmsis_nn  # type: ignore[import-not-found, import-untyped]
+
+    from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+
+    target_config = CortexMTargetConfig(cpu=CortexM.M55)
+    module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
+    pool_target = exir_ops.edge.cortex_m.quantized_avg_pool2d.default
+    [pool_node] = [
+        n
+        for n in module.graph.nodes
+        if n.op == "call_function" and n.target == pool_target
+    ]
+    scratch_arg = pool_node.args[-1]
+    scratch_size = scratch_arg.args[0][0][0]
+
+    input_node = pool_node.args[0]
+    input_shape = input_node.meta["val"].shape
+    output_shape = pool_node.meta["val"].shape
+    expected_size = cmsis_nn.avgpool_buffer_size(
+        target_config.backend,
+        cmsis_nn.DataType.A8W8,
+        dim_dst_width=int(output_shape[3]),
+        ch_src=int(input_shape[1]),
+    )
+    assert (
+        scratch_size == expected_size
+    ), f"scratch buffer size mismatch: got {scratch_size}, expected {expected_size}"
+
+
+@parametrize("test_case", fallback_test_cases)
+def test_dialect_avg_pool2d_fallback(test_case):
+    tester = CortexMTester(test_case.model, test_case.example_inputs)
+    tester.test_dialect(
+        {
+            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
+        },
+        {
+            "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
+            "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+            "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
+        },
         qtol=1,
     )
 

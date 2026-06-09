@@ -5,7 +5,7 @@
 
 
 import itertools
-from typing import Any, Set, Type
+from typing import Any, cast, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
@@ -39,6 +39,7 @@ from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
+from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 
 
@@ -350,6 +351,68 @@ class RewriteConvPass(ArmPass):
                         return True
         return False
 
+    def _insert_output_conversion(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        tosa_op: torch.fx.Node,
+        input_fake_tensor: torch.Tensor,
+        tosa_node_fake_tensor: torch.Tensor,
+    ) -> tuple[torch.fx.Node, FakeTensor]:
+        node_replacement: torch.fx.Node = tosa_op
+        node_replacement_fake_tensor = tosa_node_fake_tensor
+        if (
+            tosa_node_fake_tensor.dtype == torch.int32
+            and input_fake_tensor.dtype == torch.int8
+        ):
+            node_replacement, node_replacement_fake_tensor = self.insert_output_rescale(
+                graph_module, node, tosa_op, tosa_node_fake_tensor
+            )
+        elif (
+            tosa_node_fake_tensor.dtype == torch.int32
+            and input_fake_tensor.dtype == torch.int16
+        ):
+            # Explicit layout paths require a post-conv permute, which does
+            # not support INT48. Always rescale before post-permute.
+            if self._has_int32_rescale_user(node):
+                node_replacement, node_replacement_fake_tensor = (
+                    self.insert_identity_int32_rescale(
+                        graph_module, node, tosa_op, tosa_node_fake_tensor
+                    )
+                )
+            else:
+                node_replacement, node_replacement_fake_tensor = (
+                    self.insert_output_rescale(
+                        graph_module, node, tosa_op, tosa_node_fake_tensor
+                    )
+                )
+
+            tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+        elif (
+            tosa_node_fake_tensor.dtype == torch.float16
+            and input_fake_tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
+        ):
+            node_output_fake_tensor = get_first_fake_tensor(node)
+            # TOSA FP8 conv widens the output. Cast back to the exported
+            # graph dtype before the post-layout permute.
+            node_replacement_fake_tensor = (
+                exir_ops.edge.dim_order_ops._to_dim_order_copy.default(
+                    tosa_node_fake_tensor,
+                    dtype=node_output_fake_tensor.dtype,
+                )
+            )
+            with graph_module.graph.inserting_after(tosa_op):
+                node_replacement = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                    args=(tosa_op,),
+                    kwargs={"dtype": node_output_fake_tensor.dtype},
+                    from_node=tosa_op,
+                )
+            node_replacement.meta["val"] = node_replacement_fake_tensor
+
+        return node_replacement, cast(FakeTensor, node_replacement_fake_tensor)
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         modified = False
         for node in graph_module.graph.nodes:
@@ -561,37 +624,15 @@ class RewriteConvPass(ArmPass):
             )
             tosa_op.meta["val"] = tosa_node_fake_tensor
 
-            node_replacement: torch.fx.Node = tosa_op
-            node_replacement_fake_tensor = tosa_node_fake_tensor
-            if (
-                tosa_node_fake_tensor.dtype == torch.int32
-                and input_fake_tensor.dtype == torch.int8
-            ):
-                output_rescale, output_rescale_fake = self.insert_output_rescale(
-                    graph_module, node, tosa_op, tosa_node_fake_tensor
+            node_replacement, node_replacement_fake_tensor = (
+                self._insert_output_conversion(
+                    graph_module,
+                    node,
+                    tosa_op,
+                    input_fake_tensor,
+                    tosa_node_fake_tensor,
                 )
-                node_replacement = output_rescale
-                node_replacement_fake_tensor = output_rescale_fake
-            elif (
-                tosa_node_fake_tensor.dtype == torch.int32
-                and input_fake_tensor.dtype == torch.int16
-            ):
-                # Explicit layout paths require a post-conv permute, which does
-                # not support INT48. Always rescale before post-permute.
-                if self._has_int32_rescale_user(node):
-                    output_rescale, output_rescale_fake = (
-                        self.insert_identity_int32_rescale(
-                            graph_module, node, tosa_op, tosa_node_fake_tensor
-                        )
-                    )
-                else:
-                    output_rescale, output_rescale_fake = self.insert_output_rescale(
-                        graph_module, node, tosa_op, tosa_node_fake_tensor
-                    )
-                node_replacement = output_rescale
-                node_replacement_fake_tensor = output_rescale_fake
-
-                tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+            )
 
             if post_permute_dims is None:
                 raise RuntimeError("Expected post permute dims for explicit layout")
