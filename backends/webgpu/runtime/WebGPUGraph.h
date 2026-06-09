@@ -107,15 +107,15 @@ class WebGPUGraph {
   }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
-  void set_symint(int id, int32_t val); // rewrites the live buffer in place
+  // set_symint writes the buffer + marks dirty only if the value changed.
+  void set_symint(int id, int32_t val);
   // read_symint throws (fail-loud) if id is not a SymInt.
   int32_t read_symint(int id) const {
     return symints_.at(id).value;
   }
-  // symint_buffer returns nullptr if id is not a SymInt.
+  // symint_buffer throws (fail-loud) if id is not a SymInt.
   WGPUBuffer symint_buffer(int id) const {
-    auto it = symints_.find(id);
-    return it == symints_.end() ? nullptr : it->second.buffer;
+    return symints_.at(id).buffer;
   }
 
   // Records that a SymInt's value is read from input_tensor[index] along dim.

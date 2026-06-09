@@ -12,6 +12,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any, cast, Optional, Union
 
 import torch
+
+from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch._inductor.decomposition import remove_decompositions
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -157,6 +159,40 @@ def extract_output_dequant_params(
                     dtype,
                 )
     raise ValueError("Could not find dequantize_per_tensor at the output of the graph")
+
+
+def extract_all_output_dequant_params(
+    module: torch.fx.GraphModule,
+) -> list[QuantArgs | None]:
+    """
+    Extract per-output dequantization parameters from a multi-output model.
+
+    Returns a QuantArgs tuple for outputs ending in dequantize_per_tensor
+    or None for outputs that aren't dequantized.
+    """
+    output_nodes = module.graph.find_nodes(op="output")
+    if not output_nodes:
+        raise ValueError("No output node in graph")
+    output_args = output_nodes[0].args[0]
+    if not isinstance(output_args, (tuple, list)):
+        output_args = (output_args,)
+
+    dequant_ops = _get_dequantize_ops()
+    params: list[QuantArgs | None] = []
+    for out in output_args:
+        if not isinstance(out, torch.fx.Node) or out.target not in dequant_ops:
+            params.append(None)
+            continue
+        params.append(
+            (
+                float(get_arg(out, "scale", float)),
+                int(get_arg(out, "zero_point", int)),
+                int(get_arg(out, "quant_min", int)),
+                int(get_arg(out, "quant_max", int)),
+                get_arg(out, "dtype", torch.dtype),
+            )
+        )
+    return params
 
 
 def extract_output_dequant_params_through_permute(
@@ -400,33 +436,60 @@ class QuantizedInputWrapper(torch.nn.Module):
 
 class QuantizedOutputWrapper(torch.nn.Module):
     """
-    Wrapper that quantizes a model's output so it produces uint8 tensors.
+    Wrapper that quantizes a model's output(s) so they produce quantized tensors.
 
     Mirrors QuantizedInputWrapper: the wrapper adds a quantize_per_tensor after
-    the model's output. When the graph is traced, the dequant (from the model) →
+    each output. When the graph is traced, the dequant (from the model) →
     quant (from the wrapper) pair with matching parameters folds away, leaving
     the output in its quantized form.
 
     Args:
         module: The module to wrap (may already be a QuantizedInputWrapper).
-        output_quant_args: (scale, zero_point, qmin, qmax, dtype) for the output.
+        output_quant_args: Quantization parameters — either a single QuantArgs
+            tuple or a list with one entry per output.
     """
 
     def __init__(
         self,
         module: torch.nn.Module,
-        output_quant_args: QuantArgs,
+        output_quant_args: Union[QuantArgs, list[QuantArgs | None]],
     ) -> None:
         super().__init__()
         self.module: torch.nn.Module = module
-        self.output_quant_args: QuantArgs = output_quant_args
+        if isinstance(output_quant_args, list):
+            self._multi_output: bool = True
+            self._per_output_args: list[QuantArgs | None] = output_quant_args
+        else:
+            self._multi_output = False
+            self._per_output_args = [output_quant_args]
 
     def forward(self, *args: torch.Tensor) -> Any:
-        result = self.module(*args)
-        scale, zp, qmin, qmax, dtype = self.output_quant_args
-        return torch.ops.quantized_decomposed.quantize_per_tensor.default(
-            result, scale, zp, qmin, qmax, dtype
-        )
+        model_output = self.module(*args)
+        if not self._multi_output:
+            quant_args = self._per_output_args[0]
+            assert quant_args is not None
+            scale, zero_point, quant_min, quant_max, dtype = quant_args
+            return torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                model_output, scale, zero_point, quant_min, quant_max, dtype
+            )
+
+        quantized_outputs: list[torch.Tensor] = []
+        for output_index, output_tensor in enumerate(model_output):
+            quant_args = (
+                self._per_output_args[output_index]
+                if output_index < len(self._per_output_args)
+                else None
+            )
+            if quant_args is None:
+                quantized_outputs.append(output_tensor)
+            else:
+                scale, zero_point, quant_min, quant_max, dtype = quant_args
+                quantized_outputs.append(
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                        output_tensor, scale, zero_point, quant_min, quant_max, dtype
+                    )
+                )
+        return tuple(quantized_outputs)
 
 
 def _get_transparent_ops() -> set[Any]:
