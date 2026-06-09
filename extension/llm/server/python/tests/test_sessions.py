@@ -139,6 +139,96 @@ def test_session_header_precedence(make_client):
     assert fake.opened_log == ["xet"]
 
 
+def _chat_msgs(client, messages, session_id):
+    return client.post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "session_id": session_id, "messages": messages},
+    )
+
+
+# The fake worker streams tokens ("Hello", ", ", "world"), so the assistant
+# content we return (and the client must echo back to match the fingerprint) is:
+_FAKE_REPLY = "Hello, world"
+
+
+def test_token_id_segments_splice_prior_assistant_turn(make_client):
+    # V2b.1.5: the server stores turn-1's generated ids and, on turn 2, sends
+    # prompt_segments that splice them back as an exact {ids} run (not text) --
+    # but only because the client echoes back the assistant turn we generated.
+    client, fake = make_client(max_named_sessions=2, gen_ids=[7, 8, 9])
+    assert (
+        _chat_msgs(client, [{"role": "user", "content": "hi"}], "s").status_code == 200
+    )
+    # First turn has no prior assistant turn -> plain text prompt.
+    assert fake.captured_config.prompt_segments is None
+
+    turn2 = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": _FAKE_REPLY},  # matches what we returned
+        {"role": "user", "content": "more"},
+    ]
+    assert _chat_msgs(client, turn2, "s").status_code == 200
+    segs = fake.captured_config.prompt_segments
+    assert segs is not None, "expected token-ID segments on the second turn"
+    # The stored generated ids are spliced in as an exact id run...
+    assert any(s.get("ids") == [7, 8, 9] for s in segs)
+    # ...bracketed by text segments (template glue + the new user turn).
+    assert any("text" in s for s in segs)
+
+
+def test_edited_assistant_turn_not_spliced(make_client):
+    # P1 guard: if the client edits a prior assistant turn (or reuses the session
+    # for a different conversation), the stale ids must NOT be spliced -- the
+    # fingerprint mismatches and we fall back to text.
+    client, fake = make_client(max_named_sessions=2, gen_ids=[7, 8, 9])
+    _chat_msgs(client, [{"role": "user", "content": "hi"}], "s")
+    turn2 = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "EDITED - not what the model generated"},
+        {"role": "user", "content": "more"},
+    ]
+    assert _chat_msgs(client, turn2, "s").status_code == 200
+    assert fake.captured_config.prompt_segments is None
+
+
+def test_stop_trimmed_turn_not_spliced(make_client):
+    # P1/P2 guard: a stop-trimmed turn (worker omits generated_token_ids ->
+    # recorded ids=None) is never spliced, even when the turn fingerprint matches,
+    # so unseen post-stop tokens can't be injected into a later prompt.
+    client, fake = make_client(max_named_sessions=2, gen_ids=[])  # [] => ids None
+    _chat_msgs(client, [{"role": "user", "content": "hi"}], "s")
+    turn2 = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": _FAKE_REPLY},  # fingerprint matches
+        {"role": "user", "content": "more"},
+    ]
+    assert _chat_msgs(client, turn2, "s").status_code == 200
+    assert fake.captured_config.prompt_segments is None
+
+
+def test_no_segments_for_anonymous_requests(make_client):
+    client, fake = make_client(max_named_sessions=2, gen_ids=[1, 2])
+    client.post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert fake.captured_config.prompt_segments is None
+
+
+def test_reset_clears_stored_ids(make_client):
+    # After reset, the next turn has no stored ids to splice -> plain text again.
+    client, fake = make_client(max_named_sessions=2, gen_ids=[5, 6])
+    _chat_msgs(client, [{"role": "user", "content": "hi"}], "s")
+    client.post("/v1/sessions/s/reset")
+    turn2 = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "reply"},
+        {"role": "user", "content": "more"},
+    ]
+    _chat_msgs(client, turn2, "s")
+    assert fake.captured_config.prompt_segments is None
+
+
 def test_reset_endpoint_clears_context_but_keeps_slot(make_client):
     # max_named=1: open "a", reset it, then a *different* id must still 429 —
     # proving reset cleared context without freeing the slot (unlike DELETE).
@@ -156,3 +246,116 @@ def test_reset_invalid_session_id_rejected(make_client):
     r = client.post("/v1/sessions/has%20space/reset")
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "invalid_session_id"
+
+
+class _RaisingRuntime:
+    """Runtime whose worker ops fail, to exercise the lockstep invariant."""
+
+    async def open(self, sid):
+        pass
+
+    async def reset(self, sid):
+        raise WorkerError("worker down")
+
+    async def close(self, sid):
+        raise WorkerError("worker down")
+
+
+@pytest.mark.parametrize("op", ["reset_session", "close_session"])
+def test_worker_op_failure_keeps_transcript(op):
+    # Lockstep invariant: if the worker reset/close fails, the adapter transcript
+    # must NOT be cleared -- both retain old state so they never drift.
+    template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
+    serving = ServingChat(_RaisingRuntime(), template, "test-model")
+    serving._transcript.record_assistant_turn(
+        session_id="s",
+        content="hi",
+        tool_calls=None,
+        generated_token_ids=[1, 2],
+        prior_turns=0,
+    )
+
+    async def go():
+        with pytest.raises(GenerationError):
+            await getattr(serving, op)("s")
+
+    asyncio.run(go())
+    assert serving._transcript._turns.get(
+        "s"
+    ), "transcript cleared despite worker failure"
+
+
+def test_record_assistant_turn_replaces_stale_at_position():
+    # A regenerated/branched turn under the same session_id must REPLACE the
+    # record at its position (prior_turns), not append, so a later turn can still
+    # splice the regenerated ids instead of breaking on a stale fingerprint.
+    from executorch.extension.llm.server.python.openai_transcript import (
+        OpenAITranscriptState,
+    )
+
+    t = OpenAITranscriptState(ChatTemplate(hf_tokenizer_path=None, allow_fallback=True))
+    t.record_assistant_turn(
+        session_id="s",
+        content="a0",
+        tool_calls=None,
+        generated_token_ids=[1],
+        prior_turns=0,
+    )
+    t.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=[2],
+        prior_turns=1,
+    )
+    assert [r["ids"] for r in t._turns["s"]] == [[1], [2]]
+    # regenerate turn 2 (same prior_turns) -> replaces stale [2], no stale tail
+    t.record_assistant_turn(
+        session_id="s",
+        content="a1b",
+        tool_calls=None,
+        generated_token_ids=[3],
+        prior_turns=1,
+    )
+    assert [r["ids"] for r in t._turns["s"]] == [[1], [3]]
+
+
+def test_divergence_truncates_stale_tail():
+    # Editing an EARLIER assistant turn (divergence at k) prunes the stale tail
+    # from k so it can't keep shadowing future requests; nothing is spliced and
+    # the matched prefix is kept. (Restoring hits for the edited turn isn't
+    # possible -- we never generated its ids -- but staleness is bounded.)
+    from executorch.extension.llm.server.python.openai_transcript import (
+        OpenAITranscriptState,
+    )
+    from executorch.extension.llm.server.python.protocol import ChatMessage
+
+    t = OpenAITranscriptState(ChatTemplate(hf_tokenizer_path=None, allow_fallback=True))
+    t.record_assistant_turn(
+        session_id="s",
+        content="a0",
+        tool_calls=None,
+        generated_token_ids=[1],
+        prior_turns=0,
+    )
+    t.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=[2],
+        prior_turns=1,
+    )
+    msgs = [
+        ChatMessage(role="user", content="u0"),
+        ChatMessage(role="assistant", content="a0-EDITED"),
+        ChatMessage(role="user", content="u1"),
+    ]
+    out = t.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt="X",
+        tools=None,
+        template_kwargs=None,
+    )
+    assert out.text == "X"  # diverged -> plain text fallback
+    assert t._turns["s"] == []  # stale tail pruned from the first mismatch

@@ -243,6 +243,16 @@ Each `done` event reports
 (`new`/`exact_prefix`/`dirty`/`mismatch`/`equal`) for measuring the hit rate.
 `--no-warm-resume` forces a full prefill every request (for A/B comparison).
 
+**Tool-call turns (token-ID continuation):** an assistant turn re-rendered from
+its parsed tool call rarely re-tokenizes to the tokens the model actually
+generated, so plain warm resume misses on agent loops. The server stores the
+exact generated token ids per session and, on the next turn, sends the prompt as
+segments (`{"text"}` / `{"ids"}`) that splice those ids back in for prior
+assistant turns instead of re-rendering them — so the resident state stays an
+exact token prefix and resume hits. Tool *results* remain text (re-tokenized
+deterministically). The worker's exact-token check still backstops everything, so
+a mismatch just falls back to a full prefill.
+
 This is **isolation + warm resume, not concurrency**: execution is still
 synchronous (one in-flight request; `--num-runners > 1` is rejected since more
 workers would duplicate the weights). Fair interleaving across in-flight requests

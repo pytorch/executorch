@@ -137,6 +137,7 @@ does blocking pipe I/O on its executor thread.
 | `chat_template.py` | messages (+tools) → prompt string |
 | `worker_client.py` | spawn a worker process + drive it over JSONL (raw transport) |
 | `session_runtime.py` | stateful runtime over one worker: open/generate/reset/close + streaming bridge |
+| `openai_transcript.py` | OpenAI token-ID warm-resume state (fingerprints + sentinel splicing) |
 | `serving_chat.py` | `/v1/chat/completions` OpenAI adapter (streaming + non-streaming, stop, tools) |
 | `tool_parsers/` | Hermes/Qwen `<tool_call>` parser only |
 | `cpp/text_llm_worker.cpp` | the generic C++ worker binary |

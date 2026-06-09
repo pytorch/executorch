@@ -22,6 +22,7 @@ from .errors import (
     InvalidSessionId,
     SessionCapacity,
 )
+from .openai_transcript import OpenAITranscriptState
 from .protocol import (
     _new_id,
     ChatCompletionChunk,
@@ -73,6 +74,10 @@ class ServingChat:
         # Special tokens (e.g. <|im_end|>) the runner decodes to text; we cut the
         # visible content at the first one so they don't leak into responses.
         self._stops = template.special_tokens()
+        # OpenAI/chat-template token-ID warm-resume state (V2b.1.5). Adapter-side,
+        # not runtime; kept in lockstep with the worker's session state by
+        # clearing both on reset/close.
+        self._transcript = OpenAITranscriptState(template)
 
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
@@ -217,18 +222,24 @@ class ServingChat:
             raise GenerationError(str(e))
 
     async def close_session(self, session_id: str) -> None:
+        # Lockstep: do the fallible worker op FIRST, then clear the (best-effort,
+        # can't-fail) transcript. If the worker op fails both retain old state,
+        # so they never drift.
         self._validate_session_id(session_id)
         try:
             await self._runtime.close(session_id)
         except WorkerError as e:
             raise GenerationError(str(e))
+        self._transcript.close(session_id)
 
     async def reset_session(self, session_id: str) -> None:
+        # Lockstep: worker op first (fallible), then clear the transcript.
         self._validate_session_id(session_id)
         try:
             await self._runtime.reset(session_id)
         except WorkerError as e:
             raise GenerationError(str(e))
+        self._transcript.reset(session_id)
 
     def _finish_reason(
         self,
@@ -321,6 +332,24 @@ class ServingChat:
                 "unsupported_parameter",
             )
 
+    def _count_prompt_tokens(self, prompt: PromptInput) -> Optional[int]:
+        """Token count of what the worker will actually assemble: the rendered
+        text, or for token-ID segments sum(len(ids)) for {ids} runs + the
+        tokenized length of {text} chunks. None when no tokenizer is available to
+        count text (the worker still enforces the real context limit)."""
+        if prompt.text is not None:
+            return self._template.count_tokens(prompt.text)
+        total = 0
+        for seg in prompt.segments:
+            if "ids" in seg:
+                total += len(seg["ids"])
+            else:
+                c = self._template.count_tokens(seg["text"])
+                if c is None:
+                    return None
+                total += c
+        return total
+
     async def create(self, req: ChatCompletionRequest):
         self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
@@ -333,10 +362,24 @@ class ServingChat:
         prompt = self._template.render(
             req.messages, tools=template_tools, template_kwargs=req.chat_template_kwargs
         )
-        # Pre-flight context check: reject cleanly instead of failing mid-generation
-        # (only possible when a tokenizer is available to count, e.g. --hf-tokenizer).
+        # Build the prompt input first: token-ID segments (V2b.1.5) splice this
+        # session's prior assistant turns' exact ids so warm resume stays exact
+        # across the chat template's lossy re-render of tool-call turns; plain
+        # rendered text when there's nothing to splice / on any ambiguity (the
+        # worker verifies the exact-token prefix regardless).
+        prompt_input = self._transcript.build_prompt_input(
+            session_id=req.session_id,
+            messages=req.messages,
+            rendered_prompt=prompt,
+            tools=template_tools,
+            template_kwargs=req.chat_template_kwargs,
+        )
+        # Pre-flight context check against the tokens the worker will actually
+        # assemble: for segments that is sum(len(ids)) + tokenized text, not the
+        # rendered string, so a near-limit prompt agrees with the worker rather
+        # than false-400ing or failing mid-decode. Only when a tokenizer exists.
         if self._max_context:
-            count = self._template.count_tokens(prompt)
+            count = self._count_prompt_tokens(prompt_input)
             if count is not None:
                 if count >= self._max_context:
                     raise ContextLengthExceeded(count, self._max_context)
@@ -347,7 +390,6 @@ class ServingChat:
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
         options = self._options(req)
-        prompt_input = PromptInput(text=prompt)
         # Admit the session up front (before the stream's first chunk) so a
         # capacity refusal is an HTTP status, not a mid-stream error event.
         if req.session_id is not None:
@@ -375,6 +417,16 @@ class ServingChat:
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, content = self._extract_tools(req, self._truncate_raw(text, req))
+        # Record after the response is finalized: the fingerprint is of exactly
+        # what we return (content + tool_calls), so the next turn can confirm the
+        # client echoed this turn before splicing its ids.
+        self._transcript.record_assistant_turn(
+            session_id=req.session_id,
+            content=content,
+            tool_calls=tool_calls,
+            generated_token_ids=stats.generated_token_ids,
+            prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
+        )
         finish = self._finish_reason(
             req, stats.completion_tokens, tool_calls, stopped, stats.finish_reason
         )
@@ -439,6 +491,7 @@ class ServingChat:
                     stop_hit[0] = True
                     self._runtime.stop()
 
+                streamed: list[str] = []
                 async for token in self._clean(
                     self._runtime.generate_stream(
                         req.session_id, prompt, options, stats
@@ -446,7 +499,9 @@ class ServingChat:
                     stops,
                     on_stop=on_stop,
                 ):
+                    streamed.append(token)
                     yield chunk(DeltaMessage(content=token))
+                content = "".join(streamed)  # for the session fingerprint
         except (
             Exception
         ) as e:  # noqa: BLE001 - emit a structured error event, never drop the socket
@@ -461,6 +516,13 @@ class ServingChat:
             yield f"data: {json.dumps({'error': err})}\n\n"
             yield "data: [DONE]\n\n"
             return
+        self._transcript.record_assistant_turn(
+            session_id=req.session_id,
+            content=content,
+            tool_calls=tool_calls,
+            generated_token_ids=stats.generated_token_ids,
+            prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
+        )
 
         if use_tools:
             if content:
