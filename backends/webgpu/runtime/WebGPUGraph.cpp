@@ -510,7 +510,6 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
         cb_info);
   }
 
-  // WaitAny returns pre-queue on CI Dawn+SwiftShader here; pump until mapped.
   bool all_mapped = false;
   while (!all_mapped) {
     webgpu_poll(instance_);
