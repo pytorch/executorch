@@ -343,6 +343,38 @@ test_suite_bf16 = (
     | MatMulSingleInput.test_data_bf16
     | MatMulCombo.test_data_bf16
 )
+test_suite_fp8 = {
+    "double_input_rand_rand_2d_fp8e4m3": lambda: _make_test_case(
+        MatMulDoubleInput(),
+        lambda: (
+            torch.rand(4, 4, dtype=torch.float32).to(torch.float8_e4m3fn),
+            torch.rand(4, 3, dtype=torch.float32).to(torch.float8_e4m3fn),
+        ),
+        EXIR_OPS_MM,
+    ),
+    "double_input_rand_rand_3d_fp8e5m2": lambda: _make_test_case(
+        MatMulDoubleInput(),
+        lambda: (
+            torch.rand(2, 4, 4, dtype=torch.float32).to(torch.float8_e5m2),
+            torch.rand(2, 4, 3, dtype=torch.float32).to(torch.float8_e5m2),
+        ),
+        EXIR_OPS_BMM,
+    ),
+    "single_input_rand_2d_fp8e4m3": lambda: _make_test_case(
+        MatMulSingleInput(),
+        lambda: (torch.rand(4, 4, dtype=torch.float32).to(torch.float8_e4m3fn),),
+        EXIR_OPS_MM,
+    ),
+    "combo_rand_rand_rand_2d_fp8e5m2": lambda: _make_test_case(
+        MatMulCombo(),
+        lambda: (
+            torch.rand(4, 4, dtype=torch.float32).to(torch.float8_e5m2),
+            torch.rand(4, 3, dtype=torch.float32).to(torch.float8_e5m2),
+            torch.rand(3, 4, dtype=torch.float32).to(torch.float8_e5m2),
+        ),
+        (exir_op_mm_2d, exir_op_mm_2d),
+    ),
+}
 
 xfails = {
     "double_input_randn_rand_1d_1d": "aten.dot.default is not supported",
@@ -362,6 +394,25 @@ def test_matmul_tosa_FP(test_case: test_case_t):
         aten_op_mm,
         list(test_data.exir_ops),
         tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_case", test_suite_fp8)
+def test_matmul_tosa_FP_fp8(test_case: test_case_t):
+    test_data = test_case()
+    input_dtype = test_data.input_factory()[0].dtype
+    tosa_extension = "fp8e4m3" if input_dtype == torch.float8_e4m3fn else "fp8e5m2"
+    pipeline = TosaPipelineFP[input_t](
+        test_data.module,
+        test_data.input_factory(),
+        aten_op_mm,
+        list(test_data.exir_ops),
+        tosa_extensions=[tosa_extension],
+        run_on_tosa_ref_model=False,
+    )
+    pipeline.count_tosa_ops(
+        {"MATMUL": len(test_data.exir_ops), "CAST": len(test_data.exir_ops)}
     )
     pipeline.run()
 
