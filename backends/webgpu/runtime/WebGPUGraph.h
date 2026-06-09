@@ -121,6 +121,9 @@ class WebGPUGraph {
     uniform_buffer_bytes_ += bytes;
   }
 
+  // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
+  WGPUBuffer create_scratch_buffer(size_t nbytes);
+
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
       const char* wgsl_source);
@@ -174,6 +177,9 @@ class WebGPUGraph {
   std::vector<int> tensor_mem_obj_ids_;
   std::vector<WGPUBuffer> shared_buffers_;
   std::vector<size_t> shared_buffer_sizes_;
+
+  // Long-lived scratch storage buffers for fused ops (e.g. SDPA temporaries).
+  std::vector<WGPUBuffer> scratch_buffers_;
 
   // Staging buffers for reading back outputs (MapRead | CopyDst).
   std::vector<WGPUBuffer> output_staging_buffers_;
