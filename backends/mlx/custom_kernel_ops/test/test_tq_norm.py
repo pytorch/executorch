@@ -6,23 +6,21 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for ``mlx::tq_dequant``.
+Tests for ``mlx::tq_norm``.
 
-Verifies the fused unpack + gather + multiply Metal kernel matches
-the eager reference at head_dim values used by TurboQuant
-(D ∈ {128, 256, 512}). Output is byte-exact — no fp32 promotion in
-either path.
+Verifies the fused L2-norm Metal kernel matches eager ``vector_norm``
+at head_dim values used by TurboQuant (D ∈ {128, 256, 512}).
 
 Usage::
 
-    python -m executorch.backends.mlx.model_ops.test_tq_dequant run
-    python -m executorch.backends.mlx.model_ops.test_tq_dequant run -v
-    python -m executorch.backends.mlx.model_ops.test_tq_dequant run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_tq_norm run
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_tq_norm run -v
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_tq_norm run --rebuild
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.model_ops.tq_dequant  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.tq_norm  # noqa: F401
 
 import torch
 import torch.nn as nn
@@ -30,24 +28,19 @@ import torch.nn as nn
 from executorch.backends.mlx.test.test_utils import OpTestCase
 
 
-class TQDequantModel(nn.Module):
-    """``packed, norms, centroids → unrotated``."""
+class TQNormModel(nn.Module):
+    """``x → ||x||₂`` over the last dim."""
 
-    def forward(
-        self,
-        packed: torch.Tensor,
-        norms: torch.Tensor,
-        centroids: torch.Tensor,
-    ) -> torch.Tensor:
-        return torch.ops.mlx.tq_dequant(packed, norms, centroids)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.ops.mlx.tq_norm(x)
 
 
-class TQDequantTest(OpTestCase):
-    """Byte-exact comparison vs eager unpack + gather + multiply."""
+class TQNormTest(OpTestCase):
+    """Compare ``mlx::tq_norm`` to eager ``vector_norm`` within bf16 ULPs."""
 
-    name = "tq_dequant"
-    rtol = 0.0
-    atol = 0.0
+    name = "tq_norm"
+    rtol = 1e-2
+    atol = 1e-2
 
     def __init__(
         self,
@@ -60,11 +53,10 @@ class TQDequantTest(OpTestCase):
         self.n_heads = n_heads
         self.seq_len = seq_len
         self.head_dim = head_dim
-        self.half_dim = head_dim // 2
-        self.name = f"tq_dequant_b{batch_size}_h{n_heads}_t{seq_len}_d{head_dim}"
+        self.name = f"tq_norm_b{batch_size}_h{n_heads}_t{seq_len}_d{head_dim}"
 
     @classmethod
-    def get_test_configs(cls) -> List["TQDequantTest"]:
+    def get_test_configs(cls) -> List["TQNormTest"]:
         return [
             # head_dim=128 (Qwen3.5 MoE / Gemma 4 sliding)
             cls(seq_len=1, head_dim=128),
@@ -80,29 +72,18 @@ class TQDequantTest(OpTestCase):
         ]
 
     def create_model(self) -> nn.Module:
-        return TQDequantModel()
+        return TQNormModel().to(torch.bfloat16)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        # Random packed bytes exercise every codebook entry.
-        packed = torch.randint(
-            0,
-            256,
-            (self.batch_size, self.n_heads, self.seq_len, self.half_dim),
-            dtype=torch.uint8,
-        )
-        norms = (
-            torch.randn(
-                self.batch_size,
-                self.n_heads,
-                self.seq_len,
-                1,
-                dtype=torch.bfloat16,
-            ).abs()
-            + 0.1
-        )
-        # Deterministic codebook covering [-1, 1].
-        centroids = torch.linspace(-1.0, 1.0, 16, dtype=torch.bfloat16)
-        return (packed, norms, centroids)
+        # Activation-scale bf16 inputs.
+        x = torch.randn(
+            self.batch_size,
+            self.n_heads,
+            self.seq_len,
+            self.head_dim,
+            dtype=torch.bfloat16,
+        ) * (1.0 / (self.head_dim**0.5))
+        return (x,)
 
 
 if __name__ == "__main__":  # noqa: C901
@@ -111,8 +92,11 @@ if __name__ == "__main__":  # noqa: C901
 
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
-    parser = argparse.ArgumentParser(description="Test mlx::tq_dequant op")
-    parser.add_argument("action", choices=["generate", "compare", "run", "list"])
+    parser = argparse.ArgumentParser(description="Test mlx::tq_norm op")
+    parser.add_argument(
+        "action",
+        choices=["generate", "compare", "run", "list"],
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--rebuild", action="store_true")
     parser.add_argument("--config", type=str, default=None)
@@ -121,7 +105,7 @@ if __name__ == "__main__":  # noqa: C901
     if args.rebuild and not rebuild_op_test_runner(verbose=args.verbose):
         sys.exit(1)
 
-    configs = TQDequantTest.get_test_configs()
+    configs = TQNormTest.get_test_configs()
 
     if args.action == "list":
         for cfg in configs:

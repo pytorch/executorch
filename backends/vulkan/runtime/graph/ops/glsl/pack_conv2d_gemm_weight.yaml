@@ -16,7 +16,5 @@ pack_conv2d_gemm_weight:
         - parameter_values: [texture2d, float, float]
         - parameter_values: [texture2d, half, half]
         - parameter_values: [texture2d, half, float]
-        - parameter_values: [buffer, float, float]
-        - parameter_values: [buffer, half, half]
   shader_variants:
     - NAME: pack_conv2d_gemm_weight

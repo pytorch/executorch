@@ -81,14 +81,16 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "texture2d")}
 ${layout_declare_ubo(B, "ivec4", "out_sizes")}
 
 // Push constants are uploaded in 16-byte chunks (one ivec4 each).
+// K4_total is shape-independent (it depends only on C_in and the conv kernel
+// dims), so it is safe to bake at build time even under dynamic shapes.
+// M = H_out * W_out IS shape-dependent, so it is derived at runtime from the
+// refreshed out_sizes UBO in main() rather than read from here.
 layout(push_constant) uniform restrict Block {
-  ivec4 gemm_dims;   // (K_total, K4_total, M, _unused)
+  ivec4 gemm_dims;   // (K4_total, _unused, _unused, _unused)
   vec4  clamp_vals;  // (out_min, out_max, _unused, _unused)
 };
 
-#define K_TOTAL  gemm_dims.x
-#define K4_TOTAL gemm_dims.y
-#define M_TOTAL  gemm_dims.z
+#define K4_TOTAL gemm_dims.x
 #define OUT_MIN  clamp_vals.x
 #define OUT_MAX  clamp_vals.y
 
@@ -174,7 +176,9 @@ void main() {
 
   const int W_out = out_sizes.x;
   const int H_out = out_sizes.y;
-  const int M = M_TOTAL;
+  // M = H_out * W_out is derived from the refreshed out_sizes UBO so it tracks
+  // dynamic output shapes (out_sizes is virtual_resize'd on trigger_resize).
+  const int M = W_out * H_out;
   const int K4 = K4_TOTAL;
   const int N = out_sizes.z;
   const int N4 = div_up_4(N);
