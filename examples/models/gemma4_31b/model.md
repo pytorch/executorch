@@ -154,8 +154,10 @@ Modules in `quant/`:
   packers dispatch by module type (`nn.Linear`, `nn.Embedding`). CUDA passes
   Int4Tensor through (dispatch handled by `int4_dispatch.py`); MLX converts
   Int4Tensor → IntxUnpackedToInt8Tensor and regroups per-axis embeddings.
-- **GGUF** (`gguf.py`): `unpack_gguf_tensor` / `iter_gguf_tensors` for
-  loading community-quantized GGUF files (Q4_K, Q6_K).
+- **GGUF**: community-quantized GGUF files (Q4_K, Q6_K) are loaded by the
+  shared, backend-agnostic `extension/llm/export/gguf.py` (`load_gguf` /
+  `iter_gguf` → `ExportableGGUFTensor`); `gguf_loader.py` remaps GGUF names to
+  model FQNs and picks the per-backend weight representation.
 
 The quantize-once flow:
 

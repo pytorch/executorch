@@ -16,6 +16,7 @@ AdaptiveAvgPool2D = exir_ops.edge.aten._adaptive_avg_pool2d.default
 AddTensor = exir_ops.edge.aten.add.Tensor
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
+Clamp = exir_ops.edge.aten.clamp.default
 ConstantPadND = exir_ops.edge.aten.constant_pad_nd.default
 Convolution = exir_ops.edge.aten.convolution.default
 DequantizePerChannel = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default

@@ -23,7 +23,11 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.tests.config_importer import test_config
-from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.dataset_creator import (
+    create_quantized_variant_of_dataset,
+    InputQuantizationSpec,
+    RandomDatasetCreator,
+)
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_calibration_inputs_fn_from_dataset_dir,
     ModelInputSpec,
@@ -61,20 +65,7 @@ class ReferenceModel(Enum):
     FLOAT_PYTORCH_PYTHON = 4
 
 
-def _run_delegated_executorch_program(
-    model,
-    test_dir,
-    test_name,
-    calibration_dataset_dir,
-    testing_dataset_dir,
-    input_spec,
-    dlg_model_verifier,
-    npu_results_dir,
-    mocker,
-    use_qat: bool = False,
-    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
-    use_new_flow_neutron_c: bool = False,
-) -> ExportedProgram:
+def _get_dataset_cli_args(input_spec: list[ModelInputSpec], testing_dataset_dir):
     if len(input_spec) == 1:
         # Single input, use --dataset
         dataset_cli = "--dataset"
@@ -90,14 +81,24 @@ def _run_delegated_executorch_program(
                 ]
             )
         )
+    return dataset_cli, dataset_or_inputs
 
-    # Run nxp_executor_runner with program delegated to NPU
-    delegated_model_path = os.path.abspath(
-        os.path.join(test_dir, f"{test_name}_delegated.pte")
-    )
 
-    delegated_cmd = f"{NEUTRON_TEST_PATH} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
-        --output {npu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
+def _run_delegated_executorch_program(
+    model,
+    test_dir,
+    test_name,
+    calibration_dataset_dir,
+    testing_dataset_dir,
+    input_spec,
+    dlg_model_verifier,
+    npu_results_dir,
+    mocker,
+    use_qat: bool = False,
+    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    operators_not_to_delegate: list[str] = None,
+    remove_quant_io_ops: bool = False,
+) -> tuple[ExportedProgram, str]:
     try:
         if mocker:
             method = getattr(NeutronPartitioner, "partition")  # noqa B009
@@ -122,7 +123,8 @@ def _run_delegated_executorch_program(
             delegate_to_npu=True,
             use_qat=use_qat,
             train_fn=train_fn,
-            use_new_flow_neutron_c=use_new_flow_neutron_c,
+            operators_not_to_delegate=operators_not_to_delegate,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
     except RuntimeError as e:
         if "Model converted with neutron-converter has" in str(e) and hasattr(
@@ -139,9 +141,30 @@ def _run_delegated_executorch_program(
     dlg_model_verifier.verify_graph(exported_program.graph)
 
     save_pte_program(delegated_program, test_name + "_delegated", test_dir)
+
+    # Preparation of quantized dataset, requires quantization parameters from converted delegated model
+    if remove_quant_io_ops:
+        dataset_dir_quant = os.path.join(test_dir, "dataset_quant")
+        input_quant_spec = _parse_input_quant_params(input_spec, delegated_program)
+        create_quantized_variant_of_dataset(
+            testing_dataset_dir, dataset_dir_quant, input_quant_spec, input_spec
+        )
+        testing_dataset_dir = dataset_dir_quant
+
+    dataset_cli, dataset_or_inputs = _get_dataset_cli_args(
+        input_spec, testing_dataset_dir
+    )
+
+    # Run nxp_executor_runner with program delegated to NPU
+    delegated_model_path = os.path.abspath(
+        os.path.join(test_dir, f"{test_name}_delegated.pte")
+    )
+
+    delegated_cmd = f"{NEUTRON_TEST_PATH} --model {delegated_model_path} {dataset_cli} {dataset_or_inputs} \
+        --output {npu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
     execute_cmd(delegated_cmd)
 
-    return exported_program
+    return exported_program, testing_dataset_dir
 
 
 def _run_non_delegated_executorch_program(
@@ -154,30 +177,11 @@ def _run_non_delegated_executorch_program(
     cpu_results_dir,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    remove_quant_io_ops: bool = False,
 ) -> ExportedProgram:
-    if len(input_spec) == 1:
-        # Single input, use --dataset
-        dataset_cli = "--dataset"
-        dataset_or_inputs = testing_dataset_dir
-    else:
-        # Multiple input, use --inputs with subdirectories
-        dataset_cli = "--inputs"
-        dataset_or_inputs = ",".join(
-            sorted(
-                [
-                    os.path.join(testing_dataset_dir, d)
-                    for d in os.listdir(testing_dataset_dir)
-                ]
-            )
-        )
-
-    # Run program via nxp_executor_runner on CPU
-    non_delegated_model_path = os.path.abspath(
-        os.path.join(test_dir, f"{test_name}_non_delegated.pte")
+    dataset_cli, dataset_or_inputs = _get_dataset_cli_args(
+        input_spec, testing_dataset_dir
     )
-
-    non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
-        --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
 
     non_delegated_program = to_quantized_executorch_program(
         model,
@@ -186,6 +190,7 @@ def _run_non_delegated_executorch_program(
         delegate_to_npu=False,
         use_qat=use_qat,
         train_fn=train_fn,
+        remove_quant_io_ops=remove_quant_io_ops,
     )
 
     nodes = list(non_delegated_program.exported_program().graph.nodes)
@@ -194,6 +199,14 @@ def _run_non_delegated_executorch_program(
     ), "Delegated parts found in program executed on CPU!"
 
     save_pte_program(non_delegated_program, test_name + "_non_delegated", test_dir)
+
+    # Run program via nxp_executor_runner on CPU
+    non_delegated_model_path = os.path.abspath(
+        os.path.join(test_dir, f"{test_name}_non_delegated.pte")
+    )
+
+    non_delegated_cmd = f"{NEUTRON_TEST_PATH} --model {non_delegated_model_path} {dataset_cli} {dataset_or_inputs} \
+        --output {cpu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
     execute_cmd(non_delegated_cmd)
 
     return non_delegated_program.exported_program()
@@ -229,9 +242,9 @@ def read_prepared_samples(
                 bin_file_path = os.path.join(
                     sample_dir, f"{str(spec_idx).zfill(2)}.bin"
                 )
-                sample_vector = np.fromfile(bin_file_path, dtype=spec.type).reshape(
-                    spec.shape
-                )
+                sample_vector = np.fromfile(
+                    bin_file_path, dtype=torch_type_to_numpy_type(spec.dtype)
+                ).reshape(spec.shape)
                 current_samples.append(sample_vector)
 
             all_samples.append(tuple(current_samples))
@@ -384,7 +397,8 @@ def lower_run_compare(
     reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
-    use_new_flow_neutron_c: bool = False,
+    operators_not_to_delegate: list[str] = None,
+    remove_quant_io_ops: bool = False,
 ):
     """
     Run provided program twice with neutron-test and check if results correspond. At first,
@@ -401,7 +415,10 @@ def lower_run_compare(
     :param mocker: Mocker instance used by visualizer.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
-    :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
+    :param operators_not_to_delegate: list of operators not to delegate.
+    :param remove_quant_io_ops: If true, IO q-ops are removed and verification is done on quantized
+        version of dataset (quantized INT8 input samples).
+
     """
     assert_NSYS()
 
@@ -430,7 +447,7 @@ def lower_run_compare(
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
 
-    delegated_program = _run_delegated_executorch_program(
+    delegated_program, testing_dataset_dir = _run_delegated_executorch_program(
         model_to_delegate,
         test_dir,
         test_name,
@@ -442,7 +459,8 @@ def lower_run_compare(
         mocker,
         use_qat=use_qat,
         train_fn=train_fn,
-        use_new_flow_neutron_c=use_new_flow_neutron_c,
+        operators_not_to_delegate=operators_not_to_delegate,
+        remove_quant_io_ops=remove_quant_io_ops,
     )
 
     output_spec = _get_program_output_spec(delegated_program)
@@ -461,6 +479,7 @@ def lower_run_compare(
                 cpu_results_dir,
                 use_qat=use_qat,
                 train_fn=train_fn,
+                remove_quant_io_ops=remove_quant_io_ops,
             )
 
         case ReferenceModel.QUANTIZED_EDGE_PYTHON:
@@ -475,10 +494,19 @@ def lower_run_compare(
                     delegate_to_npu=False,
                     use_qat=use_qat,
                     train_fn=train_fn,
+                    remove_quant_io_ops=remove_quant_io_ops,
                 )
                 .exported_program()
                 .module()
             )
+            # Switch input spec dtype to quantized int8 if run with remove_quant_io_ops flag
+            # The input spec has to still have float32 dtype during edge program lowering to correctly calibrate the
+            # model. When running in Python, the testing data are loaded from numpy tensors according to input spec.
+            # There the testing data are in quantized int8 dtype.
+            if remove_quant_io_ops:
+                for spec in input_spec:
+                    spec.dtype = torch.int8
+
             _run_python_program(
                 non_delegated_edge_program,
                 testing_dataset_dir,
@@ -489,6 +517,12 @@ def lower_run_compare(
             )
 
         case ReferenceModel.FLOAT_PYTORCH_PYTHON:
+            if remove_quant_io_ops:
+                raise ValueError(
+                    "Flag remove_quant_io_ops is not applicable to FLOAT_PYTORCH_PYTHON reference model"
+                    "as it works with float data only. Run with remove_quant_io_ops=False."
+                )
+
             # Run the PyTorch nn.Module directly in Python.
             _run_python_program(
                 model_to_not_delegate,
@@ -561,7 +595,7 @@ def lower_run_compare_ptq_qat(
     ptq_results_dir = os.path.join(test_dir, "results_ptq")
     qat_results_dir = os.path.join(test_dir, "results_qat")
 
-    delegated_program_ptq = _run_delegated_executorch_program(
+    delegated_program_ptq, _ = _run_delegated_executorch_program(
         model_ptq,
         test_dir,
         test_name,
@@ -597,12 +631,39 @@ def lower_run_compare_ptq_qat(
     )
 
 
+def _parse_input_quant_params(
+    input_spec: tuple[ModelInputSpec, ...], exported_program_manager
+) -> list[InputQuantizationSpec]:
+    """
+    Parse input quantization params from provided exported program manager.
+
+    :param input_spec: Model inputs specification.
+    :param exported_program_manager: Exported program manager of parsed model.
+    :return: List of input quantization specification.
+    """
+    if (config_methods := exported_program_manager._config_methods) is None:
+        raise ValueError("Attempt to parse q-params for not fully quantized model")
+
+    q_params = []
+
+    for idx in range(len(input_spec)):
+        input_name = f"input{idx}"
+        scale = config_methods[f"{input_name}_scale"]
+        zp = config_methods[f"{input_name}_zp"]
+        dtype = config_methods[f"{input_name}_dtype"]
+
+        q_params.append(InputQuantizationSpec(input_name, scale, zp, dtype))
+
+    return q_params
+
+
 def _get_caller_name():
     test_function_names = ["lower_run_compare", "lower_run_compare_ptq_qat"]
     for idx, frame in enumerate(inspect.stack()):
         if frame.function in test_function_names:
             # Look one index above to get caller
             return inspect.stack()[idx + 1].function
+    return None
 
 
 def execute_cmd(cmd, cwd="."):

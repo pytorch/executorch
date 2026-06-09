@@ -105,7 +105,7 @@ INIT_PACKAGE_PARAM_ORDER_DEF()
  * needs to be global in the package
  * one list per package
  * for listing op names which support per-channel quantization
- * per-axis quantization info of an op is embeded in axisScaleOffsetEncoding
+ * per-axis quantization info of an op is embedded in axisScaleOffsetEncoding
  *   inside Qnn_Tensor_t types
  * HTP backend only supports per-channel scale ops
  *   i.e. along last dimension, offset is always zero

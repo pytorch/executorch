@@ -220,7 +220,7 @@ class TensorTest {
     assertEquals(data.size.toLong(), tensor.shape()[0])
     assertEquals(data.size.toLong(), tensor.numel())
     assertArrayEquals(data, tensor.dataAsShortArray)
-    val raw = tensor.rawDataBuffer as java.nio.ShortBuffer
+    val raw = tensor.getRawDataBuffer() as java.nio.ShortBuffer
     assertTrue(raw === buffer)
   }
 
@@ -627,13 +627,8 @@ class TensorTest {
     val shapeWithNegativeValues = longArrayOf(-1, 2)
     val mismatchShape = longArrayOf(1, 2)
 
-    assertThatThrownBy { Tensor.fromBlob(null as FloatArray?, mismatchShape) }
-        .isInstanceOf(IllegalArgumentException::class.java)
-        .hasMessage("Data array must be not null")
-
-    assertThatThrownBy { Tensor.fromBlob(data, null) }
-        .isInstanceOf(IllegalArgumentException::class.java)
-        .hasMessage("Shape must be not null")
+    // Null data/shape tests removed: Kotlin non-null parameters reject null at compile time.
+    // Java callers still get a NullPointerException from Kotlin's intrinsic null check.
 
     assertThatThrownBy { Tensor.fromBlob(data, shapeWithNegativeValues) }
         .isInstanceOf(IllegalArgumentException::class.java)
@@ -691,7 +686,7 @@ class TensorTest {
     val data = tensor.dataAsFloatArray
     assertEquals(DType.FLOAT, tensor.dtype())
     for (i in shape.indices) {
-      assertEquals(shape[i], tensor.shape[i])
+      assertEquals(shape[i], tensor.shape()[i])
     }
     for (i in data.indices) {
       assertEquals(data[i], 1.0f, 1e-5.toFloat())
@@ -705,7 +700,7 @@ class TensorTest {
     val data = tensor.dataAsFloatArray
     assertEquals(DType.FLOAT, tensor.dtype())
     for (i in shape.indices) {
-      assertEquals(shape[i], tensor.shape[i])
+      assertEquals(shape[i], tensor.shape()[i])
     }
     for (i in data.indices) {
       assertEquals(data[i], 0.0f, 1e-5.toFloat())

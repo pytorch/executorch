@@ -4,9 +4,11 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -330,8 +332,27 @@ inline SlotVariant convert_slot_variant(const mlx_delegate::SlotVariant* fb) {
   return SlotVariant{fb->idx(), convert_slot_type(fb->slot_type())};
 }
 
+// Interns FlatBuffer strings by pointer so identical kernel source/header
+// blobs (deduplicated to a single offset by the serializer) share one
+// std::string in memory. Buffers written without string sharing simply get
+// one entry per node — correct, just not deduplicated.
+struct StringPool {
+  std::unordered_map<const void*, std::shared_ptr<const std::string>> map;
+  std::shared_ptr<const std::string> intern(const flatbuffers::String* s) {
+    if (!s) {
+      return nullptr;
+    }
+    auto& slot = map[static_cast<const void*>(s)];
+    if (!slot) {
+      slot = std::make_shared<const std::string>(s->str());
+    }
+    return slot;
+  }
+};
+
 // Load an instruction from FlatBuffer
-Instruction load_instruction(const mlx_delegate::Instruction* fb_instr);
+Instruction load_instruction(
+    const mlx_delegate::Instruction* fb_instr, StringPool& strpool);
 
 // Load the full MLXProgram from FlatBuffer data
 MLXProgram load_program(const void* data, size_t size);
