@@ -182,6 +182,7 @@ def define_common_targets():
         ["portable"],
         deps = [
             "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
             "//executorch/runtime/platform:platform",
         ],
     )

@@ -24,6 +24,7 @@
 
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using executorch::extension::Module;
@@ -34,50 +35,7 @@ using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
-
-namespace {
-
-class MockCudaAllocator : public DeviceAllocator {
- public:
-  Result<void*> allocate(
-      size_t nbytes,
-      DeviceIndex index,
-      size_t alignment = kDefaultAlignment) override {
-    (void)alignment;
-    allocate_count_++;
-    last_allocate_size_ = nbytes;
-    last_allocate_index_ = index;
-    buffer_ = std::make_unique<uint8_t[]>(nbytes);
-    return static_cast<void*>(buffer_.get());
-  }
-
-  void deallocate(void* ptr, DeviceIndex index) override {
-    deallocate_count_++;
-    buffer_.reset();
-  }
-
-  Error copy_host_to_device(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return DeviceType::CUDA;
-  }
-
-  int allocate_count_ = 0;
-  int deallocate_count_ = 0;
-  size_t last_allocate_size_ = 0;
-  DeviceIndex last_allocate_index_ = -1;
-
- private:
-  std::unique_ptr<uint8_t[]> buffer_;
-};
-
-} // namespace
+using executorch::runtime::testing::MockCudaAllocator;
 
 static MockCudaAllocator g_mock_cuda;
 

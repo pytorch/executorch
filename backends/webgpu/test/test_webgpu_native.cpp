@@ -260,21 +260,25 @@ struct SdpaConfig {
   int s; // new tokens this step
   int cmax; // kv-cache capacity
   int input_pos; // prior tokens already in the cache (decode)
+  float denom; // ramp divisor (mirrors Python); small -> large logits
 };
 
 static const SdpaConfig kSdpaConfigs[] = {
-    // name             Hq Hkv  D  S Cmax pos
-    {"gqa31_prefill", 6, 2, 8, 4, 16, 0}, // GQA 3:1 (original case)
-    {"mha_ctxodd", 4, 4, 16, 3, 8, 0}, // MHA; context_len=3 (odd)
-    {"gqa21_prefill", 8, 4, 4, 5, 16, 0}, // GQA 2:1; multi-token S=5
-    {"gqa31_decode", 6, 2, 8, 2, 16, 2}, // decode: 2 prior tokens
+    // name             Hq Hkv  D  S Cmax pos denom
+    {"gqa31_prefill", 6, 2, 8, 4, 16, 0, 16.0f}, // GQA 3:1 (original case)
+    {"mha_ctxodd", 4, 4, 16, 3, 8, 0, 16.0f}, // MHA; context_len=3 (odd)
+    {"gqa21_prefill", 8, 4, 4, 5, 16, 0, 16.0f}, // GQA 2:1; multi-token S=5
+    {"gqa31_decode", 6, 2, 8, 2, 16, 2, 16.0f}, // decode: 2 prior tokens
     // llama3-ish GQA, D=128, S=128.
-    {"llama3_prefill", 24, 8, 128, 128, 256, 0},
+    {"llama3_prefill", 24, 8, 128, 128, 256, 0, 16.0f},
+    // Adversarial: denom=0.5 -> peak logit ~177 (>88) overflows naive fp32 exp.
+    {"mha_biglogit", 4, 4, 32, 4, 16, 0, 0.5f},
 };
 
-// /16 ramp: ((i % mod) - off) / 16, exact in fp32. Mirrors test_sdpa.py::_ramp.
-static float sdpa_ramp(int i, int mod, int off) {
-  return static_cast<float>((i % mod) - off) / 16.0f;
+// /denom ramp: ((i % mod) - off) / denom, exact in fp32 (power-of-two denom).
+// Mirrors test_sdpa.py::_ramp.
+static float sdpa_ramp(int i, int mod, int off, float denom = 16.0f) {
+  return static_cast<float>((i % mod) - off) / denom;
 }
 
 // Step-indexed ramp; mirrors test_sdpa.py::_ramp_t bit-for-bit (integer
@@ -331,11 +335,11 @@ static bool test_sdpa_config(
 
   std::vector<float> q(qn), k(kn), v(kn), kc(cn, 0.0f), vc(cn, 0.0f);
   for (int i = 0; i < qn; i++) {
-    q[i] = sdpa_ramp(i, 17, 8);
+    q[i] = sdpa_ramp(i, 17, 8, cfg.denom);
   }
   for (int i = 0; i < kn; i++) {
-    k[i] = sdpa_ramp(i, 13, 6);
-    v[i] = sdpa_ramp(i, 11, 5);
+    k[i] = sdpa_ramp(i, 13, 6, cfg.denom);
+    v[i] = sdpa_ramp(i, 11, 5, cfg.denom);
   }
   // Decode: seed cache rows [0, input_pos) with prior_k/prior_v (flat over
   // input_pos*Hkv*D elements); all other rows stay zero.
@@ -1172,6 +1176,11 @@ int main(int argc, char** argv) {
   // Guard python<->C++ ramp bit-identity (recorded: _ramp_t(0,17,8,2)=0.1875).
   if (std::abs(sdpa_ramp_t(0, 17, 8, 2) - 0.1875f) > 1e-12f) {
     printf("FAIL: sdpa_ramp_t bit-identity check\n");
+    ok = false;
+  }
+  // Guard the adversarial denom path: sdpa_ramp(0,17,8,0.5)= -16.0 exactly.
+  if (std::abs(sdpa_ramp(0, 17, 8, 0.5f) - (-16.0f)) > 1e-12f) {
+    printf("FAIL: sdpa_ramp denom bit-identity check\n");
     ok = false;
   }
 

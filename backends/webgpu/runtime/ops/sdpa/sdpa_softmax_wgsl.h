@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_softmax.wgsl - DO NOT EDIT.
-// wgsl-sha256: 6b808fd2635cd63f7e48e0ba9d8628343308b08175204927c240098f7fe22cb3
+// wgsl-sha256: e2714ec4c2400b37f6fd39c410075c519effc0273354a4f906fb924334809024
 inline constexpr const char* kSdpaSoftmaxWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_in: array<f32>;
@@ -34,7 +34,7 @@ const NEG_INF: f32 = -1.0e30;
 var<workgroup> shared_max: array<f32, WG_SIZE>;
 var<workgroup> shared_sum: array<f32, WG_SIZE>;
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(WG_SIZE, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>) {

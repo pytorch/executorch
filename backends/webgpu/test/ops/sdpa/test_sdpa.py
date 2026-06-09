@@ -39,6 +39,7 @@ class SdpaConfig:
     s: int  # new tokens this step
     cmax: int  # kv-cache capacity
     input_pos: int  # number of prior tokens already in the cache (decode)
+    denom: float = 16.0  # ramp divisor; small denom -> large logits (softmax stress)
 
 
 # Single source of truth, mirrored by the C++ CONFIGS table in the native test.
@@ -50,6 +51,8 @@ CONFIGS = [
     SdpaConfig("gqa31_decode", 6, 2, 8, 2, 16, 2),  # decode: 2 prior tokens
     # llama3-ish GQA, D=128, S=128.
     SdpaConfig("llama3_prefill", 24, 8, 128, 128, 256, 0),
+    # Adversarial: denom=0.5 -> peak scaled logit ~177 (>88) overflows naive fp32 exp.
+    SdpaConfig("mha_biglogit", 4, 4, 32, 4, 16, 0, 0.5),
 ]
 
 
@@ -96,10 +99,10 @@ class SdpaModule(torch.nn.Module):
         )
 
 
-def _ramp(n, mod, off):
-    """Deterministic /16 ramp: ((i % mod) - off) / 16, exact in fp32."""
+def _ramp(n, mod, off, denom=16.0):
+    """Ramp ((i % mod) - off) / denom; exact in fp32 for power-of-two denom."""
     a = (np.arange(n) % mod).astype(np.float32)
-    return ((a - off) / 16.0).astype(np.float32)
+    return ((a - off) / np.float32(denom)).astype(np.float32)
 
 
 def _ramp_t(n, mod, off, t):
@@ -129,17 +132,17 @@ def _step_inputs(seq: "ReplaySeq", t: int, s: int):
 def _det_inputs(cfg: SdpaConfig):
     """Deterministic fp32 inputs the native test reconstructs bit-for-bit.
 
-    q/k_new/v_new use the /16 ramps. For decode (input_pos > 0) the first
+    q/k_new/v_new use the /cfg.denom ramps. For decode (input_pos > 0) the first
     input_pos rows of each cache are seeded with prior_k/prior_v (flat over
     input_pos*Hkv*D elements); all other cache rows are zero.
     """
-    q = torch.from_numpy(_ramp(cfg.s * cfg.hq * cfg.d, 17, 8)).reshape(
+    q = torch.from_numpy(_ramp(cfg.s * cfg.hq * cfg.d, 17, 8, cfg.denom)).reshape(
         1, cfg.s, cfg.hq, cfg.d
     )
-    k = torch.from_numpy(_ramp(cfg.s * cfg.hkv * cfg.d, 13, 6)).reshape(
+    k = torch.from_numpy(_ramp(cfg.s * cfg.hkv * cfg.d, 13, 6, cfg.denom)).reshape(
         1, cfg.s, cfg.hkv, cfg.d
     )
-    v = torch.from_numpy(_ramp(cfg.s * cfg.hkv * cfg.d, 11, 5)).reshape(
+    v = torch.from_numpy(_ramp(cfg.s * cfg.hkv * cfg.d, 11, 5, cfg.denom)).reshape(
         1, cfg.s, cfg.hkv, cfg.d
     )
 
@@ -159,35 +162,45 @@ def _det_inputs(cfg: SdpaConfig):
 
 
 def _golden(cfg: SdpaConfig, q, k, v, k_cache, v_cache) -> torch.Tensor:
-    """Reference attention output [1,S,Hq,D] via F.scaled_dot_product_attention.
+    """Reference attention output [1,S,Hq,D], computed in fp64 then cast to fp32.
 
-    Builds the full K/V over the context (prior cache rows + new tokens), expands
-    GQA groups, and applies a causal mask offset by input_pos.
+    fp64 makes the reference the true answer (rounding ~1e-15), so the baked
+    golden carries no fp32 accumulation error -- the GPU's fp32 error is measured
+    against truth, not against another fp32 approximation. Builds the full K/V
+    over the context, expands GQA groups, applies a causal mask offset by
+    input_pos. Mirrors Vulkan sdpa_test.cpp::sdpa_reference_impl (decomposed).
     """
     context_len = cfg.s + cfg.input_pos
     g = cfg.hq // cfg.hkv
+    qd, kd, vd = q.double(), k.double(), v.double()
+    kcd, vcd = k_cache.double(), v_cache.double()
 
     # Full K/V over the context: prior cache rows then the new tokens.
-    k_full = torch.empty(context_len, cfg.hkv, cfg.d)
-    v_full = torch.empty(context_len, cfg.hkv, cfg.d)
+    k_full = torch.empty(context_len, cfg.hkv, cfg.d, dtype=torch.float64)
+    v_full = torch.empty(context_len, cfg.hkv, cfg.d, dtype=torch.float64)
     if cfg.input_pos > 0:
-        k_full[: cfg.input_pos] = k_cache[0, : cfg.input_pos]
-        v_full[: cfg.input_pos] = v_cache[0, : cfg.input_pos]
-    k_full[cfg.input_pos : context_len] = k[0]
-    v_full[cfg.input_pos : context_len] = v[0]
+        k_full[: cfg.input_pos] = kcd[0, : cfg.input_pos]
+        v_full[: cfg.input_pos] = vcd[0, : cfg.input_pos]
+    k_full[cfg.input_pos : context_len] = kd[0]
+    v_full[cfg.input_pos : context_len] = vd[0]
 
     # GQA-expand to Hq heads, then [Hq, context_len, D].
-    qh = q[0].transpose(0, 1)  # [Hq, S, D]
+    qh = qd[0].transpose(0, 1)  # [Hq, S, D]
     kh = k_full.repeat_interleave(g, dim=1).transpose(0, 1)  # [Hq, ctx, D]
     vh = v_full.repeat_interleave(g, dim=1).transpose(0, 1)
 
     # Causal mask with offset: row s attends to context cols <= s + input_pos.
-    mask = torch.full((cfg.s, context_len), float("-inf"))
+    mask = torch.full((cfg.s, context_len), float("-inf"), dtype=torch.float64)
     for s in range(cfg.s):
         mask[s, : s + cfg.input_pos + 1] = 0.0
 
-    out = F.scaled_dot_product_attention(qh, kh, vh, attn_mask=mask)  # [Hq,S,D]
-    return out.transpose(0, 1).reshape(1, cfg.s, cfg.hq, cfg.d).contiguous()
+    out = F.scaled_dot_product_attention(qh, kh, vh, attn_mask=mask)  # [Hq,S,D] f64
+    return (
+        out.transpose(0, 1)
+        .reshape(1, cfg.s, cfg.hq, cfg.d)
+        .to(torch.float32)
+        .contiguous()
+    )
 
 
 def _export_pte(cfg: SdpaConfig, q, k, v, kc, vc):
@@ -213,8 +226,8 @@ class TestSdpa(unittest.TestCase):
                 )
 
     def test_golden_matches_eager_op(self) -> None:
-        # The torch-F golden must agree with the llama op's own CPU impl, for
-        # every config. This catches any golden/seeding mistake before Canary.
+        # Oracle self-validation (mirrors Vulkan test_reference_sdpa): the fp64
+        # golden and the shipped fp32 CPU op are independent refs that must agree.
         for cfg in CONFIGS:
             with self.subTest(config=cfg.name):
                 q, k, v, kc, vc = _det_inputs(cfg)
@@ -337,7 +350,6 @@ def export_replay_sequences(out_dir: str) -> None:
 # supplied at runtime as a tensor; input_pos[0].item() lowers to a SymInt the
 # WebGPU backend reads via a live uniform + per-step resize hook (mirrors the
 # Vulkan SymInt path). The native test reuses ONE module and advances input_pos.
-torch._dynamo.config.capture_scalar_outputs = True
 
 DYN_DECODE_STEPS = 6  # S=1 decode steps; input_pos = 0..N-1
 
@@ -368,7 +380,9 @@ def _export_dyn_pte(seq: "ReplaySeq", s: int):
     kc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
     vc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
     ip = torch.tensor([0], dtype=torch.long)  # placeholder input_pos at build
-    ep = torch.export.export(DynamicSdpaModule(), (q, k, v, kc, vc, ip))
+    # Scoped (not process-wide): input_pos[0].item() must lower to a SymInt.
+    with torch._dynamo.config.patch(capture_scalar_outputs=True):
+        ep = torch.export.export(DynamicSdpaModule(), (q, k, v, kc, vc, ip))
     symint_nodes = [
         n.name
         for n in ep.graph_module.graph.nodes
@@ -473,7 +487,9 @@ def export_incache_decode(out_dir: str) -> None:
         m = DecodeCacheModule(seq.hkv, seq.d, seq.cmax)
         q, k, v = _step_inputs(seq, 0, 1)
         ip = torch.tensor([0], dtype=torch.long)
-        ep = torch.export.export(m, (q, k, v, ip))
+        # Scoped (not process-wide): input_pos[0].item() must lower to a SymInt.
+        with torch._dynamo.config.patch(capture_scalar_outputs=True):
+            ep = torch.export.export(m, (q, k, v, ip))
         et = to_edge_transform_and_lower(
             ep, partitioner=[VulkanPartitioner()]
         ).to_executorch()
