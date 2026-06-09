@@ -20,7 +20,7 @@ Constraints:
 
 Usage::
 
-    import executorch.backends.mlx.model_ops.tq_norm  # noqa: F401
+    import executorch.backends.mlx.custom_kernel_ops.tq_norm  # noqa: F401
 
     norms = torch.ops.mlx.tq_norm(x)
     # x:     (..., D) bf16

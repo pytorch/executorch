@@ -7,8 +7,8 @@
 """CUDA packer: assign quantized weights to model modules.
 
 Passes ``Int4Tensor`` and ``IntxUnpackedToInt8Tensor`` through as
-``nn.Parameter`` without conversion.  The Int4Tensor dispatch override
-(``int4_dispatch.py``) handles F.linear at runtime.
+``nn.Parameter`` without conversion.  The quantize_op_dispatch package
+(``int4_dispatch`` / ``int8_dispatch``) handles F.linear at runtime.
 
 No CUDA is required for packing.  The backend-agnostic ``pack_model``
 dispatcher lives in ``pack.py``.
