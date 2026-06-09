@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
 
 import traceback
 from collections.abc import Callable
@@ -28,7 +29,7 @@ class DialectNodeSpec:
 
 # Expected type to be used for substitution functions
 SubstitutionFn: TypeAlias = Callable[
-    [torch.fx.Node, "AtenToDialectPass"], DialectNodeSpec | None
+    [torch.fx.Node, AtenToDialectPass], DialectNodeSpec | None
 ]
 
 

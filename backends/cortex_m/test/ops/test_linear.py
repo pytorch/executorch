@@ -235,7 +235,10 @@ small_magnitude_variants = {
         _SmallMagnitudeLinearNoBias, CortexM.M4, uses_kernel_sum=False, has_bias=False
     ),
     "scalar_nobias": _small_magnitude_variant(
-        _SmallMagnitudeLinearNoBias, CortexM.M0PLUS, uses_kernel_sum=False, has_bias=False
+        _SmallMagnitudeLinearNoBias,
+        CortexM.M0PLUS,
+        uses_kernel_sum=False,
+        has_bias=False,
     ),
 }
 
