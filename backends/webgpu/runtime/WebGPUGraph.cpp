@@ -48,6 +48,17 @@ size_t vk_datatype_size(vkgraph::VkDataType dtype) {
 
 WebGPUGraph::WebGPUGraph() = default;
 
+WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
+  WGPUBufferDescriptor buf_desc = {};
+  buf_desc.size = nbytes > 0 ? nbytes : 4;
+  buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+      WGPUBufferUsage_CopySrc;
+  buf_desc.mappedAtCreation = false;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+  scratch_buffers_.push_back(buffer);
+  return buffer;
+}
+
 WebGPUGraph::~WebGPUGraph() {
   for (size_t i = 0; i < tensors_.size(); i++) {
     if (tensors_[i].buffer &&
@@ -56,6 +67,11 @@ WebGPUGraph::~WebGPUGraph() {
     }
   }
   for (auto& buf : shared_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& buf : scratch_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
     }
