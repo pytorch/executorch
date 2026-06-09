@@ -19,9 +19,7 @@
 
 #include <executorch/runtime/core/named_data_map.h>
 
-namespace executorch {
-namespace backends {
-namespace webgpu {
+namespace executorch::backends::webgpu {
 
 struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
@@ -274,6 +272,4 @@ class WebGPUGraph {
   size_t uniform_buffer_bytes_ = 0;
 };
 
-} // namespace webgpu
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::webgpu
