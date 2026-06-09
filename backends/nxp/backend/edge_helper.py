@@ -29,11 +29,15 @@ from torch.nn import Parameter
 QUANTIZE_OPERATORS = [
     QuantizePerChannel,
     QuantizePerTensor,
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_channel.default,
 ]
 
 DEQUANTIZE_OPERATORS = [
     DequantizePerChannel,
     DequantizePerTensor,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_channel.default,
 ]
 
 # A set of operators which could possibly be no-ops in certain conditions. The operators in this set will be proclaimed
@@ -122,17 +126,11 @@ def try_get_tensor_constant_from_node(
 
 
 def _is_dequantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS + [
-        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
-        torch.ops.quantized_decomposed.dequantize_per_channel.default,
-    ]
+    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS
 
 
 def _is_quantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS + [
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
-        torch.ops.quantized_decomposed.quantize_per_channel.default,
-    ]
+    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS
 
 
 def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
