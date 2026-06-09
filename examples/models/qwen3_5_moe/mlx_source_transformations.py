@@ -194,7 +194,7 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     x = a + self.dt_bias
     g = (-self.A_log.exp() * torch.logaddexp(x, torch.zeros_like(x))).exp()
 
-    import executorch.backends.mlx.model_ops.gated_delta_rule as _  # noqa: ensure op registered
+    import executorch.backends.mlx.custom_kernel_ops.gated_delta_rule as _  # noqa: ensure op registered
 
     output = torch.ops.mlx.gated_delta_rule(
         q,
