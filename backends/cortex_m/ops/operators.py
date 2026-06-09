@@ -467,8 +467,8 @@ def quantized_linear_meta(
 def quantized_linear_impl(
     input: torch.Tensor,
     weights: torch.Tensor,
-    bias: torch.Tensor,
-    kernel_sum: torch.Tensor,
+    bias: torch.Tensor | None,
+    kernel_sum: torch.Tensor | None,
     input_offset: int,
     filter_offset: int,
     output_offset: int,
@@ -481,10 +481,11 @@ def quantized_linear_impl(
     Functional variant - creates output tensor and calls out variant
     """
 
-    # Leaving both implementations for debugging purposes.
-    compute_using_kernel_sum = True
-
-    if compute_using_kernel_sum:
+    # Mirror CMSIS-NN's arm_fully_connected_s8 contract: the MVE path reads
+    # kernel_sum (ctx.buf) and ignores bias; the DSP and scalar paths read
+    # bias and ignore kernel_sum. The AOT pass populates exactly one of them
+    # based on the target ISA, so dispatch off which one is present.
+    if kernel_sum is not None:
         weights_int32 = weights.to(torch.int32)
 
         input_int32 = input.to(torch.int32)
