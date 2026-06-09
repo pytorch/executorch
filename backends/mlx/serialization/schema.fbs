@@ -976,6 +976,15 @@ table ScanNode {
     scan_axis: int32 = 1;              // dimension to iterate over
 }
 
+// Runtime conditional: select one of two instruction chains based on a runtime
+// integer condition. The selected branch writes its output slot(s) directly, so
+// no `outputs` field is needed (unlike ScanNode, which post-processes/stacks).
+table IfNode {
+    cond: IntOrVid (required);         // nonzero -> then_chain, zero -> else_chain
+    then_chain_idx: uint32;            // index into MLXGraph.instruction_chains
+    else_chain_idx: uint32;            // index into MLXGraph.instruction_chains
+}
+
 // Custom Metal kernel execution via mlx::core::fast::metal_kernel().
 // Two-phase API:
 //   1. Factory: metal_kernel(name, input_names, output_names, source, header,
@@ -1151,7 +1160,8 @@ union OpNode {
     RollNode,
     BitwiseAndNode,
     BitwiseOrNode,
-    BitwiseXorNode
+    BitwiseXorNode,
+    IfNode
     // BC: Add new op nodes here (append only)
 }
 

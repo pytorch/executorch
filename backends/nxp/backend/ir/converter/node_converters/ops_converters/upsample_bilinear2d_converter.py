@@ -82,48 +82,28 @@ class UpsampleBilinear2DConverter(NodeConverter):
         _, in_c, in_h, in_w = node.all_input_nodes[0].meta["val"].shape
         _, _, out_h, out_w = node.meta["val"].shape
 
-        if neutron_target_spec.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
-            if not NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            ):
-                return False
-
-            supported_scales = [1, 2, 4, 8]
-            align_corners = node.args[2]
-            if align_corners:
-                if in_h == 1 or in_w == 1:
-                    return False  # Avoid division by 0.
-                h_scale = (out_h - 1) / (in_h - 1)
-                w_scale = (out_w - 1) / (in_w - 1)
-            else:
-                h_scale = out_h / in_h
-                w_scale = out_w / in_w
-
-            # The H and W scales don't need to be equal, but both must be supported.
-            if (h_scale not in supported_scales) or (w_scale not in supported_scales):
-                return False
-
+        supported_scales = [1, 2, 4, 8]
+        align_corners = node.args[2]
+        if align_corners:
+            if in_h == 1 or in_w == 1:
+                return False  # Avoid division by 0.
+            h_scale = (out_h - 1) / (in_h - 1)
+            w_scale = (out_w - 1) / (in_w - 1)
         else:
-            # Requirements of the old Neutron flow.
+            h_scale = out_h / in_h
+            w_scale = out_w / in_w
 
-            # Neutron supports only the doubling and quadrupleing of both height and width at the same time.
-            #  neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.3#778
-            supported_scales = [2, 4]
-            if not any(
-                in_h * scale == out_h and in_w * scale == out_w
-                for scale in supported_scales
-            ):
-                return False
-
-            # Neutron requires the input channels to be a multiple of `num_macs`.
-            #  neutron-library/src/utils/NeutronLibraryInterrogation.cpp?at=refs%2Ftags%2FNEUTRON_SOFTWARE_2.2.3#777
-            if in_c % neutron_target_spec.get_num_macs() != 0:
-                return False
+        # The H and W scales don't need to be equal, but both must be supported.
+        if (h_scale not in supported_scales) or (w_scale not in supported_scales):
+            return False
 
         return True
 

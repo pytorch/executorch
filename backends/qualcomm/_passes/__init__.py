@@ -24,6 +24,7 @@ from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
+from .decompose_hardsigmoid import DecomposeHardsigmoid
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
@@ -84,6 +85,7 @@ __all__ = [
     DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
+    DecomposeHardsigmoid,
     DecomposeLinalgVectorNorm,
     DecomposeLogVariants,
     DecomposeMaxPool3d,

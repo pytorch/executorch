@@ -64,33 +64,50 @@ public extension ImageProcessor {
   /// RGBA, 8-bit NV12, and 10-bit P010. Output is a `Tensor<Float>` with
   /// shape `[1, 3, target_height, target_width]`.
   ///
-  /// The buffer is treated as already upright: orientation correction is not
-  /// applied and cannot be derived from a CVPixelBuffer, so the caller is
-  /// responsible for supplying an upright buffer.
-  func process(_ pixelBuffer: CVPixelBuffer) throws -> Tensor<Float> {
-    let anyTensor = try processPixelBuffer(pixelBuffer)
+  /// `orientation` is the EXIF orientation of the buffer's contents; the
+  /// pipeline rotates it upright before resizing. It cannot be derived from a
+  /// CVPixelBuffer, so the caller supplies it (defaults to `.up`).
+  func process(
+    _ pixelBuffer: CVPixelBuffer,
+    orientation: ImageOrientation = .up
+  ) throws -> Tensor<Float> {
+    let anyTensor = try processPixelBuffer(pixelBuffer, orientation: orientation)
     return Tensor<Float>(anyTensor)
   }
 
   /// Process a CVPixelBuffer into a caller-provided tensor, reusing its storage.
   ///
-  /// Avoids the per-call allocation of `process(_:)`, which matters for
-  /// sustained video. `tensor` must be a `Tensor<Float>` with shape
+  /// Avoids the per-call allocation of `process(_:orientation:)`, which matters
+  /// for sustained video. `tensor` must be a `Tensor<Float>` with shape
   /// `[1, 3, target_height, target_width]`; its storage is overwritten and can
   /// be reused across frames. The contents are valid until the next call that
   /// writes into the same tensor.
   ///
-  /// The buffer is treated as already upright (see `process(_:)`).
-  func process(_ pixelBuffer: CVPixelBuffer, into tensor: Tensor<Float>) throws {
-    try processPixelBuffer(pixelBuffer, into: tensor.anyTensor)
+  /// `orientation` matches `process(_:orientation:)` (defaults to `.up`).
+  func process(
+    _ pixelBuffer: CVPixelBuffer,
+    orientation: ImageOrientation = .up,
+    into tensor: Tensor<Float>
+  ) throws {
+    try processPixelBuffer(
+      pixelBuffer, orientation: orientation, into: tensor.anyTensor)
   }
 
   /// Letterbox padding (per side, in pixels) applied for a source of the given
   /// size: `x` is the left/right pad and `y` the top/bottom pad of the resized
   /// content. Returns `(0, 0)` for the stretch resize mode or the top-left
   /// anchor. Lets callers map the padded output back to the source region.
-  func computeLetterboxPadding(inputWidth: Int, inputHeight: Int) -> (x: Int, y: Int) {
-    let padding = __computeLetterboxPadding(forInputWidth: inputWidth, height: inputHeight)
+  ///
+  /// `orientation` is the EXIF orientation of the source (defaults to `.up`);
+  /// the dimensions are oriented before the padding is computed, matching the
+  /// geometry `process(_:orientation:)` produces.
+  func computeLetterboxPadding(
+    inputWidth: Int,
+    inputHeight: Int,
+    orientation: ImageOrientation = .up
+  ) -> (x: Int, y: Int) {
+    let padding = __computeLetterboxPadding(
+      forInputWidth: inputWidth, height: inputHeight, orientation: orientation)
     return (padding.x, padding.y)
   }
 }
