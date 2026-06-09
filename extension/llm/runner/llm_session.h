@@ -61,8 +61,11 @@ struct LLMServingCapacity {
   // sessions would copy the whole model); raise only on a backend proven to
   // share packed weights.
   int32_t max_physical_sessions_without_weight_duplication = 1;
-  // Planned bytes one session adds (KV + activations), for memory-budget
-  // admission. 0 = unknown; the server skips the memory clamp.
+  // Planned bytes one session adds (KV + activations). Reported for a FUTURE
+  // memory-budget admission policy; NOT yet enforced -- admission is currently
+  // by session COUNT only (--max-sessions). Over-provisioning therefore fails
+  // at the first execute (cudaMalloc) of the over-committed session, not at
+  // admit time. 0 = unknown.
   int64_t estimated_bytes_per_session = 0;
 };
 
@@ -79,7 +82,19 @@ class ET_EXPERIMENTAL LLMSession {
   /// `initial_sampling` (optional): the sampling config for the FIRST generated
   /// token, for backends that sample during prefill (e.g. in-graph sampling).
   /// Pass it so the first token uses the request's sampling instead of a stale
-  /// default. Backends that only sample in decode_one() ignore it.
+  /// default. Backends that only sample in decode_one() ignore it. NOTE:
+  /// because the first token is sampled here, it does NOT pass through
+  /// decode_one()'s logit processors -- a grammar/tool mask that must constrain
+  /// the opening token is not applied to it (a known limitation for
+  /// grammar-constrained serving).
+  ///
+  /// ERROR CONTRACT: an error may be returned AFTER backend state has already
+  /// mutated. On any error from prefill_tokens()/decode_one(), the session is
+  /// POISONED -- position() may no longer agree with the resident KV. The
+  /// caller must call reset() (and only proceed once it returns Ok) before any
+  /// further prefill/decode; it must NOT retry the failed call. The serving
+  /// worker enforces this (marks the session dirty and forces a reset next
+  /// request).
   virtual ::executorch::runtime::Error prefill_tokens(
       std::vector<uint64_t> tokens,
       const SamplingConfig* initial_sampling = nullptr) = 0;
@@ -87,6 +102,8 @@ class ET_EXPERIMENTAL LLMSession {
   /// Decode one token from the pending state; looping reproduces a full
   /// generation while returning exact sampled token ids. A single decode_one()
   /// runs one forward pass and is not interruptible mid-call (see stop()).
+  /// On error the session is poisoned -- see the error contract on
+  /// prefill_tokens() (reset() before any further use; never retry).
   virtual ::executorch::runtime::Result<DecodeResult> decode_one(
       const SamplingConfig& sampling) = 0;
 

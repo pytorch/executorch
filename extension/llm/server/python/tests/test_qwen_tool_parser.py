@@ -124,3 +124,95 @@ def test_untyped_param_falls_back_to_json_guess():
     )
     r = _parse(text, tools)
     assert json.loads(r.calls[0].arguments) == {"n": 42, "items": [1, 2]}
+
+
+_TYPED = {
+    "code_tool": {"type": "object", "properties": {"code": {"type": "string"}}},
+    "calc": {
+        "type": "object",
+        "properties": {
+            "n": {"type": "integer"},
+            "x": {"type": "number"},
+            "flag": {"type": "boolean"},
+        },
+    },
+}
+
+
+def test_param_value_with_literal_parameter_close():
+    # A value containing literal </parameter> must be preserved, not truncated.
+    text = "<function=code_tool><parameter=code>a </parameter> b</parameter></function>"
+    r = _parse(text, _TYPED)
+    assert json.loads(r.calls[0].arguments) == {"code": "a </parameter> b"}
+
+
+def test_param_value_with_function_markup():
+    # A value containing <function=...> markup must stay in the value, not split.
+    text = (
+        "<function=code_tool><parameter=code>x = <function=foo></parameter></function>"
+    )
+    r = _parse(text, _TYPED)
+    assert len(r.calls) == 1
+    assert json.loads(r.calls[0].arguments) == {"code": "x = <function=foo>"}
+
+
+def test_declared_integer_with_float_string_kept_raw():
+    text = "<function=calc><parameter=n>10.0</parameter></function>"
+    val = json.loads(_parse(text, _TYPED).calls[0].arguments)["n"]
+    assert val == "10.0" and isinstance(val, str)  # not float 10.0
+
+
+def test_declared_boolean_with_one_kept_raw():
+    text = "<function=calc><parameter=flag>1</parameter></function>"
+    val = json.loads(_parse(text, _TYPED).calls[0].arguments)["flag"]
+    assert val == "1" and isinstance(val, str)  # not int 1
+
+
+def test_declared_integer_with_underscores_kept_raw():
+    text = "<function=calc><parameter=n>1_000</parameter></function>"
+    val = json.loads(_parse(text, _TYPED).calls[0].arguments)["n"]
+    assert val == "1_000" and isinstance(val, str)  # not int 1000
+
+
+def _reject_bare_constant(c):
+    # json.loads parse_constant hook: fires only for bare NaN/Infinity/-Infinity.
+    raise AssertionError(f"emitted bare non-finite constant: {c}")
+
+
+def test_declared_number_non_finite_never_emitted():
+    for bad in ("NaN", "Infinity", "-Infinity", "1e999"):
+        text = f"<function=calc><parameter=x>{bad}</parameter></function>"
+        args = _parse(text, _TYPED).calls[0].arguments
+        # Strict-client safe: no bare NaN/Infinity constant in the emitted JSON.
+        json.loads(args, parse_constant=_reject_bare_constant)
+        assert json.loads(args)["x"] == bad  # kept as the raw string
+
+
+def test_multiple_valid_calls_still_parse():
+    text = (
+        "<function=add><parameter=a>1</parameter><parameter=b>2</parameter></function>"
+        "<function=add><parameter=a>3</parameter><parameter=b>4</parameter></function>"
+    )
+    r = _parse(text)
+    assert [json.loads(c.arguments) for c in r.calls] == [
+        {"a": 1, "b": 2},
+        {"a": 3, "b": 4},
+    ]
+
+
+def test_truncated_call_degrades_without_leaking_markup():
+    # A call cut off by max_tokens (no closing tags) must NOT leak the partial
+    # <function=...> markup -- only the leading text survives (mirrors Hermes).
+    text = "Sure! <function=get_weather><parameter=city>Paris"
+    r = _parse(text, _TYPED)
+    assert not r.calls
+    assert "<function=" not in r.normal_text
+    assert r.normal_text == "Sure!"
+
+
+def test_truncated_tool_call_wrapper_no_leak():
+    text = "ok <tool_call>\n<function=get_weather><parameter=city>Par"
+    r = _parse(text, _TYPED)
+    assert not r.calls
+    assert "<tool_call>" not in r.normal_text and "<function=" not in r.normal_text
+    assert r.normal_text == "ok"
