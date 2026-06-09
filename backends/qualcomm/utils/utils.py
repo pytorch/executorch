@@ -17,7 +17,9 @@ import executorch.exir as exir
 import torch
 
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
@@ -448,6 +450,10 @@ def to_edge_transform_and_lower_to_qnn(
             dynamic_shapes=dynamic_shapes[graph_name],
             strict=True,
         )
+        option = generate_qnn_executorch_option(compiler_specs[graph_name])
+        python_options = flatbuffer_to_option(option)
+        backend_type = python_options.backend_options.backend_type
+        pass_manager = get_qnn_pass_manager_cls(backend_type)()
         # This transformation is primarily intended for the LiftConstantScalarOperands pass
         # to avoid creating temporary tensors in the operation builder.
         # However, this pass will create a get_attr node, which should be converted
@@ -455,17 +461,14 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(
-            ep, convert_linear_to_conv2d=convert_linear_to_conv2d
+        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(
+            ep,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
-        option = generate_qnn_executorch_option(compiler_specs[graph_name])
-        python_options = flatbuffer_to_option(option)
-        backend_type = python_options.backend_options.backend_type
-        transform_passes[graph_name] = QnnPassManager().get_to_edge_transform_passes(
+        transform_passes[graph_name] = pass_manager.get_to_edge_transform_passes(
             ep,
             passes_job=passes_job[graph_name],
             dep_table=dep_table[graph_name],
-            backend_type=backend_type,
         )
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(
@@ -506,14 +509,15 @@ def capture_program(
         stacklevel=1,
     )
     ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
-    ep = QnnPassManager().transform_for_export_pipeline(ep)
+    pass_manager = get_qnn_pass_manager_cls(QnnExecuTorchBackendType.kHtpBackend)()
+    ep = pass_manager.transform_for_export_pipeline(ep)
     # TODO: Handle stack op. If we want to run annotate_decomposed pass for stack op,
     # we need to make stack op decompose, which means we need to find a method to
     # remove it from skip_decomp table
     decomposed_ep = ep.run_decompositions(get_decomp_table(passes_job))
     core_ep = ExirExportedProgram(decomposed_ep, False)
     edge_ep = core_ep.to_edge(qnn_edge_config())
-    transform_passes = QnnPassManager().get_to_edge_transform_passes(
+    transform_passes = pass_manager.get_to_edge_transform_passes(
         edge_ep.exported_program,
         passes_job=passes_job,
         dep_table=dep_table,
