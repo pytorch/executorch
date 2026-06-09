@@ -15,22 +15,34 @@
 namespace vkcompute {
 
 /*
- * End-to-end orchestration for an FP32 / FP16 conv2d computed as
- * im2col -> GEMM.  The dataflow is:
+ * End-to-end orchestration for an FP32 / FP16 conv2d computed as im2col ->
+ * GEMM.
  *
- *   t_in [1, C_in, H_in, W_in]
- *     │
- *     ▼   (add_conv2d_im2col_node, conv2d_im2col.glsl)
- *   im2col [1, K_total, H_out, W_out]      K_total = Kh * Kw * align_up_4(C_in)
- *     │
- *     │ + flattened weight [C_out, K_total]   (built CPU-side from
- *     │   [C_out, C_in, Kh, Kw] with the ci ↔ (ki, kj) transpose)
- *     ▼   (add_conv2d_gemm_node, conv2d_gemm.glsl)
- *   t_out [1, C_out, H_out, W_out]
+ * Dataflow (input t_in [1, C_in, H_in, W_in] -> output t_out [1, C_out, H_out,
+ * W_out]):
+ *
+ *   1. im2col: add_conv2d_im2col_node (conv2d_im2col.glsl) expands t_in into an
+ *      im2col matrix. The K (reduction) axis is laid out as
+ *      K = (ki * Kw + kj) * Cin_padded + ci, with K_total = Kh * Kw *
+ *      align_up_4(C_in). The im2col storage type selects its shape (see
+ *      conv2d_gemm_impl):
+ *        - buffer / texture2d: flat [M, K_total], width-packed, with
+ *          M = H_out * W_out.
+ *        - texture3d: [1, K_total, H_out, W_out], channels-packed, so the K4
+ *          tiles lay along Z.
+ *   2. GEMM: add_conv2d_gemm_node (conv2d_gemm.glsl) multiplies the im2col
+ *      matrix by the packed weight [C_out, K_total] to produce t_out. The
+ *      packed weight is prepacked on the GPU directly from the serialized
+ *      [C_out, C_in, Kh, Kw] weight (no CPU repack), applying the im2col K-axis
+ *      decode plus a 4OC x 4IC blocked transpose.
  *
  * This function performs both dispatch and prepack registration. The im2col
- * intermediate is allocated as a graph tensor; the flattened weight is
- * registered as a new TensorRef owned by the graph.
+ * intermediate is allocated as a scoped TmpTensor scratch tensor, so the memory
+ * planner can alias one backing buffer across the non-overlapping im2col
+ * lifetimes of every conv2d layer (peak memory tracks the largest single im2col
+ * rather than the sum). The packed weight is produced by a GPU prepack node
+ * (PrepackNode running pack_conv2d_gemm_weight.glsl) from the serialized
+ * weight.
  *
  * Constraints (asserted internally):
  *   - input batch == 1

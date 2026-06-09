@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dIm2Col.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Convolution.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <optional>
@@ -58,13 +59,20 @@ ValueRef prepack_conv2d_gemm_weight(
   const int64_t output_height = K4;
   const int64_t output_width = N4 * 4 * 4;
 
-  utils::StorageType weight_storage = utils::kTexture2D;
+  // The GEMM shader (conv2d_gemm.glsl) only reads the packed weight as a
+  // texture2d. A buffer-backed packed weight would require a WEIGHT_BUFFER
+  // codegen variant of conv2d_gemm.glsl (and its picker), which does not exist
+  // yet.
+  // TODO: if this check ever triggers for a real model, add buffer-backed
+  // packed-weight support — a WEIGHT_BUFFER variant of conv2d_gemm.{glsl,yaml}
+  // with the picker routed accordingly, plus the buffer variants restored in
+  // pack_conv2d_gemm_weight.yaml.
+  const utils::StorageType weight_storage = utils::kTexture2D;
   const uint32_t max_extent =
       graph.context()->adapter_ptr()->max_texture2d_dim();
-  if (output_width / 4 > max_extent ||
-      utils::safe_downcast<uint32_t>(output_height) > max_extent) {
-    weight_storage = utils::kBuffer;
-  }
+  VK_CHECK_COND(
+      output_width / 4 <= max_extent &&
+      utils::safe_downcast<uint32_t>(output_height) <= max_extent);
 
   ValueRef packed_weight = graph.add_tensor(
       {output_height, output_width},
@@ -149,31 +157,76 @@ utils::uvec3 pick_conv2d_gemm_global_wg_size(
   return {N4, utils::div_up(M, 4u), 1};
 }
 
-// Output sizes are determined by the conv shape (im2col tensor's spatial
-// extents match the conv output), so the GEMM shader doesn't need to resize
-// the output tensor — it's already set by the caller.  We still need a noop
-// resize because the dispatch infra expects one.
+// Recompute the conv output sizes from the current input shape and resize the
+// output tensor. This is the load-bearing resize for the im2col/GEMM path:
+// under dynamic shapes the graph is built for the upper-bound input, so on
+// trigger_resize() the output must be recomputed from the real input or it
+// stays frozen at the upper bound (producing garbage downstream).
+//
+// The GEMM shader derives M = H_out * W_out and the spatial store coordinates
+// from the (now-refreshed) out_sizes UBO, so resizing `out` here is sufficient
+// to make the GEMM track the dynamic shape — no push-constant update is needed.
+//
+// resize_args = { in, weight_data, stride, padding, dilation }
 void resize_conv2d_gemm_node(
-    ComputeGraph* /*graph*/,
-    const std::vector<ArgGroup>& /*args*/,
-    const std::vector<ValueRef>& /*extra_args*/) {
-  // no-op
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = resize_args.at(0);
+  const ValueRef weight_data = resize_args.at(1);
+  const ValueRef stride = resize_args.at(2);
+  const ValueRef padding = resize_args.at(3);
+  const ValueRef dilation = resize_args.at(4);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  const size_t ndim = in_sizes.size();
+  std::vector<int64_t> new_out_sizes(ndim);
+
+  // N (batch) carries through; C_out = weight_data dim 0.
+  new_out_sizes.at(ndim - 4) = in_sizes.at(ndim - 4);
+  const std::vector<int64_t> w_sizes = graph->sizes_of(weight_data);
+  new_out_sizes.at(ndim - 3) = w_sizes.at(0);
+
+  // Height / Width from the current input, via the shared conv-output helper
+  // (same H/W split + formula the direct-conv resize uses). transposed=false,
+  // and the args[3] slot (consulted only as an optional ceil_mode) is a
+  // non-bool ValueRef, so ceil_mode resolves to false — matching the conv2d
+  // semantics.
+  const std::vector<int64_t> new_out_sizes_hw = calc_out_sizes_hw(
+      *graph,
+      in_sizes,
+      weight_data,
+      /*kernel_size_only=*/false,
+      {stride, padding, dilation, dilation},
+      /*transposed=*/false);
+  new_out_sizes.at(ndim - 2) = new_out_sizes_hw.at(0);
+  new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
+
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 void add_conv2d_gemm_node(
     ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef weight_data,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation,
     const ValueRef im2col_in,
     const ValueRef packed_weight,
     const ValueRef packed_bias,
     const ValueRef out,
     const int32_t K_total,
-    const int32_t M_total,
     const bool clamp_out,
     const float out_min_val,
     const float out_max_val) {
   const int32_t K4_total = K_total / 4;
 
-  const utils::ivec4 gemm_dims{K_total, K4_total, M_total, 0};
+  // gemm_dims carries only the shape-independent K4_total. M is derived in the
+  // shader from the refreshed out_sizes UBO, so it is not baked here (a baked
+  // plain-data push constant cannot be updated on resize).
+  const utils::ivec4 gemm_dims{K4_total, 0, 0, 0};
   const utils::vec4 clamp_vals{out_min_val, out_max_val, 0.0f, 0.0f};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -193,7 +246,7 @@ void add_conv2d_gemm_node(
       // activation_type: 0=none, 1=relu, 2=clamp
       {clamp_out ? 2 : 0},
       // Resize args
-      {},
+      {in, weight_data, stride, padding, dilation},
       // Resizing logic
       resize_conv2d_gemm_node));
 }
@@ -325,6 +378,10 @@ void conv2d_gemm_impl(
       graph,
       in,
       im2col_tensor,
+      weight_data,
+      stride,
+      padding,
+      dilation,
       utils::safe_downcast<int32_t>(K_h),
       utils::safe_downcast<int32_t>(K_w),
       stride_h,
@@ -333,9 +390,7 @@ void conv2d_gemm_impl(
       padding_w,
       dilation_h,
       dilation_w,
-      utils::safe_downcast<int32_t>(Cin_padded),
-      utils::safe_downcast<int32_t>(H_out),
-      utils::safe_downcast<int32_t>(W_out));
+      utils::safe_downcast<int32_t>(Cin_padded));
 
   // Step 2: prepack weight for the GEMM directly from the serialized
   // [C_out, C_in, K_h, K_w] weight on the GPU. The serialized data is read
@@ -360,12 +415,16 @@ void conv2d_gemm_impl(
   // Step 3: GEMM
   add_conv2d_gemm_node(
       graph,
+      in,
+      weight_data,
+      stride,
+      padding,
+      dilation,
       im2col_tensor,
       packed_weight,
       packed_bias,
       out,
       utils::safe_downcast<int32_t>(K_total),
-      utils::safe_downcast<int32_t>(M),
       clamp_out,
       out_min_val,
       out_max_val);

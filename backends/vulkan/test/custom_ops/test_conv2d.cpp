@@ -454,11 +454,14 @@ static std::vector<TestCase> generate_conv2d_test_cases() {
 
   // Small shapes used to exercise each im2col intermediate-storage variant
   // (buffer / texture2d / texture3d) deterministically and independently of
-  // the device's auto-selection. All dims <= kRefDimSizeLimit so the float
-  // reference validates them. For the texture3d case the im2col intermediate
-  // is the channels-packed [1, K_total, H_out, W_out] = [1, 144, 16, 16] for
-  // the 16x16 shape — tiny, so it always fits texture3d even on the small
-  // shape (texture3d would never be naturally selected for a small shape).
+  // the device's auto-selection. All dims < kRefDimSizeLimit so both the FP32
+  // and FP16 references validate them. The first two shapes keep M (= H_out *
+  // W_out) tiny, so the im2col intermediate [1, K_total, H_out, W_out] is small
+  // and the forced texture3d variant never exercises the large-M texture3d
+  // Z-layout the auto-selector actually falls back to. The third shape (48x48)
+  // is included specifically so the forced im2col_tex3d variant exercises the
+  // texture3d layout (K4 along Z, many spatial rows) at a non-trivial M, while
+  // still keeping every dim under kRefDimSizeLimit for reference validation.
   std::vector<Conv2dTestConfig> per_variant_configs = {
       // 3x3 s1 p1, channels multiple of 4
       {InputDims(1, 16, 16, 16),
@@ -476,6 +479,18 @@ static std::vector<TestCase> generate_conv2d_test_cases() {
        Padding(1, 1),
        Dilation(1, 1),
        false},
+      // Larger spatial extent (M = 48*48 = 2304) exercises the texture3d im2col
+      // layout [1, K_total, H_out, W_out] with K4 along Z at a non-trivial M,
+      // while all dims stay < kRefDimSizeLimit so both FP32 and FP16 references
+      // validate it. C_in=16 keeps K = 3*3*16 = 144 (same as the 16x16 case)
+      // so FP16 accumulation stays within tolerance.
+      {InputDims(1, 16, 48, 48),
+       16,
+       KernelSize(3, 3),
+       Stride(1, 1),
+       Padding(1, 1),
+       Dilation(1, 1),
+       true},
   };
 
   // Two implementation variants: direct sliding-window (default) and im2col.

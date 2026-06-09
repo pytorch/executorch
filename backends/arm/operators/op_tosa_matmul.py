@@ -54,6 +54,8 @@ class MatmulVisitor(NodeVisitor):
                 ts.DType.FP16,
                 ts.DType.FP32,
                 ts.DType.BF16,
+                ts.DType.FP8E4M3,
+                ts.DType.FP8E5M2,
             ],
             self.tosa_spec,
         )

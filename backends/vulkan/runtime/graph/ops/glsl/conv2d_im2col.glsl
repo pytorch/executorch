@@ -55,11 +55,14 @@ ${layout_declare_tensor(B, "r", "t_in", DTYPE, "texture3d")}
 ${layout_declare_ubo(B, "ivec4", "in_sizes")}
 
 // Push constants are uploaded in 16-byte chunks (one ivec4 each) to comply
-// with the per-entry size limit.
+// with the per-entry size limit. All of these fields are shape-independent
+// (they depend only on the conv kernel params and C_in), so they are safe to
+// bake at build time even under dynamic shapes — W_out / H_out / M are derived
+// at runtime from the refreshed in_sizes UBO below.
 layout(push_constant) uniform restrict Block {
   ivec4 kernel_stride;  // (Kh, Kw, Sh, Sw)
   ivec4 padding_dil;    // (Ph, Pw, Dh, Dw)
-  ivec4 dims;           // (Cin_padded, W_out, H_out, K4_total)
+  ivec4 dims;           // (Cin_padded, _unused, _unused, K4_total)
 };
 
 #define KERNEL_H   kernel_stride.x
@@ -71,8 +74,6 @@ layout(push_constant) uniform restrict Block {
 #define DILATION_H padding_dil.z
 #define DILATION_W padding_dil.w
 #define CIN_PADDED dims.x
-#define W_OUT      dims.y
-#define H_OUT      dims.z
 #define K4_TOTAL   dims.w
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -80,6 +81,17 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 void main() {
   const int k4 = int(gl_GlobalInvocationID.x);
   const int m  = int(gl_GlobalInvocationID.y);
+
+  // Derive the spatial output extents from the (refreshed-on-resize) input
+  // sizes UBO so the im2col mapping tracks dynamic input shapes. in_sizes is
+  // (W_in, H_in, C_in, N). dilation == 1 is guaranteed by the C++ routing
+  // heuristic, but the general formula is used for correctness.
+  const int W_OUT =
+      (in_sizes.x + 2 * PADDING_W - DILATION_W * (KERNEL_W - 1) - 1) / STRIDE_W +
+      1;
+  const int H_OUT =
+      (in_sizes.y + 2 * PADDING_H - DILATION_H * (KERNEL_H - 1) - 1) / STRIDE_H +
+      1;
   const int M  = H_OUT * W_OUT;
 
   if (k4 >= K4_TOTAL || m >= M) {

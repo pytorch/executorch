@@ -96,7 +96,6 @@ def _run_delegated_executorch_program(
     mocker,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
-    use_new_flow_neutron_c: bool = False,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
 ) -> tuple[ExportedProgram, str]:
@@ -124,7 +123,6 @@ def _run_delegated_executorch_program(
             delegate_to_npu=True,
             use_qat=use_qat,
             train_fn=train_fn,
-            use_new_flow_neutron_c=use_new_flow_neutron_c,
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
         )
@@ -399,7 +397,6 @@ def lower_run_compare(
     reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
-    use_new_flow_neutron_c: bool = False,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
 ):
@@ -418,7 +415,6 @@ def lower_run_compare(
     :param mocker: Mocker instance used by visualizer.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
-    :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
     :param operators_not_to_delegate: list of operators not to delegate.
     :param remove_quant_io_ops: If true, IO q-ops are removed and verification is done on quantized
         version of dataset (quantized INT8 input samples).
@@ -463,7 +459,6 @@ def lower_run_compare(
         mocker,
         use_qat=use_qat,
         train_fn=train_fn,
-        use_new_flow_neutron_c=use_new_flow_neutron_c,
         operators_not_to_delegate=operators_not_to_delegate,
         remove_quant_io_ops=remove_quant_io_ops,
     )
