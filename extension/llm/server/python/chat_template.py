@@ -25,6 +25,38 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_SPECIAL_TOKENS = ["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<|end|>"]
 
+# Chat turn terminators eligible to be used as generation stop strings. This is a
+# deliberate allowlist of end-of-turn / end-of-text tokens -- NOT the tokenizer's
+# full special-token set. Structural/tool delimiters (e.g. <tool_call>) must reach
+# the tool parser, so they are intentionally excluded: using them as hard stops
+# would truncate a tool call before it is ever parsed.
+_TURN_TERMINATORS = (
+    "<|im_end|>",
+    "<|endoftext|>",
+    "<|eot_id|>",
+    "<|end|>",
+    "<|end_of_text|>",
+    "<end_of_turn>",
+    "</s>",
+)
+
+
+def _content_text(content) -> str:
+    """Best-effort text for the ChatML fallback: a str as-is, or the concatenated
+    text parts of an OpenAI list-content message (non-text parts dropped). Avoids
+    rendering a Python repr of structured content. None -> empty string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                out.append(str(part.get("text", "")))
+            elif isinstance(part, str):
+                out.append(part)
+        return "".join(out)
+    return str(content or "")
+
 
 def _decode_tool_call_arguments(messages: list[dict[str, Any]]) -> None:
     """In-place: parse each tool call's ``function.arguments`` from a JSON string
@@ -120,25 +152,64 @@ class ChatTemplate:
             return len(self._hf.encode(prompt, add_special_tokens=False))
         return None
 
-    def special_tokens(self) -> list[str]:
-        """Special-token strings whose appearance ends the visible content.
+    def turn_stop_sequences(self) -> list[str]:
+        """Generation stop strings: model/template-specific *turn terminators*
+        only -- the tokenizer's EOS plus known chat turn-end tokens -- NOT the
+        full special-token set.
 
-        From the HF tokenizer when available (model-accurate), else a default set
-        covering common chat models.
+        Structural/tool delimiters (e.g. <tool_call>) are deliberately excluded:
+        if a tokenizer registers them as special, using the whole special set as
+        hard stops would halt generation at the delimiter and truncate the tool
+        call before the parser ever sees it. Whitespace-only tokens are dropped.
+        User-supplied request `stop` strings are handled separately and are not
+        affected by this set.
+
+        May return [] if the tokenizer has no eos_token and registers none of the
+        known terminators as special; in that case end-of-turn detection relies
+        entirely on the worker's EOS-by-token-id check (e.g. the Qwen engine adds
+        <|im_end|> to eos_ids), so the string set here is only a backstop.
+        """
+        if self._hf is None:
+            return list(_DEFAULT_SPECIAL_TOKENS)
+        specials = {
+            t
+            for t in (getattr(self._hf, "all_special_tokens", []) or [])
+            if isinstance(t, str) and t.strip()
+        }
+        out: list[str] = []
+        eos = getattr(self._hf, "eos_token", None)
+        if isinstance(eos, str) and eos.strip():
+            out.append(eos)
+        for t in _TURN_TERMINATORS:
+            if t in specials and t not in out:
+                out.append(t)
+        return out
+
+    def special_tokens(self) -> list[str]:
+        """ALL special-token strings, for final content cleanup -- stripping any
+        special token that leaked into visible output. Deliberately broad, and
+        distinct from turn_stop_sequences(): this set must NOT be used as
+        generation stops or pre-parse truncation (that would halt/cut a tool call
+        at a structural delimiter), only to scrub trailing specials from the
+        already-parsed visible content. Whitespace-only tokens are dropped so a
+        stray '  ' token can't truncate content at the first double space.
         """
         if self._hf is not None:
             toks = list(getattr(self._hf, "all_special_tokens", []) or [])
-            return [t for t in toks if isinstance(t, str) and t]
+            return [t for t in toks if isinstance(t, str) and t.strip()]
         return list(_DEFAULT_SPECIAL_TOKENS)
 
     @staticmethod
     def _fallback(messages: list[ChatMessage]) -> str:
-        # Approximate ChatML. Provide --hf-tokenizer for model-correct formatting
-        # (including reasoning controls like enable_thinking, which the fallback
-        # cannot reproduce).
+        # Approximate ChatML, TEXT-ONLY. Provide --hf-tokenizer for model-correct
+        # formatting (reasoning controls like enable_thinking, and structured
+        # tool/multimodal turns, which this fallback cannot reproduce). This path
+        # renders only text content: assistant `tool_calls` and a tool-role
+        # `tool_call_id` are dropped, so it is NOT a correctness path for tool or
+        # multimodal conversations -- use a real --hf-tokenizer for those.
         parts = []
         for m in messages:
-            content = m.content if isinstance(m.content, str) else str(m.content or "")
+            content = _content_text(m.content)
             parts.append(f"<|im_start|>{m.role}\n{content}<|im_end|>")
         parts.append("<|im_start|>assistant\n")
         return "\n".join(parts)
