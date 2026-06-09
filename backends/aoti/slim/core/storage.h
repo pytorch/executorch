@@ -14,6 +14,7 @@
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/extension/cuda/caller_stream.h>
 #endif
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
@@ -181,7 +182,7 @@ struct DeviceTraits<c10::DeviceType::CUDA> {
     // green context would not confine. When a caller stream is active, copy
     // on it asynchronously and synchronize it to preserve blocking
     // semantics; otherwise fall back to the plain synchronous copy.
-    const auto caller_stream = executorch::backends::cuda::getCallerStream();
+    const auto caller_stream = executorch::extension::cuda::getCallerStream();
     if (caller_stream) {
       ET_CUDA_CHECK(
           cudaMemcpyAsync(dst, src, nbytes, direction, *caller_stream));

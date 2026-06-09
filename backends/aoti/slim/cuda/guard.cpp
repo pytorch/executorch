@@ -17,7 +17,6 @@ namespace executorch::backends::cuda {
 namespace {
 // Thread-local stream storage (private to this file)
 thread_local std::unordered_map<DeviceIndex, cudaStream_t> current_streams_;
-thread_local std::optional<cudaStream_t> caller_stream_;
 } // namespace
 
 Error setCurrentCUDAStream(cudaStream_t stream, DeviceIndex device_index) {
@@ -79,19 +78,6 @@ void clearCurrentCUDAStream(DeviceIndex device_index) {
     device_index = static_cast<DeviceIndex>(tmp_device);
   }
   current_streams_.erase(device_index);
-}
-
-std::optional<cudaStream_t> getCallerStream() {
-  return caller_stream_;
-}
-
-CallerStreamGuard::CallerStreamGuard(cudaStream_t stream)
-    : previous_(caller_stream_) {
-  caller_stream_ = stream;
-}
-
-CallerStreamGuard::~CallerStreamGuard() {
-  caller_stream_ = previous_;
 }
 
 CUDAGuard::CUDAGuard(CUDAGuard&& other) noexcept

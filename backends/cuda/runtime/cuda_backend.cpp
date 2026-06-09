@@ -38,6 +38,7 @@
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/aoti/slim/factory/from_etensor.h>
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/extension/cuda/caller_stream.h>
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
@@ -490,7 +491,7 @@ class ET_EXPERIMENTAL CudaBackend final
     // choice here routes the whole execution; restore the prior selection on
     // return so a caller stream does not linger for later work on this thread.
     const std::optional<cudaStream_t> caller_stream =
-        executorch::backends::cuda::getCallerStream();
+        executorch::extension::cuda::getCallerStream();
 
     // A captured CUDA graph is bound to its capture stream and cannot be safely
     // replayed on a different, caller-provided stream.

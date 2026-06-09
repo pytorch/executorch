@@ -67,33 +67,6 @@ std::optional<cudaStream_t> peekCurrentCUDAStream(
 void clearCurrentCUDAStream(DeviceIndex device_index = -1);
 
 /**
- * The CUDA stream the caller selected for this thread (via CallerStreamGuard),
- * or std::nullopt if none. The CUDA backend runs on it when set, otherwise it
- * uses its own stream. Kept separate from getCurrentCUDAStream so an explicit
- * caller choice is distinguishable from a lazily-created stream.
- */
-std::optional<cudaStream_t> getCallerStream();
-
-/**
- * Scopes the CUDA stream the backend should run on for the calling thread, and
- * restores the previous selection on destruction. One value per thread; a
- * cuGreenCtxStreamCreate stream confines work to that green context's SM
- * partition.
- */
-class CallerStreamGuard {
- public:
-  explicit CallerStreamGuard(cudaStream_t stream);
-  ~CallerStreamGuard();
-  CallerStreamGuard(const CallerStreamGuard&) = delete;
-  CallerStreamGuard& operator=(const CallerStreamGuard&) = delete;
-  CallerStreamGuard(CallerStreamGuard&&) = delete;
-  CallerStreamGuard& operator=(CallerStreamGuard&&) = delete;
-
- private:
-  std::optional<cudaStream_t> previous_;
-};
-
-/**
  * RAII guard that sets the current CUDA device and restores it on destruction.
  * This ensures that the device is properly restored even if an exception
  * occurs.
