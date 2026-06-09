@@ -10,18 +10,18 @@ Tests for mlx::gated_delta_rule custom op + pattern handler.
 
 Usage:
     # Run all configs:
-    python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gated_delta_rule run
 
     # Run with verbose output:
-    python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gated_delta_rule run -v
 
     # Rebuild C++ runner first:
-    python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run --rebuild
+    python -m executorch.backends.mlx.custom_kernel_ops.test.test_gated_delta_rule run --rebuild
 """
 
 from typing import List, Tuple
 
-import executorch.backends.mlx.model_ops.gated_delta_rule  # noqa: F401
+import executorch.backends.mlx.custom_kernel_ops.gated_delta_rule  # noqa: F401
 
 import torch
 import torch.nn as nn

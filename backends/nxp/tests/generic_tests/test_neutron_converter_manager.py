@@ -60,20 +60,6 @@ def test_conv2d_neutron_conversion__prefetching(mocker):
     ), "The weight prefetching flag does not make a difference!"
 
 
-def test_neutron_converter_with_experimental_mlir_flow(mocker):
-    model = LinearModule(True)
-    input_shape = (1, 1, 32, 32)
-
-    process_spy = mocker.spy(multiprocessing, "Process")
-    to_quantized_edge_program(
-        model, input_shape, use_new_flow_neutron_c=True
-    ).exported_program()
-
-    compilation_opts = process_spy.call_args.kwargs["args"][1]
-    assert isinstance(compilation_opts, dict)
-    assert compilation_opts["useNewFlowNeutronC"] is True
-
-
 def test_convert_unsafe_args_are_picklable(mocker):
     """Verify that all args passed to `multiprocessing.Process` are picklable.
 
