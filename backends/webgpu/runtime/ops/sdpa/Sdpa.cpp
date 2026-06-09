@@ -504,8 +504,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         static_cast<uint64_t>(Hq) * static_cast<uint64_t>(D);
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(out_floats), av_wg, "AV");
-    ComputeOutParams p =
-        make_compute_out_params(S, Hq, Hkv, D, context_len, g);
+    ComputeOutParams p = make_compute_out_params(S, Hq, Hkv, D, context_len, g);
     WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
     BufferBinding bindings[3] = {
         {out.buffer, out.nbytes},
