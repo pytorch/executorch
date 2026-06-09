@@ -20,6 +20,10 @@ import org.pytorch.executorch.extension.llm.LlmModule;
 import org.pytorch.executorch.extension.llm.LlmModuleConfig;
 import org.pytorch.executorch.extension.llm.LlmGenerationConfig;
 import org.pytorch.executorch.extension.llm.LlmCallback;
+
+// Only needed for the multimodal ByteBuffer paths in the Images section.
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 ```
 
 Kotlin:
@@ -28,6 +32,10 @@ import org.pytorch.executorch.extension.llm.LlmModule
 import org.pytorch.executorch.extension.llm.LlmModuleConfig
 import org.pytorch.executorch.extension.llm.LlmGenerationConfig
 import org.pytorch.executorch.extension.llm.LlmCallback
+
+// Only needed for the multimodal ByteBuffer paths in the Images section.
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 ```
 
 ### LlmModule
@@ -264,7 +272,8 @@ module.prefillImages(normalized, 336, 336, 3);
 ByteBuffer floatBuffer = ByteBuffer
     .allocateDirect(3 * 336 * 336 * Float.BYTES)
     .order(ByteOrder.nativeOrder());
-// fill floatBuffer with normalized values, then:
+// fill floatBuffer with normalized values, then rewind before the call:
+floatBuffer.rewind();
 module.prefillNormalizedImage(floatBuffer, 336, 336, 3);
 ```
 
@@ -276,7 +285,8 @@ module.prefillImages(normalized, 336, 336, 3)
 val floatBuffer: ByteBuffer = ByteBuffer
     .allocateDirect(3 * 336 * 336 * Float.SIZE_BYTES)
     .order(ByteOrder.nativeOrder())
-// fill floatBuffer with normalized values, then:
+// fill floatBuffer with normalized values, then rewind before the call:
+floatBuffer.rewind()
 module.prefillNormalizedImage(floatBuffer, 336, 336, 3)
 ```
 
