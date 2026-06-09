@@ -10,8 +10,6 @@
 
 #include <webgpu/webgpu.h>
 
-#include <cstdint>
-
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
 #else
@@ -21,14 +19,9 @@
 
 namespace executorch::backends::webgpu {
 
-// Caller's instance must enable TimedWaitAny; returns the WaitAny status.
-inline WGPUWaitStatus webgpu_wait(WGPUInstance instance, WGPUFuture future) {
-  WGPUFutureWaitInfo info = {};
-  info.future = future;
-  return wgpuInstanceWaitAny(instance, 1, &info, UINT64_MAX);
-}
-
-// Blocking event-loop pump for the output-map readback (browser: JS yield).
+// Make progress on pending WebGPU callbacks; callers loop until their done flag
+// is set. Native (Dawn): pump the event queue + brief yield (no busy-spin).
+// Browser: yield to the JS event loop.
 inline void webgpu_poll(WGPUInstance instance) {
 #if defined(__EMSCRIPTEN__)
   (void)instance;
