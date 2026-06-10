@@ -9,6 +9,7 @@ def cuda_slim_cpp_unittest(name):
         ],
         deps = [
             "//executorch/backends/aoti/slim/cuda:guard",
+            "//executorch/extension/cuda:caller_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/platform:platform",
