@@ -117,8 +117,6 @@ def test_sd3_transformer_tosa_FP():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
-            atol=4.0,
         )
         pipeline.change_args(
             "check_count.exir", TestSD3Transformer2DModel.ops_after_partitioner_FP
@@ -137,9 +135,7 @@ def test_sd3_transformer_tosa_INT():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
-            rtol=1.0,
-            atol=4.0,
+            atol=0.1,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
             frobenius_threshold=None,
             cosine_threshold=None,
         )
@@ -161,8 +157,6 @@ def test_sd3_transformer_vgf_no_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT,
-            atol=4.0,
             quantize=False,
         )
         pipeline.change_args(
@@ -184,9 +178,7 @@ def test_sd3_transformer_vgf_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            qtol=1.0,
-            rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT,
-            atol=4.0,
+            atol=0.1,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
             quantize=True,
         )
         pipeline.change_args(

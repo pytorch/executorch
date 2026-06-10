@@ -82,6 +82,31 @@ test_data_suite_bf16 = {
         [3, 2, 1],
     ),
 }
+test_data_suite_fp8 = {
+    "rand_fp8e4m3": lambda: (
+        torch.rand(1, 8, 20, 20).to(torch.float8_e4m3fn),
+        [3, 2, 1],
+        "fp8e4m3",
+    ),
+    "rand_fp8e5m2": lambda: (
+        torch.rand(1, 8, 20, 20).to(torch.float8_e5m2),
+        [3, 2, 1],
+        "fp8e5m2",
+    ),
+}
+
+test_data_suite_fp8_dilation = {
+    "dilation_fp8e4m3": lambda: (
+        torch.rand(1, 1, 8, 8).to(torch.float8_e4m3fn),
+        [3, 1, 0, 2],
+        "fp8e4m3",
+    ),
+    "dilation_fp8e5m2": lambda: (
+        torch.rand(1, 1, 8, 8).to(torch.float8_e5m2),
+        [3, 1, 0, 2],
+        "fp8e5m2",
+    ),
+}
 
 
 test_data_suite_dilation = [
@@ -154,6 +179,21 @@ def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
         exir_op,
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+def test_max_pool2d_tosa_FP_fp8(test_data: torch.Tensor):
+    input_tensor, model_params, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params),
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+        run_on_tosa_ref_model=False,  # torch.max_pool2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+    )
+    pipeline.count_tosa_ops({"MAX_POOL2D": 1})
     pipeline.run()
 
 
@@ -300,6 +340,21 @@ def test_max_pool2d_tosa_FP_dilation(test_data):
         aten_op,
         exir_op,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8_dilation)
+def test_max_pool2d_tosa_FP_fp8_dilation(test_data):
+    data, model_params, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+        run_on_tosa_ref_model=False,  # torch.max_pool2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+    )
+    pipeline.count_tosa_ops({"MAX_POOL2D": 1})
     pipeline.run()
 
 
