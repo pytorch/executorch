@@ -12,6 +12,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>
@@ -28,18 +29,21 @@ struct QnnBackendBundle {
   std::unique_ptr<QnnLogger> qnn_logger_ptr;
   std::unique_ptr<QnnBackend> qnn_backend_ptr;
   std::unique_ptr<QnnDevice> qnn_device_ptr;
+  std::unique_ptr<QnnSystemImplementation> system_implementation;
 
   // Default ctor
   QnnBackendBundle()
       : implementation(nullptr),
         qnn_logger_ptr(nullptr),
         qnn_backend_ptr(nullptr),
-        qnn_device_ptr(nullptr) {}
+        qnn_device_ptr(nullptr),
+        system_implementation{nullptr} {}
   // Default dtor
   ~QnnBackendBundle() {
     qnn_device_ptr.reset();
     qnn_backend_ptr.reset();
     qnn_logger_ptr.reset();
+    system_implementation.reset();
     implementation.reset();
   }
 };

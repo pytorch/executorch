@@ -4,9 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import multiprocessing
+import pickle
 
 import torch
-from eiq_neutron_sdk.neutron_converter.neutron_converter import CompilationContext
 from executorch import exir
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -60,16 +60,23 @@ def test_conv2d_neutron_conversion__prefetching(mocker):
     ), "The weight prefetching flag does not make a difference!"
 
 
-def test_neutron_converter_with_experimental_mlir_flow(mocker):
+def test_convert_unsafe_args_are_picklable(mocker):
+    """Verify that all args passed to `multiprocessing.Process` are picklable.
+
+    The subprocess uses forkserver/spawn in some environments, which requires
+    all Process args to be serializable via pickle.
+    """
     model = LinearModule(True)
     input_shape = (1, 1, 32, 32)
 
     process_spy = mocker.spy(multiprocessing, "Process")
-    to_quantized_edge_program(
-        model, input_shape, use_new_flow_neutron_c=True
-    ).exported_program()
+    to_quantized_edge_program(model, input_shape).exported_program()
 
-    compilation_context = process_spy.call_args.kwargs["args"][2]
-    assert isinstance(compilation_context, CompilationContext)
-    if hasattr(compilation_context.compilationOpts, "useNewFlowNeutronC"):
-        assert compilation_context.compilationOpts.useNewFlowNeutronC
+    args = process_spy.call_args.kwargs["args"]
+    for i, arg in enumerate(args):
+        try:
+            pickle.dumps(arg)
+        except (pickle.PicklingError, TypeError) as e:
+            raise AssertionError(
+                f"Process arg at index {i} ({type(arg).__name__}) is not picklable: {e}"
+            )

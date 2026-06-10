@@ -16,17 +16,44 @@ on:
       - .github/workflows/cuda-windows.yml
       - backends/cuda/**
       - backends/aoti/**
+      - extension/cuda/**
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   export-model-cuda-windows-artifact:
     name: export-model-cuda-windows-artifact
-    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
+    # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch CUDA-relevant paths skip
+    # this job on non-sampled commits. See _ci-run-decision.yml for
+    # the sampling policy.
+    needs: [changed-files, run-decision]
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -114,7 +141,21 @@ jobs:
 
   test-model-cuda-windows-e2e:
     name: test-model-cuda-windows-e2e
-    needs: export-model-cuda-windows-artifact
+    # Same path filter as the export job above. Also explicitly gated
+    # on the export job succeeding — when needs: jobs are *skipped*
+    # (e.g. fork PR), GitHub still evaluates this if:, so without the
+    # explicit success-check this job would run and then fail trying
+    # to download an artifact that was never produced.
+    needs: [changed-files, export-model-cuda-windows-artifact, run-decision]
+    if: |
+      needs.export-model-cuda-windows-artifact.result == 'success' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
       fail-fast: false

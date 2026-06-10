@@ -7,6 +7,16 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    runtime.cxx_library(
+        name = "mock_cuda_allocator",
+        srcs = [],
+        exported_headers = ["mock_cuda_allocator.h"],
+        visibility = ["//executorch/..."],
+        exported_deps = [
+            "//executorch/runtime/core:device_allocator",
+        ],
+    )
+
     runtime.cxx_test(
         name = "device_memory_buffer_test",
         srcs = ["device_memory_buffer_test.cpp"],
