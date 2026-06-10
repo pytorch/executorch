@@ -14,3 +14,5 @@ QNN_ZIP_URL="https://softwarecenter.qualcomm.com/api/download/software/sdks/Qual
 HEXAGON_SDK_VERSION="6.5.0.0"
 HEXAGON_TOOLS_VERSION="19.0.07"
 HEXAGON_SDK_ZIP_URL="https://apigwx-aws.qualcomm.com/qsc/public/v1/api/download/software/sdks/Hexagon_SDK/Linux/Debian/${HEXAGON_SDK_VERSION}/Hexagon_SDK_Linux.zip"
+# SHA-256 of the downloaded zip. Recompute and update when HEXAGON_SDK_VERSION changes. Command to gen followin sha: sha256sum Hexagon_SDK_Linux.zip
+HEXAGON_SDK_ZIP_SHA256="668626f75c38ce1ca993768953db9bf4b632753c3e32ed8363a8287e3aaffc9a"

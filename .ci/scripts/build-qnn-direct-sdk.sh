@@ -15,6 +15,7 @@ install_hexagon_sdk
 
 bash backends/qualcomm/scripts/build.sh \
     --build_direct_mode 3 --soc_model SM8750 \
+    --skip_x86_64 --skip_linux_android \
     --release
 
 ARTIFACT="build-direct/backends/qualcomm/libqnn_executorch_backend.so"

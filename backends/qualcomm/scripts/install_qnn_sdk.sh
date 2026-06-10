@@ -135,14 +135,17 @@ install_hexagon_sdk() {
 
   HEXAGON_ZIP_FILE="Hexagon_SDK_Linux.zip"
   # Match install_qnn's retry shape: --fail rejects HTTP errors,
-  # --retry-all-errors retries transport failures, and `unzip -t`
-  # validates the archive before we proceed.
+  # --retry-all-errors retries transport failures, `unzip -t` validates the
+  # archive, and the SHA-256 check pins the exact bytes we tested against. All
+  # are inside the retry condition so a truncated or wrong-content download is
+  # re-fetched rather than killing the job.
   HEXAGON_DOWNLOAD_MAX_ATTEMPTS=5
   for attempt in $(seq 1 ${HEXAGON_DOWNLOAD_MAX_ATTEMPTS}); do
     rm -f "/tmp/${HEXAGON_ZIP_FILE}"
     if curl --fail --retry 3 --retry-delay 5 --retry-connrefused --retry-all-errors \
          -Lo "/tmp/${HEXAGON_ZIP_FILE}" "${HEXAGON_SDK_ZIP_URL}" \
-       && unzip -tq "/tmp/${HEXAGON_ZIP_FILE}"; then
+       && unzip -tq "/tmp/${HEXAGON_ZIP_FILE}" \
+       && echo "${HEXAGON_SDK_ZIP_SHA256}  /tmp/${HEXAGON_ZIP_FILE}" | sha256sum -c -; then
       break
     fi
     ls -l "/tmp/${HEXAGON_ZIP_FILE}" 2>&1 || true
