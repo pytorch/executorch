@@ -8,7 +8,9 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-@compute @workgroup_size(256)
+override wg_size: u32 = 256;
+
+@compute @workgroup_size(wg_size)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idx = gid.x;
     if (idx >= params.num_elements) {

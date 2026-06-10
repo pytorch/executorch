@@ -46,7 +46,9 @@ def get_docstring(obj) -> str:
 
     lines = docstring.split("\n")
     for line in lines:
-        if ":" in line and line.startswith(" "):
+        # Only first-level arg lines should become bullets.
+        is_arg_line = line.startswith("    ") and not line.startswith("        ")
+        if ":" in line and is_arg_line:
             new_line = line.strip()
             pos = new_line.index(":")
             new_line = f"- **{new_line[:pos]}**" + new_line[pos:]

@@ -35,7 +35,8 @@ class CastInt64BuffersToInt32Pass(ArmPass):
                 f"Node {node.name} has value > {torch.iinfo(torch.int32).max}"
             )
 
-    def _to_int32(self, graph_module: torch.fx.GraphModule):
+    def _to_int32(self, graph_module: torch.fx.GraphModule) -> bool:
+        modified = False
         for node in graph_module.graph.nodes:
             if len(node.users) == 0:
                 continue
@@ -59,10 +60,11 @@ class CastInt64BuffersToInt32Pass(ArmPass):
                 )
                 buffer_int32 = buffer.to(torch.int32)
                 self.exported_program.state_dict[buffer_name] = buffer_int32
-                continue
+                modified = True
+        return modified
 
     def call(self, graph_module: torch.fx.GraphModule):
-        self._to_int32(graph_module)
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        modified = self._to_int32(graph_module)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

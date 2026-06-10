@@ -42,6 +42,14 @@ class CortexMToEdge(ToEdge):
                 torch.ops.aten.hardsigmoid_.default,
                 torch.ops.aten.hardswish.default,
                 torch.ops.aten.hardswish_.default,
+                # silu naturally decomposes to sigmoid*x at the to_edge step.
+                # Preserve it so the LUT lowering can collapse it into a single
+                # cortex_m.quantized_activation call rather than emitting an
+                # extra elementwise mul. Set globally because no per-test
+                # opt-out exists today; any new cortex_m test that uses SiLU
+                # must therefore expect a single aten.silu op in the edge graph
+                # (not sigmoid+mul).
+                torch.ops.aten.silu.default,
             ],
             _check_ir_validity=False,
             _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
@@ -61,16 +69,22 @@ class CortexMRunPasses(RunPasses):
 
 
 class CortexMSerialize(Serialize):
-    def __init__(self):
+    def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
+        target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         compile_spec = get_u55_compile_spec()
-        super().__init__(compile_spec, 1024)
+        # Select the runner built for this target (build_test_runner.sh writes
+        # one runner per target into a target-suffixed directory).
+        super().__init__(
+            compile_spec,
+            None,
+            build_dir_suffix=f"_{target_config.target_string}",
+        )
 
 
 cortex_m_stage_classes = {
     StageType.EXPORT: Export,
     StageType.QUANTIZE: CortexMQuantize,
     StageType.RUN_PASSES: CortexMRunPasses,
-    StageType.SERIALIZE: Serialize,
     StageType.TO_EDGE: CortexMToEdge,
     StageType.TO_EXECUTORCH: ToExecutorch,
     StageType.SERIALIZE: CortexMSerialize,
@@ -93,6 +107,9 @@ class CortexMTester(TesterBase):
             cortex_m_stage_classes
         )
         stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
+            target_config=target_config
+        )
+        stage_classes[StageType.SERIALIZE] = lambda: CortexMSerialize(
             target_config=target_config
         )
         super().__init__(module, resolved_example_inputs, stage_classes)
