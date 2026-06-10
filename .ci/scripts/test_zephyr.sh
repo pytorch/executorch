@@ -32,17 +32,28 @@ Options:
 EOF
 }
 
+require_value() {
+  if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
+    echo "ERROR: $1 requires a non-empty argument" >&2
+    usage >&2
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --zephyr-samples-readme-path)
+      require_value "$1" "${2:-}"
       ZEPHYR_SAMPLES_README_PATH="$2"
       shift 2
       ;;
     --zephyr-dev-root)
+      require_value "$1" "${2:-}"
       ZEPHYR_DEV_ROOT="$2"
       shift 2
       ;;
     --targets)
+      require_value "$1" "${2:-}"
       TARGETS_ARG="$2"
       shift 2
       ;;

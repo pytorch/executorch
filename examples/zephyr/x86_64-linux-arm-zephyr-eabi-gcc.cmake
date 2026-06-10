@@ -57,12 +57,6 @@ add_compile_definitions("$<$<NOT:$<CONFIG:DEBUG>>:NDEBUG>")
 # Link options
 add_link_options(-mcpu=${GCC_CPU} -mthumb)
 
-# Zephyr SDK GCC defaults to Picolibc and does not ship GNU Arm's
-# nosys.specs/rdimon.specs files.
-if(SEMIHOSTING)
-  add_link_options(-lsemihost)
-endif()
-
 # Set floating point unit
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "\\+fp")
   set(FLOAT hard)

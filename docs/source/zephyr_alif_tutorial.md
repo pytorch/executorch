@@ -383,13 +383,14 @@ I [executorch:main.cpp]
 I [executorch:main.cpp] MobileNetV2 Demo Complete
 I [executorch:main.cpp] Model size: 3380576 bytes
 I [executorch:main.cpp] Input: [1, 3, 224, 224] NCHW RGB tensor (150528 bytes)
-I [executorch:main.cpp] Output: 1000 ImageNet classes (top-5 shown)
+I [executorch:main.cpp] Output: 1000 classes (top-5 shown)
 I [executorch:main.cpp] Inference time: 30 ms
 I [executorch:main.cpp] ========================================
 ```
 
-All predictions show `0.0000` because `mv2_untrained` has random weights.
-Use `mv2` (with torchvision pretrained weights) for meaningful class scores.
+Use `mv2_untrained` instead of `mv2` if you want to avoid downloading
+pretrained weights. In that case the class scores are arbitrary and may all be
+close to `0.0000`.
 
 ## Troubleshooting
 
