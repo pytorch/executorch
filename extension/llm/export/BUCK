@@ -55,6 +55,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/extension/export_util:export_util",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/extension/llm/export:metadata",
         "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
     ],
 )
@@ -106,5 +107,17 @@ fbcode_target(_kind = runtime.python_test,
     ],
     deps = [
         ":export_lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "metadata",
+    srcs = [
+        "metadata.py",
+    ],
+    base_module = "executorch.extension.llm.export",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/exir:lib",
     ],
 )

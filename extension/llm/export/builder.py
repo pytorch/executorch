@@ -34,6 +34,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
+from executorch.extension.llm.export.metadata import add_metadata
 from pytorch_tokenizers import get_tokenizer
 from torch.export import export, ExportedProgram
 from torch.nn.attention import SDPBackend
@@ -69,6 +70,18 @@ class DType(Enum):
         if dtype not in mapping:
             raise ValueError(f"Unsupported torch.dtype {dtype}")
         return mapping[dtype]
+
+
+_CONSTANT_METHOD_TO_NAMED_DATA = {
+    "get_bos_id": "tokenizer.bos_id",
+    "get_eos_ids": "tokenizer.eos_ids",
+    "get_max_seq_len": "context.max_seq_len",
+    "get_max_context_len": "context.max_context_len",
+    "get_vocab_size": "model.vocab_size",
+    "use_kv_cache": "model.use_kv_cache",
+    "use_sdpa_with_kv_cache": "model.use_sdpa_with_kv_cache",
+    "enable_dynamic_shape": "model.enable_dynamic_shape",
+}
 
 
 class LLMEdgeManager:
@@ -440,6 +453,28 @@ class LLMEdgeManager:
             logging.info("No quantizer provided, passing...")
             return self
 
+    def _write_metadata_to_named_data(self):
+        """Write metadata to NamedData for efficient C++ runtime access.
+
+        This writes the same metadata values stored as constant_methods
+        also as NamedData entries, enabling the C++ runner to read them
+        without loading full ExecutionPlan entries.
+        """
+        if self.edge_manager is None:
+            return
+        named_data = {}
+        for key, value in self.metadata.items():
+            nd_key = _CONSTANT_METHOD_TO_NAMED_DATA.get(key, key)
+            named_data[nd_key] = value
+        try:
+            add_metadata(self.edge_manager, named_data)
+        except Exception:
+            # Don't fail the export if metadata writing fails
+            logging.warning(
+                "Failed to write metadata to NamedData, "
+                "falling back to constant_methods only"
+            )
+
     def export_to_edge(self) -> "LLMEdgeManager":
         """
         Export the model to Edge dialect and retrieve a LLMEdgeManager.
@@ -465,6 +500,7 @@ class LLMEdgeManager:
                     edge_compile_config=edge_config,
                     verbose=self.verbose,
                 )
+        self._write_metadata_to_named_data()
         return self
 
     def to_backend(self, partitioners: Optional[List[Partitioner]]) -> "LLMEdgeManager":
@@ -517,6 +553,7 @@ class LLMEdgeManager:
             constant_methods=self.metadata,
             generate_etrecord=self.generate_etrecord,
         )
+        self._write_metadata_to_named_data()
         if self.verbose:
             logging.info(f"Exported graph:\n{self.edge_manager.exported_program()}")
         return self

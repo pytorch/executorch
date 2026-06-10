@@ -10,6 +10,7 @@
 
 #include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/metadata.h>
 #include <executorch/extension/llm/runner/multimodal_decoder_runner.h>
 #include <executorch/extension/llm/runner/multimodal_prefiller.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
@@ -99,7 +100,84 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
       {llm::kUseSDPAWithKVCache, false},
   });
 
-  // Read metadata from the model
+  // Try reading from NamedDataMap first (new format)
+  auto program = module->program();
+  if (program) {
+    auto ndm_result = program->get_named_data_map();
+    if (ndm_result.ok() && ndm_result.get() != nullptr) {
+      const auto* named_data_map = ndm_result.get();
+
+      // Map from runtime keys to NamedData keys
+      struct KeyMapping {
+        const char* runtime_key;
+        const char* named_data_key;
+      };
+      static const KeyMapping mappings[] = {
+          {llm::kMaxSeqLen, metadata::kMaxSeqLen},
+          {llm::kMaxContextLen, metadata::kMaxContextLen},
+          {llm::kUseKVCache, metadata::kUseKVCache},
+          {llm::kEnableDynamicShape, metadata::kEnableDynamicShape},
+          {llm::kUseSDPAWithKVCache, metadata::kUseSDPAWithKVCache},
+      };
+
+      // Check if kMaxSeqLen exists in NamedData (required key)
+      auto max_seq_result =
+          metadata::get_int(*named_data_map, metadata::kMaxSeqLen);
+      if (max_seq_result.ok()) {
+        ET_LOG(Info, "Reading metadata from NamedData");
+
+        for (const auto& mapping : mappings) {
+          auto val =
+              metadata::get_int(*named_data_map, mapping.named_data_key);
+          if (val.ok()) {
+            metadata[mapping.runtime_key] = val.get();
+            ET_LOG(
+                Info,
+                "NamedData: %s = %" PRId64,
+                mapping.runtime_key,
+                val.get());
+          }
+        }
+
+        // Read bos_id from NamedData
+        auto bos_result =
+            metadata::get_int(*named_data_map, metadata::kBosId);
+        if (bos_result.ok()) {
+          metadata[llm::kBosId] = bos_result.get();
+        } else {
+          metadata[llm::kBosId] = tokenizer->bos_tok();
+        }
+
+        // Read vocab_size from NamedData
+        auto vocab_result =
+            metadata::get_int(*named_data_map, metadata::kVocabSize);
+        if (vocab_result.ok()) {
+          metadata[llm::kVocabSize] = vocab_result.get();
+        } else {
+          metadata[llm::kVocabSize] = tokenizer->vocab_size();
+        }
+
+        // Handle kMaxContextLen default: if not explicitly set,
+        // default to kMaxSeqLen
+        if (metadata.find(llm::kMaxContextLen) == metadata.end() ||
+            metadata[llm::kMaxContextLen] == 128) {
+          auto ctx_result =
+              metadata::get_int(*named_data_map, metadata::kMaxContextLen);
+          if (!ctx_result.ok()) {
+            metadata[llm::kMaxContextLen] = metadata[llm::kMaxSeqLen];
+          }
+        }
+
+        for (auto& pair : metadata) {
+          ET_LOG(
+              Info, "Metadata: %s = %" PRId64, pair.first.c_str(), pair.second);
+        }
+        return metadata;
+      }
+    }
+  }
+
+  // Fallback: Read metadata from constant_methods (legacy format)
   auto method_names_result = module->method_names();
   if (method_names_result.error() != Error::Ok) {
     ET_LOG(Error, "Failed reading method names");
@@ -158,7 +236,26 @@ std::unordered_set<uint64_t> get_eos_ids(
     tokenizers::Tokenizer* tokenizer,
     Module* module) {
   std::unordered_set<uint64_t> eos_ids = {tokenizer->eos_tok()};
-  // Get EOS IDs if available
+
+  // Try NamedData first (new format)
+  auto program = module->program();
+  if (program) {
+    auto ndm_result = program->get_named_data_map();
+    if (ndm_result.ok() && ndm_result.get() != nullptr) {
+      auto eos_result =
+          metadata::get_int_list(*ndm_result.get(), metadata::kEosIds);
+      if (eos_result.ok()) {
+        eos_ids.clear();
+        for (auto id : eos_result.get()) {
+          eos_ids.emplace(static_cast<uint64_t>(id));
+          ET_LOG(Info, "NamedData eos_id = %" PRId64, id);
+        }
+        return eos_ids;
+      }
+    }
+  }
+
+  // Fallback: Get EOS IDs from constant_methods (legacy format)
   auto method_names_result = module->method_names();
   if (method_names_result.error() != Error::Ok) {
     ET_LOG(Error, "Failed reading method names");

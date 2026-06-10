@@ -17,6 +17,18 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
+    runtime.cxx_library(
+        name = "metadata",
+        exported_headers = [
+            "metadata.h",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:named_data_map",
+            "//executorch/runtime/core:core",
+        ],
+    )
+
     for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
 
@@ -128,6 +140,7 @@ def define_common_targets():
             exported_deps = [
                 ":image_prefiller" + aten_suffix,
                 ":irunner",
+                ":metadata",
                 ":multimodal_runner_lib" + aten_suffix,
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
