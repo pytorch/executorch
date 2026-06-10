@@ -30,6 +30,7 @@ set(WEBGPU_SRCS
     runtime/WebGPUGraph.cpp
     runtime/WebGPUDelegateHeader.cpp
     runtime/WebGPUDevice.cpp
+    runtime/WebGPUQueryPool.cpp
     runtime/ops/OperatorRegistry.cpp
     runtime/ops/add/BinaryOp.cpp
     runtime/ops/rms_norm/RmsNorm.cpp
