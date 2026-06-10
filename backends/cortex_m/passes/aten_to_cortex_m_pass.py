@@ -7,6 +7,7 @@
 
 from typing import cast
 
+import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 import executorch.backends.cortex_m.ops.operators  # noqa
 import executorch.exir as exir
 import torch
@@ -16,6 +17,7 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,
     quantize_multiplier_aot,
+    to_physical_order,
 )
 from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
     required_cmsis_nn_buffer_sizes,
@@ -146,7 +148,7 @@ def _has_qparams(node: Node) -> bool:
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.tanh.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.silu.default)
 def _get_activation_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     """Lower a standalone quantized sigmoid / tanh / silu to a single
     cortex_m.quantized_activation call backed by an AoT-built 256-entry
@@ -156,6 +158,7 @@ def _get_activation_replacement(
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     input_qparams = node.meta["input_qparams"][0]
     output_qparams = node.meta["output_qparams"][0]
     lut_tensor = build_activation_lut(
@@ -187,7 +190,7 @@ def _get_activation_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.linear.default)
 def _get_linear_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     """
     Let
@@ -209,6 +212,10 @@ def _get_linear_replacement(
     if not _has_qparams(node):
         return None
 
+    assert isinstance(dialect_pass, AtenToCortexMPass)
+    exported_program = dialect_pass.exported_program
+    target_config = dialect_pass.target_config
+
     input_scale = node.meta["input_qparams"][0].scale
     input_zp = node.meta["input_qparams"][0].zp
     weight_scale = node.meta["input_qparams"][1].scale
@@ -218,13 +225,22 @@ def _get_linear_replacement(
     output_min = node.meta["output_qparams"][0].qmin
     output_max = node.meta["output_qparams"][0].qmax
 
+    if weight_zp != 0:
+        raise NotImplementedError(
+            f"cortex_m::quantized_linear assumes symmetric weight "
+            f"quantization (weight_zp == 0); got weight_zp={weight_zp}"
+        )
+
     quantized_multiplier, quantized_shift = quantize_multiplier_aot(
         (input_scale * weight_scale) / output_scale
     )
 
-    # TODO: Add support for configuring the backend to support other extensions.
-    # Kernel sum is only used in the CMSIS-NN implementation for the MVE extension,
-    # so this should be optional.
+    # CMSIS-NN's MVE `arm_fully_connected_s8` path reads a precomputed
+    # kernel_sum (input_offset×sum(weight) + bias) from ctx.buf and
+    # ignores the bias argument. The DSP and scalar paths do the opposite
+    # — they read the bias argument at runtime and ignore ctx.buf
+    # (see arm_nn_vec_mat_mult_t_s8.c). Pick the right input format here
+    # based on the target ISA so the runtime gets exactly what it expects.
     linear_args = node.args
     weights = cast(Node, linear_args[1])
     weights_tensor = get_param_tensor(exported_program, weights)
@@ -232,23 +248,29 @@ def _get_linear_replacement(
     bias_tensor = (
         get_param_tensor(exported_program, bias_node) if bias_node is not None else None
     )
-    kernel_sum_tensor = _compute_kernel_sum(
-        weights_tensor, bias_tensor, -input_zp, -weight_zp
-    )
-    with node.graph.inserting_after(weights):
-        kernel_sum = create_constant_placeholder(
-            exported_program,
-            node.graph,
-            node.name + "_kernel_sum",
-            InputKind.PARAMETER,
-            kernel_sum_tensor,
+
+    if target_config.backend == cmsis_nn.Backend.MVE:
+        kernel_sum_tensor = _compute_kernel_sum(
+            weights_tensor, bias_tensor, -input_zp, -weight_zp
         )
+        with node.graph.inserting_after(weights):
+            kernel_sum_arg = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_kernel_sum",
+                InputKind.PARAMETER,
+                kernel_sum_tensor,
+            )
+        bias_arg = None
+    else:
+        kernel_sum_arg = None
+        bias_arg = bias_node
 
     args = (
         linear_args[0],
         weights,
-        None,
-        kernel_sum,
+        bias_arg,
+        kernel_sum_arg,
         -input_zp,
         -weight_zp,
         output_zp,
@@ -263,11 +285,12 @@ def _get_linear_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.convolution.default)
 def _get_convolution_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     conv_args = node.args
     (
         x,
@@ -292,7 +315,7 @@ def _get_convolution_replacement(
     )
 
     if transposed:
-        return _get_transpose_conv2d_replacement(node, exported_program)
+        return _get_transpose_conv2d_replacement(node, dialect_pass)
 
     input_scale = node.meta["input_qparams"][0].scale
     input_zero_point = node.meta["input_qparams"][0].zp
@@ -437,7 +460,7 @@ def _get_convolution_replacement(
 
 
 def _get_transpose_conv2d_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     """
     Transform aten.convolution with transposed=True to cortex_m.quantized_transpose_conv2d.
@@ -445,6 +468,7 @@ def _get_transpose_conv2d_replacement(
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     conv_t_args = node.args
     (
         x,
@@ -562,11 +586,12 @@ def _get_transpose_conv2d_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.bmm.default)
 def _get_bmm_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     lhs_scale = node.meta["input_qparams"][0].scale
     lhs_zp = node.meta["input_qparams"][0].zp
     rhs_scale = node.meta["input_qparams"][1].scale
@@ -619,3 +644,57 @@ def _get_bmm_replacement(
         scratch,
     )
     return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_batch_matmul.default, args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.avg_pool2d.default)
+def _get_avg_pool2d_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    if not _has_qparams(node):
+        return None
+
+    exported_program = dialect_pass.exported_program
+    pool_args = node.args
+    kernel_size = cast(list[int], pool_args[1])
+    stride = cast(list[int], pool_args[2]) if len(pool_args) > 2 else list(kernel_size)
+    padding = cast(list[int], pool_args[3]) if len(pool_args) > 3 else [0, 0]
+    ceil_mode = cast(bool, pool_args[4]) if len(pool_args) > 4 else False
+    count_include_pad = cast(bool, pool_args[5]) if len(pool_args) > 5 else True
+    divisor_override = pool_args[6] if len(pool_args) > 6 else None
+
+    if ceil_mode or divisor_override is not None:
+        return None
+
+    input_node = cast(Node, pool_args[0])
+    input_zp = node.meta["input_qparams"][0].zp
+    input_scale = node.meta["input_qparams"][0].scale
+    output_mult, output_shift = quantize_multiplier_aot(input_scale)
+
+    avg_padding = padding
+    if count_include_pad:
+        pad_h, pad_w = padding
+        input_tensor = get_first_fake_tensor(input_node)
+        pre_pad = post_pad = to_physical_order([0, 0, pad_h, pad_w], input_tensor)
+        with node.graph.inserting_before(node):
+            input_node = node.graph.create_node(
+                "call_function",
+                target=exir_ops.edge.cortex_m.pad.default,
+                args=(input_node, pre_pad, post_pad, int(input_zp)),
+            )
+        avg_padding = [0, 0]
+
+    scratch = _create_uninitialized_alloc_node(node, exported_program)
+
+    new_args = (
+        input_node,
+        kernel_size,
+        stride,
+        avg_padding,
+        int(input_zp),
+        int(output_mult),
+        int(output_shift),
+        scratch,
+    )
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.quantized_avg_pool2d.default, new_args
+    )
