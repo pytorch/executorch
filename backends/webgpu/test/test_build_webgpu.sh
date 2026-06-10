@@ -38,11 +38,16 @@ echo "=== Step 2: Export test models ==="
 PTE_MODEL="/tmp/webgpu_add_test.pte"
 PTE_CHAINED_MODEL="/tmp/webgpu_chained_add_test.pte"
 RMS_NORM_DIR="/tmp/rmsn"
+DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
 export_add_model('${PTE_MODEL}')
 export_chained_add_model('${PTE_CHAINED_MODEL}')
+"
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
+export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 "
 if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
   $PYTHON_EXECUTABLE -c "
@@ -77,6 +82,8 @@ cmake \
 
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_native_test -j${NPROC}
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_rms_norm_test -j${NPROC}
+cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_dispatch_order_test -j${NPROC}
+cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_scratch_buffer_test -j${NPROC}
 
 echo "=== Step 4: Run native tests ==="
 env \
@@ -89,5 +96,8 @@ if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
 else
   echo "(skipping rms_norm native test: pytest or export did not complete)"
 fi
+
+"${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
+"${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_scratch_buffer_test"
 
 echo "=== Done ==="
