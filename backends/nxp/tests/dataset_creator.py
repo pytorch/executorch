@@ -348,7 +348,7 @@ class LinearRampDatasetCreator(DatasetCreator):
     equal to `high`, with increments depending on the total number of elements.
     """
 
-    def __init__(self, num_samples=2, low=0.0, high=1.0):
+    def __init__(self, num_samples=2, low=-1.0, high=1.0):
         self._num_samples = num_samples
         self.low = low
         self.high = high
