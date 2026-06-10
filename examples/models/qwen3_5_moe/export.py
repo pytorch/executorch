@@ -623,8 +623,10 @@ def _materialize_buffers(model, config):
 
     Replaces meta buffers with real tensors on CPU, recomputes RoPE
     inv_freq and causal masks. State buffers (KV cache, conv/recurrent
-    state) are zero-initialized registered buffers that will be shared
-    across methods via share_mutable_buffers.
+    state) are zero-initialized registered buffers. On the CUDA/AOTI backend
+    they are lifted into the delegate as constants and shared across methods at
+    runtime via the backend's per-FQN buffer cache; backends that keep them at
+    the graph level instead share them via share_mutable_buffers.
     """
     # Masks stay bool, inv_freq stays float32.
     for fqn, buf in list(model.named_buffers()):
@@ -922,8 +924,12 @@ def _export_cuda(model, config, args):
         via fused_moe_batched_gemm, with dynamic sequence length.
 
     Both methods share mutable state buffers (KV cache, conv_state,
-    recurrent_state) via share_mutable_buffers=True. The model uses
-    registered buffers with in-place updates — no state in/out args.
+    recurrent_state): the model uses registered buffers with in-place
+    updates (no state in/out args). On the CUDA/AOTI backend these buffers
+    are lifted into the delegate as constants and shared across the
+    decode/prefill methods at runtime via the backend's per-FQN buffer cache
+    (share_mutable_buffers is left off for CUDA); backends that keep them at
+    the graph level instead share them via share_mutable_buffers.
     """
     import torch._inductor.config as inductor_config
 
@@ -1032,8 +1038,7 @@ def _export_cuda(model, config, args):
             extract_delegate_segments=True,
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
-                alloc_graph_input=False,
-                share_mutable_buffers=True,
+                alloc_graph_input=False
             ),
             emit_mutable_buffer_names=True,
         ),

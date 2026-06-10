@@ -147,11 +147,13 @@ inline void _strided_copy(
 }
 
 // Copy data from SlimTensor to ETensor, rearranging if strides differ.
-// When stream is non-null, GPU copies use that stream (async fast path).
-// When stream is null, GPU copies are synchronous.
+// dst_device selects the destination memory space (CPU for D2H, a CUDA device
+// for D2D). When stream is non-null, GPU copies use that stream (async fast
+// path). When stream is null, GPU copies are synchronous.
 inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor,
+    const executorch::backends::aoti::slim::c10::Device& dst_device,
     cudaStream_t stream) {
   ET_CHECK_OK_OR_RETURN_ERROR(_check_tensor_metadata(slim_tensor, etensor));
 
@@ -165,7 +167,7 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
 
   if (_strides_match(slim_tensor, etensor)) {
     // Fast path: strides match, raw byte copy
-    if (slim_tensor->is_cpu()) {
+    if (slim_tensor->is_cpu() && dst_device.is_cpu()) {
       std::memcpy(dst_data, src_data, nbytes);
     } else if (stream) {
       executorch::backends::aoti::slim::DeviceTraits<
@@ -174,7 +176,7 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
               dst_data,
               src_data,
               nbytes,
-              executorch::backends::aoti::slim::CPU_DEVICE,
+              dst_device,
               slim_tensor->device(),
               stream);
     } else {
@@ -184,13 +186,14 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
               dst_data,
               src_data,
               nbytes,
-              executorch::backends::aoti::slim::CPU_DEVICE,
+              dst_device,
               slim_tensor->device());
     }
   } else {
     // Slow path: strides differ (e.g., AOTI delegate output layout differs
-    // from .pte's dim_order). Copy to a temp CPU buffer, then rearrange
-    // element-by-element to match the ETensor's expected layout.
+    // from .pte's dim_order). Copy to a temp CPU buffer, rearrange
+    // element-by-element to match the ETensor's expected layout, then move the
+    // result to the destination (CPU stays in place; GPU gets an H2D copy).
     std::vector<char> tmp(nbytes);
     if (slim_tensor->is_cpu()) {
       std::memcpy(tmp.data(), src_data, nbytes);
@@ -218,13 +221,38 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
 
     size_t elem_size = executorch::backends::aoti::slim::c10::elementSize(
         slim_tensor->dtype());
-    _strided_copy(
-        dst_data,
-        tmp.data(),
-        elem_size,
-        sizes_vec,
-        src_strides_vec,
-        dst_strides_vec);
+
+    if (dst_device.is_cpu()) {
+      _strided_copy(
+          dst_data,
+          tmp.data(),
+          elem_size,
+          sizes_vec,
+          src_strides_vec,
+          dst_strides_vec);
+    } else {
+      // Rearrange into a CPU staging buffer, then copy to the GPU destination.
+      std::vector<char> rearranged(nbytes);
+      _strided_copy(
+          rearranged.data(),
+          tmp.data(),
+          elem_size,
+          sizes_vec,
+          src_strides_vec,
+          dst_strides_vec);
+      if (stream) {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
+            dst_data,
+            rearranged.data(),
+            nbytes,
+            cudaMemcpyHostToDevice,
+            stream));
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(stream));
+      } else {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
+            dst_data, rearranged.data(), nbytes, cudaMemcpyHostToDevice));
+      }
+    }
   }
 
   return executorch::runtime::Error::Ok;
@@ -251,7 +279,39 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor_async(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor,
     cudaStream_t stream) {
-  return _copy_slimtensor_to_etensor_impl(slim_tensor, etensor, stream);
+  return _copy_slimtensor_to_etensor_impl(
+      slim_tensor,
+      etensor,
+      executorch::backends::aoti::slim::CPU_DEVICE,
+      stream);
+}
+
+/**
+ * Copies data from a SlimTensor to a GPU-resident ETensor asynchronously
+ * (device-to-device).
+ *
+ * Used when the destination ETensor's storage lives in a planned GPU arena.
+ * The destination device is taken from the source SlimTensor, so this only
+ * supports same-device D2D copies (source and destination on the same GPU).
+ *
+ * When strides match (common case), performs a fast async D2D copy on the
+ * provided stream. When strides differ, falls back to a staged copy with
+ * element-by-element rearrangement on the host.
+ *
+ * NOTE: In the fast path the copy is asynchronous. The caller must synchronize
+ * the stream before consuming the ETensor data.
+ *
+ * @param slim_tensor Pointer to the source SlimTensor (must not be null).
+ * @param etensor Pointer to the destination GPU ETensor (must not be null).
+ * @param stream The CUDA stream to use for async copy.
+ * @return Error::Ok on success, or an appropriate error code on failure.
+ */
+inline executorch::runtime::Error copy_slimtensor_to_device_etensor_async(
+    const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
+    executorch::runtime::etensor::Tensor* etensor,
+    cudaStream_t stream) {
+  return _copy_slimtensor_to_etensor_impl(
+      slim_tensor, etensor, slim_tensor->device(), stream);
 }
 
 /**
@@ -267,7 +327,11 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor_async(
 inline executorch::runtime::Error copy_slimtensor_to_etensor(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
     executorch::runtime::etensor::Tensor* etensor) {
-  return _copy_slimtensor_to_etensor_impl(slim_tensor, etensor, nullptr);
+  return _copy_slimtensor_to_etensor_impl(
+      slim_tensor,
+      etensor,
+      executorch::backends::aoti::slim::CPU_DEVICE,
+      nullptr);
 }
 
 /**
