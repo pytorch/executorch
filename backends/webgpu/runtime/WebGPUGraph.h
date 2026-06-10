@@ -17,9 +17,7 @@
 
 #include <executorch/runtime/core/named_data_map.h>
 
-namespace executorch {
-namespace backends {
-namespace webgpu {
+namespace executorch::backends::webgpu {
 
 struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
@@ -121,6 +119,9 @@ class WebGPUGraph {
     uniform_buffer_bytes_ += bytes;
   }
 
+  // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
+  WGPUBuffer create_scratch_buffer(size_t nbytes);
+
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
       const char* wgsl_source);
@@ -175,6 +176,9 @@ class WebGPUGraph {
   std::vector<WGPUBuffer> shared_buffers_;
   std::vector<size_t> shared_buffer_sizes_;
 
+  // Long-lived scratch storage buffers for fused ops (e.g. SDPA temporaries).
+  std::vector<WGPUBuffer> scratch_buffers_;
+
   // Staging buffers for reading back outputs (MapRead | CopyDst).
   std::vector<WGPUBuffer> output_staging_buffers_;
 
@@ -193,6 +197,4 @@ class WebGPUGraph {
   size_t uniform_buffer_bytes_ = 0;
 };
 
-} // namespace webgpu
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::webgpu

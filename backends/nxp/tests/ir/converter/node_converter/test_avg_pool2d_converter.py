@@ -114,13 +114,13 @@ class TestAvgPool2D:
 class TestAvgPool1D:
 
     # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
-    def test__basic_nsys_inference__view_not_delegated(self, mocker):
+    def test__basic_nsys_inference(self, mocker):
         input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
         model = AvgPool1DModule()
         graph_verifier = DetailedGraphVerifier(
             mocker,
-            expected_delegated_ops={AvgPool2D: 1},
-            expected_non_delegated_ops={ViewCopy: 2},
+            expected_delegated_ops={AvgPool2D: 1, ViewCopy: 2},
+            expected_non_delegated_ops={},
         )
 
         lower_run_compare(model, input_shape, graph_verifier)

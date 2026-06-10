@@ -764,6 +764,20 @@ if(EXECUTORCH_BUILD_CUDA
   find_package_torch()
 endif()
 
+# Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
+# vendored torch-tensorrt delegate). Built before backends/aoti and
+# backends/cuda, which link it.
+if(EXECUTORCH_BUILD_CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
+  install(
+    DIRECTORY extension/cuda/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/cuda
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_cuda)
+endif()
+
 # Build common AOTI functionality if needed by CUDA or Metal backends
 if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
@@ -1024,6 +1038,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_COREML AND APPLE)
     list(APPEND _dep_libs coremldelegate)
+  endif()
+
+  if(EXECUTORCH_BUILD_VGF)
+    list(APPEND _dep_libs vgf_backend)
   endif()
 
   if(EXECUTORCH_BUILD_MPS)
