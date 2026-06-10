@@ -533,25 +533,48 @@ def _build_parser():
     )
 
     parser.add_argument(
-        "--tasks",
+        "--eval_tasks",
         nargs="+",
         type=str,
         default=None,
-        help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
+        help="list of lm-eluther tasks to evaluate usage: --eval_tasks task1 task2",
     )
 
     parser.add_argument(
-        "--limit",
+        "--eval_limit",
         type=int,
         default=1,
         help="number of samples to evalulate. If not set, evaluate all samples",
     )
     parser.add_argument(
-        "--num_fewshot",
+        "--eval_num_fewshot",
         type=int,
         default=None,
         metavar="N",
-        help="Number of examples in few-shot context",
+        help="Number of examples to eval in few-shot context",
+    )
+
+    parser.add_argument(
+        "--calib_tasks",
+        nargs="+",
+        type=str,
+        default=None,
+        help="list of lm-eluther tasks to calibrate usage: --calib_tasks task1 task2",
+    )
+
+    parser.add_argument(
+        "--calib_limit",
+        type=int,
+        default=1,
+        help="number of samples to calibrate. If not set, calibrate all samples",
+    )
+
+    parser.add_argument(
+        "--calib_num_fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of examples to calibrate in few-shot context",
     )
 
     parser.add_argument(
@@ -598,8 +621,8 @@ def export_llama(args) -> None:
         raise RuntimeError(
             "Eval device perplexity is only supported for KV mode. Hybrid mode will only use KV mode when evaluating tasks/sqnr."
         )
-    if TASKS_EVAL in args.eval_methods and args.tasks is None:
-        raise RuntimeError("Please provide --tasks to eval perplexity")
+    if TASKS_EVAL in args.eval_methods and args.eval_tasks is None:
+        raise RuntimeError("Please provide --eval_tasks to eval perplexity")
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
     ), f"Unknown decoder_model: {args.decoder_model}."
