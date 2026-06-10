@@ -648,11 +648,12 @@ def _get_bmm_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.avg_pool2d.default)
 def _get_avg_pool2d_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     if not _has_qparams(node):
         return None
 
+    exported_program = dialect_pass.exported_program
     pool_args = node.args
     kernel_size = cast(list[int], pool_args[1])
     stride = cast(list[int], pool_args[2]) if len(pool_args) > 2 else list(kernel_size)
