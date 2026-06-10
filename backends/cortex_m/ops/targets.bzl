@@ -70,6 +70,7 @@ OPERATORS = [
     "quantized_avg_pool2d",
     "quantized_batch_matmul",
     "quantized_max_pool2d",
+    "quantized_activation",
 ]
 
 def define_common_targets():
