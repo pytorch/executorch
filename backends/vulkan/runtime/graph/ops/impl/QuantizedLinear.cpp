@@ -54,7 +54,7 @@ void resize_linear_qw_node(
 }
 
 // Per-shader coopmat tile geometry (must match each shader's yaml). The
-// shaders restructured to the double-buffered reference (gemm_double_buf)
+// shaders restructured to the double-buffered reference (coopmat_mm_ref)
 // use larger tiles and K-step 16; the rest keep the GemmCoopmat.h 64x64x32
 // geometry. All use 256-thread workgroups.
 //   linear_q4gsw_coopmat       128x128x16, 8 subgroups x 32 (forced)

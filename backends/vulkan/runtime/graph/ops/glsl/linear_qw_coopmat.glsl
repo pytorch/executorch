@@ -22,7 +22,7 @@
  * Bsh, keeping the K-loop a clean fp16 MMA.
  *
  * Loop structure follows the NVIDIA double-buffered GEMM reference
- * (shmem_double_buf4.comp, "store-first" variant; see gemm_double_buf.glsl
+ * (shmem_double_buf4.comp, "store-first" variant; see coopmat_mm_ref.glsl
  * in test/custom_ops — measured 1.5x faster than the previous
  * single-buffered skeleton at fp16 on Xclipse 970):
  *   - PROLOGUE: prefetch tile 0 from global memory into temp registers, then
@@ -110,7 +110,7 @@ ${layout_declare_spec_const(C, "int", "num_groups_arg", "0")}
 // the first store per subgroup lands correctly; standalone repro cm_acc2).
 ${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
 
-// --- Tile geometry (from yaml; defaults match gemm_double_buf) ---
+// --- Tile geometry (from yaml; defaults match coopmat_mm_ref) ---
 const uint MMA_M = ${MMA_M};
 const uint MMA_N = ${MMA_N};
 const uint MMA_K = ${MMA_K};

@@ -14,26 +14,26 @@
 namespace vkcompute {
 
 // Dispatch for the ported NVIDIA double-buffered coopmat GEMM reference
-// (gemm_double_buf.glsl): D[M,N] = A[M,K] x B[K,N], all fp16 buffers,
+// (coopmat_mm_ref.glsl): D[M,N] = A[M,K] x B[K,N], all fp16 buffers,
 // row-major. One workgroup per 128x128 output tile, 256 threads, subgroup
 // size forced to 32 by the shader's REQUIRED_SUBGROUP_SIZE annotation.
 
-constexpr uint32_t kDbTileM = 128;
-constexpr uint32_t kDbTileN = 128;
-constexpr uint32_t kDbTileK = 16;
-constexpr uint32_t kDbInvocations = 256; // 8 subgroups x 32
+constexpr uint32_t kRefTileM = 128;
+constexpr uint32_t kRefTileN = 128;
+constexpr uint32_t kRefTileK = 16;
+constexpr uint32_t kRefInvocations = 256; // 8 subgroups x 32
 
-static vkapi::ShaderInfo pick_gemm_double_buf_shader(
+static vkapi::ShaderInfo pick_coopmat_mm_ref_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)graph;
   (void)args;
   (void)resize_args;
-  return VK_KERNEL_FROM_STR("gemm_double_buf_half");
+  return VK_KERNEL_FROM_STR("coopmat_mm_ref_half");
 }
 
-static utils::uvec3 pick_gemm_double_buf_global_wg_size(
+static utils::uvec3 pick_coopmat_mm_ref_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -45,15 +45,15 @@ static utils::uvec3 pick_gemm_double_buf_global_wg_size(
   const uint32_t M = out_sizes.at(out_sizes.size() - 2);
   const uint32_t N = out_sizes.at(out_sizes.size() - 1);
   // Same group-count cancellation trick as GemmCoopmat.cpp: the framework
-  // divides by the local size, so multiplying tiles_n by kDbInvocations
+  // divides by the local size, so multiplying tiles_n by kRefInvocations
   // yields exactly tiles_n x tiles_m workgroups.
   return {
-      utils::div_up(N, kDbTileN) * kDbInvocations,
-      utils::div_up(M, kDbTileM),
+      utils::div_up(N, kRefTileN) * kRefInvocations,
+      utils::div_up(M, kRefTileM),
       1};
 }
 
-static utils::uvec3 pick_gemm_double_buf_local_wg_size(
+static utils::uvec3 pick_coopmat_mm_ref_local_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const utils::uvec3& global_workgroup_size,
@@ -64,10 +64,10 @@ static utils::uvec3 pick_gemm_double_buf_local_wg_size(
   (void)global_workgroup_size;
   (void)args;
   (void)resize_args;
-  return {kDbInvocations, 1, 1};
+  return {kRefInvocations, 1, 1};
 }
 
-void gemm_double_buf(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void coopmat_mm_ref(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int idx = 0;
   const ValueRef mat1 = args.at(idx++);
   const ValueRef mat2 = args.at(idx++);
@@ -82,15 +82,15 @@ void gemm_double_buf(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const int32_t N = graph.size_at<int32_t>(-1, out);
   const int32_t K = graph.size_at<int32_t>(-1, mat1);
   // No partial-tile or K-tail handling in the reference shader.
-  VK_CHECK_COND(M % static_cast<int32_t>(kDbTileM) == 0);
-  VK_CHECK_COND(N % static_cast<int32_t>(kDbTileN) == 0);
-  VK_CHECK_COND(K % static_cast<int32_t>(kDbTileK) == 0);
+  VK_CHECK_COND(M % static_cast<int32_t>(kRefTileM) == 0);
+  VK_CHECK_COND(N % static_cast<int32_t>(kRefTileN) == 0);
+  VK_CHECK_COND(K % static_cast<int32_t>(kRefTileK) == 0);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      pick_gemm_double_buf_shader,
-      pick_gemm_double_buf_global_wg_size,
-      pick_gemm_double_buf_local_wg_size,
+      pick_coopmat_mm_ref_shader,
+      pick_coopmat_mm_ref_global_wg_size,
+      pick_coopmat_mm_ref_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2}, vkapi::kRead}},
       // Shader params buffers — none; all geometry is spec constants
@@ -106,7 +106,7 @@ void gemm_double_buf(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.gemm_double_buf, gemm_double_buf);
+  VK_REGISTER_OP(etvk.coopmat_mm_ref, coopmat_mm_ref);
 }
 
 } // namespace vkcompute

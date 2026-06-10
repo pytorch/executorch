@@ -12,7 +12,7 @@
 # Forces buffer storage for activation/output (coopMatLoad/Store on buffers);
 # INT weight storage can be texture2d or buffer (matches the tiled path).
 # DTYPE = half only; fp32 activations are not supported.
-# Geometry follows the double-buffered reference (gemm_double_buf): 128x128
+# Geometry follows the double-buffered reference (coopmat_mm_ref): 128x128
 # tile, K-step 16, 8 subgroups x 32 threads (subgroup size 32 forced).
 
 linear_qw_coopmat:

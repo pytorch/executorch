@@ -27,7 +27,7 @@
  * unsigned int4 nibbles in dotPacked4x8) cancels out and is not needed.
  *
  * Loop structure follows the NVIDIA double-buffered GEMM reference
- * (shmem_double_buf4.comp "store-first" variant; see gemm_double_buf.glsl in
+ * (shmem_double_buf4.comp "store-first" variant; see coopmat_mm_ref.glsl in
  * test/custom_ops): prologue register prefetch, then per chunk
  * barrier -> prefetch next chunk -> int8 MMA on the current LDS slice ->
  * store temp into the other slice. One barrier per chunk; the prefetch is

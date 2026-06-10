@@ -8,7 +8,7 @@
 //   tiled    matmul_vec, Texture3D (production default baseline)
 //   coopmat  matmul_coopmat (coopmat_mm.glsl), Buffer — our shader, forced
 //            past the desktop-only gate via test_etvk.test_mm "coopmat"
-//   dbuf4    gemm_double_buf (NVIDIA shmem_double_buf4 reference port),
+//   coopmat_ref  coopmat_mm_ref (NVIDIA shmem_double_buf4 reference port),
 //            Buffer — double-buffered shared memory, subgroup size 32
 //
 // Apples-to-apples: same shapes, same runtime-mat2 row-major [K,N] fp16
@@ -30,9 +30,9 @@ struct GemmConfig {
   int64_t N;
 };
 
-// Impl rows benchmarked per shape. The dbuf4 tile is 128x128 (vs 64x64 for
+// Impl rows benchmarked per shape. The coopmat_ref tile is 128x128 (vs 64x64 for
 // coopmat), so correctness shapes must align to 128.
-static const std::vector<std::string> kImpls = {"tiled", "coopmat", "dbuf4"};
+static const std::vector<std::string> kImpls = {"tiled", "coopmat", "coopmat_ref"};
 
 static TestCase make_case(const GemmConfig& cfg, const std::string& impl) {
   const vkapi::ScalarType dt = vkapi::kHalf;
@@ -53,8 +53,8 @@ static TestCase make_case(const GemmConfig& cfg, const std::string& impl) {
   ValueSpec output({cfg.M, cfg.N}, dt, storage, utils::kWidthPacked,
                    DataGenType::ZEROS);
 
-  if (impl == "dbuf4") {
-    tc.set_operator_name("etvk.gemm_double_buf");
+  if (impl == "coopmat_ref") {
+    tc.set_operator_name("etvk.coopmat_mm_ref");
     tc.add_input_spec(mat1);
     tc.add_input_spec(mat2);
   } else {
@@ -68,7 +68,7 @@ static TestCase make_case(const GemmConfig& cfg, const std::string& impl) {
   }
   tc.add_output_spec(output);
 
-  // tiled accumulates in fp16 (error grows with K); coopmat/dbuf4 accumulate
+  // tiled accumulates in fp16 (error grows with K); coopmat/coopmat_ref accumulate
   // in fp32, bounded by fp16 input/output rounding only.
   if (impl == "tiled") {
     tc.set_abs_tolerance(1.0f);
@@ -128,8 +128,8 @@ std::vector<TestCase> generate_cases() {
       }
     }
   }
-  // Correctness: aligned to the dbuf4 128x128 tile (and coopmat's 64/32);
-  // the second shape dispatches a 2x2 workgroup grid for dbuf4.
+  // Correctness: aligned to the coopmat_ref 128x128 tile (and coopmat's 64/32);
+  // the second shape dispatches a 2x2 workgroup grid for coopmat_ref.
   static const std::vector<GemmConfig> kCorrectnessShapes = {
       {128, 64, 128}, {256, 128, 256}};
   for (const auto& cfg : kCorrectnessShapes) {
@@ -172,7 +172,7 @@ int main() {
     for (const auto& st : r.get_shader_timings()) {
       if (st.shader_name.find("matmul") != std::string::npos ||
           st.shader_name.find("coopmat") != std::string::npos ||
-          st.shader_name.find("double_buf") != std::string::npos) {
+          st.shader_name.find("coopmat_mm_ref") != std::string::npos) {
         name = st.shader_name;
       }
     }
@@ -183,7 +183,7 @@ int main() {
             << ") ==========\n";
   std::cout << std::left << std::setw(15) << "shape(K,N)" << std::right
             << std::setw(10) << "tiled" << std::setw(10) << "coopmat"
-            << std::setw(10) << "dbuf4" << std::setw(12) << "dbuf4/coop"
+            << std::setw(12) << "coopmat_ref" << std::setw(10) << "ref/coop"
             << "  kernels\n";
   size_t idx = 0;
   for (const auto& kn : kShapes) {
@@ -201,7 +201,7 @@ int main() {
                   std::to_string(kn.second) + ")")
               << std::right << std::fixed << std::setprecision(1)
               << std::setw(10) << tiled << std::setw(10) << coop
-              << std::setw(10) << dbuf << std::setw(11)
+              << std::setw(12) << dbuf << std::setw(9)
               << std::setprecision(2) << (coop > 0 ? dbuf / coop : 0.0f)
               << "x  " << c_kernel << " | " << d_kernel << "\n";
   }

@@ -11,7 +11,7 @@
 #   WEIGHT_NBITS=8 -> linear_dq8ca_q8csw_coopmat (INT8 per-channel symmetric)
 # Requires the VK_COMPONENT_TYPE_SINT8_KHR cooperative matrix property to be
 # enumerated on the device.
-# Loop structure follows the double-buffered reference (gemm_double_buf) at
+# Loop structure follows the double-buffered reference (coopmat_mm_ref) at
 # a 128x64 tile with K-step 32, 4 subgroups x 64 threads. The reference's
 # subgroup-32 layout is NOT used — the Xclipse PAL compiler crashes in
 # vkCreateComputePipelines when int8 WMMA is compiled at forced subgroup

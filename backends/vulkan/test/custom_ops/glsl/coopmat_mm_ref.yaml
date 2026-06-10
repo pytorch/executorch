@@ -8,7 +8,7 @@
 # the ET shader system. Geometry matches the reference's standalone harness:
 # one workgroup = one 128x128 output tile, K-step 16, 8 subgroups x 32 threads.
 
-gemm_double_buf:
+coopmat_mm_ref:
   parameter_names_with_default_values:
     MMA_M: 16
     MMA_N: 16
@@ -20,4 +20,4 @@ gemm_double_buf:
     SG_GRID_Y: 2
     SUBGROUP_SIZE: 32
   shader_variants:
-    - NAME: gemm_double_buf_half
+    - NAME: coopmat_mm_ref_half

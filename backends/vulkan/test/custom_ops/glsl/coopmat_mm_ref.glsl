@@ -38,7 +38,7 @@
 
 layout(std430) buffer;
 
-// Bindings — match add_gemm_double_buf_node: output(0), mat1(1), mat2(2).
+// Bindings — match add_coopmat_mm_ref_node: output(0), mat1(1), mat2(2).
 layout(set = 0, binding = 0) buffer restrict writeonly t_outputBuffer {
     float16_t t_output[]; // fp16 D [M, N]
 };
