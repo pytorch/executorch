@@ -607,6 +607,29 @@ class RewriteConvPass(ArmPass):
                     dilation,
                 )
 
+            # Compute fake tensor BEFORE materializing SymInts into FX nodes,
+            # since the underlying op expects ints/SymInts (not FX Nodes).
+            bias_fake_tensor = get_first_fake_tensor(bias) if bias else None
+            tosa_node_fake_tensor = target_op(
+                input_tensor_for_tosa_fake,
+                weight_fake_tensor,
+                bias_fake_tensor,
+                *conv_args[3:],
+            )
+
+            # ``Graph.create_node`` rejects raw SymInts in call_function args.
+            # If ``pad`` contains symbolic entries, materialize them into FX
+            # nodes so the TOSA conv node references the producing graph
+            # subgraph instead of holding raw SymInts.
+            if isinstance(pad, list) and any(
+                isinstance(p, torch.SymInt) for p in pad
+            ):
+                with graph_module.graph.inserting_before(node):
+                    materialized_pad = graph_module.graph.materialize_symints(pad)
+                new_conv_args = list(conv_args)
+                new_conv_args[4] = materialized_pad
+                conv_args = tuple(new_conv_args)
+
             with graph_module.graph.inserting_after(node):
                 tosa_op = create_node(
                     graph=graph_module.graph,
@@ -615,13 +638,6 @@ class RewriteConvPass(ArmPass):
                     from_node=node,
                     inherit_qparams=True,
                 )
-            bias_fake_tensor = get_first_fake_tensor(bias) if bias else None
-            tosa_node_fake_tensor = target_op(
-                input_tensor_for_tosa_fake,
-                weight_fake_tensor,
-                bias_fake_tensor,
-                *conv_args[3:],
-            )
             tosa_op.meta["val"] = tosa_node_fake_tensor
 
             node_replacement, node_replacement_fake_tensor = (

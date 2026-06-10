@@ -50,7 +50,13 @@ def test_insert_dynamic_padding():
             n for n in nodes if n.target == exir_ops.backend.tosa.CONV2D.default
         )
         initial_padding = conv_node.args[4]
-        assert any(isinstance(p, torch.SymInt) for p in initial_padding)
+        # SymInts now appear as FX nodes (with the SymInt stored in meta['val'])
+        # so that Graph.create_node does not reject raw SymInts in call_function args.
+        assert any(isinstance(p, torch.fx.Node) for p in initial_padding)
+        initial_padding_vals = [
+            p.meta["val"] if isinstance(p, torch.fx.Node) else p
+            for p in initial_padding
+        ]
 
         edge_model = edge_model.transform(
             [
@@ -70,5 +76,5 @@ def test_insert_dynamic_padding():
         pad_list = padding_node.args[1].meta["val"]
         assert len(pad_list) == 8
         assert pad_list[:2] == [0, 0]  # N-padding
-        assert pad_list[2:6] == initial_padding  # HW-padding in NHWC order
+        assert pad_list[2:6] == initial_padding_vals  # HW-padding in NHWC order
         assert pad_list[6:] == [0, 0]  # C-padding

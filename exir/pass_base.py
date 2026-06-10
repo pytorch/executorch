@@ -562,6 +562,45 @@ class _ExportPassBase(PassBase):
     ) -> ProxyValue:
         return self._fx("call_function", op, args, kwargs, meta)
 
+    def call_size_operator(
+        self,
+        tensor_proxy: ProxyValue,
+        dim: int,
+        meta: NodeMetadata,
+    ) -> Union[ProxyValue, int]:
+        """Read ``tensor_proxy.size(dim)`` as a value usable in graph args.
+        Returns a plain ``int`` for static dims; emits and returns an
+        ``aten.sym_size.int`` ``ProxyValue`` for SymInt dims (since
+        ``Graph.create_node`` rejects raw SymInts in call_function args).
+        """
+        size = tensor_proxy.data.shape[dim]
+        if isinstance(size, torch.SymInt):
+            new_proxy = self.call_operator(
+                torch.ops.aten.sym_size.int, (tensor_proxy, dim), {}, meta
+            )
+            # Mirror source's "example_value" if present, so the new node
+            # matches the surrounding graph's meta-key convention. "val"
+            # is already set by call_operator → _fx → set_metadata.
+            if "example_value" in tensor_proxy.node.meta:
+                new_proxy.node.meta["example_value"] = new_proxy.node.meta["val"]
+            return new_proxy
+        return int(size)
+
+    def call_size_operator_all(
+        self,
+        tensor_proxy: ProxyValue,
+        meta: NodeMetadata,
+    ) -> list[Union[ProxyValue, int]]:
+        """Return all dims of ``tensor_proxy.shape`` as a list of values
+        usable in graph args. Each entry is an ``int`` (static dim) or an
+        ``aten.sym_size.int`` ``ProxyValue`` (dynamic dim) — see
+        ``call_size_operator``.
+        """
+        return [
+            self.call_size_operator(tensor_proxy, d, meta)
+            for d in range(len(tensor_proxy.data.shape))
+        ]
+
     def call_sym(
         self,
         target: Fn,

@@ -55,7 +55,27 @@ class DecomposeLinearPass(ArmPass):
             # weights have shape (Co, Ci)
             weights_reshaped_shape = [weights_shape[0], weights_shape[1], 1, 1]
 
+            # ``Graph.create_node`` rejects raw SymInts in call_function
+            # args; ``materialize_symints`` walks each value's sympy
+            # expression and emits the FX subgraph that recomputes it from
+            # existing producers (placeholders / sym ops). One call shares
+            # the symbol→Proxy hash-cons across all three shape lists so
+            # repeated symbols become a single subgraph.
             with graph_module.graph.inserting_before(node):
+                n_in, n_w = (
+                    len(input_reshaped_shape),
+                    len(weights_reshaped_shape),
+                )
+                all_sizes = graph_module.graph.materialize_symints(
+                    [
+                        *input_reshaped_shape,
+                        *weights_reshaped_shape,
+                        *output_shape,
+                    ]
+                )
+                input_reshaped_shape = all_sizes[:n_in]
+                weights_reshaped_shape = all_sizes[n_in : n_in + n_w]
+                output_size = all_sizes[n_in + n_w :]
                 # Reshape input to 4D with shape (N, Ci, 1, 1)
                 input_reshaped = create_node(
                     graph=graph_module.graph,
@@ -102,7 +122,7 @@ class DecomposeLinearPass(ArmPass):
                 output = create_node(
                     graph=graph_module.graph,
                     op_target=exir_ops.edge.aten.view_copy.default,
-                    args=(conv, list(output_shape)),
+                    args=(conv, output_size),
                     kwargs={},
                     from_node=node,
                     inherit_qparams=False,
