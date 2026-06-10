@@ -8,6 +8,9 @@ import math
 import numpy as np
 import torch
 from executorch.backends.nxp.backend.edge_helper import try_get_arg
+from executorch.backends.nxp.backend.graph_utils import (
+    is_clamp_preserved_under_quantization,
+)
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
@@ -20,6 +23,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
 )
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     propagate_quantization,
+    quantize,
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
@@ -117,17 +121,20 @@ class ClampConverter(NodeConverter):
             output_indices=[0],
         )
 
-        # We either convert to ReLU -> SingleInputQuantization pattern
-        # or we convert to Min/Max, which requires same quantization on
-        # both input and output.
-        return (relu_compatible | io_quant_consistent) and quant_supported
+        if relu_compatible and activation_supported_on_target(
+            node,
+        ):
+            return True
+
+        # We convert to Min/Max, which requires same quantization for both input and output.
+        return io_quant_consistent and quant_supported
 
     @classmethod
     def supports_partitioning_result(
         cls,
         node: Node,
         partition_list: list[Partition],
-        _: CustomDelegationOptions,
+        custom_delegation_options: CustomDelegationOptions,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
@@ -136,29 +143,18 @@ class ClampConverter(NodeConverter):
         # Neutron cannot delegate a partition where ReLU or ReLU6 is the only operator
         # and at the same time the node does not satisfy delegation requirements.
         # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfuly.
-        if bounds in [
-            cls.RELU_COMPATIBLE_BOUNDS["Relu"],
-            cls.RELU_COMPATIBLE_BOUNDS["Relu6"],
-        ]:
+        if bounds in cls.RELU_COMPATIBLE_BOUNDS.values():
             is_alone_in_partition = cls.is_node_alone_in_partition(
                 node, partition_list, filter_fn=is_not_qdq_node
             )
             if is_alone_in_partition:
-                return activation_supported_on_target(node, neutron_target_spec)
+                return is_clamp_preserved_under_quantization(
+                    node,
+                    min_val=bounds[0],
+                    max_val=bounds[1],
+                )
 
         return True
-
-    @staticmethod
-    def _quantize_value(
-        value: int,
-        zp: int,
-        scale: float,
-        quant_min: int,
-        quant_max: int,
-        dtype: type = np.int8,
-    ) -> np.integer:
-        rescaled_value = round(value / scale) + zp
-        return dtype(np.clip(rescaled_value, quant_min, quant_max))
 
     def convert(self, node: Node):
         """Convert the `aten.clamp.default` operator to either
@@ -202,9 +198,9 @@ class ClampConverter(NodeConverter):
         min_value, max_value = bounds
 
         if min_value is not None:
-            min_value = self._quantize_value(
+            min_value = quantize(
                 value=min_value,
-                zp=zp,
+                zero_point=zp,
                 scale=scale,
                 quant_min=quant_min,
                 quant_max=quant_max,
@@ -216,9 +212,9 @@ class ClampConverter(NodeConverter):
             propagate_quantization(x, min_tensor)
 
         if max_value is not None:
-            max_value = self._quantize_value(
+            max_value = quantize(
                 value=max_value,
-                zp=zp,
+                zero_point=zp,
                 scale=scale,
                 quant_min=quant_min,
                 quant_max=quant_max,

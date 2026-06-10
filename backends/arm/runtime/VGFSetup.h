@@ -163,6 +163,7 @@ class VgfRepr {
   // per-VgfRepr-instance objects allocated in process_vgf, used (can be more
   // than once) in execute_vgf
   VkCommandBuffer vk_execute_cmd = VK_NULL_HANDLE;
+  VkFence vk_execute_fence = VK_NULL_HANDLE;
   // Note: the vector of tensor memory is stored in IOs above
 
   bool init_timestamp_queries();

@@ -18,6 +18,7 @@ import unittest
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import RmsNormModule
+from executorch.backends.webgpu.test.tester import WEBGPU_SUPPORTED_OPS
 from executorch.exir import to_edge_transform_and_lower
 
 
@@ -73,7 +74,8 @@ def _model(kind: str, shape, depth: int) -> torch.nn.Module:
 def _lower(model: torch.nn.Module, x: torch.Tensor):
     ep = torch.export.export(model, (x,))
     return to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
+        ep,
+        partitioner=[VulkanPartitioner(operator_allowlist=WEBGPU_SUPPORTED_OPS)],
     ).to_executorch()
 
 

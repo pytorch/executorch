@@ -10,6 +10,10 @@
 
 #include <webgpu/webgpu.h>
 
+#include <executorch/backends/webgpu/runtime/WebGPUQueryPool.h>
+
+#include <memory>
+
 namespace executorch {
 namespace backends {
 namespace webgpu {
@@ -19,6 +23,10 @@ struct WebGPUContext {
   WGPUAdapter adapter = nullptr;
   WGPUDevice device = nullptr;
   WGPUQueue queue = nullptr;
+  // True if the device was created with the TimestampQuery feature (bench).
+  bool timestamp_supported = false;
+  // Bench-only: timestamp-query pool, lazily created in execute() (env-gated).
+  std::unique_ptr<WebGPUQueryPool> querypool;
 };
 
 WebGPUContext create_webgpu_context();
