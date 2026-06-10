@@ -45,7 +45,7 @@ fi
 
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
 
-EXCLUDE_TARGET_EXPR="(not u55) and (not u85) and (not tosa) and (not _vgf_)"
+EXCLUDE_TARGET_EXPR="(not u55) and (not u65) and (not u85) and (not tosa) and (not _vgf_)"
 PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
 
 all() { # Run all tests
@@ -133,7 +133,7 @@ test_pytest_ops_ethos_u55() {
     backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u55
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -269,6 +269,15 @@ test_run_vkml() {
 
     examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
     examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_vgf_smoke() {
+    echo "${TEST_SUITE_NAME}: Run VGF AOT smoke test"
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        backends/arm/test/misc/test_vgf_smoke.py
 
     echo "${TEST_SUITE_NAME}: PASS"
 }

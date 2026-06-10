@@ -524,6 +524,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.threshold` | `DecomposeThreshold` |
 | `aten.triu` | `DecomposeTriu` |
 | `aten.trunc` | `DecomposeTrunc` |
+| `aten.var.correction`, `aten.var.dim` | `DecomposeVar` |
 
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.

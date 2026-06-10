@@ -10,10 +10,10 @@ from typing import cast, Dict, Optional
 
 import torch
 from executorch.backends.cortex_m.passes.passes_utils import (
-    is_channels_last,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
+    to_physical_order,
 )
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
@@ -37,14 +37,6 @@ class QuantizedOpFusionPass(ExportPass):
     """
 
     _SOFTMAX_INPUT_INTEGER_BITS = 5
-
-    _NHWC_DIM_ORDER = [0, 2, 3, 1]
-
-    def _to_physical_order(self, logical_pad: list[int], tensor_data) -> list[int]:
-        """Permute a 4-element logical-dim-order list to physical memory order."""
-        if not is_channels_last(tensor_data):
-            return logical_pad
-        return [logical_pad[self._NHWC_DIM_ORDER[i]] for i in range(4)]
 
     def _get_add_replacement(self, args, meta):
         if (
@@ -308,63 +300,6 @@ class QuantizedOpFusionPass(ExportPass):
         args = (args[0], perms)
         return exir_ops.edge.cortex_m.transpose.default, args
 
-    def _get_avg_pool2d_replacement(self, args, meta):
-        if (
-            meta.data.get("input_qparams", {}) == {}
-            or meta.data.get("output_qparams", {}) == {}
-        ):
-            return exir_ops.edge.aten.avg_pool2d.default, args
-
-        # Extract values
-        scale = meta["input_qparams"][0].scale
-        zero_point = meta["input_qparams"][0].zp
-
-        output_mult, output_shift = quantize_multiplier_aot(scale)
-        kernel_size = self._to_int_pair(args[1], None)
-        stride_arg = args[2] if len(args) > 2 else None
-        stride = self._to_int_pair(stride_arg, kernel_size)
-        padding_arg = args[3] if len(args) > 3 else None
-        padding = self._to_int_pair(padding_arg, (0, 0))
-
-        ceil_mode_arg = args[4] if len(args) > 4 else False
-        ceil_mode = self._to_bool(ceil_mode_arg, False)
-        count_include_pad_arg = args[5] if len(args) > 5 else True
-        count_include_pad = self._to_bool(count_include_pad_arg, True)
-        divisor_override = args[6] if len(args) > 6 else None
-        divisor_override_val = self._unwrap_argument(divisor_override)
-
-        if ceil_mode or divisor_override_val is not None:
-            return exir_ops.edge.aten.avg_pool2d.default, args
-
-        input_arg = args[0]
-        avg_padding = padding
-        if count_include_pad:
-            # Decompose count_include_pad=True into explicit input padding.
-            pad_h, pad_w = padding
-            pre_pad = [0, 0, pad_h, pad_w]
-            post_pad = [0, 0, pad_h, pad_w]
-            pre_pad = self._to_physical_order(pre_pad, args[0].data)
-            post_pad = self._to_physical_order(post_pad, args[0].data)
-            input_arg = super().call_operator(
-                exir_ops.edge.cortex_m.pad.default,
-                (input_arg, pre_pad, post_pad, int(zero_point)),
-                {},
-                NodeMetadata({}),
-            )
-            avg_padding = [0, 0]
-
-        args = (
-            input_arg,
-            kernel_size,
-            stride,
-            avg_padding,
-            zero_point,
-            output_mult,
-            output_shift,
-        )
-
-        return exir_ops.edge.cortex_m.quantized_avg_pool2d.default, args
-
     def _get_pad_replacement(self, args, meta):
         input_qparams = meta.data.get("input_qparams", {})
         if not input_qparams:
@@ -395,8 +330,8 @@ class QuantizedOpFusionPass(ExportPass):
             pre_pad[dim_4d] = int(padding[2 * i])
             post_pad[dim_4d] = int(padding[2 * i + 1])
 
-        pre_pad = self._to_physical_order(pre_pad, args[0].data)
-        post_pad = self._to_physical_order(post_pad, args[0].data)
+        pre_pad = to_physical_order(pre_pad, args[0].data)
+        post_pad = to_physical_order(post_pad, args[0].data)
 
         new_args = (args[0], pre_pad, post_pad, int(quantized_pad_value))
         return exir_ops.edge.cortex_m.pad.default, new_args
@@ -424,8 +359,6 @@ class QuantizedOpFusionPass(ExportPass):
                 op, args = self._get_maximum_replacement(args, meta)
             case exir_ops.edge.aten.permute_copy.default:
                 op, args = self._get_permute_replacement(args, meta)
-            case exir_ops.edge.aten.avg_pool2d.default:
-                op, args = self._get_avg_pool2d_replacement(args, meta)
             case exir_ops.edge.aten.constant_pad_nd.default:
                 op, args = self._get_pad_replacement(args, meta)
             case _:
