@@ -18,8 +18,8 @@
 #
 # Builds whatever native test targets are present in the landed tree (NOT a fixed
 # list). This stack lands: webgpu_native_test, webgpu_rms_norm_test (base) +
-# webgpu_dispatch_order_test, webgpu_scratch_buffer_test (D107576199). update_cache
-# / SDPA executables join automatically once their sibling diffs land.
+# webgpu_dispatch_order_test, webgpu_scratch_buffer_test (D107576199) +
+# webgpu_update_cache_test (D107547307). SDPA executables join once they land.
 
 set -e
 
@@ -45,6 +45,8 @@ RMS_NORM_DIR="/tmp/rmsn"
 RMS_NORM_OK=1
 DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 DISPATCH_ORDER_OK=1
+UPDATE_CACHE_DIR="/tmp/update_cache"
+UPDATE_CACHE_OK=1
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
@@ -61,6 +63,17 @@ $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
 export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 " || { echo "WARN: dispatch_order export failed; skipping dispatch_order native test"; DISPATCH_ORDER_OK=0; }
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_update_cache import (
+    export_update_cache_cases,
+    export_update_cache_replay,
+    export_update_cache_negative,
+)
+export_update_cache_cases('${UPDATE_CACHE_DIR}')
+export_update_cache_replay('${UPDATE_CACHE_DIR}')
+export_update_cache_negative('${UPDATE_CACHE_DIR}')
+" || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
 
 # ── Configure (Dawn-only: no -DWEBGPU_IMPL; Dawn is the sole backend) ─────────
 echo "=== Configure WebGPU native tests on Dawn ==="
@@ -79,7 +92,7 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 # ── Build + run every native test target that exists in this tree ────────────
-TARGETS=(webgpu_native_test webgpu_rms_norm_test webgpu_dispatch_order_test webgpu_scratch_buffer_test)
+TARGETS=(webgpu_native_test webgpu_rms_norm_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test)
 BIN_DIR="${BUILD_DIR}/backends/webgpu"
 
 # Which targets are defined depends on which diffs are landed (native_test +
@@ -121,6 +134,9 @@ else
 fi
 if [[ "${RMS_NORM_OK}" == "1" && -x "${BIN_DIR}/webgpu_rms_norm_test" ]]; then
   "${BIN_DIR}/webgpu_rms_norm_test" "${RMS_NORM_DIR}"
+fi
+if [[ "${UPDATE_CACHE_OK}" == "1" && -x "${BIN_DIR}/webgpu_update_cache_test" ]]; then
+  "${BIN_DIR}/webgpu_update_cache_test" "${UPDATE_CACHE_DIR}"
 fi
 if [[ "${DISPATCH_ORDER_OK}" == "1" && -x "${BIN_DIR}/webgpu_dispatch_order_test" ]]; then
   "${BIN_DIR}/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
