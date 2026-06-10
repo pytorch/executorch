@@ -4,20 +4,24 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# coopmat<int8> x coopmat<int8> -> coopmat<int32> variant of
-# linear_dq8ca_q4gsw_tiled.  Requires VK_COMPONENT_TYPE_SINT8_KHR cooperative
-# matrix property to be enumerated on the device (e.g. Radeon 780M / Mesa RADV
-# exposes int8 16x16x16 Subgroup).
+# coopmat<int8> x coopmat<int8> -> coopmat<int32> variants of the
+# dynamically-quantized-activation linear tiled shaders. One template, two
+# weight formats:
+#   WEIGHT_NBITS=4 -> linear_dq8ca_q4gsw_coopmat (INT4 group-symmetric)
+#   WEIGHT_NBITS=8 -> linear_dq8ca_q8csw_coopmat (INT8 per-channel symmetric)
+# Requires the VK_COMPONENT_TYPE_SINT8_KHR cooperative matrix property to be
+# enumerated on the device.
 # Loop structure follows the double-buffered reference (gemm_double_buf) at
-# a 128x64 tile with K-step 16, 4 subgroups x 64 threads. The reference's
+# a 128x64 tile with K-step 32, 4 subgroups x 64 threads. The reference's
 # subgroup-32 layout is NOT used — the Xclipse PAL compiler crashes in
 # vkCreateComputePipelines when int8 WMMA is compiled at forced subgroup
-# size 32 (fp16 WMMA at 32 is fine; see linear_q4gsw_coopmat).
+# size 32 (fp16 WMMA at 32 is fine; see linear_qw_coopmat).
 
-linear_dq8ca_q4gsw_coopmat:
+linear_dq8ca_qw_coopmat:
   parameter_names_with_default_values:
     PRECISION: highp
     HAS_BIAS: false
+    WEIGHT_NBITS: 4
     WEIGHT_STORAGE: texture2d
     MMA_M: 16
     MMA_N: 16
@@ -30,6 +34,14 @@ linear_dq8ca_q4gsw_coopmat:
     SUBGROUP_SIZE: 64
   shader_variants:
     - NAME: linear_dq8ca_q4gsw_coopmat_buffer_texture2d_half
+      WEIGHT_NBITS: 4
       WEIGHT_STORAGE: texture2d
     - NAME: linear_dq8ca_q4gsw_coopmat_buffer_buffer_half
+      WEIGHT_NBITS: 4
+      WEIGHT_STORAGE: buffer
+    - NAME: linear_dq8ca_q8csw_coopmat_buffer_texture2d_half
+      WEIGHT_NBITS: 8
+      WEIGHT_STORAGE: texture2d
+    - NAME: linear_dq8ca_q8csw_coopmat_buffer_buffer_half
+      WEIGHT_NBITS: 8
       WEIGHT_STORAGE: buffer

@@ -4,17 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# coopmat variant of linear_q4gsw_tiled (fp16 act x INT4 weight).
+# coopmat variants of the weight-only quantized linear tiled shaders (fp16
+# act x INT weight, dequantized to fp16 at the shared-memory store). One
+# template, two weight formats:
+#   WEIGHT_NBITS=4 -> linear_q4gsw_coopmat (INT4 group-symmetric)
+#   WEIGHT_NBITS=8 -> linear_q8csw_coopmat (INT8 per-channel symmetric)
 # Forces buffer storage for activation/output (coopMatLoad/Store on buffers);
-# INT4 weight storage can be texture2d or buffer (matches the tiled path).
+# INT weight storage can be texture2d or buffer (matches the tiled path).
 # DTYPE = half only; fp32 activations are not supported.
 # Geometry follows the double-buffered reference (gemm_double_buf): 128x128
 # tile, K-step 16, 8 subgroups x 32 threads (subgroup size 32 forced).
 
-linear_q4gsw_coopmat:
+linear_qw_coopmat:
   parameter_names_with_default_values:
     PRECISION: highp
     HAS_BIAS: false
+    WEIGHT_NBITS: 4
     WEIGHT_STORAGE: texture2d
     MMA_M: 16
     MMA_N: 16
@@ -27,6 +32,14 @@ linear_q4gsw_coopmat:
     SUBGROUP_SIZE: 32
   shader_variants:
     - NAME: linear_q4gsw_coopmat_buffer_texture2d_half
+      WEIGHT_NBITS: 4
       WEIGHT_STORAGE: texture2d
     - NAME: linear_q4gsw_coopmat_buffer_buffer_half
+      WEIGHT_NBITS: 4
+      WEIGHT_STORAGE: buffer
+    - NAME: linear_q8csw_coopmat_buffer_texture2d_half
+      WEIGHT_NBITS: 8
+      WEIGHT_STORAGE: texture2d
+    - NAME: linear_q8csw_coopmat_buffer_buffer_half
+      WEIGHT_NBITS: 8
       WEIGHT_STORAGE: buffer
