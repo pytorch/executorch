@@ -122,7 +122,10 @@ def test_cat__channels_first__same_shapes(dim, num_inputs, mocker, use_qat):
 
     channels = input_shape[1] if dim not in {1, -3} else input_shape[1] * num_inputs
     quantized_program = to_quantized_edge_program(
-        CatConvModule(dim, channels), [input_shape] * num_inputs, use_qat=use_qat
+        CatConvModule(dim, channels),
+        [input_shape] * num_inputs,
+        use_qat=use_qat,
+        use_neutron_for_format_conversion=False,
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -280,7 +283,10 @@ def test_cat__channels_first__different_shapes(dim, num_inputs, mocker, use_qat)
         sum(shape[1] for shape in input_shapes) if dim in [1, -3] else input_shape[1]
     )
     quantized_program = to_quantized_edge_program(
-        CatConvModule(dim, channels), input_shapes, use_qat=use_qat
+        CatConvModule(dim, channels),
+        input_shapes,
+        use_qat=use_qat,
+        use_neutron_for_format_conversion=False,
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
@@ -468,7 +474,10 @@ def test_cat__format_specific_support__channels_first(mocker, use_qat):
         sum(shape[1] for shape in input_shapes) if dim in [1, -3] else input_shape[1]
     )
     quantized_program = to_quantized_edge_program(
-        CatConvModule(dim, channels), input_shapes, use_qat=use_qat
+        CatConvModule(dim, channels),
+        input_shapes,
+        use_qat=use_qat,
+        use_neutron_for_format_conversion=False,
     ).exported_program()
 
     # Make sure the `Cat` was delegated.
