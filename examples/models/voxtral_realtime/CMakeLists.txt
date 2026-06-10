@@ -24,9 +24,9 @@ find_package(gflags REQUIRED)
 # Find executorch libraries
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch_prim_ops)
 
-set(link_libraries executorch gflags)
+set(link_libraries executorch_prim_ops gflags)
 
 # Common ops for all builds
 list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)

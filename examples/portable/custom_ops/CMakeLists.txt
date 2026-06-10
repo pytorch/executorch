@@ -44,7 +44,7 @@ find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
 )
 
-target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_include_directories(executorch_prim_ops INTERFACE ${_common_include_directories})
 
 # ------------------------------ OPTIONS BEGIN -------------------------------
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
@@ -106,11 +106,11 @@ elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
 endif()
 
 add_library(custom_kernels ${kernel_sources})
-target_link_libraries(custom_kernels PRIVATE executorch)
+target_link_libraries(custom_kernels PRIVATE executorch_prim_ops)
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
 gen_operators_lib(
-  LIB_NAME "custom_ops_lib" KERNEL_LIBS custom_kernels DEPS executorch
+  LIB_NAME "custom_ops_lib" KERNEL_LIBS custom_kernels DEPS executorch_prim_ops
 )
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
@@ -119,7 +119,7 @@ add_executable(custom_ops_executor_runner ${_executor_runner__srcs})
 target_link_libraries(
   custom_ops_executor_runner
   custom_ops_lib
-  executorch
+  executorch_prim_ops
   extension_evalue_util
   extension_runner_util
   gflags

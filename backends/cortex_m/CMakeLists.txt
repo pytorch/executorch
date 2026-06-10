@@ -109,7 +109,7 @@ add_library(cortex_m_kernels ${_cortex_m_kernels__srcs})
 target_link_libraries(
   cortex_m_kernels
   PRIVATE cmsis-nn
-  PRIVATE executorch
+  PRIVATE executorch_prim_ops
   PRIVATE kernels_util_all_deps
 )
 target_compile_definitions(
@@ -126,7 +126,7 @@ target_include_directories(
 
 # cortex_m_ops_lib: Register Cortex-M ops kernels into Executorch runtime
 gen_operators_lib(
-  LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS executorch
+  LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS executorch_prim_ops
 )
 
 install(

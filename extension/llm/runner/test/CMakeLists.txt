@@ -33,7 +33,7 @@ if(APPLE)
 endif()
 
 et_cxx_test(
-  test_runner SOURCES ${_test_srcs} EXTRA_LIBS executorch extension_llm_runner
+  test_runner SOURCES ${_test_srcs} EXTRA_LIBS executorch_prim_ops extension_llm_runner
 )
 
 # Override sanitizer to this issue:

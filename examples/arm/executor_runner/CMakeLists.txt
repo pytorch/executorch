@@ -311,7 +311,7 @@ list(
   arm_executor_runner_link
   extension_runner_util
   ethosu_target_init
-  executorch
+  executorch_prim_ops
   quantized_ops_lib
   cortex_m_ops_lib
   executorch_delegate_ethos_u
@@ -393,7 +393,7 @@ if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
     KERNEL_LIBS
     portable_kernels
     DEPS
-    executorch
+    executorch_prim_ops
     DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )

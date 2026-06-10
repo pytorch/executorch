@@ -76,9 +76,9 @@ endif()
 
 # Check if the ExecuTorch Target is aleady defined, what indicate this
 # CMakeLists.txt is involved as subproject:
-message(STATUS "Looking for executorch target")
-if(NOT TARGET executorch)
-  message(STATUS "Looking for executorch target -- not found, adding")
+message(STATUS "Looking for executorch_prim_ops target")
+if(NOT TARGET executorch_prim_ops)
+  message(STATUS "Looking for executorch_prim_ops target -- not found, adding")
   set(EXECUTORCH_BUILD_NXP_NEUTRON ON)
   set(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
   set(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
@@ -87,7 +87,7 @@ if(NOT TARGET executorch)
     EXCLUDE_FROM_ALL
   )
 else()
-  message(STATUS "Looking for executorch target -- found")
+  message(STATUS "Looking for executorch_prim_ops target -- found")
 endif()
 
 message(STATUS "Looking for gflags")
@@ -112,7 +112,7 @@ target_compile_options(nxp_executor_runner PRIVATE -DNEUTRON_CMODEL)
 
 target_link_libraries(
   nxp_executor_runner
-  PRIVATE executorch
+  PRIVATE executorch_prim_ops
           executorch_kernels
           nd
           gflags::gflags

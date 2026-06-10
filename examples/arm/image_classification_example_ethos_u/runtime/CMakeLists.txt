@@ -86,7 +86,7 @@ target_sources(
 
 target_link_libraries(
   img_class_example
-  PUBLIC executorch
+  PUBLIC executorch_prim_ops
          ethosu_target_init
          extension_runner_util
          quantized_ops_lib

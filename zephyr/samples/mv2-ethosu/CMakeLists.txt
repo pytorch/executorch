@@ -174,7 +174,7 @@ if(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS)
     KERNEL_LIBS
     portable_kernels
     DEPS
-    executorch
+    executorch_prim_ops
     DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )

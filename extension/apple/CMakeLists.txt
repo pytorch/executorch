@@ -36,7 +36,7 @@ target_include_directories(
 
 find_library(FOUNDATION_FRAMEWORK Foundation)
 target_link_libraries(
-  extension_apple PRIVATE executorch ${FOUNDATION_FRAMEWORK}
+  extension_apple PRIVATE executorch_prim_ops ${FOUNDATION_FRAMEWORK}
 )
 
 set_source_files_properties(

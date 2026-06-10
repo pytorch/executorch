@@ -28,7 +28,7 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
 endif()
 
 target_link_libraries(
-  op_test_runner PRIVATE extension_module extension_tensor executorch
+  op_test_runner PRIVATE extension_module extension_tensor executorch_prim_ops
                          mlxdelegate
 )
 
