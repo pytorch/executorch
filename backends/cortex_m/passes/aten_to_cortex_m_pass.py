@@ -785,9 +785,9 @@ def _get_avg_pool2d_replacement(
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 )
 def _get_quantize_per_tensor_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     if not _is_quant_per_tensor_qualified(node):
         return None
     return DialectNodeSpec(
@@ -799,9 +799,9 @@ def _get_quantize_per_tensor_replacement(
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 )
 def _get_dequantize_per_tensor_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     if not _is_quant_per_tensor_qualified(node):
         return None
     return DialectNodeSpec(
@@ -811,9 +811,9 @@ def _get_dequantize_per_tensor_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.add.Tensor)
 def _get_add_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     if not _has_qparams(node):
         return None
 
@@ -854,9 +854,9 @@ def _get_add_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.mul.Tensor)
 def _get_mul_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     if not _has_qparams(node):
         return None
 
@@ -884,9 +884,9 @@ def _get_mul_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten._softmax.default)
 def _get_softmax_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     if not _has_qparams(node):
         return None
 
@@ -934,9 +934,9 @@ def _get_softmax_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.max_pool2d.default)
 def _get_max_pool2d_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     input_qparams = node.meta.get("input_qparams", {}).get(0)
     cortex_m_meta = node.meta.get("custom", {}).get("cortex_m", {})
     if input_qparams is None or cortex_m_meta.get("skip_quantized_max_pool2d", False):
@@ -999,9 +999,9 @@ def _get_max_pool2d_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.minimum.default)
 def _get_minimum_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     input_tensor = _get_input_tensor_data(node)
     if input_tensor.dtype not in (torch.int8, torch.int32):
         return None
@@ -1010,9 +1010,9 @@ def _get_minimum_replacement(
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.maximum.default)
 def _get_maximum_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     input_tensor = _get_input_tensor_data(node)
     if input_tensor.dtype != torch.int8:
         return None
@@ -1023,9 +1023,9 @@ def _get_maximum_replacement(
     exir_ops.edge.aten.permute_copy.default
 )
 def _get_permute_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     input_tensor = _get_input_tensor_data(node)
     if input_tensor.dtype != torch.int8:
         return None
@@ -1041,9 +1041,9 @@ def _get_permute_replacement(
     exir_ops.edge.aten.constant_pad_nd.default
 )
 def _get_pad_replacement(
-    node: Node, exported_program: ExportedProgram
+    node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del exported_program
+    del dialect_pass
     input_qparams = node.meta.get("input_qparams", {})
     if not input_qparams:
         return None
