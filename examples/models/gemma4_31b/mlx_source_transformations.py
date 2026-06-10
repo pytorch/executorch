@@ -217,3 +217,51 @@ def mlx_source_transformations(
         _replace_layer_forward(layer)
 
     _replace_model_forward(model)
+
+
+def install_mlx_tap_forward(model: nn.Module) -> None:
+    """Install a mask-free EAGLE-3 tap forward for the MLX path.
+
+    ``Gemma4_31B.forward_logits_taps`` / ``_decode`` call layers with the 4-arg
+    mask-based signature, which is incompatible with the mask-free ``(x,
+    input_pos)`` layers produced by :func:`mlx_source_transformations`. This
+    installs an MLX-compatible ``forward_logits_taps`` that mirrors ``_decode``'s
+    tap-index convention (index 0 = embedding output; index k = output after
+    decoder layer k-1) but uses the mask-free layer signature, so the EAGLE-3
+    speculator's target methods trace through the MLX layers.
+
+    Call after :func:`mlx_source_transformations` (which rewrites the layers).
+    """
+    import types
+
+    from executorch.examples.models.gemma4_31b.model import validate_eagle_tap_layers
+
+    def _mlx_forward_logits_taps(self, tokens, input_pos, last_logits_only=True):
+        x = self.embed_tokens(tokens) * self.embed_normalizer
+
+        tap_layers = self.config.eagle_tap_layers
+        validate_eagle_tap_layers(tap_layers, len(self.layers))
+        taps = []
+        if 0 in tap_layers:
+            taps.append(x)  # index 0 == embedding output
+        for i, layer in enumerate(self.layers):
+            x = layer(x, input_pos)  # mask-free MLX layer
+            if (i + 1) in tap_layers:
+                taps.append(x)  # output of layer i == hidden-state index i+1
+
+        if len(taps) != len(tap_layers):
+            raise ValueError(
+                f"collected {len(taps)} taps but eagle_tap_layers requests "
+                f"{len(tap_layers)} ({tap_layers}); check the index convention"
+            )
+
+        x = self.norm(x)
+        if last_logits_only:
+            x = x[:, -1:, :]
+        logits = self.lm_head(x).float()
+        cap = self.logit_softcap.float()
+        logits = torch.tanh(logits / cap) * cap
+        taps_out = torch.cat(taps, dim=-1) if taps else None
+        return logits, taps_out
+
+    model.forward_logits_taps = types.MethodType(_mlx_forward_logits_taps, model)

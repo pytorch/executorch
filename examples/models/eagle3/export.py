@@ -27,11 +27,20 @@ target_verify + draft_decode are sufficient for multi-round decoding
 (``test_shifted_speculative_decode_is_lossless`` drives the full loop through only
 these three methods).
 
-Export runs with the model on the host (CPU); AOTInductor streams weights to the
-GPU per kernel during compilation, so peak GPU memory stays low even for the INT4
-31B target. The target is loaded from a prequantized (INT4) directory and the
-draft from a vLLM-speculator checkpoint; only the CUDA (AOTI) backend is
-supported.
+Export runs with the model on the host (CPU). For ``--backend cuda`` AOTInductor
+streams weights to the GPU per kernel during compilation, so peak GPU memory
+stays low even for the INT4 31B target. The target is loaded from a prequantized
+(INT4) directory and the draft from a vLLM-speculator checkpoint.
+
+Backends:
+  - ``cuda`` (AOTI): three methods (prefill, target_verify, draft_decode) sharing
+    KV caches by FQN; bf16 draft.
+  - ``mlx`` (Apple silicon): MLX has no cross-method KV-cache sharing, so prefill
+    and verify are merged into one dynamic-seq ``target_forward`` (sharing the
+    target cache within a single handle) plus ``draft_decode``; the draft is bf16
+    by default (``--quantize-draft`` for int4). Both methods return logits (target
+    soft-capped + draft) so the host applies temperature / sampling — greedy is
+    host-side argmax.
 
 Scope (this is a fixed-shape ExecuTorch artifact, not a generic EAGLE runtime):
 chain length, the chain_len+1 verify window, the prefill/draft dynamic ranges,
@@ -93,6 +102,35 @@ class _DraftDecode(nn.Module):
 
     def forward(self, tokens, feature, input_pos):
         return self.spec.draft_decode(tokens, feature, input_pos)
+
+
+# Logit-returning variants for the MLX sampling path: the host applies
+# temperature + modified rejection sampling, so the methods return distributions
+# (soft-capped target logits / draft logits) instead of the greedy argmax. Greedy
+# (--temperature 0) just argmaxes these host-side.
+
+
+class _TargetForwardLogits(nn.Module):
+    def __init__(self, spec: Eagle3Speculator):
+        super().__init__()
+        self.spec = spec
+
+    def forward(self, tokens, input_pos):
+        logits, taps = self.spec.target.forward_logits_taps(
+            tokens, input_pos, last_logits_only=False
+        )
+        return logits, self.spec.draft.fuse(taps)
+
+
+class _DraftDecodeLogits(nn.Module):
+    def __init__(self, spec: Eagle3Speculator):
+        super().__init__()
+        self.spec = spec
+
+    def forward(self, tokens, feature, input_pos):
+        emb = self.spec.draft.embed(tokens)
+        draft_logits, g = self.spec.draft.forward_cached(emb, feature, input_pos)
+        return draft_logits, g
 
 
 def _export_cuda(
@@ -253,6 +291,233 @@ def _export_cuda(
     print("Done.")
 
 
+def _export_mlx(
+    spec: Eagle3Speculator,
+    output_dir: str,
+    max_prefill: int,
+    chain_len: int,
+    share_base_embedding: bool = False,
+) -> None:
+    import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+    import executorch.extension.llm.export.gguf  # noqa: F401
+    import executorch.extension.llm.export.int4  # noqa: F401
+    from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.passes import get_default_passes
+    from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
+        install_mlx_tap_forward,
+        mlx_source_transformations,
+    )
+    from executorch.examples.models.gemma4_31b.model import materialize_runtime_buffers
+    from executorch.exir import (
+        EdgeCompileConfig,
+        ExecutorchBackendConfig,
+        to_edge_transform_and_lower,
+    )
+    from executorch.exir.passes import MemoryPlanningPass
+    from torch.export import Dim, export
+
+    target_config = spec.target.config
+    hidden = spec.draft.config.hidden_size
+    draft_vocab_size = spec.draft.config.draft_vocab_size
+
+    # MLX rewrites the target to mask-free layers + MLX KV caches; install a
+    # matching mask-free tap forward so the speculator's target methods trace.
+    mlx_source_transformations(spec.target, dtype=torch.bfloat16)
+    install_mlx_tap_forward(spec.target)
+    materialize_runtime_buffers(spec.target, dtype=torch.bfloat16)
+
+    if share_base_embedding:
+        # Point the draft at the target's packed embedding so both methods emit
+        # identical bytes; the NamedDataStore then content-dedups them to one
+        # copy. Safe because the draft embed is a frozen copy of the target's and
+        # the draft's input_layernorm (RMSNorm) is invariant to the embed scale.
+        spec.draft.embed_tokens = spec.target.embed_tokens
+
+    # MLX has no cross-method KV-cache sharing, so prefill and verify are one
+    # dynamic-seq method that shares the target cache within a single handle. The
+    # method returns per-position logits; the host samples (or argmaxes).
+    print(f"Exporting target_forward (T in [1, {max_prefill}])...")
+    target_dim = Dim("target_len", min=1, max=max_prefill)
+    with torch.no_grad():
+        target_ep = export(
+            _TargetForwardLogits(spec),
+            (
+                torch.zeros((1, max_prefill), dtype=torch.long),
+                torch.arange(max_prefill, dtype=torch.long),
+            ),
+            dynamic_shapes=({1: target_dim}, {0: target_dim}),
+            strict=True,
+        )
+
+    draft_max = max(max_prefill, chain_len + 1)
+    print(f"Exporting draft_decode (T in [1, {draft_max}])...")
+    draft_dim = Dim("draft_len", min=1, max=draft_max)
+    with torch.no_grad():
+        draft_ep = export(
+            _DraftDecodeLogits(spec),
+            (
+                torch.zeros((1, draft_max), dtype=torch.long),
+                torch.zeros((1, draft_max, hidden), dtype=torch.bfloat16),
+                torch.arange(draft_max, dtype=torch.long),
+            ),
+            dynamic_shapes=({1: draft_dim}, {1: draft_dim}, {0: draft_dim}),
+            strict=True,
+        )
+
+    del spec
+    gc.collect()
+
+    print("Lowering to ExecuTorch with MLX backend...")
+    et_prog = to_edge_transform_and_lower(
+        {"target_forward": target_ep, "draft_decode": draft_ep},
+        transform_passes=get_default_passes(),
+        partitioner={
+            "target_forward": [MLXPartitioner()],
+            "draft_decode": [MLXPartitioner()],
+        },
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+        constant_methods={
+            "get_max_seq_len": target_config.max_seq_len,
+            "get_vocab_size": target_config.vocab_size,
+            "get_n_layers": target_config.num_hidden_layers,
+            "get_max_prefill_chunk": max_prefill,
+            "get_min_prefill_chunk": 1,
+            "get_chain_len": chain_len,
+            "get_draft_vocab_size": draft_vocab_size,
+            "use_kv_cache": True,
+            "enable_dynamic_shape": True,
+        },
+    )
+    del target_ep, draft_ep
+    gc.collect()
+
+    et_program = et_prog.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+        ),
+    )
+    del et_prog
+    gc.collect()
+
+    os.makedirs(output_dir, exist_ok=True)
+    pte_path = os.path.join(output_dir, "model.pte")
+    print(f"Saving to {pte_path}...")
+    with open(pte_path, "wb") as f:
+        et_program.write_to_file(f)
+    print(f"  {os.path.getsize(pte_path) / 1024**2:.1f} MB")
+    if et_program._tensor_data:
+        et_program.write_tensor_data_to_file(output_dir)
+        print(f"  Saved tensor data (.ptd) to {output_dir}/")
+    print("Done.")
+
+
+def _validate_backend_flags(p, args) -> None:
+    if args.share_draft_embedding and args.backend != "mlx":
+        p.error("--share-draft-embedding is only supported with --backend mlx.")
+    if args.quantize_draft and args.backend != "mlx":
+        p.error("--quantize-draft is only supported with --backend mlx.")
+
+
+def _load_target_and_draft(p, args, spec_t):
+    print(f"Loading {args.target_model} target ({args.backend}) from {args.target}...")
+    target = spec_t.load(args.target, args.max_seq_len, args.backend)
+
+    print(f"Loading draft head from {args.draft}...")
+    draft, _ = Eagle3Draft.from_checkpoint(
+        args.draft, device="cpu", dtype=torch.bfloat16, max_seq_len=args.max_seq_len
+    )
+    if target.config.hidden_size != draft.config.target_hidden_size:
+        p.error(
+            f"target hidden_size {target.config.hidden_size} != draft "
+            f"target_hidden_size {draft.config.target_hidden_size}"
+        )
+    # Cheap matched-pair guard: every draft id must map (target_id = draft_id +
+    # d2t[draft_id]) into the target vocab. A wrong d2t / mismatched pair would
+    # otherwise emit target ids outside the embedding range at runtime. This does
+    # not validate tokenizer identity or tap convention (see the scope note above).
+    target_ids = torch.arange(draft.d2t.numel(), device=draft.d2t.device) + draft.d2t
+    if int(target_ids.min()) < 0 or int(target_ids.max()) >= target.config.vocab_size:
+        p.error(
+            f"draft d2t maps draft ids outside the target vocab "
+            f"[0, {target.config.vocab_size}): got target id range "
+            f"[{int(target_ids.min())}, {int(target_ids.max())}]; the draft and "
+            f"target are likely not a matched pair"
+        )
+    return target, draft
+
+
+def _run_mlx(p, args, target, draft, max_prefill, verify_len) -> None:
+    if args.quantize_draft:
+        from executorch.examples.models.eagle3.quant_mlx import (
+            quantize_pack_draft_for_mlx,
+        )
+
+        print("Quantizing + packing draft for MLX (int4)...")
+        draft = quantize_pack_draft_for_mlx(draft)
+    else:
+        print("Keeping draft in bf16 (pass --quantize-draft for int4)...")
+    # MLX builds attention masks internally, so a single forward accepts T>=1.
+    if max_prefill < verify_len:
+        p.error(
+            f"computed max_prefill={max_prefill} < verify window {verify_len}; "
+            f"raise --max-prefill (got {args.max_prefill}) or --max-seq-len "
+            f"(got {args.max_seq_len})"
+        )
+    spec = Eagle3Speculator(target, draft).eval()
+    _export_mlx(
+        spec,
+        args.output_dir,
+        max_prefill=max_prefill,
+        chain_len=args.chain,
+        share_base_embedding=args.share_draft_embedding,
+    )
+
+
+def _run_cuda(p, args, spec_t, target, draft, max_prefill, verify_len) -> None:
+    spec = Eagle3Speculator(target, draft).eval()
+    # prefill's dynamic min (see _export_cuda target_min): the target's own
+    # specialization (min_forward_len) and the INT4 dispatch (> MATVEC_MAX_M).
+    prefill_min = max(spec_t.min_forward_len, _MATVEC_MAX_M + 1)
+    if max_prefill < prefill_min:
+        p.error(
+            f"computed max_prefill={max_prefill} < {prefill_min}; raise "
+            f"--max-prefill (got {args.max_prefill}) or --max-seq-len (got "
+            f"{args.max_seq_len})"
+        )
+    # target_verify is a single static forward of chain+1 tokens: it must fit the
+    # small-M GEMM (chain+1 <= _MATVEC_MAX_M) and the target's minimum forward.
+    if verify_len > _MATVEC_MAX_M:
+        p.error(
+            f"--chain {args.chain} (verify window {verify_len}) exceeds the "
+            f"INT4 small-M GEMM limit {_MATVEC_MAX_M}"
+        )
+    if verify_len < spec_t.min_forward_len:
+        p.error(
+            f"--chain {args.chain} (verify window {verify_len}) is below the "
+            f"target's minimum forward length {spec_t.min_forward_len}"
+        )
+    # Route the static chain_len+1 verify forward to the small-M INT4 GEMM by
+    # raising the dispatch threshold for this export only; restore it after.
+    import executorch.backends.cuda.int4_dispatch as int4_dispatch
+
+    saved_threshold = int4_dispatch.MATVEC_MAX_M
+    int4_dispatch.MATVEC_MAX_M = _MATVEC_MAX_M
+    try:
+        _export_cuda(
+            spec,
+            args.output_dir,
+            max_prefill=max_prefill,
+            chain_len=args.chain,
+            prefill_min=spec_t.min_forward_len,
+        )
+    finally:
+        int4_dispatch.MATVEC_MAX_M = saved_threshold
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Export an EAGLE-3 speculator to .pte.")
     p.add_argument(
@@ -278,87 +543,49 @@ def main() -> None:
     p.add_argument(
         "--chain", type=int, default=4, help="Draft chain length K (verify K+1)."
     )
+    p.add_argument(
+        "--backend",
+        default="cuda",
+        choices=["cuda", "mlx"],
+        help="Target backend: cuda (AOTI, INT4 target, bf16 draft) or mlx "
+        "(Apple silicon, INT4 target; bf16 draft, --quantize-draft for int4).",
+    )
+    p.add_argument(
+        "--share-draft-embedding",
+        action="store_true",
+        help="MLX only: reuse the target's packed embedding for the draft so the "
+        "NamedDataStore dedups it to one copy (drops the draft's own embedding).",
+    )
+    p.add_argument(
+        "--quantize-draft",
+        action="store_true",
+        help="MLX only: int4-pack the draft head (default keeps it bf16). bf16 "
+        "gives higher acceptance but a larger draft; pair with "
+        "--share-draft-embedding to avoid a separate draft embedding copy.",
+    )
     args = p.parse_args()
+    _validate_backend_flags(p, args)
 
     spec_t = TARGETS[args.target_model]
-    if not torch.cuda.is_available():
-        p.error("CUDA is required to compile the EAGLE-3 export.")
+    if args.backend == "cuda" and not torch.cuda.is_available():
+        p.error("CUDA is required to compile the CUDA EAGLE-3 export.")
 
-    print(f"Loading {args.target_model} target from {args.target}...")
-    target = spec_t.load(args.target, args.max_seq_len)
+    target, draft = _load_target_and_draft(p, args, spec_t)
 
-    print(f"Loading draft head from {args.draft}...")
-    draft, _ = Eagle3Draft.from_checkpoint(
-        args.draft, device="cpu", dtype=torch.bfloat16, max_seq_len=args.max_seq_len
-    )
-    if target.config.hidden_size != draft.config.target_hidden_size:
-        p.error(
-            f"target hidden_size {target.config.hidden_size} != draft "
-            f"target_hidden_size {draft.config.target_hidden_size}"
-        )
-    # Cheap matched-pair guard: every draft id must map (target_id = draft_id +
-    # d2t[draft_id]) into the target vocab. A wrong d2t / mismatched pair would
-    # otherwise emit target ids outside the embedding range at runtime. This does
-    # not validate tokenizer identity or tap convention (see the scope note above).
-    target_ids = torch.arange(draft.d2t.numel(), device=draft.d2t.device) + draft.d2t
-    if int(target_ids.min()) < 0 or int(target_ids.max()) >= target.config.vocab_size:
-        p.error(
-            f"draft d2t maps draft ids outside the target vocab "
-            f"[0, {target.config.vocab_size}): got target id range "
-            f"[{int(target_ids.min())}, {int(target_ids.max())}]; the draft and "
-            f"target are likely not a matched pair"
-        )
-
-    spec = Eagle3Speculator(target, draft).eval()
-
-    # A single target forward accepts min_forward_len .. max_forward_len tokens.
+    # A single target forward accepts up to max_forward_len tokens.
     max_forward = spec_t.max_forward_len(target.config)
     max_prefill = min(args.max_prefill, args.max_seq_len - 1, max_forward)
-    # prefill's dynamic min (see _export_cuda target_min): the target's own
-    # specialization (min_forward_len) and the INT4 dispatch (> MATVEC_MAX_M).
-    prefill_min = max(spec_t.min_forward_len, _MATVEC_MAX_M + 1)
-    if max_prefill < prefill_min:
-        p.error(
-            f"computed max_prefill={max_prefill} < {prefill_min}; raise "
-            f"--max-prefill (got {args.max_prefill}) or --max-seq-len (got "
-            f"{args.max_seq_len})"
-        )
-    # target_verify is a single static forward of chain+1 tokens: it must fit the
-    # small-M GEMM (chain+1 <= _MATVEC_MAX_M) and the target's per-forward bounds
-    # [min_forward_len, max_forward].
     verify_len = args.chain + 1
-    if verify_len > _MATVEC_MAX_M:
-        p.error(
-            f"--chain {args.chain} (verify window {verify_len}) exceeds the "
-            f"INT4 small-M GEMM limit {_MATVEC_MAX_M}"
-        )
-    if verify_len < spec_t.min_forward_len:
-        p.error(
-            f"--chain {args.chain} (verify window {verify_len}) is below the "
-            f"target's minimum forward length {spec_t.min_forward_len}"
-        )
     if verify_len > min(args.max_seq_len - 1, max_forward):
         p.error(
             f"--chain {args.chain} (verify window {verify_len}) exceeds the "
             f"target's per-forward limit {min(args.max_seq_len - 1, max_forward)}"
         )
-    # Route the static chain_len+1 verify forward to the small-M INT4 GEMM by
-    # raising the dispatch threshold for this export only; restore it so the
-    # process-global default (4) is unchanged for any later use.
-    import executorch.backends.cuda.int4_dispatch as int4_dispatch
 
-    saved_threshold = int4_dispatch.MATVEC_MAX_M
-    int4_dispatch.MATVEC_MAX_M = _MATVEC_MAX_M
-    try:
-        _export_cuda(
-            spec,
-            args.output_dir,
-            max_prefill=max_prefill,
-            chain_len=args.chain,
-            prefill_min=spec_t.min_forward_len,
-        )
-    finally:
-        int4_dispatch.MATVEC_MAX_M = saved_threshold
+    if args.backend == "mlx":
+        _run_mlx(p, args, target, draft, max_prefill, verify_len)
+    else:
+        _run_cuda(p, args, spec_t, target, draft, max_prefill, verify_len)
 
 
 if __name__ == "__main__":
