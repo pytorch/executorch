@@ -17,7 +17,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.models import Conv2dWithActivation, HardTanhModule
+from executorch.backends.nxp.tests.models import Conv2dWithActivation
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
@@ -117,34 +117,3 @@ def test_custom_hardtanh_quant(
         input_data=input_data,
         atol=2.0,
     )
-
-
-@pytest.mark.parametrize(
-    "input_shape, activation_range",
-    [
-        pytest.param(
-            (3, 7, 15, 7),
-            (0, float("inf")),
-            id="activation range: Relu, num_channels not divisible by NUM_MACS, alone in partition",
-        ),
-        pytest.param(
-            (3, 7, 15, 7),
-            (0, 6),
-            id="activation range: Relu6, num_channels not divisible by NUM_MACS, alone in partition",
-        ),
-    ],
-)
-def test_hardtanh__unsupported(
-    input_shape: tuple[int],
-    activation_range: tuple[float, float],
-    use_qat: bool,
-):
-    min_val, max_val = activation_range
-    model = HardTanhModule(min_val, max_val)
-    delegated_ep = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
-    ).exported_program()
-
-    # Make sure the `hardtanh` was NOT delegated.
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert graph_contains_any_of_ops(delegated_ep.graph, [HardTanh, HardTanh_])

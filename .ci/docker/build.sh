@@ -102,7 +102,7 @@ esac
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 BUILD_DOCS=1
 
-if [[ "${GCC_VERSION:-}" == "11" && -z "${SKIP_PYTORCH:-}" ]]; then
+if [[ -n "${GCC_VERSION:-}" && -z "${SKIP_PYTORCH:-}" ]]; then
   PYTORCH_BUILD_MAX_JOBS=6
 fi
 
