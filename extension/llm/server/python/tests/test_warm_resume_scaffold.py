@@ -19,6 +19,7 @@ import os
 
 import pytest
 
+from executorch.extension.llm.server.python.chat_template import ChatTemplate
 from executorch.extension.llm.server.python.openai_transcript import (
     OpenAITranscriptState,
 )
@@ -507,3 +508,34 @@ def test_token_level_exact_prefix_toolloop_think():
     assert pi.segments is not None
     assembled = _assemble(pi.segments, enc)
     assert assembled[: len(resident)] == resident
+
+
+# --- WI4a: generation_preamble threads tools --------------------------------
+
+
+def test_generation_preamble_threads_tools():
+    # generation_preamble must pass `tools` to the render probe and key the cache
+    # on them, so a template whose post-header scaffold depends on tools gets the
+    # right preamble for each (and never serves a stale cached one).
+    class _ToolScaffoldTok:
+        eos_token = "<|im_end|>"
+        all_special_tokens = ["<|im_end|>"]
+
+        def encode(self, text, add_special_tokens=False):
+            return [0]
+
+        def apply_chat_template(
+            self, messages, tools, add_generation_prompt, tokenize, **kwargs
+        ):
+            scaffold = "<tools-on>" if tools else "<tools-off>"
+            return "<|im_start|>assistant\n" + scaffold
+
+    t = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
+    t._hf = _ToolScaffoldTok()
+    assert t.generation_preamble(tools=None) == "<tools-off>"
+    assert (
+        t.generation_preamble(tools=[{"type": "function", "function": {"name": "f"}}])
+        == "<tools-on>"
+    )
+    # cached separately -> the no-tool value is not shadowed by the tool one
+    assert t.generation_preamble(tools=None) == "<tools-off>"

@@ -71,14 +71,15 @@ class ServingChat:
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
-        # Two distinct sets (see chat_template):
-        #  * _stops: NARROW turn terminators (e.g. <|im_end|>) used as generation
-        #    stops AND for pre-parse truncation (_options/_collect_until_stop/
-        #    _truncate_raw/_clean). Excludes structural/tool delimiters so a
-        #    <tool_call> is never halted or cut before _extract_tools sees it.
-        #  * _content_specials: BROAD all-special-tokens set, used ONLY by
-        #    _strip_specials for final cleanup of the already-parsed visible
-        #    content, so a stray special token can't leak to the user.
+        # Two distinct sets (see chat_template); create() combines them per path:
+        #  * _stops: NARROW turn terminators (e.g. <|im_end|>). The ONLY stop set
+        #    for tool turns -- excludes structural/tool delimiters so a <tool_call>
+        #    is never halted or cut before _extract_tools sees it. Also used by
+        #    _truncate_raw (pre-parse truncation on the tool path).
+        #  * _content_specials: BROAD all-special-tokens set. For PLAIN chat it is
+        #    added to the worker/clean stop set (create() -> gen_stops) so a leaked
+        #    special halts the worker and never reaches the client, AND it backs
+        #    _strip_specials for final cleanup of already-parsed visible content.
         self._stops = template.turn_stop_sequences()
         self._content_specials = template.special_tokens()
         # OpenAI/chat-template token-ID warm-resume state (V2b.1.5). Adapter-side,
@@ -199,17 +200,20 @@ class ServingChat:
         if buf:
             yield buf
 
-    def _options(self, req: ChatCompletionRequest) -> GenerationOptions:
+    def _options(
+        self, req: ChatCompletionRequest, stops: list[str]
+    ) -> GenerationOptions:
         return GenerationOptions(
             max_new_tokens=req.resolved_max_tokens(),
             temperature=req.temperature if req.temperature is not None else 0.0,
-            # Let the worker terminate at the same boundary the control plane
-            # would cut: the model's special tokens (e.g. <|im_end|>) AND request
-            # stop sequences. This stops generation at end-of-turn even when the
-            # worker's EOS-by-token-id check misses it, instead of running to
-            # max_new (or erroring) past the turn. The server's
-            # _clean/_collect_until_stop still re-apply these as a backstop.
-            stop=self._stops + self._request_stops(req),
+            # Worker stop set, decided per path in create(): narrow turn
+            # terminators (+ request stops) for tool turns so a structural/tool
+            # delimiter is never cut before the parser sees it; plus the broad
+            # content specials for plain chat so a leaked special halts the worker
+            # -- which then marks the turn dirty and omits its ids -- instead of
+            # streaming a token the client should not see. The server re-applies
+            # the same set in _clean/_collect_until_stop as a backstop.
+            stop=stops,
         )
 
     @staticmethod
@@ -398,19 +402,33 @@ class ServingChat:
                 requested = req.resolved_max_tokens()
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
-        options = self._options(req)
+        # Stop-set split by path. Tool turns use only the narrow turn terminators
+        # (+ request stops) so a structural/tool delimiter is never halted before
+        # the parser sees it. Plain chat adds the broad content specials so a
+        # leaked special (one non-streaming would strip) halts the worker -- which
+        # marks the turn dirty and omits its ids -- instead of reaching the client
+        # or being recorded as resumable ids for text never shown. Both paths
+        # reuse this exact set in the control-plane cut (_clean/_collect_until_stop).
+        if self._tools_active(req):
+            gen_stops = self._stops + self._request_stops(req)
+        else:
+            gen_stops = self._stops + self._content_specials + self._request_stops(req)
+        options = self._options(req, gen_stops)
         # The generation scaffold the worker will prefill ahead of this turn's
         # tokens (e.g. Qwen3 <think> block), resolved with the same per-request
-        # mode as the render; recorded per turn so warm-resume splicing reproduces
-        # the exact resident scaffold even if the mode changes between requests.
-        preamble = self._template.generation_preamble(req.chat_template_kwargs)
+        # mode AND tools as the render; recorded per turn so warm-resume splicing
+        # reproduces the exact resident scaffold even if the mode changes between
+        # requests.
+        preamble = self._template.generation_preamble(
+            req.chat_template_kwargs, tools=template_tools
+        )
         # Admit the session up front (before the stream's first chunk) so a
         # capacity refusal is an HTTP status, not a mid-stream error event.
         if req.session_id is not None:
             await self._preflight_session(req.session_id)
         if req.stream:
-            return self._stream(req, prompt_input, options, preamble)
-        return await self._complete(req, prompt_input, options, preamble)
+            return self._stream(req, prompt_input, options, preamble, gen_stops)
+        return await self._complete(req, prompt_input, options, preamble, gen_stops)
 
     async def _complete(
         self,
@@ -418,14 +436,23 @@ class ServingChat:
         prompt: PromptInput,
         options: GenerationOptions,
         preamble: str = "",
+        gen_stops: Optional[list[str]] = None,
     ) -> ChatCompletionResponse:
+        # Same stop set the worker was given (per-path: narrow for tools, broad
+        # content specials added for plain chat); falls back to narrow if a caller
+        # didn't supply it.
+        stops = (
+            gen_stops
+            if gen_stops is not None
+            else self._stops + self._request_stops(req)
+        )
         stats = GenStats()
         try:
             # Collect raw text (markers intact for tool parsing), halting early
             # at a stop boundary (special token or request stop).
             text, stopped = await self._collect_until_stop(
                 self._runtime.generate_stream(req.session_id, prompt, options, stats),
-                self._stops + self._request_stops(req),
+                stops,
             )
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
             raise GenerationError(str(e))
@@ -467,6 +494,7 @@ class ServingChat:
         prompt: PromptInput,
         options: GenerationOptions,
         preamble: str = "",
+        gen_stops: Optional[list[str]] = None,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -486,7 +514,14 @@ class ServingChat:
 
         stats = GenStats()
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
-        stops = self._stops + self._request_stops(req)
+        # Per-path stop set from create(): for plain chat this includes the broad
+        # content specials, so _clean cuts a leaked special out of the stream (and
+        # the worker, given the same set, halts + omits ids -> non-resumable turn).
+        stops = (
+            gen_stops
+            if gen_stops is not None
+            else self._stops + self._request_stops(req)
+        )
         try:
             if use_tools:
                 # v1: buffer the (usually short) tool response, parse once.
