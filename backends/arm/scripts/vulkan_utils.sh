@@ -17,28 +17,30 @@ fi
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 source "${script_dir}/utils.sh"
 
-vulkan_sdk_version="1.4.321.1"
+vulkan_sdk_version=""
 vulkan_sdk_base_dir="vulkan_sdk"
 
 os_name="${OS:-$(uname -s)}"
 vulkan_sdk_arch="${ARCH}"
 
-# Vulkan SDK selection differs between macOS and Linux; macOS has its own SDK version
+# macOS and Linux x86_64 use the official LunarG SDK tarballs. Linux ARM64
+# uses a separately repackaged mirror of the same SDK version.
 if [[ "${os_name}" == "Darwin" ]]; then
-    # Latest published macOS SDK is 1.4.321.0 (1.4.321.1 is not available for macOS)
-    vulkan_sdk_version="1.4.321.0"
+    vulkan_sdk_version="1.4.341.1"
     vulkan_sdk_arch="macOS"
     vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/mac/vulkansdk-macos-${vulkan_sdk_version}.zip"
-    vulkan_sdk_sha256="d873c43acacec1e3330fb530dafd541aa5d8a5726575a98a3f70ca505fc203db"
+    vulkan_sdk_sha256="632cbe96c8ed6ed00c6ce25e3a7738c466134f76586e1c51f1419410d7f9042e"
 elif [[ "${os_name}" == "Linux" ]] && [[ "${ARCH}" == "x86_64" ]]; then
+    vulkan_sdk_version="1.4.341.1"
     vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/linux/vulkansdk-linux-x86_64-${vulkan_sdk_version}.tar.xz"
-    vulkan_sdk_sha256="f22a3625bd4d7a32e7a0d926ace16d5278c149e938dac63cecc00537626cbf73"
+    vulkan_sdk_sha256="3bf0f762afb6c79bc6a9d9fb5998745ccff928800a29619b501ed9de7fd9789b"
 elif [[ "${os_name}" == "Linux" ]] && ([[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]); then
+    vulkan_sdk_version="1.4.341.1"
     if [[ "${vulkan_sdk_arch}" == "arm64" ]]; then
         vulkan_sdk_arch="aarch64"
     fi
-    vulkan_sdk_url="https://github.com/jakoch/vulkan-sdk-arm/releases/download/1.4.321.1/vulkansdk-ubuntu-22.04-arm-1.4.321.1.tar.xz"
-    vulkan_sdk_sha256="c57e318d0940394d3a304034bb7ddabda788b5b0b54638e80e90f7264efe9f84"
+    vulkan_sdk_url="https://github.com/jakoch/vulkan-sdk-arm/releases/download/${vulkan_sdk_version}/vulkansdk-ubuntu-22.04-arm-${vulkan_sdk_version}.tar.xz"
+    vulkan_sdk_sha256="345312aee2c835e128b30653278593f899a659a7ba287c571cafb22acb708b8f"
 else
     log_step "vulkan" "Error: only macOS and Linux are supported (detected ${os_name}); architecture must be x86-64 or aarch64/arm64"
     exit 1
@@ -164,7 +166,8 @@ function setup_path_vulkan() {
     vulkan_sdk_arch_root="$(cd "${vulkan_sdk_arch_root}" && pwd)"
     vulkan_sdk_bin_path="$(cd "${vulkan_sdk_bin_dir}" && pwd)"
 
-    append_env_in_setup_path PATH "${vulkan_sdk_bin_path}"
+    # Prefer the SDK-provided compiler over any host-installed glslc.
+    prepend_env_in_setup_path PATH "${vulkan_sdk_bin_path}"
     if [[ "${OS:-}" == "Darwin" ]]; then
         prepend_env_in_setup_path DYLD_LIBRARY_PATH "${vulkan_sdk_arch_root}/lib"
         local moltenvk_icd_path="${vulkan_sdk_arch_root}/share/vulkan/icd.d/MoltenVK_icd.json"
