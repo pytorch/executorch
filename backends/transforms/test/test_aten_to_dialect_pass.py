@@ -61,9 +61,8 @@ def test_rewrites_node_when_substitution_matches() -> None:
 
     @_TestAtenToDialectPass.register_dialect_substitution(torch.ops.aten.add.Tensor)
     def replace_add_with_sub(
-        node: Node, exported_program: ExportedProgram
+        node: Node, dialect_pass: AtenToDialectPass
     ) -> DialectNodeSpec | None:
-        del exported_program
         return DialectNodeSpec(torch.ops.aten.sub.Tensor, node.args)
 
     exported_program = _export_add_model()
@@ -82,7 +81,7 @@ def test_substitution_can_add_state_dict_placeholder() -> None:
 
     @_TestAtenToDialectPass.register_dialect_substitution(torch.ops.aten.add.Tensor)
     def replace_add_rhs_with_constant(
-        node: Node, exported_program: ExportedProgram
+        node: Node, dialect_pass: AtenToDialectPass
     ) -> DialectNodeSpec | None:
         first_placeholder = next(
             graph_node
@@ -91,7 +90,7 @@ def test_substitution_can_add_state_dict_placeholder() -> None:
         )
         with node.graph.inserting_before(first_placeholder):
             const_node = create_constant_placeholder(
-                exp_program=exported_program,
+                exp_program=dialect_pass.exported_program,
                 graph=node.graph,
                 name="test_constant",
                 kind=InputKind.PARAMETER,
@@ -125,9 +124,8 @@ def test_substitution_can_change_kwargs() -> None:
 
     @_TestAtenToDialectPass.register_dialect_substitution(torch.ops.aten.add.Tensor)
     def replace_add_alpha(
-        node: Node, exported_program: ExportedProgram
+        node: Node, dialect_pass: AtenToDialectPass
     ) -> DialectNodeSpec | None:
-        del exported_program
         return DialectNodeSpec(torch.ops.aten.add.Tensor, node.args, {"alpha": 3})
 
     exported_program = _export_add_alpha_model()
@@ -150,9 +148,8 @@ def test_preserves_meta_when_substitution_matches() -> None:
 
     @_TestAtenToDialectPass.register_dialect_substitution(torch.ops.aten.add.Tensor)
     def replace_add_with_sub(
-        node: Node, exported_program: ExportedProgram
+        node: Node, dialect_pass: AtenToDialectPass
     ) -> DialectNodeSpec | None:
-        del exported_program
         return DialectNodeSpec(torch.ops.aten.sub.Tensor, node.args)
 
     exported_program = _export_add_model()
@@ -178,9 +175,8 @@ def test_keeps_node_when_substitution_returns_none() -> None:
 
     @_TestAtenToDialectPass.register_dialect_substitution(torch.ops.aten.add.Tensor)
     def do_not_replace(
-        node: Node, exported_program: ExportedProgram
+        node: Node, dialect_pass: AtenToDialectPass
     ) -> DialectNodeSpec | None:
-        del node, exported_program
         return None
 
     exported_program = _export_add_model()
@@ -199,16 +195,14 @@ def test_raises_when_duplicate_substitution_is_registered() -> None:
 
     @_TestAtenToDialectPass.register_dialect_substitution(torch.ops.aten.add.Tensor)
     def first_replace(
-        node: Node, exported_program: ExportedProgram
+        node: Node, dialect_pass: AtenToDialectPass
     ) -> DialectNodeSpec | None:
-        del exported_program
         return DialectNodeSpec(torch.ops.aten.sub.Tensor, node.args)
 
     with pytest.raises(RuntimeError, match="Multiple substitutions registered"):
 
         @_TestAtenToDialectPass.register_dialect_substitution(torch.ops.aten.add.Tensor)
         def second_replace(
-            node: Node, exported_program: ExportedProgram
+            node: Node, dialect_pass: AtenToDialectPass
         ) -> DialectNodeSpec | None:
-            del exported_program
             return DialectNodeSpec(torch.ops.aten.mul.Tensor, node.args)

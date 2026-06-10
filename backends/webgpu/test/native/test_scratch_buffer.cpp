@@ -70,7 +70,9 @@ std::vector<float> readback(
   std::vector<float> out(nbytes / sizeof(float));
   if (cb.status.load(std::memory_order_acquire) == WGPUMapAsyncStatus_Success) {
     const void* m = wgpuBufferGetConstMappedRange(staging, 0, nbytes);
-    std::memcpy(out.data(), m, nbytes);
+    if (m != nullptr) {
+      std::memcpy(out.data(), m, nbytes);
+    }
     wgpuBufferUnmap(staging);
   }
   wgpuBufferRelease(staging);
