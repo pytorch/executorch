@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dGemm.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Convolution.h>
 
 #include <optional>
 
@@ -29,7 +30,10 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args[10] = output [N, C_out, H_out, W_out]
   //
   // impl_selector grammar:
-  //   ""             -> aten.convolution.default (direct sliding-window)
+  //   ""             -> aten.convolution.default (heuristic-routed:
+  //                     should_use_conv2d_im2col() picks direct vs im2col)
+  //   "direct"       -> add_conv2d_node(force_direct=true): forces the direct
+  //                     sliding-window path, bypassing the routing heuristic
   //   "im2col"       -> et_vk.conv2d_gemm.default, auto im2col storage
   //   "im2col_buffer"-> im2col/GEMM, force buffer im2col intermediate
   //   "im2col_tex2d" -> im2col/GEMM, force texture2d im2col intermediate
@@ -87,6 +91,31 @@ void test_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef output_padding =
       graph.add_scalar_list<int64_t>(std::vector<int64_t>{0, 0});
   ValueRef groups = graph.add_scalar<int64_t>(1);
+
+  // The "direct" selector must reach the exact direct sliding-window dispatch
+  // the heuristic would otherwise pick. The registered op can only route via
+  // the heuristic, so call add_conv2d_node directly with force_direct=true to
+  // bypass it (mirroring how the forced-storage variants call
+  // conv2d_gemm_impl).
+  if (impl_selector == "direct") {
+    add_conv2d_node(
+        graph,
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+        /*out_min=*/kDummyValueRef,
+        /*out_max=*/kDummyValueRef,
+        out,
+        /*clamp_out=*/false,
+        /*force_direct=*/true);
+    return;
+  }
 
   const std::string target_op = (impl_selector == "im2col")
       ? "et_vk.conv2d_gemm.default"
