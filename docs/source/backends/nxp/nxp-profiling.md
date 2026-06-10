@@ -193,7 +193,7 @@ inspector.print_data_tabular(include_delegate_debug_data = True)
 ### Complete Example
 
 A full implementation is available
-in [analyzing_with_inspector.py](https://github.com/pytorch/executorch/blob/main/examples/nxp/analyzing_with_inspector.py).
+in [analyzing_with_inspector.py](https://github.com/pytorch/executorch/blob/main/examples/nxp/analyzing_with_inspector.py). @lint-ignore
 
 ---
 
