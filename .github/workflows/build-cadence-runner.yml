@@ -50,3 +50,67 @@ jobs:
     uses: ./.github/workflows/_test_cadence.yml
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+  # Cross-compile cadence_executor_runner for the Cadence Xtensa cores (build
+  # stage; an ISS test stage follows later, cf. cpu-build -> cpu-test). The
+  # toolchain + core configs are licensed and cannot be hosted publicly, so they
+  # are fetched at runtime from an auth-gated store using a short-lived OIDC
+  # credential; the store, role, and region are supplied via CI variables and
+  # are not committed. Fork PRs are skipped (they cannot assume the role).
+  xtensa-build:
+    name: xtensa-build-${{ matrix.backend }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # fusion_g3 is omitted until the upstream fusion_g3 operator <->
+        # nnlib-FusionG3 API skew is resolved (its op wrappers call kernels
+        # absent from the vendored nnlib, so the runner does not link).
+        backend: [hifi4, vision]
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      job-name: xtensa-build-${{ matrix.backend }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      upload-artifact: cadence-xtensa-build-${{ matrix.backend }}
+      script: |
+        set -eux
+        # The generic Linux job uses the base env, not the one set up by the image.
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        ./install_requirements.sh > /dev/null
+        pip install --quiet awscli
+
+        # Obtain a short-lived credential for the artifact store via GitHub
+        # OIDC. The ACTIONS_ID_TOKEN_REQUEST_* vars are present because this job
+        # has id-token: write. Role and store are provided via CI variables.
+        OIDC_TOKEN=$(curl -sS \
+          -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -r '.value')
+        CREDS=$(aws sts assume-role-with-web-identity \
+          --role-arn "${{ vars.CADENCE_CI_AWS_ROLE }}" \
+          --role-session-name "xtensa-${{ matrix.backend }}-${GITHUB_RUN_ID}" \
+          --web-identity-token "${OIDC_TOKEN}" \
+          --duration-seconds 7200 \
+          --query Credentials --output json)
+        export AWS_ACCESS_KEY_ID=$(echo "${CREDS}" | jq -r .AccessKeyId)
+        export AWS_SECRET_ACCESS_KEY=$(echo "${CREDS}" | jq -r .SecretAccessKey)
+        export AWS_SESSION_TOKEN=$(echo "${CREDS}" | jq -r .SessionToken)
+        export AWS_DEFAULT_REGION="${{ vars.CADENCE_CI_AWS_REGION }}"
+        export XTENSA_S3_BUCKET="${{ vars.CADENCE_CI_S3_BUCKET }}"
+
+        # Download + install toolchain and core, exporting the Xtensa env into
+        # this shell, then cross-compile cadence_executor_runner (build only;
+        # the ISS smoke run lives in the downstream test job).
+        source .ci/scripts/setup-xtensa-tools.sh "${{ matrix.backend }}"
+        .ci/scripts/build-cadence-xtensa.sh --no-run
+
+        # Publish the cross-compiled runner for the downstream test job.
+        cp cmake-out/backends/cadence/cadence_executor_runner "${RUNNER_ARTIFACT_DIR}/"
