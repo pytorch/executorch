@@ -6796,6 +6796,19 @@ class TestQNNQuantizedUtils(TestQNN):
             skip_node_id_set={"aten_add_tensor"},
         )
 
+    def test_qnn_backend_skip_node_id_partitioner_int_node(self):
+        module = SkipIntNode()  # noqa: F405
+        sample_input = (
+            torch.randint(0, 5, (2, 3, 4), dtype=torch.int32),
+            torch.randint(0, 5, (2, 3, 4), dtype=torch.int32),
+        )
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=2,
+            skip_node_id_set={"aten_mul_tensor"},
+        )
+
     def test_qnn_backend_skip_node_id_quantizer(self):
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))

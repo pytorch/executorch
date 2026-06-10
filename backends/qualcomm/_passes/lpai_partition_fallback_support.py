@@ -155,10 +155,11 @@ class LpaiPartitionFallbackSupport(ExportPass):
             compiler_specs=self.compiler_specs,
             skip_node_id_set=self.skip_node_id_set,
             skip_node_op_set=self.skip_node_op_set,
+            is_qnn_partitioner=False,
+            phase="LpaiPartitionFallbackSupport",
         )
 
         unsupported_nodes = []
-
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
@@ -263,20 +264,28 @@ class LpaiPartitionFallbackSupport(ExportPass):
                 continue
             if node.target in q_ops or node.target in dq_ops:
                 continue
-            if node.meta.get(QCOM_FALLBACK_NODE):
+
+            if node.meta.get(QCOM_FALLBACK_NODE) and QCOM_QUANT_ATTRS in node.meta:
+
+                # Skip node like get_attr
+                input_call_func_nodes = [
+                    input_node
+                    for input_node in node.all_input_nodes
+                    if input_node.op == "call_function"
+                ]
                 assert all(
-                    input_node.target in dq_ops for input_node in node.all_input_nodes
+                    input_node.target in dq_ops for input_node in input_call_func_nodes
                 ), (
-                    f"Expected every input of fall back node {node.name} to be "
+                    f"Expected every call_function input of fp fall back node {node.name} to be "
                     f"a dequantize op (insert_partition_qdq should have wrapped "
                     f"each input with a Q1/DQ1 pair), got: "
-                    f"{[(n.name, n.target) for n in node.all_input_nodes]}"
+                    f"{[(n.name, n.target) for n in input_call_func_nodes]}"
                 )
-                for dq_node in list(node.all_input_nodes):
+                for dq_node in input_call_func_nodes:
                     q_node = dq_node.args[0]
                     if q_node.op == "placeholder":
                         raise RuntimeError(
-                            "Fallback nodes with weights is currently supported."
+                            "Fallback nodes with weights is not currently supported."
                         )
                     assert (
                         q_node.target in q_ops

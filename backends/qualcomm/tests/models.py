@@ -2325,6 +2325,17 @@ class SkipNodeFirstOrLast(torch.nn.Module):
         return torch.relu(x) + torch.sqrt(x)
 
 
+class SkipIntNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        a = torch.add(x, y)
+        b = torch.mul(a, a)
+        c = torch.add(b, y)
+        return c
+
+
 class SkipMultiInput(torch.nn.Module):
 
     def __init__(self):

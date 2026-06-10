@@ -56,16 +56,23 @@ class QnnOperatorSupport(OperatorSupportBase):
         compiler_specs,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
+        is_qnn_partitioner=True,
+        phase="QnnPartitioner",
     ):
         option = generate_qnn_executorch_option(compiler_specs)
         python_options = flatbuffer_to_option(option)
         self.node_visitors = node_visitor_manager.get_node_visitors(
             edge_program,
             op_package_infos=python_options.op_package_options.op_package_infos,
+            is_qnn_partitioner=is_qnn_partitioner,
         )
 
         self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
+        self.is_qnn_partitioner = is_qnn_partitioner
+        # Label prefixed to op-support log lines so callers that reuse this
+        # checker (e.g. the LPAI fallback pass) are distinguishable in the logs.
+        self.phase = phase
         self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = get_current_qnn_manager(
             python_options.backend_options.backend_type, compiler_specs
@@ -77,12 +84,12 @@ class QnnOperatorSupport(OperatorSupportBase):
 
         if node.target in to_be_implemented_operator:
             logger.info(
-                f"{node.target.__name__} | Skipped, this op can be supported, please report an issue in https://github.com/pytorch/executorch/issues"
+                f"[{self.phase}] {node.target.__name__} | Skipped, this op can be supported, please report an issue in https://github.com/pytorch/executorch/issues"
             )
             return False
 
         if node.meta.get(QCOM_FALLBACK_NODE, False):
-            logger.info(f"{node.target.__name__} | Forced Fallback")
+            logger.info(f"[{self.phase}] {node.target.__name__} | Forced Fallback")
             return False
 
         if (
@@ -92,14 +99,14 @@ class QnnOperatorSupport(OperatorSupportBase):
             # bypass dequantize op for parameters & buffers
             or node.meta.get(QCOM_BYPASS_NODE, False)
         ):
-            logger.info(f"{node.target.__name__} | Forced Passed")
+            logger.info(f"[{self.phase}] {node.target.__name__} | Forced Passed")
             return True
 
         if (
             node.name in self.skip_node_id_set
             or node.target.__name__ in self.skip_node_op_set
         ):
-            logger.info(f"{node.target.__name__} | Skipped")
+            logger.info(f"[{self.phase}] {node.target.__name__} | Skipped")
             return False
 
         supported = False
@@ -121,7 +128,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
 
         self.nodes_to_wrappers.clear()
-        logger.info(f"{node.target.__name__} | {supported}")
+        logger.info(f"[{self.phase}] {node.target.__name__} | {supported}")
         return supported
 
 
