@@ -2109,6 +2109,28 @@ class TestQNNFloatingPointOperator(TestQNN):
             },
             {
                 QCOM_MODULE: [
+                    SelectScatter(dim=-1, index=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(3, 4, 5),
+                        torch.randn(3, 4),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    SelectScatter(dim=3, index=1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(2, 3, 4, 5),
+                        torch.randn(2, 3, 4),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
                     SelectScatter(dim=1, index=0),  # noqa: F405
                     SelectScatter(dim=1, index=-1),  # noqa: F405
                 ],
@@ -2289,6 +2311,55 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Unsqueeze()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_var(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    VarCorrection(dim=[1], correction=1, keepdim=False),  # noqa: F405
+                    VarCorrection(dim=[1], correction=0, keepdim=True),  # noqa: F405
+                    VarCorrection(  # noqa: F405
+                        dim=[0, 2], correction=1, keepdim=False
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 4, 5),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    VarDim(dim=[1], unbiased=True, keepdim=False),  # noqa: F405
+                    VarDim(dim=[1], unbiased=False, keepdim=True),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 4, 5),),
+                ],
+            },
+            {
+                # Edge case: N == correction (single-element dim with correction=1)
+                # Should produce nan, matching native PyTorch behavior.
+                # Use assert_output_equal=False since nan != nan in IEEE 754.
+                QCOM_MODULE: [
+                    VarCorrection(dim=[1], correction=1, keepdim=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 1, 5),),
+                ],
+                "assert_output_equal": False,
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(
+                            module,
+                            sample_input,
+                            assert_output_equal=comb.get("assert_output_equal", True),
+                        )
 
     def test_qnn_backend_view(self):
         module = View()  # noqa: F405
@@ -5021,6 +5092,28 @@ class TestQNNQuantizedOperator(TestQNN):
                     )
                 ],
             },
+            {
+                QCOM_MODULE: [
+                    SelectScatter(dim=-1, index=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(3, 4, 5),
+                        torch.randn(3, 4),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    SelectScatter(dim=3, index=1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.randn(2, 3, 4, 5),
+                        torch.randn(2, 3, 4),
+                    )
+                ],
+            },
         ]
 
         index = 0
@@ -5227,6 +5320,56 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn([1, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_var(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    VarCorrection(dim=[1], correction=1, keepdim=False),  # noqa: F405
+                    VarCorrection(dim=[1], correction=0, keepdim=True),  # noqa: F405
+                    VarCorrection(  # noqa: F405
+                        dim=[0, 2], correction=1, keepdim=False
+                    ),
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 4, 5),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    VarDim(dim=[1], unbiased=True, keepdim=False),  # noqa: F405
+                    VarDim(dim=[1], unbiased=False, keepdim=True),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 4, 5),),
+                ],
+            },
+            {
+                # Edge case: N == correction (single-element dim with correction=1)
+                # Should produce nan, matching native PyTorch behavior.
+                # Use assert_output_equal=False since nan != nan in IEEE 754.
+                QCOM_MODULE: [
+                    VarCorrection(dim=[1], correction=1, keepdim=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(3, 1, 5),),
+                ],
+                "assert_output_equal": False,
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(
+                            qdq_module,
+                            sample_input,
+                            assert_output_equal=comb.get("assert_output_equal", True),
+                        )
 
     def test_qnn_backend_view(self):
         module = View()  # noqa: F405
@@ -7628,6 +7771,7 @@ class TestExampleLLMScript(TestQNN):
             "1024",
             "--max_context_len",
             "1024",
+            "--skip_user_prompt_calibration",
         ]
 
         match self.static_llm_eval_method:
@@ -7636,9 +7780,13 @@ class TestExampleLLMScript(TestQNN):
                     [
                         "--eval_methods",
                         "tasks_eval",
-                        "--tasks",
+                        "--eval_tasks",
                         "wikitext",
-                        "--limit",
+                        "--eval_limit",
+                        "1",
+                        "--calib_tasks",
+                        "wikitext",
+                        "--calib_limit",
                         "1",
                     ]
                 )
@@ -7647,25 +7795,33 @@ class TestExampleLLMScript(TestQNN):
                     [
                         "--eval_methods",
                         "tasks_eval",
-                        "--tasks",
+                        "--eval_tasks",
                         "hellaswag",
-                        "--limit",
+                        "--eval_limit",
+                        "10",
+                        "--calib_tasks",
+                        "hellaswag",
+                        "--calib_limit",
                         "10",
                     ]
                 )
             case "sqnr":
                 cmds.extend(
                     [
-                        "--skip_user_prompt_calibration",
-                        "--tasks",
+                        "--eval_tasks",
                         "wikitext",
-                        "--limit",
+                        "--eval_limit",
                         "1",
                         "--eval_methods",
                         "sqnr_eval",
+                        "--calib_tasks",
+                        "wikitext",
+                        "--calib_limit",
+                        "1",
                     ]
                 )
             case _:
+                cmds.remove("--skip_user_prompt_calibration")
                 logging.warning(
                     "No llm eval method chosen. Only generate model output."
                 )
@@ -7931,9 +8087,13 @@ class TestExampleLLMScript(TestQNN):
             "1024",
             "--eval_methods",
             "tasks_eval",
-            "--tasks",
+            "--eval_tasks",
             "wikitext",
-            "--limit",
+            "--eval_limit",
+            "1",
+            "--calib_tasks",
+            "wikitext",
+            "--calib_limit",
             "1",
             "--use_attention_sink",
             "4,32",
