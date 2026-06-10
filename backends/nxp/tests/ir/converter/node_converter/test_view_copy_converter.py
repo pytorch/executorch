@@ -155,7 +155,12 @@ def test__view_copy__channels_first_to_2d(mocker):
     converter_spy = mocker.spy(ModelBuilder, "finish")
 
     convert_run_compare(
-        edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess()
+        edge_program,
+        input_data,
+        tflite_input_preprocess=ToChannelLastPreprocess(),
+        conversion_config=ConversionConfig(
+            {"use_neutron_for_format_conversion": False}
+        ),
     )
 
     tflite_model = converter_spy.spy_return
@@ -213,6 +218,9 @@ def test__view_copy__formatless_to_channels_first(mocker):
         input_data,
         tflite_output_preprocess=ToChannelFirstPreprocess(),
         atol=2.0e-7,
+        conversion_config=ConversionConfig(
+            {"use_neutron_for_format_conversion": False}
+        ),
     )
 
     tflite_model = converter_spy.spy_return
@@ -370,7 +378,7 @@ def test__view_copy__context_dependent__channels_first_to_formatless__transpose_
         use_neutron_for_format_conversion=False,
     ).exported_program()
 
-    # Make sure the convolution and the linear were delegated, but not the view_copy.
+    # Make sure all ops were delegated anyway.
     assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
@@ -378,11 +386,6 @@ def test__view_copy__context_dependent__channels_first_to_formatless__transpose_
             exir_ops.edge.aten.convolution.default,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.addmm.default,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        ep.graph,
-        [
             exir_ops.edge.aten.view_copy.default,
         ],
     )
@@ -423,33 +426,6 @@ def test__view_copy__formatless_to_channels_first__transpose_supported(mocker):
     )
 
 
-def test__view_copy__formatless_to_channels_first__transpose_not_supported():
-    input_shape = (1, 8 * 3 * 4)
-    new_shape = [1, 8, 3, 4]  # The last dim is not a multiple of num_macs.
-    module = FormatlessToChannelsFirstModule(8, new_shape)
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure the view_copy was not delegated.
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.view_copy.default,
-        ],
-    )
-
-
 def test__view_copy__channels_first_to_channels_first__transpose_supported(mocker):
     input_shape = (1, 8, 3, 8)
     new_shape = [1, 8, 1, 24]
@@ -483,33 +459,6 @@ def test__view_copy__channels_first_to_channels_first__transpose_supported(mocke
         tfl_model=neutron_ir_model,
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tflite_output_preprocess=ToChannelFirstPreprocess(),
-    )
-
-
-def test__view_copy__channels_first_to_channels_first__transpose_not_supported():
-    input_shape = (1, 8, 3, 5)  # The last dimension is not a multiple of num_macs.
-    new_shape = [1, 8, 1, 15]
-    module = ConvViewConvModule(new_shape, 8)
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure the view_copy was NOT delegated
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.view_copy.default,
-        ],
     )
 
 

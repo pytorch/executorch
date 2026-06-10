@@ -685,9 +685,9 @@ class TaskEval(EvalBase):
             is_multimodal=is_multimodal,
         )
         self.inference_speed = None
-        self.tasks = args.tasks
-        self.num_fewshot = args.num_fewshot
-        self.limit = args.limit
+        self.tasks = args.eval_tasks
+        self.num_fewshot = args.eval_num_fewshot
+        self.limit = args.eval_limit
         adb = self._get_adb()
         self.eval_wrapper = TaskEval.QnnRunnerEvalWrapper(
             args=args,

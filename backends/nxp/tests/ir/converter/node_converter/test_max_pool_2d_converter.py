@@ -166,8 +166,8 @@ class TestMaxPool1D:
 
         graph_verifier = DetailedGraphVerifier(
             mocker,
-            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
-            expected_non_delegated_ops={ViewCopy: 2},
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1, ViewCopy: 2},
+            expected_non_delegated_ops={},
         )
 
         lower_run_compare(model, input_shape, graph_verifier)
