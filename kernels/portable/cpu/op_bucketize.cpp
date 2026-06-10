@@ -1,8 +1,7 @@
+#include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
-#include <cstdio>
-#include <iostream>
 
 namespace torch {
 namespace executor {
@@ -10,12 +9,23 @@ namespace native {
 
 namespace {
 
+using namespace torch::executor::native::utils::internal;
+using namespace torch::executor::native::utils;
+
 template <typename CTYPE>
-int64_t
-cus_lower_bound(int64_t start, int64_t end, const CTYPE val, const CTYPE* bd) {
+int64_t cus_lower_bound(
+    int64_t end,
+    const CTYPE val,
+    const char* bd,
+    load_to_compute_fn<CTYPE> bd_load_fn,
+    ssize_t bd_elem_size) {
+  int64_t start = 0;
+
   while (start < end) {
     const int64_t mid = start + ((end - start) >> 1);
-    if (bd[mid] < val) {
+    CTYPE mid_bd = bd_load_fn(&bd[mid * bd_elem_size]);
+
+    if (mid_bd < val) {
       start = mid + 1;
     } else {
       end = mid;
@@ -25,11 +35,19 @@ cus_lower_bound(int64_t start, int64_t end, const CTYPE val, const CTYPE* bd) {
 }
 
 template <typename CTYPE>
-int64_t
-cus_upper_bound(int64_t start, int64_t end, const CTYPE val, const CTYPE* bd) {
+int64_t cus_upper_bound(
+    int64_t end,
+    const CTYPE val,
+    const char* bd,
+    load_to_compute_fn<CTYPE> bd_load_fn,
+    ssize_t bd_elem_size) {
+  ino64_t start = 0;
+
   while (start < end) {
     const int64_t mid = start + ((end - start) >> 1);
-    if (bd[mid] <= val) {
+    CTYPE mid_bd = bd_load_fn(&bd[mid * bd_elem_size]);
+
+    if (mid_bd <= val) {
       start = mid + 1;
     } else {
       end = mid;
@@ -38,33 +56,44 @@ cus_upper_bound(int64_t start, int64_t end, const CTYPE val, const CTYPE* bd) {
   return start;
 }
 
-template <typename CTYPE, typename OUT_CTYPE>
-void searchsorted_cpu(
+template <typename CTYPE_COMPUTE, typename CTYPE_OUT, const char* op_name>
+void bucketize_tensor(
     KernelRuntimeContext& context,
-    const Tensor& input,
+    const Tensor& self,
     const Tensor& boundaries,
     const bool& right,
     Tensor& out) {
-  const auto bd_data = boundaries.const_data_ptr<CTYPE>();
-  const auto in_data = input.const_data_ptr<CTYPE>();
-  OUT_CTYPE* out_data = out.mutable_data_ptr<OUT_CTYPE>();
-  int64_t end_bd = boundaries.sizes().back();
+  auto in_load_fn = get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
+      context, self, SupportedTensorDtypes::REALHBF16);
+  const ssize_t in_size = self.element_size();
+  auto in_data = reinterpret_cast<const char*>(self.const_data_ptr());
 
-  const bool success = parallel_for(
-      0, input.numel(), 200, [&](const auto begin, const auto end) {
-        for (const auto out_i : c10::irange(begin, end)) {
+  auto bd_load_fn = get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
+      context, boundaries, SupportedTensorDtypes::REALHBF16);
+  const ssize_t bd_elem_size = boundaries.element_size();
+  auto bd_data = reinterpret_cast<const char*>(boundaries.const_data_ptr());
+  int64_t bd_end = boundaries.sizes().back();
+
+  auto out_data = out.mutable_data_ptr<CTYPE_OUT>();
+
+  const bool success =
+      parallel_for(0, self.numel(), 200, [&](const auto begin, const auto end) {
+        for (const auto i : c10::irange(begin, end)) {
+          auto compute_val = in_load_fn(&in_data[i * in_size]);
           int64_t pos = right
-              ? cus_upper_bound(0, end_bd, in_data[out_i], bd_data)
-              : cus_lower_bound(0, end_bd, in_data[out_i], bd_data);
-          out_data[out_i] = pos;
+              ? cus_upper_bound(
+                    bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size)
+              : cus_lower_bound(
+                    bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size);
+          out_data[i] = pos;
         }
       });
+
   ET_KERNEL_CHECK_MSG(context, success, Internal, , "parallel_for failed");
 }
 
-void bucketize_pre_check(
+void bucketize_common_pre_checks(
     KernelRuntimeContext& context,
-    const Tensor& input,
     const Tensor& boundaries,
     bool out_int32,
     Tensor& out) {
@@ -89,9 +118,6 @@ void bucketize_pre_check(
       out_dtype,
       " and out_int32 flag is ",
       (out_int32 ? "True" : "False"));
-
-  ET_KERNEL_CHECK(
-      context, tensors_have_same_shape(input, out), InvalidArgument, );
 }
 
 } // namespace
@@ -103,23 +129,33 @@ Tensor& bucketize_tensor_out(
     bool out_int32,
     bool right,
     Tensor& out) {
-  bucketize_pre_check(context, self, boundaries, out_int32, out);
+  bucketize_common_pre_checks(context, boundaries, out_int32, out);
+  // Check manually as bucketize_common_pre_checks do not return
+  if (context.failure_state() != Error::Ok) {
+    return out;
+  }
+  ET_KERNEL_CHECK(
+      context, tensors_have_same_shape(self, out), InvalidArgument, out);
 
   ScalarType common_type =
       promoteTypes(self.scalar_type(), boundaries.scalar_type());
+  ScalarType compute_type = utils::get_compute_type(common_type);
+
+  static constexpr const char op_name[] = "bucketize.Tensor_out";
 
   ET_SWITCH_REALHBF16_TYPES(
-      common_type, context, "bucketize.Tensor_out", CTYPE, [&]() {
+      compute_type, context, op_name, CTYPE_COMPUTE, [&]() {
         if (out_int32) {
-          searchsorted_cpu<CTYPE, int32_t>(
+          bucketize_tensor<CTYPE_COMPUTE, int32_t, op_name>(
               context, self, boundaries, right, out);
         } else {
-          searchsorted_cpu<CTYPE, int64_t>(
+          bucketize_tensor<CTYPE_COMPUTE, int64_t, op_name>(
               context, self, boundaries, right, out);
         }
       });
   return out;
 }
+
 Tensor& bucketize_scalar_out(
     KernelRuntimeContext& context,
     const Scalar& self,
@@ -128,8 +164,8 @@ Tensor& bucketize_scalar_out(
     bool right,
     Tensor& out) {
   return out;
+}
 
-} // namespace
 } // namespace native
 } // namespace executor
 } // namespace torch
