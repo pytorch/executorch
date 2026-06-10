@@ -173,6 +173,7 @@ exclude_patterns = [
     'extension/asr/runner/transducer_runner.h',
     'extension/aten_util/**',
     'extension/benchmark/apple/**',
+    'extension/cuda/**',
     'extension/data_loader/**',
     'extension/evalue_util/**',
     'extension/flat_tensor/**',
