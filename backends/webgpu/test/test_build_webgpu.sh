@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# End-to-end build and test script for the WebGPU backend (native via wgpu-native).
+# End-to-end build and test script for the WebGPU backend (native via Dawn).
 # Usage: bash backends/webgpu/test/test_build_webgpu.sh
 
 set -e
@@ -51,22 +51,20 @@ export_rms_norm_cases('${RMS_NORM_DIR}')
 " || { echo "WARN: rms_norm export failed; skipping rms_norm native test"; RMS_NORM_PYTEST_OK=0; }
 fi
 
-# ── Step 3: Native build + test (wgpu-native) ────────────────────────────────
+# ── Step 3: Native build + test (Dawn + SwiftShader) ─────────────────────────
 
-WGPU_DIR="${EXECUTORCH_ROOT}/backends/webgpu/third-party/wgpu-native"
+# Vendor Dawn (Tint) + SwiftShader and export Dawn_DIR/VK_ICD_FILENAMES. Set
+# DAWN_PREBUILT_DIR to an existing Dawn install to skip the download locally.
+echo "=== Installing Dawn (Tint) + SwiftShader ==="
+source "${EXECUTORCH_ROOT}/.ci/scripts/setup-webgpu-linux-deps.sh"
 
-# Auto-download wgpu-native if not present
-if [[ ! -d "${WGPU_DIR}/lib" ]]; then
-    echo "=== Installing wgpu-native ==="
-    bash "${EXECUTORCH_ROOT}/backends/webgpu/scripts/setup-wgpu-native.sh"
-fi
-
-echo "=== Step 3: Native build with wgpu-native ==="
+echo "=== Step 3: Native build with Dawn ==="
 NATIVE_BUILD_DIR="${EXECUTORCH_ROOT}/cmake-out-webgpu-native"
 rm -rf "${NATIVE_BUILD_DIR}"
 
 cmake \
     -DEXECUTORCH_BUILD_WEBGPU=ON \
+    -DDawn_DIR="${Dawn_DIR}" \
     -DEXECUTORCH_BUILD_WEBGPU_TEST=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
