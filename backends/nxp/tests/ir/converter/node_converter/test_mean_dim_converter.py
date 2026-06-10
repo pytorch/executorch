@@ -201,11 +201,25 @@ class TestMeanDim:
         [((1, 7, 3, 3), 1)],
         ids=lambda val: f"shape={val}" if isinstance(val, tuple) else f"dim={val}",
     )
-    def test__channels_first(self, mocker, input_shape, dim, keep_dim):
+    @pytest.mark.parametrize(
+        "keep_dim",
+        [
+            pytest.param(True),
+            pytest.param(
+                False,
+                marks=pytest.mark.xfail(
+                    strict=True, reason="Known format inference bug (EIEX-937)."
+                ),
+            ),
+        ],
+        ids=lambda kd: f"keep_dim={kd}",
+    )
+    def test__channels_first__keep_dim__true(self, mocker, input_shape, dim, keep_dim):
         # Just 1 test case to verify correct handling of the `dim`.
         # Most cases fall into the single bit error case, and since this test uses 2 operators, the error accumulates
         #  and the final error is larger. We cannot with 100% certainty say that the error is only caused by the single
         #  bit errors and not related to the format. That's why only this 1 case with no errors is used.
+
         model = MaxPoolMeanDimModule(dim, keep_dim)
         self.assert_delegated(
             model,

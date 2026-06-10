@@ -1075,3 +1075,4 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_e2e.yml
     with:
       models: '["mv2", "mv3"]'
+      targets: '["cortex-m55", "cortex-m7"]'

@@ -24,13 +24,21 @@ Usage:
   python -m pytest backends/cuda/tests/test_int4_dispatch.py -v
 """
 
+import contextlib
 import unittest
+from unittest import mock
 
 import executorch.backends.cuda.quantize_op_dispatch.int4_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from executorch.examples.models.gemma4_31b.quant.quantize import quantize_weight
+from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
+from executorch.examples.models.gemma4_31b.quant.pack_cuda import pack_linear_for_cuda
+from executorch.examples.models.gemma4_31b.quant.quantize import (
+    dequantize_weight,
+    quantize_weight,
+)
 from executorch.examples.models.gemma4_31b.quant.recipe import QuantConfig
 
 
@@ -51,8 +59,9 @@ def _make_int4_linear(N, K, group_size=128, symmetric=False, bias=False):
     )
     int4_w = quantize_weight(w_bf16, config)
 
-    module = nn.Linear(K, N, bias=bias, dtype=torch.bfloat16, device="cuda")
-    module.weight = nn.Parameter(int4_w.cuda(), requires_grad=False)
+    module = nn.Linear(K, N, bias=bias, dtype=torch.bfloat16)
+    pack_linear_for_cuda(module, {"weight": int4_w})
+    module.cuda()
     return module, w_bf16.cuda()
 
 
@@ -174,7 +183,7 @@ class TestDeviceMovement(unittest.TestCase):
         config = QuantConfig(bits=4, group_size=128, symmetric=False, method="min_max")
         int4_w = quantize_weight(w_bf16, config)
         module = nn.Linear(512, 256, bias=False)
-        module.weight = nn.Parameter(int4_w, requires_grad=False)
+        pack_linear_for_cuda(module, {"weight": int4_w})
         module = module.to("cuda")
         x = torch.randn(1, 512, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_bf16.cuda()))
@@ -205,6 +214,115 @@ class TestLargeShapes(unittest.TestCase):
         module, w_ref = _make_int4_linear(21504, 5376)
         x = torch.randn(128, 5376, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_ref))
+
+
+def _make_int4_tensor(N, K, group_size=128, symmetric=False):
+    """Build a stock torchao ``Int4Tensor`` (NOT packed/coalesced) on CPU."""
+    w = torch.randn(N, K, dtype=torch.bfloat16)
+    config = QuantConfig(
+        bits=4, group_size=group_size, symmetric=symmetric, method="min_max"
+    )
+    return quantize_weight(w, config), w
+
+
+@contextlib.contextmanager
+def _record_int4_plain_mm():
+    """Record calls to the decode custom op without needing a GPU.
+
+    Replaces ``torch.ops.executorch_cuda.int4_plain_mm`` (whose real impl is the
+    CUDA C shim) with a recorder that computes the result via the eager CPU
+    dequant, so the dispatch handler still returns a valid tensor.
+    """
+    calls = []
+
+    def _fake(self, qdata, scale, zero, group_size):
+        calls.append((tuple(self.shape), group_size))
+        return _dequant_matmul(self, qdata, scale, zero, group_size)
+
+    with mock.patch.object(torch.ops.executorch_cuda, "int4_plain_mm", _fake):
+        yield calls
+
+
+class TestDispatchRouting(unittest.TestCase):
+    """Type-based routing: only CudaCoalescedInt4Tensor reaches int4_plain_mm.
+
+    These tests run without a GPU by recording calls to the decode custom op
+    and computing the result with the eager CPU dequant. They guard the
+    comment-8 refactor: the CUDA decode path must be selected by weight *type*,
+    not by globally overriding torchao ``Int4Tensor``'s F.linear.
+    """
+
+    def setUp(self):
+        torch.manual_seed(0)
+
+    def _rel_err(self, out, ref):
+        return (
+            (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+        ).item()
+
+    def test_stock_int4tensor_does_not_route_to_int4_plain_mm(self):
+        """A plain torchao Int4Tensor must fall back to torchao's default path."""
+        t, _ = _make_int4_tensor(16, 64, group_size=32)
+        x = torch.randn(1, 64, dtype=torch.bfloat16)  # M=1 (decode regime)
+        with _record_int4_plain_mm() as calls:
+            # torchao's default path uses mslk/CUDA and is not exercised on CPU;
+            # we only assert that our decode op is NOT reached.
+            with contextlib.suppress(Exception):
+                F.linear(x, t)
+        self.assertEqual(calls, [])
+
+    def test_coalesced_tensor_routes_to_int4_plain_mm(self):
+        """CudaCoalescedInt4Tensor with M<=4 routes to the decode custom op."""
+        t, _ = _make_int4_tensor(16, 64, group_size=32)
+        c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
+        x = torch.randn(1, 64, dtype=torch.bfloat16)  # M=1 (decode regime)
+        with _record_int4_plain_mm() as calls:
+            out = F.linear(x, c)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(out.shape, (1, 16))
+
+    def test_coalesced_tensor_prefill_uses_dequant(self):
+        """M>4 uses inline dequant (no custom op) and is numerically correct."""
+        t, _ = _make_int4_tensor(16, 64, group_size=32)
+        c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
+        x = torch.randn(8, 64, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
+        with _record_int4_plain_mm() as calls:
+            out = F.linear(x, c)
+        self.assertEqual(calls, [])
+        ref = F.linear(x, dequantize_weight(t, torch.bfloat16))
+        self.assertLess(self._rel_err(out, ref), 0.02)
+
+    def test_square_shape_not_misrouted(self):
+        """N == n_groups (square scale) stock tensor is still not routed.
+
+        K = group_size * N makes scale square (n_groups == N); the old shape
+        heuristic could not distinguish this coalesced-looking case. Type-based
+        routing makes the scale shape irrelevant.
+        """
+        t, _ = _make_int4_tensor(4, 128, group_size=32)
+        self.assertEqual(tuple(t.scale.shape), (4, 4))  # (n_groups, N), square
+        x = torch.randn(1, 128, dtype=torch.bfloat16)
+        with _record_int4_plain_mm() as calls:
+            with contextlib.suppress(Exception):
+                F.linear(x, t)
+        self.assertEqual(calls, [])
+
+    def test_from_int4_tensor_transpose_correct(self):
+        """from_int4_tensor owns the (n_groups, N) -> (N, n_groups) transpose."""
+        t, _ = _make_int4_tensor(24, 192, group_size=64)
+        c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
+        n_groups = 192 // 64
+        self.assertEqual(tuple(t.scale.shape), (n_groups, 24))  # torchao layout
+        self.assertEqual(tuple(c.scale.shape), (24, n_groups))  # coalesced layout
+        self.assertTrue(torch.equal(c.scale, t.scale.t().contiguous()))
+        self.assertTrue(torch.equal(c.zero_point, t.zero_point.t().contiguous()))
+        # End-to-end decode result matches a reference dequant of the original.
+        x = torch.randn(2, 192, dtype=torch.bfloat16)
+        with _record_int4_plain_mm() as calls:
+            out = F.linear(x, c)
+        self.assertEqual(len(calls), 1)
+        ref = F.linear(x, dequantize_weight(t, torch.bfloat16))
+        self.assertLess(self._rel_err(out, ref), 0.02)
 
 
 if __name__ == "__main__":

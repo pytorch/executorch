@@ -9,7 +9,7 @@
 // W4A8 dp4a matvec for INT4 decode (M <= 4).
 //
 // Reads plain nibble-packed [N, K//2] weights (Int4Tensor format).
-// Scale/zero layout: [K//gs, N] (Int4Tensor's native layout).
+// Scale/zero layout: [N, K//gs] (transposed AOT for coalesced loads).
 //
 // Dynamically quantizes bf16 activations to INT8 (per-32-element blocks),
 // then uses dp4a for fused int4×int8 dot products with 16-byte vectorized
@@ -98,18 +98,28 @@ __global__ void quantize_activations_q8_kernel(
 }
 
 // ---------------------------------------------------------------------------
-// W4A8 dp4a matvec kernel
+// Coalesced-scale W4A8 dp4a matvec
+//
+// Reads scale/zero in the transposed [N, n_groups] layout (transposed AOT at
+// export time). With group_size >= 32, one uint4 (32 weights) maps to exactly
+// one activation block and one weight group, so within a warp the 32 lanes
+// touch 32 consecutive groups. In [N, n_groups] layout those 32 group scales
+// are contiguous => a single coalesced load, vs 32 stride-N cache lines in the
+// native layout. For the gemma group_size=32 weights this is the dominant
+// decode-matvec cost.
 // ---------------------------------------------------------------------------
 
-__global__ void __launch_bounds__(MV_THREADS) int4_w4a8_matvec_kernel(
-    const uint8_t* __restrict__ qdata,
-    const __nv_bfloat16* __restrict__ w_scale,
-    const __nv_bfloat16* __restrict__ w_zero,
-    const Q8Block* __restrict__ q8,
-    __nv_bfloat16* __restrict__ out,
-    int32_t N,
-    int32_t K,
-    int32_t gs_shift) {
+__global__ void __launch_bounds__(MV_THREADS)
+    int4_w4a8_matvec_coalesced_kernel(
+        const uint8_t* __restrict__ qdata,
+        const __nv_bfloat16* __restrict__ w_scale_t, // [N, n_groups]
+        const __nv_bfloat16* __restrict__ w_zero_t, // [N, n_groups]
+        const Q8Block* __restrict__ q8,
+        __nv_bfloat16* __restrict__ out,
+        int32_t N,
+        int32_t K,
+        int32_t gs_shift,
+        int32_t n_groups) {
   const int32_t n = blockIdx.x * MV_NWARPS + threadIdx.y;
   const int32_t m = blockIdx.y;
   if (n >= N)
@@ -120,9 +130,10 @@ __global__ void __launch_bounds__(MV_THREADS) int4_w4a8_matvec_kernel(
   const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE;
 
   const uint8_t* qrow = qdata + static_cast<int64_t>(n) * K_half;
-  const __nv_bfloat16* scale_base = w_scale + n;
-  const __nv_bfloat16* zero_base = w_zero + n;
-  const int32_t scale_stride = N;
+  const __nv_bfloat16* scale_row =
+      w_scale_t + static_cast<int64_t>(n) * n_groups;
+  const __nv_bfloat16* zero_row =
+      w_zero_t + static_cast<int64_t>(n) * n_groups;
   const Q8Block* q8_row = q8 + static_cast<int64_t>(m) * n_q8_blocks;
 
   const uint4* qrow16 = reinterpret_cast<const uint4*>(qrow);
@@ -145,8 +156,8 @@ __global__ void __launch_bounds__(MV_THREADS) int4_w4a8_matvec_kernel(
       int32_t g = k_word >> gs_shift;
 
       if (g != prev_g) {
-        ws = __bfloat162float(__ldg(&scale_base[g * scale_stride]));
-        wz = __bfloat162float(__ldg(&zero_base[g * scale_stride]));
+        ws = __bfloat162float(__ldg(&scale_row[g]));
+        wz = __bfloat162float(__ldg(&zero_row[g]));
         prev_g = g;
       }
 
@@ -227,8 +238,8 @@ static Q8Block* get_q8_buffer(size_t needed) {
 void _int4_plain_mm_cuda(
     const Tensor& A, // [M, K] bf16
     const Tensor& qdata, // [N, K//2] uint8
-    const Tensor& scale, // [K//gs, N] bf16
-    const Tensor& zero, // [K//gs, N] bf16
+    const Tensor& scale, // [N, K//gs] bf16
+    const Tensor& zero, // [N, K//gs] bf16
     int64_t group_size,
     Tensor* output) { // [M, N] bf16, pre-allocated
   int32_t M = A.size(0);
@@ -245,9 +256,9 @@ void _int4_plain_mm_cuda(
   ET_CHECK(qdata.dim() == 2);
   ET_CHECK(qdata.size(1) == K / 2);
   ET_CHECK(scale.dim() == 2);
-  ET_CHECK(scale.size(1) == N);
+  ET_CHECK(scale.size(0) == N);
   ET_CHECK(zero.dim() == 2);
-  ET_CHECK(zero.size(1) == N);
+  ET_CHECK(zero.size(0) == N);
 
   int32_t gs = static_cast<int32_t>(group_size);
   ET_CHECK_MSG(
@@ -279,15 +290,15 @@ void _int4_plain_mm_cuda(
   // dp4a matvec
   dim3 grid((N + MV_NWARPS - 1) / MV_NWARPS, M);
   dim3 block(MV_WARP_SIZE, MV_NWARPS);
-  int4_w4a8_matvec_kernel<<<grid, block, 0, stream>>>(
+
+  int32_t n_groups = static_cast<int32_t>(scale.size(1));
+  int4_w4a8_matvec_coalesced_kernel<<<grid, block, 0, stream>>>(
       reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
       reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
       reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
       q8_buf,
       reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
-      N,
-      K,
-      gs_shift);
+      N, K, gs_shift, n_groups);
 }
 
 } // namespace executorch::backends::cuda

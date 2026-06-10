@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
 
 import traceback
 from collections.abc import Callable
@@ -24,12 +25,6 @@ class DialectNodeSpec:
     op: Target
     args: tuple
     kwargs: dict = None
-
-
-# Expected type to be used for substitution functions
-SubstitutionFn: TypeAlias = Callable[
-    [torch.fx.Node, torch.export.ExportedProgram], DialectNodeSpec | None
-]
 
 
 class AtenToDialectPass(ExportPass):
@@ -86,7 +81,7 @@ class AtenToDialectPass(ExportPass):
             if substitution_func is None:
                 continue
 
-            dialect_node_spec = substitution_func(node, self.exported_program)
+            dialect_node_spec = substitution_func(node, self)
             if dialect_node_spec is None:
                 continue
 
@@ -116,3 +111,11 @@ class AtenToDialectPass(ExportPass):
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
+
+
+# Defined after the class so AtenToDialectPass is available at runtime.
+# Class-body references to SubstitutionFn are annotation-only and resolve
+# via __future__.annotations.
+SubstitutionFn: TypeAlias = Callable[
+    [torch.fx.Node, AtenToDialectPass], DialectNodeSpec | None
+]
