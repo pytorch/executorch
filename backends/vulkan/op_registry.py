@@ -1552,6 +1552,69 @@ def register_grid_priors():
 
 
 # =============================================================================
+# GridSampler2d.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.grid_sampler_2d.default)
+def register_grid_sampler_2d():
+    # The Vulkan implementation only supports the configuration used by RIFE's
+    # WarpModule: bilinear interpolation (0), border padding (1),
+    # align_corners=True. The C++ side has VK_CHECK_COND asserts for these,
+    # but those abort the whole inference at graph build — for any other model
+    # that contains a differently-configured grid_sampler_2d we want graceful
+    # CPU fallback, so we gate delegation here.
+    #
+    # Edge IR can hand us these scalar args as plain Python literals, SymInt /
+    # SymBool wrappers, or get_attr-style fx.Node references, so we unwrap
+    # each one defensively (mirrors the `isinstance(groups, int)` guard in
+    # check_conv_node / pick_conv_storage above). If we can't confidently pull
+    # a literal out of any arg, return False so the node stays on CPU instead
+    # of hitting a runtime VK_CHECK_COND.
+    def _unwrap_literal(arg: object) -> object:
+        # Plain Python literal (covers bool, since bool is a subclass of int).
+        if isinstance(arg, (bool, int, float)):
+            return arg
+        # get_attr / constant fx.Node — read the materialized value from meta.
+        if isinstance(arg, torch.fx.Node):
+            val = arg.meta.get("val", None)
+            if isinstance(val, (bool, int, float)):
+                return val
+            return None
+        # Symbolic int/bool (or anything else int-convertible) — try once.
+        try:
+            return int(arg)  # pyre-ignore[6]
+        except (TypeError, ValueError):
+            return None
+
+    def check_grid_sampler_2d_node(node: torch.fx.Node) -> bool:
+        # Schema: aten::grid_sampler_2d(input, grid, interpolation_mode,
+        #                               padding_mode, align_corners)
+        if len(node.args) < 5:
+            return False
+
+        interp = _unwrap_literal(node.args[2])
+        padding = _unwrap_literal(node.args[3])
+        align_corners = _unwrap_literal(node.args[4])
+
+        if interp is None or padding is None or align_corners is None:
+            return False
+
+        # mode: 0 = bilinear; padding: 1 = border; align_corners must be True.
+        return interp == 0 and padding == 1 and bool(align_corners) is True
+
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input  : [N, C, Hin, Win]
+            utils.CONTIGUOUS_BUFFER,  # grid   : [N, Hout, Wout, 2]
+        ],
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_grid_sampler_2d_node,
+    )
+
+
+# =============================================================================
 # Repeat.cpp
 # =============================================================================
 

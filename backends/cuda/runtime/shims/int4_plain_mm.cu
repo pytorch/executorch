@@ -52,8 +52,43 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       InvalidArgument,
       "aoti_torch_cuda_int4_plain_mm: ret0 is null");
 
+  // Validate the coalesced scale/zero layout [N, K/group_size]
+
+  const int64_t N = qdata->size(0);
+  const int64_t K = qdata->size(1) * 2;
+
+  ET_CHECK_OR_RETURN_ERROR(
+      group_size > 0 && (group_size & (group_size - 1)) == 0,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: group_size=%lld must be a positive power of 2",
+      static_cast<long long>(group_size));
+
+  const int64_t n_groups = K / group_size;
+
+  ET_CHECK_OR_RETURN_ERROR(
+      scale->dim() == 2 && zero->dim() == 2,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: scale/zero must be 2D (got scale.dim()=%lld, zero.dim()=%lld)",
+      static_cast<long long>(scale->dim()),
+      static_cast<long long>(zero->dim()));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      scale->size(0) == N && zero->size(0) == N,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: scale/zero must be coalesced [N, K/group_size] (AOT layout); native [n_groups, N] is not supported - repack via pack_linear_for_cuda. Expected size(0)=N=%lld, got scale.size(0)=%lld, zero.size(0)=%lld",
+      static_cast<long long>(N),
+      static_cast<long long>(scale->size(0)),
+      static_cast<long long>(zero->size(0)));
+
+  ET_CHECK_OR_RETURN_ERROR(
+      scale->size(1) == n_groups && zero->size(1) == n_groups,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: scale/zero must be coalesced [N, K/group_size] (AOT layout); native [n_groups, N] is not supported - repack via pack_linear_for_cuda. Expected size(1)=K/group_size=%lld, got scale.size(1)=%lld, zero.size(1)=%lld",
+      static_cast<long long>(n_groups),
+      static_cast<long long>(scale->size(1)),
+      static_cast<long long>(zero->size(1)));
+
   int32_t M = self->size(0);
-  int32_t N = qdata->size(0);
   Tensor* C = nullptr;
   std::array<int64_t, 2> c_shape = {M, N};
   std::array<int64_t, 2> c_stride = {N, 1};
