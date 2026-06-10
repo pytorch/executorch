@@ -29,7 +29,10 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "image_processor" + aten_suffix,
-            srcs = ["image_processor_common.cpp"] + select({
+            srcs = [
+                "image_processor_common.cpp",
+                "image_processor_simd.cpp",
+            ] + select({
                 "DEFAULT": ["image_processor.cpp"],
                 "ovr_config//os:iphoneos": [
                     "image_processor_apple.cpp",
@@ -42,6 +45,7 @@ def define_common_targets():
             }),
             headers = [
                 "image_processor_apple_gpu.h",
+                "image_processor_simd.h",
             ],
             exported_headers = [
                 "image_processor.h",

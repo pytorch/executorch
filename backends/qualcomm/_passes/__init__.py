@@ -39,6 +39,7 @@ from .decompose_tan import DecomposeTan
 from .decompose_threshold import DecomposeThreshold
 from .decompose_triu import DecomposeTriu
 from .decompose_trunc import DecomposeTrunc
+from .decompose_var import DecomposeVar
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
@@ -100,6 +101,7 @@ __all__ = [
     DecomposeThreshold,
     DecomposeTriu,
     DecomposeTrunc,
+    DecomposeVar,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,

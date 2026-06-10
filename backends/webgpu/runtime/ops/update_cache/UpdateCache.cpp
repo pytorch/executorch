@@ -82,11 +82,23 @@ void update_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU update_cache: input_pos must be Int (SymInt not yet supported)");
   }
   const int64_t input_pos = graph.get_int(input_pos_id);
+  if (input_pos < 0) {
+    throw std::runtime_error(
+        "WebGPU update_cache: input_pos must be non-negative");
+  }
+
+  // Bound input_pos in u64 so the u32 param downcasts cannot overflow/truncate.
+  const uint64_t stride = n_heads * head_dim;
+  if (cache_numel > UINT32_MAX || value_numel > cache_numel ||
+      static_cast<uint64_t>(input_pos) > (cache_numel - value_numel) / stride) {
+    throw std::runtime_error(
+        "WebGPU update_cache: input_pos writes past cache capacity");
+  }
+  const uint64_t dst_offset = static_cast<uint64_t>(input_pos) * stride;
 
   UpdateCacheParams params = {};
   params.numel = static_cast<uint32_t>(value_numel);
-  params.dst_offset = static_cast<uint32_t>(
-      static_cast<uint64_t>(input_pos) * n_heads * head_dim);
+  params.dst_offset = static_cast<uint32_t>(dst_offset);
   params.cache_numel = static_cast<uint32_t>(cache_numel);
 
   // Validate dispatch against device limits before allocating GPU objects.

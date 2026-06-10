@@ -43,11 +43,11 @@ help() {
     echo "  --target=<TARGET>                    Target to build and run for Default: ${target}"
     echo "  --build_type=<TYPE>                  Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --bundleio                           Support both pte and Bundle IO bpte using Devtools BundelIO with Input/RefOutput included"
-    echo "  --system_config=<CONFIG>             System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
+    echo "  --system_config=<CONFIG>             System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U65_High_End for EthosU65 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                         NOTE: If given, this option must match the given target. This option along with the memory_mode sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --memory_mode=<CONFIG>               Vela memory mode, used for setting the Timing Adapter parameters of the Corstone platforms."
     echo "                                       Valid values are Shared_Sram(for Ethos-U55, Ethos-U65, Ethos-85), Sram_Only(for Ethos-U55, Ethos-U65, Ethos-U85) or Dedicated_Sram(for Ethos-U65, Ethos-U85)."
-    echo "                                       Default: Shared_Sram for the Ethos-U55 and Sram_Only for the Ethos-U85"
+    echo "                                       Default: Shared_Sram for the Ethos-U55, Sram_Only for the Ethos-U65 and Dedicated_Sram_384KB for the Ethos-U85"
     echo "  --etdump                             Adds Devtools etdump support to track timing and output, etdump area will be base64 encoded in the log"
     echo "  --extra_build_flags=<FLAGS>          Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --output=<FOLDER>                    Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
@@ -139,6 +139,10 @@ fi
 if [[ ${system_config} == "" ]]
 then
     system_config="Ethos_U55_High_End_Embedded"
+    if [[ ${target} =~ "ethos-u65" ]]
+    then
+        system_config="Ethos_U65_High_End"
+    fi
     if [[ ${target} =~ "ethos-u85" ]]
     then
         system_config="Ethos_U85_SYS_DRAM_Mid"
@@ -148,6 +152,10 @@ fi
 if [[ ${memory_mode} == "" ]]
 then
     memory_mode="Shared_Sram"
+    if [[ ${target} =~ "ethos-u65" ]]
+    then
+        memory_mode="Sram_Only"
+    fi
     if [[ ${target} =~ "ethos-u85" ]]
     then
         memory_mode="Dedicated_Sram_384KB"
@@ -163,6 +171,9 @@ if [[ ${target} =~ ^cortex-m([0-9]+(plus|p)?)(\+|$) ]]; then
     target_cpu="cortex-m${BASH_REMATCH[1]}"
     npu_target_config="ethos-u55-128"
 elif [[ ${target} == *"ethos-u55"* ]]; then
+    target_cpu=cortex-m55
+    npu_target_config="${target}"
+elif [[ ${target} == *"ethos-u65"* ]]; then
     target_cpu=cortex-m55
     npu_target_config="${target}"
 else
