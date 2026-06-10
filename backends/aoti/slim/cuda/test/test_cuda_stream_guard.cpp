@@ -8,12 +8,14 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 
 #include <type_traits>
 
 using namespace executorch::backends::cuda;
+using namespace executorch::extension::cuda;
 using namespace executorch::runtime;
 
 // TODO(gasoonjia): Multiple device tests were not included due to test
