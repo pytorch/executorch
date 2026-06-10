@@ -108,3 +108,14 @@ fbcode_target(_kind = runtime.python_test,
         ":export_lib",
     ],
 )
+
+fbcode_target(_kind = runtime.python_library,
+    name = "metadata",
+    srcs = [
+        "metadata.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/exir:lib",
+    ],
+)

@@ -7,6 +7,16 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     runtime.cxx_test(
+        name = "test_metadata",
+        srcs = ["test_metadata.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:metadata",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "test_generation_config",
         srcs = ["test_generation_config.cpp"],
         deps = [

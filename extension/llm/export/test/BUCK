@@ -17,3 +17,15 @@ fbcode_target(_kind = runtime.python_test,
         "//caffe2:torch",
     ],
 )
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_metadata_roundtrip",
+    srcs = [
+        "test_metadata_roundtrip.py",
+    ],
+    deps = [
+        "//executorch/extension/llm/export:metadata",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
