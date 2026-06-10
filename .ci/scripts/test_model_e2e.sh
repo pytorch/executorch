@@ -247,10 +247,18 @@ case "$HF_MODEL" in
     ;;
 esac
 
-echo "::group::Setup ExecuTorch Requirements"
-./install_requirements.sh
-pip list
-echo "::endgroup::"
+# Allow callers (e.g. the A100 batch orchestrator) to run ./install_requirements.sh
+# once up front and skip the per-model install here. Default behavior is unchanged.
+if [ -n "${SKIP_INSTALL_REQUIREMENTS:-}" ]; then
+  echo "::group::Setup ExecuTorch Requirements (skipped: SKIP_INSTALL_REQUIREMENTS set)"
+  pip list
+  echo "::endgroup::"
+else
+  echo "::group::Setup ExecuTorch Requirements"
+  ./install_requirements.sh
+  pip list
+  echo "::endgroup::"
+fi
 
 echo "::group::Prepare $MODEL_NAME Artifacts"
 
