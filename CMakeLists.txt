@@ -49,17 +49,6 @@ cmake_minimum_required(VERSION 3.24)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Hexagon toolchain with release build complains about code in third party
-# libraries.
-if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
-                                                     STREQUAL "Release"
-)
-  add_compile_options(
-    -Wno-error=format -Wno-error=implicit-int-conversion
-    -Wno-error=unused-variable -Wno-error=unused-function
-  )
-endif()
-
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -89,6 +78,18 @@ endif()
 project(executorch
         VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
 )
+
+# Hexagon toolchain with release build complains about code in third party
+# libraries. Must come after project(), which runs the toolchain file that sets
+# CMAKE_SYSTEM_PROCESSOR, and before add_subdirectory(third-party).
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
 
 message(
   STATUS
