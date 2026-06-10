@@ -52,6 +52,21 @@ ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
     size_t eos_token_index = 1);
 
 /**
+ * @brief Loads a tokenizer from an in-memory model buffer
+ *
+ * This mirrors load_tokenizer(), but consumes bytes bundled inside an
+ * ExecuTorch program, such as tokenizer delegate inline data.
+ */
+ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer>
+load_tokenizer_from_buffer(
+    const void* data,
+    size_t size,
+    std::unique_ptr<std::vector<std::string>> special_tokens = nullptr,
+    std::optional<std::string> pattern = std::nullopt,
+    size_t bos_token_index = 0,
+    size_t eos_token_index = 1);
+
+/**
  * @brief Gets LLM metadata from the model and tokenizer
  *
  * This function extracts metadata from the model such as vocabulary size,

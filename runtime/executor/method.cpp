@@ -1290,14 +1290,9 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         lhs,
         rhs);
   } else if (e.isString()) {
-    ET_CHECK_OR_RETURN_ERROR(
-        e.toString() == input_evalue.toString(),
-        InvalidArgument,
-        "The %" ET_PRIsize_t
-        "-th input of method should have the same value as the input_evalue, but get %s and %s",
-        input_idx,
-        e.toString().data(),
-        input_evalue.toString().data());
+    // Strings are runtime inputs. The EValue references caller-owned storage,
+    // which must outlive this execution, matching non-memory-planned tensors.
+    mutable_value(get_input_index(input_idx)) = input_evalue;
   } else {
 #if ET_LOG_ENABLED
     std::array<char, kTagNameBufferSize> tag_name;

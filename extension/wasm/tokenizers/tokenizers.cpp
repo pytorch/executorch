@@ -9,9 +9,9 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <executorch/runtime/platform/compiler.h>
+#include <pytorch/tokenizers/sentencepiece.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
-#include <pytorch/tokenizers/sentencepiece.h>
 #include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
 #include <cstdio>

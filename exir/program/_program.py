@@ -1882,6 +1882,7 @@ class ExecutorchProgramManager:
         self._named_data: Optional[NamedDataStoreOutput] = named_data
 
         backend_config = backend_config or ExecutorchBackendConfig()
+        self._backend_config = backend_config
 
         # Emit methods
         self._emitter_output: EmitterOutput = emit_program(

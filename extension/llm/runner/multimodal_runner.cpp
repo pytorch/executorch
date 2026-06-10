@@ -12,8 +12,8 @@
 #include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/sentencepiece.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 
 #ifdef CUDA_AVAILABLE
 #include <executorch/backends/cuda/runtime/memory_tracker.h>

@@ -34,6 +34,9 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
+from executorch.extension.llm.export.tokenizer_delegate import (
+    append_tokenizer_delegate_method,
+)
 from pytorch_tokenizers import get_tokenizer
 from torch.export import export, ExportedProgram
 from torch.nn.attention import SDPBackend
@@ -519,6 +522,14 @@ class LLMEdgeManager:
                 external_constants=external_constants_tag,
             )
         )
+        if self.tokenizer_path is not None:
+            append_tokenizer_delegate_method(
+                self.export_program,
+                tokenizer_path=self.tokenizer_path,
+                max_context_length=int(
+                    self.metadata.get("get_max_context_len", self.max_seq_len)
+                ),
+            )
         logging.info(
             "Required memory for activation in bytes: {}".format(
                 self.export_program._emitter_output.program.execution_plan[

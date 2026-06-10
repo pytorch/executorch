@@ -17,3 +17,11 @@ fbcode_target(_kind = runtime.python_test,
         "//caffe2:torch",
     ],
 )
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_tokenizer_delegate",
+    srcs = ["test_tokenizer_delegate.py"],
+    deps = [
+        "//executorch/extension/llm/export:export_lib",
+    ],
+)

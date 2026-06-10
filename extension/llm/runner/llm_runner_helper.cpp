@@ -18,13 +18,23 @@
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/memory_allocator/cpu_caching_malloc_allocator.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <pytorch/tokenizers/sentencepiece.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
-#include <pytorch/tokenizers/sentencepiece.h>
 #include <pytorch/tokenizers/tekken.h>
 #include <pytorch/tokenizers/tiktoken.h>
+
+#include <cerrno>
+#include <cinttypes>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <string_view>
 
 namespace executorch::extension::llm {
 
@@ -87,6 +97,269 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
 
   return nullptr;
 }
+
+std::unique_ptr<tokenizers::Tokenizer> load_tokenizer_from_buffer(
+    const void* data,
+    size_t size,
+    std::unique_ptr<std::vector<std::string>> special_tokens,
+    std::optional<std::string> pattern,
+    size_t bos_token_index,
+    size_t eos_token_index) {
+  runtime::runtime_init();
+  auto tekken_tokenizer = std::make_unique<tokenizers::Tekken>();
+  if (tekken_tokenizer->load_from_buffer(data, size) ==
+      ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded tekken tokenizer from buffer");
+    return tekken_tokenizer;
+  }
+
+  auto json_tokenizer = std::make_unique<tokenizers::HFTokenizer>();
+  if (json_tokenizer->load_from_buffer(data, size) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded json tokenizer from buffer");
+    return json_tokenizer;
+  }
+
+  std::unique_ptr<::tokenizers::Tiktoken> tiktoken_tokenizer;
+  if (special_tokens != nullptr && !pattern.has_value()) {
+    tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
+        std::move(special_tokens), bos_token_index, eos_token_index);
+  } else if (special_tokens != nullptr && pattern.has_value()) {
+    tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>(
+        pattern.value(),
+        std::move(special_tokens),
+        bos_token_index,
+        eos_token_index);
+  } else {
+    tiktoken_tokenizer = std::make_unique<::tokenizers::Tiktoken>();
+  }
+  if (tiktoken_tokenizer->load_from_buffer(data, size) ==
+      ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded TikToken tokenizer from buffer");
+    return tiktoken_tokenizer;
+  }
+
+  auto sp_tokenizer = std::make_unique<::tokenizers::SPTokenizer>();
+  if (sp_tokenizer->load_from_buffer(data, size) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded Sentencepiece tokenizer from buffer");
+    return sp_tokenizer;
+  }
+
+  auto bpe_tokenizer = std::make_unique<::tokenizers::Llama2cTokenizer>();
+  if (bpe_tokenizer->load_from_buffer(data, size) == ::tokenizers::Error::Ok) {
+    ET_LOG(Info, "Loaded BPE tokenizer from buffer");
+    return bpe_tokenizer;
+  }
+
+  return nullptr;
+}
+
+namespace {
+
+constexpr const char* kTokenizerBackendId = "TokenizerBackend";
+constexpr const char* kMaxContextLengthSpec = "max_context_length";
+constexpr const char* kBosSpec = "bos";
+constexpr const char* kEosSpec = "eos";
+
+struct TokenizerDelegateHandle final {
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer;
+  size_t max_context_length = 0;
+  int8_t bos = 0;
+  int8_t eos = 0;
+};
+
+Error parse_size_compile_spec(
+    executorch::runtime::ArrayRef<executorch::runtime::CompileSpec>
+        compile_specs,
+    const char* key,
+    bool required,
+    size_t* out) {
+  for (size_t i = 0; i < compile_specs.size(); ++i) {
+    const auto& spec = compile_specs[i];
+    if (std::strcmp(spec.key, key) != 0) {
+      continue;
+    }
+    std::string value(
+        static_cast<const char*>(spec.value.buffer), spec.value.nbytes);
+    errno = 0;
+    char* end = nullptr;
+    const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
+    ET_CHECK_OR_RETURN_ERROR(
+        !value.empty() && value[0] != '-' && errno != ERANGE &&
+            end == value.c_str() + value.size(),
+        InvalidProgram,
+        "Invalid TokenizerBackend compile spec %s=%s",
+        key,
+        value.c_str());
+    ET_CHECK_OR_RETURN_ERROR(
+        parsed <= std::numeric_limits<size_t>::max(),
+        InvalidProgram,
+        "TokenizerBackend compile spec %s is too large",
+        key);
+    *out = static_cast<size_t>(parsed);
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      !required,
+      InvalidProgram,
+      "Missing TokenizerBackend compile spec %s",
+      key);
+  return Error::Ok;
+}
+
+Error parse_i8_compile_spec(
+    executorch::runtime::ArrayRef<executorch::runtime::CompileSpec>
+        compile_specs,
+    const char* key,
+    int8_t* out) {
+  size_t parsed = static_cast<size_t>(*out);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      parse_size_compile_spec(compile_specs, key, /*required=*/false, &parsed));
+  ET_CHECK_OR_RETURN_ERROR(
+      parsed <= static_cast<size_t>(std::numeric_limits<int8_t>::max()),
+      InvalidProgram,
+      "TokenizerBackend compile spec %s is too large for int8_t",
+      key);
+  *out = static_cast<int8_t>(parsed);
+  return Error::Ok;
+}
+
+class TokenizerBackend final : public executorch::runtime::BackendInterface {
+ public:
+  bool is_available() const override {
+    return true;
+  }
+
+  executorch::runtime::Result<executorch::runtime::DelegateHandle*> init(
+      executorch::runtime::BackendInitContext& context,
+      executorch::runtime::FreeableBuffer* processed,
+      executorch::runtime::ArrayRef<executorch::runtime::CompileSpec>
+          compile_specs) const override {
+    ET_CHECK_OR_RETURN_ERROR(
+        processed != nullptr && processed->data() != nullptr &&
+            processed->size() > 0,
+        InvalidProgram,
+        "TokenizerBackend requires non-empty bundled tokenizer data");
+
+    size_t max_context_length = 0;
+    ET_CHECK_OK_OR_RETURN_ERROR(parse_size_compile_spec(
+        compile_specs,
+        kMaxContextLengthSpec,
+        /*required=*/true,
+        &max_context_length));
+    ET_CHECK_OR_RETURN_ERROR(
+        max_context_length > 0,
+        InvalidProgram,
+        "TokenizerBackend max_context_length must be positive");
+
+    int8_t bos = 0;
+    int8_t eos = 0;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        parse_i8_compile_spec(compile_specs, kBosSpec, &bos));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        parse_i8_compile_spec(compile_specs, kEosSpec, &eos));
+
+    auto* handle = context.get_runtime_allocator()
+                       ->allocateInstance<TokenizerDelegateHandle>();
+    ET_CHECK_OR_RETURN_ERROR(
+        handle != nullptr,
+        MemoryAllocationFailed,
+        "Failed to allocate TokenizerBackend handle");
+    new (handle) TokenizerDelegateHandle();
+    handle->max_context_length = max_context_length;
+    handle->bos = bos;
+    handle->eos = eos;
+    handle->tokenizer = load_tokenizer_from_buffer(
+        processed->data(), processed->size());
+    if (handle->tokenizer == nullptr) {
+      handle->~TokenizerDelegateHandle();
+      ET_LOG(Error, "Failed to load bundled tokenizer");
+      return Error::InvalidProgram;
+    }
+    return reinterpret_cast<executorch::runtime::DelegateHandle*>(handle);
+  }
+
+  Error execute(
+      executorch::runtime::BackendExecutionContext&,
+      executorch::runtime::DelegateHandle* handle,
+      executorch::runtime::Span<executorch::runtime::EValue*> args)
+      const override {
+    ET_CHECK_OR_RETURN_ERROR(
+        handle != nullptr,
+        DelegateInvalidHandle,
+        "TokenizerBackend handle is null");
+    ET_CHECK_OR_RETURN_ERROR(
+        args.size() == 2,
+        InvalidProgram,
+        "TokenizerBackend expects 2 arguments, got %zu",
+        args.size());
+
+    auto* tokenizer_handle =
+        reinterpret_cast<TokenizerDelegateHandle*>(handle);
+    auto* input = args[0];
+    auto* output_value = args[1];
+    ET_CHECK_OR_RETURN_ERROR(
+        input != nullptr && input->isString(),
+        InvalidArgument,
+        "TokenizerBackend input must be a string");
+    ET_CHECK_OR_RETURN_ERROR(
+        output_value != nullptr && output_value->isTensor(),
+        InvalidArgument,
+        "TokenizerBackend output must be a tensor");
+
+    const std::string_view prompt = input->toString();
+    auto tokens_result = tokenizer_handle->tokenizer->encode(
+        std::string(prompt), tokenizer_handle->bos, tokenizer_handle->eos);
+    if (!tokens_result.ok()) {
+      ET_LOG(Error, "Bundled tokenizer failed to encode input");
+      return Error::InvalidArgument;
+    }
+    const auto& tokens = tokens_result.get();
+    ET_CHECK_OR_RETURN_ERROR(
+        tokens.size() <= tokenizer_handle->max_context_length,
+        InvalidArgument,
+        "Tokenizer output length %zu exceeds max context length %zu",
+        tokens.size(),
+        tokenizer_handle->max_context_length);
+
+    auto& output = output_value->toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        output.scalar_type() == executorch::aten::ScalarType::Long,
+        InvalidArgument,
+        "TokenizerBackend output tensor must be int64");
+    ET_CHECK_OR_RETURN_ERROR(
+        output.dim() == 1,
+        InvalidArgument,
+        "TokenizerBackend output tensor must be rank 1");
+    executorch::aten::SizesType output_size =
+        static_cast<executorch::aten::SizesType>(tokens.size());
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        executorch::runtime::resize_tensor(
+            output,
+            executorch::aten::ArrayRef<executorch::aten::SizesType>(
+                &output_size, 1)));
+    auto* output_data = output.mutable_data_ptr<int64_t>();
+    for (size_t i = 0; i < tokens.size(); ++i) {
+      output_data[i] = static_cast<int64_t>(tokens[i]);
+    }
+    return Error::Ok;
+  }
+
+  void destroy(executorch::runtime::DelegateHandle* handle) const override {
+    if (handle != nullptr) {
+      reinterpret_cast<TokenizerDelegateHandle*>(handle)
+          ->~TokenizerDelegateHandle();
+    }
+  }
+};
+
+TokenizerBackend tokenizer_backend;
+executorch::runtime::Backend tokenizer_backend_registration{
+    kTokenizerBackendId,
+    &tokenizer_backend};
+static auto tokenizer_backend_registration_status =
+    executorch::runtime::register_backend(tokenizer_backend_registration);
+
+} // namespace
 
 ::executorch::runtime::Result<std::unordered_map<std::string, int64_t>>
 get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
