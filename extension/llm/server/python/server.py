@@ -77,6 +77,21 @@ def _spawn(args):
     return spawn_worker(cmd, env=env)
 
 
+def _resolve_session_id(
+    req: ChatCompletionRequest,
+    x_executorch_session_id: Optional[str],
+    session_id_header: Optional[str],
+    x_session_affinity: Optional[str],
+) -> Optional[str]:
+    # Session id precedence: body field wins, else the X-ExecuTorch-Session-ID /
+    # session_id / x-session-affinity headers (in that order). Aliases let clients
+    # that already emit a stable per-conversation id for cache affinity (e.g. pi's
+    # sendSessionAffinityHeaders) route to a session with no extra config.
+    if req.session_id is not None:
+        return req.session_id
+    return x_executorch_session_id or session_id_header or x_session_affinity
+
+
 def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     app = FastAPI(title="ExecuTorch LLM Server")
 
@@ -92,10 +107,8 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     async def chat_completions(
         req: ChatCompletionRequest,
         # FastAPI dependency: the Header() call in the default is required.
+        # `session_id` is matched verbatim (underscore).
         x_executorch_session_id: Optional[str] = Header(default=None),  # noqa: B008
-        # Aliases so clients that already emit a stable per-conversation id for
-        # cache affinity (e.g. pi's sendSessionAffinityHeaders) route to a session
-        # with no extra config. `session_id` is matched verbatim (underscore).
         session_id_header: Optional[str] = Header(  # noqa: B008
             default=None, alias="session_id"
         ),
@@ -104,12 +117,9 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
         # Typed param → FastAPI validates the body and returns 422 on bad input.
         # APIError (e.g. context_length_exceeded) → structured 4xx/5xx, never a
         # dropped connection. Mid-stream failures are handled inside the stream.
-        # Session id precedence: body field, then the X-ExecuTorch-Session-ID /
-        # session_id / x-session-affinity headers (body wins if set).
-        if req.session_id is None:
-            req.session_id = (
-                x_executorch_session_id or session_id_header or x_session_affinity
-            )
+        req.session_id = _resolve_session_id(
+            req, x_executorch_session_id, session_id_header, x_session_affinity
+        )
         try:
             result = await serving.create(req)
         except APIError as e:

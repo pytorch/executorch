@@ -11,15 +11,6 @@ up front so capacity refusals are HTTP statuses rather than mid-stream errors.
 These assert the HTTP/wire contract only.
 """
 
-import asyncio
-
-import pytest
-
-from executorch.extension.llm.server.python.chat_template import ChatTemplate
-from executorch.extension.llm.server.python.errors import GenerationError
-from executorch.extension.llm.server.python.serving_chat import ServingChat
-from executorch.extension.llm.server.python.worker_client import WorkerError
-
 
 def _chat(client, *, session_id=None, headers=None):
     body = {"model": "test-model", "messages": [{"role": "user", "content": "hi"}]}
