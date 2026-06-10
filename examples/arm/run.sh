@@ -77,10 +77,10 @@ function help() {
     echo "  --build_only                           Only build, don't run"
     echo "  --extra_build_flags=\"<FLAGS>\"         Extra -D style flags to pass to cmake when run.sh auto-configures the build"
     echo "  --toolchain=<arm-none-eabi-gcc|arm-zephyr-eabi-gcc>  Toolchain preset to use when run.sh auto-configures the build. Default: ${toolchain}"
-    echo "  --system_config=<CONFIG>               Ethos-U: System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
+    echo "  --system_config=<CONFIG>               Ethos-U: System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U65_High_End for EthosU65 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --config=<FILEPATH>                    Ethos-U: System configuration file that specifies system configurations (vela.ini)"
-    echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
+    echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U65 targets and 'Dedicated_Sram_384KB' for Ethos-U85 targets"
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --specify_ethosu_scratch               Use actual Ethos-U scratch size for given model to size temp allocator"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
@@ -187,6 +187,10 @@ esac
 if [[ ${system_config} == "" ]]
 then
     system_config="Ethos_U55_High_End_Embedded"
+    if [[ ${target} =~ "ethos-u65" ]]
+    then
+        system_config="Ethos_U65_High_End"
+    fi
     if [[ ${target} =~ "ethos-u85" ]]
     then
         system_config="Ethos_U85_SYS_DRAM_Mid"
@@ -196,6 +200,10 @@ fi
 if [[ ${memory_mode} == "" ]]
 then
     memory_mode="Shared_Sram"
+    if [[ ${target} =~ "ethos-u65" ]]
+    then
+        memory_mode="Sram_Only"
+    fi
     if [[ ${target} =~ "ethos-u85" ]]
     then
         memory_mode="Dedicated_Sram_384KB"
@@ -208,7 +216,7 @@ then
 fi
 
 target_cpu="cortex-m85"
-if [[ ${target} =~ "ethos-u55" ]]
+if [[ ${target} =~ "ethos-u55" || ${target} =~ "ethos-u65" ]]
 then
     target_cpu="cortex-m55"
 fi
@@ -769,16 +777,16 @@ for i in "${!test_model[@]}"; do
         echo "Build for ${target} skip generating a .elf and running it"
         continue
     elif [[ ${target} == cortex-m*  ]]; then
-        # Cortex-M backend uses a shared semihosting executor_runner (built
-        # by build_test_runner.sh) that loads the .bpte at runtime, rather
-        # than per-model runners with the PTE baked in.
+        # Cortex-M backend uses a semihosting executor_runner (built by
+        # build_test_runner.sh, one per target) that loads the .bpte at
+        # runtime, rather than per-model runners with the PTE baked in.
         if [ "$bundleio" != true ]; then
             echo "Error: --target=${target} requires --bundleio (the cortex-m runner loads bundled inputs via semihosting)"
             exit 1
         fi
         set -x
         backends/cortex_m/test/build_test_runner.sh --target="${target}"
-        cortex_m_elf="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300/arm_executor_runner"
+        cortex_m_elf="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300_${target}/arm_executor_runner"
         if [ "$build_only" = false ] ; then
             backends/arm/scripts/run_fvp.sh --elf="${cortex_m_elf}" --target="${target}" --bundle="${pte_file}"
         fi

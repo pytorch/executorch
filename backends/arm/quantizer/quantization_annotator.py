@@ -21,6 +21,7 @@ from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.quantizer import QuantizationConfig
 
+from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 from torch.fx import Node
 from torchao.quantization.pt2e import (
@@ -441,7 +442,7 @@ def _match_pattern(
     return left_condition and right_condition
 
 
-_conv_ops = {
+_conv_ops: set[OpOverload] = {
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
     torch.ops.aten.conv2d.padding,
@@ -473,7 +474,7 @@ _fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
     },
 }
 
-_one_to_one = {
+_one_to_one: set[OpOverload] = {
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
@@ -514,7 +515,7 @@ _one_to_one = {
     torch.ops.aten.tan.default,
 }
 
-_one_to_one_shared_input_qspec = {
+_one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
@@ -546,7 +547,6 @@ _one_to_one_shared_input_qspec = {
     torch.ops.aten.split.Tensor,
     torch.ops.aten.split_with_sizes.default,
     torch.ops.aten.split_copy.Tensor,
-    torch.ops.aten.transpose.Dimname,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
     torch.ops.aten.t_copy.default,
@@ -574,7 +574,16 @@ _one_to_one_shared_input_qspec = {
     torch.ops.aten.detach_copy.default,
 }
 
-_one_to_one_shared_input_or_input_act_qspec = {
+# Dimname has been removed from upstream PyTorch, but there may be a window
+# where developers in this backend are using a mainline build of this backend
+# with an older version of PyTorch.
+# TODO: remove this once the build has time to be propagated and majority of
+# dev expected to be unimpacted
+_transpose_dimname = getattr(torch.ops.aten.transpose, "Dimname", None)
+if _transpose_dimname is not None:
+    _one_to_one_shared_input_qspec.add(_transpose_dimname)
+
+_one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.alias.default,
     torch.ops.aten.clone.default,
     torch.ops.aten.hardtanh.default,
