@@ -33,6 +33,7 @@ set(WEBGPU_SRCS
     runtime/ops/OperatorRegistry.cpp
     runtime/ops/add/BinaryOp.cpp
     runtime/ops/rms_norm/RmsNorm.cpp
+    runtime/ops/update_cache/UpdateCache.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
