@@ -7,19 +7,12 @@ import numpy as np
 import pytest
 import torch
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
-)
-from executorch.backends.nxp.tests.models import Conv2dWithActivation
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.models import Conv2dWithActivation, HardTanhModule
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import Convolution
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -31,89 +24,110 @@ def reseed_model_per_test_run():
 
 ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 HardTanh = exir_ops.edge.aten.hardtanh.default
-HardTanh_ = exir_ops.edge.aten.hardtanh_.default
 
 
-@pytest.mark.parametrize("input_shape", [(1, 3, 128, 128)])
-@pytest.mark.parametrize("inplace", [True, False])
-def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool, use_qat: bool):
-    # The torch.nn.Relu6 inherits from torch.nn.Hardtanh, and hence represented as HardTanh in ATen.
-    # Testing the hardtanh originated from torch.nn.Relu6 op.
-    model = Conv2dWithActivation(
-        activation=torch.nn.ReLU6(inplace=inplace), in_channels=input_shape[1]
+class TestHardTanhNewNeutronFlow:
+    @pytest.mark.parametrize("input_shape", [(1, 3, 128, 128)])
+    @pytest.mark.parametrize("inplace", [True, False])
+    def test_relu6_quant(
+        self, mocker, input_shape: tuple[int], inplace: bool, use_qat: bool
+    ):
+        # The torch.nn.Relu6 inherits from torch.nn.Hardtanh, and hence represented as HardTanh in ATen.
+        # Testing the hardtanh originated from torch.nn.Relu6 op.
+        model = Conv2dWithActivation(
+            activation=torch.nn.ReLU6(inplace=inplace), in_channels=input_shape[1]
+        )
+
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={HardTanh: 1, Convolution: 1},
+            expected_non_delegated_ops={},
+        )
+
+        lower_run_compare(
+            model=model,
+            input_spec=input_shape,
+            dlg_model_verifier=graph_verifier,
+            use_qat=use_qat,
+        )
+
+    @pytest.mark.parametrize("input_shape", [(1, 3, 16, 16), (1, 3, 32, 32)])
+    @pytest.mark.parametrize(
+        "activation_range",
+        [
+            (0.0, 6.0),
+            (-1.0, 1.0),
+            (0.0, 1.0),
+            (0.0, float("inf")),
+            (0, 6),
+            (-1, 1),
+            (0, 1),
+            (0, float("inf")),
+        ],
     )
+    @pytest.mark.parametrize("inplace", [True, False])
+    def test_custom_hardtanh_quant(
+        self,
+        mocker,
+        input_shape: tuple[int],
+        activation_range: tuple[float, float],
+        inplace: bool,
+        use_qat: bool,
+    ):
+        min_val, max_val = activation_range
+        model = Conv2dWithActivation(
+            activation=torch.nn.Hardtanh(
+                min_val=min_val, max_val=max_val, inplace=inplace
+            ),
+            in_channels=input_shape[1],
+        )
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={HardTanh: 1, Convolution: 1},
+            expected_non_delegated_ops={},
+        )
 
-    quantized_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-    ).exported_program()
+        lower_run_compare(
+            model=model,
+            input_spec=input_shape,
+            dlg_model_verifier=graph_verifier,
+            use_qat=use_qat,
+        )
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    assert not graph_contains_any_of_ops(quantized_program.graph, [HardTanh, HardTanh_])
-    assert graph_contains_any_of_ops(quantized_program.graph, [ExecutorchDelegateCall])
-
-    input_data = (np.random.random(input_shape) * 50).astype(np.int8)
-    convert_run_compare(
-        exported_program,
-        tfl_model=tflite_flatbuffers_model,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        input_data=input_data,
-        atol=2.0,
+    @pytest.mark.parametrize(
+        "input_shape, activation_range",
+        [
+            pytest.param(
+                (3, 7, 15, 7),
+                (0, float("inf")),
+                id="activation range: Relu, num_channels not divisible by NUM_MACS, alone in partition",
+            ),
+            pytest.param(
+                (3, 7, 15, 7),
+                (0, 6),
+                id="activation range: Relu6, num_channels not divisible by NUM_MACS, alone in partition",
+            ),
+        ],
     )
+    def test_hardtanh__old_flow_unsupported(
+        self,
+        mocker,
+        input_shape: tuple[int],
+        activation_range: tuple[float, float],
+        use_qat: bool,
+    ):
+        min_val, max_val = activation_range
+        model = HardTanhModule(min_val, max_val)
 
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={HardTanh: 1}, expected_non_delegated_ops={}
+        )
 
-@pytest.mark.parametrize("input_shape", [(1, 3, 16, 16), (1, 3, 32, 32)])
-@pytest.mark.parametrize(
-    "activation_range",
-    [
-        (0.0, 6.0),
-        (-1.0, 1.0),
-        (0.0, 1.0),
-        (0.0, float("inf")),
-        (0, 6),
-        (-1, 1),
-        (0, 1),
-        (0, float("inf")),
-    ],
-)
-@pytest.mark.parametrize("inplace", [True, False])
-def test_custom_hardtanh_quant(
-    mocker,
-    input_shape: tuple[int],
-    activation_range: tuple[float, float],
-    inplace: bool,
-    use_qat: bool,
-):
-    # TODO(13063): This test suffers from non-ideal testing random quantization, because we always use range <0,1>.
-    #  We should update (decrease atol) when the Conv/Linear + Activation fuse at quantization is in place.
-    min_val, max_val = activation_range
-    model = Conv2dWithActivation(
-        activation=torch.nn.Hardtanh(min_val=min_val, max_val=max_val, inplace=inplace),
-        in_channels=input_shape[1],
-    )
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    quantized_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-    ).exported_program()
-
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    assert not graph_contains_any_of_ops(quantized_program.graph, [HardTanh, HardTanh_])
-    assert graph_contains_any_of_ops(quantized_program.graph, [ExecutorchDelegateCall])
-
-    input_data = (np.random.random(input_shape) * 50).astype(np.int8)
-    convert_run_compare(
-        exported_program,
-        tfl_model=tflite_flatbuffers_model,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        input_data=input_data,
-        atol=2.0,
-    )
+        lower_run_compare(
+            model=model,
+            input_spec=input_shape,
+            dlg_model_verifier=graph_verifier,
+            dataset_creator=RandomDatasetCreator(low=-1, high=1),
+            use_qat=use_qat,
+        )
