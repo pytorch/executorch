@@ -7,6 +7,12 @@ name: Test WebGPU Native (Dawn)
 # CPU runner -- separate from _test_backend.yml so that reusable template stays
 # untouched.
 
+# Nightly-only for now: this job builds SwiftShader from source (vendored LLVM),
+# which is too expensive to run on every PR while the workflow's reliability is
+# still being established. Once it has proven stable, re-enable a scoped PR
+# trigger with a paths: filter (backends/webgpu/**, the webgpu CI scripts, and
+# this file). The pull_request-aware ref/concurrency expressions below are kept
+# intentionally so that re-enable is a one-line change.
 on:
   schedule:
     - cron: 0 2 * * *
@@ -16,7 +22,6 @@ on:
       - release/*
     tags:
       - ciflow/nightly/*
-  pull_request:
   workflow_dispatch:
 
 concurrency:
