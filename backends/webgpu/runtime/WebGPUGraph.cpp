@@ -59,6 +59,86 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   return buffer;
 }
 
+void WebGPUGraph::update_symints_from_inputs(
+    const std::vector<std::pair<const void*, size_t>>& inputs) {
+  for (const auto& src : symint_sources_) {
+    int pos = -1;
+    for (size_t i = 0; i < input_ids_.size(); i++) {
+      if (input_ids_[i] == src.input_tensor_id) {
+        pos = static_cast<int>(i);
+        break;
+      }
+    }
+    if (pos < 0 || pos >= static_cast<int>(inputs.size())) {
+      throw std::runtime_error(
+          "select_as_symint: source tensor is not a graph input");
+    }
+    const auto& dims = tensors_[src.input_tensor_id].dims;
+    int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
+    if (dim < 0 || dim >= static_cast<int>(dims.size())) {
+      throw std::runtime_error("select_as_symint: dim out of range");
+    }
+    int index = src.index;
+    if (index < 0) {
+      index += static_cast<int>(dims[dim]);
+    }
+    if (index < 0 || index >= static_cast<int>(dims[dim])) {
+      throw std::runtime_error("select_as_symint: index out of range");
+    }
+    int64_t numel = 1;
+    for (int64_t d : dims) {
+      numel *= d;
+    }
+    if (numel <= 0) {
+      throw std::runtime_error("select_as_symint: empty input tensor");
+    }
+    int64_t stride = 1;
+    for (size_t i = static_cast<size_t>(dim) + 1; i < dims.size(); i++) {
+      stride *= dims[i];
+    }
+    // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
+    const int64_t offset = static_cast<int64_t>(index) * stride;
+    // elem_size back-derived from build-time numel (sources are static-shaped).
+    const void* host = inputs[pos].first;
+    const size_t elem_size = inputs[pos].second / static_cast<size_t>(numel);
+    int32_t val;
+    if (elem_size == sizeof(int64_t)) {
+      val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
+    } else if (elem_size == sizeof(int32_t)) {
+      val = static_cast<const int32_t*>(host)[offset];
+    } else {
+      throw std::runtime_error(
+          "select_as_symint: unsupported input element size");
+    }
+    set_symint(src.symint_id, val);
+  }
+}
+
+void WebGPUGraph::set_symint(int id, int32_t val) {
+  auto it = symints_.find(id);
+  if (it == symints_.end()) {
+    throw std::runtime_error("WebGPUGraph::set_symint: id is not a SymInt");
+  }
+  if (it->second.value != val) {
+    it->second.value = val;
+    wgpuQueueWriteBuffer(
+        queue_, it->second.buffer, 0, &it->second.value, sizeof(int32_t));
+    dirty_symints_.insert(id);
+  }
+}
+
+void WebGPUGraph::propagate_resize() {
+  if (dirty_symints_.empty()) {
+    return;
+  }
+  for (auto& hook : resize_hooks_) {
+    if (dirty_symints_.count(hook.symint_id) != 0) {
+      hook.fn(*this);
+    }
+  }
+  dirty_symints_.clear();
+}
+
 WebGPUGraph::~WebGPUGraph() {
   for (size_t i = 0; i < tensors_.size(); i++) {
     if (tensors_[i].buffer &&
@@ -74,6 +154,16 @@ WebGPUGraph::~WebGPUGraph() {
   for (auto& buf : scratch_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& buf : owned_uniform_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& kv : symints_) {
+    if (kv.second.buffer) {
+      wgpuBufferRelease(kv.second.buffer);
     }
   }
   for (auto& buf : output_staging_buffers_) {
@@ -234,6 +324,27 @@ void WebGPUGraph::build(
       case vkgraph::GraphTypes::Bool: {
         value_types_[i] = ValueType::Bool;
         bools_[i] = val->value_as_Bool()->bool_val();
+        break;
+      }
+      case vkgraph::GraphTypes::SymInt: {
+        // Live scalar: small Uniform buffer the CPU rewrites per execute.
+        value_types_[i] = ValueType::SymInt;
+        SymIntSlot slot;
+        slot.value = static_cast<int32_t>(val->value_as_SymInt()->value());
+        // 16B matches the backend uniform-struct alignment; int32 in first 4.
+        constexpr size_t kSymIntUniformBytes = 16;
+        WGPUBufferDescriptor d = {};
+        d.size = kSymIntUniformBytes;
+        d.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+        d.mappedAtCreation = true;
+        slot.buffer = wgpuDeviceCreateBuffer(device_, &d);
+        void* mapped =
+            wgpuBufferGetMappedRange(slot.buffer, 0, kSymIntUniformBytes);
+        std::memset(mapped, 0, kSymIntUniformBytes);
+        std::memcpy(mapped, &slot.value, sizeof(int32_t));
+        wgpuBufferUnmap(slot.buffer);
+        symints_[i] = slot;
+        add_uniform_buffer_bytes(kSymIntUniformBytes);
         break;
       }
       default:
