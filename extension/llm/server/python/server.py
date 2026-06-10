@@ -30,7 +30,7 @@ import logging
 import os
 from pathlib import Path
 
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -77,6 +77,33 @@ def _spawn(args):
     return spawn_worker(cmd, env=env)
 
 
+def _resolve_session_id(
+    req: ChatCompletionRequest,
+    x_executorch_session_id: Optional[str],
+    session_id_header: Optional[str],
+    x_session_affinity: Optional[str],
+) -> Optional[str]:
+    # Session id precedence: body field wins, else the X-ExecuTorch-Session-ID /
+    # session_id / x-session-affinity headers (in that order). Aliases let clients
+    # that already emit a stable per-conversation id for cache affinity (e.g. pi's
+    # sendSessionAffinityHeaders) route to a session with no extra config.
+    if req.session_id is not None:
+        return req.session_id
+    return x_executorch_session_id or session_id_header or x_session_affinity
+
+
+async def _session_op(
+    op: Callable[[str], Awaitable[None]], session_id: str, ok: dict
+) -> JSONResponse:
+    # Shared shape for the session vendor-extension routes (close/reset): run the
+    # idempotent op, mapping APIError to a structured JSON error.
+    try:
+        await op(session_id)
+    except APIError as e:
+        return JSONResponse(e.body(), status_code=e.status)
+    return JSONResponse(ok)
+
+
 def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     app = FastAPI(title="ExecuTorch LLM Server")
 
@@ -92,10 +119,8 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     async def chat_completions(
         req: ChatCompletionRequest,
         # FastAPI dependency: the Header() call in the default is required.
+        # `session_id` is matched verbatim (underscore).
         x_executorch_session_id: Optional[str] = Header(default=None),  # noqa: B008
-        # Aliases so clients that already emit a stable per-conversation id for
-        # cache affinity (e.g. pi's sendSessionAffinityHeaders) route to a session
-        # with no extra config. `session_id` is matched verbatim (underscore).
         session_id_header: Optional[str] = Header(  # noqa: B008
             default=None, alias="session_id"
         ),
@@ -104,12 +129,9 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
         # Typed param → FastAPI validates the body and returns 422 on bad input.
         # APIError (e.g. context_length_exceeded) → structured 4xx/5xx, never a
         # dropped connection. Mid-stream failures are handled inside the stream.
-        # Session id precedence: body field, then the X-ExecuTorch-Session-ID /
-        # session_id / x-session-affinity headers (body wins if set).
-        if req.session_id is None:
-            req.session_id = (
-                x_executorch_session_id or session_id_header or x_session_affinity
-            )
+        req.session_id = _resolve_session_id(
+            req, x_executorch_session_id, session_id_header, x_session_affinity
+        )
         try:
             result = await serving.create(req)
         except APIError as e:
@@ -121,22 +143,21 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     @app.delete("/v1/sessions/{session_id}")
     async def close_session(session_id: str):
         # Free a named session's state + capacity slot (vendor extension; idempotent).
-        try:
-            await serving.close_session(session_id)
-        except APIError as e:
-            return JSONResponse(e.body(), status_code=e.status)
-        return JSONResponse({"closed": True, "session_id": session_id})
+        return await _session_op(
+            serving.close_session,
+            session_id,
+            {"closed": True, "session_id": session_id},
+        )
 
     @app.post("/v1/sessions/{session_id}/reset")
     async def reset_session(session_id: str):
         # Clear a named session's context but keep its slot (vendor extension;
-        # idempotent). Lets an agent reuse a slot for a new conversation without
-        # freeing/reopening it.
-        try:
-            await serving.reset_session(session_id)
-        except APIError as e:
-            return JSONResponse(e.body(), status_code=e.status)
-        return JSONResponse({"reset": True, "session_id": session_id})
+        # idempotent): reuse a slot for a new conversation without reopening it.
+        return await _session_op(
+            serving.reset_session,
+            session_id,
+            {"reset": True, "session_id": session_id},
+        )
 
     return app
 
