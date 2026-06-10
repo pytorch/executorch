@@ -28,10 +28,12 @@ class ConvertSplitToSlicePass(ArmPass):
     slice = exir_ops.edge.aten.slice_copy.Tensor
 
     def call(self, graph_module: torch.fx.GraphModule):
+        modified = False
         graph = graph_module.graph
         for node in graph.nodes:
             if node.target not in self.split_ops:
                 continue
+            modified = True
 
             # Get useful variables
             split_node = node
@@ -89,10 +91,11 @@ class ConvertSplitToSlicePass(ArmPass):
                         split_node, output_node, index
                     )
                     output_node.replace_all_uses_with(slice_node)
-        graph.eliminate_dead_code()
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+
+        if modified:
+            graph.eliminate_dead_code()
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)
 
 
 def _copy_user_node_qparams(

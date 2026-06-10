@@ -329,6 +329,79 @@ def emit_quantized_biases(
     return biases
 
 
+def emit_quantized_gather(
+    P: MLXProgramBuilder,
+    out: Slot,
+    indices_slot: Slot,
+    qdata_slot: Slot,
+    scales_slot: Slot,
+    biases_slot: Optional[Slot],
+    *,
+    group_size: int,
+    bits: int,
+    mode: str,
+    out_dtype: torch.dtype,
+) -> None:
+    """Gather quantized rows by index and dequantize them into ``out``.
+
+    Emits ``TakeNode`` for qdata and scales (and biases when present), then a
+    ``DequantizeNode``.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        DequantizeNode,
+        IntOrVidOrTid,
+        TakeNode,
+    )
+
+    ids_index = IntOrVidOrTid.from_tid(P.slot_to_tid(indices_slot))
+
+    _, wq_sel = P.make_tmp_slot()
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(qdata_slot),
+            index=ids_index,
+            out=P.slot_to_tid(wq_sel),
+            axis=0,
+        )
+    )
+
+    _, sc_sel = P.make_tmp_slot()
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(scales_slot),
+            index=ids_index,
+            out=P.slot_to_tid(sc_sel),
+            axis=0,
+        )
+    )
+
+    biases_tid = None
+    if biases_slot is not None:
+        _, b_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(biases_slot),
+                index=ids_index,
+                out=P.slot_to_tid(b_sel),
+                axis=0,
+            )
+        )
+        biases_tid = P.slot_to_tid(b_sel)
+
+    P.emit(
+        DequantizeNode(
+            w=P.slot_to_tid(wq_sel),
+            scales=P.slot_to_tid(sc_sel),
+            out=P.slot_to_tid(out),
+            biases=biases_tid,
+            group_size=group_size,
+            bits=bits,
+            mode=mode,
+            dtype=torch_dtype_to_scalar_type(out_dtype),
+        )
+    )
+
+
 def to_mlx_qparams(
     qdata: torch.Tensor,
     scale: torch.Tensor,
@@ -419,6 +492,34 @@ def parse_dequant_nvfp4_node(
         output_dtype = node.kwargs["output_dtype"]
 
     return qdata, scale, per_tensor_scale, output_dtype
+
+
+def parse_dequant_int4_node(
+    node: Node,
+) -> Optional[Tuple[Node, Node, Node, int, Optional[torch.dtype]]]:
+    """Parse a torchao.dequantize_int4_tensor node.
+
+    Returns (qdata, scale, zero_point, group_size, output_dtype) or None if not a
+    dequantize_int4_tensor node or the custom op is not registered.
+    """
+    target = get_aten_target(node.target)
+    try:
+        import executorch.extension.llm.export.int4  # noqa: F401
+    except ImportError:
+        return None
+
+    if target is not torch.ops.torchao.dequantize_int4_tensor.default:
+        return None
+
+    qdata, scale, zero_point, group_size = node.args[0:4]
+
+    output_dtype = None
+    if len(node.args) > 4:
+        output_dtype = node.args[4]
+    elif "output_dtype" in node.kwargs:
+        output_dtype = node.kwargs["output_dtype"]
+
+    return qdata, scale, zero_point, group_size, output_dtype
 
 
 def parse_dequant_node(

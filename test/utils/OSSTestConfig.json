@@ -52,7 +52,8 @@
         "directory": "extension/tensor/test",
         "sources": [
             "tensor_ptr_maker_test.cpp",
-            "tensor_ptr_test.cpp"
+            "tensor_ptr_test.cpp",
+            "tensor_ptr_device_test.cpp"
         ],
         "additional_libs": [
             "extension_tensor"

@@ -2,10 +2,23 @@ name: Get Changed Files
 
 on:
   workflow_call:
+    inputs:
+      include-push-diff:
+        description: |
+          When true, on push events the output is the diff between
+          `github.event.before` and `github.sha` (computed via the
+          GitHub Compare API). Default is false: push events emit '*',
+          matching the historical behavior.
+        type: boolean
+        required: false
+        default: false
     outputs:
       changed-files:
-        description: "List of changed files (space-separated) or '*' if not in a PR"
+        description: "Space-separated list of changed files for PR events (and push events when include-push-diff=true); '*' otherwise."
         value: ${{ jobs.get-changed-files.outputs.changed-files }}
+
+permissions:
+  contents: read
 
 jobs:
   get-changed-files:
@@ -18,26 +31,65 @@ jobs:
         id: get-files
         env:
           GH_TOKEN: ${{ github.token }}
+          INCLUDE_PUSH_DIFF: ${{ inputs.include-push-diff }}
         run: |
-          # Check if we're in a pull request context
-          if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "pull_request_target" ]; then
+          set -eu
+
+          EVENT_NAME="${{ github.event_name }}"
+          REPO="${{ github.repository }}"
+
+          # PR context: list files modified by the PR.
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "pull_request_target" ]; then
             echo "Running in PR context"
-
-            # Get the PR number from the github context
             PR_NUMBER="${{ github.event.number }}"
-
-            # Use gh CLI to get changed files in the PR with explicit repo
-            CHANGED_FILES=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/files --paginate --jq '.[] | select(.status != "removed") | .filename' | tr '\n' ' ' | sed 's/ $//')
+            CHANGED_FILES=$(gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate \
+              --jq '.[] | select(.status != "removed") | .filename' | tr '\n' ' ' | sed 's/ $//')
 
             if [ -z "$CHANGED_FILES" ]; then
               echo "No changed files found, setting to '*'"
               CHANGED_FILES="*"
             fi
+            echo "Changed files: $CHANGED_FILES"
+            echo "changed-files=$CHANGED_FILES" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Push context with opt-in: diff between previous tip and new
+          # tip via the GitHub Compare API. This is what lets path-
+          # filtered jobs skip on push commits that don't touch their
+          # relevant paths. Callers must explicitly request this with
+          # `include-push-diff: true` because some workflows (e.g.
+          # lint.yml) historically rely on the '*' value to take a
+          # broader code path.
+          if [ "$EVENT_NAME" = "push" ] && [ "$INCLUDE_PUSH_DIFF" = "true" ]; then
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.sha }}"
+            ZERO_SHA="0000000000000000000000000000000000000000"
+
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO_SHA" ]; then
+              echo "No 'before' SHA on push event (tag/branch creation or initial push); setting changed files to '*'"
+              echo "changed-files=*" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "Running in push context: comparing $BEFORE..$AFTER"
+            CHANGED_FILES=$(gh api "repos/$REPO/compare/$BEFORE...$AFTER" --paginate \
+              --jq '.files[]? | select(.status != "removed") | .filename' 2>/dev/null \
+              | tr '\n' ' ' | sed 's/ $//' || echo "")
+
+            if [ -z "$CHANGED_FILES" ]; then
+              echo "Compare returned empty; setting changed files to '*'"
+              echo "changed-files=*" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
 
             echo "Changed files: $CHANGED_FILES"
             echo "changed-files=$CHANGED_FILES" >> "$GITHUB_OUTPUT"
-
-          else
-            echo "Not in PR context, setting changed files to '*'"
-            echo "changed-files=*" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Default for non-PR events (push without opt-in,
+          # workflow_dispatch, schedule, etc.): no diff. Emit '*' to
+          # preserve the historical behavior.
+          echo "Event '$EVENT_NAME' (or include-push-diff=false): emitting '*'"
+          echo "changed-files=*" >> "$GITHUB_OUTPUT"

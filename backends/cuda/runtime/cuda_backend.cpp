@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -32,10 +33,12 @@
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/core/storage.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/backends/aoti/slim/factory/empty.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/aoti/slim/factory/from_etensor.h>
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
+#include <executorch/extension/cuda/caller_stream.h>
 
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
@@ -487,7 +490,39 @@ class ET_EXPERIMENTAL CudaBackend final
     size_t n_outputs;
     handle->get_num_outputs(handle->container_handle, &n_outputs);
 
-    setCurrentCUDAStream(handle->get_cuda_stream(), 0);
+    // Run on the caller-selected stream when one is active on this thread (e.g.
+    // a CUDA green-context stream), otherwise the handle's own stream. Every
+    // kernel and boundary copy reads getCurrentCUDAStream, so installing the
+    // choice here routes the whole execution; restore the prior selection on
+    // return so a caller stream does not linger for later work on this thread.
+    const std::optional<cudaStream_t> caller_stream =
+        executorch::extension::cuda::getCallerStream();
+
+    // A captured CUDA graph is bound to its capture stream and cannot be safely
+    // replayed on a different, caller-provided stream.
+    ET_CHECK_OR_RETURN_ERROR(
+        !(caller_stream &&
+          handle->cuda_graph_state.phase != CudaGraphPhase::Disabled),
+        NotSupported,
+        "CUDA graph is not supported together with a caller-provided CUDA stream.");
+
+    // Snapshot the prior selection without creating one (peek, not get), so the
+    // restore is exact and we don't leak a stream just to snapshot.
+    std::optional<cudaStream_t> prev_stream;
+    if (caller_stream) {
+      prev_stream = peekCurrentCUDAStream(0);
+    }
+    setCurrentCUDAStream(caller_stream.value_or(handle->get_cuda_stream()), 0);
+    executorch::backends::aoti::ScopeGuard restore_stream([&]() noexcept {
+      if (!caller_stream) {
+        return;
+      }
+      if (prev_stream) {
+        setCurrentCUDAStream(*prev_stream, 0);
+      } else {
+        clearCurrentCUDAStream(0);
+      }
+    });
 
     size_t n_io_sum = 0;
     ET_CHECK_OR_RETURN_ERROR(
