@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2024-2025 Arm Limited and/or its affiliates.
+ * Copyright 2024-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -68,6 +68,12 @@ DEFINE_string(
     output_file,
     "",
     "Base name of output file. If not empty output will be written to the file(s).");
+DEFINE_bool(
+    server_mode,
+    false,
+    "Run continuously, executing one inference per line read from stdin. "
+    "In server mode, input files specified by --inputs are re-read before each "
+    "execution and outputs are overwritten under --output_file.");
 
 DEFINE_string(
     print_output,
@@ -117,6 +123,49 @@ using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
 
 enum class PrintOutputMode { None, Summary, All };
+
+namespace {
+
+Error load_input_files(
+    const std::vector<std::string>& file_paths,
+    std::vector<std::string>& inputs_storage,
+    std::vector<std::pair<char*, size_t>>& input_buffers) {
+  inputs_storage.clear();
+  input_buffers.clear();
+  inputs_storage.reserve(file_paths.size());
+
+  for (const auto& file_path : file_paths) {
+    std::ifstream input_file_handle(
+        file_path, std::ios::binary | std::ios::ate);
+
+    if (!input_file_handle) {
+      ET_LOG(Error, "Failed to open input file: %s", file_path.c_str());
+      return Error::AccessFailed;
+    }
+
+    std::streamsize file_size = input_file_handle.tellg();
+    input_file_handle.seekg(0, std::ios::beg);
+    if (file_size < 0) {
+      ET_LOG(Error, "Failed to read input file size: %s", file_path.c_str());
+      return Error::Internal;
+    }
+
+    // Reserve memory for actual file contents.
+    inputs_storage.emplace_back(static_cast<size_t>(file_size), '\0');
+
+    if (!input_file_handle.read(inputs_storage.back().data(), file_size)) {
+      ET_LOG(Error, "Failed to read input file: %s", file_path.c_str());
+      return Error::AccessFailed;
+    }
+
+    input_buffers.emplace_back(
+        inputs_storage.back().data(), static_cast<size_t>(file_size));
+  }
+
+  return Error::Ok;
+}
+
+} // namespace
 
 /// Helper to manage resources for ETDump generation
 class EventTraceManager {
@@ -270,40 +319,25 @@ int main(int argc, char** argv) {
   // everything hardcoded to ones.
   std::vector<std::string> inputs_storage;
   std::vector<std::pair<char*, size_t>> input_buffers;
+  std::vector<std::string> file_paths;
   if (!bundle_io) {
     if (!FLAGS_inputs.empty()) {
       ET_LOG(Info, "Loading inputs from input file(s).");
       std::stringstream list_of_input_files(FLAGS_inputs);
       std::string path;
 
-      std::vector<std::string> file_paths;
       while (std::getline(list_of_input_files, path, ',')) {
         file_paths.push_back(std::move(path));
       }
-      // First reserve number of elements to avoid vector reallocations.
-      inputs_storage.reserve(file_paths.size());
 
-      for (const auto& file_path : file_paths) {
-        std::ifstream input_file_handle(
-            file_path, std::ios::binary | std::ios::ate);
-
-        if (!input_file_handle) {
-          ET_LOG(Error, "Failed to open input file: %s\n", file_path.c_str());
-          return 1;
-        }
-
-        std::streamsize file_size = input_file_handle.tellg();
-        input_file_handle.seekg(0, std::ios::beg);
-
-        // Reserve memory for actual file contents.
-        inputs_storage.emplace_back(file_size, '\0');
-
-        if (!input_file_handle.read(inputs_storage.back().data(), file_size)) {
-          ET_LOG(Error, "Failed to read input file: %s\n", file_path.c_str());
-          return 1;
-        }
-
-        input_buffers.emplace_back(&inputs_storage.back()[0], file_size);
+      // In server mode, input files are re-read before each execution.
+      if (!FLAGS_server_mode) {
+        const Error load_status =
+            load_input_files(file_paths, inputs_storage, input_buffers);
+        ET_CHECK_MSG(
+            load_status == Error::Ok,
+            "Could not load inputs: 0x%" PRIx32,
+            (uint32_t)load_status);
       }
     }
   }
@@ -471,6 +505,88 @@ int main(int argc, char** argv) {
             1000000.0);
   }
 
+  if (FLAGS_server_mode) {
+    ET_CHECK_MSG(
+        !FLAGS_output_file.empty(),
+        "--output_file must be set in --server_mode so outputs can be retrieved.");
+    ET_LOG(Info, "Running in server mode; waiting for stdin triggers.");
+    std::vector<EValue> outputs(method->outputs_size());
+    ET_LOG(Info, "%zu outputs: ", outputs.size());
+
+    std::string line;
+    while (std::getline(std::cin, line)) {
+      (void)line;
+
+      if (!bundle_io && !file_paths.empty()) {
+        const Error load_status =
+            load_input_files(file_paths, inputs_storage, input_buffers);
+        ET_CHECK_MSG(
+            load_status == Error::Ok,
+            "Could not load inputs: 0x%" PRIx32,
+            (uint32_t)load_status);
+      }
+
+      std::optional<executorch::extension::BufferCleanup> inputs;
+
+#ifdef ET_BUNDLE_IO_ENABLED
+      if (bundle_io) {
+        ET_LOG(Debug, "Getting inputs from bundled IO");
+        Error status = executorch::bundled_program::load_bundled_input(
+            *method, model_pte, testset_idx);
+        ET_CHECK_MSG(
+            status == Error::Ok,
+            "load_bundled_input failed with status 0x%" PRIx32,
+            static_cast<uint32_t>(status));
+      } else
+#endif
+      {
+        ET_LOG(Debug, "Preparing inputs.");
+        auto res = executorch::extension::prepare_input_tensors(
+            *method, {}, input_buffers);
+        ET_CHECK_MSG(
+            res.ok(),
+            "Could not prepare inputs: 0x%" PRIx32,
+            (uint32_t)res.error());
+        inputs.emplace(std::move(res.get()));
+        ET_LOG(Debug, "Inputs prepared.");
+      }
+
+      Error status = method->execute();
+      ET_CHECK_MSG(
+          status == Error::Ok,
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method_name,
+          static_cast<uint32_t>(status));
+
+      status = method->get_outputs(outputs.data(), outputs.size());
+      ET_CHECK(status == Error::Ok);
+
+      if (FLAGS_output_file.size() > 0) {
+        for (int i = 0; i < outputs.size(); ++i) {
+          if (outputs[i].isTensor()) {
+            Tensor tensor = outputs[i].toTensor();
+
+            char out_filename[255];
+            snprintf(
+                out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
+            ET_LOG(Info, "Writing output to file: %s", out_filename);
+            FILE* out_file = fopen(out_filename, "wb");
+            ET_CHECK_MSG(
+                out_file != nullptr,
+                "Failed to open output file: %s",
+                out_filename);
+            fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
+            fclose(out_file);
+          }
+        }
+      }
+
+      ET_LOG(Info, "SERVER MODE DONE");
+    }
+
+    return 0;
+  }
+
   et_timestamp_t time_spent_executing = 0;
   // Run the model.
   for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
@@ -553,6 +669,10 @@ int main(int argc, char** argv) {
         snprintf(out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
         ET_LOG(Info, "Writing output to file: %s", out_filename);
         FILE* out_file = fopen(out_filename, "wb");
+        ET_CHECK_MSG(
+            out_file != nullptr,
+            "Failed to open output file: %s",
+            out_filename);
         fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
         fclose(out_file);
       }

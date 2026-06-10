@@ -12,7 +12,7 @@ import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
 from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
@@ -98,7 +98,7 @@ class QnnLLMEdgeManager:
         self.config = config
         self.verbose = verbose
         self.use_fp16 = True
-        self.passes_job = get_capture_program_passes()
+        self.passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
         self.edge_prog_mgr = None
         self.logits_quant_attrs = None
 

@@ -56,15 +56,15 @@ _h2d_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
       out,
       "_h2d_copy: destination tensor must be on a non-CPU device");
 
-  auto nbytes = self.nbytes();
   ET_KERNEL_CHECK_MSG(
       ctx,
-      nbytes == out.nbytes(),
+      resize_tensor(out, self.sizes()) == Error::Ok,
       InvalidArgument,
       out,
-      "_h2d_copy: size mismatch: self.nbytes()=%zu, out.nbytes()=%zu",
-      nbytes,
+      "_h2d_copy: cannot resize out to self sizes (self.nbytes()=%zu exceeds out planned capacity %zu?)",
+      self.nbytes(),
       out.nbytes());
+  auto nbytes = self.nbytes();
 
   DeviceAllocator* allocator =
       executorch::runtime::get_device_allocator(device_type);
@@ -117,15 +117,15 @@ _d2h_copy_out(KernelRuntimeContext& ctx, const Tensor& self, Tensor& out) {
       "_d2h_copy: destination tensor must be on CPU, got device_type=%d",
       static_cast<int>(out.unsafeGetTensorImpl()->device_type()));
 
-  auto nbytes = self.nbytes();
   ET_KERNEL_CHECK_MSG(
       ctx,
-      nbytes == out.nbytes(),
+      resize_tensor(out, self.sizes()) == Error::Ok,
       InvalidArgument,
       out,
-      "_d2h_copy: size mismatch: self.nbytes()=%zu, out.nbytes()=%zu",
-      nbytes,
+      "_d2h_copy: cannot resize out to self sizes (self.nbytes()=%zu exceeds out planned capacity %zu?)",
+      self.nbytes(),
       out.nbytes());
+  auto nbytes = self.nbytes();
 
   DeviceAllocator* allocator =
       executorch::runtime::get_device_allocator(device_type);

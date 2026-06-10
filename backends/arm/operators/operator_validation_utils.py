@@ -9,8 +9,9 @@ allowed dtypes, and compute pooling padding adjustments.
 
 """
 
-from math import ceil, floor
 from typing import Any, List, Optional
+
+import torch
 
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 
@@ -168,8 +169,12 @@ def validate_cf_extension(op_name: str, tosa_spec: TosaSpecification) -> None:
 
 
 def adjust_pooling_pad_if_needed(
-    input_size: int, kernel_size: int, stride: int, pad: int, ceil_mode: bool
-) -> int:
+    input_size: int | torch.SymInt,
+    kernel_size: int,
+    stride: int,
+    pad: int | torch.SymInt,
+    ceil_mode: bool,
+) -> int | torch.SymInt:
     """Compute the post padding needed for pooling.
 
     ATen pooling uses a single symmetric ``pad`` per dimension and rounds the
@@ -181,20 +186,21 @@ def adjust_pooling_pad_if_needed(
     This function returns the required ``post_pad`` given a symmetric ``pad``.
 
     Args:
-        input_size (int): Input size.
+        input_size (int | torch.SymInt): Input size.
         kernel_size (int): Kernel size.
         stride (int): Stride size.
-        pad (int): Symmetric padding specified by ATen.
+        pad (int | torch.SymInt): Symmetric padding specified by ATen.
         ceil_mode (bool): Use ceil when computing output size.
 
     Returns:
-        int: Post-padding to satisfy the TOSA formula.
+        int | torch.SymInt: Post-padding to satisfy the TOSA formula.
 
     """
+    numerator = input_size - kernel_size + 2 * pad
     if ceil_mode:
-        output_size = ceil((input_size - kernel_size + 2 * pad) / stride) + 1
+        output_size = (numerator + stride - 1) // stride + 1
     else:
-        output_size = floor((input_size - kernel_size + 2 * pad) / stride) + 1
+        output_size = numerator // stride + 1
 
     # Solve for post_pad from
     # output_size = (input_size + pre_pad + post_pad - kernel_size) / stride + 1

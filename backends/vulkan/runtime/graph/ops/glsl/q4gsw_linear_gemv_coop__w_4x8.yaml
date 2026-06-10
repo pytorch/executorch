@@ -1,0 +1,41 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+q4gsw_linear_gemv_coop__w_4x8:
+  parameter_names_with_default_values:
+    DTYPE: float
+    IO_STORAGE: buffer
+    NUM_GROUPS: 1
+    WORKERS_PER_GROUP: 64
+    WEIGHT_STORAGE: buffer
+    WEIGHT_KC: 0
+  generate_variant_forall:
+    IO_STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    # nc Buffer weight (SSBO ivec4 reads). Indexed at `k4 * N8 + n8`. 4K x 8N
+    # byte-pair payload. Shared with the production GEMM nc-buffer prepack so
+    # prefill + decode use a single prepack. The _g1w64, _g4w16 and _g8w8
+    # siblings expose alternative (NUM_GROUPS, WORKERS_PER_GROUP) decompositions
+    # selected by the production picker based on output N (N<=1024 -> g1w64,
+    # N<=4096 -> g4w16, else g8w8). All three keep total threads/WG = 64.
+    - NAME: q4gsw_linear_gemv_coop__w_4x8_nc_buffer_g1w64
+      WEIGHT_STORAGE: buffer
+      WEIGHT_KC: 0
+    - NAME: q4gsw_linear_gemv_coop__w_4x8_nc_buffer_g4w16
+      WEIGHT_STORAGE: buffer
+      WEIGHT_KC: 0
+      NUM_GROUPS: 4
+      WORKERS_PER_GROUP: 16
+    - NAME: q4gsw_linear_gemv_coop__w_4x8_nc_buffer_g8w8
+      WEIGHT_STORAGE: buffer
+      WEIGHT_KC: 0
+      NUM_GROUPS: 8
+      WORKERS_PER_GROUP: 8

@@ -79,6 +79,12 @@ class CortexMTargetConfig:
             )
 
     @property
+    def target_string(self) -> str:
+        """Canonical ``cortex-m<variant>`` string; inverse of
+        ``from_target_string``."""
+        return "cortex-m" + self.cpu.name[1:].lower()
+
+    @property
     def backend(self) -> cmsis_nn.Backend:
         if self.isa is not None:
             return self.isa
@@ -105,6 +111,6 @@ class CortexMTargetConfig:
         except KeyError as e:
             raise ValueError(
                 f"Unsupported Cortex-M target string: {target!r}. "
-                f"Supported: {sorted('cortex-m' + m.name[1:].lower() for m in CortexM)}"
+                f"Supported: {sorted(cls(cpu=m).target_string for m in CortexM)}"
             ) from e
         return cls(cpu=cpu)
