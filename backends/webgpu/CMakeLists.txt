@@ -33,6 +33,8 @@ set(WEBGPU_SRCS
     runtime/ops/OperatorRegistry.cpp
     runtime/ops/add/BinaryOp.cpp
     runtime/ops/rms_norm/RmsNorm.cpp
+    runtime/ops/update_cache/UpdateCache.cpp
+    runtime/ops/select_as_symint/SelectAsSymint.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
@@ -123,5 +125,8 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
   )
   add_webgpu_native_test(
     webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
+  )
+  add_webgpu_native_test(
+    webgpu_update_cache_test test/native/test_update_cache.cpp
   )
 endif()
