@@ -105,7 +105,8 @@ inline void worker_handle_request(
     bool warm,
     ::tokenizers::Tokenizer& tokenizer,
     const std::unordered_map<std::string, int64_t>& metadata,
-    const nlohmann::json& req) {
+    const nlohmann::json& req,
+    const std::vector<uint64_t>& prompt_prefix_ids = {}) {
   LLMSession& session = *st.session;
   int64_t max_new = req.value("max_new_tokens", static_cast<int64_t>(-1));
   const float temperature = req.value("temperature", 0.0f);
@@ -129,7 +130,7 @@ inline void worker_handle_request(
     throw std::runtime_error(
         "exactly one of prompt / prompt_segments is required");
   }
-  std::vector<uint64_t> ids;
+  std::vector<uint64_t> ids = prompt_prefix_ids;
   auto encode_text = [&](const std::string& text) {
     auto enc = tokenizer.encode(text, /*bos=*/0, /*eos=*/0);
     if (!enc.ok()) {
@@ -397,7 +398,8 @@ inline int run_worker_stdio_loop(
     LLMEngine& engine,
     ::tokenizers::Tokenizer& tokenizer,
     const std::unordered_map<std::string, int64_t>& metadata,
-    bool enable_warm_resume = true) {
+    bool enable_warm_resume = true,
+    const std::vector<uint64_t>& prompt_prefix_ids = {}) {
   WorkerSessions sessions(engine);
   worker_emit(
       {{"ready", true},
@@ -465,7 +467,8 @@ inline int run_worker_stdio_loop(
         }
         warm = enable_warm_resume;
       }
-      worker_handle_request(*st, warm, tokenizer, metadata, req);
+      worker_handle_request(
+          *st, warm, tokenizer, metadata, req, prompt_prefix_ids);
     } catch (const std::exception& e) { // report and keep serving
       worker_emit({{"error", std::string(e.what())}});
     }

@@ -127,7 +127,7 @@ help:
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
-	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner with CUDA backend"
+	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner + OpenAI serving worker with CUDA backend"
 	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner with MLX backend"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner + OpenAI serving worker (CUDA)"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
@@ -444,11 +444,13 @@ qwen3_5_moe-cuda:
 gemma4_31b-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
-	@echo "==> Building Gemma 4 31B runner with CUDA..."
+	@echo "==> Building Gemma 4 31B runner + serving worker with CUDA..."
 	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-cuda
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Serving worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
+	@echo "  Launch: see examples/models/gemma4_31b/README.md (Serving)"
 
 gemma4_31b-mlx:
 	@echo "==> Building and installing ExecuTorch with MLX..."

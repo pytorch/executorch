@@ -13,7 +13,7 @@
         },
         {
             "name": "gemma4-31b-cuda",
-            "displayName": "Gemma 4 31B runner (CUDA)",
+            "displayName": "Gemma 4 31B runner + serving worker (CUDA)",
             "inherits": ["gemma4-31b-base"],
             "cacheVariables": {
                 "EXECUTORCH_BUILD_CUDA": "ON"
@@ -39,9 +39,9 @@
     "buildPresets": [
         {
             "name": "gemma4-31b-cuda",
-            "displayName": "Build Gemma 4 31B runner (CUDA)",
+            "displayName": "Build Gemma 4 31B runner + serving worker (CUDA)",
             "configurePreset": "gemma4-31b-cuda",
-            "targets": ["gemma4_31b_runner"]
+            "targets": ["gemma4_31b_runner", "gemma4_31b_worker"]
         },
         {
             "name": "gemma4-31b-mlx",
@@ -53,7 +53,7 @@
     "workflowPresets": [
         {
             "name": "gemma4-31b-cuda",
-            "displayName": "Configure and build Gemma 4 31B runner (CUDA)",
+            "displayName": "Configure and build Gemma 4 31B runner + serving worker (CUDA)",
             "steps": [
                 {
                     "type": "configure",

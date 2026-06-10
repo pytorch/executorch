@@ -63,11 +63,13 @@ class ServingChat:
         model_id: str,
         max_context: Optional[int] = None,
         tool_detector_cls: Optional[type[HermesDetector]] = None,
+        prompt_token_offset: int = 0,
     ):
         self._runtime = runtime
         self._template = template
         self._model_id = model_id
         self._max_context = max_context
+        self._prompt_token_offset = prompt_token_offset
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -347,8 +349,9 @@ class ServingChat:
         tokenized length of {text} chunks. None when no tokenizer is available to
         count text (the worker still enforces the real context limit)."""
         if prompt.text is not None:
-            return self._template.count_tokens(prompt.text)
-        total = 0
+            count = self._template.count_tokens(prompt.text)
+            return None if count is None else count + self._prompt_token_offset
+        total = self._prompt_token_offset
         for seg in prompt.segments:
             if "ids" in seg:
                 total += len(seg["ids"])

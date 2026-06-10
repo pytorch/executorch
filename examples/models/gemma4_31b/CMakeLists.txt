@@ -15,6 +15,9 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_json_include
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
+)
 
 # gflags
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
@@ -58,9 +61,13 @@ endif()
 # Tokenizer (HuggingFace tokenizer.json)
 list(APPEND link_libraries tokenizers::tokenizers)
 
-add_executable(gemma4_31b_runner main.cpp)
+if(EXECUTORCH_BUILD_CUDA)
+  add_executable(gemma4_31b_runner main.cpp gemma4_31b_engine.cpp)
+else()
+  add_executable(gemma4_31b_runner main.cpp)
+endif()
 target_include_directories(
-  gemma4_31b_runner PUBLIC ${_common_include_directories}
+  gemma4_31b_runner PUBLIC ${_common_include_directories} ${_json_include}
 )
 target_link_libraries(gemma4_31b_runner PUBLIC ${link_libraries})
 
@@ -68,6 +75,23 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(gemma4_31b_runner)
   if(NOT APPLE AND NOT MSVC)
     target_link_options(gemma4_31b_runner PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  add_executable(
+    gemma4_31b_worker gemma4_31b_worker.cpp gemma4_31b_engine.cpp
+  )
+  target_include_directories(
+    gemma4_31b_worker PUBLIC ${_common_include_directories} ${_json_include}
+  )
+  target_link_libraries(gemma4_31b_worker PUBLIC ${link_libraries})
+
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(gemma4_31b_worker)
+    if(NOT APPLE AND NOT MSVC)
+      target_link_options(gemma4_31b_worker PRIVATE "LINKER:-s")
+    endif()
   endif()
 endif()
 

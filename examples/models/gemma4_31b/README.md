@@ -139,11 +139,12 @@ model produces sensible text.
 ## Build the runner
 
 ```bash
-make gemma4_31b-cuda   # Linux — CUDA backend
-make gemma4_31b-mlx    # macOS — MLX backend (Apple Silicon)
+make gemma4_31b-cuda   # Linux — CUDA runner + serving worker
+make gemma4_31b-mlx    # macOS — MLX runner (serving later)
 ```
 
-The binary lands at `cmake-out/examples/models/gemma4_31b/gemma4_31b_runner`.
+The CUDA build also produces
+`cmake-out/examples/models/gemma4_31b/gemma4_31b_worker`.
 
 ## Run the .pte
 
@@ -162,3 +163,29 @@ Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
 
 For benchmarking, add `--cuda_graph` to capture the decode method in a CUDA
 graph (decode is fully static — `T=1`).
+
+## Serving
+
+The CUDA OpenAI-compatible server is a Python control plane plus a C++ model worker.
+The worker owns the ExecuTorch model and speaks the shared JSONL protocol used by
+the generic LLM server.
+
+```bash
+LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH \
+python -m executorch.examples.models.gemma4_31b.serve \
+    --model-path ./gemma4_31b_exports/model.pte \
+    --data-path ./gemma4_31b_exports/aoti_cuda_blob.ptd \
+    --tokenizer-path ./gemma4_31b_int4/tokenizer.json \
+    --hf-tokenizer ./gemma4_31b_int4 \
+    --model-id gemma4-31b \
+    --max-sessions 1
+```
+
+The launcher defaults to the Hermes `<tool_call>{...}</tool_call>` parser. Use
+`--tool-parser qwen` or `--tool-parser none` if the model/template you are
+testing emits a different tool-call format.
+
+Named sessions and warm resume require worker capacity above one. CUDA exports
+with `get_mutable_buffer_metadata` can use per-session mutable rebinding and
+advertise `--max-sessions > 1`; older exports fail closed to a single scratch
+session. MLX serving is intentionally left for a later change.
