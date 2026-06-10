@@ -14,7 +14,11 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.backend.utils import (
+    get_non_lowered_nodes,
+    tag_constant_data,
+    tag_mutated_buffer,
+)
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram
 
@@ -60,8 +64,17 @@ class AotiPartitioner(Partitioner):
                 torch.ops.higher_order.while_loop,
             ]
 
+        # Nodes already lowered by an earlier partitioner (e.g. a preceding
+        # TensorRT partition) appear as executorch_call_delegate calls and their
+        # output getitems; re-delegating them would nest a foreign delegate. Tag
+        # only the remaining non-lowered ops so this partitioner composes after
+        # others.
+        non_lowered_nodes = set(get_non_lowered_nodes(exported_program.graph))
+
         for node in exported_program.graph.nodes:
             if node.op == "call_function":
+                if node not in non_lowered_nodes:
+                    continue
                 node.meta["delegation_tag"] = tag
             # Tag get_attr nodes that are used by control flow operations
             elif node.op == "get_attr":
@@ -76,17 +89,22 @@ class AotiPartitioner(Partitioner):
         tag_constant_data(exported_program)
         tag_mutated_buffer(exported_program)
 
-        # Tag constant placeholders that have no users
-        # tag_constant_data only tags constants that have users with delegation_tag
-        # but we need to tag all constants for this partition
+        # A constant that still has users feeds only a prior delegate; tagging it
+        # would fail backend lowering's same-tag check (its user keeps the prior
+        # tag). tag_constant_data already claimed the ones this partition uses, so
+        # tag only the genuinely unused constants here.
         for node in exported_program.graph.nodes:
-            if node.op == "placeholder" and (
-                is_param(exported_program, node)
-                or is_buffer(exported_program, node)
-                or is_lifted_tensor_constant(exported_program, node)
+            if (
+                node.op == "placeholder"
+                and not node.users
+                and "delegation_tag" not in node.meta
+                and (
+                    is_param(exported_program, node)
+                    or is_buffer(exported_program, node)
+                    or is_lifted_tensor_constant(exported_program, node)
+                )
             ):
-                if "delegation_tag" not in node.meta:
-                    node.meta["delegation_tag"] = tag
+                node.meta["delegation_tag"] = tag
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

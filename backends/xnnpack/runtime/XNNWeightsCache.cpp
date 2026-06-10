@@ -9,7 +9,14 @@
 #include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <cerrno>
+#endif
 #include <xnnpack.h>
 #include <exception>
 #include <memory>
@@ -41,12 +48,62 @@ XNNWeightsCache::XNNWeightsCache() {
       (enum xnn_status(*)(void*))XNNWeightsCache::delete_cache;
 }
 
+XNNWeightsCache::~XNNWeightsCache() {
+#ifndef _WIN32
+  for (auto& region : mmap_regions_) {
+    if (region.addr != nullptr && region.addr != MAP_FAILED) {
+      munmap(region.addr, region.size);
+    }
+  }
+  mmap_regions_.clear();
+  if (packed_file_fd_ >= 0) {
+    close(packed_file_fd_);
+    packed_file_fd_ = -1;
+  }
+#endif
+}
+
 Error XNNWeightsCache::initialize_for_runtime(
     MemoryAllocator* runtime_allocator,
     const NamedDataMap* named_data_map) {
   runtime_allocator_ = runtime_allocator;
   named_data_map_ = named_data_map;
   is_finalized_ = false;
+
+#ifndef _WIN32
+  // Open the file for packed weights. Each reserve_space() call
+  // independently mmaps a region of the file. Once packed_file_disabled_
+  // is set we never re-open — re-opening with O_TRUNC would corrupt any
+  // still-live mappings into the same path and cause SIGBUS on access.
+  if (!packed_cache_path_.empty() && packed_file_fd_ < 0 &&
+      !packed_file_disabled_) {
+    packed_file_fd_ =
+        open(packed_cache_path_.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0600);
+    if (packed_file_fd_ < 0) {
+      ET_LOG(
+          Error,
+          "Failed to open packed weight file: %s (errno=%d)",
+          packed_cache_path_.c_str(),
+          errno);
+    } else if (flock(packed_file_fd_, LOCK_EX | LOCK_NB) != 0) {
+      // Another XNNWeightsCache instance (this process or another) is
+      // already using this path. O_TRUNC above would corrupt its mappings.
+      // Disable mmap for this instance to prevent collision; fall back to
+      // heap allocation for the remainder of this cache's lifetime.
+      ET_LOG(
+          Error,
+          "Another instance is using packed weight cache file %s (errno=%d); "
+          "disabling mmap path",
+          packed_cache_path_.c_str(),
+          errno);
+      close(packed_file_fd_);
+      packed_file_fd_ = -1;
+      packed_file_disabled_ = true;
+    } else {
+      ET_LOG(Info, "Opened packed weight file: %s", packed_cache_path_.c_str());
+    }
+  }
+#endif
 
   return Error::Ok;
 }
@@ -72,6 +129,26 @@ Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
       packed_data_names.push_back(entry.first);
     }
   }
+
+#ifndef _WIN32
+  // Schedule async flush for newly added regions only.
+  // MS_ASYNC returns immediately; OS flushes in the background.
+  if (mmap_regions_.size() > mmap_regions_synced_) {
+    size_t new_count = mmap_regions_.size() - mmap_regions_synced_;
+    for (size_t i = mmap_regions_synced_; i < mmap_regions_.size(); ++i) {
+      if (mmap_regions_[i].addr != nullptr) {
+        msync(mmap_regions_[i].addr, mmap_regions_[i].size, MS_ASYNC);
+      }
+    }
+    mmap_regions_synced_ = mmap_regions_.size();
+    ET_LOG(
+        Info,
+        "Scheduled async flush: %zu new regions (%zu total), %zu MB packed weights",
+        new_count,
+        mmap_regions_.size(),
+        packed_file_used_ / (1024 * 1024));
+  }
+#endif
 
   return packed_data_names;
 }
@@ -111,12 +188,30 @@ Error XNNWeightsCache::delete_packed_data(
       entry->second.ref_count--;
       if (entry->second.ref_count == 0) {
         void* packed_data_ptr = packed_data_ptrs_[entry->second.offset];
-        // Erase the key/value from the map frees the pointer holding the packed
-        // data
+        // Erase the key/value from the map frees the pointer holding the
+        // packed data. No-op on the file-backed mmap path, where the
+        // container is not populated.
         packed_pointer_to_container_.erase(packed_data_ptr);
-        // remove the pointer from the packed_data_ptrs_
+#ifndef _WIN32
+        // File-backed mmap path: munmap the region so VM and page-cache
+        // usage is released, not just retained until cache destruction.
+        // The vector slot is set to nullptr below so existing offsets remain
+        // valid for any concurrent lookups.
+        auto region_it = file_ptr_to_region_index_.find(packed_data_ptr);
+        if (region_it != file_ptr_to_region_index_.end()) {
+          size_t idx = region_it->second;
+          MmapRegion& region = mmap_regions_[idx];
+          if (region.addr != nullptr && region.addr != MAP_FAILED) {
+            munmap(region.addr, region.size);
+            region.addr = nullptr;
+            region.size = 0;
+          }
+          file_ptr_to_region_index_.erase(region_it);
+        }
+#endif
+        // Remove the pointer from packed_data_ptrs_.
         packed_data_ptrs_[entry->second.offset] = nullptr;
-        // Erase the name to packed metadata entry
+        // Erase the name to packed metadata entry.
         name_to_packed_data_metadata_.erase(entry->first);
       }
     }
@@ -158,38 +253,80 @@ size_t XNNWeightsCache::look_up(
   return packed_weight_entry->second.offset;
 }
 
-/**
- * Reserve space in the weight cache for n bytes of weight data, aligned to
- * context->kPackedAllocationAlignment. This function will return nullptr if
- * the allocation fails.
- */
 void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
-  // MemoryAllocator* allocator = context->runtime_allocator_;
-  // void* reserved_pointer = allocator->allocate(n,
-  // context->kPackedAllocationAlignment);
+#ifndef _WIN32
+  if (context->packed_file_fd_ >= 0) {
+    size_t page_size = sysconf(_SC_PAGESIZE);
+    size_t file_offset =
+        (context->packed_file_used_ + page_size - 1) & ~(page_size - 1);
+    size_t map_size = (n + page_size - 1) & ~(page_size - 1);
 
-  // return reserved_pointer;
+    if (ftruncate(context->packed_file_fd_, file_offset + map_size) != 0) {
+      ET_LOG(
+          Error,
+          "ftruncate to %zu failed (errno=%d)",
+          file_offset + map_size,
+          errno);
+      close(context->packed_file_fd_);
+      context->packed_file_fd_ = -1;
+      // Existing mmap_regions_ still reference this inode. Disable the
+      // file-backed path permanently so a future initialize_for_runtime
+      // doesn't re-open + O_TRUNC the same path and trigger SIGBUS on the
+      // stale mappings.
+      context->packed_file_disabled_ = true;
+      return context->reserve_space_heap(n);
+    }
+
+    void* ptr = mmap(
+        nullptr,
+        map_size,
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED,
+        context->packed_file_fd_,
+        file_offset);
+    if (ptr == MAP_FAILED) {
+      ET_LOG(Error, "mmap %zu bytes failed (errno=%d)", map_size, errno);
+      close(context->packed_file_fd_);
+      context->packed_file_fd_ = -1;
+      context->packed_file_disabled_ = true;
+      return context->reserve_space_heap(n);
+    }
+
+    // mmap returns page-aligned (>= 4 KiB), which trivially satisfies the
+    // 64-byte kPackedAllocationAlignment XNNPACK expects. Assert defensively.
+    ET_DCHECK_MSG(
+        (reinterpret_cast<uintptr_t>(ptr) % kPackedAllocationAlignment) == 0,
+        "mmap returned ptr not aligned to %zu bytes",
+        kPackedAllocationAlignment);
+
+    context->packed_file_used_ = file_offset + map_size;
+    context->file_ptr_to_region_index_[ptr] = context->mmap_regions_.size();
+    context->mmap_regions_.push_back({ptr, map_size});
+    return ptr;
+  }
+#endif
+
+  return context->reserve_space_heap(n);
+}
+
+void* XNNWeightsCache::reserve_space_heap(size_t n) {
   try {
     std::string data_container;
-    size_t raw_allocation_size = n + context->kPackedAllocationAlignment - 1;
+    size_t raw_allocation_size = n + kPackedAllocationAlignment - 1;
     data_container.resize(raw_allocation_size);
 
     void* maybe_aligned_space = data_container.data();
     void* aligned_space = std::align(
-        context->kPackedAllocationAlignment,
+        kPackedAllocationAlignment,
         n,
         maybe_aligned_space,
         raw_allocation_size // Note that std::align mutates this value.
     );
     ET_CHECK_MSG(aligned_space != nullptr, "Memory alignment failed.");
 
-    context->packed_pointer_to_container_[aligned_space] =
-        std::move(data_container);
+    packed_pointer_to_container_[aligned_space] = std::move(data_container);
     return aligned_space;
   } catch (std::bad_alloc& e) {
-    // XNNPACK can gracefully handle allocation failures, so return nullptr.
-    // We want to be able to recover from a failed attempt to load a large
-    // model without a crash.
     ET_LOG(
         Error,
         "XNN weight cache failed to allocate %zu bytes: %s.",
@@ -265,6 +402,10 @@ void* XNNWeightsCache::offset_to_addr(XNNWeightsCache* context, size_t offset) {
 
 enum xnn_status XNNWeightsCache::delete_cache(XNNWeightsCache* context) {
   return xnn_status_success;
+}
+
+void XNNWeightsCache::set_packed_cache_path(const std::string& path) {
+  packed_cache_path_ = path;
 }
 
 } // namespace delegate
