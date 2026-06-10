@@ -80,7 +80,7 @@ ethos_u = [
   # backends/arm/requirements-arm-tosa.txt.
   "ethos-u-vela==5.0.0",
   "ml_dtypes==0.5.1",
-  "tosa-tools==2026.2.1",
+  "tosa-tools==2026.5.0",
 ]
 openvino = [
   "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
