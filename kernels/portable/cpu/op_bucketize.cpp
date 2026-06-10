@@ -1,5 +1,6 @@
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
@@ -115,32 +116,26 @@ void bucketize_scalar(
   out_data[0] = pos;
 }
 
-void bucketize_common_pre_checks(
-    KernelRuntimeContext& context,
+Error bucketize_common_pre_checks(
     const Tensor& boundaries,
     bool out_int32,
     Tensor& out) {
-  ET_KERNEL_CHECK_MSG(
-      context,
+  ET_CHECK_OR_RETURN_ERROR(
       boundaries.dim() == 1,
       InvalidArgument,
-      ,
-      "boundaries tensor must be 1 dimension, but got dim(",
-      boundaries.dim(),
-      ")");
+      "boundaries tensor must be 1 dimension, but got dim(%zu)",
+      boundaries.dim());
 
   ScalarType out_dtype = out.scalar_type();
-  ET_KERNEL_CHECK_MSG(
-      context,
+  ET_CHECK_OR_RETURN_ERROR(
       (out_dtype == ScalarType::Long && !out_int32) ||
           (out_dtype == ScalarType::Int && out_int32),
       InvalidArgument,
-      ,
-      "torch.bucketize(): output tensor's dtype is wrong, it can only be Int(int32) or Long(int64) depending on ",
-      "whether out_int32 flag is True, but we got output tensor's dtype ",
-      out_dtype,
-      " and out_int32 flag is ",
+      "torch.bucketize(): output tensor's dtype is wrong, it can only be Int(int32) or Long(int64) depending on whether out_int32 flag is True, but we got output tensor dtype %s and out_int32 flag is %s",
+      toString(out_dtype),
       (out_int32 ? "True" : "False"));
+
+  return Error::Ok;
 }
 
 } // namespace
@@ -152,11 +147,11 @@ Tensor& bucketize_tensor_out(
     bool out_int32,
     bool right,
     Tensor& out) {
-  bucketize_common_pre_checks(context, boundaries, out_int32, out);
-  // Check manually as bucketize_common_pre_checks do not return
-  if (context.failure_state() != Error::Ok) {
-    return out;
-  }
+  ET_KERNEL_CHECK(
+      context,
+      bucketize_common_pre_checks(boundaries, out_int32, out) == Error::Ok,
+      InvalidArgument,
+      out);
   ET_KERNEL_CHECK(
       context, tensors_have_same_shape(self, out), InvalidArgument, out);
 
@@ -186,11 +181,11 @@ Tensor& bucketize_scalar_out(
     bool out_int32,
     bool right,
     Tensor& out) {
-  bucketize_common_pre_checks(context, boundaries, out_int32, out);
-  // Check manually as bucketize_common_pre_checks do not return
-  if (context.failure_state() != Error::Ok) {
-    return out;
-  }
+  ET_KERNEL_CHECK(
+      context,
+      bucketize_common_pre_checks(boundaries, out_int32, out) == Error::Ok,
+      InvalidArgument,
+      out);
   ET_KERNEL_CHECK(context, out.sizes().back() == 1, InvalidArgument, out);
 
   ScalarType common_type =
