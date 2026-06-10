@@ -194,9 +194,9 @@ class ConvWithSigmoid(torch.nn.Module):
 
 
 class LinearModule(torch.nn.Module):
-    def __init__(self, bias: bool):
+    def __init__(self, bias: bool, in_features: int = 32, out_features: int = 16):
         super().__init__()
-        self.linear = torch.nn.Linear(32, 16, bias=bias)
+        self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
 
     def forward(self, x):
         return self.linear(x)
