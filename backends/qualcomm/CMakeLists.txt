@@ -109,7 +109,6 @@ endif()
 
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
-  ${QNN_SDK_ROOT}/share/QNN/converter/jni
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
 

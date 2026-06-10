@@ -308,10 +308,12 @@ class FoldAndAnnotateQParamsPass(ArmPass):
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
+        modified = False
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
             if not FoldAndAnnotateQParamsPass.is_foldable(n):
                 continue
+            modified = True
 
             # Make sure we haven't already set qparams meta information on the node
             if "input_qparams" in n.meta:
@@ -368,10 +370,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 self._handle_control_flow_node(n, graph_module)
 
         # retrace the graph to update the fake tensor types
-        graph_module = super().call(graph_module).graph_module
+        if modified:
+            graph_module = super().call(graph_module).graph_module
 
-        graph_module.recompile()
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
 
 
 class QuantizeClampArgumentsPass(ArmPass):
@@ -423,6 +425,5 @@ class QuantizeClampArgumentsPass(ArmPass):
         if modified:
             # Retrace to refresh fake tensor metadata after updating clamp min/max.
             graph_module = super().call(graph_module).graph_module
-            graph_module.recompile()
 
         return PassResult(graph_module, modified)

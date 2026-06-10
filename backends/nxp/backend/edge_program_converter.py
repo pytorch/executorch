@@ -17,7 +17,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
 )
 from torch._subclasses import FakeTensor
 from torch.export import ExportedProgram
-from torch.export.graph_signature import InputKind
+from torch.export.graph_signature import ExportGraphSignature, InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
@@ -78,7 +78,7 @@ class EdgeProgramToIRConverter:
         conversion_config: ConversionConfig = _default_conversion_config,
         neutron_target_spec: NeutronTargetSpec = _default_target_spec,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
-    ) -> tuple[bytes, dict[str, DataFormat]]:
+    ) -> tuple[bytes, dict[str, dict[str, DataFormat]]]:
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
@@ -95,6 +95,7 @@ class EdgeProgramToIRConverter:
             parameters_mapping,
             dim_order_map,
             neutron_target_spec,
+            edge_program.graph_signature,
             conversion_config,
             custom_delegation_options,
         )
@@ -247,8 +248,9 @@ class EdgeProgramToIRConverter:
     @staticmethod
     def build_conversion_context(
         parameters_mapping: dict,
-        dim_order_map: dict[str, ...],
+        dim_order_map: dict[str, Parameter],
         neutron_target_spec: NeutronTargetSpec,
+        edge_program_signature: ExportGraphSignature,
         conversion_config: ConversionConfig = _default_conversion_config,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> ConversionContext:
@@ -268,6 +270,7 @@ class EdgeProgramToIRConverter:
             conversion_config,
             parameters_mapping,
             custom_delegation_options,
+            edge_program_signature,
         )
 
         return context

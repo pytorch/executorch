@@ -627,6 +627,16 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "    return builder.EndVector()",
             "",
             "",
+            "def _shared_string(builder: flatbuffers.Builder, s):",
+            '    """CreateString with per-buffer dedup so identical strings share one offset."""',
+            "    if s is None:",
+            "        return None",
+            "    # flatbuffers' Builder dedups identical strings via its built-in",
+            "    # sharedStrings cache; fall back to CreateString on old flatbuffers.",
+            '    create = getattr(builder, "CreateSharedString", None) or builder.CreateString',
+            "    return create(s)",
+            "",
+            "",
             "class GeneratedOpBuilders:",
             '    """Mixin class with auto-generated op builder methods."""',
             "",
@@ -714,7 +724,7 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "        self, builder: flatbuffers.Builder, vec: List[str]",
             "    ) -> int:",
             '        """Pre-build a vector of strings (offsets must be created before table Start)."""',
-            "        offsets = [builder.CreateString(s) for s in vec]",
+            "        offsets = [_shared_string(builder, s) for s in vec]",
             "        builder.StartVector(4, len(offsets), 4)",
             "        for off in reversed(offsets):",
             "            builder.PrependUOffsetTRelative(off)",
@@ -800,12 +810,12 @@ _PY_PREBUILD_VECTOR = {
 }
 
 _PY_PREBUILD_OFFSET = {
-    "str": "builder.CreateString(op.{name})",
+    "str": "_shared_string(builder, op.{name})",
     "int_or_vid": "self._build_int_or_vid(builder, op.{name})",
     "float_or_vid": "self._build_float_or_vid(builder, op.{name})",
     "vid_or_tid": "self._build_vid_or_tid(builder, op.{name})",
     "int_or_vid_or_tid": "self._build_int_or_vid_or_tid(builder, op.{name})",
-    "optional_str": "builder.CreateString(op.{name}) if op.{name} is not None else None",
+    "optional_str": "_shared_string(builder, op.{name})",
 }
 
 
@@ -996,6 +1006,19 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
     return header + result
 
 
+def _is_interned_str(table, field_name) -> bool:
+    """Whether a string field should be loaded as an interned shared_ptr.
+
+    Only large, frequently-duplicated kernel blobs (MetalKernelNode source/
+    header) are interned so identical text shares one std::string at runtime.
+    """
+    return (
+        table is not None
+        and getattr(table, "name", None) == "MetalKernelNode"
+        and field_name in ("source", "header")
+    )
+
+
 def _fbs_type_to_cpp(
     fbs_type: str,
     required: bool,
@@ -1022,6 +1045,10 @@ def _fbs_type_to_cpp(
         return f"std::vector<{inner_cpp}>"
 
     cpp_type = FBS_TO_CPP.get(fbs_type, fbs_type)
+
+    # Interned strings (deduped + shared at load time) use a shared_ptr handle.
+    if _is_interned_str(table, fld.name if fld is not None else None):
+        return "std::shared_ptr<const std::string>"
 
     # Handle optional types
     if not required:
@@ -1113,7 +1140,7 @@ def _generate_loader_case(table: FBSTable) -> List[str]:
 
         fb_field_name = fld.name
         kind = _get_field_kind(fld, table)
-        load_lines = _emit_cpp_load(kind, fld.name, fb_field_name)
+        load_lines = _emit_cpp_load(kind, fld.name, fb_field_name, table)
         if load_lines is None:
             raise ValueError(
                 f"Unhandled field kind '{kind}' for field '{fld.name}' in table '{table.name}'. "
@@ -1145,8 +1172,13 @@ _CPP_CONVERTER = {
 }
 
 
-def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
+def _emit_cpp_load(
+    kind: str, name: str, fb_name: str, table=None
+) -> "List[str] | None":
     """Emit C++ load lines for a field kind, or None if kind is unrecognized."""
+    # Interned string fields share one std::string via the load-time pool.
+    if _is_interned_str(table, name) and kind in ("str", "optional_str"):
+        return [f"      node.{name} = strpool.intern(fb->{fb_name}());"]
     # Required struct / compound via converter
     if kind in _CPP_CONVERTER:
         conv = _CPP_CONVERTER[kind]

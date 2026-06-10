@@ -24,6 +24,7 @@
 
 #include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#include <executorch/runtime/core/test/mock_cuda_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using executorch::extension::Module;
@@ -34,50 +35,7 @@ using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
-
-namespace {
-
-class MockCudaAllocator : public DeviceAllocator {
- public:
-  Result<void*> allocate(
-      size_t nbytes,
-      DeviceIndex index,
-      size_t alignment = kDefaultAlignment) override {
-    (void)alignment;
-    allocate_count_++;
-    last_allocate_size_ = nbytes;
-    last_allocate_index_ = index;
-    buffer_ = std::make_unique<uint8_t[]>(nbytes);
-    return static_cast<void*>(buffer_.get());
-  }
-
-  void deallocate(void* ptr, DeviceIndex index) override {
-    deallocate_count_++;
-    buffer_.reset();
-  }
-
-  Error copy_host_to_device(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  Error copy_device_to_host(void*, const void*, size_t, DeviceIndex) override {
-    return Error::Ok;
-  }
-
-  DeviceType device_type() const override {
-    return DeviceType::CUDA;
-  }
-
-  int allocate_count_ = 0;
-  int deallocate_count_ = 0;
-  size_t last_allocate_size_ = 0;
-  DeviceIndex last_allocate_index_ = -1;
-
- private:
-  std::unique_ptr<uint8_t[]> buffer_;
-};
-
-} // namespace
+using executorch::runtime::testing::MockCudaAllocator;
 
 static MockCudaAllocator g_mock_cuda;
 
@@ -146,17 +104,32 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelMethodMetaReportsCudaBuffer) {
   auto meta = module.method_meta("forward");
   ASSERT_TRUE(meta.ok());
 
-  // ModuleAddWithDevice has 1 planned buffer (48 bytes) on CUDA.
-  ASSERT_EQ(meta->num_memory_planned_buffers(), 1);
+  ASSERT_EQ(meta->num_memory_planned_buffers(), 2);
 
-  auto size = meta->memory_planned_buffer_size(0);
-  ASSERT_TRUE(size.ok());
-  EXPECT_EQ(size.get(), 48);
+  {
+    // After turn on on-device memory planning, the output cpu tensor shares
+    // the same buffer with the input cpu tensor. So the memory planned buffer
+    // only needs 2 * 16 = 32 bytes.
 
-  auto device = meta->memory_planned_buffer_device(0);
-  ASSERT_TRUE(device.ok());
-  EXPECT_EQ(device->type(), DeviceType::CUDA);
-  EXPECT_EQ(device->index(), 0);
+    auto size = meta->memory_planned_buffer_size(0);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 32);
+
+    auto device = meta->memory_planned_buffer_device(0);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), DeviceType::CPU);
+    EXPECT_EQ(device->index(), 0);
+  }
+  {
+    auto size = meta->memory_planned_buffer_size(1);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 48);
+
+    auto device = meta->memory_planned_buffer_device(1);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), DeviceType::CUDA);
+    EXPECT_EQ(device->index(), 0);
+  }
 }
 
 TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {

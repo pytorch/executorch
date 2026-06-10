@@ -248,12 +248,22 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
     """
-    If the input to quantize op is linear chain of view, transpose, permute, or
-    slice ops that are trivially quantized, we can convert the pattern
-    view/transpose/permute/slice(fp32) -> quantize(int8/uint8) to
-    quantize(int8/uint8) -> view/transpose/permute/slice(int8/uint8).
-    The benefit of such reordering is that the view/transpose/permute/slice
-    will move far less data.
+    Advances a quantize op above data-movement ops to reduce data volume.
+
+    Handles two cases:
+
+    1. Linear chain: if the input to a quantize op is a chain of trivially
+       quantizable ops (view, transpose, permute, slice), rewrite
+       data_movement(fp32) -> quantize to quantize -> data_movement(quantized)
+       so the data movement operates on smaller quantized tensors.
+
+    2. Cat: if the input to a quantize op is a cat with a single user (the
+       quantize), advance the quantize above the cat by quantizing each cat
+       input individually.  A later pass can clean up any redundant
+       dequant-quant pairs on the inputs.
+
+    For the cat case, SplitDequantizedCatPass should run first to ensure
+    each cat has at most one quantize consumer.
     """
 
     def __init__(self):
@@ -302,6 +312,47 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         # All the conditions satisfied, we advance.
         return True
 
+    def _advance_above_cat(
+        self, quant_node: torch.fx.Node, cat_node: torch.fx.Node
+    ) -> None:
+        """Advance a quantize op above a cat by quantizing each cat input."""
+        graph = quant_node.graph
+        quant_params = quant_node.args[1:]
+
+        cat_inputs = cat_node.args[0]
+        assert isinstance(cat_inputs, (list, tuple))
+
+        new_inputs: list[torch.fx.Node] = []
+        for inp in cat_inputs:
+            # cat concatenates tensors, so every input must be a node.
+            assert isinstance(inp, torch.fx.Node)
+
+            with graph.inserting_before(cat_node):
+                new_quant = graph.call_function(
+                    # pyre-ignore[6]
+                    quant_node.target,
+                    args=(inp, *quant_params),
+                )
+                # This copies the fp32 input's meta, so meta["val"] keeps the
+                # fp32 dtype rather than the quantized output dtype. That's fine:
+                # nothing in this pass reads dtype from meta (only shape, which
+                # is correct), and call() re-runs super().call() to re-propagate
+                # fake tensors, making meta dtype-consistent before we return.
+                new_quant.meta = inp.meta.copy()
+            new_inputs.append(new_quant)
+
+        dim = get_arg(cat_node, "dim", int)
+        with graph.inserting_before(quant_node):
+            new_cat = graph.call_function(
+                # pyre-ignore[6]
+                cat_node.target,
+                args=(new_inputs, dim),
+            )
+            new_cat.meta = quant_node.meta.copy()
+
+        quant_node.replace_all_uses_with(new_cat)
+        graph.erase_node(quant_node)
+
     def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
         graph = graph_module.graph
         modified = False
@@ -312,6 +363,17 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
                 exir_ops.edge.cadence.quantize_per_tensor,
                 torch.ops.cadence.quantize_per_tensor,
             ):
+                continue
+
+            inp = node.args[0]
+            if (
+                isinstance(inp, torch.fx.Node)
+                and get_overload_packet(inp.target)
+                in (exir_ops.edge.aten.cat, torch.ops.aten.cat)
+                and len(inp.users) == 1
+            ):
+                self._advance_above_cat(node, inp)
+                modified = True
                 continue
 
             if not self.advancing_feasible(node):
@@ -893,6 +955,77 @@ class PropagateSlice(RemoveOrReplacePassInterface):
 
         should_swap, do_swap = entry
         return should_swap(parent, node) and do_swap(parent, node)
+
+
+_QUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    exir_ops.edge.cadence.quantize_per_tensor,
+}
+
+_DEQUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    exir_ops.edge.cadence.dequantize_per_tensor,
+}
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class SplitDequantizedCatPass(RemoveOrReplacePassInterface):
+    """Split a cat node so that quantize consumers get their own copy.
+
+    Fires when a cat has all floating-point inputs, at least one dequantize
+    input, and at least one quantize consumer.  Quant consumers are grouped
+    by matching qparams; each group receives a dedicated duplicate of the
+    cat node.  Non-quant consumers stay on the original cat, whose
+    semantics are unchanged.
+
+    A later pass (e.g. AdvanceQuantizeOpAboveDefChainPass extended for cat)
+    can then hoist each quant above its single-consumer cat copy without
+    affecting the non-quant paths.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        cat_inputs = node.args[0]
+        if not isinstance(cat_inputs, (list, tuple)):
+            return False
+
+        has_dequant_input = False
+        for inp in cat_inputs:
+            assert isinstance(inp, torch.fx.Node)
+            val = inp.meta["val"]
+            if val is None or not val.is_floating_point():
+                return False
+            if get_overload_packet(inp.target) in _DEQUANT_OVERLOAD_PACKETS:
+                has_dequant_input = True
+
+        if not has_dequant_input:
+            return False
+
+        quant_groups: DefaultDict[Tuple, List[torch.fx.Node]] = defaultdict(list)
+        for user in list(node.users.keys()):
+            if get_overload_packet(user.target) in _QUANT_OVERLOAD_PACKETS:
+                quant_groups[user.args[1:]].append(user)
+
+        if not quant_groups:
+            return False
+
+        graph = node.graph
+        dim = get_arg(node, "dim", int)
+        for quant_consumers in quant_groups.values():
+            with graph.inserting_after(node):
+                dup_cat = graph.call_function(
+                    exir_ops.edge.aten.cat.default,
+                    args=(list(cat_inputs), dim),
+                )
+                dup_cat.meta = node.meta.copy()
+
+            for q_node in quant_consumers:
+                q_node.replace_input_with(node, dup_cat)
+
+        return True
 
 
 # The following class consolidates functions to reoder ops (i.e., either hoist
