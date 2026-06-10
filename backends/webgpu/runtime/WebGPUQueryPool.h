@@ -50,7 +50,7 @@ class WebGPUQueryPool {
   void reset(uint32_t num_dispatches);
 
   // timestampWrites for pass i: begin=2i, end=2i+1.
-  WGPUComputePassTimestampWrites writes_for(uint32_t i);
+  WGPUPassTimestampWrites writes_for(uint32_t i);
 
   // Record pass i's label + workgroup sizes (start/end filled by extract).
   void record(

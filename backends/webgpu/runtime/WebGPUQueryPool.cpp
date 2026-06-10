@@ -87,8 +87,8 @@ void WebGPUQueryPool::reset(uint32_t num_dispatches) {
   durations_.clear();
 }
 
-WGPUComputePassTimestampWrites WebGPUQueryPool::writes_for(uint32_t i) {
-  WGPUComputePassTimestampWrites tw = {};
+WGPUPassTimestampWrites WebGPUQueryPool::writes_for(uint32_t i) {
+  WGPUPassTimestampWrites tw = {};
   tw.querySet = qset_;
   tw.beginningOfPassWriteIndex = 2 * i;
   tw.endOfPassWriteIndex = 2 * i + 1;

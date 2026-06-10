@@ -533,7 +533,7 @@ void WebGPUGraph::execute() {
     for (size_t i = 0; i < n; i++) {
       const auto& dispatch = dispatches_[i];
       // tw must outlive BeginComputePass (the descriptor points at it).
-      WGPUComputePassTimestampWrites tw = {};
+      WGPUPassTimestampWrites tw = {};
       WGPUComputePassDescriptor pass_desc = {};
       if (qp) {
         tw = qp->writes_for(static_cast<uint32_t>(i));

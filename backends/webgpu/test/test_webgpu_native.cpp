@@ -1199,7 +1199,7 @@ static bool test_query_pool_roundtrip(const WebGPUContext& ctx) {
   qp.reset(1);
 
   WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(device, nullptr);
-  WGPUComputePassTimestampWrites tw = qp.writes_for(0);
+  WGPUPassTimestampWrites tw = qp.writes_for(0);
   WGPUComputePassDescriptor pass_desc = {};
   pass_desc.timestampWrites = &tw;
   WGPUComputePassEncoder pass =
