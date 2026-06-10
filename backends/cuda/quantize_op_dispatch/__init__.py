@@ -10,8 +10,8 @@ Importing this package overrides the F.linear dispatch of torchao quantized
 weight tensors so that torch.export traces through ExecuTorch's custom ops and
 dequant logic instead of torchao's defaults. It registers:
 
-  * INT4 (``Int4Tensor``)               → ``executorch_cuda::int4_plain_mm``
-  * INT8 (``IntxUnpackedToInt8Tensor``)  → ``executorch_cuda::int8_plain_mm``
+  * INT4 (``CudaCoalescedInt4Tensor``)  → ``executorch_cuda::int4_plain_mm``
+  * INT8 (``IntxUnpackedToInt8Tensor``) → ``executorch_cuda::int8_plain_mm``
 
 See ``int4_dispatch`` and ``int8_dispatch`` for the per-dtype details.
 

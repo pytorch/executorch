@@ -70,6 +70,18 @@ class AOTITorchInt4PlainMMTest : public ::testing::Test {
     cudaMemcpy(host_data, t->data_ptr(), bytes, cudaMemcpyDeviceToHost);
   }
 
+  // Transpose a uint16 [rows, cols] row-major buffer into [cols, rows].
+  // Used to convert native [n_groups, N] scale/zero literals into the
+  // [N, n_groups] layout the shim now expects (transposed AOT at export).
+  static std::vector<uint16_t>
+  transpose_u16(const uint16_t* src, int rows, int cols) {
+    std::vector<uint16_t> dst(static_cast<size_t>(rows) * cols);
+    for (int r = 0; r < rows; r++)
+      for (int c = 0; c < cols; c++)
+        dst[static_cast<size_t>(c) * rows + r] = src[r * cols + c];
+    return dst;
+  }
+
   // Run the shim and return the output tensor (asserts success).
   Tensor* run(
       Tensor* A,
@@ -111,7 +123,7 @@ class AOTITorchInt4PlainMMTest : public ::testing::Test {
 };
 
 // MultiGroupRandom: M=1, N=4, K=32, gs=16
-// scale/zero layout: [K//gs=2, N=4]
+// scale/zero layout: [N=4, K//gs=2] (transposed AOT)
 TEST_F(AOTITorchInt4PlainMMTest, MultiGroupRandom) {
   int64_t M = 1, K = 32, N = 4, gs = 16;
 
@@ -132,14 +144,17 @@ TEST_F(AOTITorchInt4PlainMMTest, MultiGroupRandom) {
   uint16_t expected[] = {0xBFCC, 0x3FB5, 0x4046, 0xC01E};
   // clang-format on
 
+  int64_t ng = K / gs;
   Tensor* A = create_bf16({M, K});
   Tensor* qdata = create_uint8({N, K / 2});
-  Tensor* scale = create_bf16({K / gs, N});
-  Tensor* zero = create_bf16({K / gs, N});
+  Tensor* scale = create_bf16({N, ng});
+  Tensor* zero = create_bf16({N, ng});
+  auto scale_t = transpose_u16(scale_host, ng, N);
+  auto zero_t = transpose_u16(zero_host, ng, N);
   upload(A, A_host, sizeof(A_host));
   upload(qdata, qdata_host, sizeof(qdata_host));
-  upload(scale, scale_host, sizeof(scale_host));
-  upload(zero, zero_host, sizeof(zero_host));
+  upload(scale, scale_t.data(), scale_t.size() * sizeof(uint16_t));
+  upload(zero, zero_t.data(), zero_t.size() * sizeof(uint16_t));
 
   Tensor* output = run(A, qdata, scale, zero, gs);
   ASSERT_NE(output, nullptr);
@@ -149,7 +164,7 @@ TEST_F(AOTITorchInt4PlainMMTest, MultiGroupRandom) {
 }
 
 // SingleGroup: M=1, N=8, K=32, gs=32
-// scale/zero layout: [K//gs=1, N=8]
+// scale/zero layout: [N=8, K//gs=1] (transposed AOT)
 TEST_F(AOTITorchInt4PlainMMTest, SingleGroup) {
   int64_t M = 1, K = 32, N = 8, gs = 32;
 
@@ -178,14 +193,17 @@ TEST_F(AOTITorchInt4PlainMMTest, SingleGroup) {
   uint16_t expected[] = {0xC031, 0x3BF8, 0x3E81, 0xBF19, 0x3FCB, 0xBF56, 0x4076, 0x3F20};
   // clang-format on
 
+  int64_t ng = K / gs;
   Tensor* A = create_bf16({M, K});
   Tensor* qdata = create_uint8({N, K / 2});
-  Tensor* scale = create_bf16({K / gs, N});
-  Tensor* zero = create_bf16({K / gs, N});
+  Tensor* scale = create_bf16({N, ng});
+  Tensor* zero = create_bf16({N, ng});
+  auto scale_t = transpose_u16(scale_host, ng, N);
+  auto zero_t = transpose_u16(zero_host, ng, N);
   upload(A, A_host, sizeof(A_host));
   upload(qdata, qdata_host, sizeof(qdata_host));
-  upload(scale, scale_host, sizeof(scale_host));
-  upload(zero, zero_host, sizeof(zero_host));
+  upload(scale, scale_t.data(), scale_t.size() * sizeof(uint16_t));
+  upload(zero, zero_t.data(), zero_t.size() * sizeof(uint16_t));
 
   Tensor* output = run(A, qdata, scale, zero, gs);
   ASSERT_NE(output, nullptr);
@@ -195,7 +213,7 @@ TEST_F(AOTITorchInt4PlainMMTest, SingleGroup) {
 }
 
 // PrefillBatch: M=8, N=4, K=64, gs=32
-// scale/zero layout: [K//gs=2, N=4]
+// scale/zero layout: [N=4, K//gs=2] (transposed AOT)
 TEST_F(AOTITorchInt4PlainMMTest, PrefillBatch) {
   int64_t M = 8, K = 64, N = 4, gs = 32;
 
@@ -224,14 +242,17 @@ TEST_F(AOTITorchInt4PlainMMTest, PrefillBatch) {
   uint16_t expected[] = {0x40BD, 0xC0E3, 0x4037, 0x40A9, 0x406F, 0x4116, 0x3F8D, 0xC01F, 0xC039, 0xC043, 0x3F86, 0x410A, 0x3F07, 0xC100, 0x4019, 0x40D7, 0x40A9, 0x40F1, 0xBF89, 0x406F, 0x40FE, 0xBFB8, 0xBF88, 0x406A, 0x4004, 0x3EDE, 0x3E17, 0x4102, 0xC081, 0xC0BA, 0xBFFB, 0x3F25};
   // clang-format on
 
+  int64_t ng = K / gs;
   Tensor* A = create_bf16({M, K});
   Tensor* qdata = create_uint8({N, K / 2});
-  Tensor* scale = create_bf16({K / gs, N});
-  Tensor* zero = create_bf16({K / gs, N});
+  Tensor* scale = create_bf16({N, ng});
+  Tensor* zero = create_bf16({N, ng});
+  auto scale_t = transpose_u16(scale_host, ng, N);
+  auto zero_t = transpose_u16(zero_host, ng, N);
   upload(A, A_host, sizeof(A_host));
   upload(qdata, qdata_host, sizeof(qdata_host));
-  upload(scale, scale_host, sizeof(scale_host));
-  upload(zero, zero_host, sizeof(zero_host));
+  upload(scale, scale_t.data(), scale_t.size() * sizeof(uint16_t));
+  upload(zero, zero_t.data(), zero_t.size() * sizeof(uint16_t));
 
   Tensor* output = run(A, qdata, scale, zero, gs);
   ASSERT_NE(output, nullptr);
@@ -241,7 +262,7 @@ TEST_F(AOTITorchInt4PlainMMTest, PrefillBatch) {
 }
 
 // GroupSize128: M=1, N=2, K=256, gs=128
-// scale/zero layout: [K//gs=2, N=2]
+// scale/zero layout: [N=2, K//gs=2] (transposed AOT)
 TEST_F(AOTITorchInt4PlainMMTest, GroupSize128) {
   int64_t M = 1, K = 256, N = 2, gs = 128;
 
@@ -286,14 +307,17 @@ TEST_F(AOTITorchInt4PlainMMTest, GroupSize128) {
   uint16_t expected[] = {0xC013, 0xBF05};
   // clang-format on
 
+  int64_t ng = K / gs;
   Tensor* A = create_bf16({M, K});
   Tensor* qdata = create_uint8({N, K / 2});
-  Tensor* scale = create_bf16({K / gs, N});
-  Tensor* zero = create_bf16({K / gs, N});
+  Tensor* scale = create_bf16({N, ng});
+  Tensor* zero = create_bf16({N, ng});
+  auto scale_t = transpose_u16(scale_host, ng, N);
+  auto zero_t = transpose_u16(zero_host, ng, N);
   upload(A, A_host, sizeof(A_host));
   upload(qdata, qdata_host, sizeof(qdata_host));
-  upload(scale, scale_host, sizeof(scale_host));
-  upload(zero, zero_host, sizeof(zero_host));
+  upload(scale, scale_t.data(), scale_t.size() * sizeof(uint16_t));
+  upload(zero, zero_t.data(), zero_t.size() * sizeof(uint16_t));
 
   Tensor* output = run(A, qdata, scale, zero, gs);
   ASSERT_NE(output, nullptr);
@@ -307,8 +331,8 @@ TEST_F(AOTITorchInt4PlainMMTest, NullInputHandling) {
 
   Tensor* A = create_bf16({M, K});
   Tensor* qdata = create_uint8({N, K / 2});
-  Tensor* scale = create_bf16({K / gs, N});
-  Tensor* zero = create_bf16({K / gs, N});
+  Tensor* scale = create_bf16({N, K / gs});
+  Tensor* zero = create_bf16({N, K / gs});
   Tensor* output = nullptr;
 
   EXPECT_EQ(
@@ -357,7 +381,7 @@ TEST_F(AOTITorchInt4PlainMMTest, RealInt4TensorLayout) {
       0x63, 0x9A, 0x95, 0x78, 0x95, 0x69, 0xF8, 0x58, 0x65, 0x0A, 0x6B, 0x47,
       0x9C, 0x5C, 0x6A, 0x35, 0xA2, 0x8A, 0x74, 0x93, 0x28, 0x6D, 0xF0, 0xAB,
       0x23, 0xA6, 0xA6, 0x3A};
-  // scale/zero are [K//gs, N] = [2, 8] — Int4Tensor's native layout
+  // scale/zero are [N, K//gs] = [8, 2] — transposed AOT for the coalesced kernel
   uint16_t scale_host[] = {
       0x3E46, 0x3E94, 0x3E8F, 0x3E94, 0x3E94, 0x3E8D, 0x3EA5, 0x3EA5,
       0x3E9F, 0x3EAD, 0x3E91, 0x3EA0, 0x3E88, 0x3EB7, 0x3E89, 0x3E92};
@@ -380,13 +404,15 @@ TEST_F(AOTITorchInt4PlainMMTest, RealInt4TensorLayout) {
 
   Tensor* A = create_bf16({M, K});
   Tensor* qdata = create_uint8({N, K / 2});
-  // Note: scale/zero shape is [n_groups, N], NOT [N, n_groups]
-  Tensor* scale = create_bf16({n_groups, N});
-  Tensor* zero = create_bf16({n_groups, N});
+  // scale/zero shape is [N, n_groups] (transposed AOT)
+  Tensor* scale = create_bf16({N, n_groups});
+  Tensor* zero = create_bf16({N, n_groups});
+  auto scale_t = transpose_u16(scale_host, n_groups, N);
+  auto zero_t = transpose_u16(zero_host, n_groups, N);
   upload(A, A_host, sizeof(A_host));
   upload(qdata, qdata_host, sizeof(qdata_host));
-  upload(scale, scale_host, sizeof(scale_host));
-  upload(zero, zero_host, sizeof(zero_host));
+  upload(scale, scale_t.data(), scale_t.size() * sizeof(uint16_t));
+  upload(zero, zero_t.data(), zero_t.size() * sizeof(uint16_t));
 
   Tensor* output = run(A, qdata, scale, zero, gs);
   ASSERT_NE(output, nullptr);
@@ -394,4 +420,26 @@ TEST_F(AOTITorchInt4PlainMMTest, RealInt4TensorLayout) {
   EXPECT_EQ(output->size(1), N);
   // W4A8 adds quantization noise vs bf16 reference — use wider tolerance
   check_bf16_output(output, expected, M * N, 0.5f);
+}
+
+// RejectsNativeLayout: scale/zero passed in the un-transposed native
+// [n_groups, N] layout (instead of the coalesced [N, n_groups] AOT layout)
+// must be rejected gracefully with Error::InvalidArgument, not crash.
+// K=64, gs=32 -> n_groups=2, N=8; native scale is [2, 8] while the shim
+// expects coalesced [8, 2]. n_groups != N so the shape guard can catch it.
+TEST_F(AOTITorchInt4PlainMMTest, RejectsNativeLayout) {
+  int64_t M = 1, K = 64, N = 8, gs = 32;
+  int64_t n_groups = K / gs; // 2
+
+  Tensor* A = create_bf16({M, K});
+  Tensor* qdata = create_uint8({N, K / 2});
+  // Native torchao layout [n_groups, N] = [2, 8], NOT the coalesced
+  // [N, n_groups] = [8, 2] the shim expects.
+  Tensor* scale = create_bf16({n_groups, N});
+  Tensor* zero = create_bf16({n_groups, N});
+  Tensor* output = nullptr;
+
+  EXPECT_EQ(
+      aoti_torch_cuda_int4_plain_mm(A, qdata, scale, zero, gs, &output),
+      Error::InvalidArgument);
 }
