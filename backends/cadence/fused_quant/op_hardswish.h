@@ -23,13 +23,11 @@ executorch::aten::Tensor& hardswish_out(
     executorch::aten::ScalarType inp_dtype,
     int64_t inp_quant_min,
     int64_t inp_quant_max,
-    executorch::aten::optional<int64_t> inp_axis,
     const executorch::aten::optional<executorch::aten::Tensor>& out_scale,
     const executorch::aten::optional<executorch::aten::Tensor>& out_zero_point,
     executorch::aten::ScalarType out_dtype,
     int64_t out_quant_min,
     int64_t out_quant_max,
-    executorch::aten::optional<int64_t> out_axis,
     executorch::aten::Tensor& out);
 
 } // namespace native
