@@ -990,8 +990,8 @@ inline void exec_metal_kernel(
       n.name,
       n.input_names,
       n.output_names,
-      n.source,
-      n.header,
+      n.source ? *n.source : std::string{},
+      n.header ? *n.header : std::string{},
       n.ensure_row_contiguous,
       n.atomic_outputs);
 
@@ -1416,6 +1416,21 @@ inline void exec_bitwise_and(
       bitwise_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
+inline void
+exec_bitwise_or(const BitwiseOrNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, bitwise_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_xor(
+    const BitwiseXorNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_xor(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
   int rows = resolve_int(n.n, st);
   int cols = resolve_int(n.m, st);
@@ -1822,6 +1837,8 @@ class Interpreter {
       st.begin_op(idx, op_name(instr.op));
       if (instr.op == OpCode::SCAN) {
         exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+      } else if (instr.op == OpCode::IF) {
+        exec_if(prog, std::get<IfNode>(instr.node), st, stream);
       } else {
         dispatch(instr, st, stream);
       }
@@ -1831,6 +1848,20 @@ class Interpreter {
   }
 
  private:
+  void exec_if(
+      const MLXProgram& prog,
+      const IfNode& n,
+      ExecutionState& st,
+      StreamOrDevice s) const {
+    // Select one branch at runtime based on the integer condition.
+    // Nonzero -> then_chain, zero -> else_chain. The selected chain's
+    // instructions write the output slot(s) directly.
+    const int64_t cond = resolve_int(n.cond, st);
+    const uint32_t chain_idx =
+        (cond != 0) ? n.then_chain_idx : n.else_chain_idx;
+    run_chain(prog, chain_idx, st, s);
+  }
+
   void exec_scan(
       const MLXProgram& prog,
       const ScanNode& n,
@@ -2068,6 +2099,12 @@ class Interpreter {
         break;
       case OpCode::BITWISE_AND:
         ops::exec_bitwise_and(std::get<BitwiseAndNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_OR:
+        ops::exec_bitwise_or(std::get<BitwiseOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_XOR:
+        ops::exec_bitwise_xor(std::get<BitwiseXorNode>(instr.node), st, s);
         break;
       case OpCode::TRI:
         ops::exec_tri(std::get<TriNode>(instr.node), st, s);

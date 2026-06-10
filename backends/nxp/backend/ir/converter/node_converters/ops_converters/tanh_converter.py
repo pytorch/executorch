@@ -35,16 +35,13 @@ class TanhConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if custom_delegation_options.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
-
-            if not NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            ):
-                return False
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
         return True
 

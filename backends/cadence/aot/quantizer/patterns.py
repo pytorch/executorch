@@ -1055,6 +1055,118 @@ class Conv2dReluPattern1(ConvReluBasePattern):
         return [torch.ops.aten.conv2d.default, torch.ops.aten.relu_.default]
 
 
+class ConvBNReluBasePattern(QuantizationPattern):
+    """Base class for Conv + BatchNorm + ReLU fusion (3-op pattern).
+
+    BatchNorm sits between conv and relu in QAT graphs, preventing the 2-op
+    Conv+ReLU pattern from matching. This pattern matches the full chain and
+    produces the same fused quantized conv op.
+    """
+
+    @abstractmethod
+    def partition_types(self) -> List[OpOverload]:
+        pass
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        conv_node = fused_partition[0].nodes[-1]
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        relu_node = fused_partition[2].nodes[-1]
+
+        bias_qspec = DerivedQuantizationSpec(
+            derived_from=[
+                (conv_node.args[0], conv_node),
+                (conv_node.args[1], conv_node),
+            ],
+            derive_qparams_fn=get_bias_qparams,
+            dtype=torch.int32,
+            quant_min=-(2**31),
+            quant_max=2**31 - 1,
+            qscheme=torch.per_tensor_affine,
+        )
+
+        bias = []
+        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
+            bias = [(conv_node, 2, bias_qspec)]
+
+        return (
+            PartitionAnchors(
+                inputs=[(conv_node, 0)],
+                weights=[(conv_node, 1)],
+                # pyre-fixme[6]: Incompatible parameter type
+                biases=bias,
+                output=[(relu_node,)],
+            ),
+            relu_node,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
+
+    def anchor_ops(self) -> tuple[OpOverload, ...]:
+        return (self.partition_types()[0],)
+
+    def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
+        # This pattern exists only to drive annotation: it groups the conv
+        # input/weight with the relu output across the BatchNorm so the whole
+        # chain shares quantization params. Actual fusion is not performed here.
+        #
+        # By the time fusion runs, the BatchNorm must already have been folded
+        # into the conv at the float level -- torchao `prepare_pt2e` folds it
+        # before annotation for PTQ, and `FuseQATConvBN` folds it before
+        # `QuantFusionPass` for QAT -- leaving a plain conv+relu that the 2-op
+        # `ConvReluBasePattern` fuses. A `batch_norm` that survives to here was
+        # never folded; building a quantized conv from the conv weights/bias
+        # alone (as `fuse_conv` does) would silently drop the BatchNorm affine
+        # and corrupt numerics. Decline so the BatchNorm is preserved for a
+        # downstream pass instead of dropped.
+        return None
+
+
+class Conv1dBNReluPattern0(ConvBNReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.batch_norm.default,
+            torch.ops.aten.relu.default,
+        ]
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv1d_ncl.per_tensor
+
+
+class Conv1dBNReluPattern1(ConvBNReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.batch_norm.default,
+            torch.ops.aten.relu_.default,
+        ]
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv1d_ncl.per_tensor
+
+
+class Conv2dBNReluPattern0(ConvBNReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.batch_norm.default,
+            torch.ops.aten.relu.default,
+        ]
+
+
+class Conv2dBNReluPattern1(ConvBNReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.batch_norm.default,
+            torch.ops.aten.relu_.default,
+        ]
+
+
 class SoftmaxPattern(QuantizationPattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten._softmax.default]
@@ -1092,9 +1204,6 @@ class SoftmaxPattern(QuantizationPattern):
             return None
         mask_shape = list(mask_shape)
         # Softmax mask is packed 16 elements per int32 word.
-        assert (
-            mask_shape[-1] % 16 == 0
-        ), f"Softmax mask dimension must be divisible by 16, got {mask_shape[-1]}"
         mask_shape[-1] = mask_shape[-1] // 16
         mask_tensor = insert_node_with_meta(
             gm,

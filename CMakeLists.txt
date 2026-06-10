@@ -764,6 +764,20 @@ if(EXECUTORCH_BUILD_CUDA
   find_package_torch()
 endif()
 
+# Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
+# vendored torch-tensorrt delegate). Built before backends/aoti and
+# backends/cuda, which link it.
+if(EXECUTORCH_BUILD_CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
+  install(
+    DIRECTORY extension/cuda/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/cuda
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_cuda)
+endif()
+
 # Build common AOTI functionality if needed by CUDA or Metal backends
 if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
@@ -862,6 +876,11 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
   list(APPEND _executorch_extensions extension_tensor)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_IMAGE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/image)
+  list(APPEND _executorch_extensions extension_image)
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
@@ -1054,6 +1073,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_VULKAN)
     list(APPEND _dep_libs vulkan_backend)
+  endif()
+
+  if(EXECUTORCH_BUILD_WEBGPU)
+    list(APPEND _dep_libs webgpu_backend)
   endif()
 
   # compile options for pybind

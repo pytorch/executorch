@@ -6,9 +6,11 @@
 
 """CUDA packer: assign quantized weights to model modules.
 
-Passes ``Int4Tensor`` and ``IntxUnpackedToInt8Tensor`` through as
-``nn.Parameter`` without conversion.  The Int4Tensor dispatch override
-(``int4_dispatch.py``) handles F.linear at runtime.
+Converts ``Int4Tensor`` weights to the ExecuTorch-internal
+``CudaCoalescedInt4Tensor`` (which owns the scale/zero transpose to the
+coalesced [N, n_groups] layout) and passes ``IntxUnpackedToInt8Tensor`` through
+as ``nn.Parameter`` without conversion. The quantize_op_dispatch package
+(``int4_dispatch`` / ``int8_dispatch``) handles F.linear at runtime.
 
 No CUDA is required for packing.  The backend-agnostic ``pack_model``
 dispatcher lives in ``pack.py``.
@@ -28,11 +30,24 @@ from .pack import ModulePackerFn, pack_model  # noqa: F401
 
 def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     """Assign a quantized weight to an ``nn.Linear`` module."""
+    from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     w = weights["weight"]
-    if isinstance(w, (Int4Tensor, IntxUnpackedToInt8Tensor)):
+    if isinstance(w, Int4Tensor):
+        # Convert to the ExecuTorch-internal CudaCoalescedInt4Tensor, which
+        # repacks scale/zero from torchao's native [n_groups, N] layout into the
+        # coalesced [N, n_groups] layout the CUDA decode kernel reads (see
+        # int4_dispatch.py / int4_plain_mm.cuh). The transpose lives in
+        # CudaCoalescedInt4Tensor.from_int4_tensor, so it is baked into the
+        # serialized weight constant and the exported decode graph carries NO
+        # per-step transpose/clone — AOTInductor (freezing=False) does not
+        # constant-fold ops on parameters, so the transpose must already live in
+        # the constant for the coalesced layout to pay off.
+        w = CudaCoalescedInt4Tensor.from_int4_tensor(w)
+        module.weight = nn.Parameter(w, requires_grad=False)
+    elif isinstance(w, IntxUnpackedToInt8Tensor):
         module.weight = nn.Parameter(w, requires_grad=False)
     else:
         raise ValueError(f"Unsupported weight type: {type(w).__name__}")

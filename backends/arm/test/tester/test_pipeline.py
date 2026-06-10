@@ -856,6 +856,65 @@ class EthosU85PipelineINT(EthosUPipelineINTBase, Generic[T]):
         )
 
 
+class EthosU65PipelineINT(EthosUPipelineINTBase, Generic[T]):
+    """Lowers a graph to u65 INT TOSA spec and tests it on the Corstone300 U65
+    FVP, if run_on_fvp is true.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge if not using
+                 use_edge_to_transform_and_lower.
+       run_on_fvp: Set to true to test the pte file on a fvp simulator.
+       use_edge_to_transform_and_lower: Selects between two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        aten_ops: str | List[str],
+        exir_ops: str | Sequence[str] | None = None,
+        run_on_fvp: bool = True,
+        symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
+        a16w8_quantization: bool = False,
+        use_to_edge_transform_and_lower: bool = True,
+        custom_path: str | None = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 1,
+        epsilon: float = 2**-12,
+        fold_quantize: bool = True,
+    ):
+        compile_spec = common.get_u65_compile_spec(
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
+        )
+        super().__init__(
+            compile_spec,
+            module,
+            test_data,
+            aten_ops,
+            exir_ops,
+            run_on_fvp=run_on_fvp,
+            symmetric_io_quantization=symmetric_io_quantization,
+            per_channel_quantization=per_channel_quantization,
+            a16w8_quantization=a16w8_quantization,
+            use_to_edge_transform_and_lower=use_to_edge_transform_and_lower,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            epsilon=epsilon,
+            fold_quantize=fold_quantize,
+        )
+
+
 class PassPipeline(TOSAPipeline, Generic[T]):
     """Runs single passes directly on an edge_program and checks operators
     before/after.
