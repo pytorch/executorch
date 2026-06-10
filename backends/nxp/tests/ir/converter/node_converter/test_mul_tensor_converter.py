@@ -98,7 +98,7 @@ class TestMulTensor:
             ),
             pytest.param(
                 [ModelInputSpec((10,)), ModelInputSpec((1, 1))],
-                id="2 inputs 2D, num_elems of input == num_elems of output",
+                id="2 inputs 1D + 2D, num_elems of input == num_elems of output",
             ),
         ],
     )
