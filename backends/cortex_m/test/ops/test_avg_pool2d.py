@@ -95,9 +95,6 @@ def test_dialect_avg_pool2d(test_case, cortex_m_target):
 
     import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 
-    from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-
-    target_config = CortexMTargetConfig(cpu=CortexM.M55)
     module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
     pool_target = exir_ops.edge.cortex_m.quantized_avg_pool2d.default
     [pool_node] = [
@@ -112,7 +109,7 @@ def test_dialect_avg_pool2d(test_case, cortex_m_target):
     input_shape = input_node.meta["val"].shape
     output_shape = pool_node.meta["val"].shape
     expected_size = cmsis_nn.avgpool_buffer_size(
-        target_config.backend,
+        cortex_m_target.backend,
         cmsis_nn.DataType.A8W8,
         dim_dst_width=int(output_shape[3]),
         ch_src=int(input_shape[1]),

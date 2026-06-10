@@ -154,8 +154,8 @@ def test_implementation_linear(test_case, cortex_m_target):
 # asserts the post-pass node has the value in the slot the configured ISA
 # expects -- the structural guard against a regression that emits zero-valued
 # kernel_sum on a no-bias DSP path (numerically inert, but wrong shape).
-# An additional implementation test drives the default M55 MVE build path
-# through the simulator.
+# An additional implementation test drives each configured target through
+# the simulator.
 # ---------------------------------------------------------------------------
 
 
@@ -284,11 +284,12 @@ def test_dialect_linear_small_magnitude(variant: _SmallMagnitudeVariant):
             assert bias_arg is None
 
 
-def test_implementation_linear_small_magnitude():
-    """Exercise the MVE kernel_sum codepath via the default M55 simulator build."""
+def test_implementation_linear_small_magnitude(cortex_m_target):
     case = McuTestCase(
         model=_SmallMagnitudeLinear().eval(),
         example_inputs=lambda: (_small_magnitude_input(),),
     )
-    tester = CortexMTester(case.model, case.get_example_inputs())
+    tester = CortexMTester(
+        case.model, case.get_example_inputs(), target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1, calibration_samples=_small_magnitude_calibration)
