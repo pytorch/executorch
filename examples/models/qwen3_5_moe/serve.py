@@ -12,10 +12,8 @@ imports no model pybind. Model execution lives in a separate C++ worker
 process (qwen3_5_moe_worker) that this process drives over JSONL via the generic
 WorkerClient — the same protocol the generic text_llm_worker speaks.
 
-Why two processes: executing the AOTI CUDA model inside a live asyncio server
-process segfaults in the int4 matmul (validated by elimination — the trigger is
-CUDA execution while a live asyncio loop is resident). Isolating CUDA in a plain
-(no-asyncio) C++ worker process is the reliable shape, and it loads weights once.
+Model execution is isolated in the C++ worker for CUDA/AOTI reliability; the
+worker loads weights once. (See the example README for the full rationale.)
 
 Sessions and constraints:
   * One worker hosts many isolated sessions on a single ~18GB weight load (CUDA
@@ -121,7 +119,7 @@ def build_app_from_args(args):
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="OpenAI-compatible LLM server for Qwen3.5 MoE (process-isolated, V1)"
+        description="OpenAI-compatible LLM server for Qwen3.5 MoE (process-isolated)"
     )
     p.add_argument("--model-path", required=True, help="Path to the .pte model")
     p.add_argument(

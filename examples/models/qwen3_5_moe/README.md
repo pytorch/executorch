@@ -161,8 +161,11 @@ LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH \
     --data-path   qwen35_moe_exports/aoti_cuda_blob.ptd \
     --tokenizer-path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
     --hf-tokenizer   ~/models/Qwen3.5-35B-A3B \
-    --model-id qwen3.5-moe --no-think
+    --model-id qwen3.5-moe --no-think --max-sessions 4
 ```
+
+`--max-sessions >= 2` is required for named sessions and warm resume; the default
+`1` is scratch-only (one slot is reserved for anonymous requests).
 
 ### Architecture (process isolation)
 
@@ -202,16 +205,16 @@ is safe under asyncio.
 ### Sessions
 
 One worker loads the weights once (~18 GB) and hosts multiple **isolated**
-sessions on that single allocation — each with its own KV/recurrent state, via
-CUDA per-session mutable rebinding. Set `--max-sessions N` (clamped to 1 if the
-backend cannot rebind); one slot is reserved for anonymous requests, so up to
-`N - 1` named `session_id`s are addressable.
+sessions on that single allocation, each with its own KV/recurrent state. Set
+`--max-sessions N` (clamped to 1 if the backend hosts a single session); one slot
+is reserved for anonymous requests, so up to `N - 1` named `session_id`s are
+addressable.
 
 Route a request to a persistent session with the `session_id` body field or, as
 aliases, the `X-ExecuTorch-Session-ID` / `session_id` / `x-session-affinity`
 headers (body wins, then that header order). The header aliases let a client that
-already emits a stable per-conversation affinity id (e.g. pi's
-`sendSessionAffinityHeaders`) route with no extra config. Requests without any
+emits a stable per-conversation affinity id route per conversation (for pi, set
+`compat.sendSessionAffinityHeaders: true` in models.json). Requests without any
 share a transient scratch session.
 
 ```bash
@@ -243,15 +246,11 @@ Each `done` event reports
 (`new`/`exact_prefix`/`dirty`/`mismatch`/`equal`) for measuring the hit rate.
 `--no-warm-resume` forces a full prefill every request (for A/B comparison).
 
-**Tool-call turns (token-ID continuation):** an assistant turn re-rendered from
-its parsed tool call rarely re-tokenizes to the tokens the model actually
-generated, so plain warm resume misses on agent loops. The server stores the
-exact generated token ids per session and, on the next turn, sends the prompt as
-segments (`{"text"}` / `{"ids"}`) that splice those ids back in for prior
-assistant turns instead of re-rendering them — so the resident state stays an
-exact token prefix and resume hits. Tool *results* remain text (re-tokenized
-deterministically). The worker's exact-token check still backstops everything, so
-a mismatch just falls back to a full prefill.
+**Tool-call turns** also warm-resume: an assistant turn re-rendered from its
+parsed tool call rarely re-tokenizes to the tokens the model generated, so the
+server replays the exact generated token ids for prior turns to keep the resident
+state an exact prefix (tool *results* stay text). A mismatch still falls back to a
+full prefill.
 
 This is **isolation + warm resume, not concurrency**: execution is still
 synchronous (one in-flight request; `--num-runners > 1` is rejected since more

@@ -32,7 +32,7 @@ _DECODER = json.JSONDecoder()
 
 
 class _UndefinedToolCall(Exception):
-    """A <tool_call> named a tool not in the request's `tools`. v1 degrades the
+    """A <tool_call> named a tool not in the request's `tools`. Degrades the
     WHOLE response to visible text rather than emitting a partial set — never
     silently drop an undefined call while keeping its siblings (spec)."""
 

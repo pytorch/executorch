@@ -13,30 +13,12 @@ JSONL on the worker's stdin/stdout. The protocol is model-agnostic: the same
 client serves a TextLLM worker, a Qwen worker, or any future model worker; only
 the binary and its launch args differ.
 
-Protocol (one JSON object per line):
-  worker -> stdout, once at startup:  {"ready": true, "max_sessions": int,
-                                       "max_named_sessions": int}
-  client -> stdin:
-    generate:  {"max_new_tokens": int, "temperature": float, "stop": [str, ...],
-                "session_id"?: str, and exactly one prompt form:
-                  "prompt": str
-                  "prompt_segments": [{"text": str} | {"ids": [int, ...]}]}
-    open:      {"op": "open",  "session_id": str}
-    close:     {"op": "close", "session_id": str}
-    reset:     {"op": "reset", "session_id": str}   # clear context, keep slot
-  worker -> stdout:
-    generate:  {"token": str} *   (streamed)
-               {"done": true, "prompt_tokens": int, "completion_tokens": int,
-                "finish_reason": "stop" | "length",
-                "reused_prompt_tokens": int, "prefilled_prompt_tokens": int,
-                "session_reset_reason": "new"|"exact_prefix"|"dirty"|"mismatch"
-                                        |"equal",
-                "generated_token_ids"?: [int, ...]}   # omitted if stop-trimmed
-    open:      {"opened": true, "session_id": str}
-    close:     {"closed": true, "session_id": str}
-    reset:     {"reset": true,  "session_id": str}
-    error:     {"error": str, "code"?: str}   # capacity_exhausted /
-                                              # unsupported_session
+Protocol (one JSON object per line; full reference in cpp/worker_loop.h): a
+per-request `generate` (a `prompt` or `prompt_segments` form, optional
+`session_id`) streams `{"token"}` then a `{"done", ...}` carrying warm-resume
+stats and optional `generated_token_ids`; `open`/`close`/`reset` ops manage named
+sessions; failures return `{"error", "code"?}`. The shapes this client builds and
+parses are in generate()/_on_done() below.
 
 The worker's stdout carries ONLY protocol JSON; its logs go to stderr. One
 request at a time per worker; the caller (SessionRuntime) serializes. A worker
@@ -64,7 +46,7 @@ class WorkerStats:
     # stop) or "length" (ran to max_new, possibly clamped to the context window).
     # None if the worker didn't report it (older worker / fake).
     finish_reason: Optional[str] = None
-    # Warm-resume accounting (V2b.1): how many prompt tokens were served from the
+    # Warm-resume accounting: how many prompt tokens were served from the
     # session's resident KV state vs actually prefilled this request, and why
     # ("new"|"exact_prefix"|"dirty"|"mismatch"|"equal"). Not exposed as OpenAI
     # usage; logged for measuring warm-resume hit rate. None on older workers.
@@ -74,7 +56,7 @@ class WorkerStats:
     # The exact (non-terminal) token ids generated this turn. The control plane
     # stores these per session and splices them back as an `ids` prompt segment
     # next turn, so a prior assistant span is an exact token extension instead of
-    # a lossy chat-template re-render (V2b.1.5). Empty on older workers.
+    # a lossy chat-template re-render. Empty on older workers.
     generated_token_ids: list = field(default_factory=list)
 
 
@@ -108,13 +90,17 @@ class WorkerClient:
         self.max_named_sessions = max_named_sessions
 
     def reset(self) -> None:
-        # The worker resets its session at the start of each request; nothing to
-        # do here.
+        # Legacy no-op; reset is explicit via reset_session, or handled by the
+        # worker's prefill plan.
         pass
 
     def stop(self) -> None:
-        # Best-effort: a request is synchronous and not interruptible mid-
-        # generation in V1.
+        # No-op: a worker request is synchronous over the JSONL pipe and is
+        # NOT interruptible mid-generation. The in-flight request runs to
+        # completion and head-of-line blocks every other session on this worker
+        # until it finishes. Real cancellation needs a protocol change (a control
+        # pipe, non-blocking stdin polling between decode steps, or request ids +
+        # an out-of-band cancel op).
         pass
 
     def open_session(self, session_id: str) -> None:
@@ -181,7 +167,7 @@ class WorkerClient:
             "temperature": getattr(config, "temperature", 0.0),
             "stop": list(getattr(config, "stop", []) or []),
         }
-        # Token-ID segments (V2b.1.5) take precedence over the rendered string:
+        # Token-ID segments take precedence over the rendered string:
         # they let prior assistant spans be exact id runs, not lossy re-renders.
         # `is not None` (not truthiness): segments is a distinct prompt form, kept
         # whatever its content (the worker validates non-empty).

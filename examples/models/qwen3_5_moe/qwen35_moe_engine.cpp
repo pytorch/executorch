@@ -95,8 +95,8 @@ Result<std::unique_ptr<Module>> build_qwen_module(
 
 #ifdef EXECUTORCH_BUILD_CUDA
   // Backend options are read during backend init(), so they must be set before
-  // load_method. (CUDA graph is intentionally not enabled: V2 rebinds each
-  // session's mutable buffers before execute, which a captured graph's baked
+  // load_method. (CUDA graph is intentionally not enabled: each session
+  // rebinds its mutable buffers before execute, which a captured graph's baked
   // pointers would ignore.)
   {
     // Cross-method per-FQN weight sharing: prefill and decode reuse one weight
@@ -124,7 +124,7 @@ Error register_mutable_fqns(Module* module, int mutable_ctx) {
     ET_LOG(
         Error,
         "Qwen35MoEEngine: model has no get_mutable_buffer_metadata; re-export "
-        "for V2 multi-session");
+        "for multi-session");
     return res.error();
   }
   const auto& outs = res.get();
@@ -368,7 +368,7 @@ class Qwen35MoESession : public LLMSession {
   Error seek(int64_t pos) override {
     // The hybrid model carries recurrent/conv state that cannot be safely
     // rewound by logical position the way contiguous KV can. Fail closed so the
-    // prefix cache falls back to reset + full prefill (V1).
+    // prefix cache falls back to reset + full prefill.
     (void)pos;
     return Error::NotSupported;
   }

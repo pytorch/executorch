@@ -78,11 +78,12 @@ class ServingChat:
         #    _truncate_raw (pre-parse truncation on the tool path).
         #  * _content_specials: BROAD all-special-tokens set. For PLAIN chat it is
         #    added to the worker/clean stop set (create() -> gen_stops) so a leaked
-        #    special halts the worker and never reaches the client, AND it backs
-        #    _strip_specials for final cleanup of already-parsed visible content.
+        #    special halts the worker (-> dirty, ids omitted, non-resumable) and
+        #    never reaches the client, AND it backs _strip_specials for final
+        #    cleanup of already-parsed visible content.
         self._stops = template.turn_stop_sequences()
         self._content_specials = template.special_tokens()
-        # OpenAI/chat-template token-ID warm-resume state (V2b.1.5). Adapter-side,
+        # OpenAI/chat-template token-ID warm-resume state. Adapter-side,
         # not runtime; kept in lockstep with the worker's session state by
         # clearing both on reset/close.
         self._transcript = OpenAITranscriptState(template)
@@ -206,13 +207,8 @@ class ServingChat:
         return GenerationOptions(
             max_new_tokens=req.resolved_max_tokens(),
             temperature=req.temperature if req.temperature is not None else 0.0,
-            # Worker stop set, decided per path in create(): narrow turn
-            # terminators (+ request stops) for tool turns so a structural/tool
-            # delimiter is never cut before the parser sees it; plus the broad
-            # content specials for plain chat so a leaked special halts the worker
-            # -- which then marks the turn dirty and omits its ids -- instead of
-            # streaming a token the client should not see. The server re-applies
-            # the same set in _clean/_collect_until_stop as a backstop.
+            # Worker stop set, chosen per path in create() (see __init__ for the
+            # two sets); the server re-applies it in _clean/_collect_until_stop.
             stop=stops,
         )
 
@@ -375,11 +371,10 @@ class ServingChat:
         prompt = self._template.render(
             req.messages, tools=template_tools, template_kwargs=req.chat_template_kwargs
         )
-        # Build the prompt input first: token-ID segments (V2b.1.5) splice this
-        # session's prior assistant turns' exact ids so warm resume stays exact
-        # across the chat template's lossy re-render of tool-call turns; plain
-        # rendered text when there's nothing to splice / on any ambiguity (the
-        # worker verifies the exact-token prefix regardless).
+        # Token-ID segments splice prior assistant turns' exact ids so warm resume
+        # survives the template's lossy tool-call re-render; plain text when
+        # there's nothing to splice or on ambiguity (the worker verifies the
+        # exact-token prefix regardless).
         prompt_input = self._transcript.build_prompt_input(
             session_id=req.session_id,
             messages=req.messages,
@@ -402,13 +397,8 @@ class ServingChat:
                 requested = req.resolved_max_tokens()
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
-        # Stop-set split by path. Tool turns use only the narrow turn terminators
-        # (+ request stops) so a structural/tool delimiter is never halted before
-        # the parser sees it. Plain chat adds the broad content specials so a
-        # leaked special (one non-streaming would strip) halts the worker -- which
-        # marks the turn dirty and omits its ids -- instead of reaching the client
-        # or being recorded as resumable ids for text never shown. Both paths
-        # reuse this exact set in the control-plane cut (_clean/_collect_until_stop).
+        # Per-path worker stop set (see __init__ for the two sets and why): tool
+        # turns use the narrow set; plain chat adds the broad content specials.
         if self._tools_active(req):
             gen_stops = self._stops + self._request_stops(req)
         else:
@@ -524,7 +514,7 @@ class ServingChat:
         )
         try:
             if use_tools:
-                # v1: buffer the (usually short) tool response, parse once.
+                # Buffer the (usually short) tool response, parse once.
                 # Halt early at a stop boundary, and bound the raw output
                 # BEFORE parsing so post-stop tool calls / text don't leak.
                 raw, stop_hit[0] = await self._collect_until_stop(

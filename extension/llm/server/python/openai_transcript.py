@@ -4,24 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""OpenAI/chat-template transcript state for token-ID warm resume (V2b.1.5).
+"""OpenAI/chat-template transcript state for token-ID warm resume.
 
-This is the OpenAI-adapter-specific glue that makes warm resume work across the
-chat template's lossy re-render of prior assistant turns (especially tool calls,
-which re-render from parsed structure and don't re-tokenize to what the model
-generated). It is NOT generic runtime infrastructure: it knows ChatMessages,
-tool_calls, the ChatTemplate, sentinels, and assistant fingerprints. The runtime
-(session_runtime) only sees PromptInput.
+Adapter-specific glue, not runtime infrastructure: it knows ChatMessages,
+tool_calls, the ChatTemplate, sentinels, and assistant fingerprints (the runtime
+only sees a PromptInput). It makes warm resume survive the chat template's lossy
+re-render of prior assistant turns -- especially tool calls, which re-render from
+parsed structure and don't re-tokenize to what the model generated.
 
-Per session we keep one record per assistant turn we produced, in order:
-{"fp": fingerprint of the response we returned, "ids": exact generated token ids
-| None}. On the next request each prior assistant turn is replaced with a unique
-sentinel, the conversation is rendered once, and the rendered text is split on
-the sentinels with the stored ids spliced back in -- but only for turns whose
-fingerprint matches the incoming message (so an edited/branched history, or a
-session reused for another conversation, is never substituted with stale ids)
-and whose ids are present (a stop-trimmed turn has None and is left as text).
-Everything is backstopped by the worker's exact-token prefix check.
+Per session it stores, for each assistant turn it produced, the exact generated
+token ids and a fingerprint of the response. On the next request each prior
+assistant turn is replaced with a sentinel, the conversation is rendered once,
+and the rendered text is split on the sentinels with the stored ids spliced back
+in -- only for turns whose fingerprint matches the incoming message (an edited,
+branched, or reused history is never substituted with stale ids) and whose ids
+are present (a stop-trimmed turn is left as text). The worker's exact-token
+prefix check is the final backstop.
 """
 
 import hashlib
@@ -88,14 +86,11 @@ class OpenAITranscriptState:
 
     @staticmethod
     def _normalize_scaffold(text_chunk: str, preamble: str) -> Optional[str]:
-        """Force the scaffold region -- the text between the last assistant header
-        in `text_chunk` and its end -- to equal `preamble`, so the worker
-        re-tokenizes the exact generation scaffold it made resident for this turn.
-        The region (the content was replaced by a sentinel) is empty when history
-        stripped the scaffold (insert) or a think scaffold when history preserved
-        it (replace, possibly with a different form than `preamble`). Returns the
-        adjusted text, or None if the region is not a recognized scaffold
-        (ambiguous -> caller falls back to plain text)."""
+        """Force the scaffold region (between the last assistant header in
+        `text_chunk` and its end) to equal `preamble`, so the worker re-tokenizes
+        the exact resident scaffold. The region is empty (history stripped it ->
+        insert) or a think scaffold (history preserved it -> replace). Returns the
+        adjusted text, or None if it isn't a recognized scaffold (-> text fallback)."""
         # No scaffold for this turn's mode/template: nothing to reproduce, so
         # leave the chunk untouched -- and don't require the Qwen/ChatML header,
         # so token-id splicing still works for templates with a different
@@ -159,14 +154,11 @@ class OpenAITranscriptState:
         stored = self._turns.get(session_id or "")
         if not stored:
             return PromptInput(text=rendered_prompt)
-        # ORDINAL ASSUMPTION: stored[k] is the k-th assistant turn WE generated
-        # for this session, matched positionally against the k-th assistant
-        # message in the request. A client-injected assistant turn we did not
-        # generate -- a few-shot exemplar, a pre-seeded turn, or any reused
-        # session -- shifts that alignment, so the fingerprint at k mismatches and
-        # we stop splicing from there. This is always SAFE (text fallback +
-        # worker exact-prefix backstop); it only lowers the warm-resume hit rate,
-        # silently, for such conversations.
+        # Positional: stored[k] is the k-th assistant turn WE generated, matched
+        # against the k-th assistant message in the request. A client-injected
+        # turn (few-shot exemplar, pre-seeded turn, reused session) shifts that
+        # alignment -> fingerprint mismatch at k -> stop splicing. Always safe
+        # (text fallback + worker prefix backstop); just a lower hit rate.
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
         splice: dict[int, dict] = {}  # message index -> {"ids", "preamble"}
         diverged_at = None
@@ -184,13 +176,9 @@ class OpenAITranscriptState:
                 }
         if diverged_at is not None:
             # Drop the stale tail from the first mismatch so an edited/branched
-            # earlier turn can't keep shadowing future requests; the matched
-            # prefix [:diverged_at] is untouched and still splices. We have no
-            # exact ids for the edited turn itself (the client authored it, we
-            # didn't generate it), so warm resume for that turn and the ones after
-            # it stays text until the session is reset/closed. Safe regardless:
-            # stale ids are never spliced and the worker's exact-token prefix
-            # check backstops correctness.
+            # earlier turn can't shadow future requests; the matched prefix still
+            # splices, the rest stays text until reset/close. Safe either way:
+            # stale ids are never spliced and the worker's prefix check backstops.
             del stored[diverged_at:]
         if not splice:
             return PromptInput(text=rendered_prompt)
@@ -230,16 +218,13 @@ class OpenAITranscriptState:
         prior_turns: int,
         preamble: str = "",
     ) -> None:
-        """Record this turn's {fingerprint, exact generated ids, generation
-        preamble} at position `prior_turns` -- the count of assistant turns in the
-        request this response answers. Stored records at/after that index are
-        dropped first, so a regenerated or branched turn under the same session_id
-        replaces stale records instead of leaving them to shadow future
-        warm-resume hits with a stale fingerprint. ids is None when the worker
-        omitted them (stop-trimmed turn) -- recorded as non-resumable but kept for
-        positional alignment. `preamble` is the generation scaffold resident ahead
-        of these ids (mode-specific, e.g. Qwen3 `<think>` block), reproduced ahead
-        of the spliced ids on the next request so the prefix stays exact."""
+        """Record this turn's {fingerprint, generated ids, generation preamble} at
+        `prior_turns` (the assistant-turn count of the request it answers).
+        Records at/after that index are dropped first, so a regenerated/branched
+        turn replaces stale records rather than shadowing later hits. ids is None
+        when the worker omitted them (stop-trimmed -> non-resumable), kept for
+        positional alignment. `preamble` is the generation scaffold (e.g. the
+        Qwen3 `<think>` block) reproduced ahead of the spliced ids next request."""
         if not session_id:
             return
         turns = self._turns.setdefault(session_id, [])

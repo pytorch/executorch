@@ -237,7 +237,7 @@ def test_turn_stop_fallback_without_hf_is_narrow():
 
 
 def test_fallback_extracts_text_parts_not_repr():
-    # 5e: the ChatML fallback renders list-content text parts, not a Python repr.
+    # The ChatML fallback renders list-content text parts, not a Python repr.
     t = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)  # no _hf
     msg = ChatMessage(
         role="user",

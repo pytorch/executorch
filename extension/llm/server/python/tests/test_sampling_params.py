@@ -118,7 +118,7 @@ def test_zero_penalties_and_unknown_fields_accepted(make_client):
 
 def test_unsupported_tool_choice_rejected(make_client):
     # "required" / a specific-function choice would need constrained decoding to
-    # force/restrict the call; v1 rejects rather than silently treating as "auto".
+    # force/restrict the call; the server rejects rather than silently treating as "auto".
     client, _ = make_client()
     for choice in (
         "required",

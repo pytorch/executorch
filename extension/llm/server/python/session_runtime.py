@@ -65,12 +65,12 @@ class GenStats:
     completion_tokens: int = 0
     # Worker-reported stop reason ("stop" | "length"), or None if not reported.
     finish_reason: Optional[str] = None
-    # Warm-resume accounting (V2b.1): tokens served from the session's resident
+    # Warm-resume accounting: tokens served from the session's resident
     # state vs prefilled this request, and why.
     reused_prompt_tokens: int = 0
     prefilled_prompt_tokens: int = 0
     session_reset_reason: Optional[str] = None
-    # Exact token ids generated this turn (V2b.1.5), for an adapter's transcript
+    # Exact token ids generated this turn, for an adapter's transcript
     # store. Empty when the worker doesn't report them (e.g. a stop-trimmed turn).
     generated_token_ids: list = field(default_factory=list)
 
@@ -180,6 +180,11 @@ class SessionRuntime:
                         raise item
                     yield item
             except asyncio.CancelledError:
+                # stop() is a no-op and we still `await fut` below, so a
+                # cancelled/disconnected client does NOT interrupt the worker --
+                # the in-flight generation runs to completion and head-of-line
+                # blocks other sessions until it does. Real interruption needs a
+                # worker-protocol cancel (see WorkerClient.stop).
                 self._worker.stop()
                 raise
             finally:
