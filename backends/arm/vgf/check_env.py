@@ -704,8 +704,8 @@ def _check_cmake_build_flags(
                 "VGF source-build CMake flags",
                 STATUS_FAIL,
                 f"No CMakeCache.txt found for build_dir={build_dir!s}.",
-                "Configure the runtime build with -DEXECUTORCH_BUILD_VGF=ON "
-                "-DEXECUTORCH_BUILD_VULKAN=ON, then pass --build-dir <dir>.",
+                "Configure the runtime build with -DEXECUTORCH_BUILD_VGF=ON, "
+                "then pass --build-dir <dir>.",
             )
 
         status = STATUS_FAIL if require_runtime_build else STATUS_WARN
@@ -720,12 +720,15 @@ def _check_cmake_build_flags(
     values = _parse_cmake_cache(cache)
     required = {
         "EXECUTORCH_BUILD_VGF": values.get("EXECUTORCH_BUILD_VGF"),
+    }
+    observed = {
+        **required,
         "EXECUTORCH_BUILD_VULKAN": values.get("EXECUTORCH_BUILD_VULKAN"),
     }
     bad = [key for key, value in required.items() if not _is_cmake_truthy(value)]
     rendered = ", ".join(
         f"{key}={value if value is not None else '<missing>'}"
-        for key, value in required.items()
+        for key, value in observed.items()
     )
 
     if bad:
@@ -734,8 +737,7 @@ def _check_cmake_build_flags(
             STATUS_FAIL,
             f"{cache}: required runtime flag(s) are disabled or missing: "
             f"{', '.join(bad)}. Current values: {rendered}",
-            "Reconfigure CMake with -DEXECUTORCH_BUILD_VGF=ON "
-            "-DEXECUTORCH_BUILD_VULKAN=ON.",
+            "Reconfigure CMake with -DEXECUTORCH_BUILD_VGF=ON.",
         )
 
     return VgfEnvironmentCheck(
