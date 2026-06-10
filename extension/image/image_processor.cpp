@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/image/image_processor.h>
+#include <executorch/extension/image/image_processor_simd.h>
 
 #include <algorithm>
 #include <cstring>
@@ -420,25 +421,23 @@ Error ImageProcessor::process_into(
         InvalidArgument,
         "normalization std_dev must be nonzero");
   }
-  // Source (resized RGB) carries input_channels; the output tensor carries
-  // output_channels. They are equal today, so channels map 1:1; a future
-  // divergence (e.g. grayscale) would need an explicit channel map here.
-  for (int32_t y = 0; y < resize_h; ++y) {
-    for (int32_t x = 0; x < resize_w; ++x) {
-      const int32_t src_idx = (y * resize_w + x) * input_channels;
-      const int32_t dst_y = y + offset_y;
-      const int32_t dst_x = x + offset_x;
-      for (int32_t c = 0; c < output_channels; ++c) {
-        const float val =
-            (resized_buf[src_idx + c] * norm.scale_factor - norm.mean[c]) /
-            norm.std_dev[c];
-        const size_t out_idx = static_cast<size_t>(c) * final_w * final_h +
-            static_cast<size_t>(dst_y) * final_w + dst_x;
-        output[out_idx] = val;
-      }
-    }
-  }
-  return Error::Ok;
+  // Deinterleave + normalize the resized interleaved RGB (R/G/B at byte
+  // offsets 0/1/2) into the CHW output.
+  return deinterleave_to_chw(
+      resized_buf.data(),
+      resize_w,
+      resize_h,
+      resize_w * input_channels,
+      input_channels,
+      /*r_off=*/0,
+      /*g_off=*/1,
+      /*b_off=*/2,
+      output,
+      final_w,
+      final_h,
+      offset_x,
+      offset_y,
+      norm);
 }
 
 Error ImageProcessor::process_yuv_into(

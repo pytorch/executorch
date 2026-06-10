@@ -136,7 +136,7 @@ class DecomposeLstmPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule):  # noqa: C901
         graph = graph_module.graph
-        made_changes = False
+        modified = False
 
         for node in list(graph.nodes):
             if (
@@ -370,11 +370,9 @@ class DecomposeLstmPass(ArmPass):
             for gi in getitem_nodes:
                 graph.erase_node(gi)
             graph.erase_node(node)
-            made_changes = True
+            modified = True
 
-        if not made_changes:
-            return PassResult(graph_module, False)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

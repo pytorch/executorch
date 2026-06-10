@@ -235,7 +235,10 @@ class TestCloneConverter(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             quantized_program = to_quantized_edge_program(
-                model, input_shape, use_qat=use_qat
+                model,
+                input_shape,
+                use_qat=use_qat,
+                use_neutron_for_format_conversion=False,
             ).exported_program()
 
             tflite_flatbuffers_model, _ = converter_spy.calls[-1].return_value

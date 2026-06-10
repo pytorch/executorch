@@ -213,7 +213,7 @@ endif()
 # consumers.
 target_link_libraries(
   aoti_cuda_backend PUBLIC cuda_platform extension_tensor CUDA::cudart
-                           ${CMAKE_DL_LIBS}
+                           extension_cuda ${CMAKE_DL_LIBS}
 )
 
 if(_cuda_is_msvc_toolchain)

@@ -89,7 +89,8 @@ open class Module private constructor(moduleAbsolutePath: String, loadMode: Int,
       check(mHybridData.isValid) { "Module has been destroyed" }
       val errorCode = loadMethodNative(methodName)
       if (errorCode != 0) {
-        throw ExecutorchRuntimeException(errorCode, "Failed to load method: $methodName")
+        throw ExecutorchRuntimeException.makeExecutorchException(
+            errorCode, "Failed to load method: $methodName")
       }
     } finally {
       mLock.unlock()
