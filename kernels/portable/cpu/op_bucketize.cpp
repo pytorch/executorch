@@ -92,6 +92,29 @@ void bucketize_tensor(
   ET_KERNEL_CHECK_MSG(context, success, Internal, , "parallel_for failed");
 }
 
+template <typename CTYPE_COMPUTE, typename CTYPE_OUT, const char* op_name>
+void bucketize_scalar(
+    KernelRuntimeContext& context,
+    const Scalar self,
+    const Tensor& boundaries,
+    const bool& right,
+    Tensor& out) {
+  CTYPE_COMPUTE compute_val = utils::scalar_to<CTYPE_COMPUTE>(self);
+
+  auto bd_load_fn = get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
+      context, boundaries, SupportedTensorDtypes::REALHBF16);
+  const ssize_t bd_elem_size = boundaries.element_size();
+  auto bd_data = reinterpret_cast<const char*>(boundaries.const_data_ptr());
+  int64_t bd_end = boundaries.sizes().back();
+
+  auto out_data = out.mutable_data_ptr<CTYPE_OUT>();
+
+  int64_t pos = right
+      ? cus_upper_bound(bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size)
+      : cus_lower_bound(bd_end, compute_val, bd_data, bd_load_fn, bd_elem_size);
+  out_data[0] = pos;
+}
+
 void bucketize_common_pre_checks(
     KernelRuntimeContext& context,
     const Tensor& boundaries,
@@ -163,6 +186,30 @@ Tensor& bucketize_scalar_out(
     bool out_int32,
     bool right,
     Tensor& out) {
+  bucketize_common_pre_checks(context, boundaries, out_int32, out);
+  // Check manually as bucketize_common_pre_checks do not return
+  if (context.failure_state() != Error::Ok) {
+    return out;
+  }
+  ET_KERNEL_CHECK(context, out.sizes().back() == 1, InvalidArgument, out);
+
+  ScalarType common_type =
+      utils::promote_type_with_scalar(boundaries.scalar_type(), self);
+  ScalarType compute_type = utils::get_compute_type(common_type);
+
+  static constexpr const char op_name[] = "bucketize.Scalar_out";
+
+  ET_SWITCH_REALHBF16_TYPES(
+      compute_type, context, op_name, CTYPE_COMPUTE, [&]() {
+        if (out_int32) {
+          bucketize_scalar<CTYPE_COMPUTE, int32_t, op_name>(
+              context, self, boundaries, right, out);
+        } else {
+          bucketize_scalar<CTYPE_COMPUTE, int64_t, op_name>(
+              context, self, boundaries, right, out);
+        }
+      });
+
   return out;
 }
 
