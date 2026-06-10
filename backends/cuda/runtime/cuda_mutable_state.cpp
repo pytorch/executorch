@@ -113,13 +113,22 @@ Error build_descriptors(Context& c, CudaDelegateHandle* h) {
   auto container = h->container_handle;
 
   size_t n = 0;
-  h->get_num_constants(container, &n);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      h->get_num_constants(container, &n),
+      "mutable_state: get_num_constants failed");
   std::unordered_map<std::string, std::string> fqn_to_internal;
   for (size_t i = 0; i < n; ++i) {
     const char* internal = nullptr;
     const char* fqn = nullptr;
-    h->get_constant_name(container, i, &internal);
-    h->get_constant_original_fqn(container, i, &fqn);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        h->get_constant_name(container, i, &internal),
+        "mutable_state: get_constant_name failed");
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        h->get_constant_original_fqn(container, i, &fqn),
+        "mutable_state: get_constant_original_fqn failed");
+    // A successful call may still report an unusable (null/empty) name --
+    // that's a method-scoped constant, not an error: skip it (another container
+    // owns it). A non-OK return code above is a real failure and falls closed.
     if (internal && fqn && fqn[0] != '\0') {
       fqn_to_internal[fqn] = internal;
     }
