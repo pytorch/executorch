@@ -15,6 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU65PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -174,6 +175,18 @@ def test_add_tensor_tosa_INT_i32(test_data: input_t1):
 @common.XfailIfNoCorstone300
 def test_add_tensor_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.XfailIfNoCorstone300
+def test_add_tensor_u65_INT(test_data: input_t1):
+    pipeline = EthosU65PipelineINT[input_t1](
         Add(),
         test_data(),
         aten_op,

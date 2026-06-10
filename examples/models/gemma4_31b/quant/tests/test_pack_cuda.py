@@ -14,9 +14,8 @@ import os
 import tempfile
 import unittest
 
-# Register Int4Tensor F.linear dispatch before any test uses it
-import executorch.backends.cuda.int4_dispatch  # noqa: F401
-
+# Register Int4/Int8 F.linear dispatch before any test uses it
+import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.examples.models.gemma4_31b.quant.pack import pack_one

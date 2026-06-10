@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
+#include <executorch/runtime/core/named_data_map.h>
 
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <webgpu/wgpu.h>
@@ -17,9 +18,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace executorch {
-namespace backends {
-namespace webgpu {
+namespace executorch::backends::webgpu {
 
 // vkgraph namespace is declared at global scope in the generated FlatBuffer
 // header
@@ -49,6 +48,17 @@ size_t vk_datatype_size(vkgraph::VkDataType dtype) {
 
 WebGPUGraph::WebGPUGraph() = default;
 
+WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
+  WGPUBufferDescriptor buf_desc = {};
+  buf_desc.size = nbytes > 0 ? nbytes : 4;
+  buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+      WGPUBufferUsage_CopySrc;
+  buf_desc.mappedAtCreation = false;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+  scratch_buffers_.push_back(buffer);
+  return buffer;
+}
+
 WebGPUGraph::~WebGPUGraph() {
   for (size_t i = 0; i < tensors_.size(); i++) {
     if (tensors_[i].buffer &&
@@ -57,6 +67,11 @@ WebGPUGraph::~WebGPUGraph() {
     }
   }
   for (auto& buf : shared_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& buf : scratch_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
     }
@@ -93,7 +108,8 @@ WebGPUGraph::~WebGPUGraph() {
 
 void WebGPUGraph::build(
     const void* flatbuffer_data,
-    const uint8_t* constant_data) {
+    const uint8_t* constant_data,
+    const executorch::runtime::NamedDataMap* named_data_map) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -165,6 +181,31 @@ void WebGPUGraph::build(
                 const uint8_t* src = constant_data + vk_bytes->offset();
                 wgpuQueueWriteBuffer(
                     queue_, tensor.buffer, 0, src, tensor.nbytes);
+              } else if (
+                  vk_bytes->named_key() != nullptr &&
+                  named_data_map != nullptr) {
+                // Constant stored in the PTE named-data map.
+                auto buf =
+                    named_data_map->get_data(vk_bytes->named_key()->c_str());
+                if (!buf.ok()) {
+                  throw std::runtime_error(
+                      std::string("WebGPU: named constant '") +
+                      vk_bytes->named_key()->c_str() +
+                      "' not found in NamedDataMap");
+                }
+                if (buf->size() < tensor.nbytes) {
+                  throw std::runtime_error(
+                      std::string("WebGPU: named constant '") +
+                      vk_bytes->named_key()->c_str() + "' undersized: have " +
+                      std::to_string(buf->size()) + " bytes, need " +
+                      std::to_string(tensor.nbytes));
+                }
+                wgpuQueueWriteBuffer(
+                    queue_, tensor.buffer, 0, buf->data(), tensor.nbytes);
+                buf->Free();
+              } else {
+                throw std::runtime_error(
+                    "WebGPU: constant has no inline offset and no named-data key");
               }
             }
           }
@@ -353,20 +394,19 @@ void WebGPUGraph::execute() {
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-    WGPUComputePassDescriptor pass_desc = {};
-    WGPUComputePassEncoder pass =
-        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-
+    // One pass per dispatch: enforces storage RAW ordering across deps.
     for (const auto& dispatch : dispatches_) {
+      WGPUComputePassDescriptor pass_desc = {};
+      WGPUComputePassEncoder pass =
+          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatch.bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
           pass, dispatch.workgroup_count_x, 1, 1);
+      wgpuComputePassEncoderEnd(pass);
+      wgpuComputePassEncoderRelease(pass);
     }
-
-    wgpuComputePassEncoderEnd(pass);
-    wgpuComputePassEncoderRelease(pass);
 
     for (const auto& copy : output_copies_) {
       wgpuCommandEncoderCopyBufferToBuffer(
@@ -396,20 +436,18 @@ void WebGPUGraph::execute() {
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-    WGPUComputePassDescriptor pass_desc = {};
-    WGPUComputePassEncoder pass =
-        wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-
     for (size_t i = start; i < end; i++) {
+      WGPUComputePassDescriptor pass_desc = {};
+      WGPUComputePassEncoder pass =
+          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatches_[i].pipeline);
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatches_[i].bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
           pass, dispatches_[i].workgroup_count_x, 1, 1);
+      wgpuComputePassEncoderEnd(pass);
+      wgpuComputePassEncoderRelease(pass);
     }
-
-    wgpuComputePassEncoderEnd(pass);
-    wgpuComputePassEncoderRelease(pass);
 
     if (end == n) {
       for (const auto& copy : output_copies_) {
@@ -518,6 +556,4 @@ WebGPUMemoryStats WebGPUGraph::memory_stats() const {
   return stats;
 }
 
-} // namespace webgpu
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::webgpu

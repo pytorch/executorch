@@ -257,8 +257,10 @@ class DecomposeGroupedConvPass(ArmOpTargetedPass):
 
         input_node = args[0]
         if DecomposeGroupedConvPass._is_depthwise_conv(input_node, groups, transposed):
-            # This is a depthwise convolution which is handled elsewhere
-            return super().call_operator(op, args, kwargs, meta)
+            # Conv2D depthwise maps to TOSA DEPTHWISE_CONV2D — handled in RewriteConvPass.
+            # Conv3D has no DEPTHWISE_CONV3D, so fall through and decompose like grouped conv.
+            if len(input_node.data.shape) != 5:
+                return super().call_operator(op, args, kwargs, meta)
 
         weight_node = args[1]
         bias_node = args[2]

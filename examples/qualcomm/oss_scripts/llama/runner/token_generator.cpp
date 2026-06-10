@@ -337,8 +337,9 @@ Result<int64_t> TokenGenerator::generate(
     pos++;
 
     // print the token as string, decode it with the Tokenizer object
-    token_callback(
-        ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
+    ET_ASSIGN_OR_RETURN_TOKENIZER(
+        decoded_token__, tokenizer_->decode(prev_token, cur_token));
+    token_callback(decoded_token__);
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (eos_ids_->count(cur_token) > 0) {
