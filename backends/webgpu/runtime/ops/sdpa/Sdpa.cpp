@@ -386,9 +386,11 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (graph.get_value_type(attn_mask_id) != VT::Null) {
     throw std::runtime_error("WebGPU sdpa: attn_mask is not supported");
   }
+  // dropout_p: serializer may dedup 0.0 onto input_pos's Int(0) when pos=0.
   const auto drop_type = graph.get_value_type(drop_p_id);
   if (!(drop_type == VT::Null ||
-        (drop_type == VT::Double && graph.get_double(drop_p_id) == 0.0))) {
+        (drop_type == VT::Double && graph.get_double(drop_p_id) == 0.0) ||
+        (drop_type == VT::Int && graph.get_int(drop_p_id) == 0))) {
     throw std::runtime_error("WebGPU sdpa: only dropout_p=0 is supported");
   }
   const auto causal_type = graph.get_value_type(is_causal_id);
