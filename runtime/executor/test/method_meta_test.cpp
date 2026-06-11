@@ -247,25 +247,31 @@ TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
       programs_["add_with_device"]->method_meta("forward");
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
-  // ModuleAddWithDevice exports with memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True).
-  // Device-aware memory planning may create separate buffers per device type,
-  // so we iterate to find the CUDA buffer.
-  size_t num_buffers = method_meta->num_memory_planned_buffers();
-  ASSERT_GE(num_buffers, 1);
+  // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
+  // The model delegates add(a,b) to CUDA with H2D/D2H copies:
+  //   - non_const_buffer_sizes: [0, 32, 48]
+  //     (index 0 reserved, buffer 0 = 32 bytes CPU for inputs,
+  //      buffer 1 = 48 bytes CUDA for delegate output)
+  //   - non_const_buffer_device: [{buffer_idx=2, device_type=CUDA,
+  //     device_index=0}]
+  // So there are 2 planned buffers: user-facing index 0 (CPU) and index 1
+  // (CUDA).
+  ASSERT_EQ(method_meta->num_memory_planned_buffers(), 2);
 
-  bool found_cuda = false;
-  for (size_t i = 0; i < num_buffers; ++i) {
-    auto device = method_meta->memory_planned_buffer_device(i);
-    ASSERT_TRUE(device.ok());
-    if (device->type() == executorch::runtime::etensor::DeviceType::CUDA) {
-      EXPECT_EQ(device->index(), 0);
-      found_cuda = true;
-    }
-  }
-  EXPECT_TRUE(found_cuda) << "Expected at least one CUDA buffer";
+  // Buffer 0 should be CPU device (method inputs).
+  auto device0 = method_meta->memory_planned_buffer_device(0);
+  ASSERT_TRUE(device0.ok());
+  EXPECT_EQ(device0->type(), executorch::runtime::etensor::DeviceType::CPU);
+  EXPECT_EQ(device0->index(), 0);
+
+  // Buffer 1 should be CUDA device (delegate output).
+  auto device1 = method_meta->memory_planned_buffer_device(1);
+  ASSERT_TRUE(device1.ok());
+  EXPECT_EQ(device1->type(), executorch::runtime::etensor::DeviceType::CUDA);
+  EXPECT_EQ(device1->index(), 0);
 
   // Out of range should return error.
   EXPECT_EQ(
-      method_meta->memory_planned_buffer_device(num_buffers).error(),
+      method_meta->memory_planned_buffer_device(2).error(),
       Error::InvalidArgument);
 }

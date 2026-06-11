@@ -153,7 +153,6 @@ class MemoryPlanningPass(PassBase):
         alloc_mutable_buffers: bool = True,
         share_mutable_buffers: bool = False,
         alignment: int = ALIGNMENT,
-        enable_non_cpu_memory_planning: bool = False,
     ) -> None:
         r"""
         alloc_graph_input/alloc_graph_output will have 4 different combinations
@@ -174,14 +173,11 @@ class MemoryPlanningPass(PassBase):
         self.alloc_mutable_buffers = alloc_mutable_buffers
         self.share_mutable_buffers = share_mutable_buffers
         self.alignment = alignment
-
-        # When True, memory planning partitions specs by device and runs the
-        # algorithm independently per device, producing separate buffers for CPU
-        # vs. accelerator memory.  Default False preserves the legacy behavior
-        # where all tensors are planned into CPU memory regardless of device.
-        # A dict can be used to set per-method values, keyed by method name.
-        self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
         self.state = _MemoryPlanningState()
+        # Set by EdgeProgramManager.to_executorch() from the top-level
+        # ExecutorchBackendConfig. When True, apply_algo partitions specs by
+        # device so non-CPU buffers get their own memory arenas.
+        self.enable_non_cpu_memory_planning: bool = False
 
     def _set_alloc_node_spec(self, graph_module: torch.fx.GraphModule) -> None:
         """
@@ -200,6 +196,13 @@ class MemoryPlanningPass(PassBase):
                     if len(out_arg_names) == 1:
                         out_alloc_node = node.kwargs[out_arg_names[0]]
                         out_alloc_node.meta["spec"] = node.meta["spec"]
+                        share_idx = node.meta.get("_share_alloc_with_arg_idx")
+                        if share_idx is not None and share_idx < len(node.args):
+                            input_node = node.args[share_idx]
+                            if isinstance(input_node, Node):
+                                base_spec = input_node.meta.get("spec")
+                                if isinstance(base_spec, TensorSpec):
+                                    node.meta["spec"].inplace_base = base_spec
                         continue
                     specs = get_node_tensor_specs(node)
                     i = 0

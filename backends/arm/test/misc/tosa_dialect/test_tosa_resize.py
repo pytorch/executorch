@@ -72,6 +72,30 @@ def test_resize_rejects_scale_numerator_over_tosa_limit():
             )
 
 
+@pytest.mark.parametrize(
+    "offset,border",
+    (
+        ([1, 0], [-1, 0]),
+        ([0, 1], [0, -1]),
+    ),
+)
+def test_resize_rejects_non_positive_output_dimensions(offset, border):
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        with pytest.raises(
+            TosaValueError,
+            match="RESIZE output dimensions must be positive",
+        ):
+            exir_ops.backend.tosa.RESIZE.default(
+                mode.from_tensor(torch.randint(0, 10, (1, 1, 1, 1), dtype=torch.int8)),
+                [1, 1, 1, 1],
+                offset,
+                border,
+                resize_mode="nearest",
+            )
+
+
 def test_resize_accepts_symbolic_scale_and_border_values():
     shape_env = ShapeEnv()
     scale_y_n = _make_symint(shape_env, "scale_y_n", hint=2, min=1, max=8)

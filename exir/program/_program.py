@@ -59,9 +59,10 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-from executorch.exir.passes.propagate_device_pass import PropagateDevicePass, PropagateDeviceConfig
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
+from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
-from executorch.exir.passes.reinplace import reinplace_pass
+from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -771,11 +772,11 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
-        # By default instantiate the pass without arguments since we compare object ids later
         PropagateDevicePass(
             skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
             skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
-        ) if device_cfg.skip_h2d_for_method_inputs or device_cfg.skip_d2h_for_method_outputs else PropagateDevicePass(),
+            enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
+        ),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
@@ -1691,8 +1692,12 @@ class EdgeProgramManager:
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
                 program = quant_fusion_and_const_prop_pass(program)
-            if config.run_reinplace_pass:
-                program = reinplace_pass(program)
+            if config.run_reinplace_pass or config.reinplace_extra_ops:
+                extra = config.reinplace_extra_ops or frozenset()
+                program = reinplace_pass(
+                    program,
+                    ops_to_inplace=DEFAULT_INPLACEABLE_OPS | extra,
+                )
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
@@ -1736,6 +1741,12 @@ class EdgeProgramManager:
                 )
             else:
                 memory_planning_pass = config.memory_planning_pass
+            # Propagate enable_non_cpu_memory_planning from the top-level config
+            # to the pass instance so that device-aware partitioning is applied.
+            if hasattr(memory_planning_pass, "enable_non_cpu_memory_planning"):
+                memory_planning_pass.enable_non_cpu_memory_planning = (
+                    config.enable_non_cpu_memory_planning
+                )
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
                 new_gm_res = memory_planning_pass.run(new_gm, new_signature)

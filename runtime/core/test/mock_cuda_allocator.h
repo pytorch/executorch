@@ -27,7 +27,13 @@ namespace testing {
  */
 class MockCudaAllocator : public DeviceAllocator {
  public:
-  Result<void*> allocate(size_t nbytes, etensor::DeviceIndex index) override {
+  Result<void*> allocate(
+      size_t nbytes,
+      etensor::DeviceIndex index,
+      size_t alignment = kDefaultAlignment) override {
+    // malloc returns memory aligned to alignof(max_align_t), which satisfies
+    // kDefaultAlignment; the mock only exercises the default alignment.
+    (void)alignment;
     void* ptr = std::malloc(nbytes);
     if (!ptr) {
       return Error::MemoryAllocationFailed;

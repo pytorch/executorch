@@ -104,25 +104,32 @@ TEST_F(ModuleDeviceMemoryTest, DeviceModelMethodMetaReportsCudaBuffer) {
   auto meta = module.method_meta("forward");
   ASSERT_TRUE(meta.ok());
 
-  // ModuleAddWithDevice has planned buffers for both CPU and CUDA.
-  // Device-aware memory planning may create separate buffers per device.
-  size_t num_buffers = meta->num_memory_planned_buffers();
-  ASSERT_GE(num_buffers, 1);
+  ASSERT_EQ(meta->num_memory_planned_buffers(), 2);
 
-  // Find the CUDA buffer among all planned buffers.
-  bool found_cuda = false;
-  for (size_t i = 0; i < num_buffers; ++i) {
-    auto device = meta->memory_planned_buffer_device(i);
+  {
+    // After turn on on-device memory planning, the output cpu tensor shares
+    // the same buffer with the input cpu tensor. So the memory planned buffer
+    // only needs 2 * 16 = 32 bytes.
+
+    auto size = meta->memory_planned_buffer_size(0);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 32);
+
+    auto device = meta->memory_planned_buffer_device(0);
     ASSERT_TRUE(device.ok());
-    if (device->type() == DeviceType::CUDA) {
-      EXPECT_EQ(device->index(), 0);
-      auto size = meta->memory_planned_buffer_size(i);
-      ASSERT_TRUE(size.ok());
-      EXPECT_EQ(size.get(), 48);
-      found_cuda = true;
-    }
+    EXPECT_EQ(device->type(), DeviceType::CPU);
+    EXPECT_EQ(device->index(), 0);
   }
-  EXPECT_TRUE(found_cuda) << "Expected at least one CUDA buffer";
+  {
+    auto size = meta->memory_planned_buffer_size(1);
+    ASSERT_TRUE(size.ok());
+    EXPECT_EQ(size.get(), 48);
+
+    auto device = meta->memory_planned_buffer_device(1);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), DeviceType::CUDA);
+    EXPECT_EQ(device->index(), 0);
+  }
 }
 
 TEST_F(ModuleDeviceMemoryTest, DeviceModelWithSharedArenasReturnsNotSupported) {

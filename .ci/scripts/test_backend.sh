@@ -57,6 +57,13 @@ if [[ "$FLOW" == *vulkan* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *webgpu* ]]; then
+    # Dawn (Tint) + SwiftShader, the spec-faithful headless WebGPU backend.
+    source .ci/scripts/setup-webgpu-linux-deps.sh
+
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_WEBGPU=ON -DDawn_DIR=$Dawn_DIR"
+fi
+
 if [[ "$FLOW" == *arm* ]]; then
     if [[ "$SUITE" == "operators" ]]; then
         PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)

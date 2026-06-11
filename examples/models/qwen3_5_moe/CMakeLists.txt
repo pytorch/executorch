@@ -32,8 +32,14 @@ list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
 # Extensions
-list(APPEND link_libraries extension_module extension_data_loader
-     extension_tensor extension_flat_tensor
+list(
+  APPEND
+  link_libraries
+  extension_llm_runner
+  extension_module
+  extension_data_loader
+  extension_tensor
+  extension_flat_tensor
 )
 
 # Backend selection
@@ -42,7 +48,7 @@ if(EXECUTORCH_BUILD_METAL)
   executorch_target_link_options_shared_lib(metal_backend)
 elseif(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
-  list(APPEND link_libraries aoti_cuda_backend CUDA::cudart)
+  list(APPEND link_libraries aoti_cuda_backend)
   executorch_target_link_options_shared_lib(aoti_cuda_backend)
   add_compile_definitions(EXECUTORCH_BUILD_CUDA)
 else()
@@ -54,12 +60,7 @@ endif()
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
 
-add_executable(
-  qwen3_5_moe_runner
-  main.cpp ${EXECUTORCH_ROOT}/runtime/core/device_allocator.cpp
-  ${EXECUTORCH_ROOT}/runtime/core/device_memory_buffer.cpp
-  ${EXECUTORCH_ROOT}/backends/cuda/runtime/cuda_allocator.cpp
-)
+add_executable(qwen3_5_moe_runner main.cpp)
 target_include_directories(
   qwen3_5_moe_runner PUBLIC ${_common_include_directories}
 )

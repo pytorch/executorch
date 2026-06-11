@@ -98,6 +98,12 @@ class XnnpackBackend final
         weights_cache_mutex_, std::defer_lock);
     if (use_weight_cache) {
       lock_weights_cache.lock();
+
+      const auto& cache_path = options_.get_packed_cache_path();
+      if (!cache_path.empty()) {
+        weights_cache_->set_packed_cache_path(cache_path);
+      }
+
       weights_cache_->initialize_for_runtime(
           context.get_runtime_allocator(), named_data_map);
       workspace->set_uses_weight_cache();

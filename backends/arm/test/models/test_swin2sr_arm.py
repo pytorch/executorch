@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import sys
 from typing import Tuple
 
 import torch
@@ -17,7 +18,7 @@ from transformers import Swin2SRConfig, Swin2SRForImageSuperResolution
 
 input_t = Tuple[torch.Tensor]
 
-exir_ops = [
+ops_expected_absent_after_lowering = [
     "executorch_exir_dialects_edge__ops_aten_add_Tensor",
     "executorch_exir_dialects_edge__ops_aten_convolution_default",
     "executorch_exir_dialects_edge__ops_aten_layer_norm_default",
@@ -26,6 +27,24 @@ exir_ops = [
     "executorch_exir_dialects_edge__ops_aten_pixel_shuffle_default",
     "executorch_exir_dialects_edge__ops_aten_softmax_int",
 ]
+
+# TODO/MLETORCH-2163: Investigate Swin2SR delegation gaps around index/view
+# in FP and Q/DQ, clamp, and expand_copy in INT.
+swin2sr_fp_lowered_outer_graph_ops = {
+    "torch.ops.higher_order.executorch_call_delegate": 2,
+    "executorch_exir_dialects_edge__ops_aten_index_Tensor": 2,
+    "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
+}
+swin2sr_int_lowered_outer_graph_ops = {
+    "torch.ops.higher_order.executorch_call_delegate": 3,
+    "executorch_exir_dialects_edge__ops_aten_clamp_default": 4,
+    "executorch_exir_dialects_edge__ops_aten_expand_copy_default": 4,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 6,
+}
+swin2sr_vgf_quant_lowered_outer_graph_ops = {
+    "torch.ops.higher_order.executorch_call_delegate": 1,
+}
 
 
 class TinySwin2SR(torch.nn.Module):
@@ -62,12 +81,10 @@ def test_swin2sr_tosa_FP():
         model,
         model_inputs,
         aten_op=[],
-        exir_op=exir_ops,
+        exir_op=ops_expected_absent_after_lowering,
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.pop_stage("check_count.exir")
-    # TODO: MLETORCH-2134 re-enable once Swin2SR runs on the TOSA ref model.
-    pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.change_args("check_count.exir", swin2sr_fp_lowered_outer_graph_ops)
     pipeline.run()
 
 
@@ -77,12 +94,10 @@ def test_swin2sr_tosa_INT():
         model,
         model_inputs,
         aten_op=[],
-        exir_op=exir_ops,
+        exir_op=ops_expected_absent_after_lowering,
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.pop_stage("check_count.exir")
-    # TODO: MLETORCH-2134 re-enable once Swin2SR runs on the TOSA ref model.
-    pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.change_args("check_count.exir", swin2sr_int_lowered_outer_graph_ops)
     pipeline.run()
 
 
@@ -93,13 +108,12 @@ def test_swin2sr_vgf_quant():
         model,
         model_inputs,
         aten_op=[],
-        exir_op=exir_ops,
+        exir_op=ops_expected_absent_after_lowering,
         use_to_edge_transform_and_lower=True,
         quantize=True,
+        run_on_vulkan_runtime=sys.platform == "linux",
     )
-    pipeline.pop_stage("check_count.exir")
-    # TODO: MLETORCH-2134 re-enable once Swin2SR runs on the TOSA ref model.
-    pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.change_args("check_count.exir", swin2sr_vgf_quant_lowered_outer_graph_ops)
     pipeline.run()
 
 
@@ -110,9 +124,9 @@ def test_swin2sr_vgf_no_quant():
         model,
         model_inputs,
         aten_op=[],
-        exir_op=exir_ops,
+        exir_op=ops_expected_absent_after_lowering,
         use_to_edge_transform_and_lower=True,
         quantize=False,
     )
-    pipeline.pop_stage("check_count.exir")
+    pipeline.change_args("check_count.exir", swin2sr_fp_lowered_outer_graph_ops)
     pipeline.run()

@@ -256,6 +256,35 @@ class LLMEdgeManager:
             assert res.graph_module is not None, "Pass returned None"
             self.pre_autograd_graph_module = res.graph_module
 
+    def _check_calibration_prefix_options(self) -> None:
+        if (
+            not self.use_kv_cache
+            and not self.enable_dynamic_shape
+            and not self.generate_full_logits
+        ):
+            raise ValueError(
+                "Static non-KV calibration with padded prefixes requires "
+                "generate_full_logits so calibration can sample the last "
+                "non-pad token position."
+            )
+
+    def _prepare_calibration_prefix(
+        self, token_list: List[int], pos: int, max_len: int, pad_token: int
+    ) -> Tuple[torch.Tensor, int]:
+        prefix_tokens = list(token_list[: pos + 1])
+        logits_token_pos = min(len(prefix_tokens), max_len) - 1
+
+        if self.enable_dynamic_shape:
+            prefix_tokens = prefix_tokens[:max_len]
+        elif len(prefix_tokens) < max_len:
+            prefix_tokens.extend([pad_token] * (max_len - len(prefix_tokens)))
+        else:
+            prefix_tokens = prefix_tokens[:max_len]
+
+        input_dtype = self.example_inputs[0].dtype
+        prefix = torch.tensor(prefix_tokens, dtype=input_dtype).unsqueeze(0)
+        return prefix, logits_token_pos
+
     def pt2e_calibrate(
         self,
         prepared_module,
@@ -266,39 +295,41 @@ class LLMEdgeManager:
         tokenizer_path,
     ):
         logging.info("Run calibration...")
-        try:
-            from executorch.examples.models.llama.eval_llama_lib import (
-                GraphModuleEvalWrapper,
-            )
-            from lm_eval.evaluator import simple_evaluate
-        except ImportError:
-            raise ImportError(
-                "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
-            )
-
+        self._check_calibration_prefix_options()
         tokenizer = get_tokenizer(tokenizer_path)
 
         def calibrate_template(
             module: torch.fx.GraphModule, tokenizer, prompts: str, max_len: int
         ):
             # TODO: change criteria & support batch inputs if necessary
-            pos = torch.tensor(0, dtype=torch.int64)
+            pos = 0
             token_list = tokenizer.encode(prompts, bos=True, eos=False)
+
+            pad_token = getattr(tokenizer, "pad_id", tokenizer.eos_id)
 
             with torch.no_grad():
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
-                    logits = module(
-                        torch.full((1, 1), token_list[pos]),
-                        {"input_pos": torch.tensor((pos,))},
-                    )
+                    logits_token_pos = -1
+                    if self.use_kv_cache:
+                        logits = module(
+                            torch.full((1, 1), token_list[pos]),
+                            {"input_pos": torch.tensor((pos,))},
+                        )
+                    else:
+                        prefix, logits_token_pos = self._prepare_calibration_prefix(
+                            token_list, pos, max_len, pad_token
+                        )
+                        logits = module(prefix)
+
                     pos += 1
                     if pos >= len(token_list):
                         if self.generate_full_logits:
-                            token_list.append(
-                                torch.argmax(logits[:, -1], dim=-1).item()
-                            )
+                            next_token = torch.argmax(
+                                logits[:, logits_token_pos], dim=-1
+                            ).item()
                         else:
-                            token_list.append(torch.argmax(logits[:], dim=-1).item())
+                            next_token = torch.argmax(logits[:], dim=-1).item()
+                        token_list.append(next_token)
 
         calibrate_template(
             module=prepared_module,
@@ -307,26 +338,41 @@ class LLMEdgeManager:
             max_len=calibration_seq_length,
         )
 
-        eval_wrapper = GraphModuleEvalWrapper(
-            model=prepared_module,
-            tokenizer=tokenizer,
-            max_seq_length=calibration_seq_length,
-            use_kv_cache=self.use_kv_cache,
-            generate_full_logits=self.generate_full_logits,
-            enable_dynamic_shape=self.enable_dynamic_shape,
-        )
+        if calibration_tasks:
+            try:
+                from executorch.examples.models.llama.eval_llama_lib import (
+                    GraphModuleEvalWrapper,
+                )
+                from lm_eval.evaluator import simple_evaluate
+            except ImportError:
+                raise ImportError(
+                    "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
+                )
 
-        # Evaluate the model
-        with torch.no_grad():
-            eval_results = simple_evaluate(
-                model=eval_wrapper,
-                tasks=calibration_tasks,
-                limit=calibration_limit,
+            eval_wrapper = GraphModuleEvalWrapper(
+                model=prepared_module,
+                tokenizer=tokenizer,
+                max_seq_length=calibration_seq_length,
+                use_kv_cache=self.use_kv_cache,
+                generate_full_logits=self.generate_full_logits,
+                enable_dynamic_shape=self.enable_dynamic_shape,
+                # The exported graph can contain ops like aten.full.default
+                # without explicit device, which default to CPU and can
+                # trigger device-mismatch errors when lm_eval runs on CUDA.
+                # Calibrate on CPU for stability.
+                device="cpu",
             )
 
-        for task, res in eval_results["results"].items():
-            print(f"{task}: {res}")
-        logging.info("Calibration finish...")
+            with torch.no_grad():
+                eval_results = simple_evaluate(
+                    model=eval_wrapper,
+                    tasks=calibration_tasks,
+                    limit=calibration_limit,
+                )
+
+            for task, res in eval_results["results"].items():
+                print(f"{task}: {res}")
+            logging.info("Calibration finish...")
 
     def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
         """
@@ -351,18 +397,19 @@ class LLMEdgeManager:
                 assert (
                     self.pre_autograd_graph_module is not None
                 ), "Please run export() first"
+                if self.calibration_tasks and self.calibration_limit is None:
+                    logging.warning(
+                        "calibration_tasks provided without calibration_limit; "
+                        "lm-eval will run the full task dataset during "
+                        "calibration."
+                    )
                 m = prepare_pt2e(
                     self.pre_autograd_graph_module,  # pyre-ignore[6]
                     composed_quantizer,
                 )
-                logging.info(
-                    f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
-                )
                 # Calibrate
                 if (
-                    self.calibration_tasks is not None
-                    and self.calibration_limit is not None
-                    and self.calibration_seq_length is not None
+                    self.calibration_seq_length is not None
                     and self.calibration_data is not None
                     and self.tokenizer_path is not None
                 ):

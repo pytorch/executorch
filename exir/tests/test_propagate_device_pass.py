@@ -7,7 +7,7 @@
 import operator
 import unittest
 from copy import deepcopy
-from typing import List, Optional
+from typing import List, NamedTuple, Optional
 
 # Import to register et_copy ops
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
@@ -28,10 +28,16 @@ from executorch.exir.passes.propagate_device_pass import (
     PropagateDeviceConfig,
     TARGET_DEVICE_COMPILE_SPEC_KEY,
 )
-from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.schema import DeviceType
 from executorch.exir.tensor import TensorSpec
 from torch.export import export
+
+
+class DeviceCopyNodes(NamedTuple):
+    h2d_nodes: List[torch.fx.Node]
+    d2h_nodes: List[torch.fx.Node]
+    delegate_nodes: List[torch.fx.Node]
+    getitem_nodes: List[torch.fx.Node]
 
 
 def _lower_model_to_executorch(
@@ -43,6 +49,7 @@ def _lower_model_to_executorch(
     """Lower model all the way through to_executorch for E2E tests."""
     if et_config is None:
         et_config = ExecutorchBackendConfig(emit_stacktrace=False)
+
     ep = export(model, inputs)
     ep_copied = deepcopy(ep)
 
@@ -59,6 +66,32 @@ def _lower_model_to_executorch(
         ("to_edge+to_backend", gm_1),
         ("to_edge_transform_and_lower", gm_2),
     ]
+
+
+def _collect_device_copy_nodes(gm: torch.fx.GraphModule) -> DeviceCopyNodes:
+    h2d_nodes = []
+    d2h_nodes = []
+    delegate_nodes = []
+    getitem_nodes = []
+
+    for node in gm.graph.nodes:
+        if node.op != "call_function":
+            continue
+        if node.target == torch.ops.et_copy._h2d_copy.out:
+            h2d_nodes.append(node)
+        elif node.target == torch.ops.et_copy._d2h_copy.out:
+            d2h_nodes.append(node)
+        elif node.target == executorch_call_delegate:
+            delegate_nodes.append(node)
+        elif node.target == operator.getitem:
+            getitem_nodes.append(node)
+
+    return DeviceCopyNodes(
+        h2d_nodes=h2d_nodes,
+        d2h_nodes=d2h_nodes,
+        delegate_nodes=delegate_nodes,
+        getitem_nodes=getitem_nodes,
+    )
 
 
 class TestPropagateDevicePass(unittest.TestCase):
@@ -148,23 +181,6 @@ class TestPropagateDevicePass(unittest.TestCase):
             )
 
     @staticmethod
-    def _collect_copy_nodes(gm):
-        """Classify call_function nodes into H2D, D2H, delegate, and getitem lists."""
-        h2d, d2h, delegate, getitem = [], [], [], []
-        for node in gm.graph.nodes:
-            if node.op != "call_function":
-                continue
-            if node.target == torch.ops.et_copy._h2d_copy.out:
-                h2d.append(node)
-            elif node.target == torch.ops.et_copy._d2h_copy.out:
-                d2h.append(node)
-            elif node.target == executorch_call_delegate:
-                delegate.append(node)
-            elif node.target == operator.getitem:
-                getitem.append(node)
-        return {"h2d": h2d, "d2h": d2h, "delegate": delegate, "getitem": getitem}
-
-    @staticmethod
     def _collect_placeholders_by_device(gm):
         """Partition placeholder nodes by device type. Returns (cuda_list, cpu_list)."""
         cuda, cpu = [], []
@@ -227,14 +243,17 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
-                nodes = self._collect_copy_nodes(gm)
-                h2d_nodes = nodes["h2d"]
-                d2h_nodes = nodes["d2h"]
-                delegate_nodes = nodes["delegate"]
-                getitem_nodes = nodes["getitem"]
+                nodes = _collect_device_copy_nodes(gm)
+                h2d_nodes = nodes.h2d_nodes
+                d2h_nodes = nodes.d2h_nodes
+                delegate_nodes = nodes.delegate_nodes
+                getitem_nodes = nodes.getitem_nodes
 
                 # Model has 2 inputs, 1 output → 2 H2D, 1 D2H
                 self.assertEqual(
@@ -284,12 +303,15 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
-                nodes = self._collect_copy_nodes(gm)
-                h2d_nodes = nodes["h2d"]
-                d2h_nodes = nodes["d2h"]
+                nodes = _collect_device_copy_nodes(gm)
+                h2d_nodes = nodes.h2d_nodes
+                d2h_nodes = nodes.d2h_nodes
 
                 self.assertGreater(
                     len(h2d_nodes),
@@ -346,21 +368,39 @@ class TestPropagateDevicePass(unittest.TestCase):
             model, inputs, CpuOnlyPartitioner()
         ):
             with self.subTest(pipeline=pipeline):
-                for node in gm.graph.nodes:
-                    if node.op != "call_function":
-                        continue
-                    self.assertNotEqual(
-                        node.target,
-                        torch.ops.et_copy._h2d_copy.out,
-                        f"[{pipeline}] Unexpected H2D copy node '{node.name}' "
-                        f"when no target_device is set",
-                    )
-                    self.assertNotEqual(
-                        node.target,
-                        torch.ops.et_copy._d2h_copy.out,
-                        f"[{pipeline}] Unexpected D2H copy node '{node.name}' "
-                        f"when no target_device is set",
-                    )
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(device_copy_nodes.h2d_nodes),
+                    0,
+                    f"[{pipeline}] Unexpected H2D copy nodes when no target_device is set",
+                )
+                self.assertEqual(
+                    len(device_copy_nodes.d2h_nodes),
+                    0,
+                    f"[{pipeline}] Unexpected D2H copy nodes when no target_device is set",
+                )
+
+    def test_copy_nodes_require_non_cpu_memory_planning(self):
+        """With enable_non_cpu_memory_planning disabled, lowering keeps legacy
+        device tags without inserting runtime copy ops."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=False),
+        ):
+            with self.subTest(pipeline=pipeline):
+                device_copy_nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(device_copy_nodes.h2d_nodes), 0)
+                self.assertEqual(len(device_copy_nodes.d2h_nodes), 0)
 
         # ---- Integration tests: device consistency after to_executorch ----
 
@@ -440,7 +480,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         ):
             with self.subTest(pipeline=pipeline):
                 for node in gm.graph.nodes:
@@ -655,26 +698,28 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            propagate_device_config=PropagateDeviceConfig(skip_h2d_for_method_inputs=True),
-            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
         )
 
         for pipeline, program, gm in self._get_executorch_program(
             model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
         ):
             with self.subTest(pipeline=pipeline):
-                nodes = self._collect_copy_nodes(gm)
+                nodes = _collect_device_copy_nodes(gm)
                 self.assertEqual(
-                    len(nodes["h2d"]),
+                    len(nodes.h2d_nodes),
                     0,
                     f"[{pipeline}] Expected no H2D copy nodes when "
-                    f"skip_h2d_for_method_inputs=True, got {len(nodes['h2d'])}",
+                    f"skip_h2d_for_method_inputs=True, got {len(nodes.h2d_nodes)}",
                 )
                 self.assertEqual(
-                    len(nodes["d2h"]),
+                    len(nodes.d2h_nodes),
                     1,
                     f"[{pipeline}] Expected 1 D2H copy node for the single "
-                    f"output, got {len(nodes['d2h'])}",
+                    f"output, got {len(nodes.d2h_nodes)}",
                 )
 
                 # Placeholder inputs should be tagged as CUDA since H2D was
@@ -711,26 +756,28 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            propagate_device_config=PropagateDeviceConfig(skip_d2h_for_method_outputs=True),
-            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
+            propagate_device_config=PropagateDeviceConfig(
+                skip_d2h_for_method_outputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
         )
 
         for pipeline, program, gm in self._get_executorch_program(
             model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
         ):
             with self.subTest(pipeline=pipeline):
-                nodes = self._collect_copy_nodes(gm)
+                nodes = _collect_device_copy_nodes(gm)
                 self.assertEqual(
-                    len(nodes["d2h"]),
+                    len(nodes.d2h_nodes),
                     0,
                     f"[{pipeline}] Expected no D2H copy nodes when "
-                    f"skip_d2h_for_method_outputs=True, got {len(nodes['d2h'])}",
+                    f"skip_d2h_for_method_outputs=True, got {len(nodes.d2h_nodes)}",
                 )
                 self.assertEqual(
-                    len(nodes["h2d"]),
+                    len(nodes.h2d_nodes),
                     2,
                     f"[{pipeline}] Expected 2 H2D copy nodes for the two "
-                    f"inputs, got {len(nodes['h2d'])}",
+                    f"inputs, got {len(nodes.h2d_nodes)}",
                 )
 
                 # Delegate getitem nodes feeding to output should stay on
@@ -769,25 +816,25 @@ class TestPropagateDevicePass(unittest.TestCase):
                 skip_h2d_for_method_inputs=True,
                 skip_d2h_for_method_outputs=True,
             ),
-            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
+            enable_non_cpu_memory_planning=True,
         )
 
         for pipeline, program, gm in self._get_executorch_program(
             model, inputs, DeviceAwarePartitioner("cuda:0"), et_config
         ):
             with self.subTest(pipeline=pipeline):
-                nodes = self._collect_copy_nodes(gm)
+                nodes = _collect_device_copy_nodes(gm)
                 self.assertEqual(
-                    len(nodes["h2d"]),
+                    len(nodes.h2d_nodes),
                     0,
                     f"[{pipeline}] Expected no H2D copy nodes when "
-                    f"skip_h2d_for_method_inputs=True, got {len(nodes['h2d'])}",
+                    f"skip_h2d_for_method_inputs=True, got {len(nodes.h2d_nodes)}",
                 )
                 self.assertEqual(
-                    len(nodes["d2h"]),
+                    len(nodes.d2h_nodes),
                     0,
                     f"[{pipeline}] Expected no D2H copy nodes when "
-                    f"skip_d2h_for_method_outputs=True, got {len(nodes['d2h'])}",
+                    f"skip_d2h_for_method_outputs=True, got {len(nodes.d2h_nodes)}",
                 )
 
                 # Placeholder inputs should be tagged as CUDA since H2D
@@ -843,8 +890,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
         et_config = ExecutorchBackendConfig(
             emit_stacktrace=False,
-            propagate_device_config=PropagateDeviceConfig(skip_h2d_for_method_inputs=True),
-            memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True),
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True
+            ),
+            enable_non_cpu_memory_planning=True,
         )
 
         for pipeline, program, gm in self._get_executorch_program(
@@ -853,18 +902,18 @@ class TestPropagateDevicePass(unittest.TestCase):
             with self.subTest(pipeline=pipeline):
                 # sin(a) is intermediate (not a placeholder), so it still
                 # gets an H2D copy. Placeholder b is skipped.
-                nodes = self._collect_copy_nodes(gm)
+                nodes = _collect_device_copy_nodes(gm)
                 self.assertEqual(
-                    len(nodes["h2d"]),
+                    len(nodes.h2d_nodes),
                     1,
                     f"[{pipeline}] Expected 1 H2D copy node for the "
-                    f"intermediate input, got {len(nodes['h2d'])}",
+                    f"intermediate input, got {len(nodes.h2d_nodes)}",
                 )
                 self.assertEqual(
-                    len(nodes["d2h"]),
+                    len(nodes.d2h_nodes),
                     1,
                     f"[{pipeline}] Expected 1 D2H copy node for the single "
-                    f"output, got {len(nodes['d2h'])}",
+                    f"output, got {len(nodes.d2h_nodes)}",
                 )
 
                 # Exactly 1 placeholder should be on CUDA (b, which feeds

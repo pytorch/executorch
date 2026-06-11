@@ -94,7 +94,7 @@ Users attempting to write a custom memory planning algorithm should start by loo
 
 ## Device-Aware Memory Planning
 
-When `enable_non_cpu_memory_planning=True` is set on `MemoryPlanningPass`,
+When `enable_non_cpu_memory_planning=True` is set on `ExecutorchBackendConfig`,
 the memory planning pass partitions tensor specs by their device type and runs
 the planning algorithm independently for each device.  This produces separate
 memory buffers for each device (e.g. CPU vs. CUDA), ensuring that device memory
@@ -103,7 +103,7 @@ and host memory are never mixed.
 ```python
 program = edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
-                memory_planning_pass=exir.passes.MemoryPlanningPass(enable_non_cpu_memory_planning=True),
+                enable_non_cpu_memory_planning=True,
             )
         )
 ```

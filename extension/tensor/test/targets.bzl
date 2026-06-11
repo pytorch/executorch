@@ -28,7 +28,7 @@ def define_common_targets():
                 "tensor_ptr_device_test.cpp",
             ],
             deps = [
-                "//executorch/extension/tensor:tensor" + aten_suffix,
+                "//executorch/extension/tensor:tensor",
                 "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core/test:mock_cuda_allocator",
             ],

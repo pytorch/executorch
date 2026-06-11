@@ -2618,7 +2618,7 @@ class TestEmit(unittest.TestCase):
         )
         lowered = edge.to_backend(DeviceAwarePartitioner())
         et_prog = lowered.to_executorch(
-            config=ExecutorchBackendConfig(memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True)),
+            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         )
         program = et_prog._emitter_output.program
 
@@ -2649,7 +2649,7 @@ class TestEmit(unittest.TestCase):
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         et_prog = edge.to_executorch(
-            config=ExecutorchBackendConfig(memory_planning_pass=MemoryPlanningPass(enable_non_cpu_memory_planning=True)),
+            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
         )
         program = et_prog._emitter_output.program
 
@@ -2661,7 +2661,7 @@ class TestEmit(unittest.TestCase):
 
     def test_emit_non_const_buffer_device_none_when_flag_disabled(self) -> None:
         """Even with device tensors, non_const_buffer_device should be None when
-        enable_non_cpu_memory_planning is False (default)."""
+        enable_non_cpu_memory_planning is explicitly disabled."""
         from executorch.exir.backend.test.device_util import DeviceAwarePartitioner
 
         class Model(torch.nn.Module):
@@ -2676,8 +2676,9 @@ class TestEmit(unittest.TestCase):
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         lowered = edge.to_backend(DeviceAwarePartitioner())
-        # Default: enable_non_cpu_memory_planning=False
-        et_prog = lowered.to_executorch()
+        et_prog = lowered.to_executorch(
+            config=ExecutorchBackendConfig(enable_non_cpu_memory_planning=False),
+        )
         program = et_prog._emitter_output.program
 
         plan = program.execution_plan[0]

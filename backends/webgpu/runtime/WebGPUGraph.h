@@ -11,12 +11,15 @@
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
-namespace executorch {
-namespace backends {
-namespace webgpu {
+#include <executorch/runtime/core/named_data_map.h>
+
+namespace executorch::backends::webgpu {
 
 struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
@@ -30,12 +33,28 @@ struct WebGPUDispatch {
   uint32_t workgroup_count_x = 1;
 };
 
+struct OutputCopy {
+  WGPUBuffer src_buffer = nullptr;
+  WGPUBuffer staging_buffer = nullptr;
+  size_t nbytes = 0;
+};
+
+struct ExecuteConfig {
+  size_t chunk_size = 0;
+  size_t initial_chunk_size = 0;
+};
+
 struct WebGPUMemoryStats {
   size_t tensor_buffer_bytes = 0;
+  size_t shared_buffer_bytes = 0;
+  int num_shared_objects = 0;
+  size_t unshared_tensor_buffer_bytes = 0;
   size_t staging_buffer_bytes = 0;
   size_t uniform_buffer_bytes = 0;
   int num_tensors = 0;
   int num_dispatches = 0;
+  int num_cached_pipelines = 0;
+  int num_cached_shaders = 0;
 
   size_t total_bytes() const {
     return tensor_buffer_bytes + staging_buffer_bytes + uniform_buffer_bytes;
@@ -49,7 +68,10 @@ class WebGPUGraph {
 
   // Build the graph from a deserialized VkGraph flatbuffer and constant data.
   // The flatbuffer_data pointer must remain valid during build().
-  void build(const void* flatbuffer_data, const uint8_t* constant_data);
+  void build(
+      const void* flatbuffer_data,
+      const uint8_t* constant_data,
+      const executorch::runtime::NamedDataMap* named_data_map = nullptr);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<std::pair<const void*, size_t>>& inputs);
@@ -84,6 +106,52 @@ class WebGPUGraph {
     return ints_[id];
   }
 
+  // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
+  // set_symint writes the buffer + marks dirty only if the value changed.
+  void set_symint(int id, int32_t val);
+  // read_symint throws (fail-loud) if id is not a SymInt.
+  int32_t read_symint(int id) const {
+    return symints_.at(id).value;
+  }
+  // symint_buffer throws (fail-loud) if id is not a SymInt.
+  WGPUBuffer symint_buffer(int id) const {
+    return symints_.at(id).buffer;
+  }
+
+  // Records that a SymInt's value is read from input_tensor[index] along dim.
+  struct SymIntSource {
+    int symint_id;
+    int input_tensor_id;
+    int dim;
+    int index;
+  };
+  void
+  add_symint_source(int symint_id, int input_tensor_id, int dim, int index) {
+    symint_sources_.push_back({symint_id, input_tensor_id, dim, index});
+  }
+  const std::vector<SymIntSource>& symint_sources() const {
+    return symint_sources_;
+  }
+
+  // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
+  void update_symints_from_inputs(
+      const std::vector<std::pair<const void*, size_t>>& inputs);
+
+  // Per-SymInt resize hook; mirrors Vulkan DynamicDispatchNode::trigger_resize.
+  void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
+    resize_hooks_.push_back({symint_id, std::move(fn)});
+  }
+  // Run hooks for changed SymInts then clear; call before execute().
+  void propagate_resize();
+
+  // Mutable dispatch access for resize hooks (to rewrite workgroup_count_x).
+  WebGPUDispatch& dispatch_at(size_t i) {
+    return dispatches_[i];
+  }
+  size_t num_dispatches() const {
+    return dispatches_.size();
+  }
+
   WGPUDevice device() const {
     return device_;
   }
@@ -99,6 +167,28 @@ class WebGPUGraph {
     uniform_buffer_bytes_ += bytes;
   }
 
+  // Keep a uniform alive for the graph's lifetime; released in the dtor.
+  void own_uniform_buffer(WGPUBuffer buffer) {
+    owned_uniform_buffers_.push_back(buffer);
+  }
+
+  // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
+  WGPUBuffer create_scratch_buffer(size_t nbytes);
+
+  WGPUShaderModule get_or_create_shader(
+      const std::string& key,
+      const char* wgsl_source);
+
+  WGPUComputePipeline get_or_create_pipeline(
+      const std::string& key,
+      WGPUShaderModule shader,
+      WGPUPipelineLayout layout);
+
+  WGPUBindGroupLayout get_or_create_bgl(
+      const std::string& key,
+      const WGPUBindGroupLayoutEntry* entries,
+      uint32_t count);
+
   void set_instance(WGPUInstance instance) {
     instance_ = instance;
   }
@@ -112,7 +202,7 @@ class WebGPUGraph {
     return static_cast<int>(value_types_.size());
   }
 
-  enum class ValueType { Tensor, Int, Double, Bool, Null, String };
+  enum class ValueType { Tensor, Int, Double, Bool, Null, String, SymInt };
 
   ValueType get_value_type(int id) const {
     return value_types_[id];
@@ -131,17 +221,52 @@ class WebGPUGraph {
   std::vector<double> doubles_;
   std::vector<bool> bools_;
 
+  // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
+  struct SymIntSlot {
+    WGPUBuffer buffer = nullptr;
+    int32_t value = 0;
+  };
+  std::unordered_map<int, SymIntSlot> symints_;
+  std::vector<SymIntSource> symint_sources_;
+
+  // Resize hooks + the set of SymInts changed since the last propagate_resize.
+  struct ResizeHook {
+    int symint_id;
+    std::function<void(WebGPUGraph&)> fn;
+  };
+  std::vector<ResizeHook> resize_hooks_;
+  std::unordered_set<int> dirty_symints_;
+
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;
+
+  // Memory aliasing: tensors with the same mem_obj_id share a WGPUBuffer.
+  std::vector<int> tensor_mem_obj_ids_;
+  std::vector<WGPUBuffer> shared_buffers_;
+  std::vector<size_t> shared_buffer_sizes_;
+
+  // Long-lived scratch storage buffers for fused ops (e.g. SDPA temporaries).
+  std::vector<WGPUBuffer> scratch_buffers_;
+
+  // Uniform buffers owned for the graph's lifetime; released in the dtor.
+  std::vector<WGPUBuffer> owned_uniform_buffers_;
 
   // Staging buffers for reading back outputs (MapRead | CopyDst).
   std::vector<WGPUBuffer> output_staging_buffers_;
 
+  // Pre-computed output copy descriptors for execute().
+  std::vector<OutputCopy> output_copies_;
+
   std::vector<WebGPUDispatch> dispatches_;
+
+  ExecuteConfig execute_config_;
+
+  // Caches for reusing GPU objects across dispatches.
+  std::unordered_map<std::string, WGPUShaderModule> shader_cache_;
+  std::unordered_map<std::string, WGPUComputePipeline> pipeline_cache_;
+  std::unordered_map<std::string, WGPUBindGroupLayout> bgl_cache_;
 
   size_t uniform_buffer_bytes_ = 0;
 };
 
-} // namespace webgpu
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::webgpu

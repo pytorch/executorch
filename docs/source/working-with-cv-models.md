@@ -56,9 +56,58 @@ If the model expects a crop after resizing, keep that policy in exactly one plac
 
 Most mobile image APIs expose decoded pixels as interleaved rows. Most PyTorch vision models expect channels-first tensors. If preprocessing stays in the app, explicitly pack pixels into the model's expected layout.
 
+ExecuTorch ships a C++ `ImageProcessor` (`extension/image`) that resizes, color-converts, and normalizes pixels into a channels-first `Tensor<Float>`, with a Swift and Objective-C binding on iOS. Prefer it where available; the per-platform helpers below show the manual packing path for when you are not using it.
+
+### C++
+
+For native runners and JNI code, call the C++ `ImageProcessor` directly. Decode the image yourself (for example with `stb_image`) into an 8-bit `RGBA` or `BGRA` buffer; `ImageProcessor` then resizes, converts to RGB, and normalizes into a `[1, 3, target_height, target_width]` `float32` tensor. Link against `extension_image`.
+
+```cpp
+#include <executorch/extension/image/image_processor.h>
+#include <executorch/extension/module/module.h>
+
+using executorch::extension::Module;
+using executorch::extension::image::ColorFormat;
+using executorch::extension::image::ImageProcessor;
+using executorch::extension::image::ImageProcessorConfig;
+using executorch::extension::image::Normalization;
+
+// Decode to interleaved 8-bit RGBA (alpha is ignored). ImageProcessor does not
+// decode JPEG/PNG; bring your own decoder.
+int width = 0, height = 0, channels = 0;
+uint8_t* rgba = stbi_load(path, &width, &height, &channels, /*req_comp=*/4);
+
+ImageProcessorConfig config;
+config.target_width = 224;
+config.target_height = 224;
+config.normalization = Normalization::imagenet(); // or zeroToOne(), or custom
+// config.resize_mode = ResizeMode::LETTERBOX;     // default: STRETCH
+
+ImageProcessor processor(config);
+
+// Resize + RGB conversion + normalization -> [1, 3, 224, 224] float32 tensor.
+auto result = processor.process(
+    rgba, width, height, /*stride_bytes=*/width * 4, ColorFormat::RGBA);
+if (!result.ok()) {
+  // Inspect result.error() and bail out.
+}
+auto input = result.get(); // TensorPtr, shape [1, 3, 224, 224], float32, RGB
+
+Module module("model.pte");
+const auto outputs = module.forward(*input);
+```
+
+The same processor covers a few related cases:
+
+- **YUV camera frames:** call `process_yuv(...)` with `YUVFormat::NV12` or `NV21`.
+- **Video:** preallocate a contiguous `[1, 3, target_height, target_width]` `float32` tensor and call `process_into(...)` to reuse it across frames and avoid per-frame allocations.
+- **Rotated source:** pass `Orientation::DOWN`, `RIGHT`, or `LEFT`.
+
+See `examples/models/dinov2/main.cpp` for a complete runner.
+
 ### Android
 
-For production Android preprocessing, handle decoding, EXIF orientation, and camera-specific transforms before packing pixels into the input tensor. The following Kotlin helper keeps the layout conversion explicit: it resizes a `Bitmap`, reads RGB pixels, applies ImageNet-style normalization, and packs the result as `NCHW` `float32` data for `Tensor.fromBlob`.
+For production Android preprocessing, handle decoding, EXIF orientation, and camera-specific transforms before packing pixels into the input tensor. There is no Java or Kotlin binding for the C++ `ImageProcessor` yet, so on Android either call it through JNI or pack the tensor in app code. The following Kotlin helper keeps the layout conversion explicit: it resizes a `Bitmap`, reads RGB pixels, applies ImageNet-style normalization, and packs the result as `NCHW` `float32` data for `Tensor.fromBlob`.
 
 ```kotlin
 import android.graphics.Bitmap
@@ -104,7 +153,41 @@ val inputTensor = Tensor.fromBlobUnsigned(
 
 ### iOS
 
-For production iOS preprocessing, prefer platform image APIs and Accelerate, such as vImage for resizing and color conversion and vDSP for normalization, especially for camera frames or other hot paths. The following Swift helper keeps the layout conversion explicit so the tensor contract is easy to inspect: it draws a `UIImage` into a fixed-size RGB buffer, uses vDSP to normalize RGB channels, and creates a channels-first `Tensor<Float>`.
+For production iOS preprocessing from a `CVPixelBuffer`, prefer the `ImageProcessor` included in the ExecuTorch iOS framework. It handles resize, color conversion, and normalization from a `CVPixelBuffer` to a channels-first `Tensor<Float>`, so you avoid hand-written pixel packing. This is a good fit for camera frames and other hot paths.
+
+```swift
+import ExecuTorch
+
+// Configure once and reuse across frames.
+let config = ImageProcessorConfig(
+  targetWidth: 224,
+  targetHeight: 224,
+  normalization: .imagenet()
+)
+let processor = ImageProcessor(config: config)
+
+// Process a CVPixelBuffer (BGRA, RGBA, 8-bit NV12, or 10-bit P010).
+let input: Tensor<Float> = try processor.process(pixelBuffer)
+// input shape: [1, 3, 224, 224], RGB, channels-first
+```
+
+- Normalization: `.zeroToOne()`, `.imagenet()`, or a custom `ImageNormalization(scaleFactor:mean:standardDeviation:)` for models such as CLIP or detection/segmentation backbones.
+- Resize: `.stretch` (default) or `.letterbox` (with `letterboxAnchor` and `padValue`); use `computeLetterboxPadding(inputWidth:inputHeight:)` to map outputs back to source coordinates.
+- Pass `orientation:` when the source buffer is rotated, for example from capture metadata.
+- For sustained video, reuse an output tensor to avoid per-frame allocations:
+
+```swift
+let output = Tensor<Float>.zeros(shape: [1, 3, 224, 224])
+try processor.process(pixelBuffer, into: output)
+```
+
+An `ImageProcessor` instance is not thread-safe; use one instance per concurrent caller.
+
+You can still use `ImageProcessor` with a `UIImage` or `CGImage`: render it into a `CVPixelBuffer` (draw the `CGImage` into a `CGContext` backed by a BGRA buffer), then call `process(_:)`. This keeps preprocessing identical to the camera path. (The C++ `ImageProcessor::process(...)` accepts a raw RGBA/BGRA buffer directly, but only the `CVPixelBuffer` entry points are exposed to Swift and Objective-C today.)
+
+`ImageProcessor` is tuned for performance: it handles common pixel formats (BGRA, RGBA, and semi-planar YUV) and picks CPU or GPU based on image size. Matching its throughput by hand is hard, so reach for manual packing only when you need full control of the conversion, or behavior `ImageProcessor` does not provide.
+
+The Swift helper below shows that manual path. It draws a `UIImage` into a fixed-size RGB buffer, normalizes the RGB channels with vDSP, and creates a channels-first `Tensor<Float>`, keeping the layout conversion explicit so the tensor contract is easy to inspect.
 
 ```swift
 import Accelerate

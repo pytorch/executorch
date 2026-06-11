@@ -8,6 +8,10 @@
 
 namespace {
 
+// SentencePiece's word-boundary marker, spelled as UTF-8 bytes so this remains
+// a const char[] literal when compiled as C++20.
+constexpr char kSentencePieceWordBoundary[] = "\xE2\x96\x81";
+
 bool is_whitespace_only(const std::string& token) {
   if (token.empty()) {
     return true;
@@ -36,7 +40,7 @@ bool is_special_token(const std::string& token) {
   if (token.rfind("##", 0) == 0) {
     return true;
   }
-  if (token.rfind(u8"▁", 0) == 0) {
+  if (token.rfind(kSentencePieceWordBoundary, 0) == 0) {
     return true;
   }
   if (is_whitespace_only(token)) {

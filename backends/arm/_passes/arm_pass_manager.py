@@ -49,6 +49,7 @@ from executorch.backends.arm._passes import (
     DecomposeCumsumPass,
     DecomposeDivPass,
     DecomposeDivTensorModePass,
+    DecomposeDynamicFullPass,
     DecomposeEinsumPass,
     DecomposeEluPass,
     DecomposeEmbeddingPass,
@@ -130,6 +131,7 @@ from executorch.backends.arm._passes import (
     RemovePermutesAroundElementwiseTosaOps,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
+    RewriteAdaptiveAvgPool2dPass,
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
@@ -150,10 +152,7 @@ from executorch.backends.arm._passes import (
 )
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import (
-    ArmPassPipelineConfig,
-    SoftmaxDecompositionConfig,
-)
+from executorch.backends.arm.common.pipeline_config import SoftmaxDecompositionConfig
 from executorch.backends.arm.tosa.specification import (
     tosa_spec_in_set,
     TosaLoweringContext,
@@ -221,16 +220,13 @@ class ArmPassManager(PassManager):
         super().__init__()
         self.configure_skip_passes()
 
-    def configure_skip_passes(
-        self,
-        override_config: ArmPassPipelineConfig | None = None,
-    ) -> tuple[type, ...]:
+    def configure_skip_passes(self) -> tuple[type, ...]:
         """Configures the pass manager to skip certain passes based on the
         ArmPassPipelineConfig class found in the compile spec.
         """
         skip_set: set[type] = set()
 
-        config = override_config or self.compile_spec._get_pass_pipeline_config()
+        config = self.compile_spec._get_pass_pipeline_config()
         logger.debug(f"Skip Config: {config}")
 
         match config.softmax:
@@ -481,9 +477,6 @@ class ArmPassManager(PassManager):
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
-                # TODO: Move DecomposeNotEqualPass to before or after this block of
-                # passes. Ticket: MLETORCH-1540
-                DecomposeNotEqualPass(),
                 MatchArgRanksPass(exported_program),
             ]
         )
@@ -491,6 +484,7 @@ class ArmPassManager(PassManager):
         # Node transformation passes (post scalar-removal)
         self.add_passes(
             [
+                DecomposeNotEqualPass(),
                 NormalizeIndexPutNoneIndicesPass(),
                 NormalizeIndexPutBoolIndexTensorPass(),
                 RewriteIndexPutPass(),
@@ -504,12 +498,14 @@ class ArmPassManager(PassManager):
                 ConvertMinMaxPass(),
                 DecomposeAnyPass(),
                 DecorateFp32toInt32CastingPass(),
+                DecomposeDynamicFullPass(),
                 ConvertExpandCopyToRepeatPass(),
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
+                RewriteAdaptiveAvgPool2dPass(),
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
                 FuseConstantArgsPass(exported_program),
@@ -590,6 +586,7 @@ class ArmPassManager(PassManager):
                     DecomposeIndexCopyPass(tfa_pass=True),
                     DecomposeSelectScatterPass(tfa_pass=True),
                     DecomposeSliceScatterPass(tfa_pass=True),
+                    DecomposeDynamicFullPass(tfa_pass=True),
                     ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
                     ConvertInt64OutputOpsToInt32Pass(tfa_pass=True),
                     InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
@@ -651,9 +648,14 @@ class ArmPassManager(PassManager):
             )
 
             # Postprocessing passes
+            quant_inf_cfg = self.compile_spec._get_pass_pipeline_config().quantize_inf
             self.add_passes(
                 [
-                    ReplaceInfAndLimitValuesPass(tfa_pass=True),
+                    ReplaceInfAndLimitValuesPass(
+                        quant_inf_cfg.neg_inf,
+                        quant_inf_cfg.pos_inf,
+                        tfa_pass=True,
+                    ),
                     DecomposeMaskedFillPass(tfa_pass=True),
                     DeduplicateGetAttrPass(tfa_pass=True),
                 ]
