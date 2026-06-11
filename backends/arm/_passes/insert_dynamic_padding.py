@@ -31,6 +31,7 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
         exir_ops.backend.tosa.CONV2D.default,
         exir_ops.backend.tosa.DEPTHWISE_CONV2D.default,
         exir_ops.backend.tosa.MAX_POOL2D.default,
+        exir_ops.backend.tosa.AVG_POOL2D.default,
     )
 
     def _is_dynamic_padding(
@@ -48,6 +49,8 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
             return super().call_operator(op, args, kwargs, meta, updated)
         if op == exir_ops.backend.tosa.MAX_POOL2D.default:
             padding_index = 3
+        elif op == exir_ops.backend.tosa.AVG_POOL2D.default:
+            padding_index = 5
         else:
             padding_index = 4
         padding = args[padding_index]
