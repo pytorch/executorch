@@ -36,6 +36,8 @@ class TosaSpecialDtype(Enum):
     """Special TOSA dtypes not natively expressed in PyTorch."""
 
     FP4E2M1 = ts.DType.FP4E2M1
+    FP6E2M3 = ts.DType.FP6E2M3
+    FP6E3M2 = ts.DType.FP6E3M2
     INT48 = ts.DType.INT48
     INT4 = ts.DType.INT4
     SHAPE = ts.DType.SHAPE
@@ -254,6 +256,12 @@ class TosaArg:
                 ):
                     return False
             case ts.DType.FP4E2M1:
+                if not tosa_spec.support_extension("mxfp"):
+                    return False
+            case ts.DType.FP6E2M3:
+                if not tosa_spec.support_extension("mxfp"):
+                    return False
+            case ts.DType.FP6E3M2:
                 if not tosa_spec.support_extension("mxfp"):
                     return False
 

@@ -61,6 +61,20 @@ def _prepare_const_values_for_tosa_dtype(
     """Normalize constant storage to the expected TOSA serializer dtype."""
     if tosa_arg.dtype == ts.DType.INT48 and values.dtype != np.int64:
         return values.astype(np.int64)
+    if tosa_arg.dtype in (ts.DType.FP6E2M3, ts.DType.FP6E3M2):
+        if values.dtype == np.uint8:
+            try:
+                import ml_dtypes  # type: ignore[import-not-found]
+            except ImportError as e:
+                raise RuntimeError(
+                    "ml_dtypes is required to serialize FP6 tensors for TOSA. "
+                    "Have you run setup.sh?"
+                ) from e
+            ml_dtype = {
+                ts.DType.FP6E2M3: ml_dtypes.float6_e2m3fn,
+                ts.DType.FP6E3M2: ml_dtypes.float6_e3m2fn,
+            }[tosa_arg.dtype]
+            return values.view(ml_dtype)
     return values
 
 

@@ -7,6 +7,11 @@ from __future__ import annotations
 
 import torch
 
+from executorch.backends.arm.ao_ext.mxfp import (
+    mxfp_str_to_dtype,
+    MXFPDType,
+    SUPPORTED_MXFP_DTYPES,
+)
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
@@ -28,15 +33,20 @@ def _validate_block_size(block_size: int) -> None:
         )
 
 
-def _get_payload_dtype(data: torch.Tensor) -> torch.dtype:
+def _get_payload_dtype(
+    data: torch.Tensor,
+    payload_dtype: str = "",
+) -> MXFPDType:
+    if payload_dtype:
+        return mxfp_str_to_dtype(payload_dtype)
     if data.dtype == torch.uint8:
         return torch.float4_e2m1fn_x2
     return data.dtype
 
 
-def _get_logical_last_dim(data: torch.Tensor) -> int:
+def _get_logical_last_dim(data: torch.Tensor, payload_dtype: str = "") -> int:
     last_dim = data.shape[-1]
-    if _get_payload_dtype(data) == torch.float4_e2m1fn_x2:
+    if _get_payload_dtype(data, payload_dtype) == torch.float4_e2m1fn_x2:
         return last_dim * 2
     return last_dim
 
@@ -46,14 +56,11 @@ def _validate_dtypes(
     A_scale: torch.Tensor,
     B_data: torch.Tensor,
     B_scale: torch.Tensor,
+    payload_dtype: str = "",
 ) -> None:
-    A_dtype = _get_payload_dtype(A_data)
-    B_dtype = _get_payload_dtype(B_data)
-    if A_dtype not in (
-        torch.float4_e2m1fn_x2,
-        torch.float8_e4m3fn,
-        torch.float8_e5m2,
-    ):
+    A_dtype = _get_payload_dtype(A_data, payload_dtype)
+    B_dtype = _get_payload_dtype(B_data, payload_dtype)
+    if A_dtype not in SUPPORTED_MXFP_DTYPES:
         raise TosaValueError(
             f"Unsupported A_data dtype {A_data.dtype}",
             op="MATMUL_T_BLOCK_SCALED",
@@ -76,6 +83,7 @@ def _validate_shapes(
     B_data: torch.Tensor,
     B_scale: torch.Tensor,
     block_size: int,
+    payload_dtype: str = "",
 ) -> tuple[int, int, int]:
     if A_data.ndim != 3 or A_scale.ndim != 3 or B_data.ndim != 3 or B_scale.ndim != 3:
         raise TosaValueError(
@@ -85,8 +93,8 @@ def _validate_shapes(
 
     N, H = A_data.shape[:2]
     D, W = B_data.shape[:2]
-    C = _get_logical_last_dim(A_data)
-    Cb = _get_logical_last_dim(B_data)
+    C = _get_logical_last_dim(A_data, payload_dtype)
+    Cb = _get_logical_last_dim(B_data, payload_dtype)
     if C != Cb:
         raise TosaValueError(
             f"A_data last dim {C} must match B_data last dim {Cb}",
@@ -121,7 +129,8 @@ def _validate_shapes(
 
 
 @register_fake_tosa_op(
-    "MATMUL_T_BLOCK_SCALED(Tensor A_data, Tensor A_scale, Tensor B_data, Tensor B_scale, SymInt block_size) -> Tensor",
+    "MATMUL_T_BLOCK_SCALED(Tensor A_data, Tensor A_scale, Tensor B_data, "
+    "Tensor B_scale, SymInt block_size, str payload_dtype='') -> Tensor",
     [TosaSpecification.create_from_string("TOSA-1.1+FP")],
 )
 def MATMUL_T_BLOCK_SCALED(
@@ -130,6 +139,7 @@ def MATMUL_T_BLOCK_SCALED(
     B_data: torch.Tensor,
     B_scale: torch.Tensor,
     block_size: int,
+    payload_dtype: str = "",
 ) -> torch.Tensor:
     tosa_spec = get_context_spec()
 
@@ -140,12 +150,13 @@ def MATMUL_T_BLOCK_SCALED(
         )
 
     _validate_block_size(block_size)
-    _validate_dtypes(A_data, A_scale, B_data, B_scale)
+    _validate_dtypes(A_data, A_scale, B_data, B_scale, payload_dtype)
     output_shape = _validate_shapes(
         A_data,
         A_scale,
         B_data,
         B_scale,
         block_size,
+        payload_dtype,
     )
     return A_data.new_empty(output_shape, dtype=torch.float32)

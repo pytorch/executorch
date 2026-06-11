@@ -8,28 +8,53 @@ from functools import reduce
 from typing import Any, cast, Sequence, Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm.ao_ext.mxfp import (
+    mxfp_dtype_to_str,
+    mxfp_str_to_dtype,
+    MXFPDType,
+)
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
 
 
-def _get_block_scaled_payload_dtype(qdata: torch.Tensor) -> torch.dtype:
+def _get_weights_payload_dtype(
+    qdata_node: torch.fx.Node,
+    dtype: str = "",
+) -> MXFPDType:
+    if dtype:
+        return mxfp_str_to_dtype(dtype)
+    qdata = get_first_fake_tensor(qdata_node)
     if qdata.dtype == torch.uint8:
         return torch.float4_e2m1fn_x2
     return qdata.dtype
 
 
-def _mark_fp4_payload(node: torch.fx.Node, payload_dtype: torch.dtype) -> None:
+def _mark_mxfp_payload(node: torch.fx.Node, payload_dtype: MXFPDType) -> None:
+    """Annotate uint8-backed MXFP payload nodes with their TOSA dtype.
+
+    PyTorch represents sub-byte MXFP payloads as ``torch.uint8`` tensors, so
+    the tensor dtype alone cannot distinguish FP4E2M1, FP6E2M3, and FP6E3M2.
+    Store the logical TOSA dtype in node metadata so later lowering and
+    serialization treat the payload as MXFP data rather than ordinary uint8.
+    FP8 payloads have native PyTorch dtypes and do not need this metadata.
+
+    """
     if payload_dtype == torch.float4_e2m1fn_x2:
         node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP4E2M1
+    elif payload_dtype == DTYPE_FP6_E2M3:
+        node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP6E2M3
+    elif payload_dtype == DTYPE_FP6_E3M2:
+        node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP6E3M2
 
 
-class RewriteMXFPLinearPass(ArmPass):
+class RewriteMXFPLinearPass(ArmOpTargetedPass):
     """Rewrite ``tosa_mxfp.linear`` into explicit TOSA MXFP operators.
 
     For each MXFP linear custom op, the pass:
@@ -44,15 +69,24 @@ class RewriteMXFPLinearPass(ArmPass):
 
     """
 
+    target_ops = {
+        torch.ops.tosa_mxfp.linear.default,
+        exir_ops.edge.tosa_mxfp.linear.default,
+    }
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: torch.export.ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
-    def _get_linear_args(
-        self, node: torch.fx.Node
-    ) -> tuple[torch.fx.Node, torch.fx.Node, torch.fx.Node, torch.fx.Node | None, int]:
+    def _get_linear_args(self, node: torch.fx.Node) -> tuple[
+        torch.fx.Node,
+        torch.fx.Node,
+        torch.fx.Node,
+        torch.fx.Node | None,
+        int,
+        MXFPDType,
+    ]:
         """Extract the MXFP linear operands from a custom-op node."""
         input_node = cast(torch.fx.Node, node.args[0])
         weight_qdata_node = cast(torch.fx.Node, node.args[1])
@@ -65,7 +99,26 @@ class RewriteMXFPLinearPass(ArmPass):
             int,
             node.args[4] if len(node.args) > 4 else node.kwargs.get("block_size", 32),
         )
-        return input_node, weight_qdata_node, weight_scale_node, bias_node, block_size
+        payload_dtype_str = cast(
+            str,
+            (
+                node.args[5]
+                if len(node.args) > 5
+                else node.kwargs.get(
+                    "weight_payload_dtype",
+                    node.kwargs.get("weight_dtype", ""),
+                )
+            ),
+        )
+        payload_dtype = _get_weights_payload_dtype(weight_qdata_node, payload_dtype_str)
+        return (
+            input_node,
+            weight_qdata_node,
+            weight_scale_node,
+            bias_node,
+            block_size,
+            payload_dtype,
+        )
 
     def _reshape_with_view(
         self,
@@ -96,14 +149,15 @@ class RewriteMXFPLinearPass(ArmPass):
         weight_qdata_node: torch.fx.Node,
         weight_scale_node: torch.fx.Node,
         block_size: int,
+        payload_dtype: MXFPDType,
     ) -> tuple[torch.fx.Node, torch.fx.Node]:
         """Create rank-3 inputs for the block-scaled cast and matmul ops."""
         graph = graph_module.graph
         input_fake = get_first_fake_tensor(input_node)
         weight_qdata_fake = get_first_fake_tensor(weight_qdata_node)
         weight_scale_fake = get_first_fake_tensor(weight_scale_node)
-        weight_dtype = _get_block_scaled_payload_dtype(weight_qdata_fake)
-        _mark_fp4_payload(weight_qdata_node, weight_dtype)
+        payload_dtype_str = mxfp_dtype_to_str(payload_dtype)
+        _mark_mxfp_payload(weight_qdata_node, payload_dtype)
 
         batches = reduce(operator.mul, input_fake.shape[:-1], 1)
         input_reshape_shape = [1, batches, input_fake.shape[-1]]
@@ -123,13 +177,13 @@ class RewriteMXFPLinearPass(ArmPass):
             graph=graph,
             op_target=exir_ops.backend.tosa.CAST_TO_BLOCK_SCALED.default,
             args=(input_reshaped, block_size),
-            kwargs={"output_dtype": weight_dtype},
+            kwargs={"output_dtype": payload_dtype_str},
             from_node=mxfp_linear_node,
         )
         cast_node.meta["val"] = exir_ops.backend.tosa.CAST_TO_BLOCK_SCALED.default(
             get_first_fake_tensor(input_reshaped),
             block_size,
-            output_dtype=weight_dtype,
+            output_dtype=payload_dtype_str,
         )
 
         input_qdata_node = create_node(
@@ -140,7 +194,7 @@ class RewriteMXFPLinearPass(ArmPass):
             from_node=mxfp_linear_node,
         )
         input_qdata_node.meta["val"] = cast_node.meta["val"][0]
-        _mark_fp4_payload(input_qdata_node, weight_dtype)
+        _mark_mxfp_payload(input_qdata_node, payload_dtype)
 
         input_scale_node = create_node(
             graph=graph,
@@ -165,8 +219,10 @@ class RewriteMXFPLinearPass(ArmPass):
         weight_qdata_node: torch.fx.Node,
         weight_scale_node: torch.fx.Node,
         block_size: int,
+        payload_dtype: MXFPDType,
     ) -> torch.fx.Node:
         """Insert ``MATMUL_T_BLOCK_SCALED`` with updated fake metadata."""
+        payload_dtype_str = mxfp_dtype_to_str(payload_dtype)
         matmul_node = create_node(
             graph=graph_module.graph,
             op_target=exir_ops.backend.tosa.MATMUL_T_BLOCK_SCALED.default,
@@ -177,7 +233,7 @@ class RewriteMXFPLinearPass(ArmPass):
                 weight_scale_node,
                 block_size,
             ),
-            kwargs={},
+            kwargs={"payload_dtype": payload_dtype_str},
             from_node=mxfp_linear_node,
         )
         matmul_node.meta["val"] = exir_ops.backend.tosa.MATMUL_T_BLOCK_SCALED.default(
@@ -186,6 +242,7 @@ class RewriteMXFPLinearPass(ArmPass):
             get_first_fake_tensor(weight_qdata_node),
             get_first_fake_tensor(weight_scale_node),
             block_size,
+            payload_dtype=payload_dtype_str,
         )
         return matmul_node
 
@@ -270,6 +327,7 @@ class RewriteMXFPLinearPass(ArmPass):
             weight_scale_node,
             bias_node,
             block_size,
+            payload_dtype,
         ) = self._get_linear_args(mxfp_linear_node)
 
         with graph.inserting_before(mxfp_linear_node):
@@ -283,6 +341,7 @@ class RewriteMXFPLinearPass(ArmPass):
                 weight_qdata_node,
                 weight_scale_node,
                 block_size,
+                payload_dtype,
             )
             matmul_node = self._create_matmul_node(
                 graph_module,
@@ -292,6 +351,7 @@ class RewriteMXFPLinearPass(ArmPass):
                 weight_qdata_node,
                 weight_scale_node,
                 block_size,
+                payload_dtype,
             )
 
         with graph.inserting_after(matmul_node):
@@ -314,10 +374,7 @@ class RewriteMXFPLinearPass(ArmPass):
         graph = graph_module.graph
 
         for node in list(graph.nodes):
-            if node.op != "call_function" or node.target not in (
-                torch.ops.tosa_mxfp.linear.default,
-                exir_ops.edge.tosa_mxfp.linear.default,
-            ):
+            if node.op != "call_function" or node.target not in self.target_ops:
                 continue
 
             modified = True

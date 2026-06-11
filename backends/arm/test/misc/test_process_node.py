@@ -15,6 +15,7 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir import to_edge
 from torch._export.utils import is_param
 from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
+from tosa_serializer.numpy_utils import pack_6bit_array
 
 
 class Int32BiasModule(torch.nn.Module):
@@ -130,3 +131,42 @@ def test_add_const_fp4_in_packed_storage() -> None:
         0x6D,
         0x55,
     ]
+
+
+def _test_add_const_fp6_in_packed_storage(dtype: int) -> None:
+    values = np.arange(32, dtype=np.uint8).reshape(1, 1, 32)
+
+    tosa_arg = cast(
+        TosaArg,
+        SimpleNamespace(dtype=dtype, shape=(1, 1, 32)),
+    )
+    tosa_graph = ts.TosaSerializer()
+
+    _add_const(tosa_graph, values, tosa_arg, name="fp6_weight")
+
+    graph = TosaGraph.GetRootAs(bytes(tosa_graph.serialize()), 0)
+    block = graph.Regions(0).Blocks(0)
+    tensors = {
+        block.Tensors(index).Name().decode(): block.Tensors(index)
+        for index in range(block.TensorsLength())
+    }
+    tensor = tensors["fp6_weight"]
+
+    assert tensor.Type() == dtype
+    assert [tensor.Shape(index) for index in range(tensor.ShapeLength())] == [
+        1,
+        1,
+        32,
+    ]
+    assert tensor.DataLength() == 24
+    assert [tensor.Data(index) for index in range(tensor.DataLength())] == (
+        pack_6bit_array(values).reshape(-1).tolist()
+    )
+
+
+def test_add_const_fp6e2m3_in_packed_storage() -> None:
+    _test_add_const_fp6_in_packed_storage(ts.DType.FP6E2M3)
+
+
+def test_add_const_fp6e3m2_in_packed_storage() -> None:
+    _test_add_const_fp6_in_packed_storage(ts.DType.FP6E3M2)

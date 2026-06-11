@@ -36,6 +36,12 @@ class InsertRescalePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    _mxfp_payload_dtypes = {
+        TosaSpecialDtype.FP4E2M1,
+        TosaSpecialDtype.FP6E2M3,
+        TosaSpecialDtype.FP6E3M2,
+    }
+
     def _ensure_uint8_io_only(self, graph_module: GraphModule) -> None:
         """Ensure uint8 tensors only appear at IO boundaries.
 
@@ -50,25 +56,25 @@ class InsertRescalePass(ArmPass):
                 continue
             if meta_val.dtype != torch.uint8:
                 continue
-            if node.meta.get(TosaSpecialDtype.meta_key()) == TosaSpecialDtype.FP4E2M1:
-                continue
             if node.op in ("placeholder", "output"):
                 continue
-            if node.op == "call_function" and node.target == operator.getitem:
-                if all(user.op == "output" for user in node.users):
+            if node.op == "call_function":
+                if node.target == operator.getitem and all(
+                    user.op == "output" for user in node.users
+                ):
                     continue
-            if (
-                node.op == "call_function"
-                and node.target
-                == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
-            ):
-                # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                if node.target == exir_ops.backend.tosa.RESCALE.default:
+                    continue
+                if (
+                    node.target
+                    == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+                ):
+                    # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                    continue
+            if node.meta.get(TosaSpecialDtype.meta_key()) in self._mxfp_payload_dtypes:
+                # Sub-byte FP types are stored uint8 arrays, so we need an exception for those.
                 continue
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.backend.tosa.RESCALE.default
-            ):
-                continue
+
             raise ValueError(
                 f"Found internal uint8 tensor at node {node.name} "
                 f"({node.target}). Uint8 is only allowed at IO boundaries."
