@@ -353,6 +353,12 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch"
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
@@ -502,6 +508,12 @@ jobs:
       download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-cuda-pybind:
