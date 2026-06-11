@@ -105,6 +105,10 @@ class TestSubTensor:
                 [ModelInputSpec((5, 3, 4)), ModelInputSpec((1, 3, 1))],
                 id="2 inputs 3D.",
             ),
+            pytest.param(
+                [ModelInputSpec((10,)), ModelInputSpec((1, 1))],
+                id="2 inputs 2D, num_elems of input == num_elems of output",
+            ),
         ],
     )
     def test__broadcast(self, mocker, request, input_spec):
