@@ -150,7 +150,9 @@ jobs:
         # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
         # torch wheel is the only candidate.
         export PIP_EXTRA_INDEX_URL=
-        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy pillow
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
@@ -223,7 +225,9 @@ jobs:
         # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
         # torch wheel is the only candidate.
         export PIP_EXTRA_INDEX_URL=
-        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy pillow
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         ./install_requirements.sh
         pip list
         echo "::endgroup::"
