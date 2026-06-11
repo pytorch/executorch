@@ -328,18 +328,23 @@ class TestCudaExport(unittest.TestCase):
 
     def test_device_info_propagated_to_cuda_delegate_outputs(self):
         """
-        Test that device info is correctly propagated from export to serialization
-        for CUDA delegate outputs.
+        Verify that, for a CUDA-delegated graph, every memory-planned tensor's
+        actual planned memory location matches its device_type tag.
 
-        This verifies the device propagation flow:
-        1. CudaPartitioner adds target_device="cuda:0" CompileSpec
-        2. PropagateDevicePass sets TensorSpec.device = CUDA for delegate outputs
-        3. Emitter serializes device info into ExtraTensorInfo.device_type
-        4. Serialized tensors have device_type = DeviceType.CUDA
+        With device memory planning (the default), the flow is:
+        1. CudaPartitioner adds target_device="cuda:0" CompileSpec.
+        2. PropagateDevicePass tags delegate IO TensorSpecs as CUDA and inserts
+           et_copy._h2d_copy / _d2h_copy ops at the delegate boundary, so the
+           method inputs/outputs stay on CPU while the delegate IO is CUDA.
+        3. Device-aware memory planning allocates each non-CPU tensor into a CUDA
+           buffer, recorded in ExecutionPlan.non_const_buffer_device.
+        4. The emitter serializes device info into ExtraTensorInfo.device_type.
 
-        Note: At this stage, the tensor memory is still on CPU. The CUDA backend
-        will copy data to GPU device at runtime. Device info tagging is the first
-        step toward full device-aware memory allocation.
+        The core check: for each planned tensor, the device of the buffer it is
+        allocated into (non_const_buffer_device) must agree with the tensor's
+        own device_type. A CUDA-tagged tensor planned into a CPU buffer (or vice
+        versa) means planning and device tagging disagree about where the
+        tensor's real memory lives.
         """
 
         class AddModule(torch.nn.Module):
@@ -354,7 +359,8 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "CUDA export failed")
 
-        # Convert to ExecuTorch and access the serialized program
+        # Convert to ExecuTorch and access the serialized program. The default
+        # config enables device memory planning, so delegate IO is GPU-resident.
         et_prog = edge_program_manager.to_executorch()
         program = et_prog._emitter_output.program
 
@@ -366,32 +372,60 @@ class TestCudaExport(unittest.TestCase):
             "Expected at least one delegate in the execution plan",
         )
 
-        # Count tensors by device type
-        cpu_tensors = []
-        cuda_tensors = []
+        # Build buffer_idx -> device map from the per-buffer device mapping.
+        # Buffers without an entry default to CPU.
+        buffer_device: dict[int, schema.DeviceType] = {}
+        for entry in plan.non_const_buffer_device or []:
+            buffer_device[entry.buffer_idx] = entry.device_type
 
+        def tensor_device(t: schema.Tensor) -> schema.DeviceType:
+            if t.extra_tensor_info is not None:
+                return t.extra_tensor_info.device_type
+            return schema.DeviceType.CPU
+
+        # Walk every memory-planned tensor in the graph and assert its declared
+        # device_type matches the device of the buffer it lives in.
+        cuda_planned = 0
+        cpu_planned = 0
         for value in plan.values:
-            if isinstance(value.val, schema.Tensor):
-                tensor = value.val
-                if (
-                    tensor.extra_tensor_info is not None
-                    and tensor.extra_tensor_info.device_type == schema.DeviceType.CUDA
-                ):
-                    cuda_tensors.append(tensor)
-                else:
-                    # Either no extra_tensor_info or device_type is CPU (default)
-                    cpu_tensors.append(tensor)
+            if not isinstance(value.val, schema.Tensor):
+                continue
+            tensor = value.val
+            # Only memory-planned (non-constant) tensors have allocation_info;
+            # their memory_id indexes into the non_const buffers.
+            if tensor.allocation_info is None:
+                continue
 
-        # Both input and output tensors should be on CUDA device for now.
+            declared = tensor_device(tensor)
+            mem_id = tensor.allocation_info.memory_id
+            planned = buffer_device.get(mem_id, schema.DeviceType.CPU)
+
+            self.assertEqual(
+                planned,
+                declared,
+                f"Tensor planned into buffer {mem_id} has device_type="
+                f"{declared.name} but the buffer is allocated on "
+                f"{planned.name}; planned memory location and device tag "
+                f"must agree.",
+            )
+            if declared == schema.DeviceType.CUDA:
+                cuda_planned += 1
+            else:
+                cpu_planned += 1
+
+        # AddModule has 2 inputs + 1 output. With device memory planning the
+        # delegate IO is CUDA-resident (2 h2d copies + 1 delegate output) and
+        # the host-side method inputs/outputs stay on CPU (2 inputs + 1 d2h
+        # output), giving exactly 3 CUDA- and 3 CPU-resident planned tensors.
         self.assertEqual(
-            len(cpu_tensors),
-            0,
-            f"Expected no CPU tensors: method inputs/outputs should be tagged "
-            f"CUDA, but found {len(cpu_tensors)}",
+            cuda_planned,
+            3,
+            f"Expected exactly 3 CUDA-resident planned tensors (2 h2d copies + "
+            f"1 delegate output), but found {cuda_planned}.",
         )
         self.assertEqual(
-            len(cuda_tensors),
+            cpu_planned,
             3,
-            f"Expected 3 CUDA tensors (2 method inputs + 1 method output), "
-            f"but found {len(cuda_tensors)}",
+            f"Expected exactly 3 CPU-resident planned tensors (2 method inputs "
+            f"+ 1 d2h output), but found {cpu_planned}.",
         )
