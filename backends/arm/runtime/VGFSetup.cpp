@@ -486,6 +486,38 @@ static bool is_tensor_like_descriptor_type(VkDescriptorType descriptor_type) {
       descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 }
 
+static VkResult submit_and_wait_with_fence(
+    VkDevice device,
+    VkQueue queue,
+    const VkSubmitInfo* submit_info) {
+  VkFence fence = VK_NULL_HANDLE;
+
+  const VkFenceCreateInfo fence_info = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+  };
+
+  VkResult result = vkCreateFence(device, &fence_info, nullptr, &fence);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to create Vulkan fence, error %d", result);
+    return result;
+  }
+
+  result = vkQueueSubmit(queue, 1, submit_info, fence);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Vulkan queue submit failed, error %d", result);
+    vkDestroyFence(device, fence, nullptr);
+    return result;
+  }
+
+  result = vkWaitForFences(
+      device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+
+  vkDestroyFence(device, fence, nullptr);
+  return result;
+}
+
 static void record_image_layout_transition(
     VkCommandBuffer command_buffer,
     VkImage image,
@@ -1278,10 +1310,11 @@ VkResult transition_image_layout(
       .signalSemaphoreCount = 0,
       .pSignalSemaphores = nullptr,
   };
-  result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-  if (result == VK_SUCCESS) {
-    result = vkQueueWaitIdle(queue);
-  }
+
+  // creates a temporary one-time command buffer, submits it once, waits, and
+  // frees it immediately.
+  result = submit_and_wait_with_fence(device, queue, &submit_info);
+
   vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
   return result;
 }
@@ -3078,17 +3111,31 @@ bool VgfRepr::process_vgf(
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_COMMAND_BUFFER");
 
-    // Allocate command buffer
     VkCommandBufferAllocateInfo buffer_allocate_info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = nullptr,
         .commandPool = vk_command_pool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1};
+
     result = vkAllocateCommandBuffers(
         vk_device, &buffer_allocate_info, &vk_execute_cmd);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to allocate command buffers");
+      return false;
+    }
+
+    const VkFenceCreateInfo fence_info{
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+
+    result = vkCreateFence(vk_device, &fence_info, nullptr, &vk_execute_fence);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to create VGF execute fence, error %d", result);
+      vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+      vk_execute_cmd = VK_NULL_HANDLE;
       return false;
     }
   }
@@ -3392,31 +3439,51 @@ bool VgfRepr::process_vgf(
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
   ET_LOG(Info, "Executing vgf");
 
-  VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submit.commandBufferCount = 1;
-  submit.pCommandBuffers = &vk_execute_cmd;
+  VkSubmitInfo submit{
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .waitSemaphoreCount = 0,
+      .pWaitSemaphores = nullptr,
+      .pWaitDstStageMask = nullptr,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &vk_execute_cmd,
+      .signalSemaphoreCount = 0,
+      .pSignalSemaphores = nullptr,
+  };
 
   VkResult result;
 
   {
-    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_SUBMIT");
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_SUBMIT_AND_WAIT_FENCE");
 
-    result = vkQueueSubmit(vk_queue, 1, &submit, VK_NULL_HANDLE);
+    if (vk_execute_fence == VK_NULL_HANDLE) {
+      ET_LOG(Error, "VGF execute fence is not initialized");
+      return false;
+    }
+
+    result = vkResetFences(vk_device, 1, &vk_execute_fence);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "VGF/VkFence reset failed, error %d", result);
+      return false;
+    }
+
+    result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
+      return false;
+    }
+
+    result = vkWaitForFences(
+        vk_device,
+        1,
+        &vk_execute_fence,
+        VK_TRUE,
+        std::numeric_limits<uint64_t>::max());
   }
 
   if (result != VK_SUCCESS) {
-    ET_LOG(Error, "VGF/VkCommandBuffer command submission failed");
-    return false;
-  }
-
-  {
-    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_WAIT_IDLE");
-
-    result = vkQueueWaitIdle(vk_queue);
-  }
-
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "VGF/VkQueue wait idle failed");
+    ET_LOG(
+        Error, "VGF/VkCommandBuffer command submission or fence wait failed");
     return false;
   }
 
@@ -3429,6 +3496,11 @@ void VgfRepr::free_vgf() {
   if (vk_timestamp_query_pool != VK_NULL_HANDLE) {
     vkDestroyQueryPool(vk_device, vk_timestamp_query_pool, nullptr);
     vk_timestamp_query_pool = VK_NULL_HANDLE;
+  }
+
+  if (vk_execute_fence != VK_NULL_HANDLE) {
+    vkDestroyFence(vk_device, vk_execute_fence, nullptr);
+    vk_execute_fence = VK_NULL_HANDLE;
   }
 
   vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
