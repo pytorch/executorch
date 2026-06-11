@@ -374,14 +374,26 @@ static executorch::runtime::Backend backend_msvc{QNN_BACKEND, &cls_msvc};
 // On Windows the DLL and the exe each carry a private copy of executorch_core
 // globals. The runner calls this function at startup, passing its own
 // register_backend() so registration happens in the exe's address space.
+// See QnnExecuTorch.h for the required register_fn signature.
 void QnnExecuTorchBackendRegister(void* register_fn) {
-  using RegisterFn = executorch::runtime::Error (*)(
-      const executorch::runtime::Backend&);
-  reinterpret_cast<RegisterFn>(register_fn)(
+  using RegisterFn =
+      executorch::runtime::Error (*)(const executorch::runtime::Backend&);
+  if (register_fn == nullptr) {
+    ET_LOG(Error, "QnnExecuTorchBackendRegister called with null register_fn");
+    return;
+  }
+  executorch::runtime::Error err = reinterpret_cast<RegisterFn>(register_fn)(
       executorch::backends::qnn::backend_msvc);
+  if (err != executorch::runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to register QNN backend: 0x%x",
+        static_cast<uint32_t>(err));
+  }
 }
 #else
 void QnnExecuTorchBackendRegister(void*) {
-  // No-op
+  // No-op: ELF symbol interposition already shares a single backend registry
+  // between the .so and the exe, so the static initializer above suffices.
 }
 #endif
