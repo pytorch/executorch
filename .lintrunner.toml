@@ -193,7 +193,6 @@ exclude_patterns = [
     'extension/wasm/**',
 
     # Kernel areas to onboard separately.
-    'kernels/aten/**',
     'kernels/optimized/**',
     'kernels/portable/**',
     'kernels/quantized/**',

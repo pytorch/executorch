@@ -49,6 +49,7 @@ from executorch.backends.arm._passes import (
     DecomposeCumsumPass,
     DecomposeDivPass,
     DecomposeDivTensorModePass,
+    DecomposeDynamicAdaptiveAvgPool2dPass,
     DecomposeDynamicFullPass,
     DecomposeEinsumPass,
     DecomposeEluPass,
@@ -463,6 +464,7 @@ class ArmPassManager(PassManager):
                 AccumulateIndexPutPass(),
                 DecomposeIndexTensorToGatherPass(),
                 DecomposeAdaptiveAvgPool2dPass(),
+                DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
                 Conv1dUnsqueezePass(),
             ]
