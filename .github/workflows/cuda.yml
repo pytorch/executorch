@@ -358,7 +358,7 @@ jobs:
         # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
         # torch wheel is the only candidate.
         export PIP_EXTRA_INDEX_URL=
-        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy pillow
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
@@ -513,7 +513,7 @@ jobs:
         # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
         # torch wheel is the only candidate.
         export PIP_EXTRA_INDEX_URL=
-        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 fsspec numpy pillow
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-cuda-pybind:
