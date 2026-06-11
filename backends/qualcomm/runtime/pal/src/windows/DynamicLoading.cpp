@@ -21,9 +21,15 @@ void* pal::dynamic_loading::DlOpen(const char* filename, int flags) {
   }
 
   if (flags & DL_NOLOAD) {
-    HMODULE mod = GetModuleHandleA(filename);
-    if (!mod) {
+    // Match the Linux RTLD_NOLOAD contract: return a handle for an
+    // already-loaded module with its reference count incremented, so the
+    // matching DlClose -> FreeLibrary stays balanced. Plain GetModuleHandleA
+    // would not take a reference, so FreeLibrary could prematurely unload a
+    // library still in use elsewhere.
+    HMODULE mod = nullptr;
+    if (!GetModuleHandleExA(0, filename, &mod)) {
       sg_lastErrMsg = "DlOpen: library is not already loaded in the process";
+      return nullptr;
     }
     return static_cast<void*>(mod);
   }
