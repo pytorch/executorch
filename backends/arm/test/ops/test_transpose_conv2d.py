@@ -267,9 +267,6 @@ test_data_FP8 = {
         "fp8e5m2",
     ),
 }
-_fp8_transpose_conv_tosa_ref_model_xfails = {
-    name: "MLETORCH-2238: Fix invalid FP8 CONV TOSA graphs" for name in test_data_FP8
-}
 
 
 @common.parametrize("test_data", test_data_FP | test_data_FP_fp16 | test_data_BF16)
@@ -287,9 +284,7 @@ def test_conv_transpose2d_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", test_data_FP8, xfails=_fp8_transpose_conv_tosa_ref_model_xfails
-)
+@common.parametrize("test_data", test_data_FP8)
 def test_conv_transpose2d_tosa_FP_fp8(test_data):
     model, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t](
