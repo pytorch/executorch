@@ -333,6 +333,14 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU sdpa: k/v seq_len must match q");
   }
 
+  // k/v projected shapes must match q/k; mirrors Vulkan update_cache -1/-2.
+  if (k.dims[kn - 1] != D || v.dims[v.dims.size() - 1] != D) {
+    throw std::runtime_error("WebGPU sdpa: k/v head_dim must match q");
+  }
+  if (v.dims[v.dims.size() - 2] != Hkv) {
+    throw std::runtime_error("WebGPU sdpa: v num_heads must match k");
+  }
+
   // Mirrors Vulkan SDPA: q/k_cache head_dim + k_cache/v_cache shape must match.
   if (D != k_cache.dims[cn - 1]) {
     throw std::runtime_error("WebGPU sdpa: q and k_cache head_dim mismatch");
@@ -367,6 +375,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   } else {
     // No silent default-to-0; mirrors Vulkan get_or_create_int_param_buffer.
     throw std::runtime_error("WebGPU sdpa: input_pos must be Int or SymInt");
+  }
+  if (input_pos < 0) {
+    throw std::runtime_error("WebGPU sdpa: input_pos must be non-negative");
   }
   const int64_t context_len = S + input_pos;
   if (context_len <= 0 || context_len > Cmax) {
@@ -457,6 +468,10 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // --- Dispatch 3: QK -> attn_weights. One thread per (h,s,c) element.
   {
+    if (aw_floats > UINT32_MAX) {
+      throw std::runtime_error(
+          "WebGPU sdpa: Hq*S*context_len exceeds uint32 max");
+    }
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(aw_floats), qk_wg, "QK");
     AttnWeightsParams p = make_attn_weights_params(
@@ -550,6 +565,10 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
          softmax_buf,
          av_buf](WebGPUGraph& gr) {
           const int32_t pos = gr.read_symint(input_pos_id);
+          if (pos < 0) {
+            throw std::runtime_error(
+                "WebGPU sdpa: input_pos must be non-negative");
+          }
           const int64_t ctx = S + pos;
           if (ctx <= 0 || ctx > Cmax) {
             throw std::runtime_error(
@@ -560,6 +579,10 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
               static_cast<uint64_t>(D));
           const uint64_t aw_floats = static_cast<uint64_t>(Hq) *
               static_cast<uint64_t>(S) * static_cast<uint64_t>(ctx);
+          if (aw_floats > UINT32_MAX) {
+            throw std::runtime_error(
+                "WebGPU sdpa: Hq*S*context_len exceeds uint32 max");
+          }
           const uint64_t kv_numel = static_cast<uint64_t>(S) *
               static_cast<uint64_t>(Hkv) * static_cast<uint64_t>(D);
           const uint64_t k_cache_numel = static_cast<uint64_t>(Cmax) *
