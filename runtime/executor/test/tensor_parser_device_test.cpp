@@ -143,9 +143,8 @@ TEST_F(TensorParserDeviceTest, CUDADeviceParsedFromPteFile) {
 
   EXPECT_EQ(cuda_tensor_count, 3)
       << "Expected 3 CUDA tensors (2 delegate inputs + 1 delegate output)";
-  // Device-aware memory planning may introduce CPU-side tensors
-  // (e.g. original inputs before H2D copies), so we no longer
-  // require cpu_tensor_count == 0.
+  EXPECT_EQ(cpu_tensor_count, 3)
+      << "Expected 3 CPU tensors (2 method inputs + 1 method output)";
 }
 
 TEST_F(TensorParserDeviceTest, NonDelegatedTensorsDefaultToCPU) {
@@ -206,7 +205,7 @@ TEST_F(TensorParserDeviceTest, CudaTensorDataPtrPointsToDeviceMemory) {
   // entries when device-aware memory planning creates separate buffers per
   // device type.
   const size_t num_buffers = method_meta->num_memory_planned_buffers();
-  ASSERT_GE(num_buffers, 1);
+  ASSERT_GE(num_buffers, 2);
 
   // Set up device-aware planned memory.
   std::vector<Span<uint8_t>> planned_spans;

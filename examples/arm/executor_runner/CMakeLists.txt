@@ -152,10 +152,7 @@ if(NOT ET_MODEL_PTE_ADDR
   )
 endif()
 
-if(NOT SEMIHOSTING
-   AND NOT ET_MODEL_PTE_ADDR
-   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
-)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   if(NOT EXISTS "${ET_PTE_FILE_PATH}")
     message(
       FATAL_ERROR
@@ -228,7 +225,7 @@ if(NOT CMAKE_SKIP_INSTALL_RULES AND TARGET ethosu_core_driver)
 endif()
 
 # Convert pte to header
-if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   add_custom_target(
     gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
   )
@@ -252,20 +249,31 @@ target_sources(
 # Check for "U55" in SYSTEM_CONFIG
 string(FIND "${SYSTEM_CONFIG}" "U55" U55_FOUND)
 
+# Check for "U65" in SYSTEM_CONFIG
+string(FIND "${SYSTEM_CONFIG}" "U65" U65_FOUND)
+
 # Check for "U85" in SYSTEM_CONFIG
 string(FIND "${SYSTEM_CONFIG}" "U85" U85_FOUND)
 
-# Check if neither "U55" nor "U85" was found
-if(U55_FOUND EQUAL -1 AND U85_FOUND EQUAL -1)
+# Check if neither "U55", "U65" nor "U85" was found
+if(U55_FOUND EQUAL -1
+   AND U65_FOUND EQUAL -1
+   AND U85_FOUND EQUAL -1
+)
   message(
     FATAL_ERROR
-      "SYSTEM_CONFIG does not contain 'U55' or 'U85'. Configuration aborting."
+      "SYSTEM_CONFIG does not contain 'U55', 'U65' or 'U85'. Configuration aborting."
   )
 endif()
 
 # Proceed with specific actions if either is found
 if(NOT U55_FOUND EQUAL -1)
   message(STATUS "SYSTEM_CONFIG contains 'U55'.")
+  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
+endif()
+
+if(NOT U65_FOUND EQUAL -1)
+  message(STATUS "SYSTEM_CONFIG contains 'U65'.")
   set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
 endif()
 
@@ -319,8 +327,7 @@ list(
 # EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
 # no undelegated ops, use neither.
 set(FOUND_OPS_IN_FILE FALSE)
-if(NOT SEMIHOSTING
-   AND NOT ET_MODEL_PTE_ADDR
+if(NOT ET_MODEL_PTE_ADDR
    AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
    AND EXISTS "${ET_PTE_FILE_PATH}"
 )
@@ -337,7 +344,7 @@ if(NOT SEMIHOSTING
   endif()
 endif()
 
-if(SEMIHOSTING)
+if(SEMIHOSTING AND "${ET_PTE_FILE_PATH}" STREQUAL "")
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
     "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
@@ -349,10 +356,9 @@ elseif(FOUND_OPS_IN_FILE)
     "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
   )
 else()
-  set(EXECUTORCH_SELECT_OPS_LIST "")
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
-    "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
+    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
   )
 endif()
 
@@ -507,7 +513,7 @@ target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
@@ -570,6 +576,10 @@ if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
 endif()
 
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
+  target_compile_definitions(arm_executor_runner PUBLIC ET_COMPILED_PTE)
+endif()
+
 # Memory buffer sizes for Executorch flow
 
 if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
@@ -577,6 +587,14 @@ if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
     arm_executor_runner
     PUBLIC
       ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE}
+  )
+endif()
+
+if(DEFINED ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(
+    arm_executor_runner
+    PUBLIC
+      ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE}
   )
 endif()
 

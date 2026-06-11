@@ -27,17 +27,3 @@ def define_common_targets():
         srcs = ["vec_ops_test.cpp"],
         deps = ["//executorch/kernels/portable/cpu:vec_ops"],
     )
-
-    runtime.cxx_test(
-        name = "op__device_copy_test",
-        srcs = ["op__device_copy_test.cpp"],
-        deps = [
-            "//executorch/kernels/portable/cpu:op__device_copy",
-            "//executorch/runtime/core:device_allocator",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/core/portable_type:portable_type",
-            "//executorch/runtime/core/test:mock_cuda_allocator",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-            "//executorch/runtime/platform:platform",
-        ],
-    )

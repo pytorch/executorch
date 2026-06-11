@@ -36,7 +36,9 @@ def define_common_targets():
         name = "size_test_all_ops",
         srcs = SIZE_TEST_SOURCES,
         deps = SIZE_TEST_DEPS + [
-            "//executorch/kernels/portable:generated_lib",
+            # size_test_all_ops is built with -fno-exceptions in the size CI;
+            # use the _no_exceptions variant whose codegen omits try/catch.
+            "//executorch/kernels/portable:generated_lib_no_exceptions",
             "//executorch/runtime/executor/test:test_backend_compiler_lib",
         ],
         define_static_target = True,

@@ -502,10 +502,11 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.any` | `DecomposeAny` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
 | `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
-| `aten.cdist` | `DecomposeCDist` |
+| `aten.cdist`, `aten._cdist_forward` | `DecomposeCDist` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
 | `aten.special_expm1` | `DecomposeExpM1` |
+| `aten.fill.Scalar` | `DecomposeFill` |
 | `aten.floor_divide` | `DecomposeFloorDivide` |
 | `aten.glu` | `DecomposeGlu` |
 | `aten.linalg_vector_norm` | `DecomposeLinalgVectorNorm` |
@@ -523,6 +524,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.threshold` | `DecomposeThreshold` |
 | `aten.triu` | `DecomposeTriu` |
 | `aten.trunc` | `DecomposeTrunc` |
+| `aten.var.correction`, `aten.var.dim` | `DecomposeVar` |
 
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.

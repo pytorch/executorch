@@ -8,9 +8,9 @@
 Registry for device copy ops used to insert explicit H2D (host-to-device)
 and D2H (device-to-host) data transfer operations at delegate boundaries.
 
-These ops are inserted by PropagateDevicePass when memory planning is configured with 
-enable_non_cpu_memory_planning=True, making the graph functional by explicitly 
-transferring data between CPU and device memory.
+These ops are inserted by PropagateDevicePass when enable_non_cpu_memory_planning
+is True, making the graph functional by explicitly transferring data between
+CPU and device memory.
 
 Follows the same registration pattern as dim_order_ops_registry.py.
 """

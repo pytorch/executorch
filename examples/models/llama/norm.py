@@ -154,6 +154,14 @@ def replace_rms_norm_for_coreml_(model: torch.nn.Module) -> torch.nn.Module:
         # Preserve trained scale (no-op for ScalelessRMSNorm).
         if getattr(mod, "weight", None) is not None:
             new.weight = mod.weight
+        else:
+            # Source was weightless (e.g. ScalelessRMSNorm). The freshly-allocated
+            # `nn.Parameter(torch.ones(dim))` inside RMSNormCoreML defaults to fp32,
+            # which causes an fp32 leak in fp16 export. Match the model's existing
+            # parameter dtype/device.
+            ref = next((p for p in model.parameters() if p.is_floating_point()), None)
+            if ref is not None:
+                new.to(dtype=ref.dtype, device=ref.device)
         # Locate parent module via the dotted name and rebind the attribute.
         if "." in name:
             parent_name, attr = name.rsplit(".", 1)

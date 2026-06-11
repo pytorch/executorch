@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -74,6 +75,7 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
 )
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.schema import TensorShapeDynamism
@@ -541,6 +543,32 @@ class TestPasses(unittest.TestCase):
         for new_node, old_node in zip(new_nodes, old_nodes):
             self.assertEqual(new_node.op, old_node.op)
             self.assertEqual(new_node.target, old_node.target)
+
+    def test_export_pass_preserves_graph_module_meta(self) -> None:
+        """ExportPass should preserve GraphModule-level meta through re-tracing."""
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        class NullPass(ExportPass):
+            pass
+
+        prog = to_edge(
+            export(Foo(), (torch.ones(3, 2),), strict=True),
+        )
+        # Set custom metadata on the graph module before the pass.
+        prog.exported_program().graph_module.meta["custom"] = {
+            "test_key": "test_value",
+            "nested": {"a": 1},
+        }
+
+        new_prog = prog.transform([NullPass()])
+        new_meta = new_prog.exported_program().graph_module.meta
+
+        self.assertIn("custom", new_meta)
+        self.assertEqual(new_meta["custom"]["test_key"], "test_value")
+        self.assertEqual(new_meta["custom"]["nested"]["a"], 1)
 
     def test_export_scalar_to_tensor_pass(self) -> None:
         # Build a graph with a scalar argument where schema expects tensor
@@ -1035,6 +1063,53 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(len(alloc_nodes) > 0)
         for node in alloc_nodes:
             self.assertTrue(isinstance(node.meta.get("spec", None), TensorSpec))
+
+    def test_to_out_var_dynamic_alloc_uses_concrete_upper_bounds(self) -> None:
+        class DynamicRelu(nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        eager_model = DynamicRelu()
+        inputs = (torch.randn(2, 4, 8, 3),)
+        dynamic_shapes = {
+            "x": {
+                0: torch.export.Dim("batch", min=0, max=2),
+                2: torch.export.Dim("height", min=0, max=8),
+                3: torch.export.Dim("width", min=0, max=8),
+            }
+        }
+        prog = to_edge(
+            export(
+                eager_model,
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+                strict=True,
+            ),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        new_prog = prog.transform(
+            [
+                SpecPropPass(),
+                ConstraintBasedSymShapeEvalPass(),
+            ]
+        )
+
+        new_gm_res = ToOutVarPass()(new_prog.exported_program().graph_module)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
+
+        alloc_nodes = []
+        for node in new_gm.graph.nodes:
+            if node.target == memory.alloc:
+                alloc_nodes.append(node)
+
+        self.assertTrue(len(alloc_nodes) > 0)
+        for node in alloc_nodes:
+            alloc_spec = node.args[0]
+            self.assertIsInstance(alloc_spec, tuple)
+            shape, _dtype = alloc_spec
+            for dim in shape:
+                self.assertIsInstance(dim, int)
 
     def test_debug_pass_file_log(self) -> None:
         eager_model = Mul()

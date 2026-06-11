@@ -42,6 +42,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_PRO_FP_SupportList,
     TOSA_PRO_INT_SupportList,
+    TOSA_PRO_MIXED_INT_SupportList,
 )
 from executorch.backends.arm.tosa.specification import (
     TosaSpecification,
@@ -436,7 +437,7 @@ class TOSAProINTFPSupportList(OperatorSupportBase):
 
         # Select list based on whether the node is quantized.
         if is_quantized(node) or node.target in (*Q_OPS, *DQ_OPS):
-            support_list = TOSA_PRO_INT_SupportList
+            support_list = TOSA_PRO_MIXED_INT_SupportList
         else:
             support_list = TOSA_PRO_FP_SupportList
 

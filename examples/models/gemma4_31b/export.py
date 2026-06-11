@@ -28,7 +28,6 @@ import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
     Gemma4_31BConfig,
@@ -141,12 +140,19 @@ def export_and_lower(
     config: Gemma4_31BConfig,
     output_dir: str,
     backend: str = "cuda",
+    use_turboquant: bool = False,
 ) -> None:
     """Export and lower the model to ExecuTorch for the given backend."""
     if backend == "cuda":
+        if use_turboquant:
+            raise ValueError(
+                "--turboquant is only supported with --backend mlx "
+                "(the CUDA path here uses a different TurboQuant integration; "
+                "see examples/models/qwen3_5_moe/export.py)."
+            )
         _export_cuda(model, config, output_dir)
     elif backend == "mlx":
-        _export_mlx(model, config, output_dir)
+        _export_mlx(model, config, output_dir, use_turboquant=use_turboquant)
     else:
         raise ValueError(
             f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
@@ -157,7 +163,6 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     import gc
 
     import torch._inductor.config as inductor_config
-
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
@@ -172,8 +177,8 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Register Int4Tensor dispatch → executorch_cuda::int4_plain_mm shim
-    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+    # Register Int4/Int8 dispatch → executorch_cuda::int{4,8}_plain_mm shims
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
@@ -257,7 +262,6 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                share_mutable_buffers=True,
             ),
             emit_mutable_buffer_names=True,
         ),
@@ -279,20 +283,34 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     print("Done.")
 
 
-def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
+def _export_mlx(
+    model: Gemma4_31B,
+    config: Gemma4_31BConfig,
+    output_dir: str,
+    use_turboquant: bool = False,
+) -> None:
     """Export to .pte via torch.export + MLX backend.
 
     Unlike CUDA (which exports separate decode/prefill methods with an
     Int4Tensor dispatch override), MLX uses a single method with dynamic
-    sequence length.  No int4_dispatch import — IntxUnpackedToInt8Tensor's
+    sequence length.  No quantize_op_dispatch import — IntxUnpackedToInt8Tensor's
     default dispatch produces the ``dequantize_affine → linear`` pattern
     that MLX's QuantizedLinearHandler matches.
+
+    When ``use_turboquant=True``, full-attention layers swap to
+    ``MLXTurboQuantKVCache`` for ~3.8× KV cache memory savings. Sliding
+    layers are unaffected (already use ``RingBufferKVCache``).
     """
     import gc
 
+    # Register the GGUF dequant op + MLX GGUF pattern handlers so quantized GGUF
+    # weights lower to the fused Q6_K kernels / Q4_K quantized matmul.
+    import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+    import executorch.extension.llm.export.gguf  # noqa: F401
+    import executorch.extension.llm.export.int4  # noqa: F401
+
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
-
     from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
         mlx_source_transformations,
     )
@@ -304,10 +322,13 @@ def _export_mlx(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) ->
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
-    mlx_source_transformations(model, dtype=torch.bfloat16)
+    mlx_source_transformations(
+        model, dtype=torch.bfloat16, use_turboquant=use_turboquant
+    )
+
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-    max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
+    max_prefill = 256
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
     print(f"Exporting (T in [1, {max_prefill}])...")
@@ -418,8 +439,17 @@ def main() -> None:
         choices=list(_SUPPORTED_BACKENDS),
         help="Target backend for export.",
     )
+    parser.add_argument(
+        "--turboquant",
+        action="store_true",
+        help="Use TurboQuant TQ4 KV cache compression (MLX backend only). "
+        "~3.8× cache memory savings; applies only to full-attention "
+        "(non-sliding) layers — sliding layers keep RingBufferKVCache.",
+    )
     args = parser.parse_args()
 
+    if args.turboquant and args.backend != "mlx":
+        parser.error("--turboquant requires --backend mlx.")
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
 
@@ -443,7 +473,13 @@ def main() -> None:
             backend=args.backend,
         )
 
-    export_and_lower(model, config, args.output_dir, backend=args.backend)
+    export_and_lower(
+        model,
+        config,
+        args.output_dir,
+        backend=args.backend,
+        use_turboquant=args.turboquant,
+    )
 
 
 if __name__ == "__main__":

@@ -39,6 +39,11 @@ set(ETHOSU_LINUX_DRIVER_SOURCE_DIR
       PATH
       "Optional local path to an existing ethos-u-linux-driver stack checkout"
 )
+set(ETHOS_SDK_PATH
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
+    CACHE PATH "Path to Ethos-U bare metal driver/env"
+)
+option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies" ON)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   message(
@@ -51,8 +56,6 @@ endif()
 if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
 
   add_compile_options("-Wall" "-Werror")
-
-  set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 
   set(_arm_backend_sources
       backends/arm/runtime/EthosUBackend.cpp
@@ -72,11 +75,22 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u
       PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
     )
-    set(_ethosu_core_driver_include
-        "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include"
+    include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
+    if(FETCH_ETHOS_U_CONTENT)
+      fetch_ethos_u_content(${ETHOS_SDK_PATH} ${EXECUTORCH_ROOT})
+    endif()
+    set(DRIVER_ETHOSU_INCLUDE_DIR
+        "${ETHOS_SDK_PATH}/core_software/core_driver/include"
     )
+    if(NOT EXISTS "${DRIVER_ETHOSU_INCLUDE_DIR}/ethosu_driver.h")
+      message(
+        FATAL_ERROR
+          "Ethos-U core driver headers were not found in ${DRIVER_ETHOSU_INCLUDE_DIR}."
+          " Run examples/arm/setup.sh or enable FETCH_ETHOS_U_CONTENT."
+      )
+    endif()
     target_include_directories(
-      executorch_delegate_ethos_u PRIVATE ${_ethosu_core_driver_include}
+      executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
     )
     target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
   elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
@@ -183,6 +197,9 @@ if(EXECUTORCH_BUILD_VGF)
   set(_vgf_backend_sources backends/arm/runtime/VGFBackend.cpp
                            backends/arm/runtime/VGFSetup.cpp
   )
+  if(NOT EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _vgf_backend_sources backends/vulkan/third-party/volk/volk.c)
+  endif()
 
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
