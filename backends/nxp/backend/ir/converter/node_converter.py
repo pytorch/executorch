@@ -5,6 +5,7 @@
 
 import operator
 from abc import ABC, abstractmethod
+from math import prod
 from typing import Callable
 
 import torch
@@ -411,30 +412,31 @@ class NodeConverter(ABC):
         )
 
     @staticmethod
-    def at_least_one_input_shape_matches_the_output_shape(node: Node) -> bool:
-        """Determine if given PyTorch fx Node uses at least one input shape broadcasting for it's input nodes or not.
+    def inputs_satisfy_broadcast_condition(node: Node) -> bool:
+        """Determine if given PyTorch fx Node has inputs that satisfy broadcasting conditions for Neutron or not.
 
         :param node: PyTorch fx Node with 'all_input_nodes' initialized.
-        :return: True, if at least one input has the same shape as the output node.
+        :return: True, if at least one input has the same number of elements as the output node.
                  False otherwise.
         """
 
         if node.all_input_nodes is None:
             logger.e(
                 logger.Code.INTERNAL_ERROR,
-                "node_converter.at_least_one_input_shape_matches_the_output_shape(): 'all_input_nodes' are None!",
+                "node_converter.inputs_satisfy_broadcast_condition(): 'all_input_nodes' are None!",
             )
 
         if len(node.all_input_nodes) == 0:
             logger.e(
                 logger.Code.INTERNAL_ERROR,
-                "node_converter.at_least_one_input_shape_matches_the_output_shape(): Operator has no inputs!",
+                "node_converter.inputs_satisfy_broadcast_condition(): Operator has no inputs!",
             )
 
         output_shape = node.meta["val"].shape
+        num_elements = prod(output_shape)
 
         return any(
-            input_tensor.meta["val"].shape == output_shape
+            prod(input_tensor.meta["val"].shape) == num_elements
             for input_tensor in node.all_input_nodes
         )
 

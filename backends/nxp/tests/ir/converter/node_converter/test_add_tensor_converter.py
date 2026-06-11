@@ -104,6 +104,10 @@ class TestAddTensor:
             pytest.param(
                 [ModelInputSpec((4,)), ModelInputSpec((4, 4))], id="2 inputs 1D + 2D."
             ),
+            pytest.param(
+                [ModelInputSpec((10,)), ModelInputSpec((1, 1))],
+                id="2 inputs 2D, num_elems of input == num_elems of output",
+            ),
         ],
     )
     def test__broadcast(self, mocker, request, input_spec):

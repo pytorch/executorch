@@ -26,7 +26,7 @@ class AddTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if not NodeConverter.at_least_one_input_shape_matches_the_output_shape(node):
+        if not NodeConverter.inputs_satisfy_broadcast_condition(node):
             return False
 
         # If one input is in channel first and ranks of input tensors are not equal, we need to add Transposes
