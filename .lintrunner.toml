@@ -173,6 +173,7 @@ exclude_patterns = [
     'extension/asr/runner/transducer_runner.h',
     'extension/aten_util/**',
     'extension/benchmark/apple/**',
+    'extension/cuda/**',
     'extension/data_loader/**',
     'extension/evalue_util/**',
     'extension/flat_tensor/**',
@@ -192,10 +193,8 @@ exclude_patterns = [
     'extension/wasm/**',
 
     # Kernel areas to onboard separately.
-    'kernels/aten/**',
     'kernels/optimized/**',
     'kernels/portable/**',
-    'kernels/prim_ops/**',
     'kernels/quantized/**',
     'kernels/test/**',
 
@@ -226,6 +225,10 @@ command = [
     '--extra-arg=--suppress=toomanyconfigs',
     '--extra-arg=--suppress=unusedFunction:*.h',
     '--extra-arg=--suppress=unusedFunction:*.hpp',
+    # Prim ops use the same ExecuTorch macro idioms as portable kernels.
+    '--extra-arg=--suppress=unknownMacro:*kernels/prim_ops/*',
+    '--extra-arg=--suppress=syntaxError:*kernels/prim_ops/*',
+    '--extra-arg=--suppress=unusedFunction:*kernels/prim_ops/*',
     '--',
     '@{{PATHSFILE}}'
 ]

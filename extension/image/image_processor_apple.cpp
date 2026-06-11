@@ -16,10 +16,11 @@
 //   YUVFormat:       NV12, NV21
 //   ResizeMode:      STRETCH, LETTERBOX
 //   LetterboxAnchor: CENTER, TOP_LEFT
-//   Orientation:     UP
+//   Orientation:     UP, DOWN (180), RIGHT (90 CW), LEFT (90 CCW)
 
 #include <executorch/extension/image/image_processor.h>
 #include <executorch/extension/image/image_processor_apple.h>
+#include <executorch/extension/image/image_processor_simd.h>
 
 #include <algorithm>
 #include <cstring>
@@ -144,6 +145,7 @@ class ImageProcessor::Impl {
   ScratchBuffer<uint8_t> resized; // resize_and_pad_bgra() output
   ScratchBuffer<uint8_t> scale_temp; // vImageScale_ARGB8888 temp buffer
   ScratchBuffer<uint8_t> gpu_resized; // GPU path intermediate buffer
+  ScratchBuffer<uint8_t> oriented; // orientation transform output
   ScratchBuffer<uint8_t> bgra; // process_yuv() intermediate BGRA
   ScratchBuffer<uint8_t> narrow_y; // P010→8-bit narrowed Y plane
   ScratchBuffer<uint8_t> narrow_uv; // P010→8-bit narrowed CbCr plane
@@ -266,10 +268,13 @@ void compute_gpu_dims(
     int32_t width,
     int32_t height,
     NormalizedRect roi,
+    Orientation orientation,
     const ImageProcessorConfig& config,
     GpuResizeDims& out) {
-  const int32_t roi_w = static_cast<int32_t>(width * roi.width);
-  const int32_t roi_h = static_cast<int32_t>(height * roi.height);
+  // ROI is in oriented (display) space, so orient the source dims first.
+  const auto od = oriented_dims(width, height, orientation);
+  const int32_t roi_w = static_cast<int32_t>(od.first * roi.width);
+  const int32_t roi_h = static_cast<int32_t>(od.second * roi.height);
   compute_resize_dims(
       roi_w,
       roi_h,
@@ -387,82 +392,60 @@ size_t compute_scale_temp_size(
   return temp_size > 0 ? static_cast<size_t>(temp_size) : 0;
 }
 
-// Deinterleave BGRA uint8 → planar RGB float with fused normalization.
-// Handles offset for letterbox padding.
-//
-// Per channel (R, G, B): vDSP_vfltu8 reads the matching byte from BGRA via
-// stride=4 and converts uint8→float, then vDSP_vsmsa applies the fused
-// affine `out = in * (scale_factor / std_dev) + (-mean / std_dev)` in-place.
-Error deinterleave_bgra_to_chw(
-    const uint8_t* bgra_data,
-    int32_t src_w,
-    int32_t src_h,
-    int32_t src_stride,
-    float* output,
-    int32_t final_w,
-    int32_t final_h,
-    int32_t offset_x,
-    int32_t offset_y,
-    const Normalization& norm) {
-  const size_t spatial = static_cast<size_t>(final_w) * final_h;
-
-  // Per-channel affine coefficients for `out = in * a + b`.
-  // BGRA byte layout: byte 0 = B, byte 1 = G, byte 2 = R; norm.{mean,std_dev}
-  // are indexed in RGB order (channel 0 = R, 1 = G, 2 = B).
-  const float a_r = norm.scale_factor / norm.std_dev[0];
-  const float a_g = norm.scale_factor / norm.std_dev[1];
-  const float a_b = norm.scale_factor / norm.std_dev[2];
-  const float b_r = -norm.mean[0] / norm.std_dev[0];
-  const float b_g = -norm.mean[1] / norm.std_dev[1];
-  const float b_b = -norm.mean[2] / norm.std_dev[2];
-
-  // When the bias is zero (e.g. zeroToOne / mean=0), a plain scale (vsmul) is
-  // cheaper than the fused scale+add (vsmsa).
-  const bool no_offset = (b_r == 0.0f && b_g == 0.0f && b_b == 0.0f);
-  auto scale_bias =
-      [no_offset](float* p, const float* a, const float* b, vDSP_Length n) {
-        if (no_offset) {
-          vDSP_vsmul(p, 1, a, p, 1, n);
-        } else {
-          vDSP_vsmsa(p, 1, a, b, p, 1, n);
-        }
-      };
-
-  // Output planes in CHW order: R, G, B. Each plane is final_w × final_h
-  // floats; we write a src_h × src_w region starting at (offset_y, offset_x).
-  float* r_plane = output + 0 * spatial;
-  float* g_plane = output + 1 * spatial;
-  float* b_plane = output + 2 * spatial;
-
-  // Fast path: source is contiguous and destination region is the entire
-  // plane (offsets 0, src dims == final dims).
-  if (src_stride == src_w * 4 && offset_x == 0 && offset_y == 0 &&
-      src_w == final_w && src_h == final_h) {
-    const vDSP_Length n = static_cast<vDSP_Length>(src_w) * src_h;
-    vDSP_vfltu8(bgra_data + 2, 4, r_plane, 1, n);
-    scale_bias(r_plane, &a_r, &b_r, n);
-    vDSP_vfltu8(bgra_data + 1, 4, g_plane, 1, n);
-    scale_bias(g_plane, &a_g, &b_g, n);
-    vDSP_vfltu8(bgra_data + 0, 4, b_plane, 1, n);
-    scale_bias(b_plane, &a_b, &b_b, n);
-    return Error::Ok;
+// Rotate an interleaved BGRA (ARGB8888 layout) buffer by `orientation` using
+// vImage's SIMD/cache-aware 90-degree rotation, writing a tightly-packed result
+// into `scratch`. UP is handled by the caller (no rotation). out_data/out_w/
+// out_h/out_stride describe the rotated buffer (dims swapped for RIGHT/LEFT).
+Error rotate_bgra(
+    const uint8_t* src,
+    int32_t width,
+    int32_t height,
+    int32_t stride,
+    Orientation orientation,
+    ScratchBuffer<uint8_t>& scratch,
+    uint8_t*& out_data,
+    int32_t& out_w,
+    int32_t& out_h,
+    int32_t& out_stride) {
+  uint8_t rotation;
+  switch (orientation) {
+    case Orientation::RIGHT: // 90 degrees clockwise
+      rotation = kRotate90DegreesClockwise;
+      break;
+    case Orientation::LEFT: // 90 degrees counter-clockwise
+      rotation = kRotate90DegreesCounterClockwise;
+      break;
+    case Orientation::DOWN: // 180 degrees
+      rotation = kRotate180DegreesClockwise;
+      break;
+    default:
+      return Error::InvalidArgument;
   }
 
-  // Slow path: row-by-row to handle stride padding and/or letterbox offsets.
-  for (int32_t y = 0; y < src_h; ++y) {
-    const uint8_t* src_row = bgra_data + y * src_stride;
-    const ptrdiff_t dst_off = (y + offset_y) * final_w + offset_x;
-    float* r_dst = r_plane + dst_off;
-    float* g_dst = g_plane + dst_off;
-    float* b_dst = b_plane + dst_off;
-    const vDSP_Length n = static_cast<vDSP_Length>(src_w);
-    vDSP_vfltu8(src_row + 2, 4, r_dst, 1, n);
-    scale_bias(r_dst, &a_r, &b_r, n);
-    vDSP_vfltu8(src_row + 1, 4, g_dst, 1, n);
-    scale_bias(g_dst, &a_g, &b_g, n);
-    vDSP_vfltu8(src_row + 0, 4, b_dst, 1, n);
-    scale_bias(b_dst, &a_b, &b_b, n);
-  }
+  const auto od = oriented_dims(width, height, orientation);
+  out_w = od.first;
+  out_h = od.second;
+  out_stride = out_w * 4;
+  out_data = scratch.resize(static_cast<size_t>(out_h) * out_stride);
+
+  vImage_Buffer srcBuf = {
+      const_cast<uint8_t*>(src),
+      static_cast<vImagePixelCount>(height),
+      static_cast<vImagePixelCount>(width),
+      static_cast<size_t>(stride)};
+  vImage_Buffer dstBuf = {
+      out_data,
+      static_cast<vImagePixelCount>(out_h),
+      static_cast<vImagePixelCount>(out_w),
+      static_cast<size_t>(out_stride)};
+  const Pixel_8888 backColor = {0, 0, 0, 0};
+  vImage_Error verr = vImageRotate90_ARGB8888(
+      &srcBuf, &dstBuf, rotation, backColor, kvImageNoFlags);
+  ET_CHECK_OR_RETURN_ERROR(
+      verr == kvImageNoError,
+      Internal,
+      "vImageRotate90_ARGB8888 failed: %zd",
+      verr);
   return Error::Ok;
 }
 
@@ -529,11 +512,16 @@ Error normalize_bgra_into(
     offset_y = offset.second;
   }
 
-  return deinterleave_bgra_to_chw(
+  // BGRA byte layout: B=0, G=1, R=2 (alpha dropped); norm is RGB-indexed.
+  return deinterleave_to_chw(
       bgra_data,
       width,
       height,
       stride,
+      /*in_channels=*/4,
+      /*r_off=*/2,
+      /*g_off=*/1,
+      /*b_off=*/0,
       out,
       final_w,
       final_h,
@@ -549,6 +537,7 @@ Error process_bgra_cpu_only_into(
     const uint8_t* bgra,
     int32_t width,
     int32_t height,
+    Orientation orientation,
     NormalizedRect roi,
     executorch::aten::Tensor& out) {
   if (is_cpu_only(proc.config())) {
@@ -559,7 +548,7 @@ Error process_bgra_cpu_only_into(
         width * 4,
         ColorFormat::BGRA,
         out,
-        Orientation::UP,
+        orientation,
         roi);
   }
   auto& cpu_proxy = proc.impl().cpu_proxy;
@@ -569,14 +558,7 @@ Error process_bgra_cpu_only_into(
     cpu_proxy = std::make_unique<ImageProcessor>(cpu_config);
   }
   return cpu_proxy->process_into(
-      bgra,
-      width,
-      height,
-      width * 4,
-      ColorFormat::BGRA,
-      out,
-      Orientation::UP,
-      roi);
+      bgra, width, height, width * 4, ColorFormat::BGRA, out, orientation, roi);
 }
 
 // Validate that `out` is a contiguous Float [1, 3, target_h, target_w] tensor.
@@ -608,7 +590,7 @@ Error ImageProcessor::process_into(
     int32_t stride_bytes,
     ColorFormat input_format,
     executorch::aten::Tensor& out,
-    Orientation /*orientation*/,
+    Orientation orientation,
     NormalizedRect roi) const {
   const auto& config = impl_->config;
   ET_CHECK_OR_RETURN_ERROR(data != nullptr, InvalidArgument, "data is null");
@@ -636,6 +618,10 @@ Error ImageProcessor::process_into(
           roi.y + roi.height <= 1.0f + 1e-6f,
       InvalidArgument,
       "invalid ROI");
+  ET_CHECK_OR_RETURN_ERROR(
+      is_supported_orientation(orientation),
+      InvalidArgument,
+      "unsupported orientation");
   auto out_err = check_out_tensor(config, out);
   if (out_err != Error::Ok) {
     return out_err;
@@ -648,7 +634,7 @@ Error ImageProcessor::process_into(
         ? CI_PIXEL_FORMAT_BGRA8
         : CI_PIXEL_FORMAT_RGBA8;
     GpuResizeDims gpu;
-    compute_gpu_dims(width, height, roi, config, gpu);
+    compute_gpu_dims(width, height, roi, orientation, config, gpu);
     auto& gpu_resized = impl_->gpu_resized;
     gpu_resized.resize(static_cast<size_t>(gpu.resize_w) * gpu.resize_h * 4);
     int ret = ci_process_to_bgra(
@@ -657,7 +643,7 @@ Error ImageProcessor::process_into(
         height,
         stride_bytes,
         ci_format,
-        to_exif_orientation(Orientation::UP),
+        to_exif_orientation(orientation),
         roi.x,
         roi.y,
         roi.width,
@@ -705,11 +691,36 @@ Error ImageProcessor::process_into(
     cur_stride = static_cast<int32_t>(conv_stride);
   }
 
-  // Step 2: ROI crop (pointer arithmetic on BGRA data).
+  // Step 2: orientation. Rotate the BGRA buffer (vImage) so ROI/resize run in
+  // display space (orient -> ROI -> resize). UP leaves the buffer untouched.
   uint8_t* cur_data = bgra_data;
+  if (orientation != Orientation::UP) {
+    uint8_t* rotated;
+    int32_t rot_w, rot_h, rot_stride;
+    auto rot_err = rotate_bgra(
+        cur_data,
+        cur_w,
+        cur_h,
+        cur_stride,
+        orientation,
+        impl_->oriented,
+        rotated,
+        rot_w,
+        rot_h,
+        rot_stride);
+    if (rot_err != Error::Ok) {
+      return rot_err;
+    }
+    cur_data = rotated;
+    cur_w = rot_w;
+    cur_h = rot_h;
+    cur_stride = rot_stride;
+  }
+
+  // Step 3: ROI crop (pointer arithmetic on BGRA data).
   apply_roi_crop_bgra(cur_data, cur_w, cur_h, cur_stride, roi);
 
-  // Step 3: resize. Letterbox padding is applied during normalization.
+  // Step 4: resize. Letterbox padding is applied during normalization.
   BgraView resized;
   int32_t final_w, final_h;
   {
@@ -738,7 +749,7 @@ Error ImageProcessor::process_into(
     }
   }
 
-  // Step 4: normalize BGRA → CHW float buffer.
+  // Step 5: normalize BGRA → CHW float buffer.
   return normalize_bgra_into(
       *this,
       resized.data,
@@ -759,7 +770,7 @@ Error ImageProcessor::process_yuv_into(
     int32_t height,
     YUVFormat format,
     executorch::aten::Tensor& out,
-    Orientation /*orientation*/,
+    Orientation orientation,
     NormalizedRect roi,
     YUVRange range) const {
   const auto& config = impl_->config;
@@ -785,6 +796,10 @@ Error ImageProcessor::process_yuv_into(
       config.target_width > 0 && config.target_height > 0,
       InvalidArgument,
       "invalid target dimensions");
+  ET_CHECK_OR_RETURN_ERROR(
+      is_supported_orientation(orientation),
+      InvalidArgument,
+      "unsupported orientation");
   auto out_err = check_out_tensor(config, out);
   if (out_err != Error::Ok) {
     return out_err;
@@ -809,7 +824,7 @@ Error ImageProcessor::process_yuv_into(
   // GPU fast path: YUV→RGB + crop + resize in a single Core Image pass.
   if (should_use_gpu(config, width, height)) {
     GpuResizeDims gpu;
-    compute_gpu_dims(width, height, roi, config, gpu);
+    compute_gpu_dims(width, height, roi, orientation, config, gpu);
     auto& gpu_resized = impl_->gpu_resized;
     gpu_resized.resize(static_cast<size_t>(gpu.resize_w) * gpu.resize_h * 4);
     int ret = ci_process_yuv_to_bgra(
@@ -820,7 +835,7 @@ Error ImageProcessor::process_yuv_into(
         width,
         height,
         static_cast<int32_t>(range),
-        to_exif_orientation(Orientation::UP),
+        to_exif_orientation(orientation),
         roi.x,
         roi.y,
         roi.width,
@@ -866,11 +881,11 @@ Error ImageProcessor::process_yuv_into(
 
   // CPU fast path: scale Y/CbCr planes first, then convert at target size.
   // Eligible when ROI is the full image and post-resize dims are even.
-  const bool fast_eligible =
-      roi.x == 0.0f && roi.y == 0.0f && roi.width == 1.0f && roi.height == 1.0f;
+  const bool fast_eligible = orientation == Orientation::UP && roi.x == 0.0f &&
+      roi.y == 0.0f && roi.width == 1.0f && roi.height == 1.0f;
   if (fast_eligible) {
     GpuResizeDims dims;
-    compute_gpu_dims(width, height, roi, config, dims);
+    compute_gpu_dims(width, height, roi, orientation, config, dims);
     if ((dims.resize_w & 1) == 0 && (dims.resize_h & 1) == 0) {
       const int32_t rw = dims.resize_w;
       const int32_t rh = dims.resize_h;
@@ -977,7 +992,7 @@ Error ImageProcessor::process_yuv_into(
       vErr);
 
   return process_bgra_cpu_only_into(
-      *this, bgra.data(), width, height, roi, out);
+      *this, bgra.data(), width, height, orientation, roi, out);
 }
 
 // Allocate a CHW float tensor sized to the configured target and fill it via
@@ -988,7 +1003,7 @@ Result<TensorPtr> ImageProcessor::process(
     int32_t height,
     int32_t stride_bytes,
     ColorFormat input_format,
-    Orientation /*orientation*/,
+    Orientation orientation,
     NormalizedRect roi) const {
   ET_CHECK_OR_RETURN_ERROR(
       impl_->config.target_width > 0 && impl_->config.target_height > 0,
@@ -1011,14 +1026,7 @@ Result<TensorPtr> ImageProcessor::process(
       [](void* p) { delete[] static_cast<float*>(p); });
 
   auto err = process_into(
-      data,
-      width,
-      height,
-      stride_bytes,
-      input_format,
-      *out,
-      Orientation::UP,
-      roi);
+      data, width, height, stride_bytes, input_format, *out, orientation, roi);
   if (err != Error::Ok) {
     return err;
   }
@@ -1035,7 +1043,7 @@ Result<TensorPtr> ImageProcessor::process_yuv(
     int32_t width,
     int32_t height,
     YUVFormat format,
-    Orientation /*orientation*/,
+    Orientation orientation,
     NormalizedRect roi,
     YUVRange range) const {
   ET_CHECK_OR_RETURN_ERROR(
@@ -1067,7 +1075,7 @@ Result<TensorPtr> ImageProcessor::process_yuv(
       height,
       format,
       *out,
-      Orientation::UP,
+      orientation,
       roi,
       range);
   if (err != Error::Ok) {
@@ -1107,6 +1115,10 @@ Error process_pixelbuffer_into(
       is_supported_pixel_format(pixelFormat),
       InvalidArgument,
       "unsupported CVPixelBuffer format");
+  ET_CHECK_OR_RETURN_ERROR(
+      is_supported_orientation(orientation),
+      InvalidArgument,
+      "unsupported orientation");
 
   // Full-range buffers carry samples across the entire [0, 255]; everything
   // else is video range. The conversion must match to avoid color distortion.
@@ -1130,9 +1142,10 @@ Error process_pixelbuffer_into(
   // small; normalize does the uint8->float conversion.
   if (should_use_gpu(processor.config(), width, height)) {
     int32_t resize_w, resize_h, final_w, final_h;
+    const auto od = oriented_dims(width, height, orientation);
     compute_resize_dims(
-        width,
-        height,
+        od.first,
+        od.second,
         processor.config(),
         resize_w,
         resize_h,
@@ -1294,6 +1307,7 @@ Error process_pixelbuffer_into(
 
 // Allocate a CHW float tensor sized to the configured target and fill it via
 // process_pixelbuffer_into.
+// cppcheck-suppress unusedFunction
 Result<TensorPtr> process_pixelbuffer(
     const ImageProcessor& processor,
     CVPixelBufferRef pixelBuffer,

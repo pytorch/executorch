@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/image/image_processor.h>
+#include <executorch/extension/image/image_processor_simd.h>
 
 #include <algorithm>
 #include <cstring>
@@ -29,6 +30,84 @@ namespace {
 
 inline uint8_t clamp_uint8(int v) {
   return static_cast<uint8_t>(std::max(0, std::min(255, v)));
+}
+
+// Apply a rotation to an interleaved 8-bit image, writing a tightly-packed
+// result to `dst` (capacity out_width * out_height * channels). Supports the
+// rotation codes UP/DOWN/RIGHT/LEFT with `channels` of 3 or 4.
+// out_width/out_height receive the post-rotation dims (swapped for RIGHT/LEFT).
+//
+// The destination pixel (r, c) maps to source (sr, sc), an affine function of
+// (r, c). The per-orientation coefficients are computed once (no per-pixel
+// branch) and the source index is stepped incrementally across the loop.
+void apply_orientation_interleaved(
+    const uint8_t* src,
+    int32_t width,
+    int32_t height,
+    int32_t stride,
+    int32_t channels,
+    Orientation orientation,
+    uint8_t* dst,
+    int32_t& out_width,
+    int32_t& out_height) {
+  const auto od = oriented_dims(width, height, orientation);
+  out_width = od.first;
+  out_height = od.second;
+  const int32_t dst_stride = out_width * channels;
+  const size_t px = static_cast<size_t>(channels);
+
+  // sr = sr0 + r*dsr_dr + c*dsr_dc;  sc = sc0 + r*dsc_dr + c*dsc_dc.
+  int32_t sr0, sc0, dsr_dr, dsr_dc, dsc_dr, dsc_dc;
+  switch (orientation) {
+    case Orientation::DOWN: // 180 degrees
+      sr0 = height - 1;
+      dsr_dr = -1;
+      dsr_dc = 0;
+      sc0 = width - 1;
+      dsc_dr = 0;
+      dsc_dc = -1;
+      break;
+    case Orientation::RIGHT: // 90 degrees clockwise
+      sr0 = height - 1;
+      dsr_dr = 0;
+      dsr_dc = -1;
+      sc0 = 0;
+      dsc_dr = 1;
+      dsc_dc = 0;
+      break;
+    case Orientation::LEFT: // 90 degrees counter-clockwise
+      sr0 = 0;
+      dsr_dr = 0;
+      dsr_dc = 1;
+      sc0 = width - 1;
+      dsc_dr = -1;
+      dsc_dc = 0;
+      break;
+    case Orientation::UP:
+    default:
+      sr0 = 0;
+      dsr_dr = 1;
+      dsr_dc = 0;
+      sc0 = 0;
+      dsc_dr = 0;
+      dsc_dc = 1;
+      break;
+  }
+
+  for (int32_t r = 0; r < out_height; ++r) {
+    int32_t sr = sr0 + r * dsr_dr;
+    int32_t sc = sc0 + r * dsc_dr;
+    uint8_t* d = dst + static_cast<size_t>(r) * dst_stride;
+    for (int32_t c = 0; c < out_width; ++c) {
+      std::memcpy(
+          d,
+          src + static_cast<size_t>(sr) * stride + static_cast<size_t>(sc) * px,
+          px);
+      d += channels;
+      sr += dsr_dc;
+      sc += dsc_dc;
+    }
+  }
 }
 
 // Convert NV12 (UV-interleaved) or NV21 (VU-interleaved) to RGBA using BT.601,
@@ -192,7 +271,7 @@ Error ImageProcessor::process_into(
     int32_t stride_bytes,
     ColorFormat input_format,
     executorch::aten::Tensor& out,
-    Orientation /*orientation*/,
+    Orientation orientation,
     NormalizedRect roi) const {
   ET_CHECK_OR_RETURN_ERROR(data != nullptr, InvalidArgument, "data is null");
   ET_CHECK_OR_RETURN_ERROR(
@@ -225,6 +304,10 @@ Error ImageProcessor::process_into(
       executorch::ET_RUNTIME_NAMESPACE::tensor_is_contiguous(out),
       InvalidArgument,
       "out must be contiguous");
+  ET_CHECK_OR_RETURN_ERROR(
+      is_supported_orientation(orientation),
+      InvalidArgument,
+      "unsupported orientation");
 
   // Channels decoded from the input format (used for the intermediate RGB
   // buffers) vs. channels written to the output tensor. Equal today (both are
@@ -237,7 +320,31 @@ Error ImageProcessor::process_into(
   const uint8_t* cur_data = data;
   int32_t cur_stride = stride_bytes;
 
-  // Step 1: ROI crop (pointer arithmetic).
+  // Step 1: orientation (orient -> ROI -> resize). Produce an oriented copy of
+  // the interleaved input so the ROI/resize below run in display space. UP
+  // keeps the zero-copy fast path.
+  std::vector<uint8_t> oriented_buf;
+  if (orientation != Orientation::UP) {
+    const int32_t bpp = bytes_per_pixel(input_format);
+    oriented_buf.resize(static_cast<size_t>(width) * height * bpp);
+    int32_t oriented_w, oriented_h;
+    apply_orientation_interleaved(
+        cur_data,
+        cur_w,
+        cur_h,
+        cur_stride,
+        bpp,
+        orientation,
+        oriented_buf.data(),
+        oriented_w,
+        oriented_h);
+    cur_data = oriented_buf.data();
+    cur_w = oriented_w;
+    cur_h = oriented_h;
+    cur_stride = oriented_w * bpp;
+  }
+
+  // Step 2: ROI crop (pointer arithmetic).
   if (roi.x != 0.0f || roi.y != 0.0f || roi.width != 1.0f ||
       roi.height != 1.0f) {
     const int32_t bpp = bytes_per_pixel(input_format);
@@ -258,7 +365,7 @@ Error ImageProcessor::process_into(
     // cur_stride stays the same.
   }
 
-  // Step 2: Swizzle BGRA/RGBA → RGB (alpha discarded).
+  // Step 3: Swizzle BGRA/RGBA → RGB (alpha discarded).
   std::vector<uint8_t> rgb_buf(
       static_cast<size_t>(cur_w) * cur_h * input_channels);
   swizzle_to_rgb(
@@ -272,7 +379,7 @@ Error ImageProcessor::process_into(
   cur_data = rgb_buf.data();
   cur_stride = cur_w * input_channels;
 
-  // Step 3: Resize.
+  // Step 4: Resize.
   int32_t resize_w, resize_h, final_w, final_h;
   compute_resize_dims(
       cur_w, cur_h, config(), resize_w, resize_h, final_w, final_h);
@@ -293,7 +400,7 @@ Error ImageProcessor::process_into(
     return err;
   }
 
-  // Step 4: Normalize + layout into the caller's CHW output (padded).
+  // Step 5: Normalize + layout into the caller's CHW output (padded).
   float* output = out.mutable_data_ptr<float>();
   std::fill(
       output,
@@ -314,25 +421,23 @@ Error ImageProcessor::process_into(
         InvalidArgument,
         "normalization std_dev must be nonzero");
   }
-  // Source (resized RGB) carries input_channels; the output tensor carries
-  // output_channels. They are equal today, so channels map 1:1; a future
-  // divergence (e.g. grayscale) would need an explicit channel map here.
-  for (int32_t y = 0; y < resize_h; ++y) {
-    for (int32_t x = 0; x < resize_w; ++x) {
-      const int32_t src_idx = (y * resize_w + x) * input_channels;
-      const int32_t dst_y = y + offset_y;
-      const int32_t dst_x = x + offset_x;
-      for (int32_t c = 0; c < output_channels; ++c) {
-        const float val =
-            (resized_buf[src_idx + c] * norm.scale_factor - norm.mean[c]) /
-            norm.std_dev[c];
-        const size_t out_idx = static_cast<size_t>(c) * final_w * final_h +
-            static_cast<size_t>(dst_y) * final_w + dst_x;
-        output[out_idx] = val;
-      }
-    }
-  }
-  return Error::Ok;
+  // Deinterleave + normalize the resized interleaved RGB (R/G/B at byte
+  // offsets 0/1/2) into the CHW output.
+  return deinterleave_to_chw(
+      resized_buf.data(),
+      resize_w,
+      resize_h,
+      resize_w * input_channels,
+      input_channels,
+      /*r_off=*/0,
+      /*g_off=*/1,
+      /*b_off=*/2,
+      output,
+      final_w,
+      final_h,
+      offset_x,
+      offset_y,
+      norm);
 }
 
 Error ImageProcessor::process_yuv_into(

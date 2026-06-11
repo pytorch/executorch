@@ -283,7 +283,12 @@ def _qspec_port_encoding_type(node: Node, qspec: QuantizationSpecBase):
     qscheme = qspec.qscheme
 
     if qscheme in [torch.per_tensor_symmetric, torch.per_tensor_affine]:
-        if qspec.dtype == torch.int8 and qspec.quant_max - qspec.quant_min <= 15:
+        range_ = qspec.quant_max - qspec.quant_min
+        assert range_ > 3, (
+            f"2-bit quantization (range={range_}) does not support per-tensor encoding. "
+            "Use per-channel quantization instead."
+        )
+        if qspec.dtype == torch.int8 and range_ <= 15:
             encoding_type = (
                 PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET
             )
@@ -297,6 +302,10 @@ def _qspec_port_encoding_type(node: Node, qspec: QuantizationSpecBase):
         ) and obs_or_fq.p.keywords.get(QCOM_BLOCK_SIZE, None) is not None:
             encoding_type = (
                 PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BLOCKWISE_EXPANSION
+            )
+        elif qspec.dtype == torch.int8 and qspec.quant_max - qspec.quant_min <= 3:
+            encoding_type = (
+                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET
             )
         elif qspec.dtype == torch.int8 and qspec.quant_max - qspec.quant_min <= 15:
             encoding_type = (

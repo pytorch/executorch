@@ -15,7 +15,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 
 
-def validate_conv2d_args_dtypes(
+def validate_conv2d_args_dtypes(  # noqa: C901
     tosa_spec: TosaSpecification,
     x: torch.Tensor,
     weight: torch.Tensor,
@@ -30,6 +30,10 @@ def validate_conv2d_args_dtypes(
     ]
     if tosa_spec.support_extension("bf16"):
         supported_float_types.append(torch.bfloat16)
+    if tosa_spec.support_extension("fp8e4m3"):
+        supported_float_types.append(torch.float8_e4m3fn)
+    if tosa_spec.support_extension("fp8e5m2"):
+        supported_float_types.append(torch.float8_e5m2)
     if x.dtype in supported_int_types:
         if not tosa_spec.support_integer():
             raise TosaValueError(
@@ -64,7 +68,10 @@ def validate_conv2d_args_dtypes(
                 f"TOSA spec {tosa_spec} requires bias {bias.dtype} to be of the same type as input {x.dtype}",
                 op=op,
             )
-        output_dtype = x.dtype
+        if x.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+            output_dtype = torch.float16
+        else:
+            output_dtype = x.dtype
     else:
         supported_types = (
             *(supported_int_types if tosa_spec.support_integer() else ()),

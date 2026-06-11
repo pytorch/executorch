@@ -55,6 +55,7 @@ class ImageProcessor {
   std::pair<int32_t, int32_t> compute_letterbox_padding(
       int32_t input_width,
       int32_t input_height,
+      Orientation orientation = Orientation::UP,
       NormalizedRect roi = kFullImage) const;
 
   /// Process an image into a normalized float tensor.

@@ -30,6 +30,14 @@ typedef struct ExecuTorchImageLetterboxPadding {
   NSInteger y;
 } ExecuTorchImageLetterboxPadding NS_SWIFT_NAME(ImageLetterboxPadding);
 
+/// EXIF orientation of the source image. The pipeline rotates the content
+/// upright before resizing. Only these rotation codes are supported.
+typedef NS_ENUM(uint8_t, ExecuTorchImageOrientation) {
+  ExecuTorchImageOrientationUp = 1,    // no rotation
+  ExecuTorchImageOrientationDown = 3,  // 180 degrees
+  ExecuTorchImageOrientationRight = 6, // 90 degrees clockwise
+  ExecuTorchImageOrientationLeft = 8,  // 90 degrees counter-clockwise
+} NS_SWIFT_NAME(ImageOrientation);
 NS_SWIFT_NAME(ImageNormalization)
 __attribute__((objc_subclassing_restricted))
 @interface ExecuTorchImageNormalization : NSObject
@@ -93,36 +101,52 @@ __attribute__((objc_subclassing_restricted))
 
 - (instancetype)initWithConfig:(ExecuTorchImageProcessorConfig *)config;
 
+/// Process a CVPixelBuffer into a normalized float tensor, treating the buffer
+/// as already upright (orientation `up`). Use
+/// processPixelBuffer:orientation:error: to specify a source orientation.
+- (nullable ExecuTorchTensor *)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
+                                            error:(NSError **)error;
+
+/// Reuse-friendly variant of processPixelBuffer:error: that writes into a
+/// caller-provided tensor; treats the buffer as already upright (orientation
+/// `up`). See processPixelBuffer:orientation:intoTensor:error:.
+- (BOOL)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
+                intoTensor:(ExecuTorchTensor *)tensor
+                     error:(NSError **)error;
+
 /// Process a CVPixelBuffer into a normalized float tensor.
 ///
 /// Auto-detects pixel format from the buffer's metadata. Supported
 /// formats: BGRA, RGBA, 8-bit NV12, and 10-bit P010 (P010 is narrowed to NV12
 /// internally). Other formats return an error.
 ///
-/// The buffer is treated as already upright. Orientation correction is not
-/// applied and cannot be derived from a CVPixelBuffer, so the caller is
-/// responsible for supplying an upright buffer (e.g. by configuring the
-/// capture connection's orientation).
+/// `orientation` is the EXIF orientation of the buffer's contents; the pipeline
+/// rotates it upright before resizing. It cannot be derived from a
+/// CVPixelBuffer, so the caller supplies it (e.g. from capture metadata).
 ///
 /// @param pixelBuffer The input pixel buffer.
+/// @param orientation The source orientation.
 /// @param error On failure, set to an NSError describing what went wrong.
 /// @return An ExecuTorchTensor with shape [1, 3, H, W] (CHW), or nil on failure.
 - (nullable ExecuTorchTensor *)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
+                                      orientation:(ExecuTorchImageOrientation)orientation
                                             error:(NSError **)error;
 
 /// Process a CVPixelBuffer into a caller-provided tensor, reusing its storage.
 ///
-/// Avoids the per-call output allocation of processPixelBuffer:error:, which
-/// matters for sustained video. `tensor` must be a Float tensor shaped
+/// Avoids the per-call output allocation of processPixelBuffer:orientation:error:,
+/// which matters for sustained video. `tensor` must be a Float tensor shaped
 /// [1, 3, targetHeight, targetWidth]; its storage is overwritten and can be
 /// reused across frames. The result aliases `tensor`, so the caller must
 /// finish using the previous result before the next call.
 ///
 /// @param pixelBuffer The input pixel buffer.
+/// @param orientation The source orientation (see processPixelBuffer:orientation:error:).
 /// @param tensor The output tensor to fill.
 /// @param error On failure, set to an NSError describing what went wrong.
 /// @return YES on success, NO on failure.
 - (BOOL)processPixelBuffer:(_Nullable CVPixelBufferRef)pixelBuffer
+               orientation:(ExecuTorchImageOrientation)orientation
                 intoTensor:(ExecuTorchTensor *)tensor
                      error:(NSError **)error;
 
@@ -132,11 +156,31 @@ __attribute__((objc_subclassing_restricted))
 /// top-left anchor. Lets callers map the padded output back to the source
 /// region without replicating the resize geometry.
 ///
+/// Treats the source as already upright (orientation `up`). Use
+/// computeLetterboxPaddingForInputWidth:height:orientation: for a rotated
+/// source.
+///
 /// @param inputWidth The source pixel width.
 /// @param inputHeight The source pixel height.
 /// @return The {x, y} padding in pixels.
 - (ExecuTorchImageLetterboxPadding)computeLetterboxPaddingForInputWidth:(NSInteger)inputWidth
                                                                 height:(NSInteger)inputHeight
+    NS_REFINED_FOR_SWIFT;
+
+/// Letterbox padding (per side, in pixels) the processor applies for a source
+/// of the given size and orientation. The source dimensions are oriented
+/// (width/height swapped for the 90-degree rotations) before the padding is
+/// computed, so the result matches the geometry that
+/// processPixelBuffer:orientation:error: produces. Returns {0, 0} for the
+/// stretch resize mode or the top-left anchor.
+///
+/// @param inputWidth The source pixel width.
+/// @param inputHeight The source pixel height.
+/// @param orientation The source orientation (see processPixelBuffer:orientation:error:).
+/// @return The {x, y} padding in pixels.
+- (ExecuTorchImageLetterboxPadding)computeLetterboxPaddingForInputWidth:(NSInteger)inputWidth
+                                                                height:(NSInteger)inputHeight
+                                     orientation:(ExecuTorchImageOrientation)orientation
     NS_REFINED_FOR_SWIFT;
 
 + (instancetype)new NS_UNAVAILABLE;

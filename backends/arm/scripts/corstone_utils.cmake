@@ -79,7 +79,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
 endfunction()
 
 function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
-  if(SYSTEM_CONFIG MATCHES "Ethos_U55")
+  if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
     add_subdirectory(
       ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target
     )
@@ -101,7 +101,7 @@ function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
   else()
     message(
       FATAL_ERROR
-        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U85)"
+        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
     )
   endif()
 endfunction()
@@ -266,6 +266,119 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
       message(
         FATAL_ERROR
           "Unsupported memory_mode ${MEMORY_MODE} for the Ethos-U55. The Ethos-U55 supports only Shared_Sram and Sram_Only."
+      )
+    endif()
+  elseif(SYSTEM_CONFIG STREQUAL "Ethos_U65_High_End")
+    set(TARGET_BOARD
+        "corstone-300"
+        PARENT_SCOPE
+    )
+    if(MEMORY_MODE MATCHES "Shared_Sram")
+      target_compile_definitions(
+        ethosu_target_common
+        INTERFACE # Configure NPU architecture timing adapters This is just
+                  # example numbers and you should make this match your hardware
+                  # SRAM
+                  ETHOSU_TA_MAXR_0=16
+                  ETHOSU_TA_MAXW_0=16
+                  ETHOSU_TA_MAXRW_0=0
+                  ETHOSU_TA_RLATENCY_0=32
+                  ETHOSU_TA_WLATENCY_0=32
+                  ETHOSU_TA_PULSE_ON_0=15999
+                  ETHOSU_TA_PULSE_OFF_0=1
+                  ETHOSU_TA_BWCAP_0=16000
+                  ETHOSU_TA_PERFCTRL_0=0
+                  ETHOSU_TA_PERFCNT_0=0
+                  ETHOSU_TA_MODE_0=1
+                  ETHOSU_TA_HISTBIN_0=0
+                  ETHOSU_TA_HISTCNT_0=0
+                  # DRAM
+                  ETHOSU_TA_MAXR_1=24
+                  ETHOSU_TA_MAXW_1=12
+                  ETHOSU_TA_MAXRW_1=0
+                  ETHOSU_TA_RLATENCY_1=500
+                  ETHOSU_TA_WLATENCY_1=250
+                  ETHOSU_TA_PULSE_ON_1=4000
+                  ETHOSU_TA_PULSE_OFF_1=1000
+                  ETHOSU_TA_BWCAP_1=3750
+                  ETHOSU_TA_PERFCTRL_1=0
+                  ETHOSU_TA_PERFCNT_1=0
+                  ETHOSU_TA_MODE_1=1
+                  ETHOSU_TA_HISTBIN_1=0
+                  ETHOSU_TA_HISTCNT_1=0
+      )
+    elseif(MEMORY_MODE MATCHES "Sram_Only")
+      target_compile_definitions(
+        ethosu_target_common
+        INTERFACE # Configure NPU architecture timing adapters This is just
+                  # example numbers and you should make this match your hardware
+                  # SRAM
+                  ETHOSU_TA_MAXR_0=16
+                  ETHOSU_TA_MAXW_0=16
+                  ETHOSU_TA_MAXRW_0=0
+                  ETHOSU_TA_RLATENCY_0=32
+                  ETHOSU_TA_WLATENCY_0=32
+                  ETHOSU_TA_PULSE_ON_0=15999
+                  ETHOSU_TA_PULSE_OFF_0=1
+                  ETHOSU_TA_BWCAP_0=16000
+                  ETHOSU_TA_PERFCTRL_0=0
+                  ETHOSU_TA_PERFCNT_0=0
+                  ETHOSU_TA_MODE_0=1
+                  ETHOSU_TA_HISTBIN_0=0
+                  ETHOSU_TA_HISTCNT_0=0
+                  # Set the second Timing Adapter to SRAM latency & bandwidth
+                  ETHOSU_TA_MAXR_1=16
+                  ETHOSU_TA_MAXW_1=16
+                  ETHOSU_TA_MAXRW_1=0
+                  ETHOSU_TA_RLATENCY_1=32
+                  ETHOSU_TA_WLATENCY_1=32
+                  ETHOSU_TA_PULSE_ON_1=15999
+                  ETHOSU_TA_PULSE_OFF_1=1
+                  ETHOSU_TA_BWCAP_1=16000
+                  ETHOSU_TA_PERFCTRL_1=0
+                  ETHOSU_TA_PERFCNT_1=0
+                  ETHOSU_TA_MODE_1=1
+                  ETHOSU_TA_HISTBIN_1=0
+                  ETHOSU_TA_HISTCNT_1=0
+      )
+    elseif(MEMORY_MODE MATCHES "Dedicated_Sram")
+      target_compile_definitions(
+        ethosu_target_common
+        INTERFACE # Configure NPU architecture timing adapters This is just
+                  # example numbers and you should make this match your hardware
+                  # SRAM
+                  ETHOSU_TA_MAXR_0=8
+                  ETHOSU_TA_MAXW_0=8
+                  ETHOSU_TA_MAXRW_0=0
+                  ETHOSU_TA_RLATENCY_0=32
+                  ETHOSU_TA_WLATENCY_0=32
+                  ETHOSU_TA_PULSE_ON_0=3999
+                  ETHOSU_TA_PULSE_OFF_0=1
+                  ETHOSU_TA_BWCAP_0=4000
+                  ETHOSU_TA_PERFCTRL_0=0
+                  ETHOSU_TA_PERFCNT_0=0
+                  ETHOSU_TA_MODE_0=1
+                  ETHOSU_TA_HISTBIN_0=0
+                  ETHOSU_TA_HISTCNT_0=0
+                  # DRAM
+                  ETHOSU_TA_MAXR_1=64
+                  ETHOSU_TA_MAXW_1=32
+                  ETHOSU_TA_MAXRW_1=0
+                  ETHOSU_TA_RLATENCY_1=500
+                  ETHOSU_TA_WLATENCY_1=250
+                  ETHOSU_TA_PULSE_ON_1=4000
+                  ETHOSU_TA_PULSE_OFF_1=1000
+                  ETHOSU_TA_BWCAP_1=3750
+                  ETHOSU_TA_PERFCTRL_1=0
+                  ETHOSU_TA_PERFCNT_1=0
+                  ETHOSU_TA_MODE_1=1
+                  ETHOSU_TA_HISTBIN_1=0
+                  ETHOSU_TA_HISTCNT_1=0
+      )
+    else()
+      message(
+        FATAL_ERROR
+          "Unsupported memory_mode ${MEMORY_MODE} for the Ethos-U65. The Ethos-U65 supports Shared_Sram and Sram_Only in this runner."
       )
     endif()
   elseif(SYSTEM_CONFIG MATCHES "Ethos_U85_SYS_DRAM_Low")

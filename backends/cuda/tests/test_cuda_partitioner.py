@@ -4,12 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import unittest
 from typing import Tuple
 
 import torch
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.exir.backend.partitioner import PartitionResult
+from executorch.exir.delegate import executorch_call_delegate
+from torch._export.utils import is_buffer
 from torch.export import export
 
 
@@ -222,3 +225,98 @@ class TestCudaPartitioner(unittest.TestCase):
                 expected_tag,
                 f"Constant placeholder {node.name} has tag '{actual_tag}' but expected '{expected_tag}'",
             )
+
+    def test_does_not_retag_already_lowered_delegate(self) -> None:
+        """
+        A node already lowered by a previous partitioner appears as an
+        executorch_call_delegate call plus its output getitem. The CUDA
+        partitioner must not re-tag those, so it can run after another backend
+        (e.g. TensorRT) and only claim the remaining ops.
+        """
+
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        exported_program = export(AddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        placeholder = next(n for n in graph.nodes if n.op == "placeholder")
+        aten_node = next(
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        )
+
+        # Splice in a fake, already-lowered delegate (call + output getitem), as a
+        # preceding partitioner (e.g. TensorRT) would have produced.
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(aten_node):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, placeholder)
+            )
+            delegate_output = graph.call_function(operator.getitem, (delegate, 0))
+        graph.lint()
+
+        CudaPartitioner([]).partition(exported_program)
+
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertNotIn("delegation_tag", delegate_output.meta)
+        self.assertIn("delegation_tag", aten_node.meta)
+
+    def test_does_not_tag_constant_used_only_by_prior_delegate(self) -> None:
+        """
+        A constant whose only consumer is a previously lowered delegate must stay
+        untagged. Tagging it would give it this partition's tag while its user
+        keeps the prior delegate's, which backend lowering rejects. Only ops this
+        partitioner claims and genuinely unused constants may be tagged.
+        """
+
+        class AddModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("w", torch.randn(3, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.w
+
+        exported_program = export(AddModule(), (torch.randn(3, 4),), strict=True)
+        graph_module = exported_program.graph_module
+        graph = graph_module.graph
+
+        buffer_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and is_buffer(exported_program, n)
+        )
+        input_placeholder = next(
+            n
+            for n in graph.nodes
+            if n.op == "placeholder" and not is_buffer(exported_program, n)
+        )
+        aten_node = next(
+            n
+            for n in graph.nodes
+            if n.op == "call_function" and n.target != operator.getitem
+        )
+
+        # Make the buffer feed only a fake, already-lowered delegate (as a
+        # preceding TensorRT partition would): rewire the aten op off the buffer,
+        # then splice the delegate consuming it.
+        aten_node.replace_input_with(buffer_placeholder, input_placeholder)
+        graph_module.lowered_module_0 = torch.nn.Module()
+        with graph.inserting_before(aten_node):
+            lowered = graph.get_attr("lowered_module_0")
+            delegate = graph.call_function(
+                executorch_call_delegate, (lowered, buffer_placeholder)
+            )
+            graph.call_function(operator.getitem, (delegate, 0))
+        graph.lint()
+
+        CudaPartitioner([]).partition(exported_program)
+
+        self.assertNotIn("delegation_tag", buffer_placeholder.meta)
+        self.assertNotIn("delegation_tag", delegate.meta)
+        self.assertIn("delegation_tag", aten_node.meta)

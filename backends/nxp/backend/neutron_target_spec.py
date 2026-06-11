@@ -96,16 +96,12 @@ class NeutronTargetSpec:
     The functionality for probing the properties of Neutron Target.
     """
 
-    def __init__(self, target: str, use_new_flow_neutron_c: bool = False):
+    def __init__(self, target: str):
 
         converter_manager = NeutronConverterManager()
         converter_manager.verify_target(target)
         neutron_converter = converter_manager.get_converter()
         self.neutron_target = neutron_converter.getNeutronTarget(target)
-
-        # The new neutron converter flow has different constraints for supported operators. These need to be addressed when
-        # deciding is operator is delegated or not in _is_supported_on_target().
-        self.use_new_flow_neutron_c = use_new_flow_neutron_c
 
         if self.is_subsystem():
             raise ValueError(
