@@ -267,6 +267,9 @@ test_data_FP8 = {
         "fp8e5m2",
     ),
 }
+_fp8_transpose_conv_tosa_ref_model_xfails = {
+    name: "MLETORCH-2238: Fix invalid FP8 CONV TOSA graphs" for name in test_data_FP8
+}
 
 
 @common.parametrize("test_data", test_data_FP | test_data_FP_fp16 | test_data_BF16)
@@ -284,7 +287,9 @@ def test_conv_transpose2d_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP8)
+@common.parametrize(
+    "test_data", test_data_FP8, xfails=_fp8_transpose_conv_tosa_ref_model_xfails
+)
 def test_conv_transpose2d_tosa_FP_fp8(test_data):
     model, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t](
@@ -292,7 +297,7 @@ def test_conv_transpose2d_tosa_FP_fp8(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_tosa_ref_model=False,  # torch.conv_transpose2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
         tosa_extensions=[tosa_extension],
     )
     pipeline.count_tosa_ops({"TRANSPOSE_CONV2D": 1, "CAST": 1})
