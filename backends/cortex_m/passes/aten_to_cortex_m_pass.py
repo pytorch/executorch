@@ -109,6 +109,7 @@ def _create_uninitialized_alloc_node(
 
 _SOFTMAX_INPUT_INTEGER_BITS = 5
 
+
 def _to_int_pair(
     value: Argument, default: Optional[tuple[int, int]]
 ) -> tuple[int, int]:
