@@ -18,16 +18,14 @@ from executorch.examples.models.gemma4_31b.quant import (
     DEFAULT_MLX_PACKERS,
     pack_model,
     QuantConfig,
+    quantize_model,
     QuantRecipe,
     QuantRule,
-    quantize_model,
 )
 
 
 def _draft_recipe(hidden_size: int, group_size: int) -> QuantRecipe:
-    int4 = QuantConfig(
-        bits=4, group_size=group_size, symmetric=False, method="min_max"
-    )
+    int4 = QuantConfig(bits=4, group_size=group_size, symmetric=False, method="min_max")
     int8_per_axis = QuantConfig(
         bits=8, group_size=hidden_size, symmetric=True, method="min_max"
     )

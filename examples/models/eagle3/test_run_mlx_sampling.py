@@ -39,9 +39,9 @@ def test_rejection_sampling_reproduces_target_distribution():
         counts[x0 if accepted else fallback] += 1
 
     empirical = counts / n
-    assert torch.max(torch.abs(empirical - p)) < 0.02, (
-        f"empirical={empirical.tolist()} target={p.tolist()}"
-    )
+    assert (
+        torch.max(torch.abs(empirical - p)) < 0.02
+    ), f"empirical={empirical.tolist()} target={p.tolist()}"
 
 
 def test_greedy_accept_is_exact_match():

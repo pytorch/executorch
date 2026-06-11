@@ -364,9 +364,10 @@ def _export_mlx(
             strict=True,
         )
 
+    # Capture d2t before freeing the speculator; baked in as get_d2t below.
+    d2t_const = spec.draft.d2t.to(torch.long).cpu().contiguous()
     del spec
     gc.collect()
-
     print("Lowering to ExecuTorch with MLX backend...")
     et_prog = to_edge_transform_and_lower(
         {"target_forward": target_ep, "draft_decode": draft_ep},
@@ -387,6 +388,10 @@ def _export_mlx(
             "get_min_prefill_chunk": 1,
             "get_chain_len": chain_len,
             "get_draft_vocab_size": draft_vocab_size,
+            # draft->target vocab map (target_id = draft_id + d2t[draft_id]); the
+            # MLX draft_decode returns draft-vocab logits, so a logits-consuming
+            # runner reads this to map proposals back to target ids.
+            "get_d2t": d2t_const,
             "use_kv_cache": True,
             "enable_dynamic_shape": True,
         },

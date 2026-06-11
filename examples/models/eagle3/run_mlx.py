@@ -159,7 +159,13 @@ def speculative_decode(
         corrected = None
         for j in range(chain_len):
             accepted, fallback = _accept(
-                vlogits[0, j], proposals[j], draft_ids[j], qs[j], temp, target_ids_all, gen
+                vlogits[0, j],
+                proposals[j],
+                draft_ids[j],
+                qs[j],
+                temp,
+                target_ids_all,
+                gen,
             )
             if accepted:
                 a += 1
@@ -277,7 +283,11 @@ def main() -> None:
 
     program = Runtime.get().load_program(args.pte, verification=Verification.Minimal)
     target_method = program.load_method("target_forward")
-    chain = args.chain if args.chain is not None else _program_const(program, "get_chain_len", 3)
+    chain = (
+        args.chain
+        if args.chain is not None
+        else _program_const(program, "get_chain_len", 3)
+    )
 
     print(f"\nPrompt: {args.prompt}\n" + "-" * 40)
     t0 = time.perf_counter()

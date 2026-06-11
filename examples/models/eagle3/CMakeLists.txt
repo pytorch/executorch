@@ -42,14 +42,19 @@ list(
   extension_flat_tensor
 )
 
-# Backend: CUDA (AOTI). The EAGLE-3 speculator export is CUDA-only.
+# Backend: CUDA (AOTI) or MLX (exactly one required). CUDA returns greedy ids;
+# MLX returns logits and the runner argmaxes + maps draft ids via d2t on the
+# host.
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
   list(APPEND link_libraries aoti_cuda_backend)
   executorch_target_link_options_shared_lib(aoti_cuda_backend)
   add_compile_definitions(EXECUTORCH_BUILD_CUDA)
+elseif(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
 else()
-  message(FATAL_ERROR "EAGLE-3 speculator runner requires EXECUTORCH_BUILD_CUDA=ON")
+  message(FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON")
 endif()
 
 # Tokenizer (HuggingFace tokenizer.json)
@@ -66,4 +71,8 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   if(NOT APPLE AND NOT MSVC)
     target_link_options(eagle3_speculator_runner PRIVATE "LINKER:-s")
   endif()
+endif()
+
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(eagle3_speculator_runner)
 endif()
