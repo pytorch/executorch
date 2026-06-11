@@ -556,6 +556,52 @@ class ArmTester(tester.Tester):
 
         return inputs, reference_stage, test_stage
 
+    def _run_method_without_comparing_outputs(
+        self,
+        stage: Optional[StageType] = None,
+        inputs: Optional[Tuple[torch.Tensor, ...]] = None,
+        num_runs: int = 1,
+    ):
+        """Runs the artifact output of 'stage' without reference comparison."""
+
+        inputs, _, test_stage = self._get_input_and_stages(inputs, stage, None, False)
+
+        logger.info(f"Running Stage '{test_stage.stage_type()}' without comparison")
+
+        number_of_runs = 1 if inputs is not None else num_runs
+
+        for run_iteration in range(number_of_runs):
+            reference_input = inputs if inputs else next(self.generate_random_inputs())
+
+            test_input = copy.deepcopy(reference_input)
+            original_input = copy.deepcopy(reference_input)
+
+            input_shapes = [
+                generated_input.shape if hasattr(generated_input, "shape") else (1,)
+                for generated_input in reference_input
+            ]
+            input_shape_str = ", ".join([str(list(i)) for i in input_shapes])
+            logger.info(f"Run #{run_iteration}, input shapes: {input_shape_str}")
+
+            test_outputs, _ = pytree.tree_flatten(test_stage.run_artifact(test_input))
+
+            # When we run with KV cache enabled, the model returns cache data in the results. This we need to strip away by extracting only USER_OUTPUT.
+            if hasattr(test_stage.artifact, "exported_program"):
+                output_specs = (
+                    test_stage.artifact.exported_program().graph_signature.output_specs
+                )
+                user_outputs = [
+                    output
+                    for output, spec in zip(test_outputs, output_specs)
+                    if spec.kind == OutputKind.USER_OUTPUT
+                ]
+                test_outputs = user_outputs
+
+            logger.info(f"\n      Input: {original_input}")
+            logger.info(f"\nTest output: {test_outputs}")
+
+        return self
+
     def run_method_and_compare_outputs(
         self,
         stage: Optional[StageType] = None,
@@ -572,13 +618,16 @@ class ArmTester(tester.Tester):
         compare_callback: Optional[Callable[..., None]] = None,
         error_callbacks: Optional[Sequence[Callable[..., None]]] = None,
         run_eager_mode: bool = False,
+        compare_outputs: bool = True,
     ):
-        """Compares the run_artifact output of 'stage' with the output of a
-        reference stage. If the model is quantized, the reference stage is the
-        Quantize stage output. Otherwise, the reference stage is the initial
-        pytorch module.
+        """Runs the artifact output of 'stage' and optionally compares it with
+        the output of a reference stage. If the model is quantized, the
+        reference stage is the Quantize stage output. Otherwise, the reference
+        stage is the initial pytorch module.
 
-        Asserts that the outputs are equal (within tolerances).
+        When compare_outputs is True, asserts that the outputs are equal
+        (within tolerances). When compare_outputs is False, only the compared
+        stage is run.
         Returns self to allow the function to be run in a test chain.
 
         Args:
@@ -586,8 +635,21 @@ class ArmTester(tester.Tester):
                 The default is the latest run stage.
             inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
                 The default is random data.
+            compare_outputs: Whether to compare the stage output with the
+                reference stage output.
 
         """
+
+        if not compare_outputs:
+            if run_eager_mode:
+                raise ValueError(
+                    "run_eager_mode is only supported when compare_outputs=True."
+                )
+            return self._run_method_without_comparing_outputs(
+                stage=stage,
+                inputs=inputs,
+                num_runs=num_runs,
+            )
 
         atol = _adjust_tosa_aarch64_atol(self.compile_spec, atol)
 
@@ -640,6 +702,18 @@ class ArmTester(tester.Tester):
                 test_outputs, _ = pytree.tree_flatten(
                     test_stage.run_artifact(test_input)
                 )
+
+            # When we run with KV cache enabled, the model returns cache data in the results. This we need to strip away by extracting only USER_OUTPUT.
+            if hasattr(test_stage.artifact, "exported_program"):
+                output_specs = (
+                    test_stage.artifact.exported_program().graph_signature.output_specs
+                )
+                user_outputs = [
+                    output
+                    for output, spec in zip(test_outputs, output_specs)
+                    if spec.kind == OutputKind.USER_OUTPUT
+                ]
+                test_outputs = user_outputs
 
             logger.info(f"\n      Input: {original_input}")
             logger.info(f"\n Ref output: {reference_outputs}")

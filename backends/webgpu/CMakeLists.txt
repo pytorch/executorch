@@ -33,9 +33,22 @@ set(WEBGPU_SRCS
     runtime/ops/OperatorRegistry.cpp
     runtime/ops/add/BinaryOp.cpp
     runtime/ops/rms_norm/RmsNorm.cpp
+    runtime/ops/update_cache/UpdateCache.cpp
+    runtime/ops/select_as_symint/SelectAsSymint.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
+
+# Verify committed *_wgsl.h match their *.wgsl (drift fails the build).
+resolve_python_executable()
+add_custom_target(
+  webgpu_wgsl_headers_check ALL
+  COMMAND "${PYTHON_EXECUTABLE}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_wgsl_headers.py" --check
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "Checking WebGPU embedded-WGSL headers are in sync"
+)
+add_dependencies(webgpu_backend webgpu_wgsl_headers_check)
 
 target_include_directories(
   webgpu_backend PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
@@ -43,28 +56,14 @@ target_include_directories(
 
 target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 
-# Native build: link against wgpu-native
-set(WGPU_NATIVE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/third-party/wgpu-native"
-    CACHE PATH "Path to wgpu-native installation"
-)
-
-if(NOT EXISTS "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a")
-  message(FATAL_ERROR "wgpu-native not found at ${WGPU_NATIVE_DIR}. "
-                      "Run: bash backends/webgpu/scripts/setup-wgpu-native.sh"
-  )
-endif()
-
-add_library(wgpu_native STATIC IMPORTED)
-set_target_properties(
-  wgpu_native PROPERTIES IMPORTED_LOCATION
-                         "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a"
-)
-
-target_include_directories(
-  webgpu_backend PUBLIC $<BUILD_INTERFACE:${WGPU_NATIVE_DIR}/include>
-)
-target_link_libraries(webgpu_backend PRIVATE wgpu_native)
+# Native WebGPU backend: Dawn (Tint) + SwiftShader; deps script sets Dawn_DIR.
+# Native-only: browser/Emscripten builds use the system webgpu.h and never reach
+# this find_package (root CMake gates it via EXECUTORCH_BUILD_WEBGPU).
+# dawn::webgpu_dawn's link interface references Threads::Threads.
+find_package(Threads REQUIRED)
+find_package(Dawn REQUIRED)
+set(WEBGPU_GPU_LIB dawn::webgpu_dawn)
+target_link_libraries(webgpu_backend PUBLIC ${WEBGPU_GPU_LIB})
 
 if(APPLE)
   target_link_libraries(
@@ -88,67 +87,46 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-# Native test target
+# Native test targets. Helper mirrors backends/vulkan's vulkan_op_test: every
+# test executable links the same backend + runtime libs.
+function(add_webgpu_native_test test_name test_src)
+  add_executable(${test_name} ${test_src})
+  target_include_directories(
+    ${test_name} PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+  )
+  target_link_libraries(
+    ${test_name}
+    PRIVATE webgpu_backend
+            ${WEBGPU_GPU_LIB}
+            executorch_core
+            extension_module_static
+            extension_data_loader
+            extension_tensor
+            portable_kernels
+            portable_ops_lib
+  )
+  if(APPLE)
+    target_link_libraries(
+      ${test_name} PRIVATE "-framework Metal" "-framework QuartzCore"
+                           "-framework CoreGraphics"
+    )
+  else()
+    target_link_libraries(${test_name} PRIVATE dl m pthread)
+  endif()
+  target_compile_options(${test_name} PRIVATE -fexceptions)
+  set_property(TARGET ${test_name} PROPERTY CXX_STANDARD 17)
+endfunction()
+
 if(EXECUTORCH_BUILD_WEBGPU_TEST)
-  add_executable(webgpu_native_test test/test_webgpu_native.cpp)
-
-  target_include_directories(
-    webgpu_native_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-                               "${WGPU_NATIVE_DIR}/include"
+  add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
+  add_webgpu_native_test(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
+  add_webgpu_native_test(
+    webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
   )
-
-  target_link_libraries(
-    webgpu_native_test
-    PRIVATE webgpu_backend
-            wgpu_native
-            executorch_core
-            extension_module_static
-            extension_data_loader
-            extension_tensor
-            portable_kernels
-            portable_ops_lib
+  add_webgpu_native_test(
+    webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
   )
-
-  if(APPLE)
-    target_link_libraries(
-      webgpu_native_test PRIVATE "-framework Metal" "-framework QuartzCore"
-                                 "-framework CoreGraphics"
-    )
-  else()
-    target_link_libraries(webgpu_native_test PRIVATE dl m pthread)
-  endif()
-
-  target_compile_options(webgpu_native_test PRIVATE -fexceptions)
-  set_property(TARGET webgpu_native_test PROPERTY CXX_STANDARD 17)
-
-  add_executable(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
-
-  target_include_directories(
-    webgpu_rms_norm_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-                                 "${WGPU_NATIVE_DIR}/include"
+  add_webgpu_native_test(
+    webgpu_update_cache_test test/native/test_update_cache.cpp
   )
-
-  target_link_libraries(
-    webgpu_rms_norm_test
-    PRIVATE webgpu_backend
-            wgpu_native
-            executorch_core
-            extension_module_static
-            extension_data_loader
-            extension_tensor
-            portable_kernels
-            portable_ops_lib
-  )
-
-  if(APPLE)
-    target_link_libraries(
-      webgpu_rms_norm_test PRIVATE "-framework Metal" "-framework QuartzCore"
-                                   "-framework CoreGraphics"
-    )
-  else()
-    target_link_libraries(webgpu_rms_norm_test PRIVATE dl m pthread)
-  endif()
-
-  target_compile_options(webgpu_rms_norm_test PRIVATE -fexceptions)
-  set_property(TARGET webgpu_rms_norm_test PROPERTY CXX_STANDARD 17)
 endif()

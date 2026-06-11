@@ -8,6 +8,7 @@
 
 #include <executorch/extension/image/image_processor.h>
 
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <thread>
@@ -187,6 +188,71 @@ YuvImage make_yuv(
   return img;
 }
 
+// Semi-planar NV12 with two horizontal luma bands (top half `y_top`, bottom
+// half `y_bottom`) and neutral chroma, so the decoded image is two flat
+// grayscale bands whose only difference is brightness. A rotation that moves
+// the bands is therefore detectable. The UV plane is tightly packed at a row
+// stride of `width` bytes. Requires even w, h.
+YuvImage
+make_yuv_hbands(int32_t w, int32_t h, uint8_t y_top, uint8_t y_bottom) {
+  YuvImage img;
+  img.y.resize(static_cast<size_t>(w) * h);
+  for (int32_t y = 0; y < h; ++y) {
+    const uint8_t yv = (y < h / 2) ? y_top : y_bottom;
+    for (int32_t x = 0; x < w; ++x) {
+      img.y[static_cast<size_t>(y) * w + x] = yv;
+    }
+  }
+  // Neutral chroma everywhere: band color depends on luma alone.
+  img.uv.assign(static_cast<size_t>(w / 2) * (h / 2) * 2, 128);
+  return img;
+}
+
+// w x h BGRA image whose red channel encodes pixel position (row-major); green/
+// blue zero, alpha 255. Run through an identity STRETCH, the output red plane
+// reveals where a transform moved each pixel.
+std::vector<uint8_t>
+make_red_map_bgra(int32_t w, int32_t h, const std::vector<uint8_t>& reds) {
+  std::vector<uint8_t> img(static_cast<size_t>(w) * h * 4, 0);
+  for (size_t i = 0; i < reds.size(); ++i) {
+    img[i * 4 + 2] = reds[i]; // R is the third byte of BGRA
+    img[i * 4 + 3] = 255;
+  }
+  return img;
+}
+
+// Process a fixed non-square (2x3) red-map under `orientation`, sizing the
+// STRETCH target to the oriented dimensions so the only transform is the
+// rotation (no scaling), and return the oriented red plane (row-major). The
+// non-square source exercises the width/height swap on the 90-degree paths,
+// which a square fixture cannot. `gpu_min_input_pixels` selects the backend so
+// callers exercise both CPU and GPU paths.
+std::array<uint8_t, 6> process_red_map(
+    int64_t gpu_min_input_pixels,
+    Orientation orientation) {
+  constexpr int32_t kSrcW = 2, kSrcH = 3;
+  // 90-degree rotations swap width and height in the oriented output.
+  const bool swaps =
+      orientation == Orientation::RIGHT || orientation == Orientation::LEFT;
+  auto config = make_config(swaps ? kSrcH : kSrcW, swaps ? kSrcW : kSrcH);
+  config.gpu_min_input_pixels = gpu_min_input_pixels;
+  ImageProcessor p(config);
+  // Red channel encodes row-major source position:
+  //   10 20
+  //   30 40
+  //   50 60
+  auto img = make_red_map_bgra(kSrcW, kSrcH, {10, 20, 30, 40, 50, 60});
+  auto res = p.process(
+      img.data(), kSrcW, kSrcH, kSrcW * 4, ColorFormat::BGRA, orientation);
+  EXPECT_TRUE(res.ok());
+  const float* d = res.get()->const_data_ptr<float>();
+  std::array<uint8_t, 6> out_reds{};
+  for (size_t i = 0; i < out_reds.size(); ++i) {
+    out_reds[i] = static_cast<uint8_t>(d[i] * 255.0f + 0.5f);
+  }
+  return out_reds;
+}
+
 } // namespace
 
 // Backend fixture: runs each pixel-processing test under both backend-selection
@@ -342,8 +408,206 @@ TEST(LetterboxPaddingTest, FollowsRoiAspect) {
   EXPECT_GT(p.compute_letterbox_padding(8, 4).second, 0); // wide full image
   const NormalizedRect square_roi{0.0f, 0.0f, 0.5f, 1.0f}; // left 4x4 -> square
   EXPECT_EQ(
-      p.compute_letterbox_padding(8, 4, square_roi),
+      p.compute_letterbox_padding(8, 4, Orientation::UP, square_roi),
       (std::pair<int32_t, int32_t>{0, 0}));
+}
+
+// --- Orientation ---
+
+TEST_P(ProcessTest, OrientationUp) {
+  constexpr std::array<uint8_t, 6> expected = {10, 20, 30, 40, 50, 60};
+  EXPECT_EQ(process_red_map(GetParam(), Orientation::UP), expected);
+}
+
+TEST_P(ProcessTest, OrientationDown180) {
+  constexpr std::array<uint8_t, 6> expected = {60, 50, 40, 30, 20, 10};
+  EXPECT_EQ(process_red_map(GetParam(), Orientation::DOWN), expected);
+}
+
+TEST_P(ProcessTest, OrientationRight90CW) {
+  // Source is 2 wide x 3 tall; RIGHT (90 CW) yields a 3 wide x 2 tall plane.
+  constexpr std::array<uint8_t, 6> expected = {50, 30, 10, 60, 40, 20};
+  EXPECT_EQ(process_red_map(GetParam(), Orientation::RIGHT), expected);
+}
+
+TEST_P(ProcessTest, OrientationLeft90CCW) {
+  // Source is 2 wide x 3 tall; LEFT (90 CCW) yields a 3 wide x 2 tall plane.
+  constexpr std::array<uint8_t, 6> expected = {20, 40, 60, 10, 30, 50};
+  EXPECT_EQ(process_red_map(GetParam(), Orientation::LEFT), expected);
+}
+
+// ROI is interpreted in oriented (display) space: the pipeline rotates first,
+// then crops (orient -> ROI -> resize). With the four-color quadrant fixture, a
+// half-image ROI must select the quadrants that land in that half *after*
+// rotation. A pipeline that cropped before rotating -- or mishandled the
+// width/height swap on the 90-degree path -- would pick a different region, so
+// this pins the ordering the geometry helpers rely on. Runs under both
+// backends.
+TEST_P(ProcessTest, OrientationThenRoiCropsInOrientedSpace) {
+  // Quadrants: TL=red TR=green / BL=blue BR=yellow.
+  auto img = make_quadrant(8, 8, ColorFormat::BGRA);
+  ImageProcessor p(cfg(4, 4)); // default STRETCH
+
+  // DOWN (180): oriented layout becomes TL=yellow TR=blue / BL=green BR=red.
+  // The right-half ROI selects the oriented right column: blue over red.
+  auto down = p.process(
+      img.data(),
+      8,
+      8,
+      8 * 4,
+      ColorFormat::BGRA,
+      Orientation::DOWN,
+      {0.5f, 0.0f, 0.5f, 1.0f});
+  ASSERT_TRUE(down.ok());
+  expect_rgb(
+      down.get()->const_data_ptr<float>(), 4, 4, 0, 0, 0, 0, 1); // top blue
+  expect_rgb(
+      down.get()->const_data_ptr<float>(), 4, 4, 3, 0, 1, 0, 0); // bottom red
+
+  // RIGHT (90 CW): oriented layout becomes TL=blue TR=red / BL=yellow BR=green.
+  // The bottom-half ROI selects the oriented bottom row: yellow beside green.
+  auto right = p.process(
+      img.data(),
+      8,
+      8,
+      8 * 4,
+      ColorFormat::BGRA,
+      Orientation::RIGHT,
+      {0.0f, 0.5f, 1.0f, 0.5f});
+  ASSERT_TRUE(right.ok());
+  expect_rgb(
+      right.get()->const_data_ptr<float>(), 4, 4, 0, 0, 1, 1, 0); // left yellow
+  expect_rgb(
+      right.get()->const_data_ptr<float>(), 4, 4, 0, 3, 0, 1, 0); // right green
+}
+
+// Orientation is honored on the YUV path too (the CPU plane-downscale fast path
+// is skipped for non-UP, so this also exercises that gating). Two horizontal
+// luma bands must move exactly as on the RGB path: 180 deg swaps top<->bottom,
+// 90 deg CW turns them into left/right bands. Compared relative to the UP
+// result so the test does not depend on the exact YUV->RGB decode. Runs both
+// backends.
+TEST_P(ProcessTest, YuvOrientationMovesBands) {
+  const int32_t w = 8, h = 8;
+  auto img = make_yuv_hbands(w, h, /*y_top*/ 60, /*y_bottom*/ 200);
+  ImageProcessor p(cfg(4, 4)); // default STRETCH
+
+  auto run = [&](Orientation o) {
+    return p.process_yuv(
+        img.y.data(), w, img.uv.data(), w, w, h, YUVFormat::NV12, o);
+  };
+
+  // Reference (UP): top row is the top band, bottom row is the bottom band.
+  auto up = run(Orientation::UP);
+  ASSERT_TRUE(up.ok());
+  const float* u = up.get()->const_data_ptr<float>();
+  const float top = chw(u, 4, 4, 0, /*row*/ 0, /*col*/ 0); // R, neutral chroma
+  const float bottom = chw(u, 4, 4, 0, /*row*/ 3, /*col*/ 0);
+  // Bands must be distinct or a swap would be undetectable.
+  ASSERT_GT(std::abs(top - bottom), 0.2f);
+
+  // DOWN (180): top and bottom bands swap.
+  auto down = run(Orientation::DOWN);
+  ASSERT_TRUE(down.ok());
+  const float* d = down.get()->const_data_ptr<float>();
+  EXPECT_NEAR(chw(d, 4, 4, 0, 0, 0), bottom, 0.05f); // top now = old bottom
+  EXPECT_NEAR(chw(d, 4, 4, 0, 3, 0), top, 0.05f); // bottom now = old top
+
+  // RIGHT (90 CW): horizontal bands become vertical -- left column is the old
+  // bottom band, right column is the old top band.
+  auto right = run(Orientation::RIGHT);
+  ASSERT_TRUE(right.ok());
+  const float* r = right.get()->const_data_ptr<float>();
+  EXPECT_NEAR(chw(r, 4, 4, 0, 0, 0), bottom, 0.05f); // left col = old bottom
+  EXPECT_NEAR(chw(r, 4, 4, 0, 0, 3), top, 0.05f); // right col = old top
+
+  // LEFT (90 CCW): the other 90-degree rotation -- bands become vertical with
+  // the opposite handedness: left column is the old top band, right column is
+  // the old bottom band.
+  auto left = run(Orientation::LEFT);
+  ASSERT_TRUE(left.ok());
+  const float* l = left.get()->const_data_ptr<float>();
+  EXPECT_NEAR(chw(l, 4, 4, 0, 0, 0), top, 0.05f); // left col = old top
+  EXPECT_NEAR(chw(l, 4, 4, 0, 0, 3), bottom, 0.05f); // right col = old bottom
+}
+
+// 90-degree rotations swap the effective source aspect ratio fed to the
+// LETTERBOX fit, while the output shape stays the target size.
+TEST(OrientationTest, LetterboxSwapsAspectFor90) {
+  auto config = make_config(4, 4);
+  config.resize_mode = ResizeMode::LETTERBOX;
+  ImageProcessor p(config);
+  // 4-wide x 2-tall landscape: resized 4x2, padded vertically by 1 per side.
+  EXPECT_EQ(
+      p.compute_letterbox_padding(4, 2, Orientation::UP),
+      (std::pair<int32_t, int32_t>{0, 1}));
+  // Rotated 90deg -> effective 2x4 portrait: resized 2x4, padded horizontally.
+  EXPECT_EQ(
+      p.compute_letterbox_padding(4, 2, Orientation::RIGHT),
+      (std::pair<int32_t, int32_t>{1, 0}));
+  // LEFT is the other 90-degree rotation -> same swap as RIGHT.
+  EXPECT_EQ(
+      p.compute_letterbox_padding(4, 2, Orientation::LEFT),
+      (std::pair<int32_t, int32_t>{1, 0}));
+  // DOWN (180) keeps the aspect ratio -> same padding as UP.
+  EXPECT_EQ(
+      p.compute_letterbox_padding(4, 2, Orientation::DOWN),
+      (std::pair<int32_t, int32_t>{0, 1}));
+}
+
+// Pixel-level companion to LetterboxSwapsAspectFor90: the pad lands on the axis
+// chosen *after* orientation. A wide 8x4 solid stays wide at UP (pad
+// top/bottom) but a 90-degree turn makes it effectively tall (pad left/right).
+// Solid content lets position alone tell pad from content. Runs under both
+// backends.
+TEST_P(ProcessTest, LetterboxPadsOnOrientedAxis) {
+  auto bgra = make_solid_bgra(8, 4, 100, 150, 200);
+  auto config = cfg(4, 4);
+  config.resize_mode = ResizeMode::LETTERBOX;
+  ImageProcessor p(config);
+
+  constexpr float kContent = 100.0f / 255.0f, kEps = 0.02f;
+  // Walk the padded axis at an interior offset on the full (content) axis: the
+  // two ends must be pad and the middle must be content.
+  auto expect_padded = [&](Orientation o, bool pad_vertical) {
+    auto res = p.process(bgra.data(), 8, 4, 8 * 4, ColorFormat::BGRA, o);
+    ASSERT_TRUE(res.ok());
+    const float* d = res.get()->const_data_ptr<float>();
+    auto at = [&](int32_t i) {
+      return pad_vertical ? chw(d, 4, 4, 0, i, 1) : chw(d, 4, 4, 0, 1, i);
+    };
+    EXPECT_FLOAT_EQ(at(0), 0.0f); // leading pad
+    EXPECT_NEAR(at(1), kContent, kEps); // content
+    EXPECT_FLOAT_EQ(at(3), 0.0f); // trailing pad
+  };
+
+  expect_padded(Orientation::UP, /*pad_vertical=*/true);
+  expect_padded(Orientation::RIGHT, /*pad_vertical=*/false);
+  expect_padded(Orientation::LEFT, /*pad_vertical=*/false);
+}
+
+TEST(OrientationTest, UnsupportedOrientationRejected) {
+  ImageProcessor p(make_config(2, 2));
+  // EXIF code 2 (horizontal mirror) is not a supported rotation; both entry
+  // points must reject it with InvalidArgument rather than mis-process it.
+  auto img = make_solid_bgra(2, 2, 10, 20, 30);
+  auto res = p.process(
+      img.data(), 2, 2, 2 * 4, ColorFormat::BGRA, static_cast<Orientation>(2));
+  EXPECT_FALSE(res.ok());
+  EXPECT_EQ(res.error(), Error::InvalidArgument);
+
+  auto yuv = make_yuv(2, 2, 128, 128, 128, YUVFormat::NV12);
+  auto yuv_res = p.process_yuv(
+      yuv.y.data(),
+      2,
+      yuv.uv.data(),
+      2,
+      2,
+      2,
+      YUVFormat::NV12,
+      static_cast<Orientation>(2));
+  EXPECT_FALSE(yuv_res.ok());
+  EXPECT_EQ(yuv_res.error(), Error::InvalidArgument);
 }
 
 // --- Color channels and resize layout ---
@@ -792,6 +1056,58 @@ TEST_P(ProcessTest, YuvFullRangeVsVideoRange) {
   // ranges must visibly disagree (otherwise the range argument is a no-op).
   EXPECT_NEAR(video_data[0], 1.0f, 0.02f);
   EXPECT_GT(video_data[0] - full_data[0], 0.05f);
+}
+
+TEST_P(ProcessTest, YuvFullRangeNonNeutralChroma) {
+  // Full range + non-neutral chroma: the existing full-range test uses neutral
+  // chroma (R=G=B from luma alone, chroma irrelevant) and the non-neutral tests
+  // run video range, so this is the only case that validates the full-range
+  // BT.601 chroma decode end to end. Reference RGB is computed from the
+  // full-range BT.601 definition, independent of the implementation:
+  //   R = Y + 1.402   * (Cr - 128)
+  //   G = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128)
+  //   B = Y + 1.772   * (Cb - 128)
+  // with Y, Cb, Cr in full-range [0, 255]. Values are chosen so no channel
+  // clamps, so a wrong matrix or bias surfaces directly on every channel.
+  const int32_t w = 4, h = 4;
+  const uint8_t y_val = 150, cb = 100, cr = 180;
+  auto img = make_yuv(w, h, y_val, cb, cr, YUVFormat::NV12);
+  ImageProcessor p(cfg(2, 2));
+
+  auto full = p.process_yuv(
+      img.y.data(),
+      w,
+      img.uv.data(),
+      w,
+      w,
+      h,
+      YUVFormat::NV12,
+      Orientation::UP,
+      kFullImage,
+      YUVRange::FULL);
+  ASSERT_TRUE(full.ok());
+
+  const float dcb = static_cast<float>(cb) - 128.0f;
+  const float dcr = static_cast<float>(cr) - 128.0f;
+  const float r = static_cast<float>(y_val) + 1.402f * dcr;
+  const float g = static_cast<float>(y_val) - 0.344136f * dcb - 0.714136f * dcr;
+  const float b = static_cast<float>(y_val) + 1.772f * dcb;
+
+  // Solid image: every pixel of each CHW channel plane equals that channel's
+  // decoded value. Target is 2x2, so 4 pixels per channel.
+  std::vector<float> expected(static_cast<size_t>(3) * 2 * 2);
+  for (int i = 0; i < 4; ++i) {
+    expected[i] = r / 255.0f;
+    expected[4 + i] = g / 255.0f;
+    expected[8 + i] = b / 255.0f;
+  }
+
+  expect_tensor_near(
+      full.get()->const_data_ptr<float>(),
+      expected.data(),
+      expected.size(),
+      0.02f,
+      "full-range non-neutral chroma");
 }
 
 TEST_P(ProcessTest, YuvDefaultsToVideoRange) {

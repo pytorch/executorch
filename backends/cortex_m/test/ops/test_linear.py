@@ -1,16 +1,21 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
+from dataclasses import dataclass
+
 import torch
 from executorch.backends.arm.test.common import parametrize
+from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class CortexMLinear(torch.nn.Module):
@@ -128,3 +133,158 @@ def test_dialect_linear(test_case):
 def test_implementation_linear(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_implementation(qtol=1)
+
+
+# ---------------------------------------------------------------------------
+# Regression: cortex_m::quantized_linear must pick the right CMSIS-NN input
+# convention based on the target ISA. `arm_fully_connected_s8` reads
+# kernel_sum (ctx.buf) on MVE/Helium and reads the bias argument on DSP/scalar
+# paths; the two are mutually exclusive. Previously the pass unconditionally
+# emitted the MVE shape, which silently dropped the bias and input-offset
+# terms on every non-MVE build. The regression only showed up when those
+# terms dominated the int32 accumulator -- i.e., on small-magnitude inputs.
+#
+# Coverage strategy: a single ISA-parametrized dialect test verifies the
+# numeric output against the float reference (catches the dropped-bias bug
+# directly), checks ops_after_transforms to confirm the linear lowered, and
+# asserts the post-pass node has the value in the slot the configured ISA
+# expects -- the structural guard against a regression that emits zero-valued
+# kernel_sum on a no-bias DSP path (numerically inert, but wrong shape).
+# An additional implementation test drives the default M55 MVE build path
+# through the simulator.
+# ---------------------------------------------------------------------------
+
+
+class _SmallMagnitudeLinear(torch.nn.Module):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 4,
+    }
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_linear_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+    }
+
+    def __init__(self, bias: bool = True):
+        super().__init__()
+        self.fc = torch.nn.Linear(512, 10, bias=bias)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
+class _SmallMagnitudeLinearNoBias(_SmallMagnitudeLinear):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_linear_default": 1,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+    }
+
+    def __init__(self):
+        super().__init__(bias=False)
+
+
+def _small_magnitude_input():
+    return torch.rand(1, 512) * 0.002
+
+
+_small_magnitude_calibration = [(_small_magnitude_input(),) for _ in range(8)]
+
+
+@dataclass(frozen=True)
+class _SmallMagnitudeVariant:
+    case: McuTestCase
+    target_config: CortexMTargetConfig
+    uses_kernel_sum: bool
+    has_bias: bool
+
+
+def _small_magnitude_variant(
+    model_cls, cpu: CortexM, *, uses_kernel_sum: bool, has_bias: bool
+) -> _SmallMagnitudeVariant:
+    return _SmallMagnitudeVariant(
+        case=McuTestCase(
+            model=model_cls().eval(),
+            example_inputs=lambda: (_small_magnitude_input(),),
+        ),
+        target_config=CortexMTargetConfig(cpu=cpu),
+        uses_kernel_sum=uses_kernel_sum,
+        has_bias=has_bias,
+    )
+
+
+# bias=True covers the regression directly (the bug dropped the bias term);
+# bias=False covers the symmetric case where only the input-offset term is
+# missing on the non-MVE paths.
+small_magnitude_variants = {
+    "mve_bias": _small_magnitude_variant(
+        _SmallMagnitudeLinear, CortexM.M55, uses_kernel_sum=True, has_bias=True
+    ),
+    "dsp_bias": _small_magnitude_variant(
+        _SmallMagnitudeLinear, CortexM.M4, uses_kernel_sum=False, has_bias=True
+    ),
+    "scalar_bias": _small_magnitude_variant(
+        _SmallMagnitudeLinear, CortexM.M0PLUS, uses_kernel_sum=False, has_bias=True
+    ),
+    "mve_nobias": _small_magnitude_variant(
+        _SmallMagnitudeLinearNoBias, CortexM.M55, uses_kernel_sum=True, has_bias=False
+    ),
+    "dsp_nobias": _small_magnitude_variant(
+        _SmallMagnitudeLinearNoBias, CortexM.M4, uses_kernel_sum=False, has_bias=False
+    ),
+    "scalar_nobias": _small_magnitude_variant(
+        _SmallMagnitudeLinearNoBias,
+        CortexM.M0PLUS,
+        uses_kernel_sum=False,
+        has_bias=False,
+    ),
+}
+
+
+@parametrize("variant", small_magnitude_variants)
+def test_dialect_linear_small_magnitude(variant: _SmallMagnitudeVariant):
+    tester = CortexMTester(
+        variant.case.model,
+        variant.case.get_example_inputs(),
+        target_config=variant.target_config,
+    )
+    tester.test_dialect(
+        ops_before_transforms=variant.case.model.ops_before_transforms,
+        ops_after_transforms=variant.case.model.ops_after_transforms,
+        qtol=1,
+        calibration_samples=_small_magnitude_calibration,
+    )
+
+    # Structural guard: numeric divergence catches the original dropped-bias
+    # bug, but a future regression that emits zero-valued kernel_sum on a
+    # no-bias DSP/scalar path would be numerically inert. Assert the slot the
+    # configured ISA actually consumes is populated and the unused one is None.
+    module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
+    linear_target = exir_ops.edge.cortex_m.quantized_linear.default
+    [linear_node] = [
+        n
+        for n in module.graph.nodes
+        if n.op == "call_function" and n.target == linear_target
+    ]
+    bias_arg, kernel_sum_arg = linear_node.args[2], linear_node.args[3]
+    if variant.uses_kernel_sum:
+        assert kernel_sum_arg is not None
+        assert bias_arg is None
+    else:
+        assert kernel_sum_arg is None
+        if variant.has_bias:
+            assert bias_arg is not None
+        else:
+            assert bias_arg is None
+
+
+def test_implementation_linear_small_magnitude():
+    """Exercise the MVE kernel_sum codepath via the default M55 simulator build."""
+    case = McuTestCase(
+        model=_SmallMagnitudeLinear().eval(),
+        example_inputs=lambda: (_small_magnitude_input(),),
+    )
+    tester = CortexMTester(case.model, case.get_example_inputs())
+    tester.test_implementation(qtol=1, calibration_samples=_small_magnitude_calibration)

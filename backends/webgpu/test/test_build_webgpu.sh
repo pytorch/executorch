@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# End-to-end build and test script for the WebGPU backend (native via wgpu-native).
+# End-to-end build and test script for the WebGPU backend (native via Dawn).
 # Usage: bash backends/webgpu/test/test_build_webgpu.sh
 
 set -e
@@ -14,6 +14,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXECUTORCH_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-python3}"
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+
+echo "=== Check embedded WGSL headers are up to date ==="
+"${PYTHON_EXECUTABLE}" "${SCRIPT_DIR}/../scripts/gen_wgsl_headers.py" --check \
+  || { echo "ERROR: *_wgsl.h out of sync with .wgsl; run scripts/gen_wgsl_headers.py"; exit 1; }
+
+# Unit tests for the WGSL header generator itself
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/test_wgsl_codegen.py" -v
 
 # ── Step 1: Python export tests ──────────────────────────────────────────────
 
@@ -31,11 +38,16 @@ echo "=== Step 2: Export test models ==="
 PTE_MODEL="/tmp/webgpu_add_test.pte"
 PTE_CHAINED_MODEL="/tmp/webgpu_chained_add_test.pte"
 RMS_NORM_DIR="/tmp/rmsn"
+DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
 export_add_model('${PTE_MODEL}')
 export_chained_add_model('${PTE_CHAINED_MODEL}')
+"
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
+export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 "
 if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
   $PYTHON_EXECUTABLE -c "
@@ -44,22 +56,20 @@ export_rms_norm_cases('${RMS_NORM_DIR}')
 " || { echo "WARN: rms_norm export failed; skipping rms_norm native test"; RMS_NORM_PYTEST_OK=0; }
 fi
 
-# ── Step 3: Native build + test (wgpu-native) ────────────────────────────────
+# ── Step 3: Native build + test (Dawn + SwiftShader) ─────────────────────────
 
-WGPU_DIR="${EXECUTORCH_ROOT}/backends/webgpu/third-party/wgpu-native"
+# Vendor Dawn (Tint) + SwiftShader and export Dawn_DIR/VK_ICD_FILENAMES. Set
+# DAWN_PREBUILT_DIR to an existing Dawn install to skip the download locally.
+echo "=== Installing Dawn (Tint) + SwiftShader ==="
+source "${EXECUTORCH_ROOT}/.ci/scripts/setup-webgpu-linux-deps.sh"
 
-# Auto-download wgpu-native if not present
-if [[ ! -d "${WGPU_DIR}/lib" ]]; then
-    echo "=== Installing wgpu-native ==="
-    bash "${EXECUTORCH_ROOT}/backends/webgpu/scripts/setup-wgpu-native.sh"
-fi
-
-echo "=== Step 3: Native build with wgpu-native ==="
+echo "=== Step 3: Native build with Dawn ==="
 NATIVE_BUILD_DIR="${EXECUTORCH_ROOT}/cmake-out-webgpu-native"
 rm -rf "${NATIVE_BUILD_DIR}"
 
 cmake \
     -DEXECUTORCH_BUILD_WEBGPU=ON \
+    -DDawn_DIR="${Dawn_DIR}" \
     -DEXECUTORCH_BUILD_WEBGPU_TEST=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -72,6 +82,8 @@ cmake \
 
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_native_test -j${NPROC}
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_rms_norm_test -j${NPROC}
+cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_dispatch_order_test -j${NPROC}
+cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_scratch_buffer_test -j${NPROC}
 
 echo "=== Step 4: Run native tests ==="
 env \
@@ -84,5 +96,8 @@ if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
 else
   echo "(skipping rms_norm native test: pytest or export did not complete)"
 fi
+
+"${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
+"${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_scratch_buffer_test"
 
 echo "=== Done ==="

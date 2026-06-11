@@ -21,8 +21,10 @@ from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
+from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
+from .decompose_hardsigmoid import DecomposeHardsigmoid
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
@@ -37,6 +39,7 @@ from .decompose_tan import DecomposeTan
 from .decompose_threshold import DecomposeThreshold
 from .decompose_triu import DecomposeTriu
 from .decompose_trunc import DecomposeTrunc
+from .decompose_var import DecomposeVar
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
@@ -80,8 +83,10 @@ __all__ = [
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
+    DecomposeHardsigmoid,
     DecomposeLinalgVectorNorm,
     DecomposeLogVariants,
     DecomposeMaxPool3d,
@@ -96,6 +101,7 @@ __all__ = [
     DecomposeThreshold,
     DecomposeTriu,
     DecomposeTrunc,
+    DecomposeVar,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
