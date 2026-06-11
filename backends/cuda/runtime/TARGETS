@@ -126,6 +126,7 @@ runtime.cxx_library(
         "//executorch/backends/aoti/slim/factory:empty",
         "//executorch/backends/aoti/slim/factory:from_blob",
         "//executorch/backends/aoti/slim/factory:from_etensor",
+        "//executorch/extension/cuda:caller_stream",
         "//executorch/extension/tensor:tensor",
         "//executorch/runtime/backend:interface",
         "//executorch/runtime/core/exec_aten/util:tensor_util",

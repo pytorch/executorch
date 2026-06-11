@@ -120,6 +120,25 @@ std::vector<uint8_t> make_vsplit_bgra(
   return img;
 }
 
+// Four solid quadrants with distinct red values (TL=50, TR=100, BL=150,
+// BR=200), so every rotation produces a distinct, checkable layout.
+std::vector<uint8_t> make_quadrant_bgra(int32_t w, int32_t h) {
+  std::vector<uint8_t> img(static_cast<size_t>(w) * h * 4);
+  for (int32_t y = 0; y < h; ++y) {
+    for (int32_t x = 0; x < w; ++x) {
+      const size_t i = (static_cast<size_t>(y) * w + x) * 4;
+      const bool bottom = y >= h / 2;
+      const bool right = x >= w / 2;
+      const uint8_t r = bottom ? (right ? 200 : 150) : (right ? 100 : 50);
+      img[i + 0] = 0; // B
+      img[i + 1] = 0; // G
+      img[i + 2] = r; // R
+      img[i + 3] = 255;
+    }
+  }
+  return img;
+}
+
 // Create a solid-color 32BGRA CVPixelBuffer (caller releases).
 CVPixelBufferRef
 make_bgra_pixelbuffer(int32_t w, int32_t h, uint8_t r, uint8_t g, uint8_t b) {
@@ -359,6 +378,42 @@ TEST(AppleRoiTest, OffsetRoiYAxisCpuGpuEquivalence) {
   // region even if cpu == gpu.
   EXPECT_NEAR(
       cpu_res.get()->const_data_ptr<float>()[0], 200.0f / 255.0f, 0.02f);
+}
+
+// Verifies the CPU orientation transform matches the GPU's
+// imageByApplyingOrientation for each supported rotation. Target dims are set
+// to the oriented source dims so the resize is an identity and the comparison
+// isolates the orientation step from resize interpolation.
+TEST(AppleOrientationTest, CpuGpuEquivalence) {
+  const int32_t w = 8;
+  const int32_t h = 6;
+  auto bgra = make_quadrant_bgra(w, h);
+
+  const Orientation orientations[3] = {
+      Orientation::DOWN, Orientation::RIGHT, Orientation::LEFT};
+  for (Orientation o : orientations) {
+    const auto od = oriented_dims(w, h, o);
+
+    auto cfg_cpu = make_config(od.first, od.second);
+    cfg_cpu.gpu_min_input_pixels = ImageProcessorConfig::kGpuNever;
+    auto cfg_gpu = make_config(od.first, od.second);
+    cfg_gpu.gpu_min_input_pixels = ImageProcessorConfig::kGpuAlways;
+    ImageProcessor cpu(cfg_cpu);
+    ImageProcessor gpu(cfg_gpu);
+
+    auto cpu_res = cpu.process(bgra.data(), w, h, w * 4, ColorFormat::BGRA, o);
+    auto gpu_res = gpu.process(bgra.data(), w, h, w * 4, ColorFormat::BGRA, o);
+    ASSERT_TRUE(cpu_res.ok());
+    ASSERT_TRUE(gpu_res.ok());
+
+    const float* c = cpu_res.get()->const_data_ptr<float>();
+    const float* g = gpu_res.get()->const_data_ptr<float>();
+    const size_t n = static_cast<size_t>(3) * od.first * od.second;
+    for (size_t i = 0; i < n; ++i) {
+      EXPECT_NEAR(c[i], g[i], 0.05f)
+          << "orientation " << static_cast<int>(o) << " mismatch at " << i;
+    }
+  }
 }
 
 // Verifies RGBAf letterbox normalization follows the strided sub-rectangle

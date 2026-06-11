@@ -48,13 +48,15 @@ std::vector<int32_t> ImageProcessor::compute_output_shape(
 std::pair<int32_t, int32_t> ImageProcessor::compute_letterbox_padding(
     int32_t input_width,
     int32_t input_height,
+    Orientation orientation,
     NormalizedRect roi) const {
+  // ROI is taken in oriented (display) space, so orient the source dims first.
   // Clamp to >= 1 to avoid a divide-by-zero -> NaN in compute_resize_dims for a
   // sub-pixel ROI (see compute_output_shape).
-  const int32_t roi_w =
-      std::max(1, static_cast<int32_t>(input_width * roi.width));
+  const auto od = oriented_dims(input_width, input_height, orientation);
+  const int32_t roi_w = std::max(1, static_cast<int32_t>(od.first * roi.width));
   const int32_t roi_h =
-      std::max(1, static_cast<int32_t>(input_height * roi.height));
+      std::max(1, static_cast<int32_t>(od.second * roi.height));
 
   int32_t resize_w, resize_h, final_w, final_h;
   compute_resize_dims(

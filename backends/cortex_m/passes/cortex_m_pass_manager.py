@@ -23,8 +23,8 @@ from executorch.exir.program._program import _transform, lift_constant_tensor_pa
 from torch.export import ExportedProgram
 
 from .activation_fusion_pass import ActivationFusionPass
+from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
-from .convert_to_cortex_m_pass import ConvertToCortexMPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
@@ -45,7 +45,7 @@ class CortexMPassManager(PassManager):
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
         QuantizedOpFusionPass,
-        ConvertToCortexMPass,
+        AtenToCortexMPass,
     ]
 
     pass_list_transform_for_annotation: list[PassClass] = [
