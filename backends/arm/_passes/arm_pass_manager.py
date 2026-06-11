@@ -7,8 +7,9 @@
 
 import logging
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
@@ -49,6 +50,7 @@ from executorch.backends.arm._passes import (
     DecomposeCumsumPass,
     DecomposeDivPass,
     DecomposeDivTensorModePass,
+    DecomposeDynamicAdaptiveAvgPool2dPass,
     DecomposeDynamicFullPass,
     DecomposeEinsumPass,
     DecomposeEluPass,
@@ -166,12 +168,17 @@ from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
 )
 
 from executorch.exir import ExportedProgram
-from executorch.exir.pass_base import ExportPass
-from executorch.exir.pass_manager import PassManager
+from executorch.exir._program_utils import _get_updated_graph_signature
+from executorch.exir.pass_base import (
+    ExportedProgramPassBase,
+    ExportedProgramPassResult,
+    ExportPass,
+)
+from executorch.exir.pass_manager import ExportedProgramPassManager
 from torch._export.utils import _get_shape_env_from_gm
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
-from torch.nn.modules import Module
+from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +192,50 @@ class PassInsertions:
 
 
 _registered_pass_insertions: dict[type, PassInsertions] = {}
+
+
+def _graph_pass_name(graph_pass: Callable[[GraphModule], PassResult | None]) -> str:
+    if isinstance(graph_pass, ExportPass):
+        return ArmPass.get_name(graph_pass)
+    if hasattr(graph_pass, "__name__"):
+        return graph_pass.__name__
+    return type(graph_pass).__name__
+
+
+class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
+    def __init__(self, graph_pass: Callable[[GraphModule], PassResult | None]) -> None:
+        self.graph_pass = graph_pass
+
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        graph_pass = cast(Any, self.graph_pass)
+        pass_exported_program = getattr(graph_pass, "exported_program", None)
+        if pass_exported_program is not None:
+            # ExportedProgramPassManager works on a shallow copy; Arm graph
+            # passes that store an ExportedProgram must update that copy.
+            graph_pass.exported_program = exported_program
+
+        try:
+            result = self.graph_pass(exported_program.graph_module)
+        finally:
+            if pass_exported_program is not None:
+                graph_pass.exported_program = pass_exported_program
+
+        if result is None:
+            raise TypeError(
+                f"The result of pass {_graph_pass_name(self.graph_pass)} should be type PassResult."
+            )
+
+        if result.modified:
+            result.graph_module.recompile()
+            exported_program._graph_module = result.graph_module
+            exported_program._graph_signature = _get_updated_graph_signature(
+                exported_program.graph_signature,
+                result.graph_module,
+            )
+            # Arm graph passes do not change symbolic shape constraints, and
+            # metadata-only fake modes may differ after propagation.
+
+        return ExportedProgramPassResult(exported_program, result.modified)
 
 
 def register_pass_insertions_before(
@@ -210,7 +261,7 @@ def clear_registered_pass_insertions() -> None:
     _registered_pass_insertions.clear()
 
 
-class ArmPassManager(PassManager):
+class ArmPassManager(ExportedProgramPassManager):
     def __init__(self, compile_spec: ArmCompileSpec) -> None:
         self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
@@ -373,8 +424,39 @@ class ArmPassManager(PassManager):
         shape_env = _get_shape_env_from_gm(graph_module)
         return TosaLoweringContext(self.tosa_spec, shape_env)
 
-    def _transform(self, graph_module: GraphModule):
-        return self(graph_module).graph_module
+    def _transform_graph_module(self, graph_module: GraphModule):
+        # TFA and control-flow submodule paths operate on bare GraphModules
+        # without a standalone ExportedProgram to keep in sync.
+        return GraphModulePassManager(self.passes)(graph_module).graph_module
+
+    def __call__(  # type: ignore[override]
+        self,
+        module: ExportedProgram | GraphModule,
+        override_verifiers: Any | None = None,
+    ) -> ExportedProgramPassResult | PassResult:
+        if isinstance(module, GraphModule):
+            if override_verifiers is not None:
+                raise ValueError("override_verifiers is only valid for ExportedProgram")
+            return GraphModulePassManager(self.passes)(module)
+        return super().__call__(module, override_verifiers)
+
+    def _transform(
+        self,
+        exported_program: ExportedProgram,
+        graph_module: GraphModule,
+    ) -> GraphModule:
+        if graph_module is exported_program.graph_module:
+            passes: list[
+                ExportedProgramPassBase | Callable[[GraphModule], PassResult | None]
+            ] = [_ExportedProgramGraphPassAdapter(p) for p in self.passes]
+            transformed_program = ExportedProgramPassManager(passes)(
+                exported_program
+            ).exported_program
+            exported_program._graph_module = transformed_program.graph_module
+            exported_program._graph_signature = transformed_program.graph_signature
+            exported_program._range_constraints = transformed_program.range_constraints
+            return exported_program.graph_module
+        return self._transform_graph_module(graph_module)
 
     def add_pass(self, pipeline_pass):
         if type(pipeline_pass) in self._skip_pass_types:
@@ -463,6 +545,7 @@ class ArmPassManager(PassManager):
                 AccumulateIndexPutPass(),
                 DecomposeIndexTensorToGatherPass(),
                 DecomposeAdaptiveAvgPool2dPass(),
+                DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
                 Conv1dUnsqueezePass(),
             ]
@@ -556,7 +639,7 @@ class ArmPassManager(PassManager):
         self._apply_pass_insertions()
 
         self.validate_constraints_mandatory()
-        return self._transform(graph_module)
+        return self._transform(exported_program, graph_module)
 
     def transform_to_backend_pipeline(
         self, exported_program: ExportedProgram, graph_module: GraphModule
@@ -661,21 +744,4 @@ class ArmPassManager(PassManager):
                 ]
             )
 
-            return self._transform(graph_module)
-
-    def __call__(self, module: Module) -> PassResult:
-        try:
-            return super().__call__(module)
-        except Exception as e:
-            first_exception = e.__cause__ or e.__context__ or e
-            import re
-
-            message = e.args[0]
-            m = re.search(r"An error occurred when running the '([^']+)' pass", message)
-            if m:
-                pass_name = m.group(1)
-                first_exception.args = (
-                    f"{pass_name}: {first_exception.args[0]}",
-                    *first_exception.args[1:],
-                )
-            raise first_exception
+            return self._transform_graph_module(graph_module)
