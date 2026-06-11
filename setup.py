@@ -1122,7 +1122,9 @@ setup(
                 BuiltExtension(
                     src_dir="backends/qualcomm/%BUILD_TYPE%/",
                     src=(
-                        "PyQnnManagerAdaptor*.pyd" if _is_windows() else "PyQnnManagerAdaptor.*"
+                        "PyQnnManagerAdaptor*.pyd"
+                        if _is_windows()
+                        else "PyQnnManagerAdaptor.*"
                     ),
                     modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
