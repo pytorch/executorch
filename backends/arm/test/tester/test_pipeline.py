@@ -441,6 +441,8 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
        atol: Absolute tolerance for output comparison.
        rtol: Relative tolerance for output comparison.
        qtol: Quantization tolerance for output comparison.
+       compare_tosa_ref_model_outputs: Whether to compare TOSA reference model
+               outputs against the eager or quantized reference outputs.
        frobenius_threshold: Threshold for Frobenius norm comparison with original model
        cosine_threshold: Threshold for cosine similarity comparison with original model
        dynamic_shapes: Optional dynamic shape specifications.
@@ -465,6 +467,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
+        compare_tosa_ref_model_outputs: bool = True,
         frobenius_threshold: float | None = 0.15,
         cosine_threshold: float | None = 0.9,
         dynamic_shapes: Optional[Tuple[Any]] = None,
@@ -561,6 +564,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_tosa_ref_model_outputs,
             )
 
         self.run_and_compare_to_initial_model(
@@ -583,6 +587,8 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
        if not using use_edge_to_transform_and_lower.
 
        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
+       compare_tosa_ref_model_outputs: Whether to compare TOSA reference model
+               outputs against eager reference outputs.
 
        tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
                      options.
@@ -604,6 +610,7 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 0,
+        compare_tosa_ref_model_outputs: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
@@ -649,6 +656,7 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_tosa_ref_model_outputs,
             )
 
 
