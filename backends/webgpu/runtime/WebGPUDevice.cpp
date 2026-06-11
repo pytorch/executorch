@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace executorch {
 namespace backends {
@@ -137,6 +138,16 @@ WebGPUContext create_webgpu_context() {
       WGPUStatus_Success) {
     device_desc.requiredLimits = &supported_limits;
   }
+
+  // Bench: enable TimestampQuery if available; fail-open (skip timing if not).
+  std::vector<WGPUFeatureName> required_features;
+  if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_TimestampQuery)) {
+    required_features.push_back(WGPUFeatureName_TimestampQuery);
+    device_desc.requiredFeatureCount = required_features.size();
+    device_desc.requiredFeatures = required_features.data();
+    ctx.timestamp_supported = true;
+  }
+
   device_desc.uncapturedErrorCallbackInfo.callback = on_device_error;
 
   WGPUWaitStatus device_wait = webgpu_wait(

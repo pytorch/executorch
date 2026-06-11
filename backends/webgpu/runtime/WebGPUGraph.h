@@ -31,6 +31,7 @@ struct WebGPUDispatch {
   WGPUComputePipeline pipeline = nullptr;
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
+  std::string kernel_name; // bench label
 };
 
 struct OutputCopy {
