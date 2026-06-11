@@ -384,6 +384,7 @@ struct SdpaConfig {
   int cmax; // kv-cache capacity
   int input_pos; // prior tokens already in the cache (decode)
   float denom; // ramp divisor (mirrors Python); small -> large logits
+  bool required = false; // CI (SDPA dir set): absent .pte = FAIL, not skip
 };
 
 static const SdpaConfig kSdpaConfigs[] = {
@@ -397,8 +398,8 @@ static const SdpaConfig kSdpaConfigs[] = {
     // Adversarial: denom=0.5 -> peak logit ~177 (>88) overflows naive fp32 exp.
     {"mha_biglogit", 4, 4, 32, 4, 16, 0, 0.5f},
     // Llama 3.2 1B shape (Hq=32,Hkv=8,D=64): decode at 4k/8k ctx.
-    {"llama1b_decode_4k", 32, 8, 64, 1, 4096, 4095, 16.0f},
-    {"llama1b_decode_8k", 32, 8, 64, 1, 8192, 8191, 16.0f},
+    {"llama1b_decode_4k", 32, 8, 64, 1, 4096, 4095, 16.0f, /*required=*/true},
+    {"llama1b_decode_8k", 32, 8, 64, 1, 8192, 8191, 16.0f, /*required=*/true},
     // Llama 3.2 1B shape: realistic prefill (S=128 at pos 0) + decode (S=1 at pos 127).
     {"llama1b_prefill", 32, 8, 64, 128, 512, 0, 16.0f},
     {"llama1b_decode", 32, 8, 64, 1, 512, 127, 16.0f},
@@ -547,7 +548,15 @@ static bool test_sdpa_sweep(const std::string& dir, bool* ran) {
     const std::string pte = dir + "sdpa_" + cfg.name + ".pte";
     FILE* f = std::fopen(pte.c_str(), "rb");
     if (!f) {
-      continue; // config not embedded in this binary
+      // required config absent (dir set) = FAIL; otherwise skip silently.
+      if (cfg.required && !dir.empty()) {
+        printf(
+            "FAIL: required sdpa config %s has no .pte in %s\n",
+            cfg.name,
+            dir.c_str());
+        ok = false;
+      }
+      continue; // not embedded in this binary
     }
     std::fclose(f);
     const std::string golden = dir + "sdpa_" + cfg.name + ".golden.bin";

@@ -86,7 +86,7 @@ export_all_sdpa_models('/tmp')
 export_replay_sequences('/tmp')
 export_dynamic_decode('/tmp')
 export_incache_decode('/tmp')
-" || echo "WARN: sdpa export failed; webgpu_native_test sdpa cases will report missing .pte"
+" || echo "WARN: sdpa export failed; required 4k/8k configs will FAIL in webgpu_native_test"
 
 # ── Configure (Dawn-only: no -DWEBGPU_IMPL; Dawn is the sole backend) ─────────
 echo "=== Configure WebGPU native tests on Dawn ==="
