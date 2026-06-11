@@ -88,7 +88,18 @@ def get_arg(
     kwarg_name: str,
     expected_type: Type[T] = Argument,
 ) -> T:
-    """Get the arg with kwarg_name of the node."""
+    """Get the arg with kwarg_name of the node.
+
+    ``kwarg_name`` is the op's schema argument name. Note that torch.fx renames a
+    schema arg named ``self`` to ``input`` when building the op signature (see
+    torch/fx/operator_schemas.py), so the normalized kwargs key for the first
+    tensor arg of ops like add/mul/bmm is ``input``. We mirror that rename so
+    callers can pass the real schema name ``self`` and still resolve the arg --
+    but only for ops whose schema actually declares a ``self`` arg. For ops with
+    a genuine ``input`` arg (e.g. linear/conv), ``self`` is not a valid name and
+    must NOT silently resolve to ``input``; such a lookup raises (KeyError) as it
+    would for any other unknown arg name.
+    """
     if kwarg_name in node.kwargs:
         value = node.kwargs[kwarg_name]
     else:
@@ -99,7 +110,12 @@ def get_arg(
             raise RuntimeError(
                 f"get_arg: Node {node} does not support normalization of arguments"
             )
-        value = normalized_args.kwargs[kwarg_name]
+        normalized_name = kwarg_name
+        if kwarg_name == "self":
+            schema = getattr(node.target, "_schema", None)
+            if schema is not None and any(a.name == "self" for a in schema.arguments):
+                normalized_name = "input"
+        value = normalized_args.kwargs[normalized_name]
 
     if expected_type is not Argument:
         try:

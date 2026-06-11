@@ -83,3 +83,48 @@ class TestGetArg(unittest.TestCase):
         _, node = self._create_graph_with_kwargs(input="not_a_list", other=2)
         with self.assertRaises(TypeError):
             get_arg(node, "input", list)
+
+    def _create_aten_add_node(self) -> torch.fx.Node:
+        """A graph with aten.add.Tensor(self, other) called positionally.
+
+        Its schema names the first arg ``self``; torch.fx renames that to
+        ``input`` in the normalized signature. Args are positional (not kwargs) so
+        get_arg resolves them through the normalization path, not node.kwargs.
+        """
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        y = graph.placeholder("y")
+        node = graph.call_function(torch.ops.aten.add.Tensor, args=(x, y))
+        graph.output(node)
+        # Owns the graph so node.graph.owning_module is set for normalization.
+        torch.fx.GraphModule(torch.nn.Module(), graph)
+        return node
+
+    def test_get_arg_self_resolves_first_arg(self) -> None:
+        """get_arg resolves the schema arg named 'self' (e.g. aten.add.Tensor),
+        which torch.fx renames to 'input' in the normalized signature."""
+        node = self._create_aten_add_node()
+        x, y = node.args
+        self.assertIs(get_arg(node, "self"), x)
+        # A sibling arg with an unchanged name still resolves alongside 'self'.
+        self.assertIs(get_arg(node, "other"), y)
+
+    def test_get_arg_self_op_fills_defaults(self) -> None:
+        """A trailing arg left at its default (alpha) resolves via get_arg on a
+        'self' op even though it is absent from node.args."""
+        node = self._create_aten_add_node()
+        self.assertEqual(get_arg(node, "alpha"), 1)
+
+    def test_get_arg_self_rejected_for_input_op(self) -> None:
+        """'self' must not silently resolve to a genuine 'input' arg. aten.linear
+        names its first arg 'input' (no 'self'), so the self->input remap must NOT
+        apply: 'input' resolves, but 'self' is an invalid name and raises."""
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        w = graph.placeholder("w")
+        node = graph.call_function(torch.ops.aten.linear.default, args=(x, w))
+        graph.output(node)
+        torch.fx.GraphModule(torch.nn.Module(), graph)
+        self.assertIs(get_arg(node, "input"), x)
+        with self.assertRaises(KeyError):
+            get_arg(node, "self")
