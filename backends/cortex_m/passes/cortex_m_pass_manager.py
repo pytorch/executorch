@@ -28,7 +28,6 @@ from .clamp_hardswish_pass import ClampHardswishPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
-from .quantized_op_fusion_pass import QuantizedOpFusionPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
 
 PassClass = Type[ExportPass]
@@ -44,7 +43,6 @@ class CortexMPassManager(PassManager):
         ActivationFusionPass,
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
-        QuantizedOpFusionPass,
         AtenToCortexMPass,
     ]
 
