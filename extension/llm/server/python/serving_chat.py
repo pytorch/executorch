@@ -22,6 +22,7 @@ from .errors import (
     InvalidSessionId,
     SessionCapacity,
 )
+from .openai_transcript import OpenAITranscriptState
 from .protocol import (
     _new_id,
     ChatCompletionChunk,
@@ -70,16 +71,21 @@ class ServingChat:
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
-        # Two distinct sets (see chat_template):
-        #  * _stops: NARROW turn terminators (e.g. <|im_end|>) used as generation
-        #    stops AND for pre-parse truncation (_options/_collect_until_stop/
-        #    _truncate_raw/_clean). Excludes structural/tool delimiters so a
-        #    <tool_call> is never halted or cut before _extract_tools sees it.
-        #  * _content_specials: BROAD all-special-tokens set, used ONLY by
-        #    _strip_specials for final cleanup of the already-parsed visible
-        #    content, so a stray special token can't leak to the user.
+        # Two distinct sets (see chat_template); create() combines them per path:
+        #  * _stops: NARROW turn terminators (e.g. <|im_end|>). The ONLY stop set
+        #    for tool turns -- excludes structural/tool delimiters so a <tool_call>
+        #    is never halted or cut before _extract_tools sees it. Also used by
+        #    _truncate_raw (pre-parse truncation on the tool path).
+        #  * _content_specials: BROAD all-special-tokens set. For PLAIN chat it is
+        #    added to the worker/clean stop set (create() -> gen_stops) so a leaked
+        #    special halts the worker and never reaches the client, AND it backs
+        #    _strip_specials for final cleanup of already-parsed visible content.
         self._stops = template.turn_stop_sequences()
         self._content_specials = template.special_tokens()
+        # OpenAI/chat-template token-ID warm-resume state (V2b.1.5). Adapter-side,
+        # not runtime; kept in lockstep with the worker's session state by
+        # clearing both on reset/close.
+        self._transcript = OpenAITranscriptState(template)
 
     @staticmethod
     def _tool_schemas(req: ChatCompletionRequest) -> dict[str, dict]:
@@ -194,17 +200,20 @@ class ServingChat:
         if buf:
             yield buf
 
-    def _options(self, req: ChatCompletionRequest) -> GenerationOptions:
+    def _options(
+        self, req: ChatCompletionRequest, stops: list[str]
+    ) -> GenerationOptions:
         return GenerationOptions(
             max_new_tokens=req.resolved_max_tokens(),
             temperature=req.temperature if req.temperature is not None else 0.0,
-            # Let the worker terminate at the same boundary the control plane
-            # would cut: the model's special tokens (e.g. <|im_end|>) AND request
-            # stop sequences. This stops generation at end-of-turn even when the
-            # worker's EOS-by-token-id check misses it, instead of running to
-            # max_new (or erroring) past the turn. The server's
-            # _clean/_collect_until_stop still re-apply these as a backstop.
-            stop=self._stops + self._request_stops(req),
+            # Worker stop set, decided per path in create(): narrow turn
+            # terminators (+ request stops) for tool turns so a structural/tool
+            # delimiter is never cut before the parser sees it; plus the broad
+            # content specials for plain chat so a leaked special halts the worker
+            # -- which then marks the turn dirty and omits its ids -- instead of
+            # streaming a token the client should not see. The server re-applies
+            # the same set in _clean/_collect_until_stop as a backstop.
+            stop=stops,
         )
 
     @staticmethod
@@ -226,18 +235,24 @@ class ServingChat:
             raise GenerationError(str(e))
 
     async def close_session(self, session_id: str) -> None:
+        # Lockstep: do the fallible worker op FIRST, then clear the (best-effort,
+        # can't-fail) transcript. If the worker op fails both retain old state,
+        # so they never drift.
         self._validate_session_id(session_id)
         try:
             await self._runtime.close(session_id)
         except WorkerError as e:
             raise GenerationError(str(e))
+        self._transcript.close(session_id)
 
     async def reset_session(self, session_id: str) -> None:
+        # Lockstep: worker op first (fallible), then clear the transcript.
         self._validate_session_id(session_id)
         try:
             await self._runtime.reset(session_id)
         except WorkerError as e:
             raise GenerationError(str(e))
+        self._transcript.reset(session_id)
 
     def _finish_reason(
         self,
@@ -330,6 +345,24 @@ class ServingChat:
                 "unsupported_parameter",
             )
 
+    def _count_prompt_tokens(self, prompt: PromptInput) -> Optional[int]:
+        """Token count of what the worker will actually assemble: the rendered
+        text, or for token-ID segments sum(len(ids)) for {ids} runs + the
+        tokenized length of {text} chunks. None when no tokenizer is available to
+        count text (the worker still enforces the real context limit)."""
+        if prompt.text is not None:
+            return self._template.count_tokens(prompt.text)
+        total = 0
+        for seg in prompt.segments:
+            if "ids" in seg:
+                total += len(seg["ids"])
+            else:
+                c = self._template.count_tokens(seg["text"])
+                if c is None:
+                    return None
+                total += c
+        return total
+
     async def create(self, req: ChatCompletionRequest):
         self._reject_invalid_values(req)
         self._reject_unsupported_params(req)
@@ -342,10 +375,24 @@ class ServingChat:
         prompt = self._template.render(
             req.messages, tools=template_tools, template_kwargs=req.chat_template_kwargs
         )
-        # Pre-flight context check: reject cleanly instead of failing mid-generation
-        # (only possible when a tokenizer is available to count, e.g. --hf-tokenizer).
+        # Build the prompt input first: token-ID segments (V2b.1.5) splice this
+        # session's prior assistant turns' exact ids so warm resume stays exact
+        # across the chat template's lossy re-render of tool-call turns; plain
+        # rendered text when there's nothing to splice / on any ambiguity (the
+        # worker verifies the exact-token prefix regardless).
+        prompt_input = self._transcript.build_prompt_input(
+            session_id=req.session_id,
+            messages=req.messages,
+            rendered_prompt=prompt,
+            tools=template_tools,
+            template_kwargs=req.chat_template_kwargs,
+        )
+        # Pre-flight context check against the tokens the worker will actually
+        # assemble: for segments that is sum(len(ids)) + tokenized text, not the
+        # rendered string, so a near-limit prompt agrees with the worker rather
+        # than false-400ing or failing mid-decode. Only when a tokenizer exists.
         if self._max_context:
-            count = self._template.count_tokens(prompt)
+            count = self._count_prompt_tokens(prompt_input)
             if count is not None:
                 if count >= self._max_context:
                     raise ContextLengthExceeded(count, self._max_context)
@@ -355,35 +402,74 @@ class ServingChat:
                 requested = req.resolved_max_tokens()
                 if requested > 0 and count + requested > self._max_context:
                     raise ContextLengthExceeded(count, self._max_context, requested)
-        options = self._options(req)
-        prompt_input = PromptInput(text=prompt)
+        # Stop-set split by path. Tool turns use only the narrow turn terminators
+        # (+ request stops) so a structural/tool delimiter is never halted before
+        # the parser sees it. Plain chat adds the broad content specials so a
+        # leaked special (one non-streaming would strip) halts the worker -- which
+        # marks the turn dirty and omits its ids -- instead of reaching the client
+        # or being recorded as resumable ids for text never shown. Both paths
+        # reuse this exact set in the control-plane cut (_clean/_collect_until_stop).
+        if self._tools_active(req):
+            gen_stops = self._stops + self._request_stops(req)
+        else:
+            gen_stops = self._stops + self._content_specials + self._request_stops(req)
+        options = self._options(req, gen_stops)
+        # The generation scaffold the worker will prefill ahead of this turn's
+        # tokens (e.g. Qwen3 <think> block), resolved with the same per-request
+        # mode AND tools as the render; recorded per turn so warm-resume splicing
+        # reproduces the exact resident scaffold even if the mode changes between
+        # requests.
+        preamble = self._template.generation_preamble(
+            req.chat_template_kwargs, tools=template_tools
+        )
         # Admit the session up front (before the stream's first chunk) so a
         # capacity refusal is an HTTP status, not a mid-stream error event.
         if req.session_id is not None:
             await self._preflight_session(req.session_id)
         if req.stream:
-            return self._stream(req, prompt_input, options)
-        return await self._complete(req, prompt_input, options)
+            return self._stream(req, prompt_input, options, preamble, gen_stops)
+        return await self._complete(req, prompt_input, options, preamble, gen_stops)
 
     async def _complete(
         self,
         req: ChatCompletionRequest,
         prompt: PromptInput,
         options: GenerationOptions,
+        preamble: str = "",
+        gen_stops: Optional[list[str]] = None,
     ) -> ChatCompletionResponse:
+        # Same stop set the worker was given (per-path: narrow for tools, broad
+        # content specials added for plain chat); falls back to narrow if a caller
+        # didn't supply it.
+        stops = (
+            gen_stops
+            if gen_stops is not None
+            else self._stops + self._request_stops(req)
+        )
         stats = GenStats()
         try:
             # Collect raw text (markers intact for tool parsing), halting early
             # at a stop boundary (special token or request stop).
             text, stopped = await self._collect_until_stop(
                 self._runtime.generate_stream(req.session_id, prompt, options, stats),
-                self._stops + self._request_stops(req),
+                stops,
             )
         except Exception as e:  # noqa: BLE001 - surface as a structured API error
             raise GenerationError(str(e))
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
         tool_calls, content = self._extract_tools(req, self._truncate_raw(text, req))
+        # Record after the response is finalized: the fingerprint is of exactly
+        # what we return (content + tool_calls), so the next turn can confirm the
+        # client echoed this turn before splicing its ids.
+        self._transcript.record_assistant_turn(
+            session_id=req.session_id,
+            content=content,
+            tool_calls=tool_calls,
+            generated_token_ids=stats.generated_token_ids,
+            prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
+            preamble=preamble,
+        )
         finish = self._finish_reason(
             req, stats.completion_tokens, tool_calls, stopped, stats.finish_reason
         )
@@ -407,6 +493,8 @@ class ServingChat:
         req: ChatCompletionRequest,
         prompt: PromptInput,
         options: GenerationOptions,
+        preamble: str = "",
+        gen_stops: Optional[list[str]] = None,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -426,7 +514,14 @@ class ServingChat:
 
         stats = GenStats()
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
-        stops = self._stops + self._request_stops(req)
+        # Per-path stop set from create(): for plain chat this includes the broad
+        # content specials, so _clean cuts a leaked special out of the stream (and
+        # the worker, given the same set, halts + omits ids -> non-resumable turn).
+        stops = (
+            gen_stops
+            if gen_stops is not None
+            else self._stops + self._request_stops(req)
+        )
         try:
             if use_tools:
                 # v1: buffer the (usually short) tool response, parse once.
@@ -448,6 +543,7 @@ class ServingChat:
                     stop_hit[0] = True
                     self._runtime.stop()
 
+                streamed: list[str] = []
                 async for token in self._clean(
                     self._runtime.generate_stream(
                         req.session_id, prompt, options, stats
@@ -455,7 +551,9 @@ class ServingChat:
                     stops,
                     on_stop=on_stop,
                 ):
+                    streamed.append(token)
                     yield chunk(DeltaMessage(content=token))
+                content = "".join(streamed)  # for the session fingerprint
         except (
             Exception
         ) as e:  # noqa: BLE001 - emit a structured error event, never drop the socket
@@ -470,6 +568,14 @@ class ServingChat:
             yield f"data: {json.dumps({'error': err})}\n\n"
             yield "data: [DONE]\n\n"
             return
+        self._transcript.record_assistant_turn(
+            session_id=req.session_id,
+            content=content,
+            tool_calls=tool_calls,
+            generated_token_ids=stats.generated_token_ids,
+            prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
+            preamble=preamble,
+        )
 
         if use_tools:
             if content:

@@ -42,8 +42,11 @@
 //   worker -> stdout, once:    {"ready": true, "max_sessions": int,
 //                               "max_named_sessions": int}
 //   client -> stdin:
-//     generate:   {"prompt": str, "max_new_tokens": int, "temperature": float,
-//                  "stop": [str, ...], "session_id"?: str}
+//     generate:   {"max_new_tokens": int, "temperature": float,
+//                  "stop": [str, ...], "session_id"?: str,
+//                  and exactly one prompt form:
+//                    "prompt": str
+//                    "prompt_segments": [{"text": str} | {"ids": [int, ...]}]}
 //     open:       {"op": "open",  "session_id": str}
 //     close:      {"op": "close", "session_id": str}
 //     reset:      {"op": "reset", "session_id": str}  // clear context, keep
@@ -55,7 +58,9 @@
 //                  "finish_reason": "stop"|"length",
 //                  "reused_prompt_tokens": int, "prefilled_prompt_tokens": int,
 //                  "session_reset_reason": "new"|"exact_prefix"|"dirty"|
-//                                          "mismatch"|"equal"}
+//                                          "mismatch"|"equal",
+//                  "generated_token_ids"?: [int, ...]}  // omitted if
+//                  stop-trimmed
 //     open:       {"opened": true, "session_id": str}
 //     close:      {"closed": true, "session_id": str}
 //     reset:      {"reset": true,  "session_id": str}
@@ -122,7 +127,6 @@ inline void worker_handle_request(
     const std::unordered_map<std::string, int64_t>& metadata,
     const nlohmann::json& req) {
   LLMSession& session = *st.session;
-  const std::string prompt = req.at("prompt").get<std::string>();
   int64_t max_new = req.value("max_new_tokens", static_cast<int64_t>(-1));
   const float temperature = req.value("temperature", 0.0f);
   // Stop strings (the request's `stop` sequences): terminate at the token
@@ -131,13 +135,43 @@ inline void worker_handle_request(
   const std::vector<std::string> stops =
       req.value("stop", std::vector<std::string>{});
 
-  // No special tokens: the prompt is already rendered (the control plane
-  // applied the chat template), matching the runner's own encode path.
-  auto encode_result = tokenizer.encode(prompt, /*bos=*/0, /*eos=*/0);
-  if (!encode_result.ok()) {
-    throw std::runtime_error("prompt encode failed");
+  // The prompt is either a single rendered string ("prompt") or an ordered list
+  // of segments ("prompt_segments"), each a {"text": ...} chunk to tokenize or
+  // a
+  // {"ids": [...]} run of literal token ids. Segments let the control plane
+  // splice the exact generated token ids of prior assistant turns back in,
+  // instead of re-tokenizing the chat template's lossy re-rendering of them (so
+  // warm resume can hit on tool-use turns). Text is encoded with no special
+  // tokens (already rendered), matching the runner's own encode path.
+  const bool has_prompt = req.contains("prompt");
+  const bool has_segments = req.contains("prompt_segments");
+  if (has_prompt == has_segments) {
+    throw std::runtime_error(
+        "exactly one of prompt / prompt_segments is required");
   }
-  std::vector<uint64_t> ids = std::move(*encode_result);
+  std::vector<uint64_t> ids;
+  auto encode_text = [&](const std::string& text) {
+    auto enc = tokenizer.encode(text, /*bos=*/0, /*eos=*/0);
+    if (!enc.ok()) {
+      throw std::runtime_error("prompt encode failed");
+    }
+    ids.insert(ids.end(), enc->begin(), enc->end());
+  };
+  if (has_segments) {
+    for (const auto& seg : req.at("prompt_segments")) {
+      if (seg.contains("ids")) {
+        for (const auto& id : seg.at("ids")) {
+          ids.push_back(id.get<uint64_t>());
+        }
+      } else if (seg.contains("text")) {
+        encode_text(seg.at("text").get<std::string>());
+      } else {
+        throw std::runtime_error("prompt_segment needs `text` or `ids`");
+      }
+    }
+  } else {
+    encode_text(req.at("prompt").get<std::string>());
+  }
   if (ids.empty()) {
     throw std::runtime_error("empty prompt");
   }
@@ -249,14 +283,27 @@ inline void worker_handle_request(
   // "length" -- it ran to max_new (possibly clamped to the context window).
   // reused/prefilled sum to prompt_tokens; session_reset_reason explains the
   // prefill plan (for measuring warm-resume hit rate).
-  worker_emit(
-      {{"done", true},
-       {"prompt_tokens", num_prompt},
-       {"completion_tokens", num_generated},
-       {"finish_reason", finish},
-       {"reused_prompt_tokens", reused},
-       {"prefilled_prompt_tokens", prefilled},
-       {"session_reset_reason", plan.reason}});
+  nlohmann::json done = {
+      {"done", true},
+      {"prompt_tokens", num_prompt},
+      {"completion_tokens", num_generated},
+      {"finish_reason", finish},
+      {"reused_prompt_tokens", reused},
+      {"prefilled_prompt_tokens", prefilled},
+      {"session_reset_reason", plan.reason}};
+  // generated_token_ids = the (non-terminal) tokens made resident this turn,
+  // for the control plane to splice back as an `ids` segment. Only emit them
+  // when they faithfully decode to the emitted text: a stop-string trim kept
+  // the post-stop tokens resident but dropped them from the output, so splicing
+  // them would inject text the client never saw. Omitting them makes the
+  // control plane record this turn as not resumable (falls back to a text
+  // re-render).
+  if (!stop_string) {
+    done["generated_token_ids"] = std::vector<uint64_t>(
+        st.resident_token_ids.end() - num_generated,
+        st.resident_token_ids.end());
+  }
+  worker_emit(done);
 }
 
 // Owns the engine's sessions for one worker: named sessions keyed by id plus a

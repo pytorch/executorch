@@ -95,3 +95,14 @@ target_include_directories(
   test_worker_prefill_plan PUBLIC ${_common_include_directories}
 )
 add_test(NAME worker_prefill_plan COMMAND test_worker_prefill_plan)
+
+# Worker-loop harness (worker_handle_request + WorkerSessions) driven by a
+# scriptable fake LLMSession/Tokenizer/LLMEngine -- no model/GPU. It includes
+# the full worker_loop.h, so it needs the JSON include + the runtime/tokenizer
+# libs.
+add_executable(test_worker_loop test_worker_loop.cpp)
+target_include_directories(
+  test_worker_loop PUBLIC ${_common_include_directories} ${_json_include}
+)
+target_link_libraries(test_worker_loop PUBLIC ${link_libraries})
+add_test(NAME worker_loop COMMAND test_worker_loop)
