@@ -18,7 +18,8 @@ These handlers match that ``dequantize_gguf -> linear/embedding`` subgraph and
 lower it without materializing the dequantized weight:
 
 * **Q6_K** -> fused custom Metal kernels in :mod:`.q6k`.
-* **Q4_K** -> fused custom Metal kernels in :mod:`.q4k`.
+* **Q4_K** -> fused custom Metal kernels in :mod:`.q4k` (default), or the legacy
+  MLX-native repack path when ``ET_MLX_EMIT_DIRECT_GGUF=0``.
 
 Both cover linear and embedding.
 
@@ -113,9 +114,18 @@ class GGUFQuantizedLinearHandler(PatternHandler):
                 emit_linear,
             )
         else:  # q4_k
-            from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.linear import (
-                emit_linear,
+            from executorch.backends.mlx.custom_kernel_ops.gguf.q4k import (
+                emit_direct_gguf,
             )
+
+            if emit_direct_gguf():
+                from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.linear import (
+                    emit_linear,
+                )
+            else:
+                from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.linear_mlx_native import (
+                    emit_linear,
+                )
         return emit_linear(P, n, x_node, self.weight, bias_node)
 
 
@@ -159,7 +169,16 @@ class GGUFQuantizedEmbeddingHandler(PatternHandler):
                 emit_embedding,
             )
         else:  # q4_k
-            from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.embedding import (
-                emit_embedding,
+            from executorch.backends.mlx.custom_kernel_ops.gguf.q4k import (
+                emit_direct_gguf,
             )
+
+            if emit_direct_gguf():
+                from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.embedding import (
+                    emit_embedding,
+                )
+            else:
+                from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.embedding_mlx_native import (
+                    emit_embedding,
+                )
         return emit_embedding(P, n, self.weight, indices_node, self.output_dtype)
