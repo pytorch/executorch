@@ -37,7 +37,14 @@ _TURN_TERMINATORS = (
     "<|end|>",
     "<|end_of_text|>",
     "<end_of_turn>",
+    "<turn|>",
     "</s>",
+)
+
+_TOOL_RESPONSE_GENERATION_PROMPT_MARKERS = (
+    "<tool_response|>",
+    "<tool_response|>\n",
+    "<turn|>\n",
 )
 
 
@@ -87,10 +94,26 @@ class ChatTemplate:
         hf_tokenizer_path: Optional[str] = None,
         default_template_kwargs: Optional[dict[str, Any]] = None,
         allow_fallback: bool = False,
+        assistant_header: str = "<|im_start|>assistant\n",
+        strip_rendered_prefix: str = "",
+        strip_rendered_bos: bool = False,
+        append_generation_prompt_after_tool_response: bool = False,
+        tool_response_generation_prompt_markers: Optional[tuple[str, ...]] = None,
     ):
+        if strip_rendered_prefix and strip_rendered_bos:
+            raise ValueError("use either strip_rendered_prefix or strip_rendered_bos")
         # Server-level defaults (e.g. {"enable_thinking": False}); per-request
         # chat_template_kwargs override these.
         self._defaults = default_template_kwargs or {}
+        self._assistant_header = assistant_header
+        self._strip_rendered_prefix = strip_rendered_prefix
+        self._append_generation_prompt_after_tool_response = (
+            append_generation_prompt_after_tool_response
+        )
+        self._tool_response_generation_prompt_markers = (
+            tool_response_generation_prompt_markers
+            or _TOOL_RESPONSE_GENERATION_PROMPT_MARKERS
+        )
         # Cache of the (deterministic) generation scaffold per resolved mode, so
         # warm-resume bookkeeping doesn't re-render a probe prompt every request.
         self._preamble_cache: dict[tuple, str] = {}
@@ -110,11 +133,20 @@ class ChatTemplate:
                     "No chat_template at %s; using approximate ChatML.",
                     hf_tokenizer_path,
                 )
+            if strip_rendered_bos:
+                bos = getattr(self._hf, "bos_token", None)
+                if not isinstance(bos, str) or not bos:
+                    raise ValueError(
+                        "strip_rendered_bos requires a tokenizer with bos_token"
+                    )
+                self._strip_rendered_prefix = bos
         elif not allow_fallback:
             raise ValueError(
                 "A chat template is required: pass --hf-tokenizer for the model's own "
                 "template, or opt into approximate ChatML with --allow-chatml-fallback."
             )
+        elif strip_rendered_bos:
+            raise ValueError("strip_rendered_bos requires --hf-tokenizer")
         else:
             logger.warning(
                 "No --hf-tokenizer; using approximate ChatML (no thinking control)."
@@ -130,14 +162,55 @@ class ChatTemplate:
         if self._hf is not None:
             dumped = [m.model_dump(exclude_none=True) for m in messages]
             _decode_tool_call_arguments(dumped)
-            return self._hf.apply_chat_template(
+            rendered = self._hf.apply_chat_template(
                 dumped,
                 tools=tools,
                 add_generation_prompt=True,
                 tokenize=False,
                 **kwargs,
             )
+            if self._strip_rendered_prefix and rendered.startswith(
+                self._strip_rendered_prefix
+            ):
+                rendered = rendered[len(self._strip_rendered_prefix) :]
+            elif self._strip_rendered_prefix:
+                raise ValueError(
+                    "rendered prompt did not start with configured strip prefix "
+                    f"{self._strip_rendered_prefix!r}"
+                )
+            return self._maybe_append_tool_response_generation_prompt(
+                rendered, messages, tools, kwargs
+            )
         return self._fallback(messages)
+
+    def _maybe_append_tool_response_generation_prompt(
+        self,
+        rendered: str,
+        messages: list[ChatMessage],
+        tools: Optional[list[dict[str, Any]]],
+        template_kwargs: dict[str, Any],
+    ) -> str:
+        if (
+            not self._append_generation_prompt_after_tool_response
+            or not messages
+            or messages[-1].role != "tool"
+        ):
+            return rendered
+        has_prompt_marker = any(
+            rendered.endswith(marker)
+            for marker in self._tool_response_generation_prompt_markers
+        )
+        if not has_prompt_marker and not rendered.endswith(self._assistant_header):
+            return rendered
+
+        prompt = self._assistant_header + self.generation_preamble(
+            template_kwargs=template_kwargs, tools=tools
+        )
+        if not prompt or rendered.endswith(prompt):
+            return rendered
+        if rendered.endswith(self._assistant_header):
+            return rendered + prompt[len(self._assistant_header) :]
+        return rendered + prompt
 
     def generation_preamble(
         self,
@@ -177,11 +250,14 @@ class ChatTemplate:
             tools=tools,
             template_kwargs=template_kwargs,
         )
-        marker = "<|im_start|>assistant\n"
+        marker = self._assistant_header
         idx = rendered.rfind(marker)
         preamble = rendered[idx + len(marker) :] if idx != -1 else ""
         self._preamble_cache[key] = preamble
         return preamble
+
+    def assistant_header(self) -> str:
+        return self._assistant_header
 
     def chat_template_str(self) -> Optional[str]:
         """Raw chat-template string (for tool-format auto-detection), if available."""

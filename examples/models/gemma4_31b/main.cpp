@@ -6,6 +6,174 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#ifdef EXECUTORCH_BUILD_CUDA
+
+// Thin CUDA CLI over Gemma4_31BEngine / LLMSession. The non-CUDA legacy runner
+// remains below for the existing MLX target; serving is CUDA-only for now.
+
+#include <gflags/gflags.h>
+
+#include <executorch/examples/models/gemma4_31b/gemma4_31b_engine.h>
+#include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/util.h>
+#include <executorch/runtime/platform/log.h>
+
+#include <cuda_runtime.h>
+
+#include <cinttypes>
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+DEFINE_string(model_path, "", "Model .pte file path.");
+DEFINE_string(data_path, "", "Data file (.ptd) for CUDA backend.");
+DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
+DEFINE_string(prompt, "Hello", "Prompt text.");
+DEFINE_string(
+    prompt_file,
+    "",
+    "Path to file containing prompt text (overrides --prompt).");
+DEFINE_double(temperature, 0.8, "Sampling temperature (0 = near-greedy).");
+DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
+DEFINE_int32(bos_id, 2, "BOS token id to prepend (Gemma convention: 2).");
+DEFINE_int32(eos_id, 1, "EOS token id (Gemma convention: 1).");
+DEFINE_bool(
+    raw_prompt,
+    false,
+    "Skip chat-template wrapping (use if the prompt is already formatted).");
+DEFINE_bool(
+    cuda_graph,
+    false,
+    "Enable CUDA graph capture for the decode method. CUDA only.");
+
+namespace llm = ::executorch::extension::llm;
+using ::executorch::runtime::Error;
+
+int main(int argc, char** argv) {
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  if (FLAGS_model_path.empty()) {
+    ET_LOG(Error, "Must specify --model_path");
+    return 1;
+  }
+  if (FLAGS_tokenizer_path.empty()) {
+    ET_LOG(Error, "Must specify --tokenizer_path");
+    return 1;
+  }
+
+  llm::Stats stats;
+  size_t gpu_free_bytes = 0, gpu_total_bytes = 0;
+  if (cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes) == cudaSuccess) {
+    stats.gpu_total_bytes = gpu_total_bytes;
+    stats.gpu_free_before_load_bytes = gpu_free_bytes;
+  }
+
+  stats.model_load_start_ms = llm::time_in_ms();
+
+  llm::Gemma4_31BConfig config;
+  config.model_path = FLAGS_model_path;
+  config.data_path = FLAGS_data_path;
+  config.tokenizer_path = FLAGS_tokenizer_path;
+  config.eos_id = FLAGS_eos_id;
+  config.enable_cuda_graph = FLAGS_cuda_graph;
+
+  printf("Loading methods...\n");
+  auto engine_result = llm::Gemma4_31BEngine::create(config);
+  if (engine_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to create Gemma 4 31B engine");
+    return 1;
+  }
+  auto engine = std::move(engine_result.get());
+
+  auto session_result = engine->create_session();
+  if (session_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to create session");
+    return 1;
+  }
+  auto session = std::move(session_result.get());
+
+  stats.model_load_end_ms = llm::time_in_ms();
+  if (cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes) == cudaSuccess) {
+    stats.gpu_free_after_load_bytes = gpu_free_bytes;
+  }
+
+  std::string prompt_text = FLAGS_prompt;
+  if (!FLAGS_prompt_file.empty()) {
+    std::ifstream f(FLAGS_prompt_file);
+    if (!f.is_open()) {
+      ET_LOG(
+          Error, "Failed to open prompt file: %s", FLAGS_prompt_file.c_str());
+      return 1;
+    }
+    prompt_text = std::string(
+        (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  }
+
+  if (!FLAGS_raw_prompt) {
+    prompt_text = "<|turn>user\n" + prompt_text +
+        "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>";
+  }
+
+  auto encode_result = engine->tokenizer()->encode(prompt_text);
+  if (!encode_result.ok()) {
+    ET_LOG(Error, "Failed to encode prompt");
+    return 1;
+  }
+  auto prompt_tokens = std::move(*encode_result);
+  prompt_tokens.insert(
+      prompt_tokens.begin(), static_cast<uint64_t>(FLAGS_bos_id));
+  const int64_t num_prompt_tokens = static_cast<int64_t>(prompt_tokens.size());
+  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
+  stats.num_prompt_tokens = num_prompt_tokens;
+
+  llm::SamplingConfig sampling;
+  sampling.temperature = static_cast<float>(FLAGS_temperature);
+  stats.inference_start_ms = llm::time_in_ms();
+  if (session->prefill_tokens(prompt_tokens, &sampling) != Error::Ok) {
+    ET_LOG(Error, "Prefill failed");
+    return 1;
+  }
+  stats.prompt_eval_end_ms = llm::time_in_ms();
+  stats.first_token_ms = stats.prompt_eval_end_ms;
+
+  int64_t num_generated = 0;
+  for (int32_t step = 0; step < FLAGS_max_new_tokens; ++step) {
+    auto step_result = session->decode_one(sampling);
+    if (step_result.error() != Error::Ok) {
+      ET_LOG(Error, "Decode step %d failed", step);
+      return 1;
+    }
+    const auto& d = step_result.get();
+    if (d.is_terminal) {
+      break;
+    }
+    if (step == 0) {
+      stats.first_token_ms = llm::time_in_ms();
+    }
+    ++num_generated;
+    if (!d.text_piece.empty()) {
+      fwrite(d.text_piece.data(), 1, d.text_piece.size(), stdout);
+      fflush(stdout);
+    }
+  }
+  printf("\n");
+
+  stats.inference_end_ms = llm::time_in_ms();
+  stats.num_generated_tokens = num_generated;
+  if (cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes) == cudaSuccess) {
+    stats.gpu_free_after_generate_bytes = gpu_free_bytes;
+    stats.gpu_peak_usage_mb =
+        (stats.gpu_total_bytes - gpu_free_bytes) / 1024.0 / 1024.0;
+  }
+
+  llm::print_report(stats);
+  return 0;
+}
+
+#else
+
 // Gemma 4 31B-IT runner for ExecuTorch. Supports two backends:
 //   CUDA  — exports ``prefill`` (T>=2, dynamic) + ``decode`` (T=1, static)
 //           methods sharing KV-cache buffers; on-device Gumbel-max sampling
@@ -416,3 +584,5 @@ int main(int argc, char** argv) {
   llm::print_report(stats);
   return 0;
 }
+
+#endif // EXECUTORCH_BUILD_CUDA
