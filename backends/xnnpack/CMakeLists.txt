@@ -118,6 +118,7 @@ list(
   backends/xnnpack/runtime/plan/execution_plan.cpp
   backends/xnnpack/runtime/plan/memory_plan.cpp
   backends/xnnpack/runtime/executor/executor.cpp
+  backends/xnnpack/runtime/FlatbufferGraphBuilder.cpp
 )
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
