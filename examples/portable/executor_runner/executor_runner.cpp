@@ -34,6 +34,7 @@
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -108,6 +109,7 @@ using executorch::extension::BufferDataLoader;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
 using executorch::runtime::DataLoader;
+using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
@@ -121,6 +123,7 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+using executorch::runtime::etensor::Device;
 
 enum class PrintOutputMode { None, Summary, All };
 
@@ -459,24 +462,80 @@ int main(int argc, char** argv) {
   // mobile environments will only have a single buffer. Some embedded
   // environments may have more than one for, e.g., slow/large DRAM and
   // fast/small SRAM, or for memory associated with particular cores.
-  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
+  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns CPU memory
+  std::vector<DeviceMemoryBuffer> planned_device_buffers; // Owns device memory
   std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
+  std::vector<Device> planned_devices; // One entry per planned buffer
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
+  planned_spans.reserve(num_memory_planned_buffers);
+  planned_devices.reserve(num_memory_planned_buffers);
+  // Under device memory planning, some planned buffers are resident on an
+  // accelerator (e.g. CUDA) rather than CPU. Those must be backed by real
+  // device memory: backing them with host memory would make delegate IO
+  // tensors device-typed but host-backed, which the backend rejects at runtime.
+  bool has_device_buffers = false;
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     // .get() will always succeed because id < num_memory_planned_buffers.
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
-    ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
-    planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
-    planned_spans.push_back({planned_buffers.back().get(), buffer_size});
+    Result<Device> buffer_device =
+        method_meta->memory_planned_buffer_device(id);
+    ET_CHECK_MSG(
+        buffer_device.ok(),
+        "Failed to get device for planned buffer %zu: 0x%" PRIx32,
+        id,
+        (uint32_t)buffer_device.error());
+    planned_devices.push_back(buffer_device.get());
+
+    if (buffer_device->is_cpu()) {
+      ET_LOG(
+          Info,
+          "Setting up CPU planned buffer %zu, size %zu.",
+          id,
+          buffer_size);
+      planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
+      planned_spans.push_back({planned_buffers.back().get(), buffer_size});
+    } else {
+      has_device_buffers = true;
+      // Allocate via the DeviceAllocator registered by the backend library
+      // (e.g. the CUDA backend registers a CudaAllocator when linked).
+      Result<DeviceMemoryBuffer> device_buffer = DeviceMemoryBuffer::create(
+          buffer_size, buffer_device->type(), buffer_device->index());
+      ET_CHECK_MSG(
+          device_buffer.ok(),
+          "Failed to allocate device memory for planned buffer %zu "
+          "(device_type=%d): 0x%" PRIx32,
+          id,
+          (int)buffer_device->type(),
+          (uint32_t)device_buffer.error());
+      ET_LOG(
+          Info,
+          "Setting up device planned buffer %zu, size %zu, device_type %d.",
+          id,
+          buffer_size,
+          (int)buffer_device->type());
+      planned_spans.push_back(device_buffer->as_span());
+      planned_device_buffers.push_back(std::move(device_buffer.get()));
+    }
   }
-  HierarchicalAllocator planned_memory(
-      {planned_spans.data(), planned_spans.size()});
+
+  // For CPU-only programs keep the legacy single-arg allocator so behavior is
+  // unchanged. When the program plans device buffers, pass the per-buffer
+  // device metadata so the runtime can place tensors on the right device.
+  std::optional<HierarchicalAllocator> planned_memory;
+  if (has_device_buffers) {
+    planned_memory.emplace(
+        Span<Span<uint8_t>>(planned_spans.data(), planned_spans.size()),
+        Span<const Device>(planned_devices.data(), planned_devices.size()));
+  } else {
+    planned_memory.emplace(
+        Span<Span<uint8_t>>(planned_spans.data(), planned_spans.size()));
+  }
 
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
   MemoryManager memory_manager(
-      &method_allocator, &planned_memory, &temp_allocator);
+      &method_allocator, &planned_memory.value(), &temp_allocator);
 
   //
   // Load the method from the program, using the provided allocators. Running

@@ -144,13 +144,7 @@ def export_and_lower(
 ) -> None:
     """Export and lower the model to ExecuTorch for the given backend."""
     if backend == "cuda":
-        if use_turboquant:
-            raise ValueError(
-                "--turboquant is only supported with --backend mlx "
-                "(the CUDA path here uses a different TurboQuant integration; "
-                "see examples/models/qwen3_5_moe/export.py)."
-            )
-        _export_cuda(model, config, output_dir)
+        _export_cuda(model, config, output_dir, use_turboquant=use_turboquant)
     elif backend == "mlx":
         _export_mlx(model, config, output_dir, use_turboquant=use_turboquant)
     else:
@@ -159,7 +153,12 @@ def export_and_lower(
         )
 
 
-def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
+def _export_cuda(
+    model: Gemma4_31B,
+    config: Gemma4_31BConfig,
+    output_dir: str,
+    use_turboquant: bool = False,
+) -> None:
     import gc
 
     import torch._inductor.config as inductor_config
@@ -181,6 +180,13 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
+
+    if use_turboquant:
+        from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
+            cuda_source_transformations,
+        )
+
+        cuda_source_transformations(model, use_turboquant=True)
 
     # Int4Tensor weights are used directly — no format conversion.
     # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).
@@ -442,14 +448,13 @@ def main() -> None:
     parser.add_argument(
         "--turboquant",
         action="store_true",
-        help="Use TurboQuant TQ4 KV cache compression (MLX backend only). "
-        "~3.8× cache memory savings; applies only to full-attention "
-        "(non-sliding) layers — sliding layers keep RingBufferKVCache.",
+        help="Use TurboQuant TQ4 KV cache compression. ~3.8× cache memory "
+        "savings; applies only to full-attention (non-sliding) layers — "
+        "sliding layers keep their default cache. Supported on both "
+        "--backend mlx and --backend cuda.",
     )
     args = parser.parse_args()
 
-    if args.turboquant and args.backend != "mlx":
-        parser.error("--turboquant requires --backend mlx.")
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
 
