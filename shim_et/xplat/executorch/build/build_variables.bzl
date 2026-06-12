@@ -480,6 +480,21 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNWorkspaceManager.cpp",
     "runtime/XnnpackBackendOptions.cpp",
     "runtime/profiling/XNNProfiler.cpp",
+    "runtime/core/tensor.cpp",
+    "runtime/core/quant_params.cpp",
+    "runtime/graph/graph.cpp",
+    "runtime/graph/graph_builder.cpp",
+    "runtime/operators/operator.cpp",
+    "runtime/executor/arena.cpp",
+    "runtime/executor/shape_env.cpp",
+    "runtime/plan/partition.cpp",
+    "runtime/plan/xnn_support.cpp",
+    "runtime/plan/execution_plan.cpp",
+    "runtime/plan/schedule.cpp",
+    "runtime/plan/xnn_subgraph.cpp",
+    "runtime/plan/memory_plan.cpp",
+    "runtime/executor/executor.cpp",
+    "runtime/FlatbufferGraphBuilder.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
