@@ -108,6 +108,7 @@ list(
   backends/xnnpack/runtime/core/quant_params.cpp
   backends/xnnpack/runtime/graph/graph.cpp
   backends/xnnpack/runtime/graph/graph_builder.cpp
+  backends/xnnpack/runtime/operators/operator.cpp
 )
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
