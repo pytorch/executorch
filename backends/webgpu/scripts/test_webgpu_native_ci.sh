@@ -75,6 +75,21 @@ export_update_cache_replay('${UPDATE_CACHE_DIR}')
 export_update_cache_negative('${UPDATE_CACHE_DIR}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
 
+# Non-fatal: a failed sdpa export makes the required 4k/8k configs hard-fail in
+# webgpu_native_test below (precise per-config error), so don't exit/mask here.
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import (
+    export_all_sdpa_models,
+    export_replay_sequences,
+    export_dynamic_decode,
+    export_incache_decode,
+)
+export_all_sdpa_models('/tmp')
+export_replay_sequences('/tmp')
+export_dynamic_decode('/tmp')
+export_incache_decode('/tmp')
+" || echo "WARN: sdpa export failed; required 4k/8k configs will FAIL in webgpu_native_test"
+
 # ── Configure (Dawn-only: no -DWEBGPU_IMPL; Dawn is the sole backend) ─────────
 echo "=== Configure WebGPU native tests on Dawn ==="
 rm -rf "${BUILD_DIR}"
