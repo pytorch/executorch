@@ -160,16 +160,7 @@ class GGUFQuantizedEmbeddingHandler(PatternHandler):
                 emit_embedding,
             )
         else:  # q4_k
-            from executorch.backends.mlx.custom_kernel_ops.gguf.q4k import (
-                emit_direct_gguf,
-            )
-
-            if emit_direct_gguf():
-                from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.embedding import (
-                    emit_embedding,
-                )
-            else:  # q4_k
-                from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.embedding import (
+            from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.embedding import (
                 emit_embedding,
             )
         return emit_embedding(P, n, self.weight, indices_node, self.output_dtype)
