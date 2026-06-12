@@ -268,7 +268,6 @@ def _export_cuda(
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                share_mutable_buffers=True,
             ),
             emit_mutable_buffer_names=True,
         ),

@@ -144,8 +144,6 @@ int main(int argc, char** argv) {
 
   stats.model_load_start_ms = llm::time_in_ms();
 
-  // Create Module with share_memory_arenas=true so prefill and decode
-  // share mutable buffers (KV cache, conv_state, recurrent_state).
   std::vector<std::string> data_files;
   if (!FLAGS_data_path.empty()) {
     data_files.push_back(FLAGS_data_path);
@@ -156,8 +154,7 @@ int main(int argc, char** argv) {
       Module::LoadMode::File,
       /*event_tracer=*/nullptr,
       /*memory_allocator=*/nullptr,
-      /*temp_allocator=*/nullptr,
-      /*share_memory_arenas=*/true);
+      /*temp_allocator=*/nullptr);
 
   // Get metadata
   auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());

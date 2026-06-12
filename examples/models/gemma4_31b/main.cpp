@@ -158,8 +158,7 @@ int main(int argc, char** argv) {
       Module::LoadMode::MmapUseMlockIgnoreErrors,
       /*event_tracer=*/nullptr,
       /*memory_allocator=*/nullptr,
-      /*temp_allocator=*/nullptr,
-      /*share_memory_arenas=*/true);
+      /*temp_allocator=*/nullptr);
 
   // Get metadata
   auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());
