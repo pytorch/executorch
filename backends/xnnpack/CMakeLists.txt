@@ -109,6 +109,8 @@ list(
   backends/xnnpack/runtime/graph/graph.cpp
   backends/xnnpack/runtime/graph/graph_builder.cpp
   backends/xnnpack/runtime/operators/operator.cpp
+  backends/xnnpack/runtime/executor/arena.cpp
+  backends/xnnpack/runtime/executor/shape_env.cpp
 )
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
