@@ -106,6 +106,9 @@ class WebGPUGraph {
   int64_t get_int(int id) const {
     return ints_[id];
   }
+  bool get_bool(int id) const {
+    return bools_[id];
+  }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
   // set_symint writes the buffer + marks dirty only if the value changed.
