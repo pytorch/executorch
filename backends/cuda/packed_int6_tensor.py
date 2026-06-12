@@ -105,9 +105,7 @@ def unpack_int6(ql: torch.Tensor, qh: torch.Tensor, N: int, K: int) -> torch.Ten
     hi_even = torch.stack(
         [(hi_even_byte >> s) & 0x3 for s in (0, 2, 4, 6)], dim=-1
     )  # (N, chunk, 4, 4) uint8
-    hi_odd = torch.stack(
-        [(hi_odd_byte >> s) & 0x3 for s in (0, 2, 4, 6)], dim=-1
-    )
+    hi_odd = torch.stack([(hi_odd_byte >> s) & 0x3 for s in (0, 2, 4, 6)], dim=-1)
     hi = torch.empty(N, chunks, 4, 8, dtype=torch.uint8, device=ql.device)
     hi[..., 0::2] = hi_even
     hi[..., 1::2] = hi_odd
