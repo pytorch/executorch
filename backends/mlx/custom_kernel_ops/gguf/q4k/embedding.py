@@ -56,7 +56,7 @@ _Q4K_EMBED_SOURCE = """
 """
 
 
-def emit_embedding(
+def _emit_embedding_fused(
     P: MLXProgramBuilder,
     head: Node,
     weight_node: Node,
@@ -125,3 +125,28 @@ def emit_embedding(
     )
 
     return out
+
+
+
+def emit_embedding(
+    P: MLXProgramBuilder,
+    head: Node,
+    weight_node: Node,
+    indices_node: Node,
+    output_dtype: torch.dtype,
+) -> Slot:
+    """Dispatch to fused Metal gather or the legacy MLX-native repack path."""
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q4k import emit_direct_gguf
+
+    if emit_direct_gguf():
+        return _emit_embedding_fused(
+            P, head, weight_node, indices_node, output_dtype
+        )
+
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.embedding_mlx_native import (
+        emit_embedding as emit_embedding_mlx_native,
+    )
+
+    return emit_embedding_mlx_native(
+        P, head, weight_node, indices_node, output_dtype
+    )

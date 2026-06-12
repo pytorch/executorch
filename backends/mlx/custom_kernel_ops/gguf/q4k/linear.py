@@ -180,7 +180,7 @@ def _q4k_matmul_source(has_bias: bool) -> str:
     short il0 = tid % NL0;
     short il  = il0;  // current dequant sub-block index within Q4_K block
     
-    const short offset1 = il0 / NL;  // always 0 for NL=8, NL0=2
+    const short offset1 = il0 / NL;  // always 0 (il0 < NL0=2, NL=16)
 
     // Pointer to weight block for this thread's assigned row.
     device const block_q4_K * wblk = (device const block_q4_K *) weight
@@ -417,7 +417,7 @@ def _emit_q4k_matmul(
     )
 
 
-def emit_linear(
+def _emit_linear_fused(
     P: MLXProgramBuilder,
     head: Node,
     x_node: Node,
@@ -513,3 +513,22 @@ def emit_linear(
             ),
         )
     return out
+
+def emit_linear(
+    P: MLXProgramBuilder,
+    head: Node,
+    x_node: Node,
+    weight_node: Node,
+    bias_node: Optional[Node],
+) -> Slot:
+    """Dispatch to fused Metal kernels or the legacy MLX-native repack path."""
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q4k import emit_direct_gguf
+
+    if emit_direct_gguf():
+        return _emit_linear_fused(P, head, x_node, weight_node, bias_node)
+
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.linear_mlx_native import (
+        emit_linear as emit_linear_mlx_native,
+    )
+
+    return emit_linear_mlx_native(P, head, x_node, weight_node, bias_node)

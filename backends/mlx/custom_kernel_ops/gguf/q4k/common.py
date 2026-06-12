@@ -51,8 +51,6 @@ Q4K_BLOCK_BYTES = (
     _Q4K_D_BYTES + _Q4K_DMIN_BYTES + _Q4K_SCALES_BYTES + _Q4K_QS_BYTES
 )  # 144
 
-# Q4_K mat-mat uses NL = QK_K / 32 (8 sub-blocks of 32 elements).
-Q4K_NL = QK_K // 32  # 8
 
 # ---------------------------------------------------------------------------
 # Shared Metal header
