@@ -26,7 +26,7 @@ linalg_svd_out(
     const ::executorch::aten::Tensor& A,
     bool full_matrices,
     bool compute_uv,
-    std::optional<::executorch::aten::string_view> driver,
+    std::optional<std::string_view> driver,
     ::executorch::aten::Tensor& U,
     ::executorch::aten::Tensor& S,
     ::executorch::aten::Tensor& Vh);

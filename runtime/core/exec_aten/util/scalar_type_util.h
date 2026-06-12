@@ -47,7 +47,7 @@ using ScalarType = at::ScalarType;
 } // namespace executorch
 #else // !USE_ATEN_LIB
 #include <executorch/runtime/core/portable_type/scalar_type.h>
-#include <executorch/runtime/core/portable_type/string_view.h>
+#include <string_view>
 namespace executorch {
 namespace aten {
 using ScalarType = torch::executor::ScalarType;

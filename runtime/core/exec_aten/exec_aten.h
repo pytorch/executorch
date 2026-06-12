@@ -9,6 +9,7 @@
 #pragma once
 
 #include <optional>
+#include <string_view>
 
 #include <executorch/runtime/core/error.h> // @manual
 #include <executorch/runtime/core/result.h> // @manual
@@ -46,7 +47,6 @@
 #include <executorch/runtime/core/portable_type/qint_types.h> // @manual
 #include <executorch/runtime/core/portable_type/scalar.h> // @manual
 #include <executorch/runtime/core/portable_type/scalar_type.h> // @manual
-#include <executorch/runtime/core/portable_type/string_view.h> // @manual
 #include <executorch/runtime/core/portable_type/tensor.h> // @manual
 #include <executorch/runtime/core/portable_type/tensor_options.h> // @manual
 

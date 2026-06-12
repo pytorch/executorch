@@ -17,7 +17,6 @@ def define_common_targets():
             "scalar.h",
             "tensor.h",
             "tensor_impl.h",
-            "string_view.h",
             "device.h",
         ],
         # Only should be depended on by kernel_types:kernel_types, but various suffixes like Android and Static
