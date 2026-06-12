@@ -136,6 +136,35 @@ matmul).
 Visual and MTP keys are skipped. `lm_head.weight` is cloned from
 `embed_tokens.weight` if not present in checkpoint (tied embeddings).
 
+## Serving (Engine/Session adapter)
+
+`main.cpp` is a thin CLI over `Qwen35MoEEngine` / `Qwen35MoESession`
+(`qwen35_moe_engine.{h,cpp}`), which implement the model-agnostic
+`LLMEngine` / `LLMSession` serving contract in
+`extension/llm/runner/llm_session.h`. This lets an OpenAI-compatible server (or
+any harness) drive the model without knowing it is Qwen-MoE or CUDA.
+
+- **`Qwen35MoEEngine`** owns immutable resources (tokenizer, metadata, EOS ids,
+  config). `create_session()` builds a `Module` with `share_memory_arenas=true`
+  and, on CUDA, sets the backend options that must precede `load_method`
+  (`weight_sharing_across_methods`, optional `enable_cuda_graph_for_method`),
+  then loads the `prefill`/`decode` methods. `serving_capacity()` reports a
+  single physical session — cross-session weight sharing is not yet proven, so
+  it fails closed to 1.
+- **`Qwen35MoESession`** owns the mutable conversation state (KV / conv /
+  recurrent arenas via the Module, position cursor, pending token).
+  `prefill_tokens` dispatches to `prefill` (T≥2) or `decode` (T==1);
+  `decode_one` emits the pending token and forwards it, stopping at EOS without
+  forwarding it (EOS is not made resident and `position()` does not advance).
+  `seek()` returns `NotSupported` — the recurrent/conv state cannot be rewound
+  by logical position. `reset()` is a logical rewind to position 0; the model
+  zeroes `conv_state`/`recurrent_state` whenever prefill runs at
+  `input_pos[0]==0`, so no Module rebuild is needed.
+- Backend-specific execution (CUDA in-graph sampling via a temperature input,
+  device sync, backend options) is isolated behind `EXECUTORCH_BUILD_CUDA` — the
+  extension point where an MLX runtime would slot in. The public
+  `LLMEngine`/`LLMSession` surface stays backend-agnostic.
+
 ## References
 
 - [HF Transformers Qwen3.5 MoE](https://github.com/huggingface/transformers) — `transformers/models/qwen3_5_moe/`

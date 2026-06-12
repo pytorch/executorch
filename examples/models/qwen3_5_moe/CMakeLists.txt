@@ -15,6 +15,11 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+# Vendored single-include nlohmann/json for the worker JSONL protocol (no new
+# dependency).
+set(_json_include
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
+)
 
 # gflags
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
@@ -60,7 +65,7 @@ endif()
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
 
-add_executable(qwen3_5_moe_runner main.cpp)
+add_executable(qwen3_5_moe_runner main.cpp qwen35_moe_engine.cpp)
 target_include_directories(
   qwen3_5_moe_runner PUBLIC ${_common_include_directories}
 )
@@ -69,4 +74,19 @@ target_link_libraries(qwen3_5_moe_runner PUBLIC ${link_libraries})
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(qwen3_5_moe_runner)
   target_link_options(qwen3_5_moe_runner PRIVATE "LINKER:-s")
+endif()
+
+# Process-isolated serving worker (qwen3_5_moe_worker): constructs
+# Qwen35MoEEngine directly and speaks the JSONL worker protocol that the Python
+# control plane drives via WorkerClient (no pybind, no Python model code). Built
+# alongside the runner by the qwen3-5-moe-cuda preset.
+add_executable(qwen3_5_moe_worker qwen35_moe_worker.cpp qwen35_moe_engine.cpp)
+target_include_directories(
+  qwen3_5_moe_worker PUBLIC ${_common_include_directories} ${_json_include}
+)
+target_link_libraries(qwen3_5_moe_worker PUBLIC ${link_libraries})
+
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(qwen3_5_moe_worker)
+  target_link_options(qwen3_5_moe_worker PRIVATE "LINKER:-s")
 endif()
