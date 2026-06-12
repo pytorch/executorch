@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <executorch/extension/llm/runner/constants.h>
+#include <executorch/extension/llm/runner/llm_session.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -140,6 +141,76 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::executorch::runtime::EventTracer> event_tracer = nullptr,
     const std::string& method_name = "forward",
     Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
+
+/**
+ * @brief Engine for multi-session text generation over one loaded Program.
+ *
+ * Loads the model's Program (weights/constants) once; create_session() builds a
+ * TextLLMRunner that reuses that Program but owns its own method/KV state. This
+ * is the correctness-first foundation for serving multiple conversations.
+ * Backend execution should be serialized by the caller until per-backend thread
+ * safety is proven (Module::execute is not assumed thread-safe). Whether extra
+ * sessions avoid duplicating packed weights is backend-dependent and reported
+ * by serving_capacity() (conservatively one).
+ */
+class ET_EXPERIMENTAL TextLLMEngine : public LLMEngine {
+ public:
+  static std::unique_ptr<TextLLMEngine> create(
+      const std::string& model_path,
+      const std::string& tokenizer_path,
+      std::optional<const std::string> data_path = std::nullopt,
+      float temperature = -1.0f,
+      const std::string& method_name = "forward",
+      Module::LoadMode load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors);
+
+  // Returns a TextLLMSession (LLMSession) that reuses this engine's loaded
+  // Program (physical weight sharing is backend-dependent; see
+  // serving_capacity).
+  ::executorch::runtime::Result<std::unique_ptr<LLMSession>> create_session()
+      override;
+  // Conservative: a single physical session (no proven cross-session weight
+  // sharing). Raise on a backend proven to share packed weights.
+  LLMServingCapacity serving_capacity() const override {
+    return LLMServingCapacity{};
+  }
+  const std::unordered_map<std::string, int64_t>& metadata() const override {
+    return metadata_;
+  }
+
+  TextLLMEngine(const TextLLMEngine&) = delete;
+  TextLLMEngine& operator=(const TextLLMEngine&) = delete;
+
+ private:
+  TextLLMEngine(
+      std::unique_ptr<Module> loader_module,
+      std::shared_ptr<Program> program,
+      std::string tokenizer_path,
+      float temperature,
+      std::string method_name,
+      std::unordered_map<std::string, int64_t> metadata);
+
+  // Keeps the shared Program's DataLoader alive for the lifetime of sessions.
+  std::unique_ptr<Module> loader_module_;
+  std::shared_ptr<Program> program_;
+  std::string tokenizer_path_;
+  float temperature_;
+  std::string method_name_;
+  std::unordered_map<std::string, int64_t> metadata_;
+};
+
+namespace detail {
+// Implementation detail (not a public API): wraps a TextLLMRunner in an
+// LLMSession (the runner -> session seam). The supported entry point is
+// LLMEngine::create_session(); this exists only so TextLLMEngine can build its
+// sessions and so unit tests can drive the runner's token-step primitives
+// through the public LLMSession surface (the concrete adapter type is private).
+// Do not depend on wrapping arbitrary runners.
+//
+// @param runner A loaded TextLLMRunner; ownership transfers to the session.
+// @return std::unique_ptr<LLMSession> wrapping `runner`.
+std::unique_ptr<LLMSession> make_text_llm_session(
+    std::unique_ptr<TextLLMRunner> runner);
+} // namespace detail
 
 /**
  * @brief Creates a MultimodalRunner instance with dependency injection

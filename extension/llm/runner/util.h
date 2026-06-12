@@ -13,7 +13,9 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
 #include <time.h>
+#include <algorithm>
 #include <cctype>
+#include <string>
 #include <vector>
 #if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
 #include <sys/resource.h>
@@ -79,6 +81,87 @@ ET_EXPERIMENTAL void inline safe_printf(const char* piece) {
     }
   }
   printf("%s", piece);
+}
+
+// Length of the longest prefix of `s` that does not end in the middle of a
+// UTF-8 multi-byte sequence. A byte-level tokenizer can emit a token that is
+// only part of a character (e.g. one byte of a 3-byte CJK codepoint or emoji),
+// so a caller streaming text must hold the incomplete tail until it completes
+// rather than decode the partial bytes. An invalid lead byte counts as length 1
+// (emitted, so the caller can replace it) rather than stalling output.
+ET_EXPERIMENTAL size_t inline utf8_complete_prefix_len(const std::string& s) {
+  size_t i = 0;
+  const size_t n = s.size();
+  while (i < n) {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    size_t len;
+    if (c < 0x80) {
+      len = 1;
+    } else if ((c >> 5) == 0x6) {
+      len = 2;
+    } else if ((c >> 4) == 0xE) {
+      len = 3;
+    } else if ((c >> 3) == 0x1E) {
+      len = 4;
+    } else {
+      len = 1; // invalid lead byte; emit it and let the caller replace it
+    }
+    if (i + len > n) {
+      break; // incomplete trailing sequence: hold it for more bytes
+    }
+    i += len;
+  }
+  return i;
+}
+
+// How many leading bytes of `text` a streaming consumer may safely emit given a
+// set of `stops` strings, and whether a stop was hit (`stop_hit`).
+//   * If any stop occurs, returns the byte offset of the EARLIEST occurrence
+//   and
+//     sets stop_hit=true — text before it is safe; the stop and everything
+//     after are dropped (the stop is excluded from output).
+//   * Otherwise returns the length minus the longest possible partial-stop tail
+//     (max(len(stop))-1 bytes), snapped DOWN to a UTF-8 boundary so a
+//     multi-byte character is never split; stop_hit=false. Holding back that
+//     tail lets a stop that straddles the next piece still be caught.
+// `text` is expected to be complete-UTF-8 (e.g. the assembled output of
+// utf8_complete_prefix_len). Empty `stops` => emit everything, no hold-back.
+ET_EXPERIMENTAL size_t inline stop_safe_prefix_len(
+    const std::string& text,
+    const std::vector<std::string>& stops,
+    bool& stop_hit) {
+  stop_hit = false;
+  if (stops.empty()) {
+    return text.size();
+  }
+  size_t earliest = std::string::npos;
+  size_t max_len = 0;
+  for (const auto& s : stops) {
+    if (s.empty()) {
+      continue;
+    }
+    max_len = std::max(max_len, s.size());
+    const size_t p = text.find(s);
+    if (p != std::string::npos &&
+        (earliest == std::string::npos || p < earliest)) {
+      earliest = p;
+    }
+  }
+  if (earliest != std::string::npos) {
+    stop_hit = true;
+    return earliest;
+  }
+  const size_t hold = max_len > 0 ? max_len - 1 : 0;
+  if (text.size() <= hold) {
+    return 0;
+  }
+  size_t end = text.size() - hold;
+  // Don't cut in the middle of a UTF-8 character: back up over continuation
+  // bytes (10xxxxxx).
+  while (end > 0 && (static_cast<unsigned char>(text[end]) & 0xC0) == 0x80) {
+    --end;
+  }
+  return end;
 }
 
 // ----------------------------------------------------------------------------

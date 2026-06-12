@@ -114,7 +114,14 @@ def define_common_targets():
             exported_headers = [
                 "text_llm_runner.h",
                 "llm_runner_helper.h",
+                "llm_session.h",
                 "constants.h",
+            ],
+            # Internal: the detail::TextLLMSession adapter (sole friended caller
+            # of TextLLMRunner's token-step hooks). Private so dependents reach
+            # it only through LLMEngine/LLMSession + make_text_llm_session().
+            headers = [
+                "text_llm_session.h",
             ],
             srcs = [
                 "text_llm_runner.cpp",
