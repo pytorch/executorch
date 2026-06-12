@@ -113,6 +113,9 @@ list(
   backends/xnnpack/runtime/executor/shape_env.cpp
   backends/xnnpack/runtime/plan/xnn_support.cpp
   backends/xnnpack/runtime/plan/partition.cpp
+  backends/xnnpack/runtime/plan/xnn_subgraph.cpp
+  backends/xnnpack/runtime/plan/schedule.cpp
+  backends/xnnpack/runtime/plan/execution_plan.cpp
 )
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
