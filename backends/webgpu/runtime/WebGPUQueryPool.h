@@ -17,6 +17,8 @@
 
 namespace executorch::backends::webgpu {
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+
 // Per-dispatch GPU timing; mirrors Vulkan QueryPool ShaderDuration.
 struct ShaderDuration {
   uint32_t idx = 0;
@@ -80,5 +82,7 @@ class WebGPUQueryPool {
   double ns_per_tick_ = 1.0; // WebGPU timestamps are already nanoseconds
   std::vector<ShaderDuration> durations_;
 };
+
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 } // namespace executorch::backends::webgpu
