@@ -375,10 +375,6 @@ test_suite_fp8 = {
         (exir_op_mm_2d, exir_op_mm_2d),
     ),
 }
-fp8_xfails = {
-    name: "MLETORCH-2239: Fix invalid FP8 MATMUL TOSA graphs" for name in test_suite_fp8
-}
-
 xfails = {
     "double_input_randn_rand_1d_1d": "aten.dot.default is not supported",
     "double_input_randn_rand_2d_1d": "aten.mv.default is not supported",
@@ -401,7 +397,7 @@ def test_matmul_tosa_FP(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite_fp8, xfails=fp8_xfails)
+@common.parametrize("test_case", test_suite_fp8)
 def test_matmul_tosa_FP_fp8(test_case: test_case_t):
     test_data = test_case()
     input_dtype = test_data.input_factory()[0].dtype

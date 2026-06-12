@@ -515,10 +515,6 @@ test_data_FP_fp8 = {
         "fp8e5m2",
     ),
 }
-_fp8_conv3d_tosa_ref_model_xfails = {
-    name: "MLETORCH-2238: Fix invalid FP8 CONV TOSA graphs" for name in test_data_FP_fp8
-}
-
 test_data_FP_bf16 = {
     "bf16_3x3": lambda: Conv3d(
         height=10,
@@ -611,9 +607,7 @@ def test_convolution_3d_tosa_FP(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", test_data_FP_fp8, xfails=_fp8_conv3d_tosa_ref_model_xfails
-)
+@common.parametrize("test_data", test_data_FP_fp8)
 def test_convolution_3d_tosa_FP_fp8(test_data):
     model, tosa_extension = test_data()
     pipeline = TosaPipelineFP[input_t](

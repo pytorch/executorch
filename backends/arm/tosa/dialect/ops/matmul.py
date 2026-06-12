@@ -56,13 +56,13 @@ def MATMUL(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
             raise TosaValueError(
                 f"TOSA spec {tosa_spec} doesn't support fp8e4m3", op="MATMUL"
             )
-        dtype = torch.float32
+        dtype = torch.float16
     elif x1.dtype == torch.float8_e5m2:
         if not tosa_spec.support_extension("fp8e5m2"):
             raise TosaValueError(
                 f"TOSA spec {tosa_spec} doesn't support fp8e5m2", op="MATMUL"
             )
-        dtype = torch.float32
+        dtype = torch.float16
     else:
         raise TosaValueError(
             "Input tensors must be of type int8, float16, float32, bfloat16, "
