@@ -12,7 +12,7 @@ resume transcript lives in OpenAITranscriptState."""
 import json
 import logging
 import math
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Callable, Optional
 
 from .chat_template import ChatTemplate
 from .errors import (
@@ -64,12 +64,15 @@ class ServingChat:
         max_context: Optional[int] = None,
         tool_detector_cls: Optional[type[HermesDetector]] = None,
         prompt_token_offset: int = 0,
+        content_filter: Optional[Callable[[str], str]] = None,
+        content_filter_specials: Optional[set[str]] = None,
     ):
         self._runtime = runtime
         self._template = template
         self._model_id = model_id
         self._max_context = max_context
         self._prompt_token_offset = prompt_token_offset
+        self._content_filter = content_filter
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -84,7 +87,10 @@ class ServingChat:
         #    never reaches the client, AND it backs _strip_specials for final
         #    cleanup of already-parsed visible content.
         self._stops = template.turn_stop_sequences()
-        self._content_specials = template.special_tokens()
+        handled = content_filter_specials or set()
+        self._content_specials = [
+            t for t in template.special_tokens() if t not in handled
+        ]
         # OpenAI/chat-template token-ID warm-resume state. Adapter-side,
         # not runtime; kept in lockstep with the worker's session state by
         # clearing both on reset/close.
@@ -109,6 +115,11 @@ class ServingChat:
         # visible content (not the narrow generation-stop set).
         cut = _earliest_stop(text, self._content_specials)
         return text[:cut] if cut is not None else text
+
+    def _visible_content(self, text: str) -> str:
+        if self._content_filter is not None:
+            text = self._content_filter(text)
+        return self._strip_specials(text)
 
     @staticmethod
     def _to_openai_tool_call(item: ToolCallItem) -> ToolCall:
@@ -167,10 +178,10 @@ class ServingChat:
                 text, self._tool_schemas(req)
             )
             if parsed.calls:
-                content = self._strip_specials(parsed.normal_text) or None
+                content = self._visible_content(parsed.normal_text) or None
                 return [self._to_openai_tool_call(c) for c in parsed.calls], content
             text = parsed.normal_text
-        return None, self._strip_specials(text)
+        return None, self._visible_content(text)
 
     async def _clean(
         self, stream: AsyncIterator[str], stops: list[str], on_stop=None
@@ -481,6 +492,36 @@ class ServingChat:
             ),
         )
 
+    async def _stream_plain_content(
+        self,
+        req: ChatCompletionRequest,
+        prompt: PromptInput,
+        options: GenerationOptions,
+        stats: GenStats,
+        stops: list[str],
+        stop_hit: list[bool],
+    ) -> AsyncIterator[str]:
+        if self._content_filter is not None:
+            raw, stop_hit[0] = await self._collect_until_stop(
+                self._runtime.generate_stream(req.session_id, prompt, options, stats),
+                stops,
+            )
+            content = self._visible_content(self._apply_stop(raw, stops))
+            if content:
+                yield content
+            return
+
+        def on_stop():
+            stop_hit[0] = True
+            self._runtime.stop()
+
+        async for token in self._clean(
+            self._runtime.generate_stream(req.session_id, prompt, options, stats),
+            stops,
+            on_stop=on_stop,
+        ):
+            yield token
+
     async def _stream(
         self,
         req: ChatCompletionRequest,
@@ -530,19 +571,9 @@ class ServingChat:
                     req, self._truncate_raw(raw, req)
                 )
             else:
-                # Plain chat: stream tokens live (best UX), cutting at special
-                # tokens or request stop sequences and halting early on a hit.
-                def on_stop():
-                    stop_hit[0] = True
-                    self._runtime.stop()
-
                 streamed: list[str] = []
-                async for token in self._clean(
-                    self._runtime.generate_stream(
-                        req.session_id, prompt, options, stats
-                    ),
-                    stops,
-                    on_stop=on_stop,
+                async for token in self._stream_plain_content(
+                    req, prompt, options, stats, stops, stop_hit
                 ):
                     streamed.append(token)
                     yield chunk(DeltaMessage(content=token))

@@ -32,6 +32,8 @@ from executorch.extension.llm.server.python.protocol import (
 HDR = "<|im_start|>assistant\n"
 NOTHINK = "<think>\n\n</think>\n\n"  # no-think generation preamble / preserved block
 THINK = "<think>\n"  # think-mode generation preamble
+GEMMA_HDR = "<|turn>model\n"
+GEMMA_PREAMBLE = "<|channel>thought\n<channel|>"
 
 
 def _msgs(*pairs):
@@ -97,6 +99,20 @@ class _FakeOtherHeader:
                     f"<|start_header_id|>{m.role}<|end_header_id|>\n\n{c}<|eot_id|>"
                 )
         out.append(self.OHDR)
+        return "".join(out)
+
+
+class _FakeGemma:
+    def assistant_header(self):
+        return GEMMA_HDR
+
+    def render(self, messages, tools=None, template_kwargs=None):
+        out = ["<bos>"]
+        for m in messages:
+            role = "model" if m.role == "assistant" else m.role
+            content = m.content if isinstance(m.content, str) else ""
+            out.append(f"<|turn>{role}\n{content}<turn|>\n")
+        out.append(GEMMA_HDR + GEMMA_PREAMBLE)
         return "".join(out)
 
 
@@ -243,6 +259,29 @@ def test_non_qwen_header_no_scaffold_still_splices():
     )
     assert pi.segments is not None  # splicing NOT disabled by the missing header
     assert any(s.get("ids") == [9, 9] for s in pi.segments)  # ids actually spliced
+
+
+def test_custom_assistant_header_inserts_scaffold():
+    st = OpenAITranscriptState(_FakeGemma())
+    st.record_assistant_turn(
+        session_id="s",
+        content="a1",
+        tool_calls=None,
+        generated_token_ids=[4, 5],
+        prior_turns=0,
+        preamble=GEMMA_PREAMBLE,
+    )
+    msgs = _msgs(("user", "u1"), ("assistant", "a1"), ("user", "u2"))
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=st._template.render(msgs),
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    before = _text_before_ids(pi.segments, [4, 5])
+    assert before.rsplit(GEMMA_HDR, 1)[-1] == GEMMA_PREAMBLE
 
 
 def test_stop_trimmed_turn_falls_back_to_text():
@@ -414,6 +453,49 @@ def test_tool_turn_splices_despite_reserialized_args():
     assert any(s.get("ids") == [1, 2, 3] for s in pi.segments)
 
 
+def test_gemma_tool_span_ignores_close_marker_inside_string():
+    st = OpenAITranscriptState(_FakeGemma())
+    call = ToolCall(
+        id="call_1",
+        function=FunctionCall(
+            name="bash", arguments='{"command":"printf <tool_call|> ok"}'
+        ),
+    )
+    st.record_assistant_turn(
+        session_id="s",
+        content="",
+        tool_calls=[call],
+        generated_token_ids=[101, 102, 103],
+        prior_turns=0,
+        preamble="",
+    )
+    msgs = [
+        ChatMessage(role="user", content="u1"),
+        ChatMessage(role="assistant", content="", tool_calls=[call]),
+        ChatMessage(role="tool", tool_call_id="call_1", content="done"),
+    ]
+    rendered = (
+        "<bos><|turn>user\nu1<turn|>\n"
+        "<|turn>model\n"
+        '<|tool_call>call:bash{command:<|"|>printf <tool_call|> ok<|"|>}<tool_call|>'
+        "<|tool_response>done<tool_response|>"
+    )
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=rendered,
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    assert any(s.get("ids") == [101, 102, 103] for s in pi.segments)
+    suffix = "".join(
+        s.get("text", "")
+        for s in pi.segments[_ids_index(pi.segments, [101, 102, 103]) + 1 :]
+    )
+    assert suffix == "<|tool_response>done<tool_response|>"
+
+
 # --- 5b. Token-level fidelity against the real tokenizer (gated/skipped) -----
 
 _MODEL = os.environ.get(
@@ -442,6 +524,128 @@ def _assemble(segs, enc):
     for seg in segs:
         out += seg["ids"] if "ids" in seg else enc(seg["text"])
     return out
+
+
+_GEMMA_MODEL = os.environ.get(
+    "GEMMA_HF_DIR", "/home/mnachin/local/scripts/models/gemma-4-31B-it-HQQ-INT4"
+)
+_HAVE_GEMMA = os.path.isdir(_GEMMA_MODEL)
+_skip_gemma = pytest.mark.skipif(
+    not _HAVE_GEMMA, reason=f"real Gemma tokenizer dir not present: {_GEMMA_MODEL}"
+)
+
+
+def _real_gemma_template_and_enc(strip_bos=True):
+    pytest.importorskip("transformers")
+    from transformers import AutoTokenizer
+
+    tmpl = ChatTemplate(
+        hf_tokenizer_path=_GEMMA_MODEL,
+        assistant_header=GEMMA_HDR,
+        strip_rendered_bos=strip_bos,
+    )
+    tok = AutoTokenizer.from_pretrained(_GEMMA_MODEL)
+    return tmpl, tok, (lambda s: tok.encode(s, add_special_tokens=False))
+
+
+@_skip_gemma
+def test_gemma_real_template_bos_strip_matches_full_render_ids():
+    stripped, tok, enc = _real_gemma_template_and_enc(strip_bos=True)
+    full, _, _ = _real_gemma_template_and_enc(strip_bos=False)
+    msgs = _msgs(("user", "What is the capital of France?"))
+    full_render = full.render(msgs)
+    stripped_render = stripped.render(msgs)
+
+    assert full_render.startswith(tok.bos_token)
+    assert not stripped_render.startswith(tok.bos_token)
+    assert [tok.bos_token_id] + enc(stripped_render) == enc(full_render)
+
+
+@_skip_gemma
+def test_gemma_real_template_warm_resume_prefix_with_bos_prefix():
+    tmpl, tok, enc = _real_gemma_template_and_enc(strip_bos=True)
+    st = OpenAITranscriptState(tmpl)
+    content = "The capital is Paris."
+    gen_ids = enc(content)
+    first_prompt = tmpl.render(_msgs(("user", "u1")))
+    resident = [tok.bos_token_id] + enc(first_prompt) + gen_ids
+    st.record_assistant_turn(
+        session_id="s",
+        content=content,
+        tool_calls=None,
+        generated_token_ids=gen_ids,
+        prior_turns=0,
+        preamble=tmpl.generation_preamble(),
+    )
+    msgs = _msgs(("user", "u1"), ("assistant", content), ("user", "u2"))
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=tmpl.render(msgs),
+        tools=None,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    assembled = [tok.bos_token_id] + _assemble(pi.segments, enc)
+    assert assembled[: len(resident)] == resident
+
+
+@_skip_gemma
+def test_gemma_real_template_post_tool_splices_call_and_keeps_tool_response():
+    tmpl, tok, enc = _real_gemma_template_and_enc(strip_bos=True)
+    st = OpenAITranscriptState(tmpl)
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "Run bash",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"],
+                },
+            },
+        }
+    ]
+    call = ToolCall(
+        id="call_1",
+        function=FunctionCall(name="bash", arguments='{"command":"echo hello42"}'),
+    )
+    raw_call = '<|tool_call>call:bash{command:<|"|>echo hello42<|"|>}<tool_call|>'
+    gen_ids = enc(raw_call)
+    first_prompt = tmpl.render(_msgs(("user", "Run echo hello42")), tools=tools)
+    resident = [tok.bos_token_id] + enc(first_prompt) + gen_ids
+    st.record_assistant_turn(
+        session_id="s",
+        content="",
+        tool_calls=[call],
+        generated_token_ids=gen_ids,
+        prior_turns=0,
+        preamble=tmpl.generation_preamble(tools=tools),
+    )
+    msgs = [
+        ChatMessage(role="user", content="Run echo hello42"),
+        ChatMessage(role="assistant", content="", tool_calls=[call]),
+        ChatMessage(role="tool", tool_call_id="call_1", content="hello42"),
+    ]
+    rendered = tmpl.render(msgs, tools=tools)
+    assert rendered.endswith("<tool_response|>")
+
+    pi = st.build_prompt_input(
+        session_id="s",
+        messages=msgs,
+        rendered_prompt=rendered,
+        tools=tools,
+        template_kwargs=None,
+    )
+    assert pi.segments is not None
+    assembled = [tok.bos_token_id] + _assemble(pi.segments, enc)
+    assert assembled[: len(resident)] == resident
+
+    suffix_text = "".join(seg.get("text", "") for seg in pi.segments)
+    assert "<|tool_response>" in suffix_text
+    assert "hello42" in suffix_text
 
 
 @_skip

@@ -181,9 +181,9 @@ python -m executorch.examples.models.gemma4_31b.serve \
     --max-sessions 1
 ```
 
-The launcher defaults to the Hermes `<tool_call>{...}</tool_call>` parser. Use
-`--tool-parser qwen` or `--tool-parser none` if the model/template you are
-testing emits a different tool-call format.
+The launcher defaults to Gemma's `<|tool_call>call:...<tool_call|>` parser. Use
+`--tool-parser hermes`, `--tool-parser qwen`, or `--tool-parser none` if the
+model/template you are testing emits a different tool-call format.
 
 Named sessions and warm resume require worker capacity above one. CUDA exports
 with `get_mutable_buffer_metadata` can use per-session mutable rebinding and

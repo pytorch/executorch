@@ -457,7 +457,6 @@ Result<std::unique_ptr<Gemma4_31BEngine>> Gemma4_31BEngine::create(
 
   auto eos_ids = get_eos_ids(tokenizer.get(), meta_module.get());
   eos_ids.insert(static_cast<uint64_t>(config.eos_id));
-  add_token_piece(tokenizer.get(), eos_ids, "<end_of_turn>");
   add_token_piece(tokenizer.get(), eos_ids, "<turn|>");
 
   const auto& metadata = metadata_result.get();

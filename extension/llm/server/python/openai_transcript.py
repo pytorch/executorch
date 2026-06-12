@@ -39,6 +39,9 @@ _ASSIST_HDR = "<|im_start|>assistant\n"
 # last user; the open form is the think-mode generation preamble). Anything else
 # in that region is unrecognized -> the splice falls back to plain text.
 _THINK_SCAFFOLD_RE = re.compile(r"\A(?:<think>\n\n</think>\n\n|<think>\n)?\Z")
+_GEMMA_TOOL_CALL_START = "<|tool_call>"
+_GEMMA_TOOL_CALL_END = "<tool_call|>"
+_GEMMA_QUOTE = '<|"|>'
 
 
 def _normalize_tool_args(args):
@@ -57,9 +60,43 @@ def _normalize_tool_args(args):
     return args
 
 
+def _find_gemma_tool_call_span(rendered: str, search_pos: int):
+    start = rendered.find(_GEMMA_TOOL_CALL_START, search_pos)
+    if start == -1:
+        return None
+    i = start + len(_GEMMA_TOOL_CALL_START)
+    in_string = False
+    depth = 0
+    saw_object = False
+    while i < len(rendered):
+        if rendered.startswith(_GEMMA_QUOTE, i):
+            in_string = not in_string
+            i += len(_GEMMA_QUOTE)
+            continue
+        if not in_string:
+            if rendered.startswith(_GEMMA_TOOL_CALL_END, i):
+                if saw_object and depth == 0:
+                    return start, i + len(_GEMMA_TOOL_CALL_END)
+            ch = rendered[i]
+            if ch in "{[":
+                depth += 1
+                saw_object = saw_object or ch == "{"
+            elif ch in "}]":
+                if depth == 0:
+                    return None
+                depth -= 1
+        i += 1
+    return None
+
+
 class OpenAITranscriptState:
     def __init__(self, template: ChatTemplate):
         self._template = template
+        self._assist_hdr = (
+            template.assistant_header()
+            if hasattr(template, "assistant_header")
+            else _ASSIST_HDR
+        )
         # session_id -> [{"fp": str, "ids": list[int] | None}, ...] (one per
         # assistant turn we produced, in order). Cleared on reset/close.
         self._turns: dict[str, list[dict]] = {}
@@ -84,8 +121,7 @@ class OpenAITranscriptState:
         blob = json.dumps([content or "", norm], sort_keys=True, ensure_ascii=False)
         return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
-    @staticmethod
-    def _normalize_scaffold(text_chunk: str, preamble: str) -> Optional[str]:
+    def _normalize_scaffold(self, text_chunk: str, preamble: str) -> Optional[str]:
         """Force the scaffold region (between the last assistant header in
         `text_chunk` and its end) to equal `preamble`, so the worker re-tokenizes
         the exact resident scaffold. The region is empty (history stripped it ->
@@ -97,10 +133,10 @@ class OpenAITranscriptState:
         # assistant header (the fix stays a true no-op for non-think models).
         if not preamble:
             return text_chunk
-        h = text_chunk.rfind(_ASSIST_HDR)
+        h = text_chunk.rfind(self._assist_hdr)
         if h == -1:
             return None
-        base = h + len(_ASSIST_HDR)
+        base = h + len(self._assist_hdr)
         region = text_chunk[base:]
         if region == preamble:
             return text_chunk
@@ -108,9 +144,8 @@ class OpenAITranscriptState:
             return None
         return text_chunk[:base] + preamble
 
-    @staticmethod
     def _split_on_sentinels(
-        rendered: str, sub: dict[str, dict]
+        self, rendered: str, sub: dict[str, dict]
     ) -> Optional[list[dict]]:
         """Split `rendered` on the sentinels into alternating {"text"} chunks and
         {"ids"} runs (each sentinel -> sub[sentinel] = {"ids", "preamble"}). The
@@ -121,7 +156,7 @@ class OpenAITranscriptState:
         segments: list[dict] = []
         pos = 0
         for mobj in pattern.finditer(rendered):
-            norm = OpenAITranscriptState._normalize_scaffold(
+            norm = self._normalize_scaffold(
                 rendered[pos : mobj.start()], sub[mobj.group()]["preamble"]
             )
             if norm is None:
@@ -130,6 +165,50 @@ class OpenAITranscriptState:
                 segments.append({"text": norm})
             segments.append({"ids": sub[mobj.group()]["ids"]})
             pos = mobj.end()
+        if pos < len(rendered):
+            segments.append({"text": rendered[pos:]})
+        return segments
+
+    def _split_gemma_tool_call_spans(
+        self,
+        rendered: str,
+        messages: list[ChatMessage],
+        splice: dict[int, dict],
+    ) -> Optional[list[dict]]:
+        segments: list[dict] = []
+        pos = 0
+
+        for i, msg in enumerate(messages):
+            tool_calls = msg.tool_calls if msg.role == "assistant" else None
+            if not tool_calls:
+                continue
+
+            start = None
+            end = pos
+            for _ in tool_calls:
+                span = _find_gemma_tool_call_span(rendered, end)
+                if span is None:
+                    return None
+                span_start, span_end = span
+                if start is None:
+                    start = span_start
+                end = span_end
+            if start is None:
+                return None
+
+            if i in splice:
+                norm = self._normalize_scaffold(
+                    rendered[pos:start], splice[i]["preamble"]
+                )
+                if norm is None:
+                    return None
+                if norm:
+                    segments.append({"text": norm})
+                segments.append({"ids": splice[i]["ids"]})
+            else:
+                segments.append({"text": rendered[pos:end]})
+            pos = end
+
         if pos < len(rendered):
             segments.append({"text": rendered[pos:]})
         return segments
@@ -182,6 +261,20 @@ class OpenAITranscriptState:
             del stored[diverged_at:]
         if not splice:
             return PromptInput(text=rendered_prompt)
+        tool_splice = {
+            pos: data
+            for pos, data in splice.items()
+            if messages[pos].tool_calls and not (messages[pos].content or "")
+        }
+        if tool_splice and _GEMMA_TOOL_CALL_START in rendered_prompt:
+            segments = self._split_gemma_tool_call_spans(
+                rendered_prompt, messages, tool_splice
+            )
+            return (
+                PromptInput(segments=segments)
+                if segments is not None
+                else PromptInput(text=rendered_prompt)
+            )
         token = uuid.uuid4().hex
         sentinel_at = {pos: f"<<ETSEG{j}_{token}>>" for j, pos in enumerate(splice)}
         sub = {sentinel_at[pos]: splice[pos] for pos in splice}

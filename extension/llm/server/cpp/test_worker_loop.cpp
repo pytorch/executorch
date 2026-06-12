@@ -58,6 +58,7 @@ class FakeSession : public LLMSession {
 
   int prefill_calls = 0;
   std::vector<size_t> prefill_sizes; // size of each prefill_tokens() call
+  std::vector<std::vector<uint64_t>> prefill_batches;
   int fail_prefill_on = -1; // 0-based call index to fail (-1 = never)
   int decode_calls = 0;
   int fail_decode_on = -1;
@@ -68,6 +69,7 @@ class FakeSession : public LLMSession {
       std::vector<uint64_t> tokens,
       const SamplingConfig* /*initial_sampling*/ = nullptr) override {
     prefill_sizes.push_back(tokens.size());
+    prefill_batches.push_back(tokens);
     if (prefill_calls++ == fail_prefill_on) {
       return ETError::Internal; // failed AFTER (notionally) mutating state
     }
@@ -173,13 +175,14 @@ Emitted run(
     WorkerSessionState& st,
     bool warm,
     const nlohmann::json& req,
-    const std::unordered_map<std::string, int64_t>& md = {}) {
+    const std::unordered_map<std::string, int64_t>& md = {},
+    const std::vector<uint64_t>& prefix = {}) {
   static FakeTokenizer tok;
   std::ostringstream cap;
   std::streambuf* old = std::cout.rdbuf(cap.rdbuf());
   Emitted em;
   try {
-    worker_handle_request(st, warm, tok, md, req);
+    worker_handle_request(st, warm, tok, md, req, prefix);
   } catch (const std::exception&) {
     em.threw = true;
   }
@@ -325,6 +328,23 @@ void test_generated_token_ids_excludes_terminal() {
       st.resident_token_ids.size() == (size_t)st.session->position());
 }
 
+void test_prompt_prefix_ids_prepend_text_prompt_once() {
+  auto st = makeState();
+  fake(st).steps = {{0, "", true, true}};
+  auto em =
+      run(st,
+          /*warm=*/true,
+          {{"max_new_tokens", 1}, {"prompt", "ab"}},
+          {},
+          {2});
+  check("prefix: prompt_tokens includes prefix", em.done["prompt_tokens"] == 3);
+  check(
+      "prefix: prefilled ids == [2,'a','b']",
+      fake(st).prefill_batches ==
+          std::vector<std::vector<uint64_t>>{
+              {2, static_cast<uint64_t>('a'), static_cast<uint64_t>('b')}});
+}
+
 void test_stop_string_marks_dirty_and_omits_ids() {
   auto st = makeState();
   fake(st).steps = {
@@ -430,6 +450,7 @@ int main() {
   test_equal_prompt_no_empty_prefill();
   test_anonymous_never_warm();
   test_generated_token_ids_excludes_terminal();
+  test_prompt_prefix_ids_prepend_text_prompt_once();
   test_stop_string_marks_dirty_and_omits_ids();
   test_prefill_failure_marks_dirty();
   test_decode_failure_marks_dirty();

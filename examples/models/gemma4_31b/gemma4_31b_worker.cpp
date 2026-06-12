@@ -24,7 +24,7 @@ DEFINE_bool(
     warm_resume,
     true,
     "Warm append-only resume for named sessions when the engine supports them.");
-DEFINE_int32(bos_id, 2, "BOS token id to prepend to every Gemma prompt.");
+DEFINE_int32(bos_id, 2, "BOS token id to prepend to server-rendered prompts.");
 DEFINE_int32(eos_id, 1, "EOS token id (Gemma convention: 1).");
 
 namespace {

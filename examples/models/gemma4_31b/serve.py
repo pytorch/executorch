@@ -9,18 +9,31 @@
 import argparse
 import logging
 import os
+import re
 from pathlib import Path
 
 from executorch.extension.llm.server.python.chat_template import ChatTemplate
 from executorch.extension.llm.server.python.serving_chat import ServingChat
 from executorch.extension.llm.server.python.session_runtime import SessionRuntime
 from executorch.extension.llm.server.python.tool_parsers import (
+    GemmaToolCallDetector,
     HermesDetector,
     QwenFunctionCallDetector,
 )
 from executorch.extension.llm.server.python.worker_client import spawn_worker
 
 logger = logging.getLogger(__name__)
+
+_GEMMA_CHANNEL_SPECIALS = {"<|channel>", "<channel|>", "<|think|>"}
+_GEMMA_CHANNEL_BLOCK = re.compile(r"<\|channel>.*?<channel\|>", re.DOTALL)
+
+
+def _strip_gemma_channels(text: str) -> str:
+    text = _GEMMA_CHANNEL_BLOCK.sub("", text)
+    open_idx = text.find("<|channel>")
+    if open_idx != -1:
+        text = text[:open_idx]
+    return text.replace("<channel|>", "").replace("<|think|>", "").strip()
 
 
 def _default_worker_bin() -> str:
@@ -62,6 +75,8 @@ def _spawn(args):
 
 
 def _tool_detector(name: str):
+    if name == "gemma":
+        return GemmaToolCallDetector
     if name == "hermes":
         return HermesDetector
     if name == "qwen":
@@ -72,7 +87,13 @@ def _tool_detector(name: str):
 
 
 def build_app_from_args(args):
-    template = ChatTemplate(args.hf_tokenizer)
+    template = ChatTemplate(
+        args.hf_tokenizer,
+        assistant_header="<|turn>model\n",
+        # Gemma's HF template starts with bos_token text. Strip that text before
+        # C++ tokenization; the worker prepends the numeric BOS id.
+        strip_rendered_bos=True,
+    )
     worker = _spawn(args)
     runtime = SessionRuntime(worker)
     serving = ServingChat(
@@ -82,6 +103,8 @@ def build_app_from_args(args):
         max_context=args.max_context,
         tool_detector_cls=_tool_detector(args.tool_parser),
         prompt_token_offset=1,
+        content_filter=_strip_gemma_channels,
+        content_filter_specials=_GEMMA_CHANNEL_SPECIALS,
     )
 
     from executorch.extension.llm.server.python.server import build_app
@@ -132,11 +155,17 @@ def main() -> None:
     )
     p.add_argument(
         "--tool-parser",
-        choices=("hermes", "qwen", "none"),
-        default="hermes",
+        choices=("gemma", "hermes", "qwen", "none"),
+        default="gemma",
         help="Tool-call format parser to apply to model output.",
     )
-    p.add_argument("--bos-id", type=int, default=2)
+    p.add_argument(
+        "--bos-id",
+        type=int,
+        default=2,
+        help="BOS token id to prepend in the worker. The launcher strips the "
+        "HF template's literal <bos> before C++ tokenization.",
+    )
     p.add_argument("--eos-id", type=int, default=1)
     p.add_argument(
         "--worker-bin",

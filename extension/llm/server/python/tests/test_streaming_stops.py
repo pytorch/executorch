@@ -25,6 +25,10 @@ from executorch.extension.llm.server.python.worker_client import WorkerError
 from fastapi.testclient import TestClient
 
 FIM = "<|fim_pad|>"  # a broad content special that is NOT a turn terminator
+CHANNEL_OPEN = "<|channel>"
+CHANNEL_CLOSE = "<channel|>"
+THINK = "<|think|>"
+CHANNEL_SPECIALS = {CHANNEL_OPEN, CHANNEL_CLOSE, THINK}
 WEATHER_TOOLS = [
     {"type": "function", "function": {"name": "get_weather", "parameters": {}}}
 ]
@@ -35,7 +39,7 @@ class _SpecialTok:
     eos=<|im_end|> (a terminator) plus <|fim_pad|> (broad-only)."""
 
     eos_token = "<|im_end|>"
-    all_special_tokens = ["<|im_end|>", FIM]
+    all_special_tokens = ["<|im_end|>", FIM, CHANNEL_OPEN, CHANNEL_CLOSE, THINK]
 
     def encode(self, text, add_special_tokens=False):
         return [0] * 5
@@ -100,12 +104,23 @@ class _Runner:
             stats_callback(stats)
 
 
-def _serving(tokens, honor_stops=False, gen_ids=None):
+def _serving(
+    tokens,
+    honor_stops=False,
+    gen_ids=None,
+    content_filter=None,
+    content_filter_specials=None,
+):
     runner = _Runner(tokens, gen_ids=gen_ids, honor_stops=honor_stops)
     template = ChatTemplate(hf_tokenizer_path=None, allow_fallback=True)
     template._hf = _SpecialTok()
     serving = ServingChat(
-        SessionRuntime(runner), template, "test-model", tool_detector_cls=HermesDetector
+        SessionRuntime(runner),
+        template,
+        "test-model",
+        tool_detector_cls=HermesDetector,
+        content_filter=content_filter,
+        content_filter_specials=content_filter_specials,
     )
     return serving, runner
 
@@ -163,6 +178,29 @@ def test_plain_chat_streaming_does_not_leak_broad_special():
     assert content == "Hi"  # the special and everything after is cut
     assert FIM not in content
     assert finish == "stop"
+
+
+def test_plain_chat_streaming_applies_content_filter():
+    def strip_channel(text):
+        return text.replace(f"{CHANNEL_OPEN}secret{CHANNEL_CLOSE}", "").strip()
+
+    serving, runner = _serving(
+        ["Visible ", CHANNEL_OPEN, "secret", CHANNEL_CLOSE],
+        content_filter=strip_channel,
+        content_filter_specials=CHANNEL_SPECIALS,
+    )
+    r = _client(serving).post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
+    content, _ = _sse_content(r.text)
+    assert content == "Visible"
+    assert CHANNEL_OPEN not in content and CHANNEL_CLOSE not in content
+    assert CHANNEL_OPEN not in (runner.captured_config.stop or [])
 
 
 def test_plain_chat_nonstreaming_matches_streaming_visible():

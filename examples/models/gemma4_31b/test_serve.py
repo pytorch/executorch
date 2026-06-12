@@ -89,6 +89,19 @@ def test_spawn_defaults_worker_bin_and_omits_empty_data_path(monkeypatch):
     assert "--warm_resume=false" in cmd
 
 
+def test_strip_gemma_channels_returns_visible_answer():
+    text = "<|channel>thought\nscratch work\n<channel|>The answer."
+    assert serve._strip_gemma_channels(text) == "The answer."
+
+
+def test_strip_gemma_channels_cuts_unclosed_channel():
+    assert serve._strip_gemma_channels("Lead <|channel>thought") == "Lead"
+
+
+def test_strip_gemma_channels_removes_stray_close():
+    assert serve._strip_gemma_channels("Visible<channel|>") == "Visible"
+
+
 def test_rejects_multiple_runners(monkeypatch):
     import sys
 

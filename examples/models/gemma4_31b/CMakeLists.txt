@@ -79,9 +79,7 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 if(EXECUTORCH_BUILD_CUDA)
-  add_executable(
-    gemma4_31b_worker gemma4_31b_worker.cpp gemma4_31b_engine.cpp
-  )
+  add_executable(gemma4_31b_worker gemma4_31b_worker.cpp gemma4_31b_engine.cpp)
   target_include_directories(
     gemma4_31b_worker PUBLIC ${_common_include_directories} ${_json_include}
   )
