@@ -64,19 +64,6 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def VgfCompileSpec.get_output_order_workaround(self) -> bool:
-```
-Gets whether the output order workaround is being applied.
-
-```python
-def VgfCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
-```
-Sets whether to apply the output order workaround.
-
-Args:
-- **output_order_workaround**: Boolean indicating whether to apply the workaround.
-
-```python
 def VgfCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
 Set the configuration for the Arm pass pipeline.
