@@ -56,6 +56,10 @@ add_compile_definitions("$<$<NOT:$<CONFIG:DEBUG>>:NDEBUG>")
 
 # Link options
 add_link_options(-mcpu=${GCC_CPU} -mthumb)
+if(EXECUTORCH_SIZE_TEST_NO_OS_LINK)
+  set(SIZE_TEST_LINKER_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/generic-no-memory.ld")
+  add_link_options(-T${SIZE_TEST_LINKER_SCRIPT})
+endif()
 
 # Set floating point unit
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "\\+fp")
