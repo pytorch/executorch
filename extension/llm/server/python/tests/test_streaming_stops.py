@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Plain-chat streaming special-token cleanup (WI1).
+"""Plain-chat streaming special-token cleanup.
 
 Non-streaming scrubs broad content specials (the full all_special_tokens set) from
 visible content via _strip_specials. Plain-chat streaming must be consistent: a

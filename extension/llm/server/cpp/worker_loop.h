@@ -8,67 +8,47 @@
 
 #pragma once
 
-// Shared model-worker generation loop + JSONL protocol, used by every model
-// worker (the generic text_llm_worker and model-specific workers like
-// qwen3_5_moe_worker). A worker only constructs its engine/tokenizer and calls
-// run_worker_stdio_loop(); the protocol, session management, and the decode
-// loop live here once, so protocol changes land in a single place.
+// Shared model-worker generation loop + JSONL protocol for every model worker
+// (the generic text_llm_worker and model-specific workers like
+// qwen3_5_moe_worker): a worker constructs its engine + tokenizer and calls
+// run_worker_stdio_loop(); the protocol, session routing, and decode loop live
+// here once.
 //
-// V2a (isolation): the worker owns one LLMEngine (weights loaded once) and
-// hands out multiple isolated LLMSessions keyed by session_id, each with its
-// own KV/recurrent state, up to the engine's serving capacity. Execution is
-// synchronous -- one in-flight request at a time, the control plane serializes.
+// The worker owns one LLMEngine (weights loaded once) and serves multiple
+// isolated LLMSessions keyed by session_id, up to the engine's serving
+// capacity; anonymous requests (no session_id) share one scratch session that
+// is reset every request. Execution is synchronous: one in-flight request at a
+// time.
 //
-// V2b.1 (warm append-only resume): a named session keeps its decoded context
-// across requests. On the next request the worker compares the new prompt's
-// token ids against the session's resident token ids; if the resident ids are
-// an exact prefix, it prefills ONLY the suffix (continuing the KV/recurrent
-// state at pos>0) instead of resetting and re-prefilling the whole prompt. The
-// check is exact-token (never string/retokenized text) and falls back to a full
-// reset+prefill whenever exact reuse can't be proven, so it is always correct;
-// the win is when the prompt is a genuine token extension of the prior turn.
+// Warm resume: a named session keeps its decoded context across requests. The
+// new prompt's token ids are matched against the session's resident token ids;
+// on an exact prefix only the suffix is prefilled (continuing at pos>0). The
+// match is exact-token (never retokenized text) and falls back to a full
+// reset+prefill whenever exact reuse can't be proven, so it is always correct.
 // See plan_prefill().
 //
-// Sessions:
-//   - Named: an explicit session_id -> session + resident token ids, created on
-//     first use (or via an `open` op), capped at max_named_sessions = capacity
-//     - 1 (the scratch slot is reserved). 0 when the backend hosts one session.
-//     Warm resume applies to named sessions (unless disabled).
-//   - Scratch: one session for anonymous requests (no session_id), reset every
-//     request -- distinct anonymous callers must never reuse each other's
-//     state.
-//
-// Protocol (one JSON object per line; matches worker_client.py):
+// Protocol (one JSON object per line; matches worker_client.py). stdout carries
+// ONLY protocol JSON; logs go to stderr (ET_LOG):
 //   worker -> stdout, once:    {"ready": true, "max_sessions": int,
 //                               "max_named_sessions": int}
 //   client -> stdin:
-//     generate:   {"max_new_tokens": int, "temperature": float,
-//                  "stop": [str, ...], "session_id"?: str,
-//                  and exactly one prompt form:
-//                    "prompt": str
-//                    "prompt_segments": [{"text": str} | {"ids": [int, ...]}]}
-//     open:       {"op": "open",  "session_id": str}
-//     close:      {"op": "close", "session_id": str}
-//     reset:      {"op": "reset", "session_id": str}  // clear context, keep
-//     slot
+//     generate: {"max_new_tokens": int, "temperature": float, "stop":
+//     [str,...],
+//                "session_id"?: str, and exactly one prompt form:
+//                  "prompt": str
+//                  "prompt_segments": [{"text": str} | {"ids": [int,...]}]}
+//     open/close/reset: {"op": "open"|"close"|"reset", "session_id": str}
 //   worker -> stdout:
-//     generate:   {"token": str} *   (streamed)
-//                 {"done": true, "prompt_tokens": int, "completion_tokens":
-//                 int,
-//                  "finish_reason": "stop"|"length",
-//                  "reused_prompt_tokens": int, "prefilled_prompt_tokens": int,
-//                  "session_reset_reason": "new"|"exact_prefix"|"dirty"|
-//                                          "mismatch"|"equal",
-//                  "generated_token_ids"?: [int, ...]}  // omitted if
-//                  stop-trimmed
-//     open:       {"opened": true, "session_id": str}
-//     close:      {"closed": true, "session_id": str}
-//     reset:      {"reset": true,  "session_id": str}
-//     error:      {"error": str, "code"?: str}  // code: "capacity_exhausted",
-//                                               // "unsupported_session"
-//
-// stdout carries ONLY protocol JSON; all logs go to stderr (ET_LOG). One
-// request at a time (the control plane serializes).
+//     generate: {"token": str} *  (streamed), then
+//               {"done": true, "prompt_tokens": int, "completion_tokens": int,
+//                "finish_reason": "stop"|"length",
+//                "reused_prompt_tokens": int, "prefilled_prompt_tokens": int,
+//                "session_reset_reason": str
+//                (new|exact_prefix|mismatch|dirty|equal),
+//                "generated_token_ids"?: [int,...]}  // omitted if stop-trimmed
+//     open/close/reset: {"opened"|"closed"|"reset": true, "session_id": str}
+//     error:    {"error": str, "code"?: str}  // capacity_exhausted |
+//                                              // unsupported_session
 
 #include <nlohmann/json.hpp>
 
@@ -242,7 +222,12 @@ inline void worker_handle_request(
     const auto& d = step_result.get();
     if (d.is_terminal) {
       finish = "stop";
-      break; // terminal step (EOS / cooperative stop): not emitted or counted
+      // Terminal step (EOS / cooperative stop): the terminal token is neither
+      // emitted as text nor counted in num_generated -> completion_tokens. This
+      // is intentional -- completion_tokens reflects the visible completion the
+      // client received, not internal forward steps; an EOS the user never sees
+      // is not part of that count.
+      break;
     }
     // The token was forwarded into the cache (pos advanced); track it so the
     // resident-ids/position invariant holds. EOS/terminal tokens are not
@@ -264,9 +249,15 @@ inline void worker_handle_request(
     if (stop_hit) {
       finish = "stop"; // reached a stop string: drop it and everything after
       stop_string = true;
-      // The emitted text was trimmed at the stop string, so the next turn's
-      // rendered prompt won't be an exact token extension of resident: force a
-      // reset rather than risk a false prefix match.
+      // Trimming at the stop means the next turn's prompt won't be an exact
+      // token extension of resident, so force a reset (no false prefix match).
+      //
+      // CONTRACT: every *string* stop is non-resumable this way (trim + dirty +
+      // omit generated_token_ids) -- right for user/request and content-cleanup
+      // stops, which change visible text. A clean turn terminator stays
+      // warm-resumable only if the engine surfaces it as a terminal/EOS token
+      // id (handled above via d.is_terminal; e.g. Qwen adds <|im_end|> to
+      // eos_ids).
       st.dirty = true;
       break;
     }
@@ -400,8 +391,8 @@ class WorkerSessions {
 // Emit {"ready": true, ...}, then read JSONL requests from stdin and dispatch
 // each (generate / open / close / reset), reporting exceptions as
 // {"error": ...} and continuing to serve. Returns 0 when stdin closes.
-// enable_warm_resume gates V2b.1 warm suffix reuse for named sessions (off ->
-// every request resets, the V2a behavior; useful for A/B measurement).
+// enable_warm_resume gates warm suffix reuse for named sessions (off -> every
+// request resets and re-prefills; useful for A/B measurement).
 inline int run_worker_stdio_loop(
     LLMEngine& engine,
     ::tokenizers::Tokenizer& tokenizer,

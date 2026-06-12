@@ -27,7 +27,7 @@ rather than silently ignored — a client relying on them would otherwise get
 wrong behavior: `top_p` (anything other than `1.0`), `seed`, `n` (> 1),
 `reasoning_effort`, `frequency_penalty`/`presence_penalty` (nonzero), `top_k`,
 `logit_bias`, `tool_choice` = `"required"` or a specific-function choice
-(forcing/restricting a call needs constrained decoding, which v1 lacks),
+(forcing/restricting a call needs constrained decoding, not implemented),
 `response_format` other than `{"type": "text"}` (no constrained JSON),
 `logprobs`/`top_logprobs` (not returned), and `parallel_tool_calls: false`
 (single-call can't be guaranteed without constraining). Unknown fields that
@@ -62,12 +62,18 @@ status (e.g. `400 context_length_exceeded` when `--max-context` is set and the
 prompt exceeds it). A mid-stream failure emits an `error` SSE event then
 `[DONE]` rather than dropping the socket. Cancellation is best-effort: on a
 client disconnect the control plane stops consuming the stream (`stop()`), but
-the worker runs the in-flight request to completion — V1 has no mid-generation
-interrupt protocol.
+the worker runs the in-flight request to completion — there is no mid-generation
+interrupt protocol. Because execution is serialized on one worker, an abandoned
+generation also **head-of-line blocks** every other session until it finishes;
+real interruption (a control pipe / between-step stdin poll / request-id cancel
+op) is future work.
 
-### Prefix cache
+### Prefix / KV reuse
 
-Not in V1 serving. The control plane holds no KV state and does no prefix-reuse
-routing; each request is an independent prompt to the worker. If turn-to-turn KV
-prefix reuse returns, it will live inside the worker/session (where the KV cache
-is), not in the control plane.
+No global (cross-session) prefix cache: the control plane holds no KV state and
+does no prefix-reuse routing, so a system prompt shared by two different sessions
+is prefilled independently for each. Per-session append-only warm resume *is*
+implemented worker-side for engines that support it — a named session whose next
+request is an exact-token extension of its resident context prefills only the new
+suffix. All KV/resident state lives inside the worker/session, never the control
+plane.

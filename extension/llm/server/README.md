@@ -11,6 +11,11 @@ extension/llm/server/
   # cpp/         # future: no-Python single-binary server
 ```
 
+**Which entry point:** use `extension.llm.server.python.server` for generic
+TextLLM `.pte` models; use `examples.models.qwen3_5_moe.serve` for Qwen3.5-MoE
+CUDA (it needs the `.ptd` delegate blob, Qwen XML tool parsing, and the Qwen
+engine/session worker).
+
 Why this layout: the OpenAI contract is identical across languages, so the
 **spec** and **conformance** suite are shared, and each language gets its own
 implementation directory. The real cross-language reuse comes from the C++
@@ -26,8 +31,8 @@ Hugging Face chat templates (`--hf-tokenizer`), `temperature` / `max_tokens` /
 (`<tool_call>...</tool_call>` JSON, complete calls only; model-specific launchers
 may select the Qwen XML format) with `tool_choice="none"`,
 structured API errors, and best-effort cancellation. One worker process with
-serialized execution; it hosts many isolated sessions on one weight load (warm
-append-only resume across turns). KV/prefix state lives inside the
+serialized execution; a worker can host isolated sessions on one weight load when its engine reports
+capacity > 1 (with warm append-only resume across turns). KV/prefix state lives inside the
 worker/session, not the control plane. Unsupported params (including `top_p`,
 `seed`, `n>1`, `reasoning_effort`, penalties, `logit_bias`, `response_format`,
 `logprobs`, and `tool_choice="required"`) are rejected with a structured 400
@@ -63,7 +68,8 @@ Point pi at the server via `~/.pi/agent/models.json`:
 ```json
 { "providers": { "executorch": {
     "baseUrl": "http://127.0.0.1:8000/v1", "api": "openai-completions",
-    "apiKey": "x", "models": [ { "id": "<model-id>" } ] } } }
+    "apiKey": "x", "models": [ { "id": "<model-id>",
+      "compat": { "sendSessionAffinityHeaders": true } } ] } } }
 ```
 
 Other OpenAI-compatible clients use their own schema — generically: base URL

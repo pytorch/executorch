@@ -398,7 +398,7 @@ void mutable_state_set_active(MutableStateContext ctx, int token) {
 void mutable_state_note_handle(CudaDelegateHandle* handle) {
   MutableStateContext ctx = tl_loading_ctx;
   if (ctx == kInvalidMutableContext) {
-    return; // not loading within a managed context (e.g. non-V2 path)
+    return; // not loading within a managed context (single-session path)
   }
   auto& m = mgr();
   std::lock_guard<std::mutex> g(m.mu);

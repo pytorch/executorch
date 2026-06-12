@@ -17,7 +17,7 @@
 // isolated points are where an MLX runtime would slot in. MLX is NOT
 // implemented or validated here.
 //
-// V2 (CUDA): the ENGINE is multi-session — one shared Module (weights loaded
+// CUDA: the ENGINE is multi-session — one shared Module (weights loaded
 // once); create_session() hands out multiple logical sessions, each rebinding
 // its own GPU buffers for the model's mutable state (KV/conv/recurrent) before
 // execute, serialized by the engine lock. serving_capacity() reports how many
@@ -26,9 +26,9 @@
 // backends/cuda/runtime/cuda_mutable_state).
 //
 // The SERVING path (qwen3_5_moe_worker + control plane) exposes this over the
-// worker protocol: the worker routes requests to per-session_id state (V2a) and
+// worker protocol: the worker routes requests to per-session_id state and
 // reuses each session's resident context across requests (warm append-only
-// resume, V2b.1). Execution stays serialized (one in-flight request).
+// resume). Execution stays serialized (one in-flight request).
 
 #pragma once
 
@@ -53,7 +53,7 @@ struct Qwen35MoEConfig {
   std::string model_path; // .pte
   std::string data_path; // .ptd (CUDA delegate blob); empty if none
   std::string tokenizer_path; // HuggingFace tokenizer.json
-  // V2 multi-session: max physical sessions to advertise when the backend can
+  // Multi-session: max physical sessions to advertise when the backend can
   // host them without weight duplication (CUDA per-session mutable rebinding).
   // Clamped to 1 if the backend cannot rebind.
   int32_t max_sessions = 1;
@@ -74,7 +74,7 @@ class ET_EXPERIMENTAL Qwen35MoEEngine : public LLMEngine {
   ::executorch::runtime::Result<std::unique_ptr<LLMSession>> create_session()
       override;
 
-  // CUDA V2: one shared Module (one weight allocation); each session rebinds
+  // CUDA: one shared Module (one weight allocation); each session rebinds
   // its own GPU buffers for the model's mutable state. Reports
   // config.max_sessions when the backend supports per-session rebinding, else
   // fails closed to 1.

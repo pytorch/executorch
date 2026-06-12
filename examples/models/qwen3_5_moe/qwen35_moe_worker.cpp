@@ -14,9 +14,8 @@
 // protocol and decode loop every worker uses (worker_loop.h); this file only
 // constructs the engine/session.
 //
-// Isolation rationale: executing the AOTI CUDA model inside a live asyncio HTTP
-// process segfaults in the int4 matmul (validated). Here the model runs in a
-// plain synchronous loop in its own process, which is reliable.
+// Model execution is isolated in this C++ worker for CUDA/AOTI reliability (see
+// the example README for the full rationale).
 //
 // Multi-session: the engine loads weights once and hosts multiple isolated
 // sessions on that one ~18GB allocation; the shared worker loop (worker_loop.h)

@@ -56,7 +56,7 @@ _NUM_RE = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$")
 
 
 class _UndefinedToolCall(Exception):
-    """A call named a tool not in the request's `tools`. v1 degrades the WHOLE
+    """A call named a tool not in the request's `tools`. Degrades the WHOLE
     response to visible text rather than emitting a partial set (spec)."""
 
 

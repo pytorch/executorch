@@ -72,6 +72,28 @@ Key flags:
 | `--num-runners N` | Worker processes — **1 only** (one worker hosts many isolated sessions on one weight load; more would duplicate weights) |
 | `--worker-bin PATH` | path to the `text_llm_worker` binary (default: `cmake-out/extension/llm/server/cpp/text_llm_worker`) |
 
+## Smoke test
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/v1/models
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"<model-id>","messages":[{"role":"user","content":"hello"}]}'
+```
+
+## Sessions
+
+When the worker reports named-session capacity (a worker whose engine supports it,
+launched with `--max-sessions N >= 2`; the generic `text_llm_worker` reports
+none), a request can target a persistent per-conversation session:
+
+- body `session_id`, or headers `X-ExecuTorch-Session-ID` / `session_id` /
+  `x-session-affinity` (body wins) — a stable id reuses that session's KV across
+  turns (warm resume).
+- `POST /v1/sessions/{id}/reset` — clear its context, keep the slot.
+- `DELETE /v1/sessions/{id}` — free its context and slot.
+
 ## Use from an agent harness
 
 - **opencode** (`opencode.json`):
@@ -85,8 +107,12 @@ Key flags:
   ```json
   { "providers": { "executorch": {
       "baseUrl": "http://127.0.0.1:8000/v1", "api": "openai-completions",
-      "apiKey": "x", "models": [ { "id": "qwen2.5-coder" } ] } } }
+      "apiKey": "x", "models": [ { "id": "qwen2.5-coder",
+        "compat": { "sendSessionAffinityHeaders": true } } ] } } }
   ```
+  `compat.sendSessionAffinityHeaders` makes pi route each conversation to its own
+  session (per-conversation isolation + warm resume); without it every request
+  uses the anonymous scratch session.
 
 ## Validate
 
@@ -115,15 +141,11 @@ plane (C++): a worker process (`text_llm_worker`) that owns all model state
 all token stepping and KV mutation; it speaks one JSON object per line on
 stdin/stdout.
 
-JSONL protocol (stdout carries protocol JSON only; logs go to stderr):
-
-```
-worker -> stdout, once at startup:  {"ready": true}
-client -> stdin,  per request:      {"prompt", "max_new_tokens", "temperature"}
-worker -> stdout, per request:      {"token": str} *        (streamed)
-                                    {"done": true, "prompt_tokens", "completion_tokens"}
-                                or  {"error": str}
-```
+The JSONL protocol — `generate` / `open` / `close` / `reset` ops, the `prompt` /
+`prompt_segments` prompt forms, warm-resume stats, and `generated_token_ids` — is
+defined in `cpp/worker_loop.h` (the worker side, the canonical reference) and
+driven by `worker_client.py` (the Python transport); stdout carries protocol JSON
+only, logs go to stderr.
 
 Process isolation is the reliable shape for CUDA/AOTI models: executing the model
 inside a live asyncio server process can segfault (validated with Qwen3.5-MoE);
@@ -161,7 +183,7 @@ Session capacity is determined by the worker/engine — a single worker hosts ma
 isolated sessions on one weight load — so `--num-runners` accepts 1; extra worker
 processes would each carry their own copy of the weights.
 
-The **generic `text_llm_worker` is scratch-only (V1)**: `TextLLMEngine::serving_capacity()`
+The **generic `text_llm_worker` is scratch-only**: `TextLLMEngine::serving_capacity()`
 is a conservative 1, so `max_named = max(0, capacity-1) = 0` — the default
 `server.py` serves only the anonymous scratch session (no named `session_id`s, no
 warm resume). The named-session / warm-resume / token-ID machinery is exercised
@@ -169,10 +191,29 @@ by a model-specific worker whose engine reports capacity > 1 (the Qwen3.5-MoE CU
 worker). This is intentional; the generic worker stays minimal until a backend is
 proven to host multiple physical sessions without duplicating weights.
 
-Cancellation is best-effort: a worker request runs to completion and is not
-interruptible mid-generation in V1, so `runner.stop()` means "the control plane
-stops consuming and the worker finishes the current request" rather than a hard
-cancel. There is **no prefix cache in V1 serving**; if KV prefix reuse returns it
-will live inside the worker/session, not in the Python control plane. Multiple
-workers, weight sharing across sessions on a backend that supports it, adaptive
-thinking, and multi-session subagents are future work.
+**Cancellation is best-effort, and it head-of-line blocks.** `WorkerClient.stop()`
+is a no-op, and `SessionRuntime.generate_stream()` holds the single worker lock until
+the worker naturally finishes. On client disconnect/cancellation the server calls
+`stop()` then awaits the in-flight worker request, so the abandoned generation runs to
+completion **and blocks every other session on that worker until it does** — a long or
+runaway generation stalls all concurrent requests (including a subagent fan-out).
+A disconnected client does **not** interrupt the C++ worker mid-generation. Real
+interruption needs a future protocol change — e.g. a control pipe, non-blocking stdin
+polling between decode steps, or request ids plus an out-of-band cancel op.
+
+**Warm resume needs true turn terminators surfaced as EOS/terminal token ids, not just
+string stops.** The worker treats every *string* stop the same — it trims the output,
+marks the session dirty, and omits `generated_token_ids` — which is correct for
+user/request stops and broad content-cleanup stops (they change visible text, so the
+turn is non-resumable). A clean model turn terminator is only resumable if the engine
+surfaces it as a terminal/EOS **token id** (the Qwen engine adds `<|im_end|>` to
+`eos_ids`, so it ends the turn before string-stop matching and stays resumable). A
+backend whose terminator is only a string stop would mark every turn dirty and never
+warm-resume; distinguishing resumable terminators from trim-stops in the protocol is
+future work.
+
+There is **no global (cross-session) prefix cache**; per-session append-only warm
+resume is worker-side (for engines that support it), and all KV/resident state
+lives inside the worker/session, never the Python control plane. Multiple workers,
+weight sharing across sessions on a backend that supports it, adaptive thinking,
+and multi-session subagents are future work.

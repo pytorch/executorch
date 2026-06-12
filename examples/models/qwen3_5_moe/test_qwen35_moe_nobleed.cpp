@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// GPU no-bleed integration proof for the CUDA V2 per-session mutable-state
+// GPU no-bleed integration proof for the CUDA per-session mutable-state
 // rebind -- the REAL guard for mutable-buffer completeness (an under-declared
 // buffer would be shared across sessions; only behavior catches that, not the
 // declared-subset-of-discovered bookkeeping check). This is the automated form
-// of the manual "A solo / A inter" proof in the V2 foundation commit.
+// of the manual "A solo / A inter" multi-session isolation proof.
 //
 // CRITICAL: sessions are interleaved at EXECUTE granularity (A prefill, B
 // prefill, A decode, B decode, ...). The mechanism under test is the

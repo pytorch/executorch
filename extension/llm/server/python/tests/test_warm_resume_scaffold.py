@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Warm-resume generation-scaffold reproduction (V2b.1.5).
+"""Warm-resume generation-scaffold reproduction.
 
 Qwen3's template prefills a deterministic ``<think>`` scaffold into the
 generation prompt (so it lands in resident KV) but strips it when re-rendering a
@@ -510,7 +510,7 @@ def test_token_level_exact_prefix_toolloop_think():
     assert assembled[: len(resident)] == resident
 
 
-# --- WI4a: generation_preamble threads tools --------------------------------
+# --- generation_preamble threads tools ------------------------------------
 
 
 def test_generation_preamble_threads_tools():

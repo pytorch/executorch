@@ -45,7 +45,7 @@ class FakeRunner:
         self._tokens = list(tokens)
         self._fail = fail
         self._finish_reason = finish_reason  # worker-reported stop reason, if any
-        self._gen_ids = list(gen_ids or [])  # ids reported per turn (V2b.1.5)
+        self._gen_ids = list(gen_ids or [])  # ids reported per turn
         self.captured_config = None
         self.stopped = False
         self.reset_count = 0

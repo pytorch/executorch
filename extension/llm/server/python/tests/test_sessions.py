@@ -6,7 +6,7 @@
 
 """Session-routing contract tests (fake worker, no model/GPU).
 
-V2a: one worker hosts multiple isolated sessions, routed by session_id, admitted
+One worker hosts multiple isolated sessions, routed by session_id, admitted
 up front so capacity refusals are HTTP statuses rather than mid-stream errors.
 These assert the HTTP/wire contract only.
 """
@@ -152,9 +152,8 @@ _FAKE_REPLY = "Hello, world"
 
 
 def test_token_id_segments_splice_prior_assistant_turn(make_client):
-    # V2b.1.5: the server stores turn-1's generated ids and, on turn 2, sends
-    # prompt_segments that splice them back as an exact {ids} run (not text) --
-    # but only because the client echoes back the assistant turn we generated.
+    # Splices turn-1's stored generated ids back as an exact {ids} run on turn 2,
+    # only because the client echoes back the assistant turn we generated.
     client, fake = make_client(max_named_sessions=2, gen_ids=[7, 8, 9])
     assert (
         _chat_msgs(client, [{"role": "user", "content": "hi"}], "s").status_code == 200
@@ -368,7 +367,7 @@ class _HFToolSpecials:
 
 
 def test_stop_set_narrow_but_strip_set_broad():
-    # Two-set split (work item 1): the generation/pre-parse-truncation set is
+    # The generation/pre-parse-truncation set is
     # NARROW (turn terminators only) so a <tool_call> is never halted or cut
     # before the parser sees it; the final content-strip set stays BROAD so stray
     # specials can't leak into visible content.
@@ -396,7 +395,7 @@ def test_stop_set_narrow_but_strip_set_broad():
 
 
 def test_injected_assistant_exemplar_falls_back_to_text():
-    # 5d: a client-injected assistant turn we never generated (few-shot exemplar /
+    # A client-injected assistant turn we never generated (few-shot exemplar /
     # pre-seeded turn) shifts the ordinal alignment -> fingerprint mismatch ->
     # safe text fallback (no stale ids spliced).
     from executorch.extension.llm.server.python.openai_transcript import (
