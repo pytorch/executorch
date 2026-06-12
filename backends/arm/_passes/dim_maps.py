@@ -525,8 +525,8 @@ class ViewMap:
             != Counter(factor.key for factor in target_factors)
         ):
             return None
-        source_factors = cast(list[_Factor], source_factors)
-        target_factors = cast(list[_Factor], target_factors)
+        source_factors = source_factors
+        target_factors = target_factors
 
         # Compute prime factor permutation between input and output shapes
         factor_count = len(source_factors)
@@ -635,6 +635,7 @@ class PermuteMap:
         if normalized is None:
             raise ValueError(f"Invalid permute dims: {permute_dims}")
         self.permute_dims = normalized
+
     def map_dims(self, dims: int | Sequence[int]) -> list[int]:
         """Computes mapped dims s.t.
 
