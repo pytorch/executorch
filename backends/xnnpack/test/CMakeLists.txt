@@ -69,3 +69,22 @@ target_include_directories(
           ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
           ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
 )
+
+# Graph runtime E2E tests (requires XNNPACK runtime).
+et_cxx_test(
+  backends_xnnpack_graph_e2e_test
+  SOURCES
+  runtime/test_e2e.cpp
+  EXTRA_LIBS
+  xnnpack_backend
+  XNNPACK
+  pthreadpool
+  cpuinfo
+  xnnpack-microkernels-prod
+)
+target_include_directories(
+  backends_xnnpack_graph_e2e_test
+  PRIVATE ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/XNNPACK/include
+          ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
+          ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+)
