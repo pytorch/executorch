@@ -83,7 +83,9 @@ option(EXECUTORCH_BUILD_WEBGPU_PROFILING
        "Enable WebGPU GPU timestamp-query profiling" OFF
 )
 if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
-  target_compile_definitions(webgpu_backend PRIVATE WGPU_BACKEND_ENABLE_PROFILING)
+  target_compile_definitions(
+    webgpu_backend PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+  )
 endif()
 
 # Link with --whole-archive for static registration of backend + ops
