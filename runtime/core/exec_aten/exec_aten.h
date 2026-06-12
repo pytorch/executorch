@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <executorch/runtime/core/error.h> // @manual
 #include <executorch/runtime/core/result.h> // @manual
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
@@ -41,7 +43,6 @@
 #include <executorch/runtime/core/portable_type/complex.h> // @manual
 #include <executorch/runtime/core/portable_type/device.h> // @manual
 #include <executorch/runtime/core/portable_type/half.h> // @manual
-#include <executorch/runtime/core/portable_type/optional.h> // @manual
 #include <executorch/runtime/core/portable_type/qint_types.h> // @manual
 #include <executorch/runtime/core/portable_type/scalar.h> // @manual
 #include <executorch/runtime/core/portable_type/scalar_type.h> // @manual

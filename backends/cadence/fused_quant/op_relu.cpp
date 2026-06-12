@@ -16,10 +16,10 @@ namespace cadence {
 namespace fused_quant {
 namespace native {
 
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 namespace {
 

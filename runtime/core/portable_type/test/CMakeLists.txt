@@ -23,7 +23,6 @@ set(_test_srcs
     bfloat16_test.cpp
     dont_shadow_complex_test.c
     half_test.cpp
-    optional_test.cpp
     scalar_test.cpp
     tensor_impl_test.cpp
     tensor_test.cpp

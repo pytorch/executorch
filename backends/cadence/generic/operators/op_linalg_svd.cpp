@@ -261,7 +261,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> linalg_svd_out(
     const Tensor& A,
     bool full_matrices,
     bool compute_uv,
-    ::executorch::aten::optional<::executorch::aten::string_view> driver,
+    std::optional<::executorch::aten::string_view> driver,
     Tensor& U,
     Tensor& S,
     Tensor& Vh) {
