@@ -133,6 +133,7 @@ static bool test_chained_add(const std::string& model_path) {
   return true;
 }
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
 // Capacity-overrun must throw; runs without a device or TimestampQuery.
 static bool test_query_pool_overrun_throws() {
   printf("\n--- Test: WebGPUQueryPool capacity-overrun guard ---\n");
@@ -255,6 +256,7 @@ static bool test_query_pool_roundtrip(const WebGPUContext& ctx) {
   printf("PASS: WebGPUQueryPool roundtrip -- non-zero GPU kernel duration\n");
   return true;
 }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 int main(int argc, char** argv) {
   std::string model_path = "webgpu_add_test.pte";
@@ -281,8 +283,11 @@ int main(int argc, char** argv) {
   set_default_webgpu_context(&ctx);
   printf("WebGPU device acquired (native)\n");
 
-  bool ok = test_query_pool_overrun_throws();
+  bool ok = true;
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  ok = test_query_pool_overrun_throws() && ok;
   ok = test_query_pool_roundtrip(ctx) && ok;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
   ok = test_single_add(model_path) && ok;
 
   if (!chained_model_path.empty()) {
