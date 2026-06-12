@@ -108,6 +108,10 @@ jobs:
         python3.12 -m venv zephyr_test_venv
         source zephyr_test_venv/bin/activate
 
+        # The Zephyr SDK host tools carry their own runtime. The CI Docker image sets a
+        # global LD_LIBRARY_PATH for other jobs, which can make SDK tools pick host libs.
+        unset LD_LIBRARY_PATH
+
         # Test zephyr backend
         .ci/scripts/test_zephyr.sh \
           --targets "${TARGET_LIST:-${{ matrix.target }}}" \
