@@ -13,7 +13,9 @@
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
 #include <vector>
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 namespace executorch {
 namespace backends {
@@ -139,6 +141,7 @@ WebGPUContext create_webgpu_context() {
     device_desc.requiredLimits = &supported_limits;
   }
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
   // Bench: enable TimestampQuery if available; fail-open (skip timing if not).
   std::vector<WGPUFeatureName> required_features;
   if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_TimestampQuery)) {
@@ -147,6 +150,7 @@ WebGPUContext create_webgpu_context() {
     device_desc.requiredFeatures = required_features.data();
     ctx.timestamp_supported = true;
   }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
   device_desc.uncapturedErrorCallbackInfo.callback = on_device_error;
 
@@ -203,6 +207,10 @@ WebGPUContext* get_default_webgpu_context() {
 }
 
 void destroy_webgpu_context(WebGPUContext& ctx) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  // Release device-child GPU resources before the device handle.
+  ctx.querypool.reset();
+#endif // WGPU_BACKEND_ENABLE_PROFILING
   if (ctx.queue) {
     wgpuQueueRelease(ctx.queue);
     ctx.queue = nullptr;
