@@ -196,7 +196,7 @@ class ViewMap:
     Additional conditions apply for the map being valid depending on if the mapped dim
     is a reduction operator or a permutation operator, as described in the respective methods.
 
-    SymInts are partialy supported by factorizing them as single primes as the true
+    SymInts are partially supported by factorizing them as single primes as the true
     value is not known, causing potentially fewer valid mappings.
 
     """
@@ -515,21 +515,24 @@ class ViewMap:
     ) -> _ViewGroups | None:
         """Build source/target axis groups from ordered prime factors."""
 
-        # Compute orderd prime factorizations of input and output shapes
+        # Compute ordered prime factorizations of input and output shapes
         source_factors = _factor_shape(source_shape)
         target_factors = _factor_shape(target_shape)
-        assert (
-            source_factors is not None
-            and (target_factors is not None)
-            and Counter(factor.key for factor in source_factors)
-            == Counter(factor.key for factor in target_factors)
-        ), "Invalid view shapes"
+        if (
+            source_factors is None
+            or target_factors is None
+            or Counter(factor.key for factor in source_factors)
+            != Counter(factor.key for factor in target_factors)
+        ):
+            return None
+        source_factors = cast(list[_Factor], source_factors)
+        target_factors = cast(list[_Factor], target_factors)
 
         # Compute prime factor permutation between input and output shapes
         factor_count = len(source_factors)
         permutation = cls._find_permutation(source_factors, target_factors)
-        assert permutation is not None, "Invalid view shapes"
-
+        if permutation is None:
+            return None
         # Find groups of factors that must be mapped together to preserve view equivalence
         union_find = _UnionFind(factor_count)
         cls._union_factors_sharing_axes(
@@ -626,8 +629,12 @@ class PermuteMap:
         assert isinstance(permute_dims, Sequence) and not isinstance(
             permute_dims, (str, bytes)
         )
-        self.permute_dims = list(cast(Sequence[int], permute_dims))
-
+        normalized = _normalize_permutation(
+            cast(Sequence[int], permute_dims), len(cast(Sequence[int], permute_dims))
+        )
+        if normalized is None:
+            raise ValueError(f"Invalid permute dims: {permute_dims}")
+        self.permute_dims = normalized
     def map_dims(self, dims: int | Sequence[int]) -> list[int]:
         """Computes mapped dims s.t.
 
