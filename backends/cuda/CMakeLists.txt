@@ -184,7 +184,9 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp
+                               runtime/cuda_mutable_state.cpp
+)
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
   # symbols exported from aoti_cuda_shims.dll.

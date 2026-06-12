@@ -20,6 +20,8 @@
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
+#include <nlohmann/json.hpp>
 #else
 #include <executorch/extension/llm/sampler/util.h>
 #endif
@@ -71,10 +73,11 @@ Result<uint64_t> read_sampled_token(
 #endif
 }
 
-// Build a Qwen Module with shared mutable arenas (so prefill and decode share
-// KV/conv/recurrent state) and, on CUDA, the weight-sharing/cuda-graph backend
-// options that MUST be set before load_method. Loads the prefill+decode methods
-// (this is the heavy ~weights load). Shared by create_session() and reset().
+// Build the one shared Qwen Module: shared mutable arenas (so prefill and
+// decode share KV/conv/recurrent state) and, on CUDA, the weight-sharing
+// backend option that MUST be set before load_method. Loads the prefill+decode
+// methods once (the heavy ~weights load). Called once when the engine is
+// created.
 Result<std::unique_ptr<Module>> build_qwen_module(
     const Qwen35MoEConfig& config) {
   std::vector<std::string> data_files;
@@ -92,13 +95,9 @@ Result<std::unique_ptr<Module>> build_qwen_module(
 
 #ifdef EXECUTORCH_BUILD_CUDA
   // Backend options are read during backend init(), so they must be set before
-  // load_method.
-  if (config.cuda_graph) {
-    executorch::runtime::BackendOptions<1> cuda_opts;
-    cuda_opts.set_option("enable_cuda_graph_for_method", "decode");
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        executorch::runtime::set_option("CudaBackend", cuda_opts.view()));
-  }
+  // load_method. (CUDA graph is intentionally not enabled: V2 rebinds each
+  // session's mutable buffers before execute, which a captured graph's baked
+  // pointers would ignore.)
   {
     // Cross-method per-FQN weight sharing: prefill and decode reuse one weight
     // allocation instead of duplicating it (critical to fit on one GPU).
@@ -115,22 +114,82 @@ Result<std::unique_ptr<Module>> build_qwen_module(
   return module;
 }
 
+#ifdef EXECUTORCH_BUILD_CUDA
+// Read the model's per-session mutable-buffer FQNs from its export metadata
+// ({"version":1,"mutable_buffers":[...]}) and register them with the CUDA
+// backend so it can give each session its own GPU buffers for that state.
+Error register_mutable_fqns(Module* module, int mutable_ctx) {
+  auto res = module->execute("get_mutable_buffer_metadata");
+  if (res.error() != Error::Ok) {
+    ET_LOG(
+        Error,
+        "Qwen35MoEEngine: model has no get_mutable_buffer_metadata; re-export "
+        "for V2 multi-session");
+    return res.error();
+  }
+  const auto& outs = res.get();
+  if (outs.empty() || !outs[0].isString()) {
+    ET_LOG(Error, "get_mutable_buffer_metadata did not return a string");
+    return Error::InvalidProgram;
+  }
+  std::string json_str(outs[0].toString());
+  auto j = nlohmann::json::parse(json_str, nullptr, /*allow_exceptions=*/false);
+  if (j.is_discarded() || !j.is_object()) {
+    ET_LOG(Error, "get_mutable_buffer_metadata is not a valid JSON object");
+    return Error::InvalidProgram;
+  }
+  if (!j.contains("version") || !j["version"].is_number_integer() ||
+      j["version"].get<int>() != 1) {
+    ET_LOG(Error, "get_mutable_buffer_metadata: unsupported/missing version");
+    return Error::InvalidProgram;
+  }
+  if (!j.contains("mutable_buffers") || !j["mutable_buffers"].is_array() ||
+      j["mutable_buffers"].empty()) {
+    ET_LOG(
+        Error,
+        "get_mutable_buffer_metadata: mutable_buffers must be a non-empty array");
+    return Error::InvalidProgram;
+  }
+  std::vector<std::string> fqns;
+  for (const auto& f : j["mutable_buffers"]) {
+    if (!f.is_string() || f.get<std::string>().empty()) {
+      ET_LOG(
+          Error,
+          "get_mutable_buffer_metadata: every mutable_buffers entry must be a "
+          "non-empty string");
+      return Error::InvalidProgram;
+    }
+    fqns.push_back(f.get<std::string>());
+  }
+  ::executorch::backends::cuda::mutable_state_register_fqns(mutable_ctx, fqns);
+  return Error::Ok;
+}
+#endif
+
 // LLMSession over the Qwen3.5 MoE prefill/decode methods. Owns one physical
 // Module (one weight allocation + its KV/recurrent/conv state). Internal: the
 // server depends only on the LLMSession base.
 class Qwen35MoESession : public LLMSession {
  public:
   Qwen35MoESession(
-      std::unique_ptr<Module> module,
+      Module* module,
+      std::mutex* exec_mutex,
+      int mutable_ctx,
+      int session_token,
+      std::atomic<int>* live_sessions,
       ::tokenizers::Tokenizer* tokenizer,
       std::unordered_map<std::string, int64_t> metadata,
       std::unordered_set<uint64_t> eos_ids)
-      : module_(std::move(module)),
+      : module_(module),
+        exec_mutex_(exec_mutex),
+        mutable_ctx_(mutable_ctx),
+        session_token_(session_token),
+        live_sessions_(live_sessions),
         tokenizer_(tokenizer),
         metadata_(std::move(metadata)),
         eos_ids_(std::move(eos_ids)) {
-    // Persistent single-step decode buffers: stable addresses are required so
-    // CUDA-graph capture (which records buffer pointers) can replay each step.
+    // Persistent single-step decode buffers, reused (updated in place) across
+    // decode steps to avoid per-step reallocation.
     decode_tokens_ = from_blob(
         decode_token_data_, {1, 1}, executorch::aten::ScalarType::Long);
     decode_pos_ =
@@ -139,6 +198,19 @@ class Qwen35MoESession : public LLMSession {
     temp_tensor_ =
         from_blob(&temp_val_, {1}, executorch::aten::ScalarType::Float);
 #endif
+  }
+
+  ~Qwen35MoESession() override {
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (session_token_ != ::executorch::backends::cuda::kNoMutableSession) {
+      ::executorch::backends::cuda::mutable_state_destroy_session(
+          mutable_ctx_, session_token_);
+    }
+#endif
+    // Release the engine's capacity slot reserved in create_session().
+    if (live_sessions_ != nullptr) {
+      live_sessions_->fetch_sub(1);
+    }
   }
 
   Error prefill_tokens(
@@ -206,25 +278,12 @@ class Qwen35MoESession : public LLMSession {
     set_temp(first_token_temp);
     inputs.push_back(EValue(temp_tensor_));
 #endif
-    auto res = module_->execute(method, inputs);
-    ET_CHECK_OK_OR_RETURN_ERROR(res.error());
     auto sampled =
-        read_sampled_token(res.get()[0].toTensor(), first_token_temp);
+        run_locked(method, inputs, first_token_temp, /*sync_after=*/true);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
     pending_ = sampled.get();
     prev_decode_token_.reset();
     pos_ += T; // the prompt tokens are now resident in KV/state
-#ifdef EXECUTORCH_BUILD_CUDA
-    // Make prefill's writes to the shared mutable arenas visible to decode
-    // (which may run on a different stream). This barrier is relied upon for
-    // correctness, and it also surfaces any async error from the prefill
-    // launch, so a non-success here must abort the request rather than decode
-    // on stale or corrupt state.
-    if (cudaDeviceSynchronize() != cudaSuccess) {
-      ET_LOG(Error, "prefill_tokens: cudaDeviceSynchronize failed");
-      return Error::Internal;
-    }
-#endif
     return Error::Ok;
   }
 
@@ -296,9 +355,8 @@ class Qwen35MoESession : public LLMSession {
     set_temp(temperature_);
     inputs.push_back(EValue(temp_tensor_));
 #endif
-    auto res = module_->execute("decode", inputs);
-    ET_CHECK_OK_OR_RETURN_ERROR(res.error());
-    auto sampled = read_sampled_token(res.get()[0].toTensor(), temperature_);
+    auto sampled =
+        run_locked("decode", inputs, temperature_, /*sync_after=*/false);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
     pending_ = sampled.get();
     prev_decode_token_ = token;
@@ -347,7 +405,49 @@ class Qwen35MoESession : public LLMSession {
   }
 #endif
 
-  std::unique_ptr<Module> module_;
+  // Run a method with THIS session's mutable state bound, then read the sampled
+  // token — all inside one engine-lock critical section so another session
+  // cannot rebind between this session's rebind, execute, and read-out.
+  Result<uint64_t> run_locked(
+      const char* method,
+      std::vector<EValue>& inputs,
+      float temperature,
+      bool sync_after) {
+    std::lock_guard<std::mutex> guard(*exec_mutex_);
+#ifdef EXECUTORCH_BUILD_CUDA
+    ::executorch::backends::cuda::mutable_state_set_active(
+        mutable_ctx_, session_token_);
+#endif
+    auto res = module_->execute(method, inputs);
+#ifdef EXECUTORCH_BUILD_CUDA
+    ::executorch::backends::cuda::mutable_state_set_active(
+        mutable_ctx_, ::executorch::backends::cuda::kNoMutableSession);
+#endif
+    ET_CHECK_OK_OR_RETURN_ERROR(res.error());
+    auto sampled = read_sampled_token(res.get()[0].toTensor(), temperature);
+    ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
+#ifdef EXECUTORCH_BUILD_CUDA
+    // Prefill runs on a different stream than decode; sync so its writes to the
+    // session's mutable buffers are visible to the session's first decode (also
+    // surfaces any async launch error). Decode reads its own writes in stream
+    // order, so it does not need this.
+    if (sync_after && cudaDeviceSynchronize() != cudaSuccess) {
+      ET_LOG(Error, "run_locked: cudaDeviceSynchronize failed");
+      return Error::Internal;
+    }
+#else
+    (void)sync_after;
+#endif
+    return sampled.get();
+  }
+
+  Module* module_; // non-owning; the engine's one shared physical model
+  std::mutex*
+      exec_mutex_; // non-owning; serializes rebind+execute across sessions
+  int mutable_ctx_; // engine's CUDA mutable-state context (per-engine)
+  int session_token_; // CUDA per-session mutable-state token (or
+                      // kNoMutableSession)
+  std::atomic<int>* live_sessions_; // non-owning; engine capacity counter
   ::tokenizers::Tokenizer* tokenizer_; // non-owning; owned by the engine
   std::unordered_map<std::string, int64_t> metadata_;
   std::unordered_set<uint64_t> eos_ids_;
@@ -358,7 +458,7 @@ class Qwen35MoESession : public LLMSession {
   float temperature_ = -1.0f;
   std::atomic<bool> stop_{false};
 
-  // Persistent single-step decode buffers (stable addresses for CUDA graph).
+  // Persistent single-step decode buffers (reused across decode steps).
   int64_t decode_token_data_[1] = {0};
   int64_t decode_pos_data_[1] = {0};
   TensorPtr decode_tokens_;
@@ -416,15 +516,133 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
         "not stop at end of turn");
   }
 
+  int mutable_ctx = 0; // kInvalidMutableContext
+#ifdef EXECUTORCH_BUILD_CUDA
+  // Create this engine's own mutable-state context (per-engine, not global) and
+  // register the per-session mutable-buffer FQNs from the .pte metadata BEFORE
+  // loading the heavy methods, so the CUDA backend associates the load's
+  // handles with this context and builds descriptors from the still-initial
+  // constants.
+  mutable_ctx = ::executorch::backends::cuda::mutable_state_create_context();
+  if (Error e = register_mutable_fqns(meta_module.get(), mutable_ctx);
+      e != Error::Ok) {
+    ::executorch::backends::cuda::mutable_state_destroy_context(mutable_ctx);
+    return e;
+  }
+  ::executorch::backends::cuda::mutable_state_begin_load(mutable_ctx);
+#endif
+
+  // Build the ONE shared physical model (the heavy ~weights load). All sessions
+  // reuse it; each rebinds its own mutable buffers before execute.
+  auto module_res = build_qwen_module(config);
+#ifdef EXECUTORCH_BUILD_CUDA
+  ::executorch::backends::cuda::mutable_state_end_load();
+#endif
+  if (module_res.error() != Error::Ok) {
+#ifdef EXECUTORCH_BUILD_CUDA
+    ::executorch::backends::cuda::mutable_state_destroy_context(mutable_ctx);
+#endif
+    return module_res.error();
+  }
+  std::unique_ptr<Module> shared_module = std::move(module_res.get());
+
+  bool rebind_available = false;
+#ifdef EXECUTORCH_BUILD_CUDA
+  rebind_available =
+      ::executorch::backends::cuda::mutable_state_available(mutable_ctx);
+  if (rebind_available) {
+    // Fail closed: if any declared mutable FQN was not found in the loaded
+    // methods' constants, multi-session would run without rebinding it and
+    // bleed state — fall back to single-session instead.
+    if (::executorch::backends::cuda::mutable_state_validate_coverage(
+            mutable_ctx) != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Qwen35MoEEngine: mutable-buffer coverage check failed; disabling "
+          "multi-session (capacity clamped to 1).");
+      rebind_available = false;
+    }
+  }
+  if (!rebind_available) {
+    ET_LOG(
+        Info,
+        "Qwen35MoEEngine: per-session rebinding unavailable; serving capacity "
+        "clamped to 1 session.");
+  }
+#endif
+
   return std::unique_ptr<Qwen35MoEEngine>(new Qwen35MoEEngine(
-      config, std::move(tokenizer), metadata_result.get(), std::move(eos_ids)));
+      config,
+      std::move(tokenizer),
+      metadata_result.get(),
+      std::move(eos_ids),
+      std::move(shared_module),
+      rebind_available,
+      mutable_ctx));
+}
+
+Qwen35MoEEngine::~Qwen35MoEEngine() {
+#ifdef EXECUTORCH_BUILD_CUDA
+  if (mutable_ctx_ != 0) {
+    ::executorch::backends::cuda::mutable_state_destroy_context(mutable_ctx_);
+  }
+#endif
 }
 
 Result<std::unique_ptr<LLMSession>> Qwen35MoEEngine::create_session() {
-  auto module = build_qwen_module(config_);
-  ET_CHECK_OK_OR_RETURN_ERROR(module.error());
+  // Enforce serving_capacity(): without rebinding, capacity is 1, so a second
+  // session would silently share the resident KV/conv/recurrent state. Reserve
+  // a slot under the exec lock (released in ~Qwen35MoESession).
+  const int cap =
+      serving_capacity().max_physical_sessions_without_weight_duplication;
+  {
+    std::lock_guard<std::mutex> g(exec_mutex_);
+    if (live_sessions_.load() >= cap) {
+      ET_LOG(
+          Error,
+          "Qwen35MoEEngine: at session capacity (%d); refusing create_session "
+          "(would share state or duplicate weights)",
+          cap);
+      return Error::InvalidState;
+    }
+    live_sessions_.fetch_add(1);
+  }
+
+  int token = -1; // kNoMutableSession: single-session / no rebind
+#ifdef EXECUTORCH_BUILD_CUDA
+  if (rebind_available_) {
+    auto t = ::executorch::backends::cuda::mutable_state_create_session(
+        mutable_ctx_);
+    if (t.error() != Error::Ok) {
+      live_sessions_.fetch_sub(1);
+      return t.error();
+    }
+    token = t.get();
+  }
+#endif
   return std::unique_ptr<LLMSession>(new Qwen35MoESession(
-      std::move(module.get()), tokenizer_.get(), metadata_, eos_ids_));
+      shared_module_.get(),
+      &exec_mutex_,
+      mutable_ctx_,
+      token,
+      &live_sessions_,
+      tokenizer_.get(),
+      metadata_,
+      eos_ids_));
+}
+
+LLMServingCapacity Qwen35MoEEngine::serving_capacity() const {
+  LLMServingCapacity cap; // default: 1 session, 0 bytes (unknown)
+#ifdef EXECUTORCH_BUILD_CUDA
+  if (rebind_available_) {
+    cap.max_physical_sessions_without_weight_duplication =
+        config_.max_sessions > 1 ? config_.max_sessions : 1;
+    cap.estimated_bytes_per_session =
+        ::executorch::backends::cuda::mutable_state_bytes_per_session(
+            mutable_ctx_);
+  }
+#endif
+  return cap;
 }
 
 } // namespace executorch::extension::llm

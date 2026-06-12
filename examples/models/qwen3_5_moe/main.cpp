@@ -38,16 +38,12 @@ DEFINE_string(
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
-DEFINE_bool(
-    cuda_graph,
-    false,
-    "Enable CUDA graph for decode method. CUDA only.");
 DEFINE_int32(
     warmup,
     0,
     "Warmup iterations to discard before timing. One model load; the session is "
-    "reset between iterations. Warmup captures the CUDA graph and ramps GPU "
-    "clocks so the timed iterations reflect steady state.");
+    "reset between iterations. Warmup ramps GPU clocks so the timed iterations "
+    "reflect steady state.");
 DEFINE_int32(num_iters, 1, "Timed iterations to average (after warmup).");
 
 namespace llm = ::executorch::extension::llm;
@@ -85,7 +81,6 @@ int main(int argc, char** argv) {
   config.model_path = FLAGS_model_path;
   config.data_path = FLAGS_data_path;
   config.tokenizer_path = FLAGS_tokenizer_path;
-  config.cuda_graph = FLAGS_cuda_graph;
 
   printf("Loading methods...\n");
   auto engine_result = llm::Qwen35MoEEngine::create(config);
@@ -139,9 +134,9 @@ int main(int argc, char** argv) {
   stats.num_prompt_tokens = num_prompt_tokens;
 
   // Warmup + timed iterations on one loaded session (reset between). The first
-  // FLAGS_warmup iterations are discarded; they trigger CUDA-graph capture,
-  // allocator growth, and GPU clock ramp so the timed iterations reflect steady
-  // state. Text is printed only on the first iteration (coherence check).
+  // FLAGS_warmup iterations are discarded; they let allocator growth and GPU
+  // clock ramp settle so the timed iterations reflect steady state. Text is
+  // printed only on the first iteration (coherence check).
   llm::SamplingConfig sampling;
   sampling.temperature = static_cast<float>(FLAGS_temperature);
   const int total_iters = FLAGS_warmup + std::max(1, FLAGS_num_iters);

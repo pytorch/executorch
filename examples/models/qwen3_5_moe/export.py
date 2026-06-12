@@ -913,6 +913,77 @@ def _export_metal(model, config, args):
     print("Done!")
 
 
+def _qwen_mutable_buffer_fqns(model):
+    """Explicit per-session mutable-state buffers of the Qwen model (source of truth).
+
+    State ownership is safety-critical for multi-session serving — a single missed
+    buffer silently bleeds one session's context into another — so we enumerate it
+    from the model's own module contract rather than inferring it from export
+    internals. Read-only buffers are deliberately excluded: RoPE inv_freq,
+    cache_positions, attention masks, TurboQuant centroids/boundaries/rotation, and
+    all weights.
+
+    This is the model-specific half of the contract; the backend consumes the
+    resulting get_mutable_buffer_metadata generically. Other models supply their own.
+    """
+    from executorch.examples.models.qwen3_5_moe.model import GatedDeltaNet, KVCache
+
+    fqns = []
+    for prefix, module in model.named_modules():
+        # TurboQuantKVCache is not a KVCache subclass; match by name to avoid a hard
+        # dependency on the turboquant module. Its codebook buffers (centroids,
+        # boundaries, rotation, rotation_T) are read-only and excluded.
+        if module.__class__.__name__ == "TurboQuantKVCache":
+            fqns += [
+                f"{prefix}.k_packed",
+                f"{prefix}.k_norms",
+                f"{prefix}.v_packed",
+                f"{prefix}.v_norms",
+            ]
+        elif isinstance(module, KVCache):
+            fqns += [f"{prefix}.k_cache", f"{prefix}.v_cache"]
+        elif isinstance(module, GatedDeltaNet):
+            fqns += [f"{prefix}.conv_state", f"{prefix}.recurrent_state"]
+
+    named = dict(model.named_buffers())
+    missing = [f for f in fqns if f not in named]
+    if missing:
+        raise RuntimeError(
+            f"Qwen mutable-buffer contract references missing buffers: {missing}"
+        )
+    if not fqns:
+        raise RuntimeError("Qwen mutable-buffer contract is empty")
+    return sorted(fqns)
+
+
+def _mutable_buffer_metadata_json(model):
+    """Minimal JSON naming the model's per-session mutable buffers.
+
+    The exported .pte advertises ONLY which named constants are per-session state
+    (KV/conv/recurrent) versus globally shared weights:
+
+        {"version": 1, "mutable_buffers": ["layers.1.attn.kv_cache.k_cache", ...]}
+
+    All tensor descriptors (dtype/sizes/strides/nbytes/device/AOTI internal name/
+    initial template) are the backend's to derive from the loaded container — the
+    single source of truth — so we deliberately do NOT duplicate them here and risk
+    drift. The serving runtime backs each session's state with its own storage while
+    the immutable weights stay shared.
+
+    The FQN set is the model's explicit contract (_qwen_mutable_buffer_fqns).
+    """
+    import json
+
+    fqns = _qwen_mutable_buffer_fqns(model)
+    named = dict(model.named_buffers())
+    total = sum(named[f].numel() * named[f].element_size() for f in fqns)
+    print(
+        f"  Recorded {len(fqns)} mutable buffers "
+        f"({total} B / {total / 1024:.1f} KiB per session)"
+    )
+    return json.dumps({"version": 1, "mutable_buffers": fqns})
+
+
 def _export_cuda(model, config, args):
     """Export model to .pte via torch.export + CUDA backend.
 
@@ -1000,6 +1071,7 @@ def _export_cuda(model, config, args):
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
+        "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},

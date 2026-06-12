@@ -138,7 +138,6 @@ cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
 | `--prompt_file` | (none) | Path to a file with the prompt (overrides `--prompt`) |
 | `--temperature` | `0.8` | Sampling temperature (0 = greedy) |
 | `--max_new_tokens` | `128` | Maximum tokens to generate |
-| `--cuda_graph` | off | Capture/replay the decode method as a CUDA graph (CUDA only). See the caveat below. |
 | `--warmup` | `0` | Warmup iterations to discard before timing (one model load; the session is reset between iterations) |
 | `--num_iters` | `1` | Timed iterations to average, after warmup |
 
@@ -218,12 +217,6 @@ is safe under asyncio.
   LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH \
     cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner ...
   ```
-- **`aoti_torch_cuda_sort_stable ... API call failed` when re-running prefill
-  with `--cuda_graph`**: capturing the decode CUDA graph and then running another
-  prefill in the same process currently fails (allocator interaction). Use
-  `--cuda_graph` for single prefill+decode runs; omit it when looping with
-  `--warmup`/`--num_iters`.
-
 - **OOM during export**: The model requires significant GPU memory even
   with int4 quantization. Try reducing `--max-seq-len` or using a GPU
   with more VRAM.

@@ -18,8 +18,10 @@
 // process segfaults in the int4 matmul (validated). Here the model runs in a
 // plain synchronous loop in its own process, which is reliable.
 //
-// V1: single-slot (one engine == one ~18GB weight allocation == one session);
-// the control plane queues concurrent requests on the resident session.
+// Single-slot serving: this worker creates one session and the control plane
+// queues concurrent requests on it. (The engine itself can host multiple
+// sessions on the one ~18GB weight allocation; exposing that over the worker
+// protocol is a follow-up.)
 
 #include <gflags/gflags.h>
 
@@ -33,7 +35,6 @@
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for the CUDA backend.");
-DEFINE_bool(cuda_graph, false, "Enable CUDA graph for the decode method.");
 
 namespace {
 namespace llm = ::executorch::extension::llm;
@@ -53,7 +54,6 @@ int main(int argc, char** argv) {
   config.model_path = FLAGS_model_path;
   config.data_path = FLAGS_data_path;
   config.tokenizer_path = FLAGS_tokenizer_path;
-  config.cuda_graph = FLAGS_cuda_graph;
 
   auto engine_result = llm::Qwen35MoEEngine::create(config);
   if (engine_result.error() != Error::Ok) {
