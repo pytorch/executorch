@@ -35,6 +35,7 @@ from executorch.backends.arm._passes import (
     ConvertToClampPass,
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
+    DecomposeAdaptiveMaxPool2dPass,
     DecomposeAddmmPass,
     DecomposeAddSubAlphaPass,
     DecomposeAnyPass,
@@ -608,6 +609,7 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 RewriteUpsamplePass(),
                 RewriteMaxPool2dPass(),
+                DecomposeAdaptiveMaxPool2dPass(),
                 RewriteConvPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
