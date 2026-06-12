@@ -73,6 +73,11 @@ class ChatCompletionRequest(BaseModel):
     parallel_tool_calls: Optional[bool] = None
     # Per-request chat-template controls, e.g. {"enable_thinking": false} for Qwen3.
     chat_template_kwargs: Optional[dict[str, Any]] = None
+    # Vendor extension: route this request to a persistent, isolated session (its
+    # own KV/recurrent context) on a multi-session worker; requests sharing a
+    # session_id continue the same context. Anonymous (a transient scratch
+    # session) when unset. Also accepted via the X-ExecuTorch-Session-ID header.
+    session_id: Optional[str] = None
     # Accepted now so the contract is stable; parsing/enforcement land in M2/M5.
     tools: Optional[list[dict[str, Any]]] = None
     tool_choice: Optional[Union[str, dict[str, Any]]] = None

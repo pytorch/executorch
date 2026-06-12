@@ -173,8 +173,8 @@ serve.py            (control plane: FastAPI/asyncio, OpenAI protocol, chat
                      templating, tool parsing, validation — NO CUDA, NO pybind)
    │  JSONL over stdin/stdout
    ▼
-qwen3_5_moe_worker  (C++ binary: one Qwen35MoEEngine + one session, synchronous
-                     loop — the CUDA model; NO asyncio server)
+qwen3_5_moe_worker  (C++ binary: one Qwen35MoEEngine, many isolated sessions,
+                     synchronous loop — the CUDA model; NO asyncio server)
 ```
 
 The model runs in a **separate worker process** because executing the AOTI CUDA
@@ -196,13 +196,42 @@ is safe under asyncio.
 | `--host` / `--port` | `127.0.0.1` / `8000` | Bind address |
 | `--max-context` | (none) | Reject prompts that exceed it with 400 |
 | `--no-think` | off | Default reasoning off (`enable_thinking=False`) |
+| `--max-sessions` | `1` | Isolated sessions on one weight load (see Sessions) |
 
-### V1 limitations
+### Sessions
 
-- **Single-slot** (`serving_capacity=1`): one worker, one session, one model
-  load. `--num-runners > 1` is rejected; concurrent requests queue on the worker.
-- **No prefix cache**: the recurrent/conv state cannot be rewound by position
-  (`seek()` is NotSupported), so turn-to-turn KV reuse is off.
+One worker loads the weights once (~18 GB) and hosts multiple **isolated**
+sessions on that single allocation — each with its own KV/recurrent state, via
+CUDA per-session mutable rebinding. Set `--max-sessions N` (clamped to 1 if the
+backend cannot rebind); one slot is reserved for anonymous requests, so up to
+`N - 1` named `session_id`s are addressable.
+
+Route a request to a persistent session with the `session_id` body field or, as
+aliases, the `X-ExecuTorch-Session-ID` / `session_id` / `x-session-affinity`
+headers (body wins, then that header order). The header aliases let a client that
+already emits a stable per-conversation affinity id (e.g. pi's
+`sendSessionAffinityHeaders`) route with no extra config. Requests without any
+share a transient scratch session. Free a session with `DELETE /v1/sessions/{id}`.
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen3.5-moe","session_id":"alice",
+       "messages":[{"role":"user","content":"hi"}]}'
+```
+
+Admission is up front: an explicit `session_id` on a single-session server
+returns **400** (`unsupported_session`); past capacity it returns **429**
+(`capacity_exhausted`) before any response bytes.
+
+This is **isolation, not concurrency or warm resume**: execution is still
+synchronous (one in-flight request; `--num-runners > 1` is rejected since more
+workers would duplicate the weights), and each request resets its session — the
+recurrent/conv state cannot be rewound by position (`seek()` is NotSupported), so
+turn-to-turn KV reuse (append-only warm resume) is a follow-up.
+
+### Other limitations
+
 - Supports the chat-completions contract of the generic server; `top_p != 1`,
   `seed`, `top_k`, `logprobs`, etc. are rejected (only temperature is plumbed).
 

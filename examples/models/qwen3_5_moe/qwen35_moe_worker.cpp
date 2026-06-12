@@ -18,23 +18,29 @@
 // process segfaults in the int4 matmul (validated). Here the model runs in a
 // plain synchronous loop in its own process, which is reliable.
 //
-// Single-slot serving: this worker creates one session and the control plane
-// queues concurrent requests on it. (The engine itself can host multiple
-// sessions on the one ~18GB weight allocation; exposing that over the worker
-// protocol is a follow-up.)
+// Multi-session (isolation): the engine loads weights once and hosts multiple
+// isolated sessions on that one ~18GB allocation; the shared worker loop
+// (worker_loop.h) routes requests to per-session_id state, up to
+// --max_sessions. Execution is still synchronous (one in-flight request); warm
+// context reuse across requests is a follow-up.
 
 #include <gflags/gflags.h>
 
 #include <executorch/examples/models/qwen3_5_moe/qwen35_moe_engine.h>
-#include <executorch/extension/llm/runner/llm_session.h>
 #include <executorch/extension/llm/server/cpp/worker_loop.h>
 #include <executorch/runtime/platform/log.h>
 
-#include <utility>
+#include <cstdint>
 
 DEFINE_string(model_path, "", "Model .pte file path.");
 DEFINE_string(tokenizer_path, "", "HuggingFace tokenizer.json path.");
 DEFINE_string(data_path, "", "Data file (.ptd) for the CUDA backend.");
+DEFINE_int32(
+    max_sessions,
+    1,
+    "Max physical sessions to host on the one weight allocation (CUDA "
+    "per-session mutable rebinding). Clamped to 1 if the backend cannot "
+    "rebind.");
 
 namespace {
 namespace llm = ::executorch::extension::llm;
@@ -54,6 +60,7 @@ int main(int argc, char** argv) {
   config.model_path = FLAGS_model_path;
   config.data_path = FLAGS_data_path;
   config.tokenizer_path = FLAGS_tokenizer_path;
+  config.max_sessions = FLAGS_max_sessions;
 
   auto engine_result = llm::Qwen35MoEEngine::create(config);
   if (engine_result.error() != Error::Ok) {
@@ -62,16 +69,9 @@ int main(int argc, char** argv) {
   }
   auto engine = std::move(engine_result.get());
 
-  auto session_result = engine->create_session();
-  if (session_result.error() != Error::Ok) {
-    ET_LOG(Error, "qwen35_moe_worker: failed to create session");
-    return 1;
-  }
-  auto session = std::move(session_result.get());
-
-  // The engine's tokenizer encodes the rendered prompt to ids; the session
-  // decodes ids back to text internally.
+  // The engine's tokenizer encodes the rendered prompt to ids; sessions decode
+  // ids back to text internally. The shared loop owns per-session_id state.
   ::tokenizers::Tokenizer* tokenizer = engine->tokenizer();
 
-  return llm::run_worker_stdio_loop(*session, *tokenizer, engine->metadata());
+  return llm::run_worker_stdio_loop(*engine, *tokenizer, engine->metadata());
 }
