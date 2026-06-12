@@ -1,0 +1,116 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""CudaPackedInt6Tensor F.linear dispatch for CUDA — eager / export trace time.
+
+This module registers an F.linear dispatch on ``CudaPackedInt6Tensor`` (an
+ExecuTorch-internal subclass, see ``packed_int6_tensor.py``) so that
+torch.export traces through our custom op and dequant logic. Routing is by
+*type*: only GGUF Q6_K weights (converted to ``CudaPackedInt6Tensor``) take the
+packed-int6 path; genuine INT8 weights stay on the int8 path. The code here runs
+during eager inference and AOTI export tracing — it does NOT run at .pte runtime.
+
+At .pte runtime, the captured graph is executed by the AOTI-generated .so:
+  - The custom op ``executorch_cuda::int6_plain_mm`` maps to a C shim that runs
+    the W6A8 dp4a matvec kernel (backends/cuda/runtime/shims/int6_plain_mm.*).
+  - The inline dequant + F.linear is compiled by inductor into fused Triton
+    dequant + cuBLAS matmul kernels.
+
+Dispatch strategy (determines what gets captured in the export graph):
+  Decode (M<=4): Custom op ``executorch_cuda::int6_plain_mm``
+  Prefill (M>4): Inline dequant + F.linear (standard PyTorch ops)
+
+The packed-int6 weight is symmetric (no zero point): ``w = q * scale`` with
+``q`` in ``[-32, 31]`` stored as the ql/qh planes. The op signature mirrors
+int4_plain_mm / int8_plain_mm but takes two weight planes (ql, qh) instead of
+one, and no zero tensor.
+
+Importing the parent ``quantize_op_dispatch`` package registers this dispatch
+override (along with the INT4 / INT8 ones)::
+
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
+"""
+
+import torch
+import torch.nn.functional as F
+from executorch.backends.cuda.packed_int6_tensor import (
+    CudaPackedInt6Tensor,
+    unpack_int6,
+)
+from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
+from torch.library import impl
+
+# ---------------------------------------------------------------------------
+# Custom op for INT6 decode (M<=4): W6A8 dp4a matvec in C shim.
+# ---------------------------------------------------------------------------
+
+_lib.define(
+    "int6_plain_mm(Tensor self, Tensor ql, Tensor qh, Tensor scale, int group_size) -> Tensor"
+)
+
+
+@impl(_lib, "int6_plain_mm", "Meta")
+def _meta_int6(self, ql, qh, scale, group_size):
+    return torch.empty(self.shape[0], ql.shape[0], dtype=self.dtype, device=self.device)
+
+
+@impl(_lib, "int6_plain_mm", "CUDA")
+def _cuda_int6(self, ql, qh, scale, group_size):
+    return _dequant_matmul_int6(self, ql, qh, scale, group_size)
+
+
+def _dequant_matmul_int6(x, ql, qh, scale, group_size):
+    """Dequant packed-INT6 weights to input dtype and call F.linear.
+
+    ql [N, K/2] / qh [N, K/4] pack symmetric Q6_K values q in [-32, 31];
+    scale [N, K//gs]. Dequant: w[n, k] = q[n, k] * scale[n, k//gs].
+    """
+    N = ql.shape[0]
+    K = ql.shape[1] * 2
+    n_groups = K // group_size
+    dtype = x.dtype
+
+    q = unpack_int6(ql, qh, N, K).to(dtype).reshape(N, n_groups, group_size)
+    s = scale.to(dtype).reshape(N, n_groups, 1)
+    w_deq = (q * s).reshape(N, K)
+
+    return F.linear(x, w_deq)
+
+
+# ---------------------------------------------------------------------------
+# CudaPackedInt6Tensor F.linear dispatch (W6A8 dp4a for decode)
+# ---------------------------------------------------------------------------
+
+aten = torch.ops.aten
+_implements_i6 = CudaPackedInt6Tensor.implements
+_implements_torch_function_i6 = CudaPackedInt6Tensor.implements_torch_function
+
+
+@_implements_i6([aten.linear.default])
+@_implements_torch_function_i6([F.linear])
+def _(func, types, args, kwargs):
+    input_tensor = args[0]
+    weight_tensor = args[1]
+    bias = args[2] if len(args) > 2 else None
+
+    orig_shape = input_tensor.shape
+    x_2d = input_tensor.reshape(-1, orig_shape[-1])
+
+    ql = weight_tensor.ql
+    qh = weight_tensor.qh
+    scale = weight_tensor.scale
+    gs = weight_tensor.block_size[-1]
+
+    M = x_2d.shape[0]
+    if M <= 4:
+        out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, gs)
+    else:
+        out = _dequant_matmul_int6(x_2d, ql, qh, scale, gs)
+
+    out = out.reshape(*orig_shape[:-1], -1)
+    if bias is not None:
+        out = out + bias
+    return out

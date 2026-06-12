@@ -467,21 +467,27 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   exit 0
 fi
 
-# Gemma 4 31B uses a prequantized checkpoint and custom export script
+# Gemma 4 31B: download the Q4_K_M GGUF and export via the GGUF loader
 if [ "$MODEL_NAME" = "gemma4_31b" ]; then
   pip install safetensors huggingface_hub gguf
 
-  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
+  # Download GGUF + tokenizer outside OUTPUT_DIR to avoid uploading on failure.
+  # The unsloth GGUF repo ships the .gguf but no tokenizer.json, so the tokenizer
+  # is fetched from the (non-GGUF) unsloth/gemma-4-31B-it repo.
   LOCAL_MODEL_DIR=$(mktemp -d)
   INDUCTOR_CACHE=$(mktemp -d)
   trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
 
-  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+  GGUF_FILE="gemma-4-31B-it-Q4_K_M.gguf"
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it-GGUF', '${GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it', 'tokenizer.json', local_dir='${LOCAL_MODEL_DIR}')"
+  GGUF_PATH="${LOCAL_MODEL_DIR}/${GGUF_FILE}"
 
-  # Sanity check: run inference on the prequantized model
+  # Sanity check: run inference on the GGUF model
   echo "::group::Inference sanity check"
   INFERENCE_OUTPUT=$(python -m executorch.examples.models.gemma4_31b.inference \
-      --prequantized "$LOCAL_MODEL_DIR" \
+      --gguf "$GGUF_PATH" \
+      --tokenizer-path "${LOCAL_MODEL_DIR}/tokenizer.json" \
       --prompt "What is the capital of France?" \
       --max-new-tokens 32 \
       --temperature 0 \
@@ -494,13 +500,13 @@ if [ "$MODEL_NAME" = "gemma4_31b" ]; then
   echo "::endgroup::"
 
   # Copy tokenizer for the runner
-  cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+  cp "${LOCAL_MODEL_DIR}/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
 
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.gemma4_31b.export \
-      --prequantized "$LOCAL_MODEL_DIR" \
+      --gguf "$GGUF_PATH" \
       --output-dir "${OUTPUT_DIR}"
   echo "::endgroup::"
 

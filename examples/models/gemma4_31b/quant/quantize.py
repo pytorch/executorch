@@ -272,6 +272,13 @@ def dequantize_weight(
         zero = weight.zero_point.float().repeat_interleave(gs, dim=-1)
         return ((weight.qdata.float() - zero) * scale).to(dtype)
 
+    # CudaPackedInt6Tensor (GGUF Q6_K on CUDA) carries its own dequant (symmetric,
+    # ql/qh planes). Imported lazily to avoid a hard backends/cuda dependency.
+    from executorch.backends.cuda.packed_int6_tensor import CudaPackedInt6Tensor
+
+    if isinstance(weight, CudaPackedInt6Tensor):
+        return weight.dequantize(dtype)
+
     raise TypeError(f"Cannot dequantize {type(weight).__name__}")
 
 

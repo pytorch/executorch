@@ -6,11 +6,17 @@
 
 """CUDA packer: assign quantized weights to model modules.
 
-Converts ``Int4Tensor`` weights to the ExecuTorch-internal
-``CudaCoalescedInt4Tensor`` (which owns the scale/zero transpose to the
-coalesced [N, n_groups] layout) and passes ``IntxUnpackedToInt8Tensor`` through
-as ``nn.Parameter`` without conversion. The quantize_op_dispatch package
-(``int4_dispatch`` / ``int8_dispatch``) handles F.linear at runtime.
+Repacks native torchao quantized tensors into the ExecuTorch-internal CUDA
+layouts read by the decode kernels:
+
+  * ``Int4Tensor`` -> ``CudaCoalescedInt4Tensor`` (bakes the scale/zero transpose
+    into the coalesced [N, n_groups] layout).
+  * symmetric Q6_K ``IntxUnpackedToInt8Tensor`` -> ``CudaPackedInt6Tensor`` (the
+    genuine 6-bit ql/qh planes).
+
+A genuine INT8 ``IntxUnpackedToInt8Tensor`` is left unchanged for the int8 path.
+The quantize_op_dispatch package (``int4_dispatch`` / ``int6_dispatch`` /
+``int8_dispatch``) handles F.linear at runtime.
 
 No CUDA is required for packing.  The backend-agnostic ``pack_model``
 dispatcher lives in ``pack.py``.
@@ -28,9 +34,26 @@ from .pack import ModulePackerFn, pack_model  # noqa: F401
 # Per-module packers
 
 
+def _is_symmetric_q6k(w) -> bool:
+    """True if ``w`` is a symmetric Q6_K ``IntxUnpackedToInt8Tensor``.
+
+    GGUF Q6_K decodes (``gguf.to_intx_unpacked_to_int8_tensor``) to a symmetric
+    int8 tensor with 16-wide groups and values in ``[-32, 31]``. Those three
+    properties together distinguish it from a genuine INT8 weight (wider groups
+    and/or the full int8 range), so the int8 path is never misrouted into the
+    6-bit packer.
+    """
+    if tuple(int(b) for b in w.block_size) != (1, 16):
+        return False
+    if not bool(torch.all(w.zero_point == 0)):
+        return False
+    return int(w.qdata.min()) >= -32 and int(w.qdata.max()) <= 31
+
+
 def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     """Assign a quantized weight to an ``nn.Linear`` module."""
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+    from executorch.backends.cuda.packed_int6_tensor import CudaPackedInt6Tensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
@@ -48,6 +71,12 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         w = CudaCoalescedInt4Tensor.from_int4_tensor(w)
         module.weight = nn.Parameter(w, requires_grad=False)
     elif isinstance(w, IntxUnpackedToInt8Tensor):
+        # GGUF Q6_K decodes to a symmetric int8 tensor; repack it into the genuine
+        # 6-bit CudaPackedInt6Tensor (ql/qh planes, 0.75 B/elem) for the W6A8 dp4a
+        # decode kernel — the bit-pack is baked into the weight constant here,
+        # once. A genuine INT8 weight is left unchanged for the int8 path.
+        if _is_symmetric_q6k(w):
+            w = CudaPackedInt6Tensor.from_intx_int8(w)
         module.weight = nn.Parameter(w, requires_grad=False)
     else:
         raise ValueError(f"Unsupported weight type: {type(w).__name__}")
