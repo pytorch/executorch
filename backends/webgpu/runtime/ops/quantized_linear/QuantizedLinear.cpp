@@ -64,6 +64,10 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     in_numel *= static_cast<uint64_t>(d);
   }
   const uint32_t M = static_cast<uint32_t>(in_numel / K);
+  if (in_numel % K != 0) {
+    throw std::runtime_error(
+        "WebGPU linear_q4gsw: input numel not a multiple of K");
+  }
   const uint32_t N = static_cast<uint32_t>(weight.dims[0]);
   const uint32_t K_packed = static_cast<uint32_t>(weight.dims[1]);
   const uint32_t num_groups = static_cast<uint32_t>(scales.dims[0]);
@@ -74,6 +78,11 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // int4 packing is 2 nibbles/byte, so K_packed must be ceil(K/2) (guards OOB).
   if (K_packed != (K + 1) / 2) {
     throw std::runtime_error("WebGPU linear_q4gsw: K_packed must be ceil(K/2)");
+  }
+  // Weight is read as array<u32>; a non-multiple-of-4 byte count over-reads.
+  if ((static_cast<uint64_t>(N) * K_packed) % 4u != 0u) {
+    throw std::runtime_error(
+        "WebGPU linear_q4gsw: N*K_packed must be a multiple of 4 (u32-packed)");
   }
 
   // One workgroup per output row (M); validate dispatch before any alloc.
@@ -100,6 +109,12 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (group_size <= 0) {
     throw std::runtime_error("WebGPU linear_q4gsw: group_size <= 0");
   }
+  // scales is indexed [(k/group_size)*padded_N + n]; guard the table bounds.
+  const uint32_t gs = static_cast<uint32_t>(group_size);
+  if (num_groups < (K + gs - 1u) / gs || padded_N < N) {
+    throw std::runtime_error(
+        "WebGPU linear_q4gsw: scales dims too small for K/N");
+  }
 
   // Optional bias: real buffer if present, else a dummy for the fixed layout.
   uint32_t has_bias = 0;
@@ -117,7 +132,6 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
   if (bias_buffer == nullptr) {
     bias_buffer = graph.create_scratch_buffer(4);
-    bias_size = 4;
   }
 
   Q4gswParams params = {};
@@ -125,7 +139,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.N = N;
   params.K = K;
   params.K_packed = K_packed;
-  params.group_size = static_cast<uint32_t>(group_size);
+  params.group_size = gs;
   params.padded_N = padded_N;
   params.has_bias = has_bias;
 
