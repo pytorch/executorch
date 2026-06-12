@@ -16,11 +16,10 @@ backend:
   by the MLX GGUF pattern (Q6_K custom kernels, Q4_K native affine ops) for both
   linear and embedding. ``embed_tokens`` and ``lm_head`` stay tied -- they share
   the one quantized tensor.
-* **CUDA**: Q4_K -> ``Int4Tensor``, Q6_K -> ``IntxUnpackedToInt8Tensor`` (native
-  torchao tensors; the backend packer in ``quant/pack_cuda.py`` repacks them into
-  ``CudaCoalescedInt4Tensor`` / the genuine 6-bit ``CudaPackedInt6Tensor``).
-  ``lm_head`` keeps the quantized tensor but the token embedding is dequantized to
-  bf16 (the packed tensors can't gather), so they are untied.
+* **CUDA**: Q4_K -> ``Int4Tensor``, Q6_K -> ``CudaPackedInt6Tensor`` (a genuine
+  6-bit packed weight, lossless, symmetric); ``lm_head`` keeps the quantized
+  tensor but the token embedding is dequantized to bf16 (the packed tensors can't
+  gather), so they are untied.
 
 Usage:
     model, config = load_gguf_model("model.gguf", backend="cuda")
@@ -93,11 +92,7 @@ def _convert_weight(model, model_key: str, gtensor, backend: str):
     """Convert an ``ExportableGGUFTensor`` to the per-backend module weight."""
     if backend == "mlx":
         return gtensor
-    # CUDA: native torchao quantized tensors. Q4_K -> Int4Tensor; Q6_K (and any
-    # other quant type) -> IntxUnpackedToInt8Tensor. The backend packer in
-    # quant/pack_cuda.py repacks these into the ExecuTorch-internal CUDA layouts
-    # (CudaCoalescedInt4Tensor / CudaPackedInt6Tensor), so the loader itself stays
-    # backend-agnostic and carries no backends/cuda dependency.
+    # CUDA: native torchao quantized tensors.
     if gtensor.ggml_type == "q4_k":
         return gtensor.to_int4_tensor()
     return gtensor.to_intx_unpacked_to_int8_tensor()
