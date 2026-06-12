@@ -84,6 +84,32 @@ def _set_fake_tensor_meta(node: torch.fx.Node, value) -> None:
         node.meta["tensor_meta"] = _extract_tensor_metadata(value)
 
 
+def _is_static_nchw_with_channels(node: torch.fx.Node, channels: int) -> bool:
+    value = node.meta.get("val")
+    return (
+        isinstance(value, torch.Tensor)
+        and len(value.shape) == 4
+        and int(value.shape[1]) == channels
+    )
+
+
+def _can_pad_c3_for_sampler(
+    input_tensor: torch.fx.Node,
+    interpolation_mode: int,
+    align_corners: bool,
+) -> bool:
+    value = input_tensor.meta.get("val")
+    return (
+        isinstance(value, torch.Tensor)
+        and len(value.shape) == 4
+        and int(value.shape[0]) == 1
+        and int(value.shape[1]) == 3
+        and value.dtype is torch.float32
+        and int(interpolation_mode) in (0, 1)
+        and not bool(align_corners)
+    )
+
+
 class RewriteGridSamplerToTosaCustomPass(ArmPass):
     """Rewrite ``aten.grid_sampler_2d`` nodes to ``tosa.CUSTOM``."""
 
@@ -92,14 +118,81 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
 
     @staticmethod
     def _encode_payload(
-        interpolation_mode: int, padding_mode: int, align_corners: bool
+        interpolation_mode: int,
+        padding_mode: int,
+        align_corners: bool,
+        input_tensor: torch.fx.Node,
     ) -> list[int]:
+        input_val = input_tensor.meta.get("val")
+        if input_val is None:
+            raise RuntimeError("grid_sampler_2d input is missing tensor metadata")
         payload = build_grid_sampler_2d_payload(
             interpolation_mode=interpolation_mode,
             padding_mode=padding_mode,
             align_corners=align_corners,
+            input_shape=tuple(input_val.shape),
+            input_dtype=input_val.dtype,
         )
         return encode_payload(payload)
+
+    @staticmethod
+    def _pad_c3_input_to_c4(
+        graph_module: torch.fx.GraphModule,
+        input_tensor: torch.fx.Node,
+    ) -> torch.fx.Node:
+        input_val = input_tensor.meta["val"]
+        first_channel = create_node(
+            graph_module.graph,
+            op_target=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(input_tensor, 1, 0, 1, 1),
+            from_node=input_tensor,
+        )
+        first_channel_val = exir_ops.edge.aten.slice_copy.Tensor(input_val, 1, 0, 1, 1)
+        _set_fake_tensor_meta(first_channel, first_channel_val)
+
+        zero_channel = create_node(
+            graph_module.graph,
+            op_target=exir_ops.edge.aten.sub.Tensor,
+            args=(first_channel, first_channel),
+            kwargs={"alpha": 1},
+            from_node=input_tensor,
+        )
+        _set_fake_tensor_meta(
+            zero_channel,
+            exir_ops.edge.aten.sub.Tensor(first_channel_val, first_channel_val),
+        )
+
+        padded_input = create_node(
+            graph_module.graph,
+            op_target=exir_ops.edge.aten.cat.default,
+            args=([input_tensor, zero_channel], 1),
+            from_node=input_tensor,
+        )
+        _set_fake_tensor_meta(
+            padded_input,
+            exir_ops.edge.aten.cat.default([input_val, zero_channel.meta["val"]], 1),
+        )
+        return padded_input
+
+    @staticmethod
+    def _slice_c4_output_to_c3(
+        graph_module: torch.fx.GraphModule,
+        output: torch.fx.Node,
+        original_node: torch.fx.Node,
+    ) -> torch.fx.Node:
+        output_val = output.meta["val"]
+        sliced_output = create_node(
+            graph_module.graph,
+            op_target=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(output, 1, 0, 3, 1),
+            from_node=original_node,
+        )
+        sliced_output.meta = dict(original_node.meta)
+        _set_fake_tensor_meta(
+            sliced_output,
+            exir_ops.edge.aten.slice_copy.Tensor(output_val, 1, 0, 3, 1),
+        )
+        return sliced_output
 
     def call(self, graph_module):
         modified = False
@@ -114,12 +207,12 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
             input_tensor, grid, interpolation_mode, padding_mode, align_corners = (
                 node.args
             )
-
-            implementation_attrs = self._encode_payload(
-                interpolation_mode=interpolation_mode,
-                padding_mode=padding_mode,
-                align_corners=align_corners,
+            pad_c3_for_sampler = _can_pad_c3_for_sampler(
+                input_tensor,
+                interpolation_mode,
+                align_corners,
             )
+
             operator_name = grid_sampler_2d_operator_name(
                 interpolation_mode=interpolation_mode,
                 padding_mode=padding_mode,
@@ -127,16 +220,27 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
             )
 
             with graph_module.graph.inserting_before(node):
+                custom_input = (
+                    self._pad_c3_input_to_c4(graph_module, input_tensor)
+                    if pad_c3_for_sampler
+                    else input_tensor
+                )
+                implementation_attrs = self._encode_payload(
+                    interpolation_mode=interpolation_mode,
+                    padding_mode=padding_mode,
+                    align_corners=align_corners,
+                    input_tensor=custom_input,
+                )
                 nhwc_input = create_node(
                     graph_module.graph,
                     op_target=exir_ops.edge.aten.permute_copy.default,
-                    args=(input_tensor, list(NHWC_ORDER)),
-                    from_node=input_tensor,
+                    args=(custom_input, list(NHWC_ORDER)),
+                    from_node=custom_input,
                 )
                 _set_fake_tensor_meta(
                     nhwc_input,
                     exir_ops.edge.aten.permute_copy.default(
-                        input_tensor.meta["val"], list(NHWC_ORDER)
+                        custom_input.meta["val"], list(NHWC_ORDER)
                     ),
                 )
 
@@ -184,7 +288,14 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                         custom_output, list(NHWC_INVERSE_ORDER)
                     ),
                 )
-                node.replace_all_uses_with(output)
+                if pad_c3_for_sampler:
+                    with graph_module.graph.inserting_after(output):
+                        replacement = self._slice_c4_output_to_c3(
+                            graph_module, output, node
+                        )
+                else:
+                    replacement = output
+                node.replace_all_uses_with(replacement)
                 graph_module.graph.erase_node(node)
 
         if modified:
