@@ -6,13 +6,13 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for the GGUF Q6_K embedding lowering.
+Tests for the GGUF Q6_K / Q4_K embedding lowering.
 
 An ``nn.Embedding`` whose weight is an ``ExportableGGUFTensor`` exports to
-``embedding(torchao::dequantize_gguf(weight, "q6_k", ...), indices)``. The MLX
-``GGUF_QUANTIZED_EMBEDDING`` pattern matches that subgraph and lowers it to the
-fused Q6_K gather Metal kernel. These tests compare the kernel against the eager
-reference (``gguf``-package dequant + ``F.embedding``) on the same packed table.
+``embedding(torchao::dequantize_gguf(weight, ggml_type, ...), indices)``. The MLX
+``GGUF_QUANTIZED_EMBEDDING`` pattern matches that subgraph and lowers it to fused
+gather Metal kernels. These tests compare the kernel against the eager reference
+(``gguf``-package dequant + ``F.embedding``) on the same packed table.
 
 Usage::
 
@@ -27,18 +27,24 @@ import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
+    make_q4_k_blob,
     make_q6_k_blob,
 )
 from executorch.backends.mlx.test.test_utils import OpTestCase
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
 
-def _make_gguf_embedding_model(vocab: int, K: int, seed: int = 0) -> nn.Module:
-    """An ``nn.Embedding`` whose weight is a Q6_K ``ExportableGGUFTensor``."""
+def _make_gguf_embedding_model(
+    vocab: int,
+    K: int,
+    ggml_type: str = "q6_k",
+    seed: int = 0,
+) -> nn.Module:
     emb = nn.Embedding(vocab, K)
-    blob = make_q6_k_blob(vocab, K, seed=seed)
+    blob_maker = make_q4_k_blob if ggml_type == "q4_k" else make_q6_k_blob
+    blob = blob_maker(vocab, K, seed=seed)
     emb.weight = nn.Parameter(
-        ExportableGGUFTensor.from_raw(blob, "q6_k", torch.bfloat16),
+        ExportableGGUFTensor.from_raw(blob, ggml_type, torch.bfloat16),
         requires_grad=False,
     )
     return emb
@@ -56,12 +62,14 @@ class GGUFEmbeddingTest(OpTestCase):
         vocab: int = 512,
         K: int = 256,
         idx_shape: Tuple[int, ...] = (8,),
+        ggml_type: str = "q6_k",
     ):
         self.vocab = vocab
         self.K = K
         self.idx_shape = idx_shape
+        self.ggml_type = ggml_type
         shp = "x".join(str(d) for d in idx_shape)
-        self.name = f"gguf_embedding_v{vocab}_k{K}_idx{shp}"
+        self.name = f"gguf_embedding_{ggml_type}_v{vocab}_k{K}_idx{shp}"
 
     @classmethod
     def get_test_configs(cls) -> List["GGUFEmbeddingTest"]:
@@ -77,6 +85,10 @@ class GGUFEmbeddingTest(OpTestCase):
             # kept small so the packed weight fits CI-runner GPU buffer limits; the
             # gather + per-row dequant path is identical regardless of vocab.
             cls(vocab=2048, K=5376, idx_shape=(8,)),
+            cls(vocab=512, K=256, idx_shape=(8,), ggml_type="q4_k"),
+            cls(vocab=512, K=512, idx_shape=(8,), ggml_type="q4_k"),
+            cls(vocab=512, K=256, idx_shape=(2, 3), ggml_type="q4_k"),
+            cls(vocab=2048, K=5376, idx_shape=(8,), ggml_type="q4_k"),
         ]
 
     def get_edge_compile_config(self):
@@ -86,7 +98,7 @@ class GGUFEmbeddingTest(OpTestCase):
         return EdgeCompileConfig(_check_ir_validity=False)
 
     def create_model(self) -> nn.Module:
-        return _make_gguf_embedding_model(self.vocab, self.K)
+        return _make_gguf_embedding_model(self.vocab, self.K, self.ggml_type)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         torch.manual_seed(0)
@@ -100,7 +112,9 @@ def _main() -> None:  # noqa: C901
 
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
-    parser = argparse.ArgumentParser(description="Test GGUF Q6_K embedding lowering")
+    parser = argparse.ArgumentParser(
+        description="Test GGUF Q6_K / Q4_K embedding lowering"
+    )
     parser.add_argument("action", choices=["generate", "compare", "run", "list"])
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--rebuild", action="store_true")

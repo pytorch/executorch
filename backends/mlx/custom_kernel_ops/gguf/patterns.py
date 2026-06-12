@@ -18,8 +18,7 @@ These handlers match that ``dequantize_gguf -> linear/embedding`` subgraph and
 lower it without materializing the dequantized weight:
 
 * **Q6_K** -> fused custom Metal kernels in :mod:`.q6k`.
-* **Q4_K** -> MLX's native 4-bit affine ops via :mod:`.q4k` (GGUF blocks
-  repacked into MLX qparams at export time).
+* **Q4_K** -> fused custom Metal kernels in :mod:`.q4k`.
 
 Both cover linear and embedding.
 
@@ -42,8 +41,7 @@ from executorch.backends.mlx.pattern_utils import has_single_user, match_target
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 
-# Quant types each pattern can lower (Q6_K via custom Metal kernels, Q4_K via
-# MLX-native affine ops).
+# Quant types each pattern can lower (both via fused custom Metal kernels).
 _LINEAR_TYPES = {"q4_k", "q6_k"}
 _EMBEDDING_TYPES = {"q4_k", "q6_k"}
 
@@ -79,8 +77,8 @@ class GGUFQuantizedLinearHandler(PatternHandler):
     """Lower ``dequantize_gguf + linear`` to a fused quantized matmul.
 
     Matches ``linear(x, dequantize_gguf(weight, ggml_type, out_dtype), bias)``
-    and dispatches on ``ggml_type``: Q6_K -> custom Metal kernels, Q4_K -> MLX
-    4-bit ``quantized_matmul``.
+    and dispatches on ``ggml_type``: Q6_K / Q4_K -> custom Metal kernels in
+    :mod:`.q6k` / :mod:`.q4k`.
     """
 
     def __init__(self, head, body, weight, ggml_type, output_dtype):
@@ -126,8 +124,8 @@ class GGUFQuantizedEmbeddingHandler(PatternHandler):
     """Lower ``dequantize_gguf + embedding`` to a quantized gather.
 
     Matches ``embedding(dequantize_gguf(weight, ggml_type, out_dtype), indices)``
-    and dispatches on ``ggml_type``: Q6_K -> custom Metal gather, Q4_K -> MLX
-    quantized gather.
+    and dispatches on ``ggml_type``: Q6_K / Q4_K -> custom Metal gather kernels
+    in :mod:`.q6k` / :mod:`.q4k`.
     """
 
     def __init__(self, head, body, weight, ggml_type, output_dtype):
