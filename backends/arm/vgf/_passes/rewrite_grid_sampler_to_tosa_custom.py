@@ -3,12 +3,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 import operator
 from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.tosa.dialect.ops.custom import register_fake_tosa
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
@@ -104,10 +110,41 @@ def _can_pad_c3_for_sampler(
         and len(value.shape) == 4
         and int(value.shape[0]) == 1
         and int(value.shape[1]) == 3
-        and value.dtype is torch.float32
+        and value.dtype in (torch.float32, torch.int8)
         and int(interpolation_mode) in (0, 1)
         and not bool(align_corners)
     )
+
+
+def _uses_grid_sampler_int8_snorm_qparams(qparams: QuantArgs) -> bool:
+    return (
+        not qparams.per_channel
+        and math.isclose(
+            qparams.get_scale_per_tensor(), 1.0 / 127.0, rel_tol=1e-6, abs_tol=1e-9
+        )
+        and qparams.get_zp_per_tensor() == 0
+        and qparams.qmin == -127
+        and qparams.qmax == 127
+        and qparams.dtype == torch.int8
+    )
+
+
+def _uses_grid_sampler_int8_snorm_metadata(node: torch.fx.Node) -> bool:
+    try:
+        input_qparams = get_input_qparams(node)
+        output_qparams = get_output_qparams(node)
+    except ValueError:
+        return False
+
+    image_qparams = input_qparams.get(0)
+    if image_qparams is None:
+        return False
+    if not output_qparams:
+        return False
+
+    return _uses_grid_sampler_int8_snorm_qparams(
+        image_qparams
+    ) and _uses_grid_sampler_int8_snorm_qparams(next(iter(output_qparams.values())))
 
 
 class RewriteGridSamplerToTosaCustomPass(ArmPass):
@@ -122,6 +159,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
         padding_mode: int,
         align_corners: bool,
         input_tensor: torch.fx.Node,
+        output_dtype: torch.dtype | None = None,
     ) -> list[int]:
         input_val = input_tensor.meta.get("val")
         if input_val is None:
@@ -132,6 +170,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
             align_corners=align_corners,
             input_shape=tuple(input_val.shape),
             input_dtype=input_val.dtype,
+            output_dtype=output_dtype,
         )
         return encode_payload(payload)
 
@@ -150,27 +189,15 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
         first_channel_val = exir_ops.edge.aten.slice_copy.Tensor(input_val, 1, 0, 1, 1)
         _set_fake_tensor_meta(first_channel, first_channel_val)
 
-        zero_channel = create_node(
-            graph_module.graph,
-            op_target=exir_ops.edge.aten.sub.Tensor,
-            args=(first_channel, first_channel),
-            kwargs={"alpha": 1},
-            from_node=input_tensor,
-        )
-        _set_fake_tensor_meta(
-            zero_channel,
-            exir_ops.edge.aten.sub.Tensor(first_channel_val, first_channel_val),
-        )
-
         padded_input = create_node(
             graph_module.graph,
             op_target=exir_ops.edge.aten.cat.default,
-            args=([input_tensor, zero_channel], 1),
+            args=([input_tensor, first_channel], 1),
             from_node=input_tensor,
         )
         _set_fake_tensor_meta(
             padded_input,
-            exir_ops.edge.aten.cat.default([input_val, zero_channel.meta["val"]], 1),
+            exir_ops.edge.aten.cat.default([input_val, first_channel_val], 1),
         )
         return padded_input
 
@@ -207,6 +234,8 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
             input_tensor, grid, interpolation_mode, padding_mode, align_corners = (
                 node.args
             )
+            use_quantized_image_payload = _uses_grid_sampler_int8_snorm_metadata(node)
+            output_dtype = torch.int8 if use_quantized_image_payload else None
             pad_c3_for_sampler = _can_pad_c3_for_sampler(
                 input_tensor,
                 interpolation_mode,
@@ -230,6 +259,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     padding_mode=padding_mode,
                     align_corners=align_corners,
                     input_tensor=custom_input,
+                    output_dtype=output_dtype,
                 )
                 nhwc_input = create_node(
                     graph_module.graph,
@@ -299,6 +329,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                 graph_module.graph.erase_node(node)
 
         if modified:
+            graph_module.graph.eliminate_dead_code()
             graph_module.graph.lint()
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module

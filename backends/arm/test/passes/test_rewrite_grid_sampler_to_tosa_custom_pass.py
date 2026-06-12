@@ -4,8 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import executorch.backends.arm.tosa.dialect  # noqa: F401
+import pytest
 import torch
 import torch.nn.functional as F
+from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+)
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -17,6 +23,7 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
     CUSTOM_SHADER_DOMAIN_NAME,
     decode_payload,
     grid_sampler_2d_operator_name,
+    GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT,
     GRID_SAMPLER_2D_SAMPLER_VK_FORMAT,
     GRID_SAMPLER_2D_SHADER_ENTRY_POINT,
     GRID_SAMPLER_2D_SHADER_LANGUAGE,
@@ -26,6 +33,7 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class GridSampler2d(torch.nn.Module):
@@ -129,6 +137,51 @@ def test_rewrite_grid_sampler_to_tosa_custom_no_target_uses_sampler_for_c4():
     assert payload["input_1_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_TENSOR_ARM"
     assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE"
     assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_VK_FORMAT
+
+
+@pytest.mark.parametrize("channels", [3, 4])
+@pytest.mark.parametrize("use_composable_quantizer", [False, True])
+def test_quantized_grid_sampler_uses_int8_sampler_payload(
+    channels, use_composable_quantizer
+):
+    model = GridSampler2d().eval()
+    example_inputs = (
+        torch.randn(1, channels, 8, 8),
+        torch.rand(1, 4, 4, 2),
+    )
+    quantizer = TOSAQuantizer(
+        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+        use_composable_quantizer=use_composable_quantizer,
+    )
+    quantizer.set_global(get_symmetric_quantization_config(is_per_channel=False))
+
+    exported = export(model, example_inputs, strict=True)
+    prepared = prepare_pt2e(exported.module(), quantizer)
+    prepared(*example_inputs)
+    converted = convert_pt2e(prepared)
+
+    edge_model = to_edge(export(converted, example_inputs, strict=True))
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP+INT")):
+        edge_model = edge_model.transform(
+            [FoldAndAnnotateQParamsPass(), RewriteGridSamplerToTosaCustomPass()]
+        )
+    nodes = list(edge_model.exported_program().graph.nodes)
+
+    custom_node = next(
+        node for node in nodes if node.target == exir_ops.backend.tosa.CUSTOM.default
+    )
+    payload = decode_payload(custom_node.kwargs["implementation_attrs"])
+
+    assert payload["input_0_type"] == "Image"
+    assert payload["input_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    assert payload["input_1_type"] == "Tensor"
+    assert payload["input_1_vkformat"] == GRID_SAMPLER_2D_VK_FORMAT
+    assert payload["output_0_type"] == "Image"
+    assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    assert custom_node.meta["input_qparams"][0].qmin == -127
+    assert custom_node.meta["input_qparams"][0].qmax == 127
+    assert next(iter(custom_node.meta["output_qparams"].values())).qmin == -127
+    assert next(iter(custom_node.meta["output_qparams"].values())).qmax == 127
 
 
 def test_rewrite_grid_sampler_to_tosa_custom_no_c3_pad_for_align_corners():

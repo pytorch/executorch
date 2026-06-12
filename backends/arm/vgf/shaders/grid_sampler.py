@@ -17,7 +17,10 @@ GRID_SAMPLER_2D_SHADER_SOURCE = "grid_sampler.glsl"
 GRID_SAMPLER_2D_SHADER_BINARY = "grid_sampler.spirv.b64"
 GRID_SAMPLER_2D_SAMPLER_SHADER_SOURCE = "grid_sampler_sampler.glsl"
 GRID_SAMPLER_2D_SAMPLER_SHADER_BINARY = "grid_sampler_sampler.spirv.b64"
+GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_SOURCE = "grid_sampler_sampler_int8.glsl"
+GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_BINARY = "grid_sampler_sampler_int8.spirv.b64"
 GRID_SAMPLER_2D_SAMPLER_VK_FORMAT = "VK_FORMAT_R32G32B32A32_SFLOAT"
+GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT = "VK_FORMAT_R8G8B8A8_SNORM"
 
 _INTERPOLATION_MODE_NAMES = {
     0: "bilinear",
@@ -72,6 +75,7 @@ def build_grid_sampler_2d_payload(
     align_corners: bool,
     input_shape: tuple[int, ...] | None = None,
     input_dtype: Any | None = None,
+    output_dtype: Any | None = None,
 ) -> dict[str, Any]:
     _mode_name(
         int(interpolation_mode),
@@ -83,17 +87,21 @@ def build_grid_sampler_2d_payload(
         _PADDING_MODE_NAMES,
         "padding_mode",
     )
+    if output_dtype is None:
+        output_dtype = input_dtype
+
+    sampler_vk_format = _sampler_vk_format(input_dtype, output_dtype)
     use_sampler = (
         input_shape is not None
         and len(input_shape) == 4
         and int(input_shape[0]) == 1
         and int(input_shape[1]) == 4
-        and str(input_dtype) == "torch.float32"
+        and sampler_vk_format is not None
         and int(interpolation_mode) in (0, 1)
         and not bool(align_corners)
     )
     shader_file = (
-        GRID_SAMPLER_2D_SAMPLER_SHADER_BINARY
+        _sampler_shader_file(sampler_vk_format)
         if use_sampler
         else GRID_SAMPLER_2D_SHADER_BINARY
     )
@@ -119,7 +127,7 @@ def build_grid_sampler_2d_payload(
         payload.update(
             {
                 "input_0_type": "Image",
-                "input_0_vkformat": GRID_SAMPLER_2D_SAMPLER_VK_FORMAT,
+                "input_0_vkformat": sampler_vk_format,
                 "input_0_vkdescriptortype": (
                     "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER"
                 ),
@@ -129,7 +137,7 @@ def build_grid_sampler_2d_payload(
                 ),
                 "input_1_vkdescriptortype": "VK_DESCRIPTOR_TYPE_TENSOR_ARM",
                 "output_0_type": "Image",
-                "output_0_vkformat": GRID_SAMPLER_2D_SAMPLER_VK_FORMAT,
+                "output_0_vkformat": sampler_vk_format,
                 "output_0_vkdescriptortype": "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE",
             }
         )
@@ -146,6 +154,22 @@ def build_grid_sampler_2d_payload(
             }
         )
     return payload
+
+
+def _sampler_vk_format(input_dtype: Any | None, output_dtype: Any | None) -> str | None:
+    if str(input_dtype) != str(output_dtype):
+        return None
+    if str(input_dtype) == "torch.float32":
+        return GRID_SAMPLER_2D_SAMPLER_VK_FORMAT
+    if str(input_dtype) == "torch.int8":
+        return GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    return None
+
+
+def _sampler_shader_file(sampler_vk_format: str | None) -> str:
+    if sampler_vk_format == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT:
+        return GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_BINARY
+    return GRID_SAMPLER_2D_SAMPLER_SHADER_BINARY
 
 
 def _sampler_config(interpolation_mode: int, padding_mode: int) -> dict[str, str]:
