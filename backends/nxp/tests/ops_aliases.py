@@ -13,10 +13,14 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 Abs = exir_ops.edge.aten.abs.default
 AdaptiveAvgPool2D = exir_ops.edge.aten._adaptive_avg_pool2d.default
+AddMm = exir_ops.edge.aten.addmm.default
 AddTensor = exir_ops.edge.aten.add.Tensor
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 Bmm = exir_ops.edge.aten.bmm.default
+Cat = exir_ops.edge.aten.cat.default
 Clamp = exir_ops.edge.aten.clamp.default
+Clone = exir_ops.edge.aten.clone.default
+CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
 ConstantPadND = exir_ops.edge.aten.constant_pad_nd.default
 Convolution = exir_ops.edge.aten.convolution.default
 DequantizePerChannel = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
@@ -29,8 +33,10 @@ LeakyRelu = exir_ops.edge.aten.leaky_relu.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
 MeanDim = exir_ops.edge.aten.mean.dim
 MulTensor = exir_ops.edge.aten.mul.Tensor
+PermuteCopy = exir_ops.edge.aten.permute_copy.default
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
 QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+PermuteCopy = exir_ops.edge.aten.permute_copy.default
 Relu = exir_ops.edge.aten.relu.default
 Sigmoid = exir_ops.edge.aten.sigmoid.default
 Slice = exir_ops.edge.aten.slice.Tensor
