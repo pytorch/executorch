@@ -408,6 +408,14 @@ class CDist(torch.nn.Module):
         return torch.cdist(x, y, p=2)
 
 
+class CDistForward(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.ops.aten._cdist_forward.default(x, y, 2.0, None)
+
+
 class Ceil(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2606,6 +2614,30 @@ class Unsqueeze(torch.nn.Module):
 
     def forward(self, x):
         return x.unsqueeze(0)
+
+
+class VarCorrection(torch.nn.Module):
+    def __init__(self, dim=None, correction=1, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.correction = correction
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.var(
+            x, dim=self.dim, correction=self.correction, keepdim=self.keepdim
+        )
+
+
+class VarDim(torch.nn.Module):
+    def __init__(self, dim=None, unbiased=True, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.unbiased = unbiased
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.var(x, dim=self.dim, unbiased=self.unbiased, keepdim=self.keepdim)
 
 
 class View(torch.nn.Module):

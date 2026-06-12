@@ -223,6 +223,22 @@ def test_cmake_build_flags_pass(tmp_path):
     assert "EXECUTORCH_BUILD_VULKAN=TRUE" in result.detail
 
 
+def test_cmake_build_flags_pass_when_vulkan_disabled(tmp_path):
+    (tmp_path / "CMakeCache.txt").write_text(
+        "EXECUTORCH_BUILD_VGF:BOOL=ON\n" "EXECUTORCH_BUILD_VULKAN:BOOL=OFF\n",
+        encoding="utf-8",
+    )
+
+    result = check_env._check_cmake_build_flags(
+        build_dir=tmp_path,
+        require_runtime_build=True,
+    )
+
+    assert result.status == check_env.STATUS_OK
+    assert "EXECUTORCH_BUILD_VGF=ON" in result.detail
+    assert "EXECUTORCH_BUILD_VULKAN=OFF" in result.detail
+
+
 def test_cmake_build_flags_fail_when_vgf_disabled(tmp_path):
     (tmp_path / "CMakeCache.txt").write_text(
         "EXECUTORCH_BUILD_VGF:BOOL=OFF\n" "EXECUTORCH_BUILD_VULKAN:BOOL=ON\n",
