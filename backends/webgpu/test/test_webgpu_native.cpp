@@ -386,6 +386,7 @@ struct Q4gswConfig {
 };
 
 // Llama-3.2-1B linear shapes (q/o/k/v/gate/up/down + lm_head) + 4k/8k prefill.
+// tol scales with K (fp32 accum depth), not M; down_proj (K=8192) is looser.
 static const Q4gswConfig kQ4gswConfigs[] = {
     // name         M     K     N      tol_abs tol_rel req    heavy
     {"q_proj", 1, 2048, 2048, 1e-4f, 1e-3f, true, false},
@@ -393,10 +394,10 @@ static const Q4gswConfig kQ4gswConfigs[] = {
     {"gate_proj", 1, 2048, 8192, 1e-4f, 1e-3f, true, false},
     {"down_proj", 1, 8192, 2048, 1e-3f, 1e-2f, true, false}, // big-K accum
     {"lm_head", 1, 2048, 128256, 1e-4f, 1e-3f, false, true},
-    {"q_proj_4k", 4096, 2048, 2048, 1e-3f, 1e-2f, true, false},
-    {"kv_proj_4k", 4096, 2048, 512, 1e-3f, 1e-2f, true, false},
-    {"q_proj_8k", 8192, 2048, 2048, 1e-3f, 1e-2f, false, true},
-    {"kv_proj_8k", 8192, 2048, 512, 1e-3f, 1e-2f, false, true},
+    {"q_proj_4k", 4096, 2048, 2048, 1e-4f, 1e-3f, true, false},
+    {"kv_proj_4k", 4096, 2048, 512, 1e-4f, 1e-3f, true, false},
+    {"q_proj_8k", 8192, 2048, 2048, 1e-4f, 1e-3f, false, true},
+    {"kv_proj_8k", 8192, 2048, 512, 1e-4f, 1e-3f, false, true},
 };
 
 // /16 ramp over the flat index; mirrors test_quantized_linear.py _ramp_input.

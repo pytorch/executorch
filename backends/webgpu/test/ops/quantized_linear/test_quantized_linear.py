@@ -96,9 +96,11 @@ def _export(m: torch.nn.Module, x: torch.Tensor):
 
 class TestQuantizedLinear(unittest.TestCase):
     def test_export_delegates(self) -> None:
-        # Every config must fuse to a VulkanBackend delegate (q4gsw). Fusion is
-        # shape-independent, so M=1 keeps even the heavy configs cheap to check.
+        # Each (non-heavy) config must fuse to a VulkanBackend delegate (q4gsw);
+        # fusion is shape-independent, so skipping the heavy 131MB+ fixtures is free.
         for cfg in CONFIGS:
+            if cfg.heavy:
+                continue
             with self.subTest(config=cfg.name):
                 m = _make_quantized_model(cfg.k, cfg.n, cfg.group_size)
                 et = _export(m, _ramp_input(1, cfg.k))
@@ -113,15 +115,15 @@ class TestQuantizedLinear(unittest.TestCase):
         # Dual oracle (mirrors SDPA test_golden_matches_eager_op): the fp64 dequant-
         # matmul truth and torchao's own fp32 quantized forward are independent refs
         # that must agree -- guards a bug in the fp64 oracle / dequantize() accessor.
-        # M=1 shapes only (cheap; the math is shape-independent).
+        # M=1 non-heavy shapes (cheap; the math is shape-independent).
         for cfg in CONFIGS:
-            if cfg.m != 1:
+            if cfg.m != 1 or cfg.heavy:
                 continue
             with self.subTest(config=cfg.name):
                 m = _make_quantized_model(cfg.k, cfg.n, cfg.group_size)
                 x = _ramp_input(1, cfg.k)
                 golden = torch.from_numpy(_fp64_golden(m, x))
-                torch.testing.assert_close(m(x), golden, atol=1e-2, rtol=1e-2)
+                torch.testing.assert_close(m(x), golden, atol=5e-4, rtol=1e-3)
 
 
 def export_quantized_linear_model(
