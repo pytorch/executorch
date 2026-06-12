@@ -62,7 +62,7 @@ class MatmulVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [output],
-            [ts.DType.INT32, ts.DType.INT48, ts.DType.FP32],
+            [ts.DType.INT32, ts.DType.INT48, ts.DType.FP16, ts.DType.FP32],
             self.tosa_spec,
         )
 

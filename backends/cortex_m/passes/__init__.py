@@ -41,6 +41,5 @@ from .cortex_m_pass import CortexMPass  # noqa
 from .decompose_hardswish_pass import DecomposeHardswishPass  # noqa
 from .decompose_mean_pass import DecomposeMeanPass  # noqa
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass  # noqa
-from .quantized_op_fusion_pass import QuantizedOpFusionPass  # noqa
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass  # noqa
 from .cortex_m_pass_manager import CortexMPassManager  # noqa  # usort: skip
