@@ -124,7 +124,7 @@ jobs:
   export-models:
     name: export-models
     needs: set-parameters
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -135,7 +135,7 @@ jobs:
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
@@ -145,6 +145,14 @@ jobs:
       script: |
         set -eux
         echo "::group::Setup ExecuTorch"
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
@@ -192,7 +200,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -201,7 +209,7 @@ jobs:
       fail-fast: false
     with:
       timeout: 90
-      runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
@@ -212,6 +220,14 @@ jobs:
       script: |
         set -eux
         echo "::group::Setup environment"
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         ./install_requirements.sh
         pip list
         echo "::endgroup::"
