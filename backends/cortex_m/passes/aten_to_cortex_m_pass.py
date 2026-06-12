@@ -5,7 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast
+import math
+from typing import cast, Optional
 
 import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 import executorch.backends.cortex_m.ops.operators  # noqa
@@ -17,10 +18,16 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,
     quantize_multiplier_aot,
+    quantize_val,
+    SHIFT_INT8,
     to_physical_order,
 )
 from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
     required_cmsis_nn_buffer_sizes,
+)
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
 )
 from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.transforms.aten_to_dialect_pass import (
@@ -38,6 +45,7 @@ from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 from torch.fx import Node
+from torch.fx.node import Argument
 from torch.fx.passes.infra.pass_manager import PassResult
 
 
@@ -97,6 +105,78 @@ def _create_uninitialized_alloc_node(
                 mode.from_tensor(torch.empty(0)),
                 None,
             )
+
+
+_SOFTMAX_INPUT_INTEGER_BITS = 5
+
+
+def _to_int_pair(
+    value: Argument, default: Optional[tuple[int, int]]
+) -> tuple[int, int]:
+    if value is None:
+        assert default is not None, "Expected default sequence for normalization"
+        return (default[0], default[1])
+
+    try:
+        int_pair = cast(tuple[int, int], value)
+        return int_pair
+    except Exception as exc:
+        raise ValueError(f"Expected a tuple of two integers, got {value}") from exc
+
+
+def _to_bool(value: Argument, default: bool) -> bool:
+    if value is None:
+        return default
+    try:
+        bool_value = cast(bool, value)
+        return bool_value
+    except Exception as exc:
+        raise ValueError(f"Expected a boolean value, got {value}") from exc
+
+
+def _is_quant_per_tensor_qualified(node: Node) -> bool:
+    """Match int8 OR int16 (de)quantize_per_tensor nodes."""
+    dtype = node.args[5]
+    if dtype == torch.int8:
+        return (
+            cast(int, node.args[3]) >= torch.iinfo(torch.int8).min
+            and cast(int, node.args[4]) <= torch.iinfo(torch.int8).max
+        )
+    if dtype == torch.int16:
+        return (
+            cast(int, node.args[3]) >= torch.iinfo(torch.int16).min
+            and cast(int, node.args[4]) <= torch.iinfo(torch.int16).max
+        )
+    return False
+
+
+def _compute_softmax_params(input_scale: float) -> tuple[int, int, int]:
+    """
+    Convert per-tensor input scale into fixed-point params for arm_softmax_s8.
+    """
+    real_multiplier = min(
+        input_scale * (1 << (31 - _SOFTMAX_INPUT_INTEGER_BITS)),
+        float((1 << 31) - 1),
+    )
+    input_multiplier, input_shift = quantize_multiplier_aot(real_multiplier)
+    diff_min_term = (
+        ((1 << _SOFTMAX_INPUT_INTEGER_BITS) - 1)
+        * math.ldexp(1.0, 31 - _SOFTMAX_INPUT_INTEGER_BITS)
+        / math.ldexp(1.0, input_shift)
+    )
+    diff_min = -int(math.floor(diff_min_term))
+    return int(input_multiplier), int(input_shift), diff_min
+
+
+def _get_input_tensor_data(node: Node, arg_index: int = 0):
+    arg = node.args[arg_index]
+    if isinstance(arg, Node) and "val" in arg.meta:
+        return get_first_fake_tensor(arg)
+    if "val" in node.meta:
+        return get_first_fake_tensor(node)
+    raise KeyError(
+        f"Expected fake tensor metadata on input arg {arg_index} or node {node.name}."
+    )
 
 
 def _compute_kernel_sum(weights, bias, input_offset, weight_offset):
@@ -698,3 +778,302 @@ def _get_avg_pool2d_replacement(
     return DialectNodeSpec(
         exir_ops.edge.cortex_m.quantized_avg_pool2d.default, new_args
     )
+
+
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+)
+def _get_quantize_per_tensor_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    if not _is_quant_per_tensor_qualified(node):
+        return None
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.quantize_per_tensor.default, node.args
+    )
+
+
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+)
+def _get_dequantize_per_tensor_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    if not _is_quant_per_tensor_qualified(node):
+        return None
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.dequantize_per_tensor.default, node.args
+    )
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.add.Tensor)
+def _get_add_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    if not _has_qparams(node):
+        return None
+
+    scale1 = node.meta["input_qparams"][0].scale
+    zero_point1 = node.meta["input_qparams"][0].zp
+    scale2 = node.meta["input_qparams"][1].scale
+    zero_point2 = node.meta["input_qparams"][1].zp
+    output_scale = node.meta["output_qparams"][0].scale
+    output_zero_point = node.meta["output_qparams"][0].zp
+
+    max_scale_2x = 2 * max(scale1, scale2)
+    input1_mult, input1_shift = quantize_multiplier_aot(scale1 / max_scale_2x)
+    input2_mult, input2_shift = quantize_multiplier_aot(scale2 / max_scale_2x)
+    output_mult, output_shift = quantize_multiplier_aot(
+        max_scale_2x / (output_scale * (1 << SHIFT_INT8))
+    )
+
+    activation_min = node.meta["output_qparams"][0].qmin
+    activation_max = node.meta["output_qparams"][0].qmax
+
+    args = (
+        node.args[0],
+        zero_point1,
+        input1_mult,
+        input1_shift,
+        node.args[1],
+        zero_point2,
+        input2_mult,
+        input2_shift,
+        output_zero_point,
+        output_mult,
+        output_shift,
+        activation_min,
+        activation_max,
+    )
+    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_add.default, args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.mul.Tensor)
+def _get_mul_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    if not _has_qparams(node):
+        return None
+
+    scale1 = node.meta["input_qparams"][0].scale
+    zero_point1 = node.meta["input_qparams"][0].zp
+    scale2 = node.meta["input_qparams"][1].scale
+    zero_point2 = node.meta["input_qparams"][1].zp
+    output_scale = node.meta["output_qparams"][0].scale
+    output_zero_point = node.meta["output_qparams"][0].zp
+
+    output_mult, output_shift = quantize_multiplier_aot(
+        (scale1 * scale2) / output_scale
+    )
+    args = (
+        node.args[0],
+        zero_point1,
+        node.args[1],
+        zero_point2,
+        output_zero_point,
+        output_mult,
+        output_shift,
+    )
+    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_mul.default, args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten._softmax.default)
+def _get_softmax_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    if not _has_qparams(node):
+        return None
+
+    half_to_float = node.args[2] if len(node.args) > 2 else False
+    if cast(bool, half_to_float):
+        return None
+
+    input_qparams = node.meta["input_qparams"][0]
+    output_qparams = node.meta["output_qparams"][0]
+
+    input_multiplier, input_shift, diff_min = _compute_softmax_params(
+        float(input_qparams.scale)
+    )
+
+    output_scale_attr = getattr(output_qparams, "scale", None)
+    output_zp_attr = getattr(output_qparams, "zp", None)
+    if output_scale_attr is None or output_zp_attr is None:
+        raise AssertionError("Softmax requires output quantization parameters.")
+
+    output_scale_val = float(output_scale_attr)
+    output_zp_val = int(output_zp_attr)
+    if not math.isclose(
+        output_scale_val, CMSIS_SOFTMAX_SCALE, rel_tol=0.0, abs_tol=1e-12
+    ):
+        raise AssertionError(
+            "Softmax output scale must match CMSIS (1/256). " f"Got {output_scale_val}."
+        )
+    if output_zp_val != CMSIS_SOFTMAX_ZERO_POINT:
+        raise AssertionError(
+            "Softmax output zero-point must match CMSIS (-128). "
+            f"Got {output_zp_val}."
+        )
+
+    args = (
+        node.args[0],
+        node.args[1],
+        int(input_qparams.zp),
+        output_zp_val,
+        input_multiplier,
+        input_shift,
+        diff_min,
+    )
+    return DialectNodeSpec(exir_ops.edge.cortex_m.softmax.default, args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.max_pool2d.default)
+def _get_max_pool2d_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    input_qparams = node.meta.get("input_qparams", {}).get(0)
+    cortex_m_meta = node.meta.get("custom", {}).get("cortex_m", {})
+    if input_qparams is None or cortex_m_meta.get("skip_quantized_max_pool2d", False):
+        return None
+
+    input_scale = float(input_qparams.scale)
+    input_zero_point = int(input_qparams.zp)
+
+    output_qparams = None
+    if node.meta.get("output_qparams"):
+        output_qparams = node.meta["output_qparams"].get(0)
+
+    if output_qparams is not None:
+        if getattr(output_qparams, "per_channel", False):
+            return None
+        output_scale = float(output_qparams.scale)
+        output_zero_point = int(output_qparams.zp)
+        activation_min = int(output_qparams.qmin)
+        activation_max = int(output_qparams.qmax)
+        if abs(input_scale - output_scale) > 1e-6:
+            return None
+        if input_zero_point != output_zero_point:
+            return None
+    else:
+        output_zero_point = input_zero_point
+        activation_min = torch.iinfo(torch.int8).min
+        activation_max = torch.iinfo(torch.int8).max
+
+    kernel_size = _to_int_pair(node.args[1], None)
+    stride_arg = node.args[2] if len(node.args) > 2 else None
+    stride = _to_int_pair(stride_arg, kernel_size)
+    padding_arg = node.args[3] if len(node.args) > 3 else None
+    padding = _to_int_pair(padding_arg, (0, 0))
+    dilation_arg = node.args[4] if len(node.args) > 4 else None
+    dilation = _to_int_pair(dilation_arg, (1, 1))
+    ceil_mode_arg = node.args[5] if len(node.args) > 5 else False
+    ceil_mode = _to_bool(ceil_mode_arg, False)
+
+    if dilation != (1, 1) or ceil_mode:
+        return None
+
+    quantized_op = getattr(exir_ops.edge.cortex_m, "quantized_max_pool2d", None)
+    if quantized_op is None:
+        return None
+
+    args = (
+        node.args[0],
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        input_zero_point,
+        output_zero_point,
+        activation_min,
+        activation_max,
+    )
+    return DialectNodeSpec(quantized_op.default, args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.minimum.default)
+def _get_minimum_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    input_tensor = _get_input_tensor_data(node)
+    if input_tensor.dtype not in (torch.int8, torch.int32):
+        return None
+    return DialectNodeSpec(exir_ops.edge.cortex_m.minimum.default, node.args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.maximum.default)
+def _get_maximum_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    input_tensor = _get_input_tensor_data(node)
+    if input_tensor.dtype != torch.int8:
+        return None
+    return DialectNodeSpec(exir_ops.edge.cortex_m.maximum.default, node.args)
+
+
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.aten.permute_copy.default
+)
+def _get_permute_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    input_tensor = _get_input_tensor_data(node)
+    if input_tensor.dtype != torch.int8:
+        return None
+
+    rank = len(input_tensor.shape)
+    perms = [p % rank for p in cast(tuple[int, ...], node.args[1])]
+    return DialectNodeSpec(
+        exir_ops.edge.cortex_m.transpose.default, (node.args[0], perms)
+    )
+
+
+@AtenToCortexMPass.register_dialect_substitution(
+    exir_ops.edge.aten.constant_pad_nd.default
+)
+def _get_pad_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    input_qparams = node.meta.get("input_qparams", {})
+    if not input_qparams:
+        return None
+
+    scale = float(input_qparams[0].scale)
+    zero_point = int(input_qparams[0].zp)
+    padding = cast(tuple[int, ...], node.args[1])
+    pad_value_raw = node.args[2] if len(node.args) > 2 else 0
+    pad_value_float = float(cast(float, pad_value_raw))
+
+    quantized_pad_value = int(
+        quantize_val(pad_value_float, scale, zero_point, -128, 127)
+    )
+
+    input_tensor = _get_input_tensor_data(node)
+    rank = len(input_tensor.shape)
+    assert 1 <= rank <= 4, f"cortex_m pad: expected rank in [1, 4], got {rank}"
+    n_pairs = len(padding) // 2
+    assert (
+        len(padding) % 2 == 0 and n_pairs <= rank
+    ), f"cortex_m pad: invalid padding length {len(padding)} for rank {rank}"
+
+    pre_pad = [0, 0, 0, 0]
+    post_pad = [0, 0, 0, 0]
+    for i in range(n_pairs):
+        dim_4d = 3 - i
+        pre_pad[dim_4d] = int(padding[2 * i])
+        post_pad[dim_4d] = int(padding[2 * i + 1])
+
+    pre_pad = to_physical_order(pre_pad, input_tensor)
+    post_pad = to_physical_order(post_pad, input_tensor)
+
+    args = (node.args[0], pre_pad, post_pad, int(quantized_pad_value))
+    return DialectNodeSpec(exir_ops.edge.cortex_m.pad.default, args)

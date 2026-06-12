@@ -11,6 +11,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     conv3d,
     custom,
     depthwise_conv2d,
+    fft,
     gather,
     identity,
     matmul,
