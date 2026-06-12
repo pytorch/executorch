@@ -86,3 +86,12 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(text_llm_worker)
   target_link_options(text_llm_worker PRIVATE "LINKER:-s")
 endif()
+
+# Pure unit test for the warm-resume prefill planner (worker_prefill_plan.h). No
+# ET/model/tokenizer dependency, so it builds and runs standalone via ctest.
+enable_testing()
+add_executable(test_worker_prefill_plan test_worker_prefill_plan.cpp)
+target_include_directories(
+  test_worker_prefill_plan PUBLIC ${_common_include_directories}
+)
+add_test(NAME worker_prefill_plan COMMAND test_worker_prefill_plan)

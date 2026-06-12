@@ -76,6 +76,7 @@ def test_spawn_builds_worker_command(monkeypatch):
             tokenizer_path="t.json",
             data_path="d.ptd",
             max_sessions=4,
+            warm_resume=True,
         )
     )
     assert captured["cmd"] == [
@@ -88,6 +89,7 @@ def test_spawn_builds_worker_command(monkeypatch):
         "d.ptd",
         "--max_sessions",
         "4",
+        "--warm_resume=true",
     ]
 
 
@@ -103,6 +105,7 @@ def test_spawn_defaults_worker_bin_and_omits_empty_data_path(monkeypatch):
             tokenizer_path="t.json",
             data_path=None,
             max_sessions=4,
+            warm_resume=True,
         )
     )
     cmd = captured["cmd"]

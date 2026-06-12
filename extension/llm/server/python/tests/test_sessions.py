@@ -128,3 +128,22 @@ def test_session_header_precedence(make_client):
     )
     assert resp.status_code == 200
     assert fake.opened_log == ["xet"]
+
+
+def test_reset_endpoint_clears_context_but_keeps_slot(make_client):
+    # max_named=1: open "a", reset it, then a *different* id must still 429 —
+    # proving reset cleared context without freeing the slot (unlike DELETE).
+    client, fake = make_client(max_named_sessions=1)
+    assert _chat(client, session_id="a").status_code == 200
+    r = client.post("/v1/sessions/a/reset")
+    assert r.status_code == 200
+    assert r.json() == {"reset": True, "session_id": "a"}
+    assert fake.reset_log == ["a"]
+    assert _chat(client, session_id="b").status_code == 429  # slot still held
+
+
+def test_reset_invalid_session_id_rejected(make_client):
+    client, _ = make_client(max_named_sessions=2)
+    r = client.post("/v1/sessions/has%20space/reset")
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_session_id"

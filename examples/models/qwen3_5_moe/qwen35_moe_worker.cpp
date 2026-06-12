@@ -18,11 +18,11 @@
 // process segfaults in the int4 matmul (validated). Here the model runs in a
 // plain synchronous loop in its own process, which is reliable.
 //
-// Multi-session (isolation): the engine loads weights once and hosts multiple
-// isolated sessions on that one ~18GB allocation; the shared worker loop
-// (worker_loop.h) routes requests to per-session_id state, up to
-// --max_sessions. Execution is still synchronous (one in-flight request); warm
-// context reuse across requests is a follow-up.
+// Multi-session: the engine loads weights once and hosts multiple isolated
+// sessions on that one ~18GB allocation; the shared worker loop (worker_loop.h)
+// routes requests to per-session_id state (up to --max_sessions) and warm-
+// resumes each session's context across requests (append-only suffix prefill).
+// Execution is synchronous (one in-flight request).
 
 #include <gflags/gflags.h>
 
@@ -41,6 +41,12 @@ DEFINE_int32(
     "Max physical sessions to host on the one weight allocation (CUDA "
     "per-session mutable rebinding). Clamped to 1 if the backend cannot "
     "rebind.");
+DEFINE_bool(
+    warm_resume,
+    true,
+    "Warm append-only resume for named sessions: prefill only the suffix when a "
+    "request's tokens extend the session's resident context. Off resets every "
+    "request (useful for A/B measurement).");
 
 namespace {
 namespace llm = ::executorch::extension::llm;
@@ -73,5 +79,6 @@ int main(int argc, char** argv) {
   // ids back to text internally. The shared loop owns per-session_id state.
   ::tokenizers::Tokenizer* tokenizer = engine->tokenizer();
 
-  return llm::run_worker_stdio_loop(*engine, *tokenizer, engine->metadata());
+  return llm::run_worker_stdio_loop(
+      *engine, *tokenizer, engine->metadata(), FLAGS_warm_resume);
 }

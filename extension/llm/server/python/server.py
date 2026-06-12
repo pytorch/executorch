@@ -30,7 +30,7 @@ import logging
 import os
 from pathlib import Path
 
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -92,6 +92,18 @@ def _resolve_session_id(
     return x_executorch_session_id or session_id_header or x_session_affinity
 
 
+async def _session_op(
+    op: Callable[[str], Awaitable[None]], session_id: str, ok: dict
+) -> JSONResponse:
+    # Shared shape for the session vendor-extension routes (close/reset): run the
+    # idempotent op, mapping APIError to a structured JSON error.
+    try:
+        await op(session_id)
+    except APIError as e:
+        return JSONResponse(e.body(), status_code=e.status)
+    return JSONResponse(ok)
+
+
 def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     app = FastAPI(title="ExecuTorch LLM Server")
 
@@ -131,11 +143,21 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     @app.delete("/v1/sessions/{session_id}")
     async def close_session(session_id: str):
         # Free a named session's state + capacity slot (vendor extension; idempotent).
-        try:
-            await serving.close_session(session_id)
-        except APIError as e:
-            return JSONResponse(e.body(), status_code=e.status)
-        return JSONResponse({"closed": True, "session_id": session_id})
+        return await _session_op(
+            serving.close_session,
+            session_id,
+            {"closed": True, "session_id": session_id},
+        )
+
+    @app.post("/v1/sessions/{session_id}/reset")
+    async def reset_session(session_id: str):
+        # Clear a named session's context but keep its slot (vendor extension;
+        # idempotent): reuse a slot for a new conversation without reopening it.
+        return await _session_op(
+            serving.reset_session,
+            session_id,
+            {"reset": True, "session_id": session_id},
+        )
 
     return app
 
