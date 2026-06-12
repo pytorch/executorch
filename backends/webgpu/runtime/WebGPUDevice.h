@@ -10,9 +10,11 @@
 
 #include <webgpu/webgpu.h>
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
 #include <executorch/backends/webgpu/runtime/WebGPUQueryPool.h>
 
 #include <memory>
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 namespace executorch {
 namespace backends {
@@ -23,10 +25,12 @@ struct WebGPUContext {
   WGPUAdapter adapter = nullptr;
   WGPUDevice device = nullptr;
   WGPUQueue queue = nullptr;
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
   // True if the device was created with the TimestampQuery feature (bench).
   bool timestamp_supported = false;
   // Bench-only: timestamp-query pool, lazily created in execute() (env-gated).
   std::unique_ptr<WebGPUQueryPool> querypool;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 };
 
 WebGPUContext create_webgpu_context();
