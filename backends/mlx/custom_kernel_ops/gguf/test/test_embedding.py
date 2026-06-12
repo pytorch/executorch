@@ -27,6 +27,8 @@ import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
+    _emit_direct_gguf_env,
+    _q4k_mlx_native_dequant,
     make_q4_k_blob,
     make_q6_k_blob,
 )
@@ -63,13 +65,18 @@ class GGUFEmbeddingTest(OpTestCase):
         K: int = 256,
         idx_shape: Tuple[int, ...] = (8,),
         ggml_type: str = "q6_k",
+        emit_direct_gguf: bool = True,
     ):
         self.vocab = vocab
         self.K = K
         self.idx_shape = idx_shape
         self.ggml_type = ggml_type
+        self.emit_direct_gguf = emit_direct_gguf
         shp = "x".join(str(d) for d in idx_shape)
-        self.name = f"gguf_embedding_{ggml_type}_v{vocab}_k{K}_idx{shp}"
+        tag = f"gguf_embedding_{ggml_type}_v{vocab}_k{K}_idx{shp}"
+        if ggml_type == "q4_k" and not emit_direct_gguf:
+            tag += "_mlx_native"
+        self.name = tag
 
     @classmethod
     def get_test_configs(cls) -> List["GGUFEmbeddingTest"]:
@@ -89,7 +96,18 @@ class GGUFEmbeddingTest(OpTestCase):
             cls(vocab=512, K=512, idx_shape=(8,), ggml_type="q4_k"),
             cls(vocab=512, K=256, idx_shape=(2, 3), ggml_type="q4_k"),
             cls(vocab=2048, K=5376, idx_shape=(8,), ggml_type="q4_k"),
+            cls(
+                vocab=512,
+                K=256,
+                idx_shape=(8,),
+                ggml_type="q4_k",
+                emit_direct_gguf=False,
+            ),
         ]
+
+    def generate_test_files(self, verbose: bool = False):
+        with _emit_direct_gguf_env(self.emit_direct_gguf):
+            return super().generate_test_files(verbose=verbose)
 
     def get_edge_compile_config(self):
         from executorch.exir import EdgeCompileConfig
@@ -104,6 +122,13 @@ class GGUFEmbeddingTest(OpTestCase):
         torch.manual_seed(0)
         indices = torch.randint(0, self.vocab, self.idx_shape, dtype=torch.int64)
         return (indices,)
+
+    def compute_expected_outputs(self, model, test_inputs):
+        if self.ggml_type == "q4_k" and not self.emit_direct_gguf:
+            weight = _q4k_mlx_native_dequant(model.weight)
+            out = torch.nn.functional.embedding(test_inputs[0], weight)
+            return [out.to(model.weight.orig_dtype)]
+        return model(*test_inputs)
 
 
 def _main() -> None:  # noqa: C901

@@ -17,8 +17,11 @@ from __future__ import annotations
 from typing import Optional
 
 from executorch.backends.mlx.builder.op_helpers import (
+    emit_ceil_div,
+    emit_if_else,
     emit_product,
     emit_shape,
+    emit_sub_int,
     torch_dtype_to_scalar_type,
 )
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
@@ -29,13 +32,9 @@ from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.common import (
     QK_K,
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
-    AddIntNode,
-    FloorDivideIntNode,
-    IfNode,
     IntOrVid,
     MetalKernelNode,
     MultiplyIntNode,
-    SubtractIntNode,
 )
 from torch.fx.node import Node
 
@@ -49,7 +48,7 @@ from torch.fx.node import Node
 # Threadgroup = (32 * NSG, 1, 1): NSG simdgroups, each computing N_R0 output
 # rows for one activation row (grid.y). Accumulate in float, reduce via simd_sum.
 def _q4k_matvec_source(has_bias: bool) -> str:
-    write = "out[(uint)m * N + r] = (InT)(tot"
+    write = "out[(uint)m * N + r] = (OutT)(tot"
     write += " + (float)bias[r]);" if has_bias else ");"
     return f"""
     constexpr short N_R0 = 2;
@@ -144,14 +143,14 @@ def _q4k_matvec_source(has_bias: bool) -> str:
 # 64x32 output tiles, 4 simdgroups / 128 threads per threadgroup.
 # Uses vectorized dequantize_q4_K_16 to decode 16 weight values per thread
 # into threadgroup memory, then runs simdgroup_multiply_accumulate on 8x8
-# tiles. NL=8 for Q4_K (QK_K / 32 = 8 dequant steps per super-block).
+# tiles. NL=16 for Q4_K (QK_K / 16 = 16 dequant steps per super-block).
 def _q4k_matmul_source(has_bias: bool) -> str:
     bias_add = "+ (float) bias[r0 + i]" if has_bias else ""
     return f"""
     constexpr short NR0 = 64;   // weight/output rows per tile (N dim)
     constexpr short NR1 = 32;   // activation rows per tile (M dim)
     constexpr short NK  = 32;   // K-chunk per iteration
-    constexpr short NL  = 16;   // Q4_K: QK_K / 32
+    constexpr short NL  = 16;   // Q4_K: QK_K / 16
     constexpr short NL0 = NK / 16;  // = 2 — dequant iterations per thread for weight
     constexpr short NL1 = NK / 8;   // = 4 — load iterations per thread for activation
 
@@ -181,7 +180,7 @@ def _q4k_matmul_source(has_bias: bool) -> str:
     short il0 = tid % NL0;
     short il  = il0;  // current dequant sub-block index within Q4_K block
     
-    const short offset1 = il0 / NL;  // always 0 for NL=8, NL0=4
+    const short offset1 = il0 / NL;  // always 0 for NL=8, NL0=2
 
     // Pointer to weight block for this thread's assigned row.
     device const block_q4_K * wblk = (device const block_q4_K *) weight
@@ -255,7 +254,7 @@ def _q4k_matmul_source(has_bias: bool) -> str:
         }}
     }}
 
-    // --- Write results: always via threadgroup memory for float→InT cast ---
+    // --- Write results: always via threadgroup memory for float→OutT cast ---
     // Barrier needed: sa was used for weight tiles during the K-loop and is now
     // reused as float staging for the output. Without this barrier, a fast
     // simdgroup could start writing mc[] into sa while a slower one is still
@@ -273,11 +272,11 @@ def _q4k_matmul_source(has_bias: bool) -> str:
 
         if (sgitg == 0) {{
             for (int j = tid; j < nr1; j += NR1) {{
-                device InT * D = out + (uint)(r1 + j) * (uint)N + r0;
+                device OutT * D = out + (uint)(r1 + j) * (uint)N + r0;
                 threadgroup float * Cp = ((threadgroup float *) sa) + j * NR0;
                 for (int i = 0; i < nr0; ++i) {{
                     float v = Cp[i];
-                    D[i] = (InT)(v {bias_add});
+                    D[i] = (OutT)(v {bias_add});
                 }}
             }}
         }}
@@ -300,6 +299,7 @@ def _emit_q4k_matvec(
     bias_slot: Optional[Slot],
     N: int,
     K: int,
+    out_dtype_int: int,
     out: Slot,
 ) -> None:
     in_dtype_int = torch_dtype_to_scalar_type(x_node.meta["val"].dtype)
@@ -341,10 +341,10 @@ def _emit_q4k_matvec(
             output_names=["out"],
             output_shapes_flat=out_shape_flat,
             output_shape_lengths=[len(out_shape_flat)],
-            output_dtypes=[in_dtype_int],
-            template_arg_names=["InT", "N", "K", "NSG"],
-            template_arg_kinds=[2, 0, 0, 0],  # dtype, int, int, int
-            template_arg_values=[in_dtype_int, N, K, nsg],
+            output_dtypes=[out_dtype_int],
+            template_arg_names=["InT", "OutT", "N", "K", "NSG"],
+            template_arg_kinds=[2, 2, 0, 0, 0],  # dtype, dtype, int, int, int
+            template_arg_values=[in_dtype_int, out_dtype_int, N, K, nsg],
         )
     )
 
@@ -358,6 +358,7 @@ def _emit_q4k_matmul(
     N: int,
     K: int,
     blocks_m_iov: IntOrVid,
+    out_dtype_int: int,
     out: Slot,
 ) -> None:
     in_dtype_int = torch_dtype_to_scalar_type(x_node.meta["val"].dtype)
@@ -408,10 +409,10 @@ def _emit_q4k_matmul(
             output_names=["out"],
             output_shapes_flat=out_shape_flat,
             output_shape_lengths=[len(out_shape_flat)],
-            output_dtypes=[in_dtype_int],
-            template_arg_names=["InT", "N", "K"],
-            template_arg_kinds=[2, 0, 0],
-            template_arg_values=[in_dtype_int, N, K],
+            output_dtypes=[out_dtype_int],
+            template_arg_names=["InT", "OutT", "N", "K"],
+            template_arg_kinds=[2, 2, 0, 0],
+            template_arg_values=[in_dtype_int, out_dtype_int, N, K],
         )
     )
 
@@ -462,10 +463,13 @@ def emit_linear(
             break
 
     out = P.make_or_get_slot(head)
+    out_dtype_int = torch_dtype_to_scalar_type(head.meta["val"].dtype)
     tile = _Q4K_MM_NR1  # M-dimension tile (activation rows per threadgroup)
     if M == 1:
         # Static decode -> mat-vec.
-        _emit_q4k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
+        _emit_q4k_matvec(
+            P, x_node, x_slot, weight_slot, bias_slot, N, K, out_dtype_int, out
+        )
     elif M is not None:
         # Static prefill -> tiled simdgroup mat-mat (literal grid).
         blocks_m = (M + tile - 1) // tile
@@ -478,46 +482,21 @@ def emit_linear(
             N,
             K,
             IntOrVid.from_literal(blocks_m),
+            out_dtype_int,
             out,
         )
     else:
         # Dynamic seqlen -> emit both kernels in separate chains and select at
         # runtime with an IfNode. cond = M - 1: nonzero (M>1) runs the mat-mat
         # (then) chain, zero (M==1) runs the mat-vec (else) chain.
-        leading = emit_shape(P, x_node, x_slot, end_dim=-1)
-        m_iov = emit_product(P, leading)
+        m_iov = emit_product(P, emit_shape(P, x_node, x_slot, end_dim=-1))
+        cond_iov = emit_sub_int(P, m_iov, IntOrVid.from_literal(1))
+        blocks_m_iov = emit_ceil_div(P, m_iov, tile)
 
-        _, cond_slot = P.make_tmp_value_slot()
-        P.emit(
-            SubtractIntNode(
-                a=m_iov,
-                b=IntOrVid.from_literal(1),
-                out=P.slot_to_vid(cond_slot),
-            )
-        )
-        cond_iov = IntOrVid.from_vid(P.slot_to_vid(cond_slot))
-
-        # blocks_m = (M + tile - 1) // tile  (mat-mat grid.y).
-        _, sum_slot = P.make_tmp_value_slot()
-        P.emit(
-            AddIntNode(
-                a=m_iov,
-                b=IntOrVid.from_literal(tile - 1),
-                out=P.slot_to_vid(sum_slot),
-            )
-        )
-        _, blocks_m_slot = P.make_tmp_value_slot()
-        P.emit(
-            FloorDivideIntNode(
-                a=IntOrVid.from_vid(P.slot_to_vid(sum_slot)),
-                b=IntOrVid.from_literal(tile),
-                out=P.slot_to_vid(blocks_m_slot),
-            )
-        )
-        blocks_m_iov = IntOrVid.from_vid(P.slot_to_vid(blocks_m_slot))
-
-        with P.new_chain() as then_idx:  # prefill / mat-mat
-            _emit_q4k_matmul(
+        emit_if_else(
+            P,
+            cond_iov,
+            emit_then=lambda: _emit_q4k_matmul(
                 P,
                 x_node,
                 x_slot,
@@ -526,16 +505,11 @@ def emit_linear(
                 N,
                 K,
                 blocks_m_iov,
+                out_dtype_int,
                 out,
-            )
-        with P.new_chain() as else_idx:  # decode / mat-vec
-            _emit_q4k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
-
-        P.emit(
-            IfNode(
-                cond=cond_iov,
-                then_chain_idx=then_idx,
-                else_chain_idx=else_idx,
-            )
+            ),
+            emit_else=lambda: _emit_q4k_matvec(
+                P, x_node, x_slot, weight_slot, bias_slot, N, K, out_dtype_int, out
+            ),
         )
     return out

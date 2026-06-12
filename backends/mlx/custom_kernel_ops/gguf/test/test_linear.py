@@ -28,6 +28,8 @@ Usage::
     python -m executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear list
 """
 
+import os
+from contextlib import contextmanager
 from typing import List, Tuple
 
 # Importing the patterns module registers GGUF_QUANTIZED_LINEAR / _EMBEDDING.
@@ -95,6 +97,19 @@ def make_q4_k_blob(N: int, K: int, seed: int = 0) -> torch.Tensor:
 _BLOB_MAKERS = {"q6_k": make_q6_k_blob, "q4_k": make_q4_k_blob}
 
 
+@contextmanager
+def _emit_direct_gguf_env(enabled: bool):
+    old = os.environ.get("ET_MLX_EMIT_DIRECT_GGUF")
+    os.environ["ET_MLX_EMIT_DIRECT_GGUF"] = "1" if enabled else "0"
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("ET_MLX_EMIT_DIRECT_GGUF", None)
+        else:
+            os.environ["ET_MLX_EMIT_DIRECT_GGUF"] = old
+
+
 def _make_gguf_linear_model(
     N: int,
     K: int,
@@ -130,12 +145,37 @@ def _fp32_linear_reference(model: "GGUFLinearModel", x: torch.Tensor):
     a bf16 eager matmul is too noisy an oracle over large K. Dequantize in fp32,
     matmul in fp32, then cast back -- differences collapse to ~1 output ULP.
 
-    Both Q6_K and Q4_K kernels dequantize the raw GGUF blob in-kernel; use the
-    gguf-exact dequant as the reference oracle.
+    Direct Q6_K / Q4_K kernels dequantize the raw GGUF blob in-kernel; use the
+    gguf-exact dequant as the reference oracle. Legacy Q4_K tests override this
+    to match the export-time MLX qparam repack path.
     """
     lin = model.linear
     weight = lin.weight
     w = weight.dequantize(torch.float32)
+    bias = lin.bias.float() if lin.bias is not None else None
+    out = torch.nn.functional.linear(x.float(), w, bias)
+    return [out.to(x.dtype)]
+
+
+def _q4k_mlx_native_dequant(weight) -> torch.Tensor:
+    from executorch.backends.mlx.builder.op_helpers import to_mlx_qparams
+
+    intx = weight.to_intx_unpacked_to_int8_tensor()
+    group_size = int(intx.block_size[-1])
+    packed, biases = to_mlx_qparams(intx.qdata, intx.scale, intx.zero_point, 4)
+    packed_bytes = packed.view(torch.uint8)
+    nibbles = torch.stack(
+        [(packed_bytes & 0xF).float(), ((packed_bytes >> 4) & 0xF).float()], dim=-1
+    )
+    q_unsigned = nibbles.reshape(intx.qdata.shape[0], -1)
+    scale = intx.scale.float().repeat_interleave(group_size, dim=1)
+    bias = biases.float().repeat_interleave(group_size, dim=1)
+    return scale * q_unsigned + bias
+
+
+def _fp32_linear_mlx_native_reference(model: "GGUFLinearModel", x: torch.Tensor):
+    lin = model.linear
+    w = _q4k_mlx_native_dequant(lin.weight)
     bias = lin.bias.float() if lin.bias is not None else None
     out = torch.nn.functional.linear(x.float(), w, bias)
     return [out.to(x.dtype)]
@@ -169,6 +209,7 @@ class GGUFLinearTest(OpTestCase):
         dtype: torch.dtype = torch.bfloat16,
         bias: bool = True,
         ggml_type: str = "q6_k",
+        emit_direct_gguf: bool = True,
     ):
         self.M = M
         self.N = N
@@ -176,8 +217,11 @@ class GGUFLinearTest(OpTestCase):
         self.dtype = dtype
         self.bias = bias
         self.ggml_type = ggml_type
+        self.emit_direct_gguf = emit_direct_gguf
         self.rtol, self.atol = _DTYPE_TOL[dtype]
         tag = f"gguf_linear_{ggml_type}_m{M}_n{N}_k{K}_{_DTYPE_TAG[dtype]}"
+        if ggml_type == "q4_k" and not emit_direct_gguf:
+            tag += "_mlx_native"
         self.name = tag if bias else tag + "_nobias"
 
     @classmethod
@@ -212,7 +256,21 @@ class GGUFLinearTest(OpTestCase):
         cfgs.append(
             cls(M=1, N=512, K=512, dtype=torch.bfloat16, bias=False, ggml_type="q4_k")
         )
+        cfgs.append(
+            cls(
+                M=1,
+                N=512,
+                K=512,
+                dtype=torch.bfloat16,
+                ggml_type="q4_k",
+                emit_direct_gguf=False,
+            )
+        )
         return cfgs
+
+    def generate_test_files(self, verbose: bool = False):
+        with _emit_direct_gguf_env(self.emit_direct_gguf):
+            return super().generate_test_files(verbose=verbose)
 
     def get_edge_compile_config(self):
         return _edge_compile_config()
@@ -229,6 +287,8 @@ class GGUFLinearTest(OpTestCase):
         return (torch.randn(self.M, self.K, dtype=self.dtype),)
 
     def compute_expected_outputs(self, model, test_inputs):
+        if self.ggml_type == "q4_k" and not self.emit_direct_gguf:
+            return _fp32_linear_mlx_native_reference(model, test_inputs[0])
         return _fp32_linear_reference(model, test_inputs[0])
 
 

@@ -45,6 +45,10 @@ _Q4K_EMBED_SOURCE = """
     const uint j = thread_position_in_grid.x;       // 0..K-1
     const uint r = thread_position_in_grid.y;       // gathered row
     const int  row = (int) indices[r];
+    if (row < 0 || row >= V) {
+        out[r * (uint)K + j] = (OutT)0;
+        return;
+    }
     const int  nb  = K / QK_K;
     device const block_q4_K * blk =
         ((device const block_q4_K *) weight) + (uint)row * nb + (j / QK_K);
@@ -72,8 +76,9 @@ def emit_embedding(
             f"gguf q4k embedding: weight must be 2-D (vocab, row_bytes); got "
             f"shape {tuple(weight_meta.shape)}"
         )
+    vocab = weight_meta.shape[0]
     row_bytes = weight_meta.shape[1]
-    if not isinstance(row_bytes, int):
+    if not isinstance(vocab, int) or not isinstance(row_bytes, int):
         raise NotImplementedError(
             "gguf q4k embedding: weight shape must be statically known"
         )
@@ -91,8 +96,9 @@ def emit_embedding(
     num_idx_iov = emit_product(P, leading)
     out_shape_flat = leading + [IntOrVid.from_literal(K)]
 
-    # threadgroup.x must divide grid.x (= K, a multiple of 256).
-    tg_x = 256 if K % 256 == 0 else K
+    if K % QK_K != 0:
+        raise AssertionError(f"gguf q4k embedding: K={K} must be divisible by {QK_K}")
+    tg_x = QK_K
 
     P.emit(
         MetalKernelNode(
@@ -112,9 +118,9 @@ def emit_embedding(
             output_shapes_flat=out_shape_flat,
             output_shape_lengths=[len(out_shape_flat)],
             output_dtypes=[out_dtype_int],
-            template_arg_names=["OutT", "K"],
-            template_arg_kinds=[2, 0],  # dtype, int
-            template_arg_values=[out_dtype_int, K],
+            template_arg_names=["OutT", "K", "V"],
+            template_arg_kinds=[2, 0, 0],  # dtype, int, int
+            template_arg_values=[out_dtype_int, K, vocab],
         )
     )
 

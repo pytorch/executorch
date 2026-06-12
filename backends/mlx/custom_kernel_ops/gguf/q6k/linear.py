@@ -45,8 +45,11 @@ from __future__ import annotations
 from typing import Optional
 
 from executorch.backends.mlx.builder.op_helpers import (
+    emit_ceil_div,
+    emit_if_else,
     emit_product,
     emit_shape,
+    emit_sub_int,
     torch_dtype_to_scalar_type,
 )
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
@@ -57,13 +60,9 @@ from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.common import (
     QK_K,
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
-    AddIntNode,
-    FloorDivideIntNode,
-    IfNode,
     IntOrVid,
     MetalKernelNode,
     MultiplyIntNode,
-    SubtractIntNode,
 )
 from torch.fx.node import Node
 
@@ -492,40 +491,14 @@ def emit_linear(
         # Dynamic seqlen -> emit both kernels in separate chains and select at
         # runtime with an IfNode. cond = M - 1: nonzero (M>1) runs the mat-mat
         # (then) chain, zero (M==1) runs the mat-vec (else) chain.
-        leading = emit_shape(P, x_node, x_slot, end_dim=-1)
-        m_iov = emit_product(P, leading)
+        m_iov = emit_product(P, emit_shape(P, x_node, x_slot, end_dim=-1))
+        cond_iov = emit_sub_int(P, m_iov, IntOrVid.from_literal(1))
+        blocks_m_iov = emit_ceil_div(P, m_iov, tile)
 
-        _, cond_slot = P.make_tmp_value_slot()
-        P.emit(
-            SubtractIntNode(
-                a=m_iov,
-                b=IntOrVid.from_literal(1),
-                out=P.slot_to_vid(cond_slot),
-            )
-        )
-        cond_iov = IntOrVid.from_vid(P.slot_to_vid(cond_slot))
-
-        # blocks_m = (M + tile - 1) // tile  (mat-mat grid.y).
-        _, sum_slot = P.make_tmp_value_slot()
-        P.emit(
-            AddIntNode(
-                a=m_iov,
-                b=IntOrVid.from_literal(tile - 1),
-                out=P.slot_to_vid(sum_slot),
-            )
-        )
-        _, blocks_m_slot = P.make_tmp_value_slot()
-        P.emit(
-            FloorDivideIntNode(
-                a=IntOrVid.from_vid(P.slot_to_vid(sum_slot)),
-                b=IntOrVid.from_literal(tile),
-                out=P.slot_to_vid(blocks_m_slot),
-            )
-        )
-        blocks_m_iov = IntOrVid.from_vid(P.slot_to_vid(blocks_m_slot))
-
-        with P.new_chain() as then_idx:  # prefill / mat-mat
-            _emit_q6k_matmul(
+        emit_if_else(
+            P,
+            cond_iov,
+            emit_then=lambda: _emit_q6k_matmul(
                 P,
                 x_node,
                 x_slot,
@@ -535,15 +508,9 @@ def emit_linear(
                 K,
                 blocks_m_iov,
                 out,
-            )
-        with P.new_chain() as else_idx:  # decode / mat-vec
-            _emit_q6k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
-
-        P.emit(
-            IfNode(
-                cond=cond_iov,
-                then_chain_idx=then_idx,
-                else_chain_idx=else_idx,
-            )
+            ),
+            emit_else=lambda: _emit_q6k_matvec(
+                P, x_node, x_slot, weight_slot, bias_slot, N, K, out
+            ),
         )
     return out
