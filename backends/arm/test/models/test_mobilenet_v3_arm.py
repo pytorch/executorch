@@ -45,7 +45,7 @@ def test_mv3_tosa_FP():
     pipeline.run()
 
 
-# Different atol for TOSA on ARM (MLETORCH-2048: Large bf16 patch embedding mismatch on aarch64)
+# Slightly higher atol for TOSA FP16 on aarch64 (MLETORCH-2048: numeric mismatch)
 @pytest.mark.slow
 def test_mv3_tosa_FP_fp16():
     input_tensor_fp16 = torch.rand(
