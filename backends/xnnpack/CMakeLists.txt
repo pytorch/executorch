@@ -100,25 +100,6 @@ set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
 
 include(cmake/Dependencies.cmake)
 
-# Graph runtime sources.
-list(
-  APPEND
-  _xnnpack_backend__srcs
-  backends/xnnpack/runtime/core/tensor.cpp
-  backends/xnnpack/runtime/core/quant_params.cpp
-  backends/xnnpack/runtime/graph/graph.cpp
-  backends/xnnpack/runtime/graph/graph_builder.cpp
-  backends/xnnpack/runtime/operators/operator.cpp
-  backends/xnnpack/runtime/executor/arena.cpp
-  backends/xnnpack/runtime/executor/shape_env.cpp
-  backends/xnnpack/runtime/plan/xnn_support.cpp
-  backends/xnnpack/runtime/plan/partition.cpp
-  backends/xnnpack/runtime/plan/xnn_subgraph.cpp
-  backends/xnnpack/runtime/plan/schedule.cpp
-  backends/xnnpack/runtime/plan/execution_plan.cpp
-  backends/xnnpack/runtime/plan/memory_plan.cpp
-)
-
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend ${_xnnpack_backend__srcs})
 target_link_libraries(
