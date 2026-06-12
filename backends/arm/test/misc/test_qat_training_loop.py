@@ -102,3 +102,192 @@ def test_qat_training_loop_tosa_INT():
     test_inputs = torch.randn(100, 1).clamp(-1, 1)
     test_outputs = torch.sin(test_inputs)
     evaluate_model(quantized_model, test_inputs, test_outputs)
+
+
+class LearnableParameterModel(torch.nn.Module):
+    """Per-channel scale module.
+
+    The scale is learnable parameter and the only downstream operation called on
+    it is scale.view.
+
+    """
+
+    def __init__(self, num_channels: int) -> None:
+        super().__init__()
+        self.num_channels = num_channels
+        self.scale = torch.nn.Parameter(torch.ones(num_channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        shape = [1] * x.dim()  # [1, 1, ...]
+        shape[1] = self.num_channels  # [1, NUM_CHANNELS, 1, 1, ...]
+        return x * self.scale.view(shape)
+
+
+def _make_batch() -> tuple[torch.Tensor, torch.Tensor]:
+    x = torch.randn(16, 3, 8, 12, dtype=torch.float32)
+    # Simulate a target that applies a different scale to each channel.
+    # These are the numbers the model should learn.
+    y = x * torch.tensor([2.7, 0.6, -1.4], dtype=torch.float32).view(1, 3, 1, 1)
+    return x, y
+
+
+def train_step(
+    model: torch.nn.Module, optimizer: torch.optim.Optimizer, input_output, loss_fn
+) -> None:
+    # Small generic training loop
+    input, output = input_output()
+    pred = model(input)
+    loss = loss_fn(pred, output)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    return loss
+
+
+def test_qat_preserve_learnable_param_tosa_INT():
+    model = LearnableParameterModel(3)
+    optimizer = torch.optim.SGD(model.parameters(), lr=1.0, momentum=0.3)
+    # Initial training loop in FP32
+    for _ in range(8):
+        train_step(model, optimizer, _make_batch, torch.nn.functional.mse_loss)
+
+    model = LearnableParameterModel(3)
+    example_inputs, _ = _make_batch()
+    exported_model = export(model, (example_inputs,), strict=True).module()
+    assert "scale" in dict(exported_model.named_parameters())
+
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    quantizer.set_global(get_symmetric_quantization_config(is_qat=True))
+    prepared_model = prepare_qat_pt2e(exported_model, quantizer)
+    prepared_model = move_exported_model_to_train(prepared_model)
+    prepared_params = list(prepared_model.named_parameters())
+    assert len(prepared_params) == 1
+    _, param = list(prepared_model.named_parameters())[0]
+    assert param.requires_grad
+    optimizer = torch.optim.SGD(prepared_model.parameters(), lr=1.0, momentum=0.3)
+    for _ in range(3):
+        train_step(model, optimizer, _make_batch, torch.nn.functional.mse_loss)
+
+
+class SmallConvQATModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.features = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 8, kernel_size=3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(8, 8, kernel_size=3, padding=1),
+            torch.nn.ReLU(),
+            torch.nn.AdaptiveAvgPool2d((1, 1)),
+        )
+        self.classifier = torch.nn.Linear(8, 10)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        return self.classifier(x)
+
+
+def _make_image_batch() -> tuple[torch.Tensor, torch.Tensor]:
+    # Simulate input image and an output in the range [0;10].
+    x = torch.randn(4, 3, 28, 28)
+    y = torch.randint(0, 10, (4,))
+    return x, y
+
+
+def test_qat_small_conv_tosa_INT():
+
+    model = SmallConvQATModel()
+
+    # FP32 training.
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    for _ in range(3):
+        loss = train_step(
+            model, optimizer, _make_image_batch, torch.nn.functional.cross_entropy
+        )
+    assert torch.isfinite(loss)
+
+    # QAT prepare.
+    example_inputs = (torch.randn(1, 3, 28, 28),)
+    exported_model = export(model, example_inputs, strict=True)
+
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    quantizer.set_global(get_symmetric_quantization_config(is_qat=True))
+
+    prepared_model = prepare_qat_pt2e(exported_model.module(), quantizer)
+    prepared_model = move_exported_model_to_train(prepared_model)
+
+    prepared_params = list(prepared_model.named_parameters())
+    assert len(prepared_params) > 0
+    trainable_params = [param for _, param in prepared_params if param.requires_grad]
+    # We should have 6 trainable parameters - weights & biases of the two
+    # conv_2d operators and weights & biases for the linear.
+    assert len(trainable_params) == 6
+
+    optimizer = torch.optim.SGD(prepared_model.parameters(), lr=0.01)
+    for _ in range(3):
+        loss = train_step(
+            model, optimizer, _make_image_batch, torch.nn.functional.cross_entropy
+        )
+
+
+class SmallMHAQATModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attn = torch.nn.MultiheadAttention(
+            embed_dim=3,
+            num_heads=3,
+            batch_first=True,
+            dropout=0.0,
+        )
+        self.classifier = torch.nn.Linear(16, 10)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y, _ = self.attn(x, x, x, need_weights=False)
+        return y
+
+
+def _make_mha_batch() -> tuple[torch.Tensor, torch.Tensor]:
+    x = torch.randn(6, 3)
+    y = torch.sin(x)
+    return x, y
+
+
+def test_qat_small_mha_tosa_INT():
+    model = SmallMHAQATModel()
+
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    for _ in range(3):
+        loss = train_step(
+            model,
+            optimizer,
+            _make_mha_batch,
+            torch.nn.functional.mse_loss,
+        )
+    assert torch.isfinite(loss)
+
+    example_inputs = (torch.randn(6, 3),)
+    exported_model = export(model, example_inputs, strict=True)
+
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    prepared_model = prepare_qat_pt2e(exported_model.module(), quantizer)
+    prepared_model = move_exported_model_to_train(prepared_model)
+    trainable_params = [
+        param for _, param in prepared_model.named_parameters() if param.requires_grad
+    ]
+    assert len(trainable_params) > 0
+
+    optimizer = torch.optim.SGD(prepared_model.parameters(), lr=0.01)
+    for _ in range(3):
+        loss = train_step(
+            prepared_model,
+            optimizer,
+            _make_mha_batch,
+            torch.nn.functional.cross_entropy,
+        )
+    assert torch.isfinite(loss)
+    prepared_model = move_exported_model_to_eval(prepared_model)
+    quantized_model = convert_pt2e(prepared_model)
+    assert not any(
+        node.op == "call_function" and node.target == torch.ops.aten.chunk.default
+        for node in quantized_model.graph.nodes
+    )
