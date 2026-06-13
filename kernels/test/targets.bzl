@@ -210,6 +210,7 @@ def define_common_targets():
     _common_op_test("op_bitwise_or_test", ["aten", "portable"])
     _common_op_test("op_bitwise_right_shift_test", ["portable"])
     _common_op_test("op_bitwise_xor_test", ["aten", "portable"])
+    _common_op_test("op_bucketize_test", ["portable"])
     _common_op_test("op_bmm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_cat_test", ["aten", "portable"])
     _common_op_test("op_cdist_forward_test", ["aten", "portable"])
