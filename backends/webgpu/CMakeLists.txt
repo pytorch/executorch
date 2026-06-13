@@ -30,11 +30,14 @@ set(WEBGPU_SRCS
     runtime/WebGPUGraph.cpp
     runtime/WebGPUDelegateHeader.cpp
     runtime/WebGPUDevice.cpp
+    runtime/WebGPUQueryPool.cpp
     runtime/ops/OperatorRegistry.cpp
     runtime/ops/add/BinaryOp.cpp
     runtime/ops/rms_norm/RmsNorm.cpp
     runtime/ops/update_cache/UpdateCache.cpp
+    runtime/ops/sdpa/Sdpa.cpp
     runtime/ops/select_as_symint/SelectAsSymint.cpp
+    runtime/ops/quantized_linear/QuantizedLinear.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
@@ -76,6 +79,17 @@ endif()
 
 target_compile_options(webgpu_backend PRIVATE -fexceptions)
 
+# Opt-in GPU timestamp profiling (WebGPUQueryPool); OFF so production builds
+# request no TimestampQuery device feature. Mirrors Vulkan's compile-flag gate.
+option(EXECUTORCH_BUILD_WEBGPU_PROFILING
+       "Enable WebGPU GPU timestamp-query profiling" OFF
+)
+if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+  target_compile_definitions(
+    webgpu_backend PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+  )
+endif()
+
 # Link with --whole-archive for static registration of backend + ops
 executorch_target_link_options_shared_lib(webgpu_backend)
 
@@ -114,6 +128,11 @@ function(add_webgpu_native_test test_name test_src)
     target_link_libraries(${test_name} PRIVATE dl m pthread)
   endif()
   target_compile_options(${test_name} PRIVATE -fexceptions)
+  if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+    target_compile_definitions(
+      ${test_name} PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+    )
+  endif()
   set_property(TARGET ${test_name} PROPERTY CXX_STANDARD 17)
 endfunction()
 
