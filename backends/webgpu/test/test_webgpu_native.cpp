@@ -136,6 +136,7 @@ static bool test_chained_add(const std::string& model_path) {
   return true;
 }
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
 // Capacity-overrun must throw; runs without a device or TimestampQuery.
 static bool test_query_pool_overrun_throws() {
   printf("\n--- Test: WebGPUQueryPool capacity-overrun guard ---\n");
@@ -258,6 +259,7 @@ static bool test_query_pool_roundtrip(const WebGPUContext& ctx) {
   printf("PASS: WebGPUQueryPool roundtrip -- non-zero GPU kernel duration\n");
   return true;
 }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 static bool test_update_cache(const std::string& model_path) {
   // update_cache: value [1,2,2,4] scattered into cache [1,8,2,4] at
@@ -566,16 +568,20 @@ static const SdpaConfig kSdpaConfigs[] = {
     {"llama1b_decode", 32, 8, 64, 1, 512, 127, 16.0f},
 };
 
+// Ramp denominator; mirror of test_sdpa.py::_RAMP_DENOM (keep in sync).
+constexpr float kSdpaRampDenom = 16.0f;
+
 // /denom ramp: ((i % mod) - off) / denom, exact in fp32 (power-of-two denom).
 // Mirrors test_sdpa.py::_ramp.
-static float sdpa_ramp(int i, int mod, int off, float denom = 16.0f) {
+static float sdpa_ramp(int i, int mod, int off, float denom = kSdpaRampDenom) {
   return static_cast<float>((i % mod) - off) / denom;
 }
 
-// Step-indexed ramp; mirrors test_sdpa.py::_ramp_t bit-for-bit (integer
-// modulo).
-static float sdpa_ramp_t(int i, int mod, int off, int t) {
-  return static_cast<float>(((i + 31 * t) % mod) - off) / 16.0f;
+// Step-indexed ramp; mirrors test_sdpa.py::_ramp_t bit-for-bit. denom defaults
+// to kSdpaRampDenom and must match the Python denom for bit-identity.
+static float
+sdpa_ramp_t(int i, int mod, int off, int t, float denom = kSdpaRampDenom) {
+  return static_cast<float>(((i + 31 * t) % mod) - off) / denom;
 }
 
 // Multi-step replay sequences. Mirror the Python REPLAY_SEQS / Vulkan param
@@ -658,11 +664,13 @@ static bool test_sdpa_config(
   const auto& outputs = result.get();
   // The mutating op returns [k_cache, v_cache, attn_output]; select the
   // attention output (numel == S*Hq*D), not a mutated cache (numel Cmax*Hkv*D).
+  // Count matches and fail if ambiguous: a cache could share the same numel.
   int attn_idx = -1;
+  int attn_matches = 0;
   for (size_t i = 0; i < outputs.size(); i++) {
     if (outputs[i].isTensor() && outputs[i].toTensor().numel() == on) {
       attn_idx = static_cast<int>(i);
-      break;
+      attn_matches++;
     }
   }
   if (attn_idx < 0) {
@@ -670,6 +678,13 @@ static bool test_sdpa_config(
         "FAIL: no attention output (numel %d) among %zu outputs\n",
         on,
         outputs.size());
+    return false;
+  }
+  if (attn_matches > 1) {
+    printf(
+        "FAIL: ambiguous attention output: %d tensors match numel %d\n",
+        attn_matches,
+        on);
     return false;
   }
   const auto& out_tensor = outputs[attn_idx].toTensor();
@@ -1465,8 +1480,11 @@ int main(int argc, char** argv) {
   set_default_webgpu_context(&ctx);
   printf("WebGPU device acquired (native)\n");
 
-  bool ok = test_query_pool_overrun_throws();
+  bool ok = true;
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  ok = test_query_pool_overrun_throws() && ok;
   ok = test_query_pool_roundtrip(ctx) && ok;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
   ok = test_single_add(model_path) && ok;
 
   if (!chained_model_path.empty()) {

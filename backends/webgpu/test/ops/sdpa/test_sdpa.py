@@ -105,20 +105,26 @@ class SdpaModule(torch.nn.Module):
         )
 
 
-def _ramp(n, mod, off, denom=16.0):
+# Ramp denominator (power-of-two => exact in fp32). Mirror of the C++
+# kSdpaRampDenom in test_webgpu_native.cpp; keep both in sync for bit-identity.
+_RAMP_DENOM = 16.0
+
+
+def _ramp(n, mod, off, denom=_RAMP_DENOM):
     """Ramp ((i % mod) - off) / denom; exact in fp32 for power-of-two denom."""
     a = (np.arange(n) % mod).astype(np.float32)
     return ((a - off) / np.float32(denom)).astype(np.float32)
 
 
-def _ramp_t(n, mod, off, t):
-    """Step-indexed /16 ramp; the C++ sdpa_ramp_t mirrors this bit-for-bit.
+def _ramp_t(n, mod, off, t, denom=_RAMP_DENOM):
+    """Step-indexed ramp; the C++ sdpa_ramp_t mirrors this bit-for-bit.
 
     The 31*t phase desyncs each step's q/k/v; integer modulo keeps it exact in
-    fp32. arange(n)+31*t stays well within int range (max n ~341k, t<=6).
+    fp32. arange(n)+31*t stays well within int range (max n ~341k, t<=6). denom
+    defaults to _RAMP_DENOM; a custom value must match the C++ sdpa_ramp_t arg.
     """
     a = ((np.arange(n) + 31 * t) % mod).astype(np.float32)
-    return ((a - off) / 16.0).astype(np.float32)
+    return ((a - off) / denom).astype(np.float32)
 
 
 def _step_inputs(seq: "ReplaySeq", t: int, s: int):
