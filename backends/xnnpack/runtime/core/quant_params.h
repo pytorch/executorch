@@ -67,10 +67,15 @@ struct PerRowQuantParams {
   int8_t axis = -1;
   DType scale_dtype = DType::Float32;
   bool has_zero_point = false;
+  // When true, this is a dynamically-quantized activation (XNNPACK qdint8):
+  // the per-row scale/zero point are computed at runtime rather than stored.
+  // `axis` is the reduced (channel) dim, so the number of trailing "row" dims
+  // (XNNPACK's num_nonbatch_dims) is -axis for the usual negative axis.
+  bool is_dynamic = false;
 
   bool operator==(const PerRowQuantParams& o) const {
     return axis == o.axis && scale_dtype == o.scale_dtype &&
-        has_zero_point == o.has_zero_point;
+        has_zero_point == o.has_zero_point && is_dynamic == o.is_dynamic;
   }
 };
 
