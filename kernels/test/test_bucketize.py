@@ -130,6 +130,24 @@ class TestBucketizeOperator(unittest.TestCase):
         bounds = torch.tensor([0, 3, 5, 7, 9], dtype=torch.float)
         self._run_and_compare(model, (x, bounds), "test_bucketize_scalar_out_int32.pte")
 
+    # ==========================================================================
+    # Edge cases tests
+    # ==========================================================================
+
+    def test_bucketize_tensor_empty_boundary(self):
+        """Test bucketize.Tensor_out: (Tensor, Tensor, bool, bool) -> Tensor."""
+        model = BucketizeModule(False, False)
+        x = torch.tensor([[1, 2, 3, 4]], dtype=torch.float)
+        bounds = torch.tensor([], dtype=torch.float)
+        self._run_and_compare(model, (x, bounds), "test_bucketize_tensor_left.pte")
+
+    def test_bucketize_tensor_empty_input(self):
+        """Test bucketize.Tensor_out: (Tensor, Tensor, bool, bool) -> Tensor."""
+        model = BucketizeModule(False, False)
+        x = torch.tensor([[]], dtype=torch.float)
+        bounds = torch.tensor([0, 3, 5, 7, 9], dtype=torch.float)
+        self._run_and_compare(model, (x, bounds), "test_bucketize_tensor_left.pte")
+
 
 if __name__ == "__main__":
     unittest.main()
