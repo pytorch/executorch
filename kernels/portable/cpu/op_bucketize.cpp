@@ -45,7 +45,7 @@ int64_t cus_upper_bound(
     const char* bd,
     load_to_compute_fn<CTYPE> bd_load_fn,
     ssize_t bd_elem_size) {
-  ino64_t start = 0;
+  int64_t start = 0;
 
   while (start < end) {
     const int64_t mid = start + ((end - start) >> 1);
