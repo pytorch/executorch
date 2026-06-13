@@ -55,6 +55,11 @@ export_chained_add_model('${PTE_CHAINED_MODEL}')
 " || echo "WARN: add export failed; webgpu_native_test self-skips models whose .pte is absent"
 
 $PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import export_all_quantized_linear_models
+export_all_quantized_linear_models('/tmp')
+" || echo "WARN: q4gsw export failed; required configs will FAIL in webgpu_native_test"
+
+$PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases
 export_rms_norm_cases('${RMS_NORM_DIR}')
 " || { echo "WARN: rms_norm export failed; skipping rms_norm native test"; RMS_NORM_OK=0; }
@@ -143,6 +148,7 @@ if [[ -x "${BIN_DIR}/webgpu_native_test" && -f "${PTE_MODEL}" ]]; then
   env WEBGPU_TEST_MODEL="${PTE_MODEL}" \
       WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
       WEBGPU_TEST_SDPA_DIR=/tmp/ \
+      WEBGPU_TEST_QUANTIZED_LINEAR_DIR=/tmp/ \
       "${BIN_DIR}/webgpu_native_test"
 else
   echo "(skipping webgpu_native_test: no exported .pte — needs the executorch python wheel)"

@@ -375,6 +375,166 @@ static bool sdpa_within_tol(
   return ok;
 }
 
+// linear_q4gsw sweep config; mirrors CONFIGS in test_quantized_linear.py.
+struct Q4gswConfig {
+  const char* name;
+  int m; // rows (tokens)
+  int k; // in_features (reduction dim)
+  int n; // out_features
+  float tol_abs; // per-element abs gate
+  float tol_rel; // per-element rel gate
+  bool required; // dir set + .pte absent => FAIL (not skip)
+  bool heavy; // huge/slow: export-gated; runs only if WEBGPU_TEST_HEAVY
+};
+
+// Llama-3.2-1B linear shapes (q/o/k/v/gate/up/down + lm_head) + 4k/8k prefill.
+// tol scales with K (fp32 accum depth), not M; down_proj (K=8192) is looser.
+static const Q4gswConfig kQ4gswConfigs[] = {
+    // name         M     K     N      tol_abs tol_rel req    heavy
+    {"q_proj", 1, 2048, 2048, 1e-4f, 1e-3f, true, false},
+    {"kv_proj", 1, 2048, 512, 1e-4f, 1e-3f, true, false},
+    {"gate_proj", 1, 2048, 8192, 1e-4f, 1e-3f, true, false},
+    {"down_proj", 1, 8192, 2048, 1e-3f, 1e-2f, true, false}, // big-K accum
+    {"lm_head", 1, 2048, 128256, 1e-4f, 1e-3f, false, true},
+    {"q_proj_4k", 4096, 2048, 2048, 1e-4f, 1e-3f, true, false},
+    {"kv_proj_4k", 4096, 2048, 512, 1e-4f, 1e-3f, true, false},
+    {"q_proj_8k", 8192, 2048, 2048, 1e-4f, 1e-3f, false, true},
+    {"kv_proj_8k", 8192, 2048, 512, 1e-4f, 1e-3f, false, true},
+};
+
+// /16 ramp over the flat index; mirrors test_quantized_linear.py _ramp_input.
+static float q4gsw_ramp(int i) {
+  return static_cast<float>((i % 17) - 8) / 16.0f;
+}
+
+// Per-element dual tolerance (abs OR rel), parameterized like sdpa_within_tol.
+static bool quant_within_tol(
+    const float* out,
+    const float* golden,
+    int n,
+    float atol,
+    float rtol,
+    float* ma,
+    float* mr) {
+  float max_abs = 0.0f, max_rel = 0.0f;
+  bool ok = true;
+  for (int i = 0; i < n; i++) {
+    const float ae = std::abs(out[i] - golden[i]);
+    const float re = ae / std::max(std::abs(golden[i]), 1e-6f);
+    max_abs = std::max(max_abs, ae);
+    max_rel = std::max(max_rel, re);
+    if (ae > atol && re > rtol) {
+      ok = false;
+    }
+  }
+  *ma = max_abs;
+  *mr = max_rel;
+  return ok;
+}
+
+// Reconstruct _ramp_input bit-for-bit, run the op, compare to the fp64 golden.
+static bool test_q4gsw_config(
+    const Q4gswConfig& cfg,
+    const std::string& pte,
+    const std::string& golden_path) {
+  printf(
+      "\n--- Test: linear_q4gsw (%s: M=%d,K=%d,N=%d) ---\n",
+      cfg.name,
+      cfg.m,
+      cfg.k,
+      cfg.n);
+
+  Module module(pte);
+  if (module.load_forward() != Error::Ok) {
+    printf("FAIL: could not load %s\n", pte.c_str());
+    return false;
+  }
+
+  const int in_numel = cfg.m * cfg.k;
+  const int out_numel = cfg.m * cfg.n;
+  std::vector<float> input(in_numel);
+  for (int i = 0; i < in_numel; i++) {
+    input[i] = q4gsw_ramp(i);
+  }
+
+  auto x = make_tensor_ptr({cfg.m, cfg.k}, std::vector<float>(input));
+  auto result = module.forward({EValue(x)});
+  if (!result.ok()) {
+    printf("FAIL: forward failed (error %d)\n", (int)result.error());
+    return false;
+  }
+  const auto& outputs = result.get();
+  if (outputs.empty() || !outputs[0].isTensor()) {
+    printf("FAIL: no tensor output\n");
+    return false;
+  }
+  const auto& out_tensor = outputs[0].toTensor();
+  if (out_tensor.numel() != out_numel) {
+    printf(
+        "FAIL: output numel %zu != expected %d\n",
+        (size_t)out_tensor.numel(),
+        out_numel);
+    return false;
+  }
+  const float* out_data = out_tensor.const_data_ptr<float>();
+
+  std::vector<float> golden = load_golden(golden_path, out_numel);
+  if (golden.empty()) {
+    printf("FAIL: could not load golden %s\n", golden_path.c_str());
+    return false;
+  }
+
+  float ma = 0.0f, mr = 0.0f;
+  const bool pass = quant_within_tol(
+      out_data, golden.data(), out_numel, cfg.tol_abs, cfg.tol_rel, &ma, &mr);
+  printf(
+      "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
+      ma,
+      mr,
+      out_numel);
+  if (!pass) {
+    printf(
+        "FAIL: linear_q4gsw %s exceeds tolerance (abs %g OR rel %g)\n",
+        cfg.name,
+        cfg.tol_abs,
+        cfg.tol_rel);
+    return false;
+  }
+  printf("PASS: linear_q4gsw %s\n", cfg.name);
+  return true;
+}
+
+// q4gsw sweep: self-discover q4gsw_<name>.pte; required=FAIL, heavy=gate, *ran.
+static bool test_q4gsw_sweep(const std::string& dir, bool* ran) {
+  bool ok = true;
+  const bool heavy_run = std::getenv("WEBGPU_TEST_HEAVY") != nullptr;
+  for (const auto& cfg : kQ4gswConfigs) {
+    const std::string pte = dir + "q4gsw_" + cfg.name + ".pte";
+    FILE* f = std::fopen(pte.c_str(), "rb");
+    if (!f) {
+      if (cfg.required && !dir.empty()) {
+        printf(
+            "FAIL: required q4gsw config %s has no .pte in %s\n",
+            cfg.name,
+            dir.c_str());
+        ok = false;
+      }
+      continue;
+    }
+    std::fclose(f);
+    if (cfg.heavy && !heavy_run) {
+      printf(
+          "SKIP: heavy q4gsw config %s (set WEBGPU_TEST_HEAVY=1 on a real GPU)\n",
+          cfg.name);
+      continue;
+    }
+    const std::string golden = dir + "q4gsw_" + cfg.name + ".golden.bin";
+    *ran = true;
+    ok = test_q4gsw_config(cfg, pte, golden) && ok;
+  }
+  return ok;
+}
+
 // Fused sdpa_with_kv_cache sweep config. Mirrors the Python CONFIGS table in
 // test_sdpa.py exactly (name, Hq, Hkv, D, S, Cmax, input_pos).
 struct SdpaConfig {
@@ -1289,6 +1449,15 @@ int main(int argc, char** argv) {
     update_cache_model_path = env;
   }
 
+  // Quantized-linear sweep dir (mirrors WEBGPU_TEST_SDPA_DIR).
+  std::string qlinear_dir;
+  if (const char* env = std::getenv("WEBGPU_TEST_QUANTIZED_LINEAR_DIR")) {
+    qlinear_dir = env;
+    if (!qlinear_dir.empty() && qlinear_dir.back() != '/') {
+      qlinear_dir += '/';
+    }
+  }
+
   // SDPA sweep: configs self-discover their sdpa_<name>.pte/.golden.bin under
   // this directory (default "" = the embedded-file root / cwd). Set
   // WEBGPU_TEST_SDPA_DIR to point at the exported .pte directory (e.g. /tmp/).
@@ -1324,6 +1493,22 @@ int main(int argc, char** argv) {
 
   if (!update_cache_model_path.empty()) {
     ok = test_update_cache(update_cache_model_path) && ok;
+  }
+
+  bool q4gsw_ran = false;
+  bool q4gsw_ok = test_q4gsw_sweep(qlinear_dir, &q4gsw_ran);
+  if (q4gsw_ran) {
+    ok = q4gsw_ok && ok;
+  }
+  // Guard python<->C++ ramp bit-identity: q4gsw_ramp(0) = -0.5 exactly.
+  if (std::abs(q4gsw_ramp(0) - (-0.5f)) > 1e-12f) {
+    printf("FAIL: q4gsw_ramp bit-identity check\n");
+    ok = false;
+  }
+  if (!qlinear_dir.empty() && !q4gsw_ran) {
+    printf(
+        "FAIL: WEBGPU_TEST_QUANTIZED_LINEAR_DIR set but no q4gsw config ran\n");
+    ok = false;
   }
 
   bool sdpa_ran = false;
