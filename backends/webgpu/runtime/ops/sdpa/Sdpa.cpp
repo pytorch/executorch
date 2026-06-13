@@ -156,8 +156,7 @@ void build_dispatch(
     uint64_t uniform_size,
     uint32_t workgroup_count_x,
     uint32_t wg_size,
-    bool retain_uniform = false,
-    const char* kernel_name = "") {
+    bool retain_uniform = false) {
   WGPUDevice device = graph.device();
 
   WGPUShaderSourceWGSL wgsl_desc = {};
@@ -228,7 +227,7 @@ void build_dispatch(
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count_x, kernel_name});
+  graph.add_dispatch({pipeline, bind_group, workgroup_count_x});
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
@@ -270,8 +269,7 @@ static WGPUBuffer record_update_cache_dispatch(
       sizeof(uc),
       wgc,
       uc_wg,
-      dynamic_pos,
-      "update_cache");
+      dynamic_pos);
   return ubuf;
 }
 
@@ -490,8 +488,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc,
         qk_wg,
-        dynamic_pos,
-        "sdpa_compute_attn_weights");
+        dynamic_pos);
     qk_buf = ubuf;
     qk_idx = graph.num_dispatches() - 1;
   }
@@ -514,8 +511,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc,
         0,
-        dynamic_pos,
-        "sdpa_softmax");
+        dynamic_pos);
     softmax_buf = ubuf;
   }
 
@@ -540,8 +536,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc,
         av_wg,
-        dynamic_pos,
-        "sdpa_compute_out");
+        dynamic_pos);
     av_buf = ubuf;
   }
 
