@@ -20,6 +20,10 @@ const char weight_cache_option_key[] = "weight_cache_enabled";
 // @lint-ignore CLANGTIDY facebook-hte-CArray
 const char packed_cache_path_option_key[] = "packed_cache_path";
 
+/// The key for the graph runtime option. When enabled, the new graph-based
+/// runtime is used instead of the legacy XNNCompiler/XNNExecutor path.
+const char use_graph_runtime_option_key[] = "use_graph_runtime";
+
 /// Workspace sharing mode. This is a backend option that can be set via the
 /// set_option API to control memory sharing between CALL_DELEGATE instances.
 /// This is useful for reducing memory consumption.
