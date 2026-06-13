@@ -186,7 +186,7 @@ Tensor& bucketize_scalar_out(
       bucketize_common_pre_checks(boundaries, out_int32, out) == Error::Ok,
       InvalidArgument,
       out);
-  ET_KERNEL_CHECK(context, out.sizes().back() == 1, InvalidArgument, out);
+  ET_KERNEL_CHECK(context, out.dim() == 0, InvalidArgument, out);
 
   ScalarType common_type =
       utils::promote_type_with_scalar(boundaries.scalar_type(), self);

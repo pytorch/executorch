@@ -32,8 +32,8 @@ class OpBucketizeScalarTest : public OperatorTest {
 
     Scalar value = 2;
     Tensor boundaries = tf_bound.make({5}, {0, 3, 5, 7, 9});
-    Tensor expected = tf_out.make({1}, {1});
-    Tensor out = tf_out.zeros({1});
+    Tensor expected = tf_out.make({}, {1});
+    Tensor out = tf_out.zeros({});
 
     Tensor ret = op_bucketize_out(value, boundaries, false, true, out);
 
@@ -54,8 +54,8 @@ TEST_F(OpBucketizeScalarTest, SanityCheck) {
 
   Scalar value = 2.5;
   Tensor boundaries = tf_bound.make({10}, {0, 2, 4, 6, 8, 10, 12, 14, 16, 18});
-  Tensor expected = tf_out.make({1}, {2});
-  Tensor out = tf_out.zeros({1});
+  Tensor expected = tf_out.make({}, {2});
+  Tensor out = tf_out.zeros({});
 
   Tensor ret = op_bucketize_out(value, boundaries, false, true, out);
 
