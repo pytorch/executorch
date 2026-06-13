@@ -98,11 +98,13 @@ Error WebGPUBackend::execute(
   const size_t num_outputs = graph->output_ids().size();
 
   // Copy inputs from EValue tensors to GPU buffers
-  std::vector<std::pair<const void*, size_t>> inputs;
+  std::vector<InputData> inputs;
   inputs.reserve(num_inputs);
   for (size_t i = 0; i < num_inputs; i++) {
     const auto& tensor = args[i]->toTensor();
-    inputs.emplace_back(tensor.const_data_ptr(), tensor.nbytes());
+    const bool host_is_int64 =
+        tensor.scalar_type() == executorch::aten::ScalarType::Long;
+    inputs.push_back({tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
   }
   graph->copy_inputs(inputs);
 

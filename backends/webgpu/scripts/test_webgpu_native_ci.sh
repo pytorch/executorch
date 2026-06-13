@@ -47,12 +47,25 @@ DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 DISPATCH_ORDER_OK=1
 UPDATE_CACHE_DIR="/tmp/update_cache"
 UPDATE_CACHE_OK=1
+EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
+EMBEDDING_INDICES="/tmp/webgpu_embedding_q4gsw_indices.bin"
+EMBEDDING_GOLDEN="/tmp/webgpu_embedding_q4gsw_golden.bin"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
 export_add_model('${PTE_MODEL}')
 export_chained_add_model('${PTE_CHAINED_MODEL}')
 " || echo "WARN: add export failed; webgpu_native_test self-skips models whose .pte is absent"
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import export_all_quantized_linear_models
+export_all_quantized_linear_models('/tmp')
+" || echo "WARN: q4gsw export failed; required configs will FAIL in webgpu_native_test"
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import export_embedding_q4gsw_model
+export_embedding_q4gsw_model('${EMBEDDING_MODEL}', '${EMBEDDING_GOLDEN}', '${EMBEDDING_INDICES}')
+" || echo "WARN: embedding_q4gsw export failed; webgpu_native_test embedding case self-skips"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases
@@ -74,6 +87,21 @@ export_update_cache_cases('${UPDATE_CACHE_DIR}')
 export_update_cache_replay('${UPDATE_CACHE_DIR}')
 export_update_cache_negative('${UPDATE_CACHE_DIR}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
+
+# Non-fatal: a failed sdpa export makes the required 4k/8k configs hard-fail in
+# webgpu_native_test below (precise per-config error), so don't exit/mask here.
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import (
+    export_all_sdpa_models,
+    export_replay_sequences,
+    export_dynamic_decode,
+    export_incache_decode,
+)
+export_all_sdpa_models('/tmp')
+export_replay_sequences('/tmp')
+export_dynamic_decode('/tmp')
+export_incache_decode('/tmp')
+" || echo "WARN: sdpa export failed; required 4k/8k configs will FAIL in webgpu_native_test"
 
 # ── Configure (Dawn-only: no -DWEBGPU_IMPL; Dawn is the sole backend) ─────────
 echo "=== Configure WebGPU native tests on Dawn ==="
@@ -128,6 +156,10 @@ if [[ -x "${BIN_DIR}/webgpu_native_test" && -f "${PTE_MODEL}" ]]; then
   env WEBGPU_TEST_MODEL="${PTE_MODEL}" \
       WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
       WEBGPU_TEST_SDPA_DIR=/tmp/ \
+      WEBGPU_TEST_QUANTIZED_LINEAR_DIR=/tmp/ \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL="${EMBEDDING_MODEL}" \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES="${EMBEDDING_INDICES}" \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN="${EMBEDDING_GOLDEN}" \
       "${BIN_DIR}/webgpu_native_test"
 else
   echo "(skipping webgpu_native_test: no exported .pte — needs the executorch python wheel)"
