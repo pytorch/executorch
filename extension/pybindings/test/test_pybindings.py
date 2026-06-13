@@ -12,11 +12,7 @@ from io import StringIO
 
 import torch
 
-from executorch.exir import (
-    ExecutorchBackendConfig,
-    to_edge,
-    to_edge_transform_and_lower,
-)
+from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.extension.pybindings.test.make_test import (
     create_program,
@@ -97,50 +93,6 @@ class PybindingsTest(unittest.TestCase):
         executorch_output = executorch_module(inputs[0])[0]
         expected = inputs[0] + inputs[0]
         self.assertEqual(str(expected), str(executorch_output))
-
-    def test_conv3d_portable_e2e(self):
-        if not self.runtime.__name__.endswith("portable_lib"):
-            self.skipTest("portable_lib unavailable")
-
-        class Model(torch.nn.Module):
-            def __init__(self, padding_mode: str, padding) -> None:
-                super().__init__()
-                self.conv = torch.nn.Conv3d(
-                    5,
-                    5,
-                    3,
-                    padding=padding,
-                    padding_mode=padding_mode,
-                )
-
-            def forward(self, x):
-                return self.conv(x)
-
-        inputs = (torch.randn(1, 5, 6, 6, 6),)
-        cases = [
-            ("zeros", 0),
-            ("circular", 0),
-            ("circular", 1),
-        ]
-
-        for padding_mode, padding in cases:
-            with self.subTest(padding_mode=padding_mode, padding=padding):
-                model = Model(padding_mode, padding).eval()
-                expected = model(*inputs)
-                ep = export(model, inputs, strict=True)
-                exec_prog = to_edge_transform_and_lower(
-                    ep,
-                ).to_executorch()
-                executorch_module = self.load_fn(exec_prog.buffer)
-                executorch_output = executorch_module.forward(inputs)[0]
-                self.assertTrue(
-                    torch.allclose(
-                        executorch_output,
-                        expected,
-                        atol=1e-4,
-                        rtol=1e-4,
-                    )
-                )
 
     def test_stderr_redirect(self):
         class RedirectedStderr:

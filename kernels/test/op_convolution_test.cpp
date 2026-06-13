@@ -50,6 +50,36 @@ class OpConvOutTest : public OperatorTest {
         out);
   }
 
+  template <class CTYPE, ScalarType DTYPE>
+  void test_conv3d_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor input = tf.full({1, 2, 3, 3, 3}, static_cast<CTYPE>(1));
+    Tensor weight = tf.full({4, 2, 2, 2, 2}, static_cast<CTYPE>(1));
+    optional<Tensor> bias;
+    Tensor expected = tf.full({1, 4, 2, 2, 2}, static_cast<CTYPE>(16));
+    Tensor out = tf.zeros({1, 4, 2, 2, 2});
+
+    int64_t stride[] = {1, 1, 1};
+    int64_t padding[] = {0, 0, 0};
+    int64_t dilation[] = {1, 1, 1};
+    int64_t output_padding[] = {0, 0, 0};
+
+    op_convolution_out(
+        input,
+        weight,
+        bias,
+        executorch::aten::ArrayRef<int64_t>{stride, 3},
+        executorch::aten::ArrayRef<int64_t>{padding, 3},
+        executorch::aten::ArrayRef<int64_t>{dilation, 3},
+        false,
+        executorch::aten::ArrayRef<int64_t>{output_padding, 3},
+        1,
+        out);
+
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+
   /* Correctness Test Template for test code generation via Python */
   /* %python
   correctness_test_template = f"""
@@ -574,6 +604,14 @@ TEST_F(OpConvCorrectnessTest, Conv3dDilation) {
       out);
 
   EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+/// A generic Conv3d smoke test that works for all supported real/half/bfloat16
+/// dtypes.
+TEST_F(OpConvCorrectnessTest, Conv3dAllDtypesSupported) {
+#define TEST_ENTRY(ctype, dtype) test_conv3d_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
 }
 
 TEST_F(OpConvCorrectnessTest, Conv3dTransposedUnsupported) {
