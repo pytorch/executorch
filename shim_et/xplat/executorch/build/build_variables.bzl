@@ -484,6 +484,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/core/quant_params.cpp",
     "runtime/graph/graph.cpp",
     "runtime/graph/graph_builder.cpp",
+    "runtime/operators/operator.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
