@@ -640,6 +640,7 @@ def tq4_sdpa(
     rotation: torch.Tensor,
     attn_mask: Optional[torch.Tensor] = None,
     is_causal: bool = False,
+    scale: Optional[float] = None,
 ) -> torch.Tensor:
     """Fused TQ4 SDPA over nibble-packed compressed K/V cache.
 
@@ -660,6 +661,10 @@ def tq4_sdpa(
         rotation: [D, D] orthogonal rotation matrix
         attn_mask: Optional [B, 1, L_Q, L_KV] bool mask
         is_causal: apply causal masking (requires L_Q == L_KV)
+        scale: softmax scale applied to ``Q @ K^T``. Defaults to
+            ``1/sqrt(HEAD_DIM)`` when ``None``. Models that handle their
+            own normalization (e.g. Gemma 4 with QK-norm uses ``1.0``)
+            should pass an explicit value.
 
     Returns:
         [B, H_Q, L_Q, D] bf16 attention output
@@ -671,7 +676,7 @@ def tq4_sdpa(
 
     _validate_tq4_mask(attn_mask, B, N_Q, N_KV)
 
-    sm_scale = 1.0 / math.sqrt(D)
+    sm_scale = float(1.0 / math.sqrt(D)) if scale is None else float(scale)
     num_groups = H_Q // H_KV
 
     # Build [256] bf16 lookup tables from [16] centroids.
@@ -752,5 +757,6 @@ def _tq4_sdpa_fake(
     rotation: torch.Tensor,
     attn_mask: Optional[torch.Tensor] = None,
     is_causal: bool = False,
+    scale: Optional[float] = None,
 ) -> torch.Tensor:
     return torch.empty_like(query)

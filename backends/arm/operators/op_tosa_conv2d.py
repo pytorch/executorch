@@ -69,8 +69,22 @@ class Conv2dVisitor(NodeVisitor):
             valid_input_dtypes.append(ts.DType.BF16)
         if self.tosa_spec.support_extension("fp8e4m3"):
             valid_input_dtypes.append(ts.DType.FP8E4M3)
+            if inputs[0].dtype == ts.DType.FP8E4M3:
+                validate_valid_dtype(
+                    self.target, [inputs[1]], [ts.DType.FP8E4M3], self.tosa_spec
+                )
+                validate_valid_dtype(
+                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec
+                )
         if self.tosa_spec.support_extension("fp8e5m2"):
             valid_input_dtypes.append(ts.DType.FP8E5M2)
+            if inputs[0].dtype == ts.DType.FP8E5M2:
+                validate_valid_dtype(
+                    self.target, [inputs[1]], [ts.DType.FP8E5M2], self.tosa_spec
+                )
+                validate_valid_dtype(
+                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec
+                )
 
         validate_valid_dtype(
             self.target,
