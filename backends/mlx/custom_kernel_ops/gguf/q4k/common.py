@@ -119,7 +119,8 @@ inline float dequant_q4k_elem(device const block_q4_K * blk, int p) {
 
 // Vectorized Q4_K dequantize: decodes 16 values into half4x4.
 // Ported from llama.cpp dequantize_q4_K (ggml-metal.metal).
-// il ranges 0..7 (Q4_K uses NL=8, not Q6_K's NL=16).
+// il = sub-block passed by the mat-mat kernel.
+// mat-mat uses NL=16 (QK_K/16), same as the Q6_K kernel_mul_mm port.
 inline void dequantize_q4_K_16(device const block_q4_K * xb, short il,
                                thread half4x4 & reg) {
     device const uint8_t * q = xb->qs;

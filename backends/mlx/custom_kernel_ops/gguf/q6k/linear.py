@@ -456,27 +456,14 @@ def emit_linear(
         )
     K = (row_bytes // Q6K_BLOCK_BYTES) * QK_K
 
-    # Determine M (product of x's leading dims). Static M lets us pick the
-    # optimal kernel and (for mat-mat) compute a literal launch grid.
-    x_meta = x_node.meta["val"]
-    leading_dims = x_meta.shape[:-1]
-    M: Optional[int] = 1
-    for d in leading_dims:
-        if isinstance(d, int):
-            M *= d
-        else:
-            M = None  # dynamic / symbolic
-            break
-
     out = P.make_or_get_slot(head)
-    tile = _Q6K_MM_NR1  # M-dimension tile (activation rows per threadgroup)
-    if M == 1:
-        # Static decode -> mat-vec.
-        _emit_q6k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
-    elif M is not None:
-        # Static prefill -> tiled simdgroup mat-mat (literal grid).
-        blocks_m = (M + tile - 1) // tile
-        _emit_q6k_matmul(
+    tile = _Q6K_MM_NR1
+
+    m_iov = emit_product(P, emit_shape(P, x_node, x_slot, end_dim=-1))
+    emit_if_else(
+        P,
+        emit_sub_int(P, m_iov, IntOrVid.from_literal(1)),
+        emit_then=lambda: _emit_q6k_matmul(
             P,
             x_node,
             x_slot,
@@ -484,33 +471,11 @@ def emit_linear(
             bias_slot,
             N,
             K,
-            IntOrVid.from_literal(blocks_m),
+            emit_ceil_div(P, m_iov, tile),
             out,
-        )
-    else:
-        # Dynamic seqlen -> emit both kernels in separate chains and select at
-        # runtime with an IfNode. cond = M - 1: nonzero (M>1) runs the mat-mat
-        # (then) chain, zero (M==1) runs the mat-vec (else) chain.
-        m_iov = emit_product(P, emit_shape(P, x_node, x_slot, end_dim=-1))
-        cond_iov = emit_sub_int(P, m_iov, IntOrVid.from_literal(1))
-        blocks_m_iov = emit_ceil_div(P, m_iov, tile)
-
-        emit_if_else(
-            P,
-            cond_iov,
-            emit_then=lambda: _emit_q6k_matmul(
-                P,
-                x_node,
-                x_slot,
-                weight_slot,
-                bias_slot,
-                N,
-                K,
-                blocks_m_iov,
-                out,
-            ),
-            emit_else=lambda: _emit_q6k_matvec(
-                P, x_node, x_slot, weight_slot, bias_slot, N, K, out
-            ),
-        )
+        ),
+        emit_else=lambda: _emit_q6k_matvec(
+            P, x_node, x_slot, weight_slot, bias_slot, N, K, out
+        ),
+    )
     return out
