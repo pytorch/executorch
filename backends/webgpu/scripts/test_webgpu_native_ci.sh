@@ -75,6 +75,8 @@ export_update_cache_replay('${UPDATE_CACHE_DIR}')
 export_update_cache_negative('${UPDATE_CACHE_DIR}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
 
+# Non-fatal: a failed sdpa export makes the required 4k/8k configs hard-fail in
+# webgpu_native_test below (precise per-config error), so don't exit/mask here.
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import (
     export_all_sdpa_models,

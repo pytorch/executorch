@@ -498,10 +498,15 @@ void WebGPUGraph::copy_inputs(
 }
 
 namespace {
-// Bench gate: WEBGPU_TIMESTAMP_QUERY enables per-pass GPU timestamp queries.
+// Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
+// WEBGPU_TIMESTAMP_QUERY env var enables per-pass GPU timestamp queries.
 bool should_timestamp_query() {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
   static const bool enabled = std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
   return enabled;
+#else
+  return false;
+#endif
 }
 } // namespace
 
@@ -510,6 +515,7 @@ void WebGPUGraph::execute() {
   const size_t chunk = execute_config_.chunk_size;
 
   if (chunk == 0 || n <= chunk) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
     // Bench: timestamp-query pool, null unless env-gated + feature present.
     WebGPUQueryPool* qp = nullptr;
     if (should_timestamp_query() && n > 0) {
@@ -524,6 +530,7 @@ void WebGPUGraph::execute() {
         }
       }
     }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
     WGPUCommandEncoderDescriptor enc_desc = {};
     WGPUCommandEncoder encoder =
@@ -532,13 +539,15 @@ void WebGPUGraph::execute() {
     // One pass per dispatch: enforces storage RAW ordering across deps.
     for (size_t i = 0; i < n; i++) {
       const auto& dispatch = dispatches_[i];
+      WGPUComputePassDescriptor pass_desc = {};
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
       // tw must outlive BeginComputePass (the descriptor points at it).
       WGPUPassTimestampWrites tw = {};
-      WGPUComputePassDescriptor pass_desc = {};
       if (qp) {
         tw = qp->writes_for(static_cast<uint32_t>(i));
         pass_desc.timestampWrites = &tw;
       }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
@@ -548,6 +557,7 @@ void WebGPUGraph::execute() {
           pass, dispatch.workgroup_count_x, 1, 1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
       if (qp) {
         qp->record(
             static_cast<uint32_t>(i),
@@ -555,6 +565,7 @@ void WebGPUGraph::execute() {
             {dispatch.workgroup_count_x, 1, 1},
             {1, 1, 1});
       }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
     }
 
     for (const auto& copy : output_copies_) {
@@ -562,9 +573,11 @@ void WebGPUGraph::execute() {
           encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
     }
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
     if (qp) {
       qp->resolve(encoder);
     }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
     WGPUCommandBufferDescriptor cmd_desc = {};
     WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
@@ -573,10 +586,12 @@ void WebGPUGraph::execute() {
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
     if (qp) {
       qp->extract_results(instance_);
       qp->print_results();
     }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
     return;
   }
 

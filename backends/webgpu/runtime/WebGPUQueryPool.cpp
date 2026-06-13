@@ -16,6 +16,8 @@
 
 namespace executorch::backends::webgpu {
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+
 namespace {
 
 struct MapCallbackData {
@@ -216,5 +218,7 @@ uint64_t WebGPUQueryPool::get_mean_shader_ns(
   }
   return n == 0 ? 0 : sum / n;
 }
+
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 } // namespace executorch::backends::webgpu
