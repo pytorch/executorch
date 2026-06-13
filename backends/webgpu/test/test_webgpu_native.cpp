@@ -633,6 +633,76 @@ static bool test_rope(
   return true;
 }
 
+static bool test_prepack(
+    const std::string& model_path,
+    const std::string& golden_path,
+    const std::string& label = "x + const w") {
+  // et_vk.prepack copy vs golden; unrun copy leaves zeros. See test_prepack.py.
+  constexpr int n = 4;
+  constexpr int numel = n * n;
+  printf("\n--- Test: prepack (%s, %dx%d) ---\n", label.c_str(), n, n);
+
+  Module module(model_path);
+  auto err = module.load_forward();
+  if (err != Error::Ok) {
+    printf("FAIL: could not load forward method (error %d)\n", (int)err);
+    return false;
+  }
+  printf("Model loaded: %s\n", model_path.c_str());
+
+  std::vector<float> golden = load_golden(golden_path, numel);
+  if (golden.empty()) {
+    printf("FAIL: could not load golden %s\n", golden_path.c_str());
+    return false;
+  }
+
+  // ((i % 13) - 6) / 16: exact in fp32, matches test_prepack.py::_inputs.
+  std::vector<float> x_data(numel);
+  for (int i = 0; i < numel; i++) {
+    x_data[i] = static_cast<float>((i % 13) - 6) / 16.0f;
+  }
+  auto x = make_tensor_ptr({n, n}, std::vector<float>(x_data));
+
+  auto result = module.forward({EValue(x)});
+  if (!result.ok()) {
+    printf("FAIL: forward failed (error %d)\n", (int)result.error());
+    return false;
+  }
+  const auto& outputs = result.get();
+  if (outputs.empty() || !outputs[0].isTensor()) {
+    printf("FAIL: no tensor output\n");
+    return false;
+  }
+  const auto& out_tensor = outputs[0].toTensor();
+  if (out_tensor.numel() != numel) {
+    printf(
+        "FAIL: output numel %zu != expected %d\n",
+        (size_t)out_tensor.numel(),
+        numel);
+    return false;
+  }
+  const float* out_data = out_tensor.const_data_ptr<float>();
+
+  float max_abs_err = 0.0f, max_rel_err = 0.0f;
+  for (int i = 0; i < numel; i++) {
+    const float ae = std::abs(out_data[i] - golden[i]);
+    max_abs_err = std::max(max_abs_err, ae);
+    max_rel_err =
+        std::max(max_rel_err, ae / std::max(std::abs(golden[i]), 1e-6f));
+  }
+  printf(
+      "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
+      max_abs_err,
+      max_rel_err,
+      numel);
+  if (max_abs_err > 1e-3f || max_rel_err > 1e-3f) {
+    printf("FAIL: prepack exceeds tolerance 1e-3\n");
+    return false;
+  }
+  printf("PASS: prepack test\n");
+  return true;
+}
+
 // Reconstruct _ramp_input bit-for-bit, run the op, compare to the fp64 golden.
 static bool test_q4gsw_config(
     const Q4gswConfig& cfg,
@@ -1681,6 +1751,22 @@ int main(int argc, char** argv) {
     rope_xk_golden_path = env;
   }
 
+  std::string prepack_model_path, prepack_golden_path;
+  if (const char* env = std::getenv("WEBGPU_TEST_PREPACK_MODEL")) {
+    prepack_model_path = env;
+  }
+  if (const char* env = std::getenv("WEBGPU_TEST_PREPACK_GOLDEN")) {
+    prepack_golden_path = env;
+  }
+
+  std::string prepack2_model_path, prepack2_golden_path;
+  if (const char* env = std::getenv("WEBGPU_TEST_PREPACK2_MODEL")) {
+    prepack2_model_path = env;
+  }
+  if (const char* env = std::getenv("WEBGPU_TEST_PREPACK2_GOLDEN")) {
+    prepack2_golden_path = env;
+  }
+
   // SDPA sweep: configs self-discover their sdpa_<name>.pte/.golden.bin under
   // this directory (default "" = the embedded-file root / cwd). Set
   // WEBGPU_TEST_SDPA_DIR to point at the exported .pte directory (e.g. /tmp/).
@@ -1744,6 +1830,16 @@ int main(int argc, char** argv) {
   if (!rope_model_path.empty() && !rope_xq_golden_path.empty() &&
       !rope_xk_golden_path.empty()) {
     ok = test_rope(rope_model_path, rope_xq_golden_path, rope_xk_golden_path) &&
+        ok;
+  }
+
+  if (!prepack_model_path.empty() && !prepack_golden_path.empty()) {
+    ok = test_prepack(prepack_model_path, prepack_golden_path) && ok;
+  }
+
+  if (!prepack2_model_path.empty() && !prepack2_golden_path.empty()) {
+    ok = test_prepack(
+             prepack2_model_path, prepack2_golden_path, "x * w1 + w2") &&
         ok;
   }
 

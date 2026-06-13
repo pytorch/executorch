@@ -50,6 +50,13 @@ struct OutputCopy {
   size_t nbytes = 0;
 };
 
+// One-time constant-prepack buffer->buffer copy, run at the end of build().
+struct PrepackCopy {
+  WGPUBuffer src = nullptr; // non-owning: owned by tensors_[], freed in dtor
+  WGPUBuffer dst = nullptr; // non-owning: owned by tensors_[], freed in dtor
+  size_t nbytes = 0;
+};
+
 struct ExecuteConfig {
   size_t chunk_size = 0;
   size_t initial_chunk_size = 0;
@@ -180,6 +187,11 @@ class WebGPUGraph {
     dispatches_.push_back(dispatch);
   }
 
+  // Record a constant-prepack copy, executed once at the end of build().
+  void add_prepack_copy(WGPUBuffer src, WGPUBuffer dst, size_t nbytes) {
+    prepack_copies_.push_back({src, dst, nbytes});
+  }
+
   void add_uniform_buffer_bytes(size_t bytes) {
     uniform_buffer_bytes_ += bytes;
   }
@@ -285,6 +297,9 @@ class WebGPUGraph {
   std::vector<OutputCopy> output_copies_;
 
   std::vector<WebGPUDispatch> dispatches_;
+
+  // Constant-prepack copies, executed once at the end of build().
+  std::vector<PrepackCopy> prepack_copies_;
 
   ExecuteConfig execute_config_;
 

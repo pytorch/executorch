@@ -53,6 +53,10 @@ EMBEDDING_GOLDEN="/tmp/webgpu_embedding_q4gsw_golden.bin"
 ROPE_MODEL="/tmp/webgpu_rope.pte"
 ROPE_XQ_GOLDEN="/tmp/webgpu_rope_xq_golden.bin"
 ROPE_XK_GOLDEN="/tmp/webgpu_rope_xk_golden.bin"
+PREPACK_MODEL="/tmp/webgpu_prepack.pte"
+PREPACK_GOLDEN="/tmp/webgpu_prepack_golden.bin"
+PREPACK2_MODEL="/tmp/webgpu_prepack_mul_add.pte"
+PREPACK2_GOLDEN="/tmp/webgpu_prepack_mul_add_golden.bin"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
@@ -74,6 +78,12 @@ $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rope.test_rope import export_rope_model
 export_rope_model('${ROPE_MODEL}', '${ROPE_XQ_GOLDEN}', '${ROPE_XK_GOLDEN}')
 " || echo "WARN: rope export failed; webgpu_native_test apply_rotary_emb case self-skips"
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.prepack.test_prepack import export_prepack_model, export_prepack_mul_add_model
+export_prepack_model('${PREPACK_MODEL}', '${PREPACK_GOLDEN}')
+export_prepack_mul_add_model('${PREPACK2_MODEL}', '${PREPACK2_GOLDEN}')
+" || echo "WARN: prepack export failed; webgpu_native_test prepack cases self-skip"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases
@@ -171,6 +181,10 @@ if [[ -x "${BIN_DIR}/webgpu_native_test" && -f "${PTE_MODEL}" ]]; then
       WEBGPU_TEST_ROPE_MODEL="${ROPE_MODEL}" \
       WEBGPU_TEST_ROPE_XQ_GOLDEN="${ROPE_XQ_GOLDEN}" \
       WEBGPU_TEST_ROPE_XK_GOLDEN="${ROPE_XK_GOLDEN}" \
+      WEBGPU_TEST_PREPACK_MODEL="${PREPACK_MODEL}" \
+      WEBGPU_TEST_PREPACK_GOLDEN="${PREPACK_GOLDEN}" \
+      WEBGPU_TEST_PREPACK2_MODEL="${PREPACK2_MODEL}" \
+      WEBGPU_TEST_PREPACK2_GOLDEN="${PREPACK2_GOLDEN}" \
       "${BIN_DIR}/webgpu_native_test"
 else
   echo "(skipping webgpu_native_test: no exported .pte — needs the executorch python wheel)"

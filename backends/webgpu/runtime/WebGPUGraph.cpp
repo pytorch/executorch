@@ -454,6 +454,23 @@ void WebGPUGraph::build(
       webgpu_operator_registry().get_op_fn(op_name)(*this, args);
     }
   }
+
+  // Phase 4: one-time constant-prepack copies (mirrors Vulkan prepack phase).
+  // No poll (Dawn lacks wgpuDevicePoll); queue order syncs it before execute().
+  if (!prepack_copies_.empty()) {
+    WGPUCommandEncoderDescriptor enc_desc = {};
+    WGPUCommandEncoder encoder =
+        wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
+    for (const auto& c : prepack_copies_) {
+      wgpuCommandEncoderCopyBufferToBuffer(
+          encoder, c.src, 0, c.dst, 0, c.nbytes);
+    }
+    WGPUCommandBufferDescriptor cmd_desc = {};
+    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
+    wgpuQueueSubmit(queue_, 1, &cmd);
+    wgpuCommandBufferRelease(cmd);
+    wgpuCommandEncoderRelease(encoder);
+  }
 }
 
 WGPUShaderModule WebGPUGraph::get_or_create_shader(
