@@ -487,6 +487,8 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/operators/operator.cpp",
     "runtime/executor/arena.cpp",
     "runtime/executor/shape_env.cpp",
+    "runtime/plan/partition.cpp",
+    "runtime/plan/xnn_support.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]

@@ -45,6 +45,7 @@ target_include_directories(
 set(_graph_runtime_test_srcs
     runtime/test_quant_params.cpp runtime/test_graph_builder.cpp
     runtime/test_shape_env.cpp runtime/test_arena.cpp
+    runtime/test_partition.cpp
 )
 
 et_cxx_test(
