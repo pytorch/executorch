@@ -95,14 +95,16 @@ class XnnpackBackend final
     // concurrent inits from resetting is_finalized_ or overwriting
     // named_data_map_ while compileModel is using the shared weights cache.
     std::unique_lock<std::mutex> lock_weights_cache(
-        options_.weights_cache_mutex(), std::defer_lock);
+        weights_cache_mutex_, std::defer_lock);
     if (use_weight_cache) {
       lock_weights_cache.lock();
 
       const auto& cache_path = options_.get_packed_cache_path();
-      options_.weights_cache().set_packed_cache_path(cache_path);
+      if (!cache_path.empty()) {
+        weights_cache_->set_packed_cache_path(cache_path);
+      }
 
-      options_.weights_cache().initialize_for_runtime(
+      weights_cache_->initialize_for_runtime(
           context.get_runtime_allocator(), named_data_map);
       workspace->set_uses_weight_cache();
     }
@@ -118,7 +120,7 @@ class XnnpackBackend final
         processed->data(),
         processed->size(),
         executor,
-        &options_.weights_cache(),
+        weights_cache_.get(),
         workspace_ptr,
         named_data_map,
         use_weight_cache);
@@ -147,7 +149,7 @@ class XnnpackBackend final
     auto workspace = executor->get_workspace();
 
     std::unique_lock<std::mutex> lock_weights_cache(
-        options_.weights_cache_mutex(), std::defer_lock);
+        weights_cache_mutex_, std::defer_lock);
     if (executor->uses_weight_cache() || workspace->uses_weight_cache()) {
       lock_weights_cache.lock();
     }
@@ -178,15 +180,14 @@ class XnnpackBackend final
       auto workspace = executor->get_workspace();
 
       const std::lock_guard<std::mutex> lock_weights_cache(
-          options_.weights_cache_mutex());
+          weights_cache_mutex_);
 
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
 #endif
 
       if (executor->uses_weight_cache()) {
-        options_.weights_cache().delete_packed_data(
-            executor->get_packed_data_names());
+        weights_cache_->delete_packed_data(executor->get_packed_data_names());
       }
 
       // This is needed to serialize access to xnn_delete_runtime which is not
@@ -217,29 +218,27 @@ class XnnpackBackend final
   Error set_option(
       BackendOptionContext& context,
       const Span<BackendOption>& backend_options) override {
-    // Process every option even if one fails — applying a `packed_cache_path`
-    // and triggering `save_weight_cache_on_disk` in the same array must not
-    // depend on declaration order. Capture the first error and report it
-    // after the loop. All option-key dispatch — including the disk-save
-    // side effect — lives inside XnnpackBackendOptions::set_option, which
-    // owns the weights-cache instance and its mutex.
-    Error first_err = Error::Ok;
     for (const auto& option : backend_options) {
       Error err = options_.set_option(option);
-      if (err != Error::Ok && first_err == Error::Ok) {
-        first_err = err;
+      if (err != Error::Ok) {
+        return err;
       }
     }
-    return first_err;
+    return Error::Ok;
   }
 
  private:
   mutable xnnpack::XnnpackBackendOptions options_;
 
-  // Lock hierarchy for mutexes:
-  //   options_.weights_cache_mutex()
-  //   workspace_meta_mutex_
-  //   workspace_mutex_ (owned by executor)
+  // Weights cache is global to all delegate instances.
+  mutable std::mutex weights_cache_mutex_;
+  std::unique_ptr<XNNWeightsCache> weights_cache_ =
+      std::make_unique<XNNWeightsCache>();
+
+  // Lock Hiearchy for Mutexes:
+  // weights_cache_mutex_
+  // workspace_meta_mutex_
+  // workspace_mutex_ (owned by executor)
 };
 
 namespace {

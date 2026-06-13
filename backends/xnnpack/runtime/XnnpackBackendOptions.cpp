@@ -79,39 +79,13 @@ Error XnnpackBackendOptions::set_option(const BackendOption& option) {
       ET_LOG(Error, "XNNPACK packed cache path must be a string.");
       return Error::InvalidArgument;
     }
-    // Same lock as weights_cache_: init() reads packed_cache_path_ under
-    // weights_cache_mutex_ and feeds it straight into the cache, so an
-    // unprotected write here would race with that read.
-    const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
     packed_cache_path_ = std::string(val->data());
     ET_LOG(
         Debug,
         "Setting XNNPACK packed cache path to %s.",
         packed_cache_path_.c_str());
-  } else if (strcmp(option.key, save_weight_cache_on_disk_option_key) == 0) {
-    auto* val = std::get_if<bool>(&option.value);
-    if (!val) {
-      ET_LOG(Error, "XNNPACK save_weight_cache_on_disk must be a bool.");
-      return Error::InvalidArgument;
-    }
-    if (*val) {
-      return save_weights_cache_locked();
-    }
   }
   return Error::Ok;
-}
-
-delegate::XNNWeightsCache& XnnpackBackendOptions::weights_cache() {
-  return weights_cache_;
-}
-
-std::mutex& XnnpackBackendOptions::weights_cache_mutex() {
-  return weights_cache_mutex_;
-}
-
-Error XnnpackBackendOptions::save_weights_cache_locked() {
-  const std::lock_guard<std::mutex> lock(weights_cache_mutex_);
-  return weights_cache_.save_packed_index();
 }
 
 bool XnnpackBackendOptions::resolve_weight_cache(
