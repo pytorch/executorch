@@ -39,6 +39,7 @@ set(WEBGPU_SRCS
     runtime/ops/select_as_symint/SelectAsSymint.cpp
     runtime/ops/quantized_linear/QuantizedLinear.cpp
     runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
+    runtime/ops/rope/RotaryEmbedding.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})

@@ -239,6 +239,7 @@ void WebGPUGraph::build(
   ints_.resize(num_vals, 0);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
+  value_lists_.resize(num_vals);
 
   for (int i = 0; i < num_vals; i++) {
     const auto* val = values->Get(i);
@@ -313,6 +314,10 @@ void WebGPUGraph::build(
                 throw std::runtime_error(
                     "WebGPU: constant has no inline offset and no named-data key");
               }
+            } else {
+              throw std::runtime_error(
+                  "WebGPU: constant_id set but the constants table is missing "
+                  "or the id is out of range");
             }
           }
         } else {
@@ -361,6 +366,16 @@ void WebGPUGraph::build(
         wgpuBufferUnmap(slot.buffer);
         symints_[i] = slot;
         add_uniform_buffer_bytes(kSymIntUniformBytes);
+        break;
+      }
+      case vkgraph::GraphTypes::ValueList: {
+        value_types_[i] = ValueType::ValueList;
+        const auto* items = val->value_as_ValueList()->items();
+        if (items) {
+          for (unsigned j = 0; j < items->size(); j++) {
+            value_lists_[i].push_back(static_cast<int>(items->Get(j)));
+          }
+        }
         break;
       }
       default:
