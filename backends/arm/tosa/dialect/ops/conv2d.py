@@ -63,15 +63,20 @@ def validate_conv2d_args_dtypes(  # noqa: C901
                 f"TOSA spec {tosa_spec} requires weights {weight.dtype} to be of the same type as input {x.dtype}",
                 op=op,
             )
-        if bias is not None and bias.dtype != x.dtype:
-            raise TosaValueError(
-                f"TOSA spec {tosa_spec} requires bias {bias.dtype} to be of the same type as input {x.dtype}",
-                op=op,
-            )
         if x.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
             output_dtype = torch.float16
         else:
             output_dtype = x.dtype
+        if bias is not None and bias.dtype != output_dtype:
+            if output_dtype != x.dtype:
+                raise TosaValueError(
+                    f"TOSA spec {tosa_spec} requires bias {bias.dtype} to be of the same type as output {output_dtype}",
+                    op=op,
+                )
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} requires bias {bias.dtype} to be of the same type as input {x.dtype}",
+                op=op,
+            )
     else:
         supported_types = (
             *(supported_int_types if tosa_spec.support_integer() else ()),
