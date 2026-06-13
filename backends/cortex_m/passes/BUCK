@@ -13,7 +13,6 @@ fbcode_target(_kind = runtime.python_library,
     name="replace_quant_nodes_pass",
     srcs=[
         "replace_quant_nodes_pass.py",
-        "quantized_op_fusion_pass.py",
     ],
     deps=[
         "//caffe2:torch",

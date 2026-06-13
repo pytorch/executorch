@@ -90,7 +90,9 @@ open class Module private constructor(moduleAbsolutePath: String, loadMode: Int,
       val errorCode = loadMethodNative(methodName)
       if (errorCode != 0) {
         throw ExecutorchRuntimeException.makeExecutorchException(
-            errorCode, "Failed to load method: $methodName")
+            errorCode,
+            "Failed to load method: $methodName",
+        )
       }
     } finally {
       mLock.unlock()
