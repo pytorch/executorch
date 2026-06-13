@@ -60,7 +60,7 @@ int64_t cus_upper_bound(
 }
 
 template <typename CTYPE_COMPUTE, typename CTYPE_OUT, const char* op_name>
-void bucketize_tensor(
+void bucketize_tensor_impl(
     KernelRuntimeContext& context,
     const Tensor& self,
     const Tensor& boundaries,
@@ -96,7 +96,7 @@ void bucketize_tensor(
 }
 
 template <typename CTYPE_COMPUTE, typename CTYPE_OUT, const char* op_name>
-void bucketize_scalar(
+void bucketize_scalar_impl(
     KernelRuntimeContext& context,
     const Scalar self,
     const Tensor& boundaries,
@@ -177,10 +177,10 @@ Tensor& bucketize_tensor_out(
   ET_SWITCH_REALHBF16_TYPES(
       compute_type, context, op_name, CTYPE_COMPUTE, [&]() {
         if (out_int32) {
-          bucketize_tensor<CTYPE_COMPUTE, int32_t, op_name>(
+          bucketize_tensor_impl<CTYPE_COMPUTE, int32_t, op_name>(
               context, self, boundaries, right, out);
         } else {
-          bucketize_tensor<CTYPE_COMPUTE, int64_t, op_name>(
+          bucketize_tensor_impl<CTYPE_COMPUTE, int64_t, op_name>(
               context, self, boundaries, right, out);
         }
       });
@@ -210,10 +210,10 @@ Tensor& bucketize_scalar_out(
   ET_SWITCH_REALHBF16_TYPES(
       compute_type, context, op_name, CTYPE_COMPUTE, [&]() {
         if (out_int32) {
-          bucketize_scalar<CTYPE_COMPUTE, int32_t, op_name>(
+          bucketize_scalar_impl<CTYPE_COMPUTE, int32_t, op_name>(
               context, self, boundaries, right, out);
         } else {
-          bucketize_scalar<CTYPE_COMPUTE, int64_t, op_name>(
+          bucketize_scalar_impl<CTYPE_COMPUTE, int64_t, op_name>(
               context, self, boundaries, right, out);
         }
       });
