@@ -25,6 +25,16 @@ struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
   std::vector<int64_t> dims;
   size_t nbytes = 0;
+  // Serialized (GPU-side) element type, used to narrow wider host inputs.
+  size_t elem_size = 0;
+  bool is_int = false;
+};
+
+// Host-side view of one graph input, passed to copy_inputs.
+struct InputData {
+  const void* data = nullptr;
+  size_t nbytes = 0;
+  bool host_is_int64 = false;
 };
 
 struct WebGPUDispatch {
@@ -75,7 +85,7 @@ class WebGPUGraph {
       const executorch::runtime::NamedDataMap* named_data_map = nullptr);
 
   // Copy input tensor data from host pointers into GPU buffers.
-  void copy_inputs(const std::vector<std::pair<const void*, size_t>>& inputs);
+  void copy_inputs(const std::vector<InputData>& inputs);
 
   // Execute all recorded dispatches.
   void execute();
@@ -138,8 +148,7 @@ class WebGPUGraph {
   }
 
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
-  void update_symints_from_inputs(
-      const std::vector<std::pair<const void*, size_t>>& inputs);
+  void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
   // Per-SymInt resize hook; mirrors Vulkan DynamicDispatchNode::trigger_resize.
   void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
