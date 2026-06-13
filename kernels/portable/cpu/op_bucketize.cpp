@@ -8,13 +8,12 @@
 namespace torch {
 namespace executor {
 namespace native {
-
-using namespace executorch::runtime;
-
 namespace {
 
-using namespace torch::executor::native::utils::internal;
-using namespace torch::executor::native::utils;
+using executorch::runtime::isRealHBF16Type;
+using torch::executor::native::utils::SupportedTensorDtypes;
+using torch::executor::native::utils::internal::get_load_to_compute_fn;
+using torch::executor::native::utils::internal::load_to_compute_fn;
 
 template <typename CTYPE>
 int64_t cus_lower_bound(
@@ -149,6 +148,8 @@ Error bucketize_common_pre_checks(
 }
 
 } // namespace
+
+using executorch::runtime::tensor_is_realhbf16_type;
 
 Tensor& bucketize_tensor_out(
     KernelRuntimeContext& context,
