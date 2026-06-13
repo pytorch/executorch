@@ -644,6 +644,175 @@ TEST(TestE2E, linear_qint8_static_dequantized) {
   EXPECT_FLOAT_EQ(d[1], 2.0f);
 }
 
+TEST(TestE2E, linear_qcint4_static_dequantized) {
+  auto builder = GraphBuilder();
+
+  auto input_spec = TensorSpec{
+      .dtype = DType::QInt8,
+      .sizes = {DimSizeSpec::constant(1), DimSizeSpec::constant(4)},
+      .quant_params = qint8_per_tensor_sym(1.0f),
+  };
+  auto quant_output_spec = TensorSpec{
+      .dtype = DType::QInt8,
+      .sizes = {DimSizeSpec::constant(1), DimSizeSpec::constant(2)},
+      .quant_params = qint8_per_tensor_sym(1.0f),
+  };
+  auto float_output_spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(1), DimSizeSpec::constant(2)},
+  };
+
+  auto input = builder.createInput(input_spec);
+
+  // Weight [2, 4], qcint4 per-channel (axis 0), scales = [1, 1].
+  // Logical values: row0 = [1,0,0,0], row1 = [0,1,0,0].
+  // qcint4 zero_point is 8, so stored nibble = value + 8.
+  //   row0 nibbles = [9,8,8,8], row1 nibbles = [8,9,8,8].
+  // Packed 2 nibbles/byte, element i in byte i/2 (low nibble for even i).
+  auto filter_tensor = std::make_shared<Tensor>();
+  filter_tensor->dtype = DType::QInt4;
+  filter_tensor->sizes = {2, 4};
+  filter_tensor->storage = make_owned(4); // 8 nibbles -> 4 bytes
+  auto* fw = filter_tensor->data_mut<uint8_t>();
+  fw[0] = (8 << 4) | 9; // row0 nibbles 0,1 = 9,8
+  fw[1] = (8 << 4) | 8; // row0 nibbles 2,3 = 8,8
+  fw[2] = (9 << 4) | 8; // row1 nibbles 0,1 = 8,9
+  fw[3] = (8 << 4) | 8; // row1 nibbles 2,3 = 8,8
+  filter_tensor->aux_storage.push_back(make_owned(2 * sizeof(float)));
+  auto* scales = static_cast<float*>(filter_tensor->aux_storage[0].data);
+  scales[0] = 1.0f;
+  scales[1] = 1.0f;
+  auto filter = builder.createConstant(filter_tensor, qint8_per_channel_sym(0));
+
+  auto linear_out = builder.createOperator(
+      Operator::Linear,
+      quant_output_spec,
+      {input, filter, ValueHandle::null()});
+  auto dequant_out = builder.createOperator(
+      Operator::Dequantize, float_output_spec, {linear_out});
+  builder.createOutput(dequant_out);
+
+  auto graph = builder.build();
+  auto executor_result = Executor::build(graph);
+  ASSERT_TRUE(executor_result.ok());
+  auto& executor = *executor_result;
+
+  Tensor ti;
+  ti.dtype = DType::QInt8;
+  ti.sizes = {1, 4};
+  ti.storage = make_owned(4);
+  auto* di = ti.data_mut<int8_t>();
+  di[0] = 1;
+  di[1] = 2;
+  di[2] = 3;
+  di[3] = 4;
+
+  std::vector<Tensor> inputs;
+  inputs.push_back(std::move(ti));
+
+  auto outputs_result = executor.run({inputs.data(), inputs.size()});
+  ASSERT_TRUE(outputs_result.ok());
+  auto& outputs = *outputs_result;
+
+  ASSERT_EQ(outputs.size(), 1);
+  ASSERT_EQ(outputs[0].sizes, (std::vector<uint64_t>{1, 2}));
+  auto* d = outputs[0].data_const<float>();
+  // out[0] = row0 . input = 1*1 = 1 ; out[1] = row1 . input = 1*2 = 2
+  EXPECT_FLOAT_EQ(d[0], 1.0f);
+  EXPECT_FLOAT_EQ(d[1], 2.0f);
+}
+
+TEST(TestE2E, linear_qd8_qcint4_dynamic) {
+  auto builder = GraphBuilder();
+
+  // Float input [2, 4]; dynamically quantized to qdint8 before the matmul.
+  auto float_input_spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(2), DimSizeSpec::constant(4)},
+  };
+  auto dyn_quant_spec = TensorSpec{
+      .dtype = DType::QInt8,
+      .sizes = {DimSizeSpec::constant(2), DimSizeSpec::constant(4)},
+      .quant_params = PerRowQuantParams{.axis = -1, .is_dynamic = true},
+  };
+  auto float_output_spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(2), DimSizeSpec::constant(2)},
+  };
+
+  auto input = builder.createInput(float_input_spec);
+  auto qinput =
+      builder.createOperator(Operator::Quantize, dyn_quant_spec, {input});
+
+  // Weight [2, 4], qcint4 per-channel (axis 0), non-trivial signed nibbles
+  // and per-channel scales to exercise sign, high/low nibble order, and scale.
+  //   row0 logical = [ 3, -2,  1, 0], scale0 = 2.0
+  //   row1 logical = [-4,  7, -1, 2], scale1 = 0.5
+  //   nibble = logical + 8:
+  //   row0 = [11, 6, 9, 8], row1 = [4, 15, 7, 10]
+  auto filter_tensor = std::make_shared<Tensor>();
+  filter_tensor->dtype = DType::QInt4;
+  filter_tensor->sizes = {2, 4};
+  filter_tensor->storage = make_owned(4);
+  auto* fw = filter_tensor->data_mut<uint8_t>();
+  fw[0] = (6 << 4) | 11; // row0 nibbles 0,1
+  fw[1] = (8 << 4) | 9; // row0 nibbles 2,3
+  fw[2] = (15 << 4) | 4; // row1 nibbles 0,1
+  fw[3] = (10 << 4) | 7; // row1 nibbles 2,3
+  filter_tensor->aux_storage.push_back(make_owned(2 * sizeof(float)));
+  auto* scales = static_cast<float*>(filter_tensor->aux_storage[0].data);
+  scales[0] = 2.0f;
+  scales[1] = 0.5f;
+  auto filter = builder.createConstant(filter_tensor, qint8_per_channel_sym(0));
+
+  auto linear_out = builder.createOperator(
+      Operator::Linear,
+      float_output_spec,
+      {qinput, filter, ValueHandle::null()});
+  builder.createOutput(linear_out);
+
+  auto graph = builder.build();
+  auto executor_result = Executor::build(graph);
+  ASSERT_TRUE(executor_result.ok());
+  auto& executor = *executor_result;
+
+  Tensor ti;
+  ti.dtype = DType::Float32;
+  ti.sizes = {2, 4};
+  ti.storage = make_owned(8 * sizeof(float));
+  auto* di = ti.data_mut<float>();
+  // row0 = [1,2,3,4], row1 = [2,1,0,-1]
+  di[0] = 1;
+  di[1] = 2;
+  di[2] = 3;
+  di[3] = 4;
+  di[4] = 2;
+  di[5] = 1;
+  di[6] = 0;
+  di[7] = -1;
+
+  std::vector<Tensor> inputs;
+  inputs.push_back(std::move(ti));
+
+  auto outputs_result = executor.run({inputs.data(), inputs.size()});
+  ASSERT_TRUE(outputs_result.ok());
+  auto& outputs = *outputs_result;
+
+  ASSERT_EQ(outputs.size(), 1);
+  ASSERT_EQ(outputs[0].sizes, (std::vector<uint64_t>{2, 2}));
+  auto* d = outputs[0].data_const<float>();
+  // input row0 = [1,2,3,4]:
+  //   out[0][0] = 2.0*(3*1 - 2*2 + 1*3 + 0*4) = 2.0*2  = 4.0
+  //   out[0][1] = 0.5*(-4*1 + 7*2 - 1*3 + 2*4) = 0.5*15 = 7.5
+  // input row1 = [2,1,0,-1]:
+  //   out[1][0] = 2.0*(3*2 - 2*1 + 1*0 + 0*-1) = 2.0*4  = 8.0
+  //   out[1][1] = 0.5*(-4*2 + 7*1 - 1*0 + 2*-1) = 0.5*-3 = -1.5
+  EXPECT_NEAR(d[0], 4.0f, 1e-1f);
+  EXPECT_NEAR(d[1], 7.5f, 1e-1f);
+  EXPECT_NEAR(d[2], 8.0f, 1e-1f);
+  EXPECT_NEAR(d[3], -1.5f, 1e-1f);
+}
+
 TEST(TestE2E, linear_qint8_static_requantized) {
   auto builder = GraphBuilder();
 
