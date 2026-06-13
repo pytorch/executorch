@@ -485,6 +485,8 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/graph/graph.cpp",
     "runtime/graph/graph_builder.cpp",
     "runtime/operators/operator.cpp",
+    "runtime/executor/arena.cpp",
+    "runtime/executor/shape_env.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
