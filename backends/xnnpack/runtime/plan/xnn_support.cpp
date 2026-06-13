@@ -17,6 +17,7 @@ bool check_xnn_dtype_support(core::DType dtype) {
     case core::DType::QUInt8:
     case core::DType::QInt8:
     case core::DType::QInt32:
+    case core::DType::QInt4:
       return true;
     default:
       return false;

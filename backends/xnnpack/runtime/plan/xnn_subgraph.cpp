@@ -44,13 +44,29 @@ runtime::Result<xnn_datatype> map_xnn_datatype(const graph::TensorSpec& spec) {
     case DType::QUInt8:
       return xnn_datatype_quint8;
     case DType::QInt8:
+      if (auto* pr = std::get_if<core::PerRowQuantParams>(&*spec.quant_params);
+          pr != nullptr && pr->is_dynamic) {
+        return xnn_datatype_qdint8;
+      }
       if (std::holds_alternative<core::PerAxisQuantParams>(
               *spec.quant_params)) {
         return xnn_datatype_qcint8;
       }
       return xnn_datatype_qint8;
     case DType::QInt32:
+      // Per-channel bias is channelwise int32 (qcint32); per-tensor is qint32.
+      if (std::holds_alternative<core::PerAxisQuantParams>(
+              *spec.quant_params)) {
+        return xnn_datatype_qcint32;
+      }
       return xnn_datatype_qint32;
+    case DType::QInt4:
+      // 4-bit weights: per-channel (qcint4) or blockwise/group (qbint4).
+      if (std::holds_alternative<core::PerBlockQuantParams>(
+              *spec.quant_params)) {
+        return xnn_datatype_qbint4;
+      }
+      return xnn_datatype_qcint4;
     default:
       ET_LOG(Error, "Unsupported quantized dtype for XNNPACK delegation");
       return runtime::Error::NotSupported;
@@ -727,6 +743,28 @@ runtime::Result<uint32_t> define_tensor(
         constant_tensor != nullptr && !constant_tensor->aux_storage.empty(),
         NotSupported,
         "Per-axis quantized tensor is missing scale data");
+    // Per-channel asymmetric quantization (per-channel zero points) is not
+    // supported; fail cleanly rather than silently using a zero zero-point.
+    ET_CHECK_OR_RETURN_ERROR(
+        !pa->has_zero_point,
+        NotSupported,
+        "Per-channel asymmetric quantization is not supported");
+    // XNNPACK requires one scale per element of the quantized (channel) dim.
+    ET_CHECK_OR_RETURN_ERROR(
+        pa->axis >= 0 && static_cast<size_t>(pa->axis) < dims.size(),
+        Internal,
+        "Per-axis quant axis %d out of range (%zu dims)",
+        (int)pa->axis,
+        dims.size());
+    size_t num_scales =
+        constant_tensor->aux_storage[0].size_in_bytes / sizeof(float);
+    ET_CHECK_OR_RETURN_ERROR(
+        num_scales == dims[pa->axis],
+        Internal,
+        "Per-axis scale count %zu != channel dim %zu (axis %d)",
+        num_scales,
+        dims[pa->axis],
+        (int)pa->axis);
     auto* scales =
         static_cast<const float*>(constant_tensor->aux_storage[0].data);
     int32_t zero_point = (xnn_dtype == xnn_datatype_qcint4) ? 8 : 0;
@@ -739,6 +777,79 @@ runtime::Result<uint32_t> define_tensor(
         static_cast<size_t>(pa->axis),
         dims.data(),
         data,
+        external_id,
+        flags,
+        &id);
+  } else if (
+      auto* pb = std::get_if<core::PerBlockQuantParams>(&*spec.quant_params)) {
+    // Blockwise 4-bit weight (qbint4): one bf16 scale per group of block_size
+    // elements along the channel axis.
+    ET_CHECK_OR_RETURN_ERROR(
+        constant_tensor != nullptr && !constant_tensor->aux_storage.empty(),
+        NotSupported,
+        "Blockwise quantized tensor is missing scale data");
+    ET_CHECK_OR_RETURN_ERROR(
+        !pb->has_zero_point,
+        NotSupported,
+        "Blockwise asymmetric quantization is not supported");
+    ET_CHECK_OR_RETURN_ERROR(
+        pb->axis >= 0 && static_cast<size_t>(pb->axis) < dims.size() &&
+            pb->block_size > 0,
+        Internal,
+        "Invalid blockwise quant axis/block_size");
+    size_t num_elements = 1;
+    for (auto d : dims)
+      num_elements *= d;
+    size_t expected_scales = num_elements / static_cast<size_t>(pb->block_size);
+    size_t num_scales =
+        constant_tensor->aux_storage[0].size_in_bytes / sizeof(uint16_t);
+    ET_CHECK_OR_RETURN_ERROR(
+        num_scales == expected_scales,
+        Internal,
+        "Blockwise scale count %zu != elements %zu / block_size %d",
+        num_scales,
+        num_elements,
+        pb->block_size);
+    // Scales are bf16 (uint16) per the blockwise quant convention.
+    auto* scales =
+        static_cast<const uint16_t*>(constant_tensor->aux_storage[0].data);
+    int32_t zero_point = (xnn_dtype == xnn_datatype_qbint4) ? 8 : 0;
+    status = xnn_define_blockwise_quantized_tensor_value(
+        subgraph,
+        xnn_dtype,
+        zero_point,
+        scales,
+        spec.sizes.size(),
+        static_cast<size_t>(pb->axis),
+        static_cast<size_t>(pb->block_size),
+        dims.data(),
+        data,
+        external_id,
+        flags,
+        &id);
+  } else if (
+      auto* pr = std::get_if<core::PerRowQuantParams>(&*spec.quant_params)) {
+    // Dynamically-quantized activation: XNNPACK computes per-row scales at
+    // runtime. Static per-row is not an XNNPACK path.
+    ET_CHECK_OR_RETURN_ERROR(
+        pr->is_dynamic,
+        NotSupported,
+        "Static per-row quantization is not supported");
+    ET_CHECK_OR_RETURN_ERROR(
+        data == nullptr,
+        Internal,
+        "Dynamically-quantized tensor must not have constant data");
+    // num_nonbatch_dims is the count of trailing "row" dims, encoded as -axis.
+    size_t ndims = spec.sizes.size();
+    size_t num_nonbatch_dims = pr->axis < 0
+        ? static_cast<size_t>(-pr->axis)
+        : ndims - static_cast<size_t>(pr->axis);
+    status = xnn_define_dynamically_quantized_tensor_value(
+        subgraph,
+        xnn_dtype,
+        ndims,
+        num_nonbatch_dims,
+        dims.data(),
         external_id,
         flags,
         &id);
