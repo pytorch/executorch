@@ -39,6 +39,10 @@ static runtime::Result<DType> map_dtype(fb::XNNDatatype dt) {
       return DType::Float16;
     case fb::XNNDatatype::xnn_datatype_qint8:
       return DType::QInt8;
+    case fb::XNNDatatype::xnn_datatype_qdint8:
+      // Dynamically-quantized int8 activation; the PerRow quant params carry
+      // the is_dynamic flag that distinguishes it from static qint8.
+      return DType::QInt8;
     case fb::XNNDatatype::xnn_datatype_quint8:
       return DType::QUInt8;
     case fb::XNNDatatype::xnn_datatype_qcint8:
@@ -91,17 +95,26 @@ static QuantParams map_quant_params(const fb::XNNQuantizedTensorValue* qtv) {
       };
     }
     case fb::XNNQuantParams::PerChannelGroupQuant: {
+      // Blockwise 4-bit (qbint4); XNNPACK requires bf16 group scales.
       auto qp = qtv->quant_params_as_PerChannelGroupQuant();
       return PerBlockQuantParams{
           .axis = static_cast<int8_t>(qp->channel_dim()),
           .block_size = static_cast<int32_t>(qp->group_size()),
-          .scale_dtype = DType::Float32,
+          .scale_dtype = DType::BFloat16,
           .has_zero_point = has_zero_point,
       };
     }
     case fb::XNNQuantParams::PerTokenDynamicQuant: {
-      return PerTensorQuantParams{
-          .scale = 1.0f, .zero_point = 0, .has_zero_point = has_zero_point};
+      // Per-token dynamic quant: per-row scales computed at runtime by XNNPACK.
+      // Encode num_nonbatch_dims in the (negative) reduced axis: axis=-1 for
+      // the usual num_nonbatch_dims=1 (per-token).
+      auto qp = qtv->quant_params_as_PerTokenDynamicQuant();
+      return PerRowQuantParams{
+          .axis = static_cast<int8_t>(-qp->num_nonbatch_dims()),
+          .scale_dtype = DType::Float32,
+          .has_zero_point = has_zero_point,
+          .is_dynamic = true,
+      };
     }
     default:
       return PerTensorQuantParams{.scale = 1.0f, .zero_point = 0};
@@ -262,6 +275,15 @@ static TensorSpec make_spec(
   return spec;
 }
 
+// Converts an fp32 value to bf16 with round-to-nearest, matching the AOT
+// serializer's blockwise-scale conversion.
+static uint16_t f32_to_bf16(float f) {
+  f *= 1.00389105f;
+  uint32_t bits;
+  std::memcpy(&bits, &f, sizeof(float));
+  return static_cast<uint16_t>(bits >> 16);
+}
+
 // Loads constant buffer `buf_idx` into an owned Storage. Records an error via
 // ctx.fail() and returns nullopt on failure.
 static std::optional<Storage> load_constant_buffer(
@@ -371,6 +393,31 @@ static void define_value(BuildContext& ctx, const fb::XValue* value) {
         auto scales = Storage::create_owned(bytes);
         if (scales.ok()) {
           std::memcpy(scales.get().data, pc->scale()->data(), bytes);
+          tensor->aux_storage.push_back(std::move(scales.get()));
+        } else {
+          ctx.fail(scales.error());
+        }
+      }
+    }
+
+    // Blockwise 4-bit (group) quant carries one bf16 scale per group. Scales
+    // are serialized either inline as fp32 (convert to bf16) or in a separate
+    // buffer (already bf16); define_tensor reads them from aux_storage.
+    if (qtv &&
+        qtv->quant_params_type() == fb::XNNQuantParams::PerChannelGroupQuant) {
+      auto* pcg = qtv->quant_params_as_PerChannelGroupQuant();
+      if (pcg->scale_buffer_idx() != 0) {
+        if (auto scales = load_constant_buffer(ctx, pcg->scale_buffer_idx())) {
+          tensor->aux_storage.push_back(std::move(*scales));
+        }
+      } else if (pcg->scale() != nullptr && pcg->scale()->size() > 0) {
+        size_t n = pcg->scale()->size();
+        auto scales = Storage::create_owned(n * sizeof(uint16_t));
+        if (scales.ok()) {
+          auto* dst = static_cast<uint16_t*>(scales.get().data);
+          for (size_t i = 0; i < n; i++) {
+            dst[i] = f32_to_bf16(pcg->scale()->Get(i));
+          }
           tensor->aux_storage.push_back(std::move(scales.get()));
         } else {
           ctx.fail(scales.error());
