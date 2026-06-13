@@ -1,4 +1,3 @@
-
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
@@ -14,24 +13,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/utils.sh"
 
-# Double check if the NDK version is set
+# Double check if Zephyr setup is enabled.
 [ -n "${ZEPHYR_SDK}" ]
 
-install_prerequiresites() {
+install_prerequisites() {
     rm /var/lib/dpkg/info/libc-bin.*
     apt-get clean
     apt-get -y update
     apt-get install -y libc-bin
     apt-get -y update
     apt-get clean
-    apt-get install --no-install-recommends -y dos2unix
     apt-get install --no-install-recommends -y ca-certificates
     apt-get install -y --reinstall libc-bin
     apt-get install --no-install-recommends -y file
     apt-get install --no-install-recommends -y locales
     apt-get install --no-install-recommends -y git
     apt-get install --no-install-recommends -y build-essential
-    apt-get install --no-install-recommends -y cmake
     apt-get install --no-install-recommends -y ninja-build gperf
     apt-get install --no-install-recommends -y device-tree-compiler
     apt-get install --no-install-recommends -y wget
@@ -51,8 +48,7 @@ install_prerequiresites() {
     apt install -y python3.12 python3.12-dev python3.12-venv python3-pip
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 
-    # Upgrade cmake ot 3.24
-    apt update
+    # Upgrade cmake to 3.24 or newer.
     apt install -y software-properties-common lsb-release
     apt update
     test -f /usr/share/doc/kitware-archive-keyring/copyright || \
@@ -78,10 +74,6 @@ install_prerequiresites() {
     apt-get clean -y
     apt-get autoremove --purge -y
     rm -rf /var/lib/apt/lists/*
-    wget https://apt.kitware.com/kitware-archive.sh && \
-        chmod +x kitware-archive.sh && \
-        ./kitware-archive.sh && \
-        rm -f kitware-archive.sh
     pip_install --no-cache-dir west
     pip_install pyelftools
 
@@ -97,4 +89,4 @@ install_prerequiresites() {
         --populate-cache
 }
 
-install_prerequiresites
+install_prerequisites

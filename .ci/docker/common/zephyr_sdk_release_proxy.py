@@ -144,6 +144,19 @@ def verify_asset(cache_dir: Path, checksums: dict[str, str], filename: str) -> N
         )
 
 
+def ensure_verified_asset(
+    cache_dir: Path, version: str, checksums: dict[str, str], filename: str
+) -> Path:
+    path = ensure_asset(cache_dir, version, filename)
+    try:
+        verify_asset(cache_dir, checksums, filename)
+    except AssetVerificationError:
+        path.unlink(missing_ok=True)
+        path = ensure_asset(cache_dir, version, filename)
+        verify_asset(cache_dir, checksums, filename)
+    return path
+
+
 def populate_cache(cache_dir: Path, version: str, toolchain: str) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     names = asset_names(version, toolchain)
@@ -152,8 +165,7 @@ def populate_cache(cache_dir: Path, version: str, toolchain: str) -> None:
     checksums = parse_sha256_sum(sha_file)
 
     for name in names:
-        ensure_asset(cache_dir, version, name)
-        verify_asset(cache_dir, checksums, name)
+        ensure_verified_asset(cache_dir, version, checksums, name)
 
 
 def release_json(version: str, toolchain: str, base_url: str) -> bytes:
@@ -204,10 +216,16 @@ class SdkProxyHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             try:
-                path = ensure_asset(self.cache_dir, self.version, filename)
                 if filename != "sha256.sum":
                     sha_file = ensure_asset(self.cache_dir, self.version, "sha256.sum")
-                    verify_asset(self.cache_dir, parse_sha256_sum(sha_file), filename)
+                    path = ensure_verified_asset(
+                        self.cache_dir,
+                        self.version,
+                        parse_sha256_sum(sha_file),
+                        filename,
+                    )
+                else:
+                    path = ensure_asset(self.cache_dir, self.version, filename)
             except (
                 AssetVerificationError,
                 subprocess.CalledProcessError,
