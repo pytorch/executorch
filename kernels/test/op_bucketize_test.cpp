@@ -120,6 +120,38 @@ class OpBucketizeTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, expected);
   }
 
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_bucketize_complex_boundary() {
+    TensorFactory<ScalarType::Long> tf_out;
+    TensorFactory<ScalarType::Float> tf_in;
+    TensorFactory<DTYPE> tf_bound;
+
+    Tensor values = tf_in.make({2, 2}, {1, 4, 6, 8});
+    Tensor boundaries = tf_bound.make({1}, {CTYPE(0, 1)});
+    Tensor out = tf_out.zeros({2, 2});
+
+    Tensor ret = op_bucketize_out(values, boundaries, false, true, out);
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_bucketize_out(values, boundaries, false, false, out));
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_bucketize_complex_input() {
+    TensorFactory<ScalarType::Long> tf_out;
+    TensorFactory<DTYPE> tf_in;
+    TensorFactory<ScalarType::Float> tf_bound;
+
+    Tensor values = tf_in.make({1}, {CTYPE(0, 1)});
+    Tensor boundaries = tf_bound.make({5}, {0, 3, 5, 7, 9});
+    Tensor out = tf_out.zeros({2, 2});
+
+    Tensor ret = op_bucketize_out(values, boundaries, false, true, out);
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_bucketize_out(values, boundaries, false, false, out));
+  }
+
   template <ScalarType IN_DTYPE>
   void test_bucketize_bound_types() {
 #define RUN_TEST(ctype, dtype) \
@@ -302,4 +334,18 @@ TEST_F(OpBucketizeTest, MismatchingIntArg64Fails) {
 
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_bucketize_out(values, boundaries, false, false, out));
+}
+
+TEST_F(OpBucketizeTest, ComplexBoundaryTypesFails) {
+#define RUN_TEST(ctype, dtype) \
+  test_bucketize_complex_boundary<ctype, ScalarType::dtype>();
+  ET_FORALL_COMPLEXH_TYPES(RUN_TEST)
+#undef RUN_TEST
+}
+
+TEST_F(OpBucketizeTest, ComplexInputTypesFails) {
+#define RUN_TEST(ctype, dtype) \
+  test_bucketize_complex_input<ctype, ScalarType::dtype>();
+  ET_FORALL_COMPLEXH_TYPES(RUN_TEST)
+#undef RUN_TEST
 }

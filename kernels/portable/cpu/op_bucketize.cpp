@@ -1,12 +1,15 @@
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 namespace torch {
 namespace executor {
 namespace native {
+
+using namespace executorch::runtime;
 
 namespace {
 
@@ -135,6 +138,13 @@ Error bucketize_common_pre_checks(
       toString(out_dtype),
       (out_int32 ? "True" : "False"));
 
+  ScalarType bound_dtype = boundaries.scalar_type();
+  ET_CHECK_OR_RETURN_ERROR(
+      isRealHBF16Type(bound_dtype),
+      InvalidArgument,
+      "boundaries tensor of type %s is not supported",
+      toString(bound_dtype));
+
   return Error::Ok;
 }
 
@@ -154,6 +164,8 @@ Tensor& bucketize_tensor_out(
       out);
   ET_KERNEL_CHECK(
       context, tensors_have_same_shape(self, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      context, tensor_is_realhbf16_type(self), InvalidArgument, out);
 
   ScalarType common_type =
       promoteTypes(self.scalar_type(), boundaries.scalar_type());
