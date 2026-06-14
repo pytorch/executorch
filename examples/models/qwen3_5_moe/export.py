@@ -942,6 +942,7 @@ def _export_cuda(model, config, args):
     )
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
+    from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
     from torch.export import Dim, export
 
     # Coordinate descent recompiles each kernel trying config perturbations,
@@ -1038,7 +1039,10 @@ def _export_cuda(model, config, args):
             extract_delegate_segments=True,
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
-            emit_mutable_buffer_names=True,
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True,
+                skip_d2h_for_method_outputs=True,
+            ),
         ),
     )
 

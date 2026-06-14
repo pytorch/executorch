@@ -42,7 +42,7 @@ def sample(
             sampler returns the unmodified ``logits`` tensor.
 
     Returns:
-        ``[B, 1]`` float32 tensor of sampled token IDs, or the unmodified
+        ``[B, 1]`` int64 tensor of sampled token IDs, or the unmodified
         ``logits`` tensor when ``temperature`` is ``None``.
     """
     # No sampling configured — return raw logits.
@@ -57,4 +57,4 @@ def sample(
     # float32 note in the docstring.
     noise = torch.rand_like(logits)
     gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
-    return (logits + gumbel).argmax(dim=-1, keepdim=True).float()
+    return (logits + gumbel).argmax(dim=-1, keepdim=True)
