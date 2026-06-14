@@ -127,6 +127,8 @@ void bucketize_scalar_impl(
 // - Boundaries must be 1D
 // - Out type must be consistent with out_int32 parameter
 // - Boundaries type must be realhbf16
+// Boundaries size is not checked against out type as SizesType always fits into
+// an int32_t.
 Error bucketize_common_pre_checks(
     const Tensor& boundaries,
     bool out_int32,
