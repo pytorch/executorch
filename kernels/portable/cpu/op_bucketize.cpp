@@ -123,6 +123,10 @@ void bucketize_scalar_impl(
   out_data[0] = pos;
 }
 
+// Performs check which are common to both tensor and scalar implementations:
+// - Boundaries must be 1D
+// - Out type must be consistent with out_int32 parameter
+// - Boundaries type must be realhbf16
 Error bucketize_common_pre_checks(
     const Tensor& boundaries,
     bool out_int32,
