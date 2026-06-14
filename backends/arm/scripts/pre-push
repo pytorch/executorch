@@ -184,7 +184,8 @@ for COMMIT in ${COMMITS}; do
         esac
 
         file_header=$(head "$committed_file")
-        if ! echo "$file_header" | grep -qi "Arm"; then
+        arm_copyright_regex="Copyright .*Arm Limited and/or its affiliates"
+        if ! echo "$file_header" | grep -Eqi "$arm_copyright_regex"; then
             echo -e "${WARNING} No Arm copyright header in ${committed_file}"\
             " (skipping license year check)"
             continue

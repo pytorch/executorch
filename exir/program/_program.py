@@ -59,9 +59,10 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 from executorch.exir.passes.propagate_device_pass import PropagateDevicePass
 from executorch.exir.passes.quant_fusion_pass import quant_fusion_and_const_prop_pass
-from executorch.exir.passes.reinplace import reinplace_pass
+from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.exir.passes.remove_graph_asserts_pass import (
     RemoveGraphAssertsPass,
     RemoveNonCoreAtenOpGraphAssertsPass,
@@ -758,6 +759,13 @@ def edge_to_executorch_passes(
     Returns a list of passes to lower from edge to executorch.
     Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
     """
+    # Handle propagate device config
+    propagate_device_config = config.propagate_device_config
+    if isinstance(propagate_device_config, dict):
+        device_cfg = propagate_device_config.get(name, PropagateDeviceConfig())
+    else:
+        device_cfg = propagate_device_config
+
     passes: List[PassType] = [
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
@@ -765,8 +773,9 @@ def edge_to_executorch_passes(
         *config.passes,
         SpecPropPass(),
         PropagateDevicePass(
-            skip_h2d_for_method_inputs=config.skip_h2d_for_method_inputs,
-            skip_d2h_for_method_outputs=config.skip_d2h_for_method_outputs,
+            skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
+            skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
+            enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
         ),
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
@@ -1683,8 +1692,12 @@ class EdgeProgramManager:
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
                 program = quant_fusion_and_const_prop_pass(program)
-            if config.run_reinplace_pass:
-                program = reinplace_pass(program)
+            if config.run_reinplace_pass or config.reinplace_extra_ops:
+                extra = config.reinplace_extra_ops or frozenset()
+                program = reinplace_pass(
+                    program,
+                    ops_to_inplace=DEFAULT_INPLACEABLE_OPS | extra,
+                )
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)

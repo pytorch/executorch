@@ -19,6 +19,9 @@ from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
+from executorch.backends.cuda.passes.replace_int64_floordiv import (
+    ReplaceInt64FloorDivWithFloatPass,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -228,6 +231,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_cuda_randint_low_out": None,
             "executorch_cuda::int4_plain_mm": None,
             "aoti_torch_cuda_int4_plain_mm": None,
+            "executorch_cuda::int8_plain_mm": None,
+            "aoti_torch_cuda_int8_plain_mm": None,
         }
 
     @classmethod
@@ -257,7 +262,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                         f"Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
-        passes = [MoveCondPredicateToCpuPass()]
+        passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
         if triton_kernel_mode == "ON":
             passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes
@@ -309,9 +314,14 @@ class CudaBackend(AotiBackend, BackendDetails):
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],
+                torch.ops.executorch_cuda.int8_plain_mm.default: [
+                    "AOTITorchError aoti_torch_cuda_int8_plain_mm("
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                ],
             }
         except AttributeError:
-            # int4_dispatch.py not imported — op not registered, skip C shim mapping
+            # quantize_op_dispatch not imported — op not registered, skip C shim mapping
             pass
 
         # Parse compile_specs to check for platform

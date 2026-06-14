@@ -257,7 +257,8 @@ jobs:
           - test_arm_backend: test_pytest_ops_ethos_u85
           - test_arm_backend: test_pytest_models_ethos_u85
           - test_arm_backend: test_run_ethos_u85
-          - test_arm_backend: test_smaller_stories_llama
+          - test_arm_backend: test_smaller_stories_llama_tosa
+          - test_arm_backend: test_model_smollm2_135M_ethos_u85
           - test_arm_backend: test_memory_allocation
           - test_arm_backend: test_ootb_tests_ethos_u
           - test_arm_backend: test_ootb_tests_tosa
@@ -305,6 +306,7 @@ jobs:
           - test_arm_backend: test_pytest_ops_vkml
           - test_arm_backend: test_pytest_models_vkml
           - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -1073,3 +1075,13 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_e2e.yml
     with:
       models: '["mv2", "mv3"]'
+      targets: '["cortex-m55", "cortex-m7", "cortex-m0plus"]'
+
+  test-cortex-m-ops:
+    name: test-cortex-m-ops
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_ops.yml
+    with:
+      targets: '["cortex-m7", "cortex-m0plus"]'

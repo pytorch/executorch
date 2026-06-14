@@ -61,6 +61,36 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh "${{ matrix.python-version }}"
 
+  test-minimal-wheel-linux:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_minimal_wheel.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'exir/') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/flat_tensor') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/pytree') ||
+      contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
+      contains(needs.changed-files.outputs.changed-files, 'schema/') ||
+      contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
+      contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')
+    name: test-minimal-wheel-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_minimal_wheel.sh
+
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -484,6 +514,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-linux-gcc
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -492,6 +523,13 @@ jobs:
         ./install_requirements.sh
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        mkdir -p /tmp/bloaty-elfs
+        cp cmake-out/test/size_test /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "linux-gcc" /tmp/bloaty-elfs/head.elf strip
+
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
@@ -519,6 +557,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-linux-clang
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -528,6 +567,13 @@ jobs:
 
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        mkdir -p /tmp/bloaty-elfs
+        cp cmake-out/test/size_test /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "linux-clang" /tmp/bloaty-elfs/head.elf strip
+
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
@@ -557,6 +603,7 @@ jobs:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: bloaty-arm-${{ matrix.os }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -612,6 +659,13 @@ jobs:
         python .github/scripts/run_nm.py -e ${elf}
         python .github/scripts/run_nm.py -e ${elf} -f "executorch" -p "${toolchain_prefix}"
         python .github/scripts/run_nm.py -e ${elf} -f "executorch_text" -p "${toolchain_prefix}"
+
+        # Bloaty per-bucket size report (best-effort; never fails the size job).
+        # Runs BEFORE the in-place strip below so the head ELF is still unstripped.
+        mkdir -p /tmp/bloaty-elfs
+        cp "${elf}" /tmp/bloaty-elfs/head.elf
+        GITHUB_HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}" \
+          bash .ci/scripts/bloaty-measure.sh "arm-${{ matrix.os }}" /tmp/bloaty-elfs/head.elf "${toolchain_prefix}strip"
 
         # Add basic guard - TODO: refine this!
         ${toolchain_prefix}strip ${elf}
@@ -893,6 +947,25 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
+
+  test-qnn-direct-build-linux:
+    name: test-qnn-direct-build-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 30
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-direct-sdk.sh
 
   test-qnn-testsuite-linux:
     name: test-qnn-testsuite-linux

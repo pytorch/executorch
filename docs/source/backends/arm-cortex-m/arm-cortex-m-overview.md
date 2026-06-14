@@ -10,13 +10,13 @@ The Arm&reg; Cortex&reg;-M backend accelerates quantized model execution on Arm 
 
 The backend targets Arm Cortex-M CPUs via CMSIS-NN, which provides optimized kernel implementations for three instruction set variants:
 
-| Variant      | Description                 | Example CPUs       | Supported |
-|--------------|-----------------------------|--------------------|-----------|
-| MVE (Helium) | M-profile Vector extensions | Cortex-M55, M85    | ✅        |
-| DSP          | DSP extension instructions  | Cortex-M4, M7, M33 | ⬜        |
-| Pure C       | Reference C implementation  | Any Cortex-M       | ⬜        |
+| Variant         | Description                 | Example CPUs           | Supported |
+|-----------------|-----------------------------|------------------------|-----------|
+| MVE (Helium)    | M-profile Vector extensions | Cortex-M55, M85        | ✅        |
+| DSP             | DSP extension instructions  | Cortex-M4, M7, M33     | ✅        |
+| Scalar (Pure C) | Reference C implementation  | Any Cortex-M (M0–M85)  | ✅        |
 
-DSP and pure C variants use the same CMSIS-NN API and may work, but have not been tested.
+The variant is selected from the target CPU's `-mcpu` flag. Build a test runner for a specific target with `backends/cortex_m/test/build_test_runner.sh --target=<cortex-mX>` and run tests against it with `pytest --cortex-m-target=<cortex-mX>`.
 
 ## CMSIS-NN Supported Operators
 
