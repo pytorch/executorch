@@ -15,6 +15,8 @@ using torch::executor::native::utils::SupportedTensorDtypes;
 using torch::executor::native::utils::internal::get_load_to_compute_fn;
 using torch::executor::native::utils::internal::load_to_compute_fn;
 
+constexpr int64_t BUCKETIZE_GRAIN_SIZE = 200;
+
 template <typename CTYPE>
 int64_t cus_lower_bound(
     int64_t end,
@@ -79,8 +81,11 @@ void bucketize_tensor_impl(
 
   auto out_data = out.mutable_data_ptr<CTYPE_OUT>();
 
-  const bool success =
-      parallel_for(0, self.numel(), 200, [&](const auto begin, const auto end) {
+  const bool success = parallel_for(
+      0,
+      self.numel(),
+      BUCKETIZE_GRAIN_SIZE,
+      [&](const auto begin, const auto end) {
         for (const auto i : c10::irange(begin, end)) {
           auto compute_val = in_load_fn(&in_data[i * in_size]);
           int64_t pos = right
