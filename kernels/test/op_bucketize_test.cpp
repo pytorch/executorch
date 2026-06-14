@@ -48,12 +48,12 @@ class OpBucketizeScalarTest : public OperatorTest {
   }
 };
 
-TEST_F(OpBucketizeScalarTest, ScalarEmptyBoundaries) {
+TEST_F(OpBucketizeScalarTest, SanityCheck) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_bound;
 
   Scalar value = 2.5;
-  Tensor boundaries = tf_bound.make({10}, {0, 2, 4, 6, 8, 10, 12, 14, 16, 18});
+  Tensor boundaries = tf_bound.make({5}, {0, 2, 4, 6, 8});
   Tensor expected = tf_out.make({}, {2});
   Tensor out = tf_out.zeros({});
 
@@ -63,7 +63,7 @@ TEST_F(OpBucketizeScalarTest, ScalarEmptyBoundaries) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpBucketizeScalarTest, SanityCheck) {
+TEST_F(OpBucketizeScalarTest, ScalarEmptyBoundaries) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_bound;
 
@@ -145,8 +145,6 @@ class OpBucketizeTest : public OperatorTest {
     Tensor boundaries = tf_bound.make({1}, {CTYPE(0, 1)});
     Tensor out = tf_out.zeros({2, 2});
 
-    Tensor ret = op_bucketize_out(values, boundaries, false, true, out);
-
     ET_EXPECT_KERNEL_FAILURE(
         context_, op_bucketize_out(values, boundaries, false, false, out));
   }
@@ -160,8 +158,6 @@ class OpBucketizeTest : public OperatorTest {
     Tensor values = tf_in.make({1}, {CTYPE(0, 1)});
     Tensor boundaries = tf_bound.make({5}, {0, 3, 5, 7, 9});
     Tensor out = tf_out.zeros({2, 2});
-
-    Tensor ret = op_bucketize_out(values, boundaries, false, true, out);
 
     ET_EXPECT_KERNEL_FAILURE(
         context_, op_bucketize_out(values, boundaries, false, false, out));
@@ -186,17 +182,17 @@ TEST_F(OpBucketizeTest, SanityCheck) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_comp;
 
-  Tensor values =
-      tf_comp.make({2, 4, 4}, {1, 4, 6, 8, 1, 4, 6, 8, 1, 4, 6, 8, 1, 4, 6, 8,
+  Tensor values = tf_comp.make(
+      {2, 4, 4}, {0, 4, 6, 8, 1, 4, 5, 8, 1,  5, 6, 8, -1, 4, 6, 9,
 
-                               1, 4, 6, 8, 1, 4, 6, 8, 1, 4, 6, 8, 1, 4, 6, 8});
+                  1, 4, 6, 8, 1, 4, 7, 8, -2, 4, 6, 8, 1,  4, 6, 8});
 
   Tensor boundaries = tf_comp.make({5}, {0, 3, 5, 7, 9});
 
   Tensor expected =
-      tf_out.make({2, 4, 4}, {1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4,
+      tf_out.make({2, 4, 4}, {1, 2, 3, 4, 1, 2, 3, 4, 1, 3, 3, 4, 0, 2, 3, 5,
 
-                              1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4});
+                              1, 2, 3, 4, 1, 2, 4, 4, 0, 2, 3, 4, 1, 2, 3, 4});
 
   Tensor out = tf_out.zeros({2, 4, 4});
 
@@ -275,22 +271,7 @@ TEST_F(OpBucketizeTest, OutOfBoundary) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_dtype;
 
-  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 30, 40});
-  Tensor boundaries = tf_dtype.make({5}, {1, 2, 3, 4, 5});
-  Tensor expected = tf_out.make({2, 2}, {0, 0, 5, 5});
-  Tensor out = tf_out.zeros({2, 2});
-
-  Tensor ret = op_bucketize_out(values, boundaries, false, false, out);
-
-  EXPECT_TENSOR_EQ(ret, expected);
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST_F(OpBucketizeTest, Boundaries1D) {
-  TensorFactory<ScalarType::Long> tf_out;
-  TensorFactory<ScalarType::Float> tf_dtype;
-
-  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 30, 40});
+  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 6, 40});
   Tensor boundaries = tf_dtype.make({5}, {1, 2, 3, 4, 5});
   Tensor expected = tf_out.make({2, 2}, {0, 0, 5, 5});
   Tensor out = tf_out.zeros({2, 2});
@@ -305,7 +286,7 @@ TEST_F(OpBucketizeTest, EmptyBoundaries) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_dtype;
 
-  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 30, 40});
+  Tensor values = tf_dtype.make({2, 2}, {1, 4, 6, 8});
   Tensor boundaries = tf_dtype.make({0}, {});
   Tensor expected = tf_out.make({2, 2}, {0, 0, 0, 0});
   Tensor out = tf_out.zeros({2, 2});
@@ -346,14 +327,12 @@ TEST_F(OpBucketizeTest, EmptyAll) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpBucketizeTest, BoundaryTypeNonRealHBF16Fails) {}
-
 TEST_F(OpBucketizeTest, BoundariesNDFails) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_dtype;
 
-  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 30, 40});
-  Tensor boundaries = tf_dtype.make({3, 2}, {1, 2, 3, 4, 5, 6});
+  Tensor values = tf_dtype.make({2, 2}, {1, 4, 6, 8});
+  Tensor boundaries = tf_dtype.make({3, 2}, {0, 3, 5, 7, 9, 11});
   Tensor out = tf_out.zeros({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
@@ -364,8 +343,8 @@ TEST_F(OpBucketizeTest, MismatchingInOutDimsFails) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_dtype;
 
-  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 30, 40});
-  Tensor boundaries = tf_dtype.make({5}, {1, 2, 3, 4, 5});
+  Tensor values = tf_dtype.make({2, 2}, {1, 4, 6, 8});
+  Tensor boundaries = tf_dtype.make({5}, {0, 3, 5, 7, 9});
   Tensor out = tf_out.zeros({2, 3});
 
   ET_EXPECT_KERNEL_FAILURE(
@@ -376,8 +355,8 @@ TEST_F(OpBucketizeTest, MismatchingIntArg32Fails) {
   TensorFactory<ScalarType::Long> tf_out;
   TensorFactory<ScalarType::Float> tf_dtype;
 
-  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 30, 40});
-  Tensor boundaries = tf_dtype.make({5}, {1, 2, 3, 4, 5});
+  Tensor values = tf_dtype.make({2, 2}, {1, 4, 6, 8});
+  Tensor boundaries = tf_dtype.make({5}, {0, 3, 5, 7, 9});
   Tensor out = tf_out.zeros({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
@@ -388,8 +367,8 @@ TEST_F(OpBucketizeTest, MismatchingIntArg64Fails) {
   TensorFactory<ScalarType::Int> tf_out;
   TensorFactory<ScalarType::Float> tf_dtype;
 
-  Tensor values = tf_dtype.make({2, 2}, {-1, -2, 30, 40});
-  Tensor boundaries = tf_dtype.make({5}, {1, 2, 3, 4, 5});
+  Tensor values = tf_dtype.make({2, 2}, {1, 4, 6, 8});
+  Tensor boundaries = tf_dtype.make({5}, {0, 3, 5, 7, 9});
   Tensor out = tf_out.zeros({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
