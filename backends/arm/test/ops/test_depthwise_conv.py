@@ -227,7 +227,6 @@ test_data_conv2d_FP_fp8 = {
         "fp8e5m2",
     ),
 }
-
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_conv2d_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -297,7 +296,7 @@ def test_convolution_2d_tosa_FP_fp8_depthwise(test_data):
         model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
-        run_on_tosa_ref_model=False,  # torch.conv2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
         tosa_extensions=[tosa_extension],
     )
     pipeline.count_tosa_ops({"DEPTHWISE_CONV2D": 1, "CAST": 1})

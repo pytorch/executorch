@@ -18,9 +18,9 @@ binary to compare (it has no ATen).
 
 import unittest
 
-import torch
-
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+import torch
 from executorch.backends.vulkan import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
@@ -41,9 +41,9 @@ class _AddConst(torch.nn.Module):
         return x + self.w
 
 
-class _MulAddConst(torch.nn.Module):
-    # Two constants (w1, w2) => two prepack nodes, exercising the multi-copy
-    # path E2E Llama relies on (many prepacked weights).
+class _AddTwoConst(torch.nn.Module):
+    # Two constants => two prepack nodes (the multi-copy path E2E Llama needs);
+    # add-only so it stays delegated with just this stack's registered ops.
     def __init__(self) -> None:
         super().__init__()
         self.w1 = torch.nn.Parameter(
@@ -54,7 +54,7 @@ class _MulAddConst(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x * self.w1 + self.w2
+        return x + self.w1 + self.w2
 
 
 def _inputs() -> tuple[torch.Tensor]:
@@ -98,10 +98,10 @@ def export_prepack_model(pte_path: str, golden_path: str) -> None:
     _write(_AddConst(), pte_path, golden_path)
 
 
-def export_prepack_mul_add_model(pte_path: str, golden_path: str) -> None:
-    """Write the x * w1 + w2 .pte + golden. Two prepacked constants, exercising
+def export_prepack_two_const_model(pte_path: str, golden_path: str) -> None:
+    """Write the x + w1 + w2 .pte + golden. Two prepacked constants, exercising
     the multi-copy path."""
-    _write(_MulAddConst(), pte_path, golden_path)
+    _write(_AddTwoConst(), pte_path, golden_path)
 
 
 if __name__ == "__main__":

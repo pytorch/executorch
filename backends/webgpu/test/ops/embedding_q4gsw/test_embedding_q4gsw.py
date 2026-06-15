@@ -22,9 +22,9 @@ at the real embedding dim, not just a single 64-wide row.
 import unittest
 from collections import namedtuple
 
-import torch
-
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+import torch
 from executorch.backends.vulkan import VulkanPartitioner
 from executorch.examples.models.llama.source_transformation.quantize import (
     EmbeddingQuantHandler,

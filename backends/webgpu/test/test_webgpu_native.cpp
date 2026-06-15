@@ -1839,7 +1839,7 @@ int main(int argc, char** argv) {
 
   if (!prepack2_model_path.empty() && !prepack2_golden_path.empty()) {
     ok = test_prepack(
-             prepack2_model_path, prepack2_golden_path, "x * w1 + w2") &&
+             prepack2_model_path, prepack2_golden_path, "x + w1 + w2") &&
         ok;
   }
 
