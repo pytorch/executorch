@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import List, Optional, Tuple, Union
+
+import scipy.linalg
 
 import torch
 
@@ -1680,6 +1683,50 @@ class Linear(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class HadamardLinear(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.linear = torch.nn.Linear(dim, dim, bias=False).eval()
+        # nn.Linear computes x @ Wᵀ; the Hadamard matrix is symmetric so
+        # x @ Hᵀ == x @ H, matching hadamard_transform(x).
+        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
+            dim
+        )
+        self.linear.weight.data.copy_(H)
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+class HadamardMatMul(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # The Hadamard matrix is symmetric, so matmul(x, H) applies the transform
+        # along the last dim of x, matching hadamard_transform(x).
+        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
+            dim
+        )
+        self.register_buffer("weight", H)
+
+    def forward(self, x):
+        return torch.matmul(x, self.weight)
+
+
+class HadamardConv(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # A 1x1 conv mixing channels is a matmul over the channel dim; a Hadamard
+        # filter makes it equivalent to hadamard_transform along channels.
+        self.conv = torch.nn.Conv2d(dim, dim, kernel_size=1, bias=False).eval()
+        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
+            dim
+        )
+        self.conv.weight.data.copy_(H.reshape(dim, dim, 1, 1))
+
+    def forward(self, x):
+        return self.conv(x)
 
 
 class LinearLeakyReLU(torch.nn.Module):

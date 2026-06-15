@@ -731,6 +731,21 @@ def test_group_norm(request, kwargs):
     GroupNorm.test(request, kwargs)  # noqa: F405
 
 
+# HadamardTransform is activation-16 only in QNN, so test 16a8w only.
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": 16, "param": 8, "pcq": False, "expected": Tolerance()},
+            id="16a8w",
+        ),
+    ],
+)
+@with_htp_context
+def test_hadamard(request, kwargs):
+    Hadamard.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_hardsigmoid(request, kwargs):

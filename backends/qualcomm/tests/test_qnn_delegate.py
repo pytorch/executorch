@@ -4288,6 +4288,188 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.47"),
+        "UT pass after QNN 2.47.",
+    )
+    def test_qnn_backend_hadamard_transform_linear(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("The op is only supported on HTP")
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
+        # A failed Hadamard match silently falls back to FullyConnected and still
+        # produces correct outputs, so output parity alone can't confirm the
+        # fast-path was taken. Inspect the QHAS op types from optrace and assert
+        # HadamardTransform appears.
+        sample_inputs = [
+            (torch.randn([1, 128]),),
+            (torch.randn([1, 4, 128]),),
+            (torch.randn([1, 2, 4, 128]),),
+        ]
+        for sample_input, per_channel in itertools.product(
+            sample_inputs, (False, True)
+        ):
+            with self.subTest(
+                ndim=sample_input[0].dim(),
+                per_channel=per_channel,
+            ):
+                module = HadamardLinear(dim=128)  # noqa: F405
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    is_linear_per_channel=per_channel,
+                    quant_dtype=QuantDtype.use_16a8w,
+                )
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+                compiler_spec = generate_qnn_executorch_compiler_spec(
+                    soc_model=self.chipset_table[TestQNN.soc_model],
+                    backend_options=backend_options,
+                    profile_level=3,
+                )
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                        module, sample_input, compiler_spec
+                    ).to_executorch()
+                    pte_path = f"{tmp_dir}/model.pte"
+                    with open(pte_path, "wb") as f:
+                        edge_prog_mgr.write_to_file(f)
+                    adb = self.get_adb_tool(pte_path)
+                    binaries_trace = generate_optrace(
+                        tmp_dir,
+                        self.chipset_table[TestQNN.soc_model],
+                        adb,
+                        pte_path,
+                        [sample_input],
+                    )
+                    htp_ops = []
+                    for _, (_, qhas) in binaries_trace.items():
+                        with open(qhas, "r") as qhas_file:
+                            qhas_data = json.load(qhas_file)
+                            for row in qhas_data["data"]["qnn_op_types"]["data"]:
+                                htp_ops.append(row["op"])
+                    self.assertTrue(
+                        any("HadamardTransform" in op for op in htp_ops),
+                        "Expected linear to be lowered to HadamardTransform "
+                        f"(likely fell back to FullyConnected), got: {htp_ops}",
+                    )
+                    self.verify_output(module, sample_input, edge_prog_mgr)
+
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.47"),
+        "UT pass after QNN 2.47.",
+    )
+    def test_qnn_backend_hadamard_transform_matmul(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("The op is only supported on HTP")
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
+        # A failed Hadamard match silently falls back to MatMul and still produces
+        # correct outputs, so inspect the QHAS op types and assert HadamardTransform.
+        sample_inputs = [
+            (torch.randn([1, 128]),),
+            (torch.randn([1, 4, 128]),),
+            (torch.randn([1, 2, 4, 128]),),
+        ]
+        for sample_input in sample_inputs:
+            with self.subTest(ndim=sample_input[0].dim()):
+                module = HadamardMatMul(dim=128)  # noqa: F405
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=QuantDtype.use_16a8w,
+                )
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+                compiler_spec = generate_qnn_executorch_compiler_spec(
+                    soc_model=self.chipset_table[TestQNN.soc_model],
+                    backend_options=backend_options,
+                    profile_level=3,
+                )
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                        module, sample_input, compiler_spec
+                    ).to_executorch()
+                    pte_path = f"{tmp_dir}/model.pte"
+                    with open(pte_path, "wb") as f:
+                        edge_prog_mgr.write_to_file(f)
+                    adb = self.get_adb_tool(pte_path)
+                    binaries_trace = generate_optrace(
+                        tmp_dir,
+                        self.chipset_table[TestQNN.soc_model],
+                        adb,
+                        pte_path,
+                        [sample_input],
+                    )
+                    htp_ops = []
+                    for _, (_, qhas) in binaries_trace.items():
+                        with open(qhas, "r") as qhas_file:
+                            qhas_data = json.load(qhas_file)
+                            for row in qhas_data["data"]["qnn_op_types"]["data"]:
+                                htp_ops.append(row["op"])
+                    self.assertTrue(
+                        any("HadamardTransform" in op for op in htp_ops),
+                        "Expected matmul to be lowered to HadamardTransform "
+                        f"(likely fell back to MatMul), got: {htp_ops}",
+                    )
+                    self.verify_output(module, sample_input, edge_prog_mgr)
+
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.47"),
+        "UT pass after QNN 2.47.",
+    )
+    def test_qnn_backend_hadamard_transform_conv(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("The op is only supported on HTP")
+        if self.enable_x86_64:
+            self.skipTest(
+                "At the moment, testing is only being conducted on the device."
+            )
+        # A failed Hadamard match silently falls back to Conv and still produces
+        # correct outputs, so inspect the QHAS op types and assert HadamardTransform.
+        sample_input = (torch.randn([1, 128, 4, 4]),)
+        module = HadamardConv(dim=128)  # noqa: F405
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a8w,
+        )
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            profile_level=3,
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_spec
+            ).to_executorch()
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as f:
+                edge_prog_mgr.write_to_file(f)
+            adb = self.get_adb_tool(pte_path)
+            binaries_trace = generate_optrace(
+                tmp_dir,
+                self.chipset_table[TestQNN.soc_model],
+                adb,
+                pte_path,
+                [sample_input],
+            )
+            htp_ops = []
+            for _, (_, qhas) in binaries_trace.items():
+                with open(qhas, "r") as qhas_file:
+                    qhas_data = json.load(qhas_file)
+                    for row in qhas_data["data"]["qnn_op_types"]["data"]:
+                        htp_ops.append(row["op"])
+            self.assertTrue(
+                any("HadamardTransform" in op for op in htp_ops),
+                "Expected conv to be lowered to HadamardTransform "
+                f"(likely fell back to Conv), got: {htp_ops}",
+            )
+            self.verify_output(module, sample_input, edge_prog_mgr)
+
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
