@@ -130,12 +130,12 @@ class TestPackLinearInt8(unittest.TestCase):
 
 
 class TestPackLinearInt6(unittest.TestCase):
-    """pack_linear_for_cuda converts a symmetric Q6_K IntxUnpackedToInt8Tensor
-    (the gguf_loader output) into a CudaPackedInt6Tensor.
+    """pack_linear_for_cuda converts a native Q6_K ExportableGGUFTensor (the
+    gguf_loader output) into a CudaPackedInt6Tensor.
 
     The pack/unpack round-trip is lossless and dequantize() == q * scale (no
     CUDA required); the F.linear correctness check is CUDA-only. A genuine INT8
-    weight is left on the int8 path.
+    IntxUnpackedToInt8Tensor is left on the int8 path.
     """
 
     def setUp(self):
@@ -148,23 +148,27 @@ class TestPackLinearInt6(unittest.TestCase):
         t = CudaPackedInt6Tensor(ql, qh, scale, [1, gs], torch.Size([N, K]))
         return t, q, scale
 
-    def _make_q6k_intx(self, N, K, gs=16):
-        """Build a symmetric Q6_K IntxUnpackedToInt8Tensor (mirrors gguf.py)."""
-        from torchao.quantization import IntxUnpackedToInt8Tensor
+    def _make_q6k_gguf(self, N, nb=1):
+        """Build a synthetic q6_k ExportableGGUFTensor (see test_gguf.py).
 
-        q = torch.randint(-32, 32, (N, K), dtype=torch.int8)
-        scale = (torch.rand(N, K // gs) * 0.1 + 0.01).to(torch.bfloat16)
-        zero = torch.zeros(N, K // gs, dtype=torch.int8)
-        t = IntxUnpackedToInt8Tensor(
-            qdata=q,
-            scale=scale,
-            zero_point=zero,
-            target_dtype=torch.int8,
-            block_size=(1, gs),
-            dtype=torch.bfloat16,
-            activation_quantization=None,
+        ``K = nb * 256``; fixed non-zero sub-scales + a small super-block scale
+        keep dequantized magnitudes O(1).
+        """
+        from executorch.extension.llm.export.gguf import (
+            _Q6_K_BLOCK_BYTES,
+            ExportableGGUFTensor,
         )
-        return t, q, scale
+
+        g = torch.Generator().manual_seed(0)
+        blk = torch.randint(
+            0, 256, (N * nb, _Q6_K_BLOCK_BYTES), dtype=torch.uint8, generator=g
+        )
+        blk[:, 192:208] = 0x10  # fixed non-zero int8 sub-scales
+        blk[:, 208:210] = torch.tensor([0.01], dtype=torch.float16).view(
+            torch.uint8
+        )  # super-block scale d
+        raw = blk.reshape(N, nb * _Q6_K_BLOCK_BYTES)
+        return ExportableGGUFTensor.from_raw(raw, "q6_k")
 
     def test_pack_unpack_roundtrip(self):
         q = torch.randint(-32, 32, (64, 128), dtype=torch.int8)
@@ -182,12 +186,12 @@ class TestPackLinearInt6(unittest.TestCase):
         self.assertTrue(torch.equal(t.dequantize(), ref))
 
     def test_pack_linear_converts_q6k(self):
-        t, _, _ = self._make_q6k_intx(32, 128)
+        gt = self._make_q6k_gguf(32, nb=1)  # (32, 256)
         with torch.device("meta"):
-            module = nn.Linear(128, 32, bias=False)
-        pack_linear_for_cuda(module, {"weight": t})
+            module = nn.Linear(256, 32, bias=False)
+        pack_linear_for_cuda(module, {"weight": gt})
         self.assertIsInstance(module.weight.data, CudaPackedInt6Tensor)
-        self.assertEqual(module.weight.shape, torch.Size([32, 128]))
+        self.assertEqual(module.weight.shape, torch.Size([32, 256]))
 
     def test_pack_linear_real_int8_passthrough(self):
         """A genuine INT8 weight (wide groups, full range) is NOT repacked."""
@@ -212,12 +216,14 @@ class TestPackLinearInt6(unittest.TestCase):
 
     def test_matmul_correct(self):
         _require_cuda(self)
-        t, q, scale = self._make_q6k_intx(256, 128, gs=16)
-        module = nn.Linear(128, 256, bias=False)
-        pack_linear_for_cuda(module, {"weight": t})
+        gt = self._make_q6k_gguf(256, nb=1)  # (256, 256)
+        intx = gt.to_intx_unpacked_to_int8_tensor()
+        q, scale = intx.qdata, intx.scale
+        module = nn.Linear(256, 256, bias=False)
+        pack_linear_for_cuda(module, {"weight": gt})
         self.assertIsInstance(module.weight.data, CudaPackedInt6Tensor)
         module.cuda()
-        x = torch.randn(1, 128, dtype=torch.bfloat16, device="cuda")
+        x = torch.randn(1, 256, dtype=torch.bfloat16, device="cuda")
         w_ref = (
             q.to(torch.bfloat16)
             * scale.to(torch.bfloat16).repeat_interleave(16, dim=-1)

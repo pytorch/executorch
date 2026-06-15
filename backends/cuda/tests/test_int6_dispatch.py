@@ -29,7 +29,11 @@ import executorch.backends.cuda.quantize_op_dispatch.int6_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from executorch.backends.cuda.packed_int6_tensor import CudaPackedInt6Tensor, pack_int6
+from executorch.backends.cuda.packed_int6_tensor import (
+    CudaPackedInt6Tensor,
+    pack_int6,
+    unpack_int6,
+)
 from executorch.backends.cuda.quantize_op_dispatch.int6_dispatch import (
     _dequant_matmul_int6,
 )
@@ -186,6 +190,48 @@ class TestDispatchRouting(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             CudaPackedInt6Tensor.from_intx_int8(intx)
+
+    def test_from_exportable_gguf(self):
+        """from_exportable_gguf reuses the gguf.py Q6_K decode then packs losslessly."""
+        from executorch.extension.llm.export.gguf import (
+            _Q6_K_BLOCK_BYTES,
+            ExportableGGUFTensor,
+        )
+
+        N, nb = 8, 1  # K = nb * 256
+        g = torch.Generator().manual_seed(0)
+        blk = torch.randint(
+            0, 256, (N * nb, _Q6_K_BLOCK_BYTES), dtype=torch.uint8, generator=g
+        )
+        blk[:, 192:208] = 0x10  # fixed non-zero int8 sub-scales
+        blk[:, 208:210] = torch.tensor([0.01], dtype=torch.float16).view(
+            torch.uint8
+        )  # super-block scale d
+        raw = blk.reshape(N, nb * _Q6_K_BLOCK_BYTES)
+        gt = ExportableGGUFTensor.from_raw(raw, "q6_k")
+
+        t = CudaPackedInt6Tensor.from_exportable_gguf(gt)
+        self.assertIsInstance(t, CudaPackedInt6Tensor)
+        self.assertEqual(tuple(t.shape), (N, nb * 256))
+
+        # The packer must reuse the shared Q6_K int8 decode (no duplication) and
+        # bit-pack it losslessly: the unpacked q and the scale match the int8 path.
+        intx = gt.to_intx_unpacked_to_int8_tensor()
+        q_rt = unpack_int6(t.ql, t.qh, N, nb * 256).to(torch.int8)
+        self.assertTrue(torch.equal(q_rt, intx.qdata))
+        self.assertTrue(torch.equal(t.scale, intx.scale))
+
+    def test_from_exportable_gguf_rejects_non_q6k(self):
+        """A non-q6_k ExportableGGUFTensor is rejected before any decode."""
+        from executorch.extension.llm.export.gguf import (
+            _Q4_K_BLOCK_BYTES,
+            ExportableGGUFTensor,
+        )
+
+        raw = torch.zeros(4, _Q4_K_BLOCK_BYTES, dtype=torch.uint8)
+        gt = ExportableGGUFTensor.from_raw(raw, "q4_k")
+        with self.assertRaises(ValueError):
+            CudaPackedInt6Tensor.from_exportable_gguf(gt)
 
 
 class TestFLinearDispatchCuda(unittest.TestCase):

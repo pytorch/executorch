@@ -11,6 +11,12 @@ genuine 6-bit packed weight (0.75 B/elem), used for GGUF Q6_K weights. Unlike
 the int8 path (``IntxUnpackedToInt8Tensor``, one int8 per 6-bit value), this
 format wastes no bits and carries no zero tensor — Q6_K is symmetric.
 
+Build one with :meth:`from_exportable_gguf` (from a native Q6_K
+``ExportableGGUFTensor`` — it reuses the shared Q6_K block decode in
+``extension/llm/export/gguf.py``) or with the low-level :meth:`from_intx_int8`
+(from an already-decoded symmetric int8 tensor). Both feed the same ql/qh packer;
+this class owns only the 6-bit pack, never the Q6_K block decode.
+
 The stored value is ``u = q + 32`` in ``[0, 63]`` (``q`` in ``[-32, 31]``); the
 constant ``-32`` offset is applied in the decode kernel. The 6 bits are split
 into two planes that mirror the INT4 nibble layout so the kernel can reuse the
@@ -187,6 +193,23 @@ class CudaPackedInt6Tensor(TorchAOBaseTensor):
             list(t.block_size),
             t.shape,
         )
+
+    @classmethod
+    def from_exportable_gguf(cls, gt) -> "CudaPackedInt6Tensor":
+        """Build from a native Q6_K ``ExportableGGUFTensor``.
+
+        Reuses the shared Q6_K block decode in
+        ``extension/llm/export/gguf.py`` (``to_intx_unpacked_to_int8_tensor`` ->
+        a symmetric int8 tensor in ``[-32, 31]``), then bit-packs into the ql/qh
+        planes via :meth:`from_intx_int8`. The Q6_K decode lives in one place;
+        this class only owns the 6-bit pack.
+        """
+        if gt.ggml_type != "q6_k":
+            raise ValueError(
+                "CudaPackedInt6Tensor.from_exportable_gguf requires a q6_k "
+                f"ExportableGGUFTensor, got {gt.ggml_type!r}"
+            )
+        return cls.from_intx_int8(gt.to_intx_unpacked_to_int8_tensor())
 
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """Dequantize to a dense tensor (symmetric: ``w = q * scale``).

@@ -92,10 +92,13 @@ def _convert_weight(model, model_key: str, gtensor, backend: str):
     """Convert an ``ExportableGGUFTensor`` to the per-backend module weight."""
     if backend == "mlx":
         return gtensor
-    # CUDA: native torchao quantized tensors.
+    # CUDA: Q4_K -> torchao Int4Tensor. Q6_K stays the raw ExportableGGUFTensor
+    # (like MLX) -- the CUDA packer repacks it into CudaPackedInt6Tensor via
+    # CudaPackedInt6Tensor.from_exportable_gguf, so the Q6_K block decode is
+    # owned by gguf.py and reused, not duplicated here.
     if gtensor.ggml_type == "q4_k":
         return gtensor.to_int4_tensor()
-    return gtensor.to_intx_unpacked_to_int8_tensor()
+    return gtensor
 
 
 def _resolve_tied_lm_head(model, lm_head_weight, packers):

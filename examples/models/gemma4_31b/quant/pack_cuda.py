@@ -11,10 +11,11 @@ layouts read by the decode kernels:
 
   * ``Int4Tensor`` -> ``CudaCoalescedInt4Tensor`` (bakes the scale/zero transpose
     into the coalesced [N, n_groups] layout).
-  * symmetric Q6_K ``IntxUnpackedToInt8Tensor`` -> ``CudaPackedInt6Tensor`` (the
-    genuine 6-bit ql/qh planes).
+  * Q6_K ``ExportableGGUFTensor`` -> ``CudaPackedInt6Tensor`` (the genuine 6-bit
+    ql/qh planes; the Q6_K block decode is reused from gguf.py, not duplicated).
 
-A genuine INT8 ``IntxUnpackedToInt8Tensor`` is left unchanged for the int8 path.
+A genuine INT8 ``IntxUnpackedToInt8Tensor`` is left unchanged for the int8 path
+(Q6_K no longer arrives as an int8 tensor, so the routing is unambiguous).
 The quantize_op_dispatch package (``int4_dispatch`` / ``int6_dispatch`` /
 ``int8_dispatch``) handles F.linear at runtime.
 
@@ -34,26 +35,16 @@ from .pack import ModulePackerFn, pack_model  # noqa: F401
 # Per-module packers
 
 
-def _is_symmetric_q6k(w) -> bool:
-    """True if ``w`` is a symmetric Q6_K ``IntxUnpackedToInt8Tensor``.
-
-    GGUF Q6_K decodes (``gguf.to_intx_unpacked_to_int8_tensor``) to a symmetric
-    int8 tensor with 16-wide groups and values in ``[-32, 31]``. Those three
-    properties together distinguish it from a genuine INT8 weight (wider groups
-    and/or the full int8 range), so the int8 path is never misrouted into the
-    6-bit packer.
-    """
-    if tuple(int(b) for b in w.block_size) != (1, 16):
-        return False
-    if not bool(torch.all(w.zero_point == 0)):
-        return False
-    return int(w.qdata.min()) >= -32 and int(w.qdata.max()) <= 31
-
-
 def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
-    """Assign a quantized weight to an ``nn.Linear`` module."""
+    """Assign a quantized weight to an ``nn.Linear`` module.
+
+    Routes by weight type: ``Int4Tensor`` -> coalesced INT4, Q6_K
+    ``ExportableGGUFTensor`` -> packed INT6, genuine ``IntxUnpackedToInt8Tensor``
+    -> int8 passthrough.
+    """
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
     from executorch.backends.cuda.packed_int6_tensor import CudaPackedInt6Tensor
+    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
@@ -69,17 +60,19 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         # constant-fold ops on parameters, so the transpose must already live in
         # the constant for the coalesced layout to pay off.
         w = CudaCoalescedInt4Tensor.from_int4_tensor(w)
-        module.weight = nn.Parameter(w, requires_grad=False)
+    elif isinstance(w, ExportableGGUFTensor) and w.ggml_type == "q6_k":
+        # GGUF Q6_K: repack the native ExportableGGUFTensor into the genuine 6-bit
+        # CudaPackedInt6Tensor (ql/qh planes, 0.75 B/elem) for the W6A8 dp4a decode
+        # kernel. from_exportable_gguf reuses the shared Q6_K decode (gguf.py) then
+        # bakes the bit-pack into the weight constant, once.
+        w = CudaPackedInt6Tensor.from_exportable_gguf(w)
     elif isinstance(w, IntxUnpackedToInt8Tensor):
-        # GGUF Q6_K decodes to a symmetric int8 tensor; repack it into the genuine
-        # 6-bit CudaPackedInt6Tensor (ql/qh planes, 0.75 B/elem) for the W6A8 dp4a
-        # decode kernel — the bit-pack is baked into the weight constant here,
-        # once. A genuine INT8 weight is left unchanged for the int8 path.
-        if _is_symmetric_q6k(w):
-            w = CudaPackedInt6Tensor.from_intx_int8(w)
-        module.weight = nn.Parameter(w, requires_grad=False)
+        # Genuine INT8 weight: left unchanged for the int8 path. Q6_K never reaches
+        # here (it arrives as an ExportableGGUFTensor), so this is unambiguous.
+        pass
     else:
         raise ValueError(f"Unsupported weight type: {type(w).__name__}")
+    module.weight = nn.Parameter(w, requires_grad=False)
 
 
 def pack_embedding_for_cuda(
