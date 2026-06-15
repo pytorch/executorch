@@ -39,7 +39,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 
-from executorch.exir.passes import PassManager
+from executorch.exir.pass_manager import PassManager
 
 from torch.export.exported_program import ExportedProgram
 

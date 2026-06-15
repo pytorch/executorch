@@ -6181,6 +6181,8 @@ class TestQNNFloatingPointUtils(TestQNN):
         TestQNN.profile_level = 0
 
     def test_qnn_backend_runtime_option_heap_profile(self):
+        if self.enable_x86_64:
+            self.skipTest("heap profiling is not supported on host machine")
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
@@ -7122,6 +7124,8 @@ class TestQNNQuantizedUtils(TestQNN):
         TestQNN.profile_level = 0
 
     def test_qnn_backend_runtime_option_heap_profile(self):
+        if self.enable_x86_64:
+            self.skipTest("heap profiling is not supported on host machine")
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module1 = self.get_qdq_module(module, sample_input)
