@@ -17,8 +17,20 @@ GRID_SAMPLER_2D_SHADER_SOURCE = "grid_sampler.glsl"
 GRID_SAMPLER_2D_SHADER_BINARY = "grid_sampler.spirv.b64"
 GRID_SAMPLER_2D_SAMPLER_SHADER_SOURCE = "grid_sampler_sampler.glsl"
 GRID_SAMPLER_2D_SAMPLER_SHADER_BINARY = "grid_sampler_sampler.spirv.b64"
+GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_SOURCE = (
+    "grid_sampler_sampler_align_corners.glsl"
+)
+GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_BINARY = (
+    "grid_sampler_sampler_align_corners.spirv.b64"
+)
 GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_SOURCE = "grid_sampler_sampler_int8.glsl"
 GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_BINARY = "grid_sampler_sampler_int8.spirv.b64"
+GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_SOURCE = (
+    "grid_sampler_sampler_int8_align_corners.glsl"
+)
+GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY = (
+    "grid_sampler_sampler_int8_align_corners.spirv.b64"
+)
 GRID_SAMPLER_2D_SAMPLER_VK_FORMAT = "VK_FORMAT_R32G32B32A32_SFLOAT"
 GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT = "VK_FORMAT_R8G8B8A8_SNORM"
 
@@ -98,10 +110,9 @@ def build_grid_sampler_2d_payload(
         and int(input_shape[1]) == 4
         and sampler_vk_format is not None
         and int(interpolation_mode) in (0, 1)
-        and not bool(align_corners)
     )
     shader_file = (
-        _sampler_shader_file(sampler_vk_format)
+        _sampler_shader_file(sampler_vk_format, align_corners=align_corners)
         if use_sampler
         else GRID_SAMPLER_2D_SHADER_BINARY
     )
@@ -166,9 +177,16 @@ def _sampler_vk_format(input_dtype: Any | None, output_dtype: Any | None) -> str
     return None
 
 
-def _sampler_shader_file(sampler_vk_format: str | None) -> str:
+def _sampler_shader_file(
+    sampler_vk_format: str | None,
+    align_corners: bool,
+) -> str:
     if sampler_vk_format == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT:
+        if align_corners:
+            return GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY
         return GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_BINARY
+    if align_corners:
+        return GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_BINARY
     return GRID_SAMPLER_2D_SAMPLER_SHADER_BINARY
 
 

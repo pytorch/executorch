@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import base64
+from importlib.resources import files
 
 import pytest
 import torch
@@ -11,6 +12,10 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
     build_grid_sampler_2d_payload,
     decode_payload,
     encode_payload,
+    GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_BINARY,
+    GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_SOURCE,
+    GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY,
+    GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_SOURCE,
     GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_BINARY,
     GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_SOURCE,
     GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT,
@@ -24,6 +29,15 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
     GRID_SAMPLER_2D_VK_FORMAT,
     GRID_SAMPLER_2D_WORKGROUP_SIZES,
 )
+
+
+def _shader_code_from_resource(shader_file: str) -> str:
+    return "".join(
+        files("executorch.backends.arm.vgf.shaders")
+        .joinpath(shader_file)
+        .read_text(encoding="utf-8")
+        .split()
+    )
 
 
 def test_grid_sampler_2d_custom_shader_payload_no_target_round_trip():
@@ -127,7 +141,7 @@ def test_grid_sampler_2d_custom_shader_payload_no_target_keeps_c3_on_buffer():
     assert "input_0_sampler" not in payload
 
 
-def test_grid_sampler_2d_custom_shader_payload_no_target_align_corners_buffer():
+def test_grid_sampler_2d_custom_shader_payload_no_target_align_corners_sampler():
     payload = build_grid_sampler_2d_payload(
         interpolation_mode=0,
         padding_mode=0,
@@ -136,11 +150,42 @@ def test_grid_sampler_2d_custom_shader_payload_no_target_align_corners_buffer():
         input_dtype=torch.float32,
     )
 
-    assert payload["input_0_type"] == "Tensor"
-    assert payload["input_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER"
-    assert payload["output_0_type"] == "Tensor"
-    assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER"
-    assert "input_0_sampler" not in payload
+    assert payload["input_0_type"] == "Image"
+    assert payload["input_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_VK_FORMAT
+    assert (
+        payload["input_0_vkdescriptortype"]
+        == "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER"
+    )
+    assert payload["output_0_type"] == "Image"
+    assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_VK_FORMAT
+    assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE"
+    assert payload["shader_code"] == _shader_code_from_resource(
+        GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_BINARY
+    )
+
+
+def test_grid_sampler_2d_custom_shader_payload_no_target_int8_align_corners_sampler():
+    payload = build_grid_sampler_2d_payload(
+        interpolation_mode=0,
+        padding_mode=0,
+        align_corners=True,
+        input_shape=(1, 4, 8, 8),
+        input_dtype=torch.int8,
+        output_dtype=torch.int8,
+    )
+
+    assert payload["input_0_type"] == "Image"
+    assert payload["input_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    assert (
+        payload["input_0_vkdescriptortype"]
+        == "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER"
+    )
+    assert payload["output_0_type"] == "Image"
+    assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE"
+    assert payload["shader_code"] == _shader_code_from_resource(
+        GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY
+    )
 
 
 def test_grid_sampler_2d_custom_shader_payload_no_target_bicubic_buffer():
@@ -178,11 +223,27 @@ def test_grid_sampler_2d_custom_shader_payload_no_target_has_shader_resources():
     assert GRID_SAMPLER_2D_SAMPLER_SHADER_SOURCE == "grid_sampler_sampler.glsl"
     assert GRID_SAMPLER_2D_SAMPLER_SHADER_BINARY == "grid_sampler_sampler.spirv.b64"
     assert (
+        GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_SOURCE
+        == "grid_sampler_sampler_align_corners.glsl"
+    )
+    assert (
+        GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_BINARY
+        == "grid_sampler_sampler_align_corners.spirv.b64"
+    )
+    assert (
         GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_SOURCE == "grid_sampler_sampler_int8.glsl"
     )
     assert (
         GRID_SAMPLER_2D_SAMPLER_INT8_SHADER_BINARY
         == "grid_sampler_sampler_int8.spirv.b64"
+    )
+    assert (
+        GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_SOURCE
+        == "grid_sampler_sampler_int8_align_corners.glsl"
+    )
+    assert (
+        GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY
+        == "grid_sampler_sampler_int8_align_corners.spirv.b64"
     )
 
 

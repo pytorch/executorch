@@ -102,7 +102,7 @@ def _is_static_nchw_with_channels(node: torch.fx.Node, channels: int) -> bool:
 def _can_pad_c3_for_sampler(
     input_tensor: torch.fx.Node,
     interpolation_mode: int,
-    align_corners: bool,
+    align_corners: bool,  # noqa: ARG001
 ) -> bool:
     value = input_tensor.meta.get("val")
     return (
@@ -112,7 +112,6 @@ def _can_pad_c3_for_sampler(
         and int(value.shape[1]) == 3
         and value.dtype in (torch.float32, torch.int8)
         and int(interpolation_mode) in (0, 1)
-        and not bool(align_corners)
     )
 
 

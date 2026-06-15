@@ -102,8 +102,12 @@ runtime.python_library(
         "vgf/shaders/grid_sampler.spirv.b64",
         "vgf/shaders/grid_sampler_sampler.glsl",
         "vgf/shaders/grid_sampler_sampler.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_align_corners.glsl",
+        "vgf/shaders/grid_sampler_sampler_align_corners.spirv.b64",
         "vgf/shaders/grid_sampler_sampler_int8.glsl",
         "vgf/shaders/grid_sampler_sampler_int8.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_int8_align_corners.glsl",
+        "vgf/shaders/grid_sampler_sampler_int8_align_corners.spirv.b64",
     ],
     deps = [
         ":arm_compile_spec",

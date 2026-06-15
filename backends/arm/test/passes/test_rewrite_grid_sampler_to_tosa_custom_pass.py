@@ -184,7 +184,7 @@ def test_quantized_grid_sampler_uses_int8_sampler_payload(
     assert next(iter(custom_node.meta["output_qparams"].values())).qmax == 127
 
 
-def test_rewrite_grid_sampler_to_tosa_custom_no_c3_pad_for_align_corners():
+def test_rewrite_grid_sampler_to_tosa_custom_c3_pad_for_align_corners():
     model = GridSampler2d()
     model.align_corners_ = True
     example_inputs = (
@@ -202,11 +202,16 @@ def test_rewrite_grid_sampler_to_tosa_custom_no_c3_pad_for_align_corners():
     )
     payload = decode_payload(custom_node.kwargs["implementation_attrs"])
 
-    assert payload["input_0_type"] == "Tensor"
-    assert not any(node.target == exir_ops.edge.aten.cat.default for node in nodes)
-    assert not any(
-        node.target == exir_ops.edge.aten.slice_copy.Tensor for node in nodes
+    assert payload["input_0_type"] == "Image"
+    assert payload["input_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_VK_FORMAT
+    assert (
+        payload["input_0_vkdescriptortype"]
+        == "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER"
     )
+    assert payload["output_0_type"] == "Image"
+    assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_VK_FORMAT
+    assert any(node.target == exir_ops.edge.aten.cat.default for node in nodes)
+    assert any(node.target == exir_ops.edge.aten.slice_copy.Tensor for node in nodes)
 
 
 def test_rewrite_grid_sampler_to_tosa_custom_no_c3_pad_for_bicubic():
