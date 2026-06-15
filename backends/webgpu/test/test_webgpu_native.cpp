@@ -819,21 +819,30 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
 
     // The op returns [k_cache, v_cache, attn_output]: attn has a unique numel;
     // the two caches share numel cn, so identify them by content at step 0.
-    int attn_idx = -1;
-    std::vector<int> cache_idxs;
-    for (size_t i = 0; i < outs.size(); i++) {
-      if (!outs[i].isTensor()) {
-        continue;
-      }
-      const int ne = static_cast<int>(outs[i].toTensor().numel());
-      if (ne == qn) {
-        attn_idx = static_cast<int>(i);
-      } else if (ne == cn) {
-        cache_idxs.push_back(static_cast<int>(i));
-      }
+    // Outputs are [k_cache, v_cache, attn_output]: ExecuTorch emits
+    // [*mutated_inputs, *user_outputs], so the two mutated caches come first
+    // (signature order k, v) and the attention output last. Select by position;
+    // numel is ambiguous when the attn output and caches share numel. The k/v
+    // caches are still disambiguated by content at step 0 below.
+    if (outs.size() != 3 || !outs[0].isTensor() || !outs[1].isTensor() ||
+        !outs[2].isTensor()) {
+      printf(
+          "FAIL: %s step%zu: expected 3 tensor outputs "
+          "[k_cache, v_cache, attn_output], got %zu\n",
+          seq.name,
+          t,
+          outs.size());
+      return false;
     }
-    if (attn_idx < 0 || cache_idxs.size() != 2) {
-      printf("FAIL: %s step%zu: expected 1 attn + 2 caches\n", seq.name, t);
+    const int attn_idx = 2;
+    const std::vector<int> cache_idxs = {0, 1};
+    if (static_cast<int>(outs[attn_idx].toTensor().numel()) != qn) {
+      printf(
+          "FAIL: %s step%zu: attn output numel %zu != expected %d\n",
+          seq.name,
+          t,
+          (size_t)outs[attn_idx].toTensor().numel(),
+          qn);
       return false;
     }
 
@@ -988,21 +997,30 @@ static bool test_sdpa_dynamic_decode(
     }
     const auto& outs = result.get();
 
-    int attn_idx = -1;
-    std::vector<int> cache_idxs;
-    for (size_t i = 0; i < outs.size(); i++) {
-      if (!outs[i].isTensor()) {
-        continue;
-      }
-      const int ne = static_cast<int>(outs[i].toTensor().numel());
-      if (ne == qn) {
-        attn_idx = static_cast<int>(i);
-      } else if (ne == cn) {
-        cache_idxs.push_back(static_cast<int>(i));
-      }
+    // Outputs are [k_cache, v_cache, attn_output]: ExecuTorch emits
+    // [*mutated_inputs, *user_outputs], so the two mutated caches come first
+    // (signature order k, v) and the attention output last. Select by position;
+    // numel is ambiguous when the attn output and caches share numel. The k/v
+    // caches are still disambiguated by content at step 0 below.
+    if (outs.size() != 3 || !outs[0].isTensor() || !outs[1].isTensor() ||
+        !outs[2].isTensor()) {
+      printf(
+          "FAIL: %s step%d: expected 3 tensor outputs "
+          "[k_cache, v_cache, attn_output], got %zu\n",
+          seq.name,
+          t,
+          outs.size());
+      return false;
     }
-    if (attn_idx < 0 || cache_idxs.size() != 2) {
-      printf("FAIL: %s step%d: expected 1 attn + 2 caches\n", seq.name, t);
+    const int attn_idx = 2;
+    const std::vector<int> cache_idxs = {0, 1};
+    if (static_cast<int>(outs[attn_idx].toTensor().numel()) != qn) {
+      printf(
+          "FAIL: %s step%d: attn output numel %zu != expected %d\n",
+          seq.name,
+          t,
+          (size_t)outs[attn_idx].toTensor().numel(),
+          qn);
       return false;
     }
     if (t == 0) {
