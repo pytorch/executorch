@@ -70,7 +70,7 @@ def define_common_targets():
                 ],
                 exclude = ["Logging.h"],
             ),
-            compiler_flags = [
+            exported_preprocessor_flags = [
                 "-Ibackends/qualcomm/runtime/pal/include",
             ],
             define_static_target = True,
