@@ -1021,6 +1021,25 @@ class DivConstantLong(torch.nn.Module):
         return x / 10
 
 
+class DivMode(torch.nn.Module):
+    def __init__(self, rounding_mode=None):
+        super().__init__()
+        self.rounding_mode = rounding_mode
+
+    def forward(self, x, y):
+        return torch.div(x, y, rounding_mode=self.rounding_mode)
+
+
+class DivScalarMode(torch.nn.Module):
+    def __init__(self, scalar=2.0, rounding_mode=None):
+        super().__init__()
+        self.scalar = scalar
+        self.rounding_mode = rounding_mode
+
+    def forward(self, x):
+        return torch.div(x, self.scalar, rounding_mode=self.rounding_mode)
+
+
 class DrawGraphModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
