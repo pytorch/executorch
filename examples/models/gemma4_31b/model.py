@@ -8,8 +8,12 @@
 Gemma 4 31B-IT — export-friendly reference implementation for ExecuTorch.
 
 Model definition designed for torch.export(strict=True) with the CUDA backend.
-All stateful buffers (KV cache, RoPE inv_freq) are registered buffers so they
-are captured by share_mutable_buffers across prefill/decode. The numerically
+All stateful buffers (KV cache, RoPE inv_freq) are registered buffers with
+in-place updates. On the CUDA/AOTI backend they are lifted into the delegate as
+constants and shared across prefill/decode at runtime via the backend's per-FQN
+buffer cache (so the CUDA export leaves share_mutable_buffers off); backends that
+keep these buffers at the graph level (e.g. MLX) instead share them via
+share_mutable_buffers. The numerically
 sensitive primitives — RMSNorm, GELU-tanh MLP, proportional/full RoPE, and
 the BHSD KV cache — are imported from ``examples.models.gemma4.text_decoder``
 so the 31B and E2B/E4B paths share them.
