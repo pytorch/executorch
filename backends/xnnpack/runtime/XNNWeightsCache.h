@@ -44,6 +44,13 @@ struct PackedDataMeta {
   // cache_loaded_ is auto-invalidated so the next init re-enters
   // load_packed_cache and reuses the saved file instead of re-packing.
   bool from_load{false};
+  // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
+  // guarantees this is consistent across runs of the same ukernel; when
+  // XNNPACK upgrades and a ukernel implementation changes, the seed
+  // changes. look_up rejects entries whose stored seed doesn't match
+  // the caller's seed so that stale cache entries don't deliver wrongly
+  // packed weights to a newer ukernel.
+  uint32_t seed{0};
 };
 
 class XNNWeightsCache {
@@ -151,7 +158,11 @@ class XNNWeightsCache {
 
  private:
   static constexpr uint32_t kCacheMagic = 0x58505743; // "XPWC"
-  static constexpr uint32_t kCacheVersion = 1;
+  // Bump when the on-disk layout (footer or per-entry record) changes.
+  // v2: per-entry seed added — old v1 files don't carry seeds and would
+  // load with seed=0, mismatching every fresh look_up with a non-zero
+  // seed, causing a stampede of re-packs. Reject v1 outright.
+  static constexpr uint32_t kCacheVersion = 2;
   bool load_packed_cache();
   void reset_for_fresh_write();
   void release_entry(void* packed_data_ptr);
