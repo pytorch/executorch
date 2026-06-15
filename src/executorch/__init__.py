@@ -9,11 +9,12 @@
 try:
     # ``version.py`` is generated at build time from ``version.txt`` (the single
     # source of truth) by ``setup.py``, mirroring ``torch/version.py``.
-    from executorch.version import __version__, git_version  # noqa: F401
-except ImportError:
-    # Source tree / namespace import without a build: fall back to the installed
-    # distribution metadata, then to a sentinel, so ``import executorch`` never
-    # fails just because the version is unknown.
+    from .version import __version__, git_version  # noqa: F401
+except ModuleNotFoundError:
+    # No generated ``version.py`` (e.g. an unbuilt source tree): fall back to the
+    # installed distribution metadata, then to a sentinel, so ``import executorch``
+    # never fails just because the version is unknown. A malformed (present but
+    # broken) ``version.py`` still raises, surfacing real packaging problems.
     try:
         from importlib.metadata import PackageNotFoundError, version as _version
 
