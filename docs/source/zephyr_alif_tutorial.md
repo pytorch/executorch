@@ -266,7 +266,7 @@ outputs there with symlinks:
 ./app-gen-toc -f "build/images/zephyr.json"
 ```
 
-Note that some versions use app-gen-toc.py
+Note that some versions use `app-gen-toc.py`.
 
 This creates `build/AppTocPackage.bin` in the SE Tools directory.
 
@@ -282,7 +282,7 @@ To flash set `SW4=SE` and run
 ```bash
 ./app-write-mram
 ```
-Note that some versions use app-write-mram.py
+Note that some versions use `app-write-mram.py`.
 
 On some boards the running application prevents the ISP handshake. In that case,
 enter hard maintenance mode first. Keep `SW4=SE`, close any serial terminal, and
