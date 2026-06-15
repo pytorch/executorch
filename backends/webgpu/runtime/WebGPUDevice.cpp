@@ -6,11 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <stdexcept>
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+#include <vector>
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 namespace executorch {
 namespace backends {
@@ -20,12 +25,10 @@ namespace {
 
 struct AdapterResult {
   WGPUAdapter adapter = nullptr;
-  bool done = false;
 };
 
 struct DeviceResult {
   WGPUDevice device = nullptr;
-  bool done = false;
 };
 
 void on_adapter_request(
@@ -45,7 +48,6 @@ void on_adapter_request(
         static_cast<int>(message.length),
         message.data);
   }
-  result->done = true;
 }
 
 void on_device_request(
@@ -65,7 +67,6 @@ void on_device_request(
         static_cast<int>(message.length),
         message.data);
   }
-  result->done = true;
 }
 
 void on_device_error(
@@ -87,25 +88,36 @@ void on_device_error(
 WebGPUContext create_webgpu_context() {
   WebGPUContext ctx;
 
-  ctx.instance = wgpuCreateInstance(nullptr);
+  // TimedWaitAny lets webgpu_wait() block on futures via wgpuInstanceWaitAny.
+  WGPUInstanceDescriptor instance_desc = {};
+#if defined(__EMSCRIPTEN__)
+  instance_desc.capabilities.timedWaitAnyEnable = true;
+  instance_desc.capabilities.timedWaitAnyMaxCount = 1;
+#else
+  WGPUInstanceFeatureName features[1] = {WGPUInstanceFeatureName_TimedWaitAny};
+  instance_desc.requiredFeatureCount = 1;
+  instance_desc.requiredFeatures = features;
+#endif
+  ctx.instance = wgpuCreateInstance(&instance_desc);
   if (!ctx.instance) {
     throw std::runtime_error("Failed to create WebGPU instance");
   }
 
-  // Request adapter using AllowSpontaneous mode (fires during
-  // wgpuInstanceProcessEvents or any other API call).
   AdapterResult adapter_result;
   WGPURequestAdapterCallbackInfo adapter_cb = {};
-  adapter_cb.mode = WGPUCallbackMode_AllowSpontaneous;
+  adapter_cb.mode = WGPUCallbackMode_WaitAnyOnly;
   adapter_cb.callback = on_adapter_request;
   adapter_cb.userdata1 = &adapter_result;
 
-  wgpuInstanceRequestAdapter(ctx.instance, nullptr, adapter_cb);
-  while (!adapter_result.done) {
-    wgpuInstanceProcessEvents(ctx.instance);
-  }
+  // No backend pin or forced fallback; Dawn auto-selects the adapter.
+  WGPURequestAdapterOptions adapter_opts = {};
+  adapter_opts.powerPreference = WGPUPowerPreference_HighPerformance;
+  adapter_opts.forceFallbackAdapter = false;
+  WGPUWaitStatus adapter_wait = webgpu_wait(
+      ctx.instance,
+      wgpuInstanceRequestAdapter(ctx.instance, &adapter_opts, adapter_cb));
 
-  if (!adapter_result.adapter) {
+  if (adapter_wait != WGPUWaitStatus_Success || !adapter_result.adapter) {
     wgpuInstanceRelease(ctx.instance);
     ctx.instance = nullptr;
     throw std::runtime_error(
@@ -117,19 +129,36 @@ WebGPUContext create_webgpu_context() {
   // Request device
   DeviceResult device_result;
   WGPURequestDeviceCallbackInfo device_cb = {};
-  device_cb.mode = WGPUCallbackMode_AllowSpontaneous;
+  device_cb.mode = WGPUCallbackMode_WaitAnyOnly;
   device_cb.callback = on_device_request;
   device_cb.userdata1 = &device_result;
 
+  // Request the adapter's full limits; software adapters default many to 0.
+  WGPULimits supported_limits = {};
   WGPUDeviceDescriptor device_desc = {};
-  device_desc.uncapturedErrorCallbackInfo.callback = on_device_error;
-
-  wgpuAdapterRequestDevice(ctx.adapter, &device_desc, device_cb);
-  while (!device_result.done) {
-    wgpuInstanceProcessEvents(ctx.instance);
+  if (wgpuAdapterGetLimits(ctx.adapter, &supported_limits) ==
+      WGPUStatus_Success) {
+    device_desc.requiredLimits = &supported_limits;
   }
 
-  if (!device_result.device) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  // Bench: enable TimestampQuery if available; fail-open (skip timing if not).
+  std::vector<WGPUFeatureName> required_features;
+  if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_TimestampQuery)) {
+    required_features.push_back(WGPUFeatureName_TimestampQuery);
+    device_desc.requiredFeatureCount = required_features.size();
+    device_desc.requiredFeatures = required_features.data();
+    ctx.timestamp_supported = true;
+  }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
+  device_desc.uncapturedErrorCallbackInfo.callback = on_device_error;
+
+  WGPUWaitStatus device_wait = webgpu_wait(
+      ctx.instance,
+      wgpuAdapterRequestDevice(ctx.adapter, &device_desc, device_cb));
+
+  if (device_wait != WGPUWaitStatus_Success || !device_result.device) {
     wgpuAdapterRelease(ctx.adapter);
     wgpuInstanceRelease(ctx.instance);
     ctx.adapter = nullptr;
@@ -151,10 +180,37 @@ void set_default_webgpu_context(WebGPUContext* ctx) {
 }
 
 WebGPUContext* get_default_webgpu_context() {
-  return g_default_context;
+  if (g_default_context) {
+    return g_default_context;
+  }
+#if !defined(__EMSCRIPTEN__)
+  // Native-only lazy process-wide context, mirroring Vulkan api::context().
+  static const std::unique_ptr<WebGPUContext, void (*)(WebGPUContext*)>
+  lazy_context(
+      []() -> WebGPUContext* {
+        try {
+          return new WebGPUContext(create_webgpu_context());
+        } catch (...) {
+          return nullptr;
+        }
+      }(),
+      [](WebGPUContext* c) {
+        if (c) {
+          destroy_webgpu_context(*c);
+          delete c;
+        }
+      });
+  return lazy_context.get();
+#else
+  return nullptr;
+#endif
 }
 
 void destroy_webgpu_context(WebGPUContext& ctx) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  // Release device-child GPU resources before the device handle.
+  ctx.querypool.reset();
+#endif // WGPU_BACKEND_ENABLE_PROFILING
   if (ctx.queue) {
     wgpuQueueRelease(ctx.queue);
     ctx.queue = nullptr;

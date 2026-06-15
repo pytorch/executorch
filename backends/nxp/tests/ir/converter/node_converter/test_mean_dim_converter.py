@@ -9,22 +9,13 @@ import numpy as np
 import pytest
 import torch
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
-)
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import MeanDimConvModule, MeanDimLinearModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
@@ -33,7 +24,6 @@ from executorch.backends.nxp.tests.ops_aliases import (
     MaxPool2DWithIndices,
     MeanDim,
 )
-from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -59,247 +49,6 @@ class MeanDimAddModule(MeanDimModule):
         return x + x
 
 
-@pytest.mark.parametrize(
-    "input_shape, dim",
-    [
-        pytest.param((1, 4, 8, 8), (-1, -2), id="Dim -1, -2."),
-        pytest.param((1, 4, 8, 8), (-2, -1), id="Dim -2, -1."),
-        pytest.param((1, 4, 8, 8), (2, 3), id="Dim 2, 3."),
-        pytest.param((1, 4, 8, 8), (3, 2), id="Dim 3, 2."),
-    ],
-)
-def test_mean_dim_conv_quant_conversion(
-    mocker, input_shape, dim, use_qat, keepdim=True
-):
-    model = MeanDimConvModule(dim, keepdim)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    ep = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-    ).exported_program()
-    # Make sure the `mean.dim` was delegated.
-    assert not graph_contains_any_of_ops(ep.graph, [MeanDim])
-    assert any("lowered_module" in n.name for n in ep.graph.nodes)
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        input_data=input_data,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-        atol=1.0,
-    )
-
-
-@pytest.mark.parametrize(
-    "input_shape, dim",
-    [
-        pytest.param((1, 32), 0, id="Dim 0."),
-        pytest.param((1, 32), 1, id="Dim 1."),
-    ],
-)
-@pytest.mark.parametrize(
-    "keepdim",
-    [
-        pytest.param(False, id="Don't keep dim."),
-        pytest.param(True, id="Keep dim."),
-    ],
-)
-def test_mean_dim_linear_unsupported_quant_conversion(
-    mocker, input_shape, dim, use_qat, keepdim
-):
-    model = MeanDimLinearModule(dim, keepdim)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    edge_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
-    ).exported_program()
-    nodes = list(edge_program.graph.nodes)
-
-    # Last 2 dimensions are not used or keepdim is False, cannot be converted to MeanDim, node is not delegated
-    assert nodes[6].target == MeanDim
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
-    )
-
-
-@pytest.mark.parametrize(
-    "input_shape, dim",
-    [
-        pytest.param((1, 4, 8, 8), 0, id="Dim 0."),
-        pytest.param((1, 4, 8, 8), 2, id="Dim 2."),
-        pytest.param((1, 4, 8, 8), -1, id="Dim -1."),
-        pytest.param((1, 4, 8, 8), -2, id="Dim -2."),
-        pytest.param((1, 4, 8, 8), (0, 1), id="Dim 0, 1."),
-        pytest.param((1, 4, 8, 8), (1, 3), id="Dim 1, 3."),
-        pytest.param((1, 4, 8, 8), (-1, -3), id="Dim -1, -3."),
-    ],
-)
-@pytest.mark.parametrize(
-    "keepdim",
-    [
-        pytest.param(False, id="Don't keep dim."),
-        pytest.param(True, id="Keep dim."),
-    ],
-)
-def test_mean_dim_conv_unsupported_quant_conversion(
-    mocker, input_shape, dim, use_qat, keepdim
-):
-    model = MeanDimConvModule(dim, keepdim)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    edge_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-    ).exported_program()
-    nodes = list(edge_program.graph.nodes)
-
-    # Last 2 dimensions are not used or keepdim is False, cannot be converted to MeanDim, node is not delegated
-    assert nodes[6].target == MeanDim
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        input_data=input_data,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-    )
-
-
-@pytest.mark.parametrize(
-    "input_shape, dim",
-    [
-        pytest.param((1, 2, 3, 8), (1, 2), id="Dim 1, 2."),
-        pytest.param((1, 2, 3, 8), (2, 1), id="Dim 2, 1."),
-        pytest.param((1, 2, 3, 8), (-3, -2), id="Dim -3, -2."),
-        pytest.param((1, 2, 3, 8), (-2, -3), id="Dim -2, -3."),
-    ],
-)
-def test_mean_dim__formatless__supported(
-    mocker, input_shape, dim, use_qat, keepdim=True
-):
-    model = MeanDimModule(dim, keepdim)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    ep = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
-    ).exported_program()
-
-    # Make sure the `mean.dim` was delegated.
-    assert not graph_contains_any_of_ops(ep.graph, [MeanDim])
-    assert any("lowered_module" in n.name for n in ep.graph.nodes)
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program,
-        input_data=input_data,
-        tfl_model=tflite_flatbuffers_model,
-        atol=1,
-    )
-
-
-@pytest.mark.parametrize(
-    "input_shape, dim",
-    [
-        pytest.param((1, 2, 3, 8), (2, 3), id="Dim 2, 3."),
-    ],
-)
-def test_mean_dim__formatless__unsupported(input_shape, dim, use_qat, keepdim=True):
-    model = MeanDimModule(dim, keepdim)
-
-    ep = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
-    ).exported_program()
-
-    # Make sure the `mean.dim` was NOT delegated.
-    assert graph_contains_any_of_ops(ep.graph, [MeanDim])
-    assert not any("lowered_module" in n.name for n in ep.graph.nodes)
-
-
-@pytest.mark.parametrize(
-    "input_shape, dim",
-    [
-        pytest.param(
-            (1, 8, 8, 4), (1, 2), id="Dim 1, 2 (supported), channels = 4 (unsupported)."
-        ),
-    ],
-)
-def test_mean_dim__formatless__unsupported_channels(
-    input_shape, dim, use_qat, keepdim=True
-):
-    model = MeanDimModule(dim, keepdim)
-
-    ep = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
-    ).exported_program()
-
-    # Make sure the `mean.dim` was NOT delegated.
-    assert graph_contains_any_of_ops(ep.graph, [MeanDim])
-    assert not any("lowered_module" in n.name for n in ep.graph.nodes)
-
-
-@pytest.mark.parametrize(
-    "input_shape, dim",
-    [
-        pytest.param(
-            (1, 4, 8, 8), (2, 3), id="Dim 2, 3 (supported), channels = 5 (unsupported)."
-        ),
-    ],
-)
-def test_mean_dim__channels_first__unsupported_channels(
-    input_shape, dim, use_qat, keepdim=True
-):
-    model = MeanDimConvModule(
-        dim, keepdim, out_channels=5
-    )  # Only multiples of 8 (num_macs) are supported.
-
-    # Run conversion
-    ep = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
-    ).exported_program()
-
-    # Make sure the `mean.dim` was NOT delegated.
-    assert graph_contains_any_of_ops(ep.graph, [MeanDim])
-
-
 class MaxPoolMeanDimModule(torch.nn.Module):
     def __init__(self, dim, keepdim):
         super().__init__()
@@ -312,7 +61,7 @@ class MaxPoolMeanDimModule(torch.nn.Module):
         return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
 
 
-class TestMeanDimNewNeutronFlow:
+class TestMeanDim:
 
     # noinspection PyMethodMayBeStatic
     def assert_delegated(
@@ -346,14 +95,11 @@ class TestMeanDimNewNeutronFlow:
             dataset_creator,
             output_comparator,
             use_qat=use_qat,
-            use_new_flow_neutron_c=True,  # Use the new flow.
         )
 
     # noinspection PyMethodMayBeStatic
     def assert_not_delegated(self, model, input_shape):
-        delegated_ep = to_quantized_edge_program(
-            model, input_shape, use_new_flow_neutron_c=True
-        ).exported_program()
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
         # Make sure the `mean` was NOT delegated.
         assert not graph_contains_any_of_ops(
@@ -395,6 +141,7 @@ class TestMeanDimNewNeutronFlow:
             pytest.param((4, 2), (-2,), id="2D, dim = (-2,)."),
             pytest.param((2, 3, 4), (0, 2), id="3D, dim = (0, 2,)."),
             pytest.param((1, 3, 3, 7), (2, -3), id="4D, dim = (2, -3)."),
+            pytest.param((1, 3, 3, 7), -2, id="4D, dim = -2."),
             pytest.param((3, 1, 4, 1, 5), (3, -5, -4), id="5D, dim = (3, -5 ,-4)."),
         ],
     )
@@ -404,15 +151,6 @@ class TestMeanDimNewNeutronFlow:
         # TODO Replace with quantized dataset testing and `atol = 1`.
         atol = 0.015
         self.assert_delegated(model, input_shape, mocker, atol=atol)
-
-    def test__compute_error(self, mocker, keep_dim):
-        input_shape, dim = (1, 3, 3, 7), -2
-        model = MeanDimModule(dim, keep_dim)
-
-        # Neutron produces an incorrect result in this case (maximum absolute error ~= 0.0607 (more than 2 * scale)).
-        # This test detects the failure to alert us once the bug is fixed. It should be fixed in Neutron 3.1.2.
-        with pytest.raises(AssertionError):
-            self.assert_delegated(model, input_shape, mocker, atol=0.06)
 
     @pytest.mark.parametrize(
         "input_shape, dim",
@@ -463,11 +201,25 @@ class TestMeanDimNewNeutronFlow:
         [((1, 7, 3, 3), 1)],
         ids=lambda val: f"shape={val}" if isinstance(val, tuple) else f"dim={val}",
     )
-    def test__channels_first(self, mocker, input_shape, dim, keep_dim):
+    @pytest.mark.parametrize(
+        "keep_dim",
+        [
+            pytest.param(True),
+            pytest.param(
+                False,
+                marks=pytest.mark.xfail(
+                    strict=True, reason="Known format inference bug (EIEX-937)."
+                ),
+            ),
+        ],
+        ids=lambda kd: f"keep_dim={kd}",
+    )
+    def test__channels_first__keep_dim__true(self, mocker, input_shape, dim, keep_dim):
         # Just 1 test case to verify correct handling of the `dim`.
         # Most cases fall into the single bit error case, and since this test uses 2 operators, the error accumulates
         #  and the final error is larger. We cannot with 100% certainty say that the error is only caused by the single
         #  bit errors and not related to the format. That's why only this 1 case with no errors is used.
+
         model = MaxPoolMeanDimModule(dim, keep_dim)
         self.assert_delegated(
             model,

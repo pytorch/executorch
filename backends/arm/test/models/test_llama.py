@@ -34,7 +34,7 @@ from executorch.extension.llm.export.config.llm_config import LlmConfig
 from transformers import GenerationConfig, LlamaConfig, LlamaForCausalLM
 from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
 
-input_t = Tuple[torch.Tensor]
+input_t = Tuple[torch.Tensor, ...]
 input_th = Tuple[torch.Tensor, torch.Tensor]
 
 # Add project dir to sys path to workaround importlib.import_module() conditions in model_factory.py
@@ -59,6 +59,15 @@ class HFPositionalAdapter(torch.nn.Module):
         else:
             cp = cache_position.to(torch.long)
         return self.inner(input_ids=input_ids, cache_position=cp)
+
+
+class LlamaPositionalAdapter(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, tokens, input_pos):
+        return self.model(tokens, {"input_pos": input_pos})
 
 
 class TestLlama:
@@ -154,6 +163,7 @@ class TestLlama:
             params_file,
             "--model",
             model_name,
+            "--use_kv_cache",
         ]
 
         parser = build_args_parser()
@@ -161,6 +171,11 @@ class TestLlama:
         llm_config = LlmConfig.from_args(args)
 
         llama_model, llama_inputs, llama_meta = get_llama_model(llm_config)
+
+        if llm_config.model.use_kv_cache:
+            tokens, attn_options = llama_inputs
+            llama_model = LlamaPositionalAdapter(llama_model).eval()
+            llama_inputs = (tokens, attn_options["input_pos"])
 
         return llama_model, llama_inputs, llama_meta
 

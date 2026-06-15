@@ -557,7 +557,7 @@ def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     )
 
     edge_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
 
     # Make sure that all nodes were delegated.

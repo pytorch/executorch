@@ -10,9 +10,19 @@ from executorch.backends.qualcomm._passes import (
     InsertReshapeForReduceOps,
     RemoveRedundancy,
 )
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
-from executorch.backends.qualcomm.tests.models import TopKandIndex
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
+from executorch.backends.qualcomm.tests.models import (
+    HardSigmoid,
+    Reciprocal,
+    TopKandIndex,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -293,6 +303,80 @@ class TestPasses(unittest.TestCase):
             0,
             f"Following nodes did not find a match in the graph: {name_handle_map.keys()}",
         )
+
+    def test_decompose_reciprocal_backend_aware(self):
+        sample_input = (torch.tensor([2.0]),)
+        target = torch.ops.aten.reciprocal.default
+        decomposed_backends = (
+            QnnExecuTorchBackendType.kHtpBackend,
+            QnnExecuTorchBackendType.kGpuBackend,
+            QnnExecuTorchBackendType.kLpaiBackend,
+        )
+        preserved_backends = (QnnExecuTorchBackendType.kUndefinedBackend,)
+
+        for backend, should_decompose in [
+            *[(b, True) for b in decomposed_backends],
+            *[(b, False) for b in preserved_backends],
+        ]:
+            # The annotation pipeline is skipped for the GPU backend, as it does not support quantized data types
+            pipelines = (
+                ("export",)
+                if backend == QnnExecuTorchBackendType.kGpuBackend
+                else ("annotation", "export")
+            )
+            for pipeline in pipelines:
+                with self.subTest(backend=backend, pipeline=pipeline):
+                    ep = torch.export.export(Reciprocal(), sample_input, strict=True)
+                    pm = get_qnn_pass_manager_cls(backend)()
+                    if pipeline == "annotation":
+                        pm.transform_for_annotation_pipeline(ep.graph_module)
+                    else:
+                        pm.transform_for_export_pipeline(ep)
+                    has_target = any(
+                        n.target == target for n in ep.graph_module.graph.nodes
+                    )
+                    self.assertNotEqual(
+                        has_target,
+                        should_decompose,
+                        f"reciprocal {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
+                    )
+
+    def test_decompose_hardsigmoid_backend_aware(self):
+        sample_input = (torch.tensor([2.0]),)
+        target = torch.ops.aten.hardsigmoid.default
+        decomposed_backends = (QnnExecuTorchBackendType.kLpaiBackend,)
+        preserved_backends = (
+            QnnExecuTorchBackendType.kGpuBackend,
+            QnnExecuTorchBackendType.kHtpBackend,
+            QnnExecuTorchBackendType.kUndefinedBackend,
+        )
+
+        for backend, should_decompose in [
+            *[(b, True) for b in decomposed_backends],
+            *[(b, False) for b in preserved_backends],
+        ]:
+            # The annotation pipeline is skipped for the GPU backend, as it does not support quantized data types
+            pipelines = (
+                ("export",)
+                if backend == QnnExecuTorchBackendType.kGpuBackend
+                else ("annotation", "export")
+            )
+            for pipeline in pipelines:
+                with self.subTest(backend=backend, pipeline=pipeline):
+                    ep = torch.export.export(HardSigmoid(), sample_input, strict=True)
+                    pm = get_qnn_pass_manager_cls(backend)()
+                    if pipeline == "annotation":
+                        pm.transform_for_annotation_pipeline(ep.graph_module)
+                    else:
+                        pm.transform_for_export_pipeline(ep)
+                    has_target = any(
+                        n.target == target for n in ep.graph_module.graph.nodes
+                    )
+                    self.assertNotEqual(
+                        has_target,
+                        should_decompose,
+                        f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
+                    )
 
 
 if __name__ == "__main__":
