@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.reorder_ops import (
     AdvanceQuantizeOpAboveDefChainPass,
     AdvanceQuantizeOpAboveDefInBranchPass,
     MoveSliceBeforePermutePass,
+    MoveSliceBeforeViewPass,
     PostponeDequantizeOpBelowUseChainPass,
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
     PropagateSlice,
@@ -763,6 +764,218 @@ class TestMoveSliceBeforePermutePass(unittest.TestCase):
             MoveSliceBeforePermutePass(),
         )
         self.assertTrue(result.modified)
+
+
+class TestMoveSliceBeforeViewPass(unittest.TestCase):
+    @staticmethod
+    def _shapes_by_target(
+        gm: torch.fx.GraphModule, target: object
+    ) -> list[tuple[int, ...]]:
+        """Output shapes of every node with the given target, in graph order."""
+        return [
+            tuple(node.meta["val"].shape)
+            for node in gm.graph.nodes
+            if node.target == target
+        ]
+
+    def _assert_slice_and_view_shapes(
+        self,
+        gm: torch.fx.GraphModule,
+        slice_shapes: list[tuple[int, ...]],
+        view_shapes: list[tuple[int, ...]],
+    ) -> None:
+        self.assertEqual(
+            self._shapes_by_target(gm, exir_ops.edge.aten.slice_copy.Tensor),
+            slice_shapes,
+        )
+        self.assertEqual(
+            self._shapes_by_target(gm, exir_ops.edge.aten.view_copy.default),
+            view_shapes,
+        )
+
+    def test_strided_innermost_move(self) -> None:
+        """Splitting the last dim into [...,2] then slicing that 2 (innermost,
+        width 1) becomes a strided slice on the pre-view tensor, then view."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 4, 0, 1, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.view_copy)
+        # The strided pre-view slice [0:255:2] keeps 128 of the 256 elements,
+        # then the view restores the (sliced) viewed shape.
+        self._assert_slice_and_view_shapes(
+            result.graph_module, [(1, 16, 128)], [(1, 16, 4, 32, 1)]
+        )
+
+    def test_fanout_both_slices_move(self) -> None:
+        """A view that fans out to even/odd slices: each is pushed before the
+        view independently and the now-dead shared view is removed."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        even = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 4, 0, 1, 1),
+        )
+        odd = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 4, 1, 2, 1),
+        )
+        builder.output([even, odd])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(sum(n == exir_ops.edge.aten.slice_copy for n in nodes), 2)
+        self.assertEqual(sum(n == exir_ops.edge.aten.view_copy for n in nodes), 2)
+        # Each fanned-out slice keeps half the elements and gets its own view.
+        self._assert_slice_and_view_shapes(
+            result.graph_module,
+            [(1, 16, 128), (1, 16, 128)],
+            [(1, 16, 4, 32, 1), (1, 16, 4, 32, 1)],
+        )
+
+    def test_contiguous_outermost_move(self) -> None:
+        """Slicing the outermost factor of a split dim → contiguous pre-view
+        slice, then view."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 2, 128]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 2, 0, 1, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.view_copy)
+        self._assert_slice_and_view_shapes(
+            result.graph_module, [(1, 16, 128)], [(1, 16, 1, 128)]
+        )
+
+    def test_contiguous_outer_factor_width_two_move(self) -> None:
+        """Slicing the first two of the outermost factor (size 4) is still a
+        contiguous pre-view slice [0:128], then view → (1,16,2,32,2)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 2, 0, 2, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.view_copy)
+        self._assert_slice_and_view_shapes(
+            result.graph_module, [(1, 16, 128)], [(1, 16, 2, 32, 2)]
+        )
+
+    def test_strided_outer_factor_not_moved(self) -> None:
+        """A strided (step>1, width>1) selection of the outermost factor is a
+        block-strided pattern, not a single pre-view slice → left unchanged."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 2, 0, 4, 2),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforeViewPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_block_strided_not_moved(self) -> None:
+        """Slicing a middle factor yields a block-strided selection that is not a
+        single pre-view slice → left unchanged."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 2, 32]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 3, 0, 1, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforeViewPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_non_view_input_no_change(self) -> None:
+        """A slice whose input is not a view is left unchanged."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 2, 0, 128, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforeViewPass()(original))
+        self.assertFalse(result.modified)
 
 
 class TestPropagateSlice(unittest.TestCase):
