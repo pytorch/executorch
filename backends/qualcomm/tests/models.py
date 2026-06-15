@@ -408,6 +408,14 @@ class CDist(torch.nn.Module):
         return torch.cdist(x, y, p=2)
 
 
+class CDistForward(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.ops.aten._cdist_forward.default(x, y, 2.0, None)
+
+
 class Ceil(torch.nn.Module):
     def __init__(self):
         super().__init__()

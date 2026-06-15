@@ -428,6 +428,14 @@ class TestQNNFloatingPointOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_cdist_forward(self):
+        module = CDistForward()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 125, 256),
+            torch.randn(1, 2048, 256),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_channel_shuffle(self):
         module = ChannelShuffle(2)  # noqa: F405
         sample_input = (torch.randn(1, 4, 3, 3),)
@@ -3152,6 +3160,15 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_cdist(self):
         module = CDist()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 125, 256),
+            torch.randn(1, 2048, 256),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cdist_forward(self):
+        module = CDistForward()  # noqa: F405
         sample_input = (
             torch.randn(1, 125, 256),
             torch.randn(1, 2048, 256),
@@ -6164,6 +6181,8 @@ class TestQNNFloatingPointUtils(TestQNN):
         TestQNN.profile_level = 0
 
     def test_qnn_backend_runtime_option_heap_profile(self):
+        if self.enable_x86_64:
+            self.skipTest("heap profiling is not supported on host machine")
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
 
@@ -7105,6 +7124,8 @@ class TestQNNQuantizedUtils(TestQNN):
         TestQNN.profile_level = 0
 
     def test_qnn_backend_runtime_option_heap_profile(self):
+        if self.enable_x86_64:
+            self.skipTest("heap profiling is not supported on host machine")
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module1 = self.get_qdq_module(module, sample_input)

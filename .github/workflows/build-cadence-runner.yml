@@ -50,3 +50,25 @@ jobs:
     uses: ./.github/workflows/_test_cadence.yml
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+  # Cross-compile cadence_executor_runner for each Cadence Xtensa core, one job
+  # per backend so they show as separate lines (no matrix grouping). Shared logic
+  # lives in _xtensa_build.yml. fusion_g3 is omitted until the upstream fusion_g3
+  # <-> nnlib-FusionG3 API skew is fixed (its runner does not link).
+  hifi-build:
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_build.yml
+    with:
+      backend: hifi4
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+  vision-build:
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_build.yml
+    with:
+      backend: vision
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

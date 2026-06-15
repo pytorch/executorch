@@ -106,6 +106,15 @@ Error WebGPUBackend::execute(
   }
   graph->copy_inputs(inputs);
 
+  // Fail loud as a runtime Error so a throw never crosses the backend boundary.
+  try {
+    graph->update_symints_from_inputs(inputs);
+    graph->propagate_resize();
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "WebGPU symint refresh/resize failed: %s", e.what());
+    return Error::Internal;
+  }
+
   // Execute the compute graph
   graph->execute();
 

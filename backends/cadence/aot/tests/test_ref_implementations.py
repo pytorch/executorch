@@ -2270,6 +2270,44 @@ class TestRefImplementations(unittest.TestCase):
                     dtype=torch.float32,
                 ),
             ),
+            # Multi-channel input, 2x2 kernel, stride 1, no padding, NHWC.
+            # Same channel values as nchw_multi_channel above, just laid out
+            # in NHWC order. Expected output is byte-for-byte identical to
+            # the NCHW case — this asserts that NHWC im2row produces the
+            # channel-major [c][kp] layout (matching torch.nn.functional.unfold
+            # after NHWC->NCHW conversion). A [kp][c] layout (the prior bug)
+            # would instead produce [1, 10, 2, 11, 4, 13, 5, 14, ...].
+            (
+                "nhwc_multi_channel",
+                torch.tensor(
+                    [
+                        [
+                            [[1, 10], [2, 11], [3, 12]],
+                            [[4, 13], [5, 14], [6, 15]],
+                            [[7, 16], [8, 17], [9, 18]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # (N=1, H=3, W=3, C=2)
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                None,
+                True,  # channel_last
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 2, 4, 5, 10, 11, 13, 14],
+                            [2, 3, 5, 6, 11, 12, 14, 15],
+                            [4, 5, 7, 8, 13, 14, 16, 17],
+                            [5, 6, 8, 9, 14, 15, 17, 18],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
             # Multi-channel input and multi-channel zero-point
             (
                 "nchw_multi_channel_and_zero_point_no_padding",
