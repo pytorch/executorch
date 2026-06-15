@@ -43,6 +43,8 @@ def define_common_targets():
             srcs = glob(
                 [
                     "*.cpp",
+                    "pal/src/linux/DynamicLoading.cpp",
+                    "pal/src/linux/Path.cpp",
                     "backends/*.cpp",
                     "backends/gpu/*.cpp",
                     "backends/htp/*.cpp",
@@ -58,6 +60,8 @@ def define_common_targets():
             exported_headers = glob(
                 [
                     "*.h",
+                    "pal/include/pal/DynamicLoading.h",
+                    "pal/include/pal/Path.h",
                     "backends/*.h",
                     "backends/gpu/*.h",
                     "backends/htp/*.h",
@@ -66,6 +70,9 @@ def define_common_targets():
                 ],
                 exclude = ["Logging.h"],
             ),
+            exported_preprocessor_flags = [
+                "-Ibackends/qualcomm/runtime/pal/include",
+            ],
             define_static_target = True,
             link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
             platforms = [ANDROID],
