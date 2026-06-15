@@ -373,7 +373,7 @@ if __name__ == "__main__":  # noqa C901
 
         # Generate ETRecord if profiling flag is set
         if args.use_profiling:
-            etrecord_path = f"etrecord/{args.model_name}_etrecord.bin"
+            etrecord_path = os.path.join("etrecord", f"{args.model_name}_etrecord.bin")
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(etrecord_path), exist_ok=True)
             # Save ETRecord

@@ -26,6 +26,8 @@ namespace neutron {
 #define ALIGN_SIZE(size) \
   ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
 
+#define KOPC_CALLARGS 6  // The operation for TileIR
+  
 // clang-format off
 /* Header schema:
      +----------------------------+-----------------------------+------------------------+
@@ -594,8 +596,8 @@ class NeutronBackend final : public PyTorchBackendInterface {
         if (start_time == 0) {
           start_time = neutron_events[i].startEvent.time;
         }
-        if (neutron_events[i].stopEvent.opCode != 6) {
-          // Only KOPC_CALLARGS=6 events can be mapped to original .pte model
+        if (neutron_events[i].stopEvent.opCode != KOPC_CALLARGS) {
+          // Only KOPC_CALLARGS events can be mapped to original .pte model.
           continue;
         } else {
           event_tracer_log_profiling_delegate(

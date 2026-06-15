@@ -55,7 +55,7 @@ class ParallelPoolModel(torch.nn.Module):
 
 
 class TestProfiling:
-    @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.")
+    @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.", strict=True)
     def test__softmax(self, caplog):
         caplog.set_level(logging.INFO)
         model = SoftmaxModule(-1)
@@ -70,7 +70,12 @@ class TestProfiling:
         # Neuron map for 1D Softmax with input size 10 should contain 4 nodes:
         # 3 Neuron kernels (pad, softmax, and slice) and 1 unmapped node used for profiling dum
         neutron_map = extract_map_from_logs(caplog)
-        assert neutron_map == {0: (2,), 1: (2,), 2: (2,), 3: ()}
+        assert neutron_map == {
+            0: (2,),  # Pad
+            1: (2,),  # Softmax
+            2: (2,),  # Slice
+            3: (),  # Neutron Dump
+        }
 
     def test__parallel_pool(self, caplog):
         caplog.set_level(logging.INFO)
@@ -85,20 +90,20 @@ class TestProfiling:
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (6,),
-            1: (),
-            2: (7,),
-            3: (),
-            4: (),
-            5: (),
-            6: (),
-            7: (),
-            8: (),
-            9: (),
-            10: (),
+            0: (6,),  # Conv2DStandardV2
+            1: (),  # Conv2DDepthwiseV2 (AvgPool)
+            2: (7,),  # MaxPool
+            3: (),  # TransposeCHW
+            4: (),  # TransposeCHW
+            5: (),  # TransposeCHW
+            6: (),  # Slice
+            7: (),  # Pad
+            8: (),  # Conv2DPointwise
+            9: (),  # Slice
+            10: (),  # Neutron Dump
         }
 
-    @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.")
+    @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.", strict=True)
     def test__cifar(self, caplog):
         caplog.set_level(logging.INFO)
         input_shape = (1, 3, 32, 32)
@@ -112,18 +117,18 @@ class TestProfiling:
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (),
-            1: (10, 11),
-            2: (12,),
-            3: (13, 14),
-            4: (15,),
-            5: (16, 17),
-            6: (18,),
-            7: (20,),
-            8: (21,),
-            9: (21,),
-            10: (21,),
-            11: (),
+            0: (),  # Pad
+            1: (10, 11),  # Conv2DStandardV1 (Pad + Conv2d)
+            2: (12,),  # MaxPool
+            3: (13, 14),  # Conv2DStandardV1 (Pad + Conv2d)
+            4: (15,),  # MaxPool
+            5: (16, 17),  # Conv2DStandardV1 (Pad + Conv2d)
+            6: (18,),  # MaxPool
+            7: (20,),  # FullyConnected
+            8: (21,),  # Pad
+            9: (21,),  # Softmax
+            10: (21,),  # Slice
+            11: (),  # Neutron Dump
         }
 
     def test__avg_pool(self, caplog):
@@ -138,4 +143,9 @@ class TestProfiling:
             use_profiling=True,
         )
         neutron_map = extract_map_from_logs(caplog)
-        assert neutron_map == {0: (2,), 1: (2,), 2: (2,), 3: ()}
+        assert neutron_map == {
+            0: (2,),  # Pad
+            1: (2,),  # Conv2DDepthwiseDense
+            2: (2,),  # Slice
+            3: (),  # Neutron Dump
+        }

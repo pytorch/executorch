@@ -2,9 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+from executorch.backends.nxp.tests.config_importer import test_config
 
 # noinspection PyProtectedMember
 from executorch.exir._serialize import _deserialize_pte_binary
@@ -14,9 +17,8 @@ from executorch.exir.schema import DelegateCall, KernelCall
 def test_aot_example__mobilenet_v2():
     """Test that mobilenet can be lowered to Neutron backend via `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Find the executorch root directory (5 levels up from this test file)
-    executorch_root = Path(__file__).parent.parent.parent.parent.parent
-    assert executorch_root.exists(), f"Executorch root not found at {executorch_root}"
+    # Set the executorch root directory.
+    executorch_root = test_config.PROJECT_DIR
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
@@ -33,7 +35,7 @@ def test_aot_example__mobilenet_v2():
     ]
 
     # Output file will be created in executorch_root
-    pte_file = executorch_root / "mobilenetv2_nxp_delegate.pte"
+    pte_file = Path(os.path.join(executorch_root, "mobilenetv2_nxp_delegate.pte"))
 
     try:
         result = subprocess.run(
@@ -100,9 +102,8 @@ def test_aot_example__mobilenet_v2__profiling():
     """Test that mobilenet_v2 can be lowered to Neutron backend via `aot_neutron_compile.py`, all ops are delegated,
     the output model is profilable and ETRecord is generated properly."""
 
-    # Find the executorch root directory (5 levels up from this test file)
-    executorch_root = Path(__file__).parent.parent.parent.parent.parent
-    assert executorch_root.exists(), f"Executorch root not found at {executorch_root}"
+    # Set the executorch root directory.
+    executorch_root = test_config.PROJECT_DIR
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
@@ -122,8 +123,12 @@ def test_aot_example__mobilenet_v2__profiling():
     ]
 
     # Output files will be created in executorch_root.
-    pte_file = executorch_root / "mobilenetv2_nxp_delegate_profile.pte"
-    etrecord_file = executorch_root / "etrecord/mobilenetv2_etrecord.bin"
+    pte_file = Path(
+        os.path.join(executorch_root, "mobilenetv2_nxp_delegate_profile.pte")
+    )
+    etrecord_file = Path(
+        os.path.join(executorch_root, "etrecord", "mobilenetv2_etrecord.bin")
+    )
 
     try:
         result = subprocess.run(
