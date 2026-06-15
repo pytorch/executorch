@@ -190,11 +190,13 @@ class TestInt4Inference(unittest.TestCase):
             return self.model(tok, pos, temp)
 
     def test_int4_weights_preserved(self):
-        """Packing passes Int4Tensor through without conversion."""
-        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+        """Packing converts Int4Tensor to CudaCoalescedInt4Tensor."""
+        from executorch.backends.cuda.coalesced_int4_tensor import (
+            CudaCoalescedInt4Tensor,
+        )
 
         w = self.model.layers[0].mlp.gate_proj.weight.data
-        self.assertIsInstance(w, Int4Tensor)
+        self.assertIsInstance(w, CudaCoalescedInt4Tensor)
 
     def test_inference_produces_valid_output(self):
         out = self._forward()
@@ -243,14 +245,19 @@ class TestGgufCudaPipeline(unittest.TestCase):
         return load_gguf_model(path, backend="cuda", config=GGUF_CONFIG)
 
     def test_load_converts_weights(self):
-        """GGUF -> CUDA: Q4_K -> Int4Tensor, Q6_K -> IntxUnpacked, embedding bf16."""
+        """GGUF -> CUDA: Q4_K -> CudaCoalescedInt4Tensor, Q6_K -> IntxUnpacked,
+        embedding bf16."""
+        from executorch.backends.cuda.coalesced_int4_tensor import (
+            CudaCoalescedInt4Tensor,
+        )
         from torchao.quantization import IntxUnpackedToInt8Tensor
-        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
         with tempfile.TemporaryDirectory() as tmp:
             model, _ = self._load(tmp)
 
-        self.assertIsInstance(model.layers[0].self_attn.q_proj.weight.data, Int4Tensor)
+        self.assertIsInstance(
+            model.layers[0].self_attn.q_proj.weight.data, CudaCoalescedInt4Tensor
+        )
         self.assertIsInstance(
             model.layers[0].mlp.down_proj.weight.data, IntxUnpackedToInt8Tensor
         )

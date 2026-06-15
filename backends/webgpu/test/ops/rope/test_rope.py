@@ -22,9 +22,9 @@ decompositions and the position->freqs indexing are covered at decode too.
 import unittest
 from collections import namedtuple
 
-import torch
-
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+import torch
 from executorch.backends.vulkan import VulkanPartitioner
 from executorch.examples.models.llama.rope import apply_rotary_emb, RotaryEmbedding
 from executorch.exir import to_edge_transform_and_lower

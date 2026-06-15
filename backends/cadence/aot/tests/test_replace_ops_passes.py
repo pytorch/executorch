@@ -2129,6 +2129,42 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.view_copy.default), 1
         )
 
+    def test_no_replace_for_channel_last(self) -> None:
+        # NHWC im2row rearranges data from kp-major (NHWC natural order) to
+        # channel-major output layout — it is not a no-op view. The pass must
+        # not elide it to view_copy even when shape conditions would otherwise
+        # allow replacement (kernel == input spatial dims).
+        in_h, in_w = 13, 15
+        x = torch.randn(1, in_h, in_w, 3)  # NHWC
+        pad_value = torch.tensor(0, dtype=torch.int32)
+        channels_last = True
+        gm = single_op_builder(
+            placeholders=(x, pad_value),
+            op=exir_ops.edge.cadence.im2row.default,
+            args=(x, (in_h, in_w), (1, 1), (0, 0), (1, 1), pad_value, channels_last),
+        )
+        gm = ExportPass().call(gm).graph_module
+        self.assertEqual(count_node(gm, exir_ops.edge.cadence.im2row.default), 1)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.view_copy.default), 0)
+
+        gm_before = copy.deepcopy(gm)
+
+        p = ReplaceIm2RowWithViewPass()
+        result = p.call(gm)
+        self.assertFalse(result.modified)
+        gm_after_replacement = result.graph_module
+
+        inputs = [x, pad_value]
+        validate(gm_before, gm_after_replacement, inputs, "ReplaceIm2RowWithViewPass")
+
+        # No replacement: im2row remains, no new view_copy.
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.cadence.im2row.default), 1
+        )
+        self.assertEqual(
+            count_node(gm_after_replacement, exir_ops.edge.aten.view_copy.default), 0
+        )
+
 
 class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
     def create_conv1d_graphmodule(

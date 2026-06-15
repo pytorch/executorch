@@ -40,13 +40,11 @@ Tensor& hardswish_out(
     ScalarType inp_dtype,
     int64_t inp_quant_min,
     int64_t inp_quant_max,
-    optional<int64_t> inp_axis,
     const optional<Tensor>& out_scale,
     const optional<Tensor>& out_zero_point,
     ScalarType out_dtype,
     int64_t out_quant_min,
     int64_t out_quant_max,
-    optional<int64_t> out_axis,
     Tensor& out) {
   int64_t numel = inp.numel();
 
@@ -60,7 +58,7 @@ Tensor& hardswish_out(
     }
     inp_buf.resize(numel);
     QParams qp = extract_qparams(
-        inp_scale, inp_zero_point, inp_quant_min, inp_quant_max, inp_axis, inp);
+        inp_scale, inp_zero_point, inp_quant_min, inp_quant_max, inp);
     FUSED_QUANT_DTYPE_SWITCH(
         inp.scalar_type(),
         scalar_t,
@@ -74,7 +72,7 @@ Tensor& hardswish_out(
     hardswish_kernel(inp_float, result_float.data(), numel);
 
     QParams qp = extract_qparams(
-        out_scale, out_zero_point, out_quant_min, out_quant_max, out_axis, out);
+        out_scale, out_zero_point, out_quant_min, out_quant_max, out);
     FUSED_QUANT_DTYPE_SWITCH(
         out.scalar_type(),
         scalar_t,

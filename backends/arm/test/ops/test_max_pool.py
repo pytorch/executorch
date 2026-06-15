@@ -191,7 +191,7 @@ def test_max_pool2d_tosa_FP_fp8(test_data: torch.Tensor):
         aten_op,
         exir_op,
         tosa_extensions=[tosa_extension],
-        run_on_tosa_ref_model=False,  # torch.max_pool2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
     )
     pipeline.count_tosa_ops({"MAX_POOL2D": 1})
     pipeline.run()
@@ -352,7 +352,7 @@ def test_max_pool2d_tosa_FP_fp8_dilation(test_data):
         aten_op,
         exir_op,
         tosa_extensions=[tosa_extension],
-        run_on_tosa_ref_model=False,  # torch.max_pool2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
     )
     pipeline.count_tosa_ops({"MAX_POOL2D": 1})
     pipeline.run()
