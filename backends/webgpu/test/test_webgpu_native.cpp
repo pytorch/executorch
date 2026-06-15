@@ -812,18 +812,23 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
     }
     const auto& outs = result.get();
 
-    // The op returns [k_cache, v_cache, attn_output]: attn has a unique numel;
-    // the two caches share numel cn, so identify them by content at step 0.
+    // Select by shape: attn is [1,S,Hq,D]; caches are [1,Cmax,Hkv,D] (a cache
+    // can share numel). Identify k vs v among the two caches by content below.
     int attn_idx = -1;
     std::vector<int> cache_idxs;
     for (size_t i = 0; i < outs.size(); i++) {
       if (!outs[i].isTensor()) {
         continue;
       }
-      const int ne = static_cast<int>(outs[i].toTensor().numel());
-      if (ne == qn) {
+      const auto& out_t = outs[i].toTensor();
+      if (out_t.dim() == 4 && static_cast<int>(out_t.size(1)) == s &&
+          static_cast<int>(out_t.size(2)) == seq.hq &&
+          static_cast<int>(out_t.size(3)) == seq.d) {
         attn_idx = static_cast<int>(i);
-      } else if (ne == cn) {
+      } else if (
+          out_t.dim() == 4 && static_cast<int>(out_t.size(1)) == seq.cmax &&
+          static_cast<int>(out_t.size(2)) == seq.hkv &&
+          static_cast<int>(out_t.size(3)) == seq.d) {
         cache_idxs.push_back(static_cast<int>(i));
       }
     }
@@ -983,16 +988,23 @@ static bool test_sdpa_dynamic_decode(
     }
     const auto& outs = result.get();
 
+    // Select by shape: attn is [1,1,Hq,D]; caches are [1,Cmax,Hkv,D] (a cache
+    // can share numel). Identify k vs v among the two caches by content below.
     int attn_idx = -1;
     std::vector<int> cache_idxs;
     for (size_t i = 0; i < outs.size(); i++) {
       if (!outs[i].isTensor()) {
         continue;
       }
-      const int ne = static_cast<int>(outs[i].toTensor().numel());
-      if (ne == qn) {
+      const auto& out_t = outs[i].toTensor();
+      if (out_t.dim() == 4 && static_cast<int>(out_t.size(1)) == 1 &&
+          static_cast<int>(out_t.size(2)) == seq.hq &&
+          static_cast<int>(out_t.size(3)) == seq.d) {
         attn_idx = static_cast<int>(i);
-      } else if (ne == cn) {
+      } else if (
+          out_t.dim() == 4 && static_cast<int>(out_t.size(1)) == seq.cmax &&
+          static_cast<int>(out_t.size(2)) == seq.hkv &&
+          static_cast<int>(out_t.size(3)) == seq.d) {
         cache_idxs.push_back(static_cast<int>(i));
       }
     }
@@ -1166,16 +1178,27 @@ static bool test_sdpa_incache_decode(
       return false;
     }
     const auto& outs = result.get();
+    // Select the attention output [1,1,Hq,D] by shape, not numel.
     int attn_idx = -1;
     for (size_t i = 0; i < outs.size(); i++) {
-      if (outs[i].isTensor() &&
-          static_cast<int>(outs[i].toTensor().numel()) == qn) {
+      if (!outs[i].isTensor()) {
+        continue;
+      }
+      const auto& out_t = outs[i].toTensor();
+      if (out_t.dim() == 4 && static_cast<int>(out_t.size(1)) == 1 &&
+          static_cast<int>(out_t.size(2)) == seq.hq &&
+          static_cast<int>(out_t.size(3)) == seq.d) {
         attn_idx = static_cast<int>(i);
         break;
       }
     }
     if (attn_idx < 0) {
-      printf("FAIL: %s step%d: no attn output (numel %d)\n", seq.name, t, qn);
+      printf(
+          "FAIL: %s step%d: no attn output [1,1,%d,%d]\n",
+          seq.name,
+          t,
+          seq.hq,
+          seq.d);
       return false;
     }
 
