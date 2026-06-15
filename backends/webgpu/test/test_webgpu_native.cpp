@@ -407,7 +407,16 @@ static float q4gsw_ramp(int i) {
   return static_cast<float>((i % 17) - 8) / 16.0f;
 }
 
-// Per-element dual tolerance (abs OR rel), parameterized like sdpa_within_tol.
+// Fwd decl of the per-element abs-OR-rel tolerance helper (defined below).
+static bool quant_within_tol(
+    const float* out,
+    const float* golden,
+    int n,
+    float atol,
+    float rtol,
+    float* ma,
+    float* mr);
+
 static std::vector<int32_t> load_indices(
     const std::string& path,
     size_t numel) {
@@ -428,13 +437,15 @@ static std::vector<int32_t> load_indices(
 static bool test_embedding_q4gsw(
     const std::string& model_path,
     const std::string& indices_path,
-    const std::string& golden_path) {
+    const std::string& golden_path,
+    int num_indices,
+    int embed,
+    const char* label) {
   // q4gsw embedding-gather vs torch golden; shapes per test_embedding_q4gsw.py.
-  constexpr int num_indices = 4;
-  constexpr int embed = 64;
-  constexpr int out_numel = num_indices * embed;
+  const int out_numel = num_indices * embed;
   printf(
-      "\n--- Test: embedding_q4gsw (indices=%d, embed=%d) ---\n",
+      "\n--- Test: embedding_q4gsw (%s: indices=%d, embed=%d) ---\n",
+      label,
       num_indices,
       embed);
 
@@ -481,19 +492,21 @@ static bool test_embedding_q4gsw(
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_abs_err = 0.0f, max_rel_err = 0.0f;
-  for (int i = 0; i < out_numel; i++) {
-    const float ae = std::abs(out_data[i] - golden[i]);
-    max_abs_err = std::max(max_abs_err, ae);
-    max_rel_err =
-        std::max(max_rel_err, ae / std::max(std::abs(golden[i]), 1e-6f));
-  }
+  const bool pass = quant_within_tol(
+      out_data,
+      golden.data(),
+      out_numel,
+      1e-3f,
+      1e-3f,
+      &max_abs_err,
+      &max_rel_err);
   printf(
       "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
       max_abs_err,
       max_rel_err,
       out_numel);
-  if (max_abs_err > 1e-3f || max_rel_err > 1e-3f) {
-    printf("FAIL: embedding_q4gsw exceeds tolerance 1e-3\n");
+  if (!pass) {
+    printf("FAIL: embedding_q4gsw exceeds tolerance 1e-3 (abs AND rel)\n");
     return false;
   }
   printf("PASS: embedding_q4gsw test\n");
@@ -527,14 +540,19 @@ static bool quant_within_tol(
 static bool test_rope(
     const std::string& model_path,
     const std::string& xq_golden_path,
-    const std::string& xk_golden_path) {
+    const std::string& xk_golden_path,
+    int S,
+    int NH,
+    int NKV,
+    int HD,
+    const char* label) {
   // Llama interleaved RoPE vs torch goldens; shapes/ramps per test_rope.py.
-  constexpr int S = 5, NH = 8, NKV = 2, HD = 64;
-  constexpr int xq_numel = S * NH * HD;
-  constexpr int xk_numel = S * NKV * HD;
-  constexpr int freqs_numel = S * (HD / 2);
+  const int xq_numel = S * NH * HD;
+  const int xk_numel = S * NKV * HD;
+  const int freqs_numel = S * (HD / 2);
   printf(
-      "\n--- Test: apply_rotary_emb (S=%d,NH=%d,NKV=%d,HD=%d) ---\n",
+      "\n--- Test: apply_rotary_emb (%s: S=%d,NH=%d,NKV=%d,HD=%d) ---\n",
+      label,
       S,
       NH,
       NKV,
@@ -578,9 +596,7 @@ static bool test_rope(
   }
   const auto& outputs = result.get();
 
-  // Outputs are returned in graph output order [xq_out, xk_out] (positional,
-  // matching the handler's ValueList[0]/[1]); verifying by shape catches a swap
-  // or wrong-size output and works for MHA (NH == NKV) too, unlike by-numel.
+  // Outputs in graph order [xq_out, xk_out]; select by shape (handles GQA).
   if (outputs.size() < 2 || !outputs[0].isTensor() || !outputs[1].isTensor()) {
     printf("FAIL: expected 2 tensor outputs, got %zu\n", outputs.size());
     return false;
@@ -609,24 +625,22 @@ static bool test_rope(
     return false;
   }
 
-  float max_abs_err = 0.0f, max_rel_err = 0.0f;
-  auto accum = [&](const float* out, const std::vector<float>& g, int n) {
-    for (int i = 0; i < n; i++) {
-      const float ae = std::abs(out[i] - g[i]);
-      max_abs_err = std::max(max_abs_err, ae);
-      max_rel_err = std::max(max_rel_err, ae / std::max(std::abs(g[i]), 1e-6f));
-    }
-  };
-  accum(xq_out, gq, xq_numel);
-  accum(xk_out, gk, xk_numel);
+  // Per-element abs-OR-rel on xq and xk (shared helper, defined above).
+  float maq = 0.0f, mrq = 0.0f, mak = 0.0f, mrk = 0.0f;
+  const bool pass_q =
+      quant_within_tol(xq_out, gq.data(), xq_numel, 1e-3f, 1e-3f, &maq, &mrq);
+  const bool pass_k =
+      quant_within_tol(xk_out, gk.data(), xk_numel, 1e-3f, 1e-3f, &mak, &mrk);
+  const float max_abs_err = std::max(maq, mak);
+  const float max_rel_err = std::max(mrq, mrk);
 
   printf(
       "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
       max_abs_err,
       max_rel_err,
       xq_numel + xk_numel);
-  if (max_abs_err > 1e-3f || max_rel_err > 1e-3f) {
-    printf("FAIL: apply_rotary_emb exceeds tolerance 1e-3\n");
+  if (!(pass_q && pass_k)) {
+    printf("FAIL: apply_rotary_emb exceeds tolerance 1e-3 (abs AND rel)\n");
     return false;
   }
   printf("PASS: apply_rotary_emb test\n");
@@ -1659,27 +1673,61 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::string emb_model_path, emb_indices_path, emb_golden_path;
-  if (const char* env = std::getenv("WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL")) {
-    emb_model_path = env;
-  }
-  if (const char* env = std::getenv("WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES")) {
-    emb_indices_path = env;
-  }
-  if (const char* env = std::getenv("WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN")) {
-    emb_golden_path = env;
-  }
+  // embedding_q4gsw on-GPU configs: small + llama1b (env-gated,
+  // run-if-present).
+  struct EmbConfig {
+    const char* name;
+    const char* model_env;
+    const char* indices_env;
+    const char* golden_env;
+    int num_indices;
+    int embed;
+  };
+  const EmbConfig emb_configs[] = {
+      {"small",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN",
+       4,
+       64},
+      {"llama1b",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_MODEL",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_INDICES",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_GOLDEN",
+       4,
+       2048},
+  };
 
-  std::string rope_model_path, rope_xq_golden_path, rope_xk_golden_path;
-  if (const char* env = std::getenv("WEBGPU_TEST_ROPE_MODEL")) {
-    rope_model_path = env;
-  }
-  if (const char* env = std::getenv("WEBGPU_TEST_ROPE_XQ_GOLDEN")) {
-    rope_xq_golden_path = env;
-  }
-  if (const char* env = std::getenv("WEBGPU_TEST_ROPE_XK_GOLDEN")) {
-    rope_xk_golden_path = env;
-  }
+  // apply_rotary_emb on-GPU configs: multi + decode (env-gated,
+  // run-if-present).
+  struct RopeConfig {
+    const char* name;
+    const char* model_env;
+    const char* xq_env;
+    const char* xk_env;
+    int S;
+    int NH;
+    int NKV;
+    int HD;
+  };
+  const RopeConfig rope_configs[] = {
+      {"multi",
+       "WEBGPU_TEST_ROPE_MODEL",
+       "WEBGPU_TEST_ROPE_XQ_GOLDEN",
+       "WEBGPU_TEST_ROPE_XK_GOLDEN",
+       5,
+       8,
+       2,
+       64},
+      {"decode",
+       "WEBGPU_TEST_ROPE_DECODE_MODEL",
+       "WEBGPU_TEST_ROPE_DECODE_XQ_GOLDEN",
+       "WEBGPU_TEST_ROPE_DECODE_XK_GOLDEN",
+       1,
+       32,
+       8,
+       64},
+  };
 
   // SDPA sweep: configs self-discover their sdpa_<name>.pte/.golden.bin under
   // this directory (default "" = the embedded-file root / cwd). Set
@@ -1734,17 +1782,22 @@ int main(int argc, char** argv) {
     ok = false;
   }
 
-  if (!emb_model_path.empty() && !emb_indices_path.empty() &&
-      !emb_golden_path.empty()) {
-    ok = test_embedding_q4gsw(
-             emb_model_path, emb_indices_path, emb_golden_path) &&
-        ok;
+  for (const auto& c : emb_configs) {
+    const char* m = std::getenv(c.model_env);
+    const char* ip = std::getenv(c.indices_env);
+    const char* g = std::getenv(c.golden_env);
+    if (m && ip && g && *m && *ip && *g) {
+      ok = test_embedding_q4gsw(m, ip, g, c.num_indices, c.embed, c.name) && ok;
+    }
   }
 
-  if (!rope_model_path.empty() && !rope_xq_golden_path.empty() &&
-      !rope_xk_golden_path.empty()) {
-    ok = test_rope(rope_model_path, rope_xq_golden_path, rope_xk_golden_path) &&
-        ok;
+  for (const auto& c : rope_configs) {
+    const char* m = std::getenv(c.model_env);
+    const char* xq = std::getenv(c.xq_env);
+    const char* xk = std::getenv(c.xk_env);
+    if (m && xq && xk && *m && *xq && *xk) {
+      ok = test_rope(m, xq, xk, c.S, c.NH, c.NKV, c.HD, c.name) && ok;
+    }
   }
 
   bool sdpa_ran = false;

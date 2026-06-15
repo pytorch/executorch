@@ -319,6 +319,10 @@ void WebGPUGraph::build(
                   "WebGPU: constant_id set but the constants table is missing "
                   "or the id is out of range");
             }
+          } else if (constant_id >= 0 && tensor.nbytes > 0) {
+            // constant_id set but constant_data null -> fail loud.
+            throw std::runtime_error(
+                "WebGPU: constant_id set but constant_data is null");
           }
         } else {
           // Shared buffer: track required size, defer allocation to pass 2

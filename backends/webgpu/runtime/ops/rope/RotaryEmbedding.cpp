@@ -57,6 +57,7 @@ void add_rope_dispatch(
     uint32_t head_dim,
     uint32_t workgroup_count) {
   const uint32_t half_dim = head_dim / 2u;
+  // out.dims == in.dims (asserted in impl), so this matches the caller's wgc.
   const uint32_t num_pairs = static_cast<uint32_t>(numel_of(out.dims) / 2u);
 
   RotaryParams params = {};
@@ -176,6 +177,11 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error(
         "WebGPU apply_rotary_emb: dtype/byte-size mismatch (all fp32) or "
         "freqs shape != [seq, head_dim/2]");
+  }
+
+  if (xq_numel / 2u > UINT32_MAX || xk_numel / 2u > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb: pair count exceeds uint32 dispatch range");
   }
 
   const uint32_t wg_size =

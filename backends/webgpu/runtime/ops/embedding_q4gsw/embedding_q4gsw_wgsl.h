@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from embedding_q4gsw.wgsl - DO NOT EDIT.
-// wgsl-sha256: b86f112c08bd73bdcbfed41a27fb63465ec36d1a50d0cdf2612684e30fceeac9
+// wgsl-sha256: 1fec9ed315696a88bb7db6c16454fc80e08ff73b0e39720b54515fda4ee1ef7c
 inline constexpr const char* kEmbeddingQ4gswWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_indices: array<i32>;
@@ -44,6 +44,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let indices_idx = block / params.blocks_per_row;
   let base_dim = (block % params.blocks_per_row) * 32u;
 
+  // token assumed in-range (mirrors Vulkan; no vocab clamp).
   let token = u32(t_indices[indices_idx]);
   let row_byte_base = token * params.bytes_per_row;
   let out_base = indices_idx * params.embed_dim + base_dim;
