@@ -57,6 +57,7 @@ void add_rope_dispatch(
     uint32_t head_dim,
     uint32_t workgroup_count) {
   const uint32_t half_dim = head_dim / 2u;
+  // out.dims == in.dims (asserted in impl), so this matches the caller's wgc.
   const uint32_t num_pairs = static_cast<uint32_t>(numel_of(out.dims) / 2u);
 
   RotaryParams params = {};
