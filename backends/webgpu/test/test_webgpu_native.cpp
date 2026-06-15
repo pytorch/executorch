@@ -662,20 +662,43 @@ static bool test_sdpa_config(
   }
 
   const auto& outputs = result.get();
-  // The mutating op returns [k_cache, v_cache, attn_output] in a fixed order,
-  // so the attention output is always the last output. Selecting it by element
-  // count is unsafe: a mutated cache (numel Cmax*Hkv*D) can share the attention
-  // output's numel (S*Hq*D) whenever S*Hq == Cmax*Hkv (e.g. llama1b_prefill).
-  if (outputs.empty() || !outputs.back().isTensor()) {
+  // sdpa_with_kv_cache mutates k_cache/v_cache in place and returns the
+  // attention output. ExecuTorch emits program outputs as
+  // [*mutated_inputs, *user_outputs], so forward() returns exactly
+  // [k_cache, v_cache, attn_output]: three tensors, attention output last.
+  // Selecting by element count is unsafe: when S*Hq*D == Cmax*Hkv*D
+  // (e.g. llama1b_prefill, all 262144) the attention output and both caches
+  // share numel. Select by the documented position instead, and assert the
+  // output count and per-slot numels so a future change in output structure
+  // still fails loudly.
+  if (outputs.size() != 3) {
     printf(
-        "FAIL: missing attention output among %zu outputs\n", outputs.size());
+        "FAIL: expected 3 outputs [k_cache, v_cache, attn_output], got %zu\n",
+        outputs.size());
     return false;
   }
-  const auto& out_tensor = outputs.back().toTensor();
+  for (size_t i = 0; i < outputs.size(); i++) {
+    if (!outputs[i].isTensor()) {
+      printf("FAIL: output %zu is not a tensor\n", i);
+      return false;
+    }
+  }
+  // Outputs 0 and 1 are the mutated k/v caches (numel cn); output 2 is attn.
+  for (int i = 0; i < 2; i++) {
+    if (outputs[i].toTensor().numel() != cn) {
+      printf(
+          "FAIL: output %d (expected k/v cache) numel %zu != Cmax*Hkv*D %d\n",
+          i,
+          (size_t)outputs[i].toTensor().numel(),
+          cn);
+      return false;
+    }
+  }
+  const auto& out_tensor = outputs[2].toTensor();
   if (out_tensor.numel() != on) {
     printf(
-        "FAIL: attention output numel %d != expected %d\n",
-        (int)out_tensor.numel(),
+        "FAIL: attention output numel %zu != S*Hq*D %d\n",
+        (size_t)out_tensor.numel(),
         on);
     return false;
   }
