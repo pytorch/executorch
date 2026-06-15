@@ -15,7 +15,7 @@ namespace executorch::backends::webgpu {
 
 namespace {
 
-// Materialize a constant to its GPU buffer: a dtype-agnostic byte copy.
+// Materialize a constant into the prepack-output buffer via one CPU->GPU write.
 void prepack_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // et_vk.prepack.default args: [src (constant), out].
   if (args.size() != 2) {
@@ -34,11 +34,13 @@ void prepack_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (src.nbytes != out.nbytes) {
     throw std::runtime_error("WebGPU prepack: src/out byte-size mismatch");
   }
-  if (src.buffer == nullptr || out.buffer == nullptr) {
-    throw std::runtime_error("WebGPU prepack: null buffer binding");
+  if (out.buffer == nullptr) {
+    throw std::runtime_error("WebGPU prepack: null out buffer binding");
   }
 
-  graph.add_prepack_copy(src.buffer, out.buffer, out.nbytes);
+  // Sole materialization: write the .pte bytes once, straight into the
+  // consumer's buffer (no eager src buffer, no buffer->buffer copy).
+  graph.materialize_constant(args.at(0), out.buffer);
 }
 
 } // namespace

@@ -122,16 +122,18 @@ class TestEmbeddingQ4gsw(unittest.TestCase):
                 weight, scales, group_size = _quant_params(qm)
                 vocab = weight.shape[0]
                 embed = weight.shape[1] * 2
-                deq = torch.empty((vocab, embed), dtype=torch.float32)
-                for row in range(vocab):
-                    for d in range(embed):
-                        byte = int(weight[row, d // 2])
-                        nib = (byte >> 4) if (d % 2 == 0) else (byte & 0xF)
-                        scale = float(scales[row, d // group_size])
-                        deq[row, d] = (nib - 8) * scale
+                # fp64 reference dequant, vectorized (no fp32 rounding in oracle).
+                w = weight.to(torch.int64)
+                nib = torch.empty((vocab, embed), dtype=torch.int64)
+                nib[:, 0::2] = (w >> 4) & 0xF  # even dim -> high nibble
+                nib[:, 1::2] = w & 0xF  # odd dim -> low nibble
+                scale_exp = scales.to(torch.float64).repeat_interleave(
+                    group_size, dim=1
+                )
+                deq = (nib - 8).to(torch.float64) * scale_exp
                 eager = torch.nn.functional.embedding(idx, deq)
                 golden = _golden(qm, idx)
-                torch.testing.assert_close(golden, eager, atol=1e-5, rtol=1e-5)
+                torch.testing.assert_close(golden.double(), eager, atol=1e-5, rtol=1e-5)
 
 
 def export_embedding_q4gsw_model(
