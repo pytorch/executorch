@@ -783,6 +783,9 @@ class _ExportPassBase(PassBase):
         new_graph_module = torch.fx.GraphModule(self.tracer.root, self.tracer.graph)
         self._validate_symbolic_input_snapshots(graph_module, new_graph_module)
 
+        # Preserve GraphModule-level metadata from the input module.
+        new_graph_module.meta = graph_module.meta.copy()
+
         self.tracer = prev_tracer
         self.interpreter = prev_interpreter
         return PassResult(

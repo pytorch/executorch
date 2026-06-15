@@ -544,6 +544,32 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.op, old_node.op)
             self.assertEqual(new_node.target, old_node.target)
 
+    def test_export_pass_preserves_graph_module_meta(self) -> None:
+        """ExportPass should preserve GraphModule-level meta through re-tracing."""
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        class NullPass(ExportPass):
+            pass
+
+        prog = to_edge(
+            export(Foo(), (torch.ones(3, 2),), strict=True),
+        )
+        # Set custom metadata on the graph module before the pass.
+        prog.exported_program().graph_module.meta["custom"] = {
+            "test_key": "test_value",
+            "nested": {"a": 1},
+        }
+
+        new_prog = prog.transform([NullPass()])
+        new_meta = new_prog.exported_program().graph_module.meta
+
+        self.assertIn("custom", new_meta)
+        self.assertEqual(new_meta["custom"]["test_key"], "test_value")
+        self.assertEqual(new_meta["custom"]["nested"]["a"], 1)
+
     def test_export_scalar_to_tensor_pass(self) -> None:
         # Build a graph with a scalar argument where schema expects tensor
         graph = torch.fx.Graph()

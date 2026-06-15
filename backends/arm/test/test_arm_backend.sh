@@ -273,6 +273,15 @@ test_run_vkml() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_pytest_vgf_smoke() {
+    echo "${TEST_SUITE_NAME}: Run VGF AOT smoke test"
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        backends/arm/test/misc/test_vgf_smoke.py
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 # --------------------------------------
 # -------- Out-of-the-box tests --------
 # --------------------------------------
@@ -379,11 +388,6 @@ test_smaller_stories_llama_vkml() {
     source backends/arm/test/setup_testing_vkml.sh
 
     _test_smaller_stories_llama vgf
-}
-
-test_smaller_stories_llama() {
-    test_smaller_stories_llama_tosa
-    test_smaller_stories_llama_vkml
 }
 
 test_memory_allocation() {

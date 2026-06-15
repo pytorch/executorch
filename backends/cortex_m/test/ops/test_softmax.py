@@ -69,8 +69,10 @@ xfail_cases_impl: dict[str, xfail_type] = {
 
 
 @parametrize("test_case", test_cases, xfails=xfail_cases_dialect)
-def test_dialect_softmax(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_softmax(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -79,6 +81,8 @@ def test_dialect_softmax(test_case):
 
 
 @parametrize("test_case", test_cases, xfails=xfail_cases_impl)
-def test_implementation_softmax(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_softmax(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=2)

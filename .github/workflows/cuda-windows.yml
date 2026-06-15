@@ -16,6 +16,7 @@ on:
       - .github/workflows/cuda-windows.yml
       - backends/cuda/**
       - backends/aoti/**
+      - extension/cuda/**
   workflow_dispatch:
 
 concurrency:
@@ -49,6 +50,7 @@ jobs:
       (
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
@@ -150,6 +152,7 @@ jobs:
       (
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
