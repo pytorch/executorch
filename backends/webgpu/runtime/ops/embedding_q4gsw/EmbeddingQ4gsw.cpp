@@ -131,6 +131,10 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU embedding_q4gsw: dtype/byte-size mismatch "
         "(indices int32, weight uint8, scales/out fp32)");
   }
+  if (total_blocks > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU embedding_q4gsw: total_blocks exceeds uint32 dispatch range");
+  }
 
   // 1D dispatch: one thread per 32-dim block; validate before any alloc.
   const uint32_t wg_size =
@@ -141,7 +145,7 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   EmbeddingParams params = {};
   params.embed_dim = embed_dim;
   params.blocks_per_row = blocks_per_row;
-  params.num_indices = num_indices;
+  params.num_indices = num_indices; // std140 layout only; shader derives it
   params.group_size = static_cast<uint32_t>(group_size);
   params.groups_per_row = groups_per_row;
   params.bytes_per_row = bytes_per_row;

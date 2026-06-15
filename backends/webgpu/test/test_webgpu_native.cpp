@@ -407,7 +407,16 @@ static float q4gsw_ramp(int i) {
   return static_cast<float>((i % 17) - 8) / 16.0f;
 }
 
-// Per-element dual tolerance (abs OR rel), parameterized like sdpa_within_tol.
+// Fwd decl of the per-element abs-OR-rel tolerance helper (defined below).
+static bool quant_within_tol(
+    const float* out,
+    const float* golden,
+    int n,
+    float atol,
+    float rtol,
+    float* ma,
+    float* mr);
+
 static std::vector<int32_t> load_indices(
     const std::string& path,
     size_t numel) {
@@ -483,19 +492,21 @@ static bool test_embedding_q4gsw(
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_abs_err = 0.0f, max_rel_err = 0.0f;
-  for (int i = 0; i < out_numel; i++) {
-    const float ae = std::abs(out_data[i] - golden[i]);
-    max_abs_err = std::max(max_abs_err, ae);
-    max_rel_err =
-        std::max(max_rel_err, ae / std::max(std::abs(golden[i]), 1e-6f));
-  }
+  const bool pass = quant_within_tol(
+      out_data,
+      golden.data(),
+      out_numel,
+      1e-3f,
+      1e-3f,
+      &max_abs_err,
+      &max_rel_err);
   printf(
       "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
       max_abs_err,
       max_rel_err,
       out_numel);
-  if (max_abs_err > 1e-3f || max_rel_err > 1e-3f) {
-    printf("FAIL: embedding_q4gsw exceeds tolerance 1e-3\n");
+  if (!pass) {
+    printf("FAIL: embedding_q4gsw exceeds tolerance 1e-3 (abs AND rel)\n");
     return false;
   }
   printf("PASS: embedding_q4gsw test\n");
@@ -614,24 +625,22 @@ static bool test_rope(
     return false;
   }
 
-  float max_abs_err = 0.0f, max_rel_err = 0.0f;
-  auto accum = [&](const float* out, const std::vector<float>& g, int n) {
-    for (int i = 0; i < n; i++) {
-      const float ae = std::abs(out[i] - g[i]);
-      max_abs_err = std::max(max_abs_err, ae);
-      max_rel_err = std::max(max_rel_err, ae / std::max(std::abs(g[i]), 1e-6f));
-    }
-  };
-  accum(xq_out, gq, xq_numel);
-  accum(xk_out, gk, xk_numel);
+  // Per-element abs-OR-rel on xq and xk (shared helper, defined above).
+  float maq = 0.0f, mrq = 0.0f, mak = 0.0f, mrk = 0.0f;
+  const bool pass_q =
+      quant_within_tol(xq_out, gq.data(), xq_numel, 1e-3f, 1e-3f, &maq, &mrq);
+  const bool pass_k =
+      quant_within_tol(xk_out, gk.data(), xk_numel, 1e-3f, 1e-3f, &mak, &mrk);
+  const float max_abs_err = std::max(maq, mak);
+  const float max_rel_err = std::max(mrq, mrk);
 
   printf(
       "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
       max_abs_err,
       max_rel_err,
       xq_numel + xk_numel);
-  if (max_abs_err > 1e-3f || max_rel_err > 1e-3f) {
-    printf("FAIL: apply_rotary_emb exceeds tolerance 1e-3\n");
+  if (!(pass_q && pass_k)) {
+    printf("FAIL: apply_rotary_emb exceeds tolerance 1e-3 (abs AND rel)\n");
     return false;
   }
   printf("PASS: apply_rotary_emb test\n");

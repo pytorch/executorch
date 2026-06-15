@@ -75,13 +75,13 @@ $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import export_embedding_q4gsw_model
 export_embedding_q4gsw_model('${EMBEDDING_MODEL}', '${EMBEDDING_GOLDEN}', '${EMBEDDING_INDICES}')
 export_embedding_q4gsw_model('${EMBEDDING_LLAMA1B_MODEL}', '${EMBEDDING_LLAMA1B_GOLDEN}', '${EMBEDDING_LLAMA1B_INDICES}', 'llama1b')
-" || echo "WARN: embedding_q4gsw export failed; webgpu_native_test embedding cases self-skip"
+" || echo "WARN: embedding_q4gsw export failed; embedding configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rope.test_rope import export_rope_model
 export_rope_model('${ROPE_MODEL}', '${ROPE_XQ_GOLDEN}', '${ROPE_XK_GOLDEN}')
 export_rope_model('${ROPE_DECODE_MODEL}', '${ROPE_DECODE_XQ_GOLDEN}', '${ROPE_DECODE_XK_GOLDEN}', 'decode')
-" || echo "WARN: rope export failed; webgpu_native_test apply_rotary_emb case self-skips"
+" || echo "WARN: rope export failed; apply_rotary_emb configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases

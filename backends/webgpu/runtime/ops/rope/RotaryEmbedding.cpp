@@ -179,6 +179,11 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "freqs shape != [seq, head_dim/2]");
   }
 
+  if (xq_numel / 2u > UINT32_MAX || xk_numel / 2u > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb: pair count exceeds uint32 dispatch range");
+  }
+
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kRotaryEmbeddingWorkgroupSizeX);
   // Validate both dispatches before any GPU-object alloc (no leak on throw).
