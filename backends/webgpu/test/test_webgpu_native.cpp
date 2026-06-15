@@ -817,8 +817,6 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
     }
     const auto& outs = result.get();
 
-    // The op returns [k_cache, v_cache, attn_output]: attn has a unique numel;
-    // the two caches share numel cn, so identify them by content at step 0.
     // Outputs are [k_cache, v_cache, attn_output]: ExecuTorch emits
     // [*mutated_inputs, *user_outputs], so the two mutated caches come first
     // (signature order k, v) and the attention output last. Select by position;
@@ -844,6 +842,21 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
           (size_t)outs[attn_idx].toTensor().numel(),
           qn);
       return false;
+    }
+    // Caches must be full-size (numel cn): step-0 identification and cross-step
+    // threading read cn/kvn elements from them, so a short tensor would be an
+    // out-of-bounds read rather than a clean failure.
+    for (int ci : cache_idxs) {
+      if (static_cast<int>(outs[ci].toTensor().numel()) != cn) {
+        printf(
+            "FAIL: %s step%zu: cache output %d numel %zu != Cmax*Hkv*D %d\n",
+            seq.name,
+            t,
+            ci,
+            (size_t)outs[ci].toTensor().numel(),
+            cn);
+        return false;
+      }
     }
 
     if (t == 0) {
@@ -1022,6 +1035,21 @@ static bool test_sdpa_dynamic_decode(
           (size_t)outs[attn_idx].toTensor().numel(),
           qn);
       return false;
+    }
+    // Caches must be full-size (numel cn): step-0 identification and cross-step
+    // threading read cn/kvn elements from them, so a short tensor would be an
+    // out-of-bounds read rather than a clean failure.
+    for (int ci : cache_idxs) {
+      if (static_cast<int>(outs[ci].toTensor().numel()) != cn) {
+        printf(
+            "FAIL: %s step%d: cache output %d numel %zu != Cmax*Hkv*D %d\n",
+            seq.name,
+            t,
+            ci,
+            (size_t)outs[ci].toTensor().numel(),
+            cn);
+        return false;
+      }
     }
     if (t == 0) {
       const float* c0 = outs[cache_idxs[0]].toTensor().const_data_ptr<float>();
