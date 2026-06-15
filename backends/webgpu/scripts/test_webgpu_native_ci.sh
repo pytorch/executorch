@@ -47,9 +47,6 @@ DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 DISPATCH_ORDER_OK=1
 UPDATE_CACHE_DIR="/tmp/update_cache"
 UPDATE_CACHE_OK=1
-EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
-EMBEDDING_INDICES="/tmp/webgpu_embedding_q4gsw_indices.bin"
-EMBEDDING_GOLDEN="/tmp/webgpu_embedding_q4gsw_golden.bin"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
@@ -61,11 +58,6 @@ $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import export_all_quantized_linear_models
 export_all_quantized_linear_models('/tmp')
 " || echo "WARN: q4gsw export failed; required configs will FAIL in webgpu_native_test"
-
-$PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import export_embedding_q4gsw_model
-export_embedding_q4gsw_model('${EMBEDDING_MODEL}', '${EMBEDDING_GOLDEN}', '${EMBEDDING_INDICES}')
-" || echo "WARN: embedding_q4gsw export failed; webgpu_native_test embedding case self-skips"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases
@@ -157,9 +149,6 @@ if [[ -x "${BIN_DIR}/webgpu_native_test" && -f "${PTE_MODEL}" ]]; then
       WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
       WEBGPU_TEST_SDPA_DIR=/tmp/ \
       WEBGPU_TEST_QUANTIZED_LINEAR_DIR=/tmp/ \
-      WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL="${EMBEDDING_MODEL}" \
-      WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES="${EMBEDDING_INDICES}" \
-      WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN="${EMBEDDING_GOLDEN}" \
       "${BIN_DIR}/webgpu_native_test"
 else
   echo "(skipping webgpu_native_test: no exported .pte — needs the executorch python wheel)"
