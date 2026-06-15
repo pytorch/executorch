@@ -662,32 +662,23 @@ static bool test_sdpa_config(
   }
 
   const auto& outputs = result.get();
-  // The mutating op returns [k_cache, v_cache, attn_output]; select the
-  // attention output (numel == S*Hq*D), not a mutated cache (numel Cmax*Hkv*D).
-  // Count matches and fail if ambiguous: a cache could share the same numel.
-  int attn_idx = -1;
-  int attn_matches = 0;
-  for (size_t i = 0; i < outputs.size(); i++) {
-    if (outputs[i].isTensor() && outputs[i].toTensor().numel() == on) {
-      attn_idx = static_cast<int>(i);
-      attn_matches++;
-    }
-  }
-  if (attn_idx < 0) {
+  // The mutating op returns [k_cache, v_cache, attn_output] in a fixed order,
+  // so the attention output is always the last output. Selecting it by element
+  // count is unsafe: a mutated cache (numel Cmax*Hkv*D) can share the attention
+  // output's numel (S*Hq*D) whenever S*Hq == Cmax*Hkv (e.g. llama1b_prefill).
+  if (outputs.empty() || !outputs.back().isTensor()) {
     printf(
-        "FAIL: no attention output (numel %d) among %zu outputs\n",
-        on,
-        outputs.size());
+        "FAIL: missing attention output among %zu outputs\n", outputs.size());
     return false;
   }
-  if (attn_matches > 1) {
+  const auto& out_tensor = outputs.back().toTensor();
+  if (out_tensor.numel() != on) {
     printf(
-        "FAIL: ambiguous attention output: %d tensors match numel %d\n",
-        attn_matches,
+        "FAIL: attention output numel %d != expected %d\n",
+        (int)out_tensor.numel(),
         on);
     return false;
   }
-  const auto& out_tensor = outputs[attn_idx].toTensor();
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   std::vector<float> golden = load_golden(golden_path, on);
