@@ -4,8 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from executorch.backends.arm.quantizer import (
+    get_symmetric_quantization_config,
     get_uint8_io_quantization_config,
     TOSAQuantizer,
 )
@@ -24,6 +27,20 @@ class SimpleMLP(torch.nn.Module):
         return self.fc2(self.relu(self.fc1(x)))
 
 
+class CloneAtIoBoundary(torch.nn.Module):
+    """zero-arithmetic cluster whose only adjacent annotated neighbours are
+    uint8-annotated IO nodes (input placeholder + graph output).
+
+    With set_global(int8) + set_io(uint8), both the placeholder and the output
+    node carry uint8 qspecs that _skip_shared_qspec_from_io filters out, leaving
+    adjacent_qspecs empty. Before the IO-boundary fallback fix in
+    SharedQspecQuantizer, this caused the cluster to stay in float.
+    """
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.clone(x)
+
+
 def test_uint8_io_quantization_config_tosa_INT_applies_to_io():
     model = SimpleMLP().eval()
     test_data = (torch.rand(1, 4),)
@@ -40,3 +57,39 @@ def test_uint8_io_quantization_config_tosa_INT_applies_to_io():
         output_qspecs={io_config.output_activation: 1},
     )
     pipeline.run()
+
+
+def test_io_boundary_shared_cluster_is_quantized():
+    """Regression: a zero-arithmetic cluster adjacent only to uint8-annotated IO
+    nodes must be annotated with the global int8 qspec, not left in float.
+
+    _skip_shared_qspec_from_io filters the uint8 qspec from IO nodes, so when
+    the cluster's only neighbours are such nodes adjacent_qspecs ends up empty.
+    The fix in SharedQspecQuantizer detects the IO-boundary via
+    _is_quantized_io_boundary and falls back to global_config.get_input_act_qspec().
+    """
+    model = CloneAtIoBoundary().eval()
+    test_data = (torch.rand(1, 4),)
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+INT")
+
+    quantizer = TOSAQuantizer(compile_spec, use_composable_quantizer=True)
+    quantizer.set_global(get_symmetric_quantization_config())
+    quantizer.set_io(get_uint8_io_quantization_config())
+
+    exported = torch.export.export(model, test_data, strict=True)
+    prepared = prepare_pt2e(exported.module(), quantizer)
+
+    clone_nodes = [
+        n
+        for n in prepared.graph.nodes
+        if n.op == "call_function" and n.target == torch.ops.aten.clone.default
+    ]
+    assert len(clone_nodes) == 1, f"Expected 1 clone node, got {len(clone_nodes)}"
+    clone_node = clone_nodes[0]
+
+    assert Q_ANNOTATION_KEY in clone_node.meta, (
+        "clone node was not annotated — IO-boundary cluster stayed in float"
+    )
+    assert clone_node.meta[Q_ANNOTATION_KEY].output_qspec is not None, (
+        "clone node has no output_qspec — IO-boundary cluster stayed in float"
+    )

@@ -480,6 +480,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
         QuantizerReporterUser.__init__(self)
+        self.global_config: Optional[QuantizationConfig] = None
         if targets is None:
             self.targets = self.SHARED_QSPEC_OPS_DEFAULT
             self.support_config_path = (
@@ -551,10 +552,24 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             return
         adjacent_qspecs.append(input_qspec)
 
-    def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any]]:
+    def _is_quantized_io_boundary(self, node: Node) -> bool:
+        """Return True if node is a model input/output annotated by the quantizer.
+
+        Such a node sits on the quantized interface but its qspec is often
+        filtered out of shared-cluster propagation: a uint8 IO qspec is skipped
+        by _skip_shared_qspec_from_io, and an input-state placeholder may carry
+        an annotation with no output_qspec. Its presence still signals that the
+        cluster is on the quantized data path.
+        """
+        return node.op in ("placeholder", "output") and self._is_annotated(node)
+
+    def _get_shared_clique(
+        self, root_node: Node
+    ) -> tuple[set[Node], list[Any], bool]:
         shared_nodes = set()
         bfs_queue = [root_node]
         adjacent_qspecs: list[Any] = []
+        touches_quantized_io = False
 
         while bfs_queue:
             node = bfs_queue.pop(0)
@@ -563,12 +578,14 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             for input_node in node.all_input_nodes:
                 self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
                 self._append_output_qspec(input_node, adjacent_qspecs)
+                touches_quantized_io |= self._is_quantized_io_boundary(input_node)
 
             for output_node in node.users.keys():
                 self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
                 self._append_input_qspec(output_node, node, adjacent_qspecs)
+                touches_quantized_io |= self._is_quantized_io_boundary(output_node)
 
-        return shared_nodes, adjacent_qspecs
+        return shared_nodes, adjacent_qspecs, touches_quantized_io
 
     def _should_skip_while_shared_qspec(self, node: Node) -> bool:
         return node.target == torch.ops.higher_order.while_loop and bool(
@@ -623,7 +640,25 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             )
             return
 
-        shared_nodes, adjacent_qspecs = self._get_shared_clique(root_node)
+        shared_nodes, adjacent_qspecs, touches_quantized_io = self._get_shared_clique(
+            root_node
+        )
+
+        # If there is no neighbor qspec to propagate but the cluster sits on the
+        # quantized I/O boundary (e.g. a state-passthrough cat whose only neighbors
+        # are a uint8 model input skipped by _skip_shared_qspec_from_io and an
+        # input-state placeholder with no output_qspec), initiate quantization from
+        # the global config rather than leaving the cluster in float. Without this,
+        # such clusters fall off the integer delegate onto CPU.
+        if (
+            len(adjacent_qspecs) == 0
+            and touches_quantized_io
+            and self.global_config is not None
+        ):
+            global_input_qspec = self.global_config.get_input_act_qspec()
+            if global_input_qspec is not None:
+                adjacent_qspecs = [global_input_qspec]
+
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
