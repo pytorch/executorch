@@ -18,8 +18,8 @@ import unittest
 import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
-from executorch.backends.cuda.packed_int6_tensor import (
-    CudaPackedInt6Tensor,
+from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+    CudaDp4aPlanarInt6Tensor,
     pack_int6,
     unpack_int6,
 )
@@ -131,7 +131,7 @@ class TestPackLinearInt8(unittest.TestCase):
 
 class TestPackLinearInt6(unittest.TestCase):
     """pack_linear_for_cuda converts a native Q6_K ExportableGGUFTensor (the
-    gguf_loader output) into a CudaPackedInt6Tensor.
+    gguf_loader output) into a CudaDp4aPlanarInt6Tensor.
 
     The pack/unpack round-trip is lossless and dequantize() == q * scale (no
     CUDA required); the F.linear correctness check is CUDA-only. A genuine INT8
@@ -145,7 +145,7 @@ class TestPackLinearInt6(unittest.TestCase):
         q = torch.randint(-32, 32, (N, K), dtype=torch.int8)
         scale = (torch.rand(N, K // gs) * 0.1 + 0.01).to(torch.bfloat16)
         ql, qh = pack_int6(q)
-        t = CudaPackedInt6Tensor(ql, qh, scale, [1, gs], torch.Size([N, K]))
+        t = CudaDp4aPlanarInt6Tensor(ql, qh, scale, [1, gs], torch.Size([N, K]))
         return t, q, scale
 
     def _make_q6k_gguf(self, N, nb=1):
@@ -190,7 +190,7 @@ class TestPackLinearInt6(unittest.TestCase):
         with torch.device("meta"):
             module = nn.Linear(256, 32, bias=False)
         pack_linear_for_cuda(module, {"weight": gt})
-        self.assertIsInstance(module.weight.data, CudaPackedInt6Tensor)
+        self.assertIsInstance(module.weight.data, CudaDp4aPlanarInt6Tensor)
         self.assertEqual(module.weight.shape, torch.Size([32, 256]))
 
     def test_pack_linear_real_int8_passthrough(self):
@@ -221,7 +221,7 @@ class TestPackLinearInt6(unittest.TestCase):
         q, scale = intx.qdata, intx.scale
         module = nn.Linear(256, 256, bias=False)
         pack_linear_for_cuda(module, {"weight": gt})
-        self.assertIsInstance(module.weight.data, CudaPackedInt6Tensor)
+        self.assertIsInstance(module.weight.data, CudaDp4aPlanarInt6Tensor)
         module.cuda()
         x = torch.randn(1, 256, dtype=torch.bfloat16, device="cuda")
         w_ref = (

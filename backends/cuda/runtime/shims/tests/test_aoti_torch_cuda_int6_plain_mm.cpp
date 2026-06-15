@@ -26,10 +26,10 @@ namespace slim_c10 = executorch::backends::aoti::slim::c10;
 
 using Tensor = executorch::backends::aoti::slim::SlimTensor;
 
-// W6A8 dp4a matvec shim for packed-INT6 decode (CudaPackedInt6Tensor layout,
-// GGUF Q6_K). The 6-bit weight is split into two planes plus a per-group scale;
-// there is NO zero tensor (Q6_K is symmetric, the -32 offset is applied in the
-// kernel):
+// W6A8 dp4a matvec shim for packed-INT6 decode (CudaDp4aPlanarInt6Tensor
+// layout, GGUF Q6_K). The 6-bit weight is split into two planes plus a
+// per-group scale; there is NO zero tensor (Q6_K is symmetric, the -32 offset
+// is applied in the kernel):
 //   ql    : [N, K/2] uint8 — low-nibble plane, nibble-packed even/odd
 //   qh    : [N, K/4] uint8 — high-2-bit plane, 4 values/byte (per 32-weight
 //           chunk: hi_even_packed[4] then hi_odd_packed[4])

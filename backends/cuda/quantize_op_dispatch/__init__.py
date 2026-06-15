@@ -11,7 +11,7 @@ weight tensors so that torch.export traces through ExecuTorch's custom ops and
 dequant logic instead of torchao's defaults. It registers:
 
   * INT4 (``CudaCoalescedInt4Tensor``)  → ``executorch_cuda::int4_plain_mm``
-  * INT6 (``CudaPackedInt6Tensor``)     → ``executorch_cuda::int6_plain_mm``
+  * INT6 (``CudaDp4aPlanarInt6Tensor``) → ``executorch_cuda::int6_plain_mm``
   * INT8 (``IntxUnpackedToInt8Tensor``) → ``executorch_cuda::int8_plain_mm``
 
 See ``int4_dispatch``, ``int6_dispatch`` and ``int8_dispatch`` for the per-dtype

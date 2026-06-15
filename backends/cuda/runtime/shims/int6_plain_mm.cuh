@@ -8,7 +8,7 @@
 
 // W6A8 dp4a matvec for packed INT6 decode (M <= 4), used for GGUF Q6_K weights.
 //
-// Reads a genuine 6-bit packed weight (CudaPackedInt6Tensor format), split into
+// Reads a genuine 6-bit packed weight (CudaDp4aPlanarInt6Tensor format), split into
 // two planes:
 //   ql    : [N, K/2] uint8 — low-nibble plane, nibble-packed even/odd exactly
 //           like the INT4 path (ql[:,j] = lo[:,2j] | (lo[:,2j+1] << 4)).

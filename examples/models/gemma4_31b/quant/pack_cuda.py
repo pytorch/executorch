@@ -11,8 +11,9 @@ layouts read by the decode kernels:
 
   * ``Int4Tensor`` -> ``CudaCoalescedInt4Tensor`` (bakes the scale/zero transpose
     into the coalesced [N, n_groups] layout).
-  * Q6_K ``ExportableGGUFTensor`` -> ``CudaPackedInt6Tensor`` (the genuine 6-bit
-    ql/qh planes; the Q6_K block decode is reused from gguf.py, not duplicated).
+  * Q6_K ``ExportableGGUFTensor`` -> ``CudaDp4aPlanarInt6Tensor`` (the genuine 6-bit
+    ql/qh split bit-planes; the Q6_K block decode is reused from gguf.py, not
+    duplicated).
 
 A genuine INT8 ``IntxUnpackedToInt8Tensor`` is left unchanged for the int8 path
 (Q6_K no longer arrives as an int8 tensor, so the routing is unambiguous).
@@ -43,7 +44,9 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
     -> int8 passthrough.
     """
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
-    from executorch.backends.cuda.packed_int6_tensor import CudaPackedInt6Tensor
+    from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+        CudaDp4aPlanarInt6Tensor,
+    )
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
@@ -62,10 +65,10 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         w = CudaCoalescedInt4Tensor.from_int4_tensor(w)
     elif isinstance(w, ExportableGGUFTensor) and w.ggml_type == "q6_k":
         # GGUF Q6_K: repack the native ExportableGGUFTensor into the genuine 6-bit
-        # CudaPackedInt6Tensor (ql/qh planes, 0.75 B/elem) for the W6A8 dp4a decode
-        # kernel. from_exportable_gguf reuses the shared Q6_K decode (gguf.py) then
-        # bakes the bit-pack into the weight constant, once.
-        w = CudaPackedInt6Tensor.from_exportable_gguf(w)
+        # CudaDp4aPlanarInt6Tensor (ql/qh split bit-planes, 0.75 B/elem) for the
+        # W6A8 dp4a decode kernel. from_exportable_gguf reuses the shared Q6_K
+        # decode (gguf.py) then bakes the bit-pack into the weight constant, once.
+        w = CudaDp4aPlanarInt6Tensor.from_exportable_gguf(w)
     elif isinstance(w, IntxUnpackedToInt8Tensor):
         # Genuine INT8 weight: left unchanged for the int8 path. Q6_K never reaches
         # here (it arrives as an ExportableGGUFTensor), so this is unambiguous.

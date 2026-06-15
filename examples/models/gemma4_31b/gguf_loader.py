@@ -16,7 +16,7 @@ backend:
   by the MLX GGUF pattern (Q6_K custom kernels, Q4_K native affine ops) for both
   linear and embedding. ``embed_tokens`` and ``lm_head`` stay tied -- they share
   the one quantized tensor.
-* **CUDA**: Q4_K -> ``Int4Tensor``, Q6_K -> ``CudaPackedInt6Tensor`` (a genuine
+* **CUDA**: Q4_K -> ``Int4Tensor``, Q6_K -> ``CudaDp4aPlanarInt6Tensor`` (a genuine
   6-bit packed weight, lossless, symmetric); ``lm_head`` keeps the quantized
   tensor but the token embedding is dequantized to bf16 (the packed tensors can't
   gather), so they are untied.
@@ -93,8 +93,8 @@ def _convert_weight(model, model_key: str, gtensor, backend: str):
     if backend == "mlx":
         return gtensor
     # CUDA: Q4_K -> torchao Int4Tensor. Q6_K stays the raw ExportableGGUFTensor
-    # (like MLX) -- the CUDA packer repacks it into CudaPackedInt6Tensor via
-    # CudaPackedInt6Tensor.from_exportable_gguf, so the Q6_K block decode is
+    # (like MLX) -- the CUDA packer repacks it into CudaDp4aPlanarInt6Tensor via
+    # CudaDp4aPlanarInt6Tensor.from_exportable_gguf, so the Q6_K block decode is
     # owned by gguf.py and reused, not duplicated here.
     if gtensor.ggml_type == "q4_k":
         return gtensor.to_int4_tensor()

@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Tests for CudaPackedInt6Tensor F.linear dispatch via int6_dispatch.
+"""Tests for CudaDp4aPlanarInt6Tensor F.linear dispatch via int6_dispatch.
 
 These tests validate the eager / trace-time dispatch path — the same code that
 torch.export traces through when building the AOTI graph. They do NOT test the
@@ -13,7 +13,7 @@ torch.export traces through when building the AOTI graph. They do NOT test the
 test_aoti_torch_cuda_int6_plain_mm.cpp (C++ unit tests).
 
 The API contract: after importing int6_dispatch, F.linear / nn.Linear with a
-CudaPackedInt6Tensor weight produce numerically correct results, routed by
+CudaDp4aPlanarInt6Tensor weight produce numerically correct results, routed by
 batch size (decode M<=4 -> custom op, prefill M>4 -> inline dequant). Routing
 tests run without a GPU by recording calls to the decode custom op.
 
@@ -29,8 +29,8 @@ import executorch.backends.cuda.quantize_op_dispatch.int6_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from executorch.backends.cuda.packed_int6_tensor import (
-    CudaPackedInt6Tensor,
+from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+    CudaDp4aPlanarInt6Tensor,
     pack_int6,
     unpack_int6,
 )
@@ -45,7 +45,7 @@ def _require_cuda(tc: unittest.TestCase) -> None:
 
 
 def _make_int6_tensor(N, K, group_size=16):
-    """Build a CudaPackedInt6Tensor (symmetric Q6_K) and return (tensor, q, scale).
+    """Build a CudaDp4aPlanarInt6Tensor (symmetric Q6_K) and return (tensor, q, scale).
 
     ``q`` (int8 in [-32, 31]) and ``scale`` are the originals, so tests can
     measure against the exact dequant reference ``w = q * scale``.
@@ -53,7 +53,7 @@ def _make_int6_tensor(N, K, group_size=16):
     q = torch.randint(-32, 32, (N, K), dtype=torch.int8)
     scale = (torch.rand(N, K // group_size) * 0.1 + 0.01).to(torch.bfloat16)
     ql, qh = pack_int6(q)
-    t = CudaPackedInt6Tensor(ql, qh, scale, [1, group_size], torch.Size([N, K]))
+    t = CudaDp4aPlanarInt6Tensor(ql, qh, scale, [1, group_size], torch.Size([N, K]))
     return t, q, scale
 
 
@@ -164,7 +164,7 @@ class TestDispatchRouting(unittest.TestCase):
             dtype=torch.bfloat16,
             activation_quantization=None,
         )
-        t = CudaPackedInt6Tensor.from_intx_int8(intx)
+        t = CudaDp4aPlanarInt6Tensor.from_intx_int8(intx)
         x = torch.randn(1, K, dtype=torch.bfloat16)
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
@@ -189,7 +189,7 @@ class TestDispatchRouting(unittest.TestCase):
             activation_quantization=None,
         )
         with self.assertRaises(ValueError):
-            CudaPackedInt6Tensor.from_intx_int8(intx)
+            CudaDp4aPlanarInt6Tensor.from_intx_int8(intx)
 
     def test_from_exportable_gguf(self):
         """from_exportable_gguf reuses the gguf.py Q6_K decode then packs losslessly."""
@@ -210,8 +210,8 @@ class TestDispatchRouting(unittest.TestCase):
         raw = blk.reshape(N, nb * _Q6_K_BLOCK_BYTES)
         gt = ExportableGGUFTensor.from_raw(raw, "q6_k")
 
-        t = CudaPackedInt6Tensor.from_exportable_gguf(gt)
-        self.assertIsInstance(t, CudaPackedInt6Tensor)
+        t = CudaDp4aPlanarInt6Tensor.from_exportable_gguf(gt)
+        self.assertIsInstance(t, CudaDp4aPlanarInt6Tensor)
         self.assertEqual(tuple(t.shape), (N, nb * 256))
 
         # The packer must reuse the shared Q6_K int8 decode (no duplication) and
@@ -231,11 +231,11 @@ class TestDispatchRouting(unittest.TestCase):
         raw = torch.zeros(4, _Q4_K_BLOCK_BYTES, dtype=torch.uint8)
         gt = ExportableGGUFTensor.from_raw(raw, "q4_k")
         with self.assertRaises(ValueError):
-            CudaPackedInt6Tensor.from_exportable_gguf(gt)
+            CudaDp4aPlanarInt6Tensor.from_exportable_gguf(gt)
 
 
 class TestFLinearDispatchCuda(unittest.TestCase):
-    """F.linear with a CudaPackedInt6Tensor weight on CUDA (eager -> dequant)."""
+    """F.linear with a CudaDp4aPlanarInt6Tensor weight on CUDA (eager -> dequant)."""
 
     def setUp(self):
         _require_cuda(self)

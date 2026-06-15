@@ -4,12 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""CudaPackedInt6Tensor F.linear dispatch for CUDA — eager / export trace time.
+"""CudaDp4aPlanarInt6Tensor F.linear dispatch for CUDA — eager / export trace time.
 
-This module registers an F.linear dispatch on ``CudaPackedInt6Tensor`` (an
-ExecuTorch-internal subclass, see ``packed_int6_tensor.py``) so that
+This module registers an F.linear dispatch on ``CudaDp4aPlanarInt6Tensor`` (an
+ExecuTorch-internal subclass, see ``dp4a_planar_int6_tensor.py``) so that
 torch.export traces through our custom op and dequant logic. Routing is by
-*type*: only GGUF Q6_K weights (converted to ``CudaPackedInt6Tensor``) take the
+*type*: only GGUF Q6_K weights (converted to ``CudaDp4aPlanarInt6Tensor``) take the
 packed-int6 path; genuine INT8 weights stay on the int8 path. The code here runs
 during eager inference and AOTI export tracing — it does NOT run at .pte runtime.
 
@@ -36,8 +36,8 @@ override (along with the INT4 / INT8 ones)::
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.cuda.packed_int6_tensor import (
-    CudaPackedInt6Tensor,
+from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+    CudaDp4aPlanarInt6Tensor,
     unpack_int6,
 )
 from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
@@ -81,12 +81,12 @@ def _dequant_matmul_int6(x, ql, qh, scale, group_size):
 
 
 # ---------------------------------------------------------------------------
-# CudaPackedInt6Tensor F.linear dispatch (W6A8 dp4a for decode)
+# CudaDp4aPlanarInt6Tensor F.linear dispatch (W6A8 dp4a for decode)
 # ---------------------------------------------------------------------------
 
 aten = torch.ops.aten
-_implements_i6 = CudaPackedInt6Tensor.implements
-_implements_torch_function_i6 = CudaPackedInt6Tensor.implements_torch_function
+_implements_i6 = CudaDp4aPlanarInt6Tensor.implements
+_implements_torch_function_i6 = CudaDp4aPlanarInt6Tensor.implements_torch_function
 
 
 @_implements_i6([aten.linear.default])

@@ -4,10 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""ExecuTorch-internal packed-INT6 tensor for the CUDA W6A8 dp4a decode kernel.
+"""ExecuTorch-internal dp4a-planar INT6 tensor for the CUDA W6A8 dp4a decode kernel.
 
-``CudaPackedInt6Tensor`` is an ExecuTorch-internal tensor subclass that stores a
-genuine 6-bit packed weight (0.75 B/elem), used for GGUF Q6_K weights. Unlike
+``CudaDp4aPlanarInt6Tensor`` is an ExecuTorch-internal tensor subclass that stores a
+genuine 6-bit packed weight (0.75 B/elem) in a dp4a-friendly *planar* layout: the
+6 bits are split into two bit-planes (``ql``/``qh``) so the decode kernel can run
+the W6A8 dp4a matvec directly. Used for GGUF Q6_K weights. Unlike
 the int8 path (``IntxUnpackedToInt8Tensor``, one int8 per 6-bit value), this
 format wastes no bits and carries no zero tensor — Q6_K is symmetric.
 
@@ -44,7 +46,7 @@ import torch
 from torchao.utils import TorchAOBaseTensor
 
 __all__ = [
-    "CudaPackedInt6Tensor",
+    "CudaDp4aPlanarInt6Tensor",
     "pack_int6",
     "unpack_int6",
 ]
@@ -121,8 +123,8 @@ def unpack_int6(ql: torch.Tensor, qh: torch.Tensor, N: int, K: int) -> torch.Ten
     return u.to(torch.int16) - 32
 
 
-class CudaPackedInt6Tensor(TorchAOBaseTensor):
-    """Packed 6-bit weight (ql/qh planes + per-group scale), symmetric.
+class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
+    """Dp4a-planar 6-bit weight (ql/qh split bit-planes + per-group scale), symmetric.
 
     ExecuTorch-internal; see the module docstring. The CUDA decode/prefill
     dispatch (``int6_dispatch.py``) is selected by *type* — it is registered on
@@ -167,7 +169,7 @@ class CudaPackedInt6Tensor(TorchAOBaseTensor):
         )
 
     @classmethod
-    def from_intx_int8(cls, t: torch.Tensor) -> "CudaPackedInt6Tensor":
+    def from_intx_int8(cls, t: torch.Tensor) -> "CudaDp4aPlanarInt6Tensor":
         """Build from a torchao ``IntxUnpackedToInt8Tensor`` decoded from Q6_K.
 
         The source is symmetric (zero_point == 0), ``qdata`` is int8 in
@@ -177,7 +179,7 @@ class CudaPackedInt6Tensor(TorchAOBaseTensor):
         q = t.qdata
         if not bool(torch.all(t.zero_point == 0)):
             raise ValueError(
-                "CudaPackedInt6Tensor.from_intx_int8 requires symmetric Q6_K "
+                "CudaDp4aPlanarInt6Tensor.from_intx_int8 requires symmetric Q6_K "
                 "weights (zero_point == 0)"
             )
         q_min, q_max = int(q.min()), int(q.max())
@@ -195,7 +197,7 @@ class CudaPackedInt6Tensor(TorchAOBaseTensor):
         )
 
     @classmethod
-    def from_exportable_gguf(cls, gt) -> "CudaPackedInt6Tensor":
+    def from_exportable_gguf(cls, gt) -> "CudaDp4aPlanarInt6Tensor":
         """Build from a native Q6_K ``ExportableGGUFTensor``.
 
         Reuses the shared Q6_K block decode in
@@ -206,7 +208,7 @@ class CudaPackedInt6Tensor(TorchAOBaseTensor):
         """
         if gt.ggml_type != "q6_k":
             raise ValueError(
-                "CudaPackedInt6Tensor.from_exportable_gguf requires a q6_k "
+                "CudaDp4aPlanarInt6Tensor.from_exportable_gguf requires a q6_k "
                 f"ExportableGGUFTensor, got {gt.ggml_type!r}"
             )
         return cls.from_intx_int8(gt.to_intx_unpacked_to_int8_tensor())
@@ -225,6 +227,6 @@ class CudaPackedInt6Tensor(TorchAOBaseTensor):
         return (q * scale).to(dtype)
 
 
-# Allow a model with CudaPackedInt6Tensor weights to be loaded with
+# Allow a model with CudaDp4aPlanarInt6Tensor weights to be loaded with
 # `weights_only=True` (mirrors torchao quantized tensors).
-torch.serialization.add_safe_globals([CudaPackedInt6Tensor])
+torch.serialization.add_safe_globals([CudaDp4aPlanarInt6Tensor])

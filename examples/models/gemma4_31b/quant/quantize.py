@@ -281,11 +281,14 @@ def dequantize_weight(
     if isinstance(weight, ExportableGGUFTensor):
         return weight.dequantize(dtype)
 
-    # CudaPackedInt6Tensor (GGUF Q6_K on CUDA) carries its own dequant (symmetric,
-    # ql/qh planes). Imported lazily to avoid a hard backends/cuda dependency.
-    from executorch.backends.cuda.packed_int6_tensor import CudaPackedInt6Tensor
+    # CudaDp4aPlanarInt6Tensor (GGUF Q6_K on CUDA) carries its own dequant
+    # (symmetric, ql/qh split bit-planes). Imported lazily to avoid a hard
+    # backends/cuda dependency.
+    from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+        CudaDp4aPlanarInt6Tensor,
+    )
 
-    if isinstance(weight, CudaPackedInt6Tensor):
+    if isinstance(weight, CudaDp4aPlanarInt6Tensor):
         return weight.dequantize(dtype)
 
     raise TypeError(f"Cannot dequantize {type(weight).__name__}")
