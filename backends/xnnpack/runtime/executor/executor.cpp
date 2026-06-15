@@ -64,9 +64,12 @@ runtime::Error Executor::run_step(size_t step_idx, const plan::PlanStep& step) {
             }
 
             auto t0 = std::chrono::steady_clock::now();
-            s.op->execute(
+            err = s.op->execute(
                 {inputs.data(), inputs.size()},
                 {outputs.data(), outputs.size()});
+            if (err != runtime::Error::Ok) {
+              return;
+            }
             auto t1 = std::chrono::steady_clock::now();
             auto us =
                 std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0)
@@ -231,7 +234,8 @@ runtime::Error Executor::update_planned_memory(Span<core::Tensor> inputs) {
     for (auto slot : op_step->input_slots) {
       input_specs.push_back(memory_plan.value_specs[slot]);
     }
-    op_step->op->reshape({input_specs.data(), input_specs.size()});
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        op_step->op->reshape({input_specs.data(), input_specs.size()}));
   }
 
   return runtime::Error::Ok;
@@ -296,8 +300,8 @@ runtime::Result<Executor> Executor::build(graph::Graph& graph) {
     for (auto slot : op_step->output_slots)
       outputs.push_back(&values[slot]);
 
-    op_step->op->prepare(
-        {inputs.data(), inputs.size()}, {outputs.data(), outputs.size()});
+    ET_CHECK_OK_OR_RETURN_ERROR(op_step->op->prepare(
+        {inputs.data(), inputs.size()}, {outputs.data(), outputs.size()}));
   }
 
   auto t4 = std::chrono::steady_clock::now();
