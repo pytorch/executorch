@@ -26,6 +26,7 @@ def pytest_configure(config):
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
 
     logging.basicConfig(stream=sys.stdout)
+    _set_random_seed()
 
 
 def pytest_collection_modifyitems(config, items):
@@ -78,6 +79,10 @@ def set_random_seed():
         ARM_TEST_SEED=3478246 pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
 
     """
+    _set_random_seed()
+
+
+def _set_random_seed():
     import torch
 
     seed_env = os.environ.get("ARM_TEST_SEED", "0")
@@ -85,16 +90,16 @@ def set_random_seed():
         random.seed()  # reset seed, in case any other test has fiddled with it
         seed = random.randint(0, 2**32 - 1)  # nosec B311 - non-crypto seed for tests
         torch.manual_seed(seed)
+        print(f" ARM_TEST_SEED=RANDOM using:{seed} ", end=" ")
     elif str.isdigit(seed_env):
         seed = int(seed_env)
         random.seed(seed)
         torch.manual_seed(seed)
+        print(f" ARM_TEST_SEED={seed} ", end=" ")
     else:
         raise TypeError(
             "ARM_TEST_SEED env variable must be integers or the string RANDOM"
         )
-
-    print(f" ARM_TEST_SEED={seed} ", end=" ")
 
 
 # ==== End of Pytest fixtures =====

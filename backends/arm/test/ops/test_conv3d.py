@@ -515,7 +515,6 @@ test_data_FP_fp8 = {
         "fp8e5m2",
     ),
 }
-
 test_data_FP_bf16 = {
     "bf16_3x3": lambda: Conv3d(
         height=10,
@@ -616,7 +615,7 @@ def test_convolution_3d_tosa_FP_fp8(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_tosa_ref_model=False,  # torch.conv3d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
         tosa_extensions=[tosa_extension],
     )
     pipeline.count_tosa_ops({"CONV3D": 1, "CAST": 1})
