@@ -106,14 +106,13 @@ Error WebGPUBackend::execute(
         tensor.scalar_type() == executorch::aten::ScalarType::Long;
     inputs.push_back({tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
   }
-  graph->copy_inputs(inputs);
-
   // Fail loud as a runtime Error so a throw never crosses the backend boundary.
   try {
+    graph->copy_inputs(inputs);
     graph->update_symints_from_inputs(inputs);
     graph->propagate_resize();
   } catch (const std::exception& e) {
-    ET_LOG(Error, "WebGPU symint refresh/resize failed: %s", e.what());
+    ET_LOG(Error, "WebGPU input copy / symint refresh failed: %s", e.what());
     return Error::Internal;
   }
 

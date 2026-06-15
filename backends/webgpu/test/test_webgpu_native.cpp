@@ -428,13 +428,15 @@ static std::vector<int32_t> load_indices(
 static bool test_embedding_q4gsw(
     const std::string& model_path,
     const std::string& indices_path,
-    const std::string& golden_path) {
+    const std::string& golden_path,
+    int num_indices,
+    int embed,
+    const char* label) {
   // q4gsw embedding-gather vs torch golden; shapes per test_embedding_q4gsw.py.
-  constexpr int num_indices = 4;
-  constexpr int embed = 64;
-  constexpr int out_numel = num_indices * embed;
+  const int out_numel = num_indices * embed;
   printf(
-      "\n--- Test: embedding_q4gsw (indices=%d, embed=%d) ---\n",
+      "\n--- Test: embedding_q4gsw (%s: indices=%d, embed=%d) ---\n",
+      label,
       num_indices,
       embed);
 
@@ -1550,16 +1552,30 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::string emb_model_path, emb_indices_path, emb_golden_path;
-  if (const char* env = std::getenv("WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL")) {
-    emb_model_path = env;
-  }
-  if (const char* env = std::getenv("WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES")) {
-    emb_indices_path = env;
-  }
-  if (const char* env = std::getenv("WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN")) {
-    emb_golden_path = env;
-  }
+  // embedding_q4gsw on-GPU configs: small + llama1b (env-gated,
+  // run-if-present).
+  struct EmbConfig {
+    const char* name;
+    const char* model_env;
+    const char* indices_env;
+    const char* golden_env;
+    int num_indices;
+    int embed;
+  };
+  const EmbConfig emb_configs[] = {
+      {"small",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN",
+       4,
+       64},
+      {"llama1b",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_MODEL",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_INDICES",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_GOLDEN",
+       4,
+       2048},
+  };
 
   // SDPA sweep: configs self-discover their sdpa_<name>.pte/.golden.bin under
   // this directory (default "" = the embedded-file root / cwd). Set
@@ -1614,11 +1630,13 @@ int main(int argc, char** argv) {
     ok = false;
   }
 
-  if (!emb_model_path.empty() && !emb_indices_path.empty() &&
-      !emb_golden_path.empty()) {
-    ok = test_embedding_q4gsw(
-             emb_model_path, emb_indices_path, emb_golden_path) &&
-        ok;
+  for (const auto& c : emb_configs) {
+    const char* m = std::getenv(c.model_env);
+    const char* ip = std::getenv(c.indices_env);
+    const char* g = std::getenv(c.golden_env);
+    if (m && ip && g && *m && *ip && *g) {
+      ok = test_embedding_q4gsw(m, ip, g, c.num_indices, c.embed, c.name) && ok;
+    }
   }
 
   bool sdpa_ran = false;

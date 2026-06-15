@@ -27,6 +27,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let indices_idx = block / params.blocks_per_row;
   let base_dim = (block % params.blocks_per_row) * 32u;
 
+  // token assumed in-range (mirrors Vulkan; no vocab clamp).
   let token = u32(t_indices[indices_idx]);
   let row_byte_base = token * params.bytes_per_row;
   let out_base = indices_idx * params.embed_dim + base_dim;
