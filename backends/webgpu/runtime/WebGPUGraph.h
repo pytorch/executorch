@@ -25,6 +25,16 @@ struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
   std::vector<int64_t> dims;
   size_t nbytes = 0;
+  // Serialized (GPU-side) element type, used to narrow wider host inputs.
+  size_t elem_size = 0;
+  bool is_int = false;
+};
+
+// Host-side view of one graph input, passed to copy_inputs.
+struct InputData {
+  const void* data = nullptr;
+  size_t nbytes = 0;
+  bool host_is_int64 = false;
 };
 
 struct WebGPUDispatch {
@@ -75,7 +85,7 @@ class WebGPUGraph {
       const executorch::runtime::NamedDataMap* named_data_map = nullptr);
 
   // Copy input tensor data from host pointers into GPU buffers.
-  void copy_inputs(const std::vector<std::pair<const void*, size_t>>& inputs);
+  void copy_inputs(const std::vector<InputData>& inputs);
 
   // Execute all recorded dispatches.
   void execute();
@@ -109,6 +119,10 @@ class WebGPUGraph {
   bool get_bool(int id) const {
     return bools_[id];
   }
+  // Member value ids of a serialized ValueList (op multi-output list).
+  const std::vector<int>& get_value_list(int id) const {
+    return value_lists_[id];
+  }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
   // set_symint writes the buffer + marks dirty only if the value changed.
@@ -138,8 +152,7 @@ class WebGPUGraph {
   }
 
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
-  void update_symints_from_inputs(
-      const std::vector<std::pair<const void*, size_t>>& inputs);
+  void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
   // Per-SymInt resize hook; mirrors Vulkan DynamicDispatchNode::trigger_resize.
   void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
@@ -206,7 +219,16 @@ class WebGPUGraph {
     return static_cast<int>(value_types_.size());
   }
 
-  enum class ValueType { Tensor, Int, Double, Bool, Null, String, SymInt };
+  enum class ValueType {
+    Tensor,
+    Int,
+    Double,
+    Bool,
+    Null,
+    String,
+    SymInt,
+    ValueList
+  };
 
   ValueType get_value_type(int id) const {
     return value_types_[id];
@@ -224,6 +246,7 @@ class WebGPUGraph {
   std::vector<int64_t> ints_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
+  std::vector<std::vector<int>> value_lists_;
 
   // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
   struct SymIntSlot {

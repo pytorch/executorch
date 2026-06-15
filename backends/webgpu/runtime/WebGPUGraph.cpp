@@ -45,6 +45,19 @@ size_t vk_datatype_size(vkgraph::VkDataType dtype) {
   }
 }
 
+bool vk_datatype_is_int(vkgraph::VkDataType dtype) {
+  switch (dtype) {
+    case vkgraph::VkDataType::BOOL:
+    case vkgraph::VkDataType::UINT8:
+    case vkgraph::VkDataType::INT8:
+    case vkgraph::VkDataType::INT32:
+    case vkgraph::VkDataType::INT64:
+      return true;
+    default:
+      return false;
+  }
+}
+
 } // namespace
 
 WebGPUGraph::WebGPUGraph() = default;
@@ -61,7 +74,7 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
 }
 
 void WebGPUGraph::update_symints_from_inputs(
-    const std::vector<std::pair<const void*, size_t>>& inputs) {
+    const std::vector<InputData>& inputs) {
   for (const auto& src : symint_sources_) {
     int pos = -1;
     for (size_t i = 0; i < input_ids_.size(); i++) {
@@ -100,8 +113,8 @@ void WebGPUGraph::update_symints_from_inputs(
     // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
     const int64_t offset = static_cast<int64_t>(index) * stride;
     // elem_size back-derived from build-time numel (sources are static-shaped).
-    const void* host = inputs[pos].first;
-    const size_t elem_size = inputs[pos].second / static_cast<size_t>(numel);
+    const void* host = inputs[pos].data;
+    const size_t elem_size = inputs[pos].nbytes / static_cast<size_t>(numel);
     int32_t val;
     if (elem_size == sizeof(int64_t)) {
       val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
@@ -226,6 +239,7 @@ void WebGPUGraph::build(
   ints_.resize(num_vals, 0);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
+  value_lists_.resize(num_vals);
 
   for (int i = 0; i < num_vals; i++) {
     const auto* val = values->Get(i);
@@ -248,7 +262,9 @@ void WebGPUGraph::build(
             numel *= dims->Get(j);
           }
         }
-        tensor.nbytes = numel * vk_datatype_size(vk_tensor->datatype());
+        tensor.elem_size = vk_datatype_size(vk_tensor->datatype());
+        tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
+        tensor.nbytes = numel * tensor.elem_size;
 
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
@@ -298,7 +314,15 @@ void WebGPUGraph::build(
                 throw std::runtime_error(
                     "WebGPU: constant has no inline offset and no named-data key");
               }
+            } else {
+              throw std::runtime_error(
+                  "WebGPU: constant_id set but the constants table is missing "
+                  "or the id is out of range");
             }
+          } else if (constant_id >= 0 && tensor.nbytes > 0) {
+            // constant_id set but constant_data null -> fail loud.
+            throw std::runtime_error(
+                "WebGPU: constant_id set but constant_data is null");
           }
         } else {
           // Shared buffer: track required size, defer allocation to pass 2
@@ -346,6 +370,16 @@ void WebGPUGraph::build(
         wgpuBufferUnmap(slot.buffer);
         symints_[i] = slot;
         add_uniform_buffer_bytes(kSymIntUniformBytes);
+        break;
+      }
+      case vkgraph::GraphTypes::ValueList: {
+        value_types_[i] = ValueType::ValueList;
+        const auto* items = val->value_as_ValueList()->items();
+        if (items) {
+          for (unsigned j = 0; j < items->size(); j++) {
+            value_lists_[i].push_back(static_cast<int>(items->Get(j)));
+          }
+        }
         break;
       }
       default:
@@ -484,16 +518,40 @@ WGPUBindGroupLayout WebGPUGraph::get_or_create_bgl(
   return bgl;
 }
 
-void WebGPUGraph::copy_inputs(
-    const std::vector<std::pair<const void*, size_t>>& inputs) {
+void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
   for (size_t i = 0; i < inputs.size() && i < input_ids_.size(); i++) {
-    if (inputs[i].second == 0) {
+    const InputData& in = inputs[i];
+    if (in.nbytes == 0) {
       continue;
     }
     int tid = input_ids_[i];
     const auto& tensor = tensors_[tid];
-    wgpuQueueWriteBuffer(
-        queue_, tensor.buffer, 0, inputs[i].first, inputs[i].second);
+
+    // Fast path: host and GPU element types match byte-for-byte.
+    if (in.nbytes == tensor.nbytes) {
+      wgpuQueueWriteBuffer(queue_, tensor.buffer, 0, in.data, tensor.nbytes);
+      continue;
+    }
+
+    // Narrow int64 host indices into the int32 buffer (mirrors Vulkan).
+    const bool buffer_is_int32 = tensor.is_int && tensor.elem_size == 4;
+    if (in.host_is_int64 && buffer_is_int32 && in.nbytes == tensor.nbytes * 2) {
+      const size_t numel = tensor.nbytes / 4;
+      const int64_t* src = static_cast<const int64_t*>(in.data);
+      std::vector<int32_t> narrowed(numel);
+      for (size_t e = 0; e < numel; e++) {
+        narrowed[e] = static_cast<int32_t>(src[e]);
+      }
+      wgpuQueueWriteBuffer(
+          queue_, tensor.buffer, 0, narrowed.data(), tensor.nbytes);
+      continue;
+    }
+
+    throw std::runtime_error(
+        "WebGPU: unsupported input copy for input " + std::to_string(i) +
+        " (host " + std::to_string(in.nbytes) + " bytes" +
+        (in.host_is_int64 ? " int64" : "") + " vs buffer " +
+        std::to_string(tensor.nbytes) + " bytes)");
   }
 }
 
