@@ -18,6 +18,7 @@ from executorch.backends.arm.test.ops.mxfp.common import (
 from executorch.backends.arm.test.tester.analyze_output_utils import (
     compare_rel_frobenius_and_cosine_similarity,
 )
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
 
 aten_op = "torch.ops.tosa_mxfp.conv2d.default"
 
@@ -260,6 +261,30 @@ def test_mxfp4_conv2d_tosa_FP(
     )
 
 
+@common.parametrize("test_data", test_data_fp)
+def test_mxfp6_e2m3_conv2d_tosa_FP(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_tosa_FP(
+        test_data,
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E2M3),
+        frobenius_threshold=0.2,
+        cosine_threshold=0.98,
+    )
+
+
+@common.parametrize("test_data", test_data_fp)
+def test_mxfp6_e3m2_conv2d_tosa_FP(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_tosa_FP(
+        test_data,
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E3M2),
+        frobenius_threshold=0.2,
+        cosine_threshold=0.98,
+    )
+
+
 def _test_mxfp_conv2d_vgf(
     test_data,
     config: MXFPOpConfig,
@@ -306,6 +331,32 @@ def test_mxfp4_conv2d_vgf(test_data: Callable[[], tuple[Conv2d, bool]]) -> None:
         MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2),
         frobenius_threshold=0.3,
         cosine_threshold=0.95,
+    )
+
+
+@common.parametrize("test_data", test_data_vgf_fp, xfails=_vgf_xfails)
+@common.SkipIfNoModelConverter
+def test_mxfp6_e2m3_conv2d_vgf(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_vgf(
+        test_data,
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E2M3),
+        frobenius_threshold=0.2,
+        cosine_threshold=0.98,
+    )
+
+
+@common.parametrize("test_data", test_data_vgf_fp, xfails=_vgf_xfails)
+@common.SkipIfNoModelConverter
+def test_mxfp6_e3m2_conv2d_vgf(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_vgf(
+        test_data,
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E3M2),
+        frobenius_threshold=0.2,
+        cosine_threshold=0.98,
     )
 
 
@@ -367,4 +418,28 @@ def test_mxfp4_conv2d_eager_cpu(
         MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2),
         frobenius_threshold=0.3,
         cosine_threshold=0.95,
+    )
+
+
+@common.parametrize("test_data", test_data_fp)
+def test_mxfp6_e2m3_conv2d_eager_cpu(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_eager_cpu(
+        test_data,
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E2M3),
+        frobenius_threshold=0.2,
+        cosine_threshold=0.98,
+    )
+
+
+@common.parametrize("test_data", test_data_fp)
+def test_mxfp6_e3m2_conv2d_eager_cpu(
+    test_data: Callable[[], tuple[Conv2d, bool]],
+) -> None:
+    _test_mxfp_conv2d_eager_cpu(
+        test_data,
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E3M2),
+        frobenius_threshold=0.2,
+        cosine_threshold=0.98,
     )

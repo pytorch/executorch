@@ -14,6 +14,9 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.arm.ao_ext.mxfp import (
     _cast_to_block_scaled_cpu_ref,
+    mxfp_dtype_to_str,
+    mxfp_str_to_dtype,
+    MXFPDType,
     MXFPOpConfig,
 )
 from executorch.backends.arm.ao_ext.mxfp_tosa_lib import MXFP_TOSA_LIB
@@ -23,20 +26,29 @@ MXFP_TOSA_LIB.define(
     "conv2d("
     "Tensor input, Tensor weight_qdata, Tensor weight_scale, "
     "Tensor? bias=None, int[] stride, int[] padding, "
-    "int[] dilation, SymInt groups=1, SymInt block_size=32"
+    "int[] dilation, SymInt groups=1, SymInt block_size=32, "
+    "str weight_payload_dtype=''"
     ") -> Tensor"
 )
 
 
-def _get_mx_elem_dtype(weight_qdata: torch.Tensor) -> torch.dtype:
+def _get_mx_elem_dtype(
+    weight_qdata: torch.Tensor,
+    weight_payload_dtype: str = "",
+) -> MXFPDType:
+    if weight_payload_dtype:
+        return mxfp_str_to_dtype(weight_payload_dtype)
     if weight_qdata.dtype == torch.uint8:
         return torch.float4_e2m1fn_x2
     return weight_qdata.dtype
 
 
-def _get_num_input_channels(weight_qdata: torch.Tensor) -> int:
+def _get_num_input_channels(
+    weight_qdata: torch.Tensor,
+    weight_payload_dtype: str = "",
+) -> int:
     num_input_channels = weight_qdata.shape[-1]
-    if _get_mx_elem_dtype(weight_qdata) == torch.float4_e2m1fn_x2:
+    if _get_mx_elem_dtype(weight_qdata, weight_payload_dtype) == torch.float4_e2m1fn_x2:
         num_input_channels *= 2
     return num_input_channels
 
@@ -77,6 +89,7 @@ def _mxfp_conv2d_fake(
     dilation: list[int] | tuple[int, int] = (1, 1),
     groups: int = 1,
     block_size: int = 32,
+    weight_payload_dtype: str = "",
 ) -> torch.Tensor:
     del bias
 
@@ -90,7 +103,7 @@ def _mxfp_conv2d_fake(
         raise ValueError(
             f"Expected rank-4 weight_qdata for Conv2d, got {weight_qdata.ndim}"
         )
-    num_input_channels = _get_num_input_channels(weight_qdata)
+    num_input_channels = _get_num_input_channels(weight_qdata, weight_payload_dtype)
     if num_input_channels % block_size != 0:
         raise ValueError(
             f"Weight in_channels={num_input_channels} must be divisible by "
@@ -139,6 +152,7 @@ def _mxfp_conv2d_cpu(
     dilation: list[int] | tuple[int, int] = (1, 1),
     groups: int = 1,
     block_size: int = 32,
+    weight_payload_dtype: str = "",
 ) -> torch.Tensor:
     """CPU reference implementation of the MXFP conv2d op."""
 
@@ -151,7 +165,7 @@ def _mxfp_conv2d_cpu(
     if len(dilation) != 2:
         raise ValueError(f"Expected dilation with 2 values, got {dilation}")
 
-    elem_dtype = _get_mx_elem_dtype(weight_qdata)
+    elem_dtype = _get_mx_elem_dtype(weight_qdata, weight_payload_dtype)
 
     input = _cast_to_block_scaled_cpu_ref(
         input.permute(0, 2, 3, 1),
@@ -196,6 +210,7 @@ class MXFPConv2dOp(torch.nn.Module):
     ) -> None:
         super().__init__()
         self.config = config
+        self.weight_dtype = mxfp_dtype_to_str(config.weight_dtype)
 
         self.register_buffer("weight_qdata", weight_qdata, persistent=True)
         self.register_buffer("weight_scale", weight_scale, persistent=True)
@@ -227,6 +242,7 @@ class MXFPConv2dOp(torch.nn.Module):
             list(self.dilation),
             self.groups,
             self.config.block_size,
+            self.weight_dtype,
         )
 
 

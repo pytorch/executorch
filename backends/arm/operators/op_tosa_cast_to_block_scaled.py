@@ -18,7 +18,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
@@ -31,7 +31,7 @@ def _getitem_index(node: torch.fx.Node) -> int:
     return index
 
 
-def _ordered_getitem_output_names(node: torch.fx.Node) -> list[str]:
+def _ordered_getitem_outputs(node: torch.fx.Node) -> list[torch.fx.Node]:
     getitem_users = [
         user
         for user in node.users
@@ -41,10 +41,11 @@ def _ordered_getitem_output_names(node: torch.fx.Node) -> list[str]:
     ordered_users = sorted(getitem_users, key=_getitem_index)
     if len(ordered_users) != 2:
         raise ValueError(
-            f"{CastToBlockScaledVisitor.target}: Expected exactly two getitem outputs, got {len(ordered_users)}"
+            f"{CastToBlockScaledVisitor.target}: Expected exactly two getitem "
+            f"outputs, got {len(ordered_users)}"
         )
 
-    return [user.name for user in ordered_users]
+    return ordered_users
 
 
 @register_node_visitor
@@ -84,11 +85,33 @@ class CastToBlockScaledVisitor(NodeVisitor):
                 f"{self.target}: expected tuple metadata with two outputs, got {node.meta.get('val')!r}"
             )
         output_data_tensor, output_scale_tensor = node.meta["val"]
-        output_names = _ordered_getitem_output_names(node)
+        output_getitems = _ordered_getitem_outputs(node)
+        output_names = [user.name for user in output_getitems]
+        output_payload_dtype = output_getitems[0].meta.get(TosaSpecialDtype.meta_key())
 
-        if output_data_tensor.dtype not in (torch.float8_e4m3fn, torch.float8_e5m2):
+        if output_payload_dtype in (
+            TosaSpecialDtype.FP4E2M1,
+            TosaSpecialDtype.FP6E2M3,
+            TosaSpecialDtype.FP6E3M2,
+        ):
+            output_data_dtype = output_payload_dtype.get_tosa_dtype()
+        elif output_data_tensor.dtype == torch.float8_e4m3fn:
+            output_data_dtype = ts.DType.FP8E4M3
+        elif output_data_tensor.dtype == torch.float8_e5m2:
+            output_data_dtype = ts.DType.FP8E5M2
+        else:
             raise ValueError(
                 f"{self.target}: unsupported payload dtype {output_data_tensor.dtype}"
+            )
+        if output_data_dtype not in (
+            ts.DType.FP4E2M1,
+            ts.DType.FP6E2M3,
+            ts.DType.FP6E3M2,
+            ts.DType.FP8E4M3,
+            ts.DType.FP8E5M2,
+        ):
+            raise ValueError(
+                f"{self.target}: unsupported payload dtype {output_data_dtype}"
             )
         if output_scale_tensor.dtype != torch.float8_e8m0fnu:
             raise ValueError(

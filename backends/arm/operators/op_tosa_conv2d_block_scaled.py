@@ -48,11 +48,22 @@ class Conv2dBlockScaledVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        # The tosa_specs attribute cannot express extension requirements.
+        # Therefore, check for the extension explicitly here.
+        if not self.tosa_spec.support_extension("mxfp"):
+            raise ValueError(f"{self.target} requires the TOSA mxfp extension")
+
         validate_num_inputs(self.target, inputs, 9)
         validate_valid_dtype(
             self.target,
             [inputs[0], inputs[2]],
-            [ts.DType.FP4E2M1, ts.DType.FP8E4M3, ts.DType.FP8E5M2],
+            [
+                ts.DType.FP4E2M1,
+                ts.DType.FP6E2M3,
+                ts.DType.FP6E3M2,
+                ts.DType.FP8E4M3,
+                ts.DType.FP8E5M2,
+            ],
             self.tosa_spec,
         )
         validate_valid_dtype(

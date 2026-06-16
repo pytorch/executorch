@@ -6,6 +6,11 @@
 from __future__ import annotations
 
 import torch
+from executorch.backends.arm.ao_ext.mxfp import (
+    mxfp_str_to_dtype,
+    MXFPDType,
+    SUPPORTED_MXFP_DTYPES,
+)
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
@@ -23,15 +28,20 @@ def _validate_mxfp_support(tosa_spec: TosaSpecification) -> None:
         )
 
 
-def _get_payload_dtype(data: torch.Tensor) -> torch.dtype:
+def _get_payload_dtype(
+    data: torch.Tensor,
+    payload_dtype: str = "",
+) -> MXFPDType:
+    if payload_dtype:
+        return mxfp_str_to_dtype(payload_dtype)
     if data.dtype == torch.uint8:
         return torch.float4_e2m1fn_x2
     return data.dtype
 
 
-def _get_logical_channels(data: torch.Tensor) -> int:
+def _get_logical_channels(data: torch.Tensor, payload_dtype: str = "") -> int:
     channels = data.shape[-1]
-    if _get_payload_dtype(data) == torch.float4_e2m1fn_x2:
+    if _get_payload_dtype(data, payload_dtype) == torch.float4_e2m1fn_x2:
         return channels * 2
     return channels
 
@@ -42,14 +52,11 @@ def _validate_conv2d_block_scaled_dtypes(
     weight_data: torch.Tensor,
     weight_scale: torch.Tensor,
     bias: torch.Tensor,
+    payload_dtype: str = "",
 ) -> None:
-    input_dtype = _get_payload_dtype(input_data)
-    weight_dtype = _get_payload_dtype(weight_data)
-    if input_dtype not in (
-        torch.float4_e2m1fn_x2,
-        torch.float8_e4m3fn,
-        torch.float8_e5m2,
-    ):
+    input_dtype = _get_payload_dtype(input_data, payload_dtype)
+    weight_dtype = _get_payload_dtype(weight_data, payload_dtype)
+    if input_dtype not in SUPPORTED_MXFP_DTYPES:
         raise TosaValueError(
             f"Unsupported input_data dtype {input_data.dtype}",
             op="CONV2D_BLOCK_SCALED",
@@ -83,6 +90,7 @@ def _validate_conv2d_block_scaled_shapes(
     weight_scale: torch.Tensor,
     bias: torch.Tensor,
     block_size: int,
+    payload_dtype: str = "",
 ) -> tuple[
     IntLikeType, IntLikeType, IntLikeType, IntLikeType, IntLikeType, IntLikeType
 ]:
@@ -100,9 +108,9 @@ def _validate_conv2d_block_scaled_shapes(
         )
 
     n, ih, iw = input_data.shape[:3]
-    ic = _get_logical_channels(input_data)
+    ic = _get_logical_channels(input_data, payload_dtype)
     oc, kh, kw = weight_data.shape[:3]
-    weight_ic = _get_logical_channels(weight_data)
+    weight_ic = _get_logical_channels(weight_data, payload_dtype)
     if ic != weight_ic:
         raise TosaValueError(
             f"input channels must match weight channels, but got {ic} and {weight_ic}",
@@ -153,7 +161,8 @@ def _validate_conv2d_block_scaled_params(
 @register_fake_tosa_op(
     "CONV2D_BLOCK_SCALED("
     "Tensor input_data, Tensor input_scale, Tensor weight_data, Tensor weight_scale, "
-    "Tensor bias, int[2] stride, int[4] pad, int[2] dilation, SymInt block_size"
+    "Tensor bias, int[2] stride, int[4] pad, int[2] dilation, SymInt block_size, "
+    "str payload_dtype=''"
     ") -> Tensor",
     TosaSpecification.all_versions_for_profile("FP"),
 )
@@ -167,6 +176,7 @@ def CONV2D_BLOCK_SCALED(
     pad: list[IntLikeType],
     dilation: list[IntLikeType],
     block_size: int,
+    payload_dtype: str = "",
 ) -> torch.Tensor:
     tosa_spec = get_context_spec()
 
@@ -184,6 +194,7 @@ def CONV2D_BLOCK_SCALED(
         weight_data,
         weight_scale,
         bias,
+        payload_dtype,
     )
     n, ih, iw, oc, kh, kw = _validate_conv2d_block_scaled_shapes(
         input_data,
@@ -192,6 +203,7 @@ def CONV2D_BLOCK_SCALED(
         weight_scale,
         bias,
         block_size,
+        payload_dtype,
     )
     _validate_conv2d_block_scaled_params(stride, pad, dilation)
 

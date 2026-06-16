@@ -6,14 +6,19 @@
 from __future__ import annotations
 
 import operator
-from typing import Set, Type
+from typing import cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     create_shape_node,
     get_first_fake_tensor,
+)
+from executorch.backends.arm.ao_ext.mxfp import (
+    mxfp_dtype_to_str,
+    mxfp_str_to_dtype,
+    MXFPDType,
 )
 from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
@@ -22,17 +27,28 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.graph_signature import InputKind
 from torch.fx import GraphModule, Node
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
 
 
-def _get_block_scaled_payload_dtype(qdata: torch.Tensor) -> torch.dtype:
+def _get_weights_payload_dtype(
+    qdata_node: torch.fx.Node,
+    dtype: str = "",
+) -> MXFPDType:
+    if dtype:
+        return mxfp_str_to_dtype(dtype)
+    qdata = get_first_fake_tensor(qdata_node)
     if qdata.dtype == torch.uint8:
         return torch.float4_e2m1fn_x2
     return qdata.dtype
 
 
-def _mark_fp4_payload(node: torch.fx.Node, payload_dtype: torch.dtype) -> None:
+def _mark_mxfp_payload(node: torch.fx.Node, payload_dtype: MXFPDType) -> None:
     if payload_dtype == torch.float4_e2m1fn_x2:
         node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP4E2M1
+    elif payload_dtype == DTYPE_FP6_E2M3:
+        node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP6E2M3
+    elif payload_dtype == DTYPE_FP6_E3M2:
+        node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.FP6E3M2
 
 
 def _set_tensor_meta(node: Node, fake_tensor: torch.Tensor) -> None:
@@ -44,15 +60,13 @@ def _set_shape_meta(node: Node, values: list[int]) -> None:
     node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
 
 
-def _require_fx_node(argument: object, *, name: str) -> Node:
-    if not isinstance(argument, Node):
-        raise ValueError(f"Expected {name} to be an FX node, got {argument!r}")
-    return argument
-
-
-class RewriteMXFPConv2dPass(ArmPass):
+class RewriteMXFPConv2dPass(ArmOpTargetedPass):
     """Rewrite the MXFP Conv2d custom op to TOSA block-scaled ops."""
 
+    target_ops = {
+        torch.ops.tosa_mxfp.conv2d.default,
+        exir_ops.edge.tosa_mxfp.conv2d.default,
+    }
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: torch.export.ExportedProgram, *args, **kwargs):
@@ -141,20 +155,77 @@ class RewriteMXFPConv2dPass(ArmPass):
         _set_shape_meta(const_shape, values)
         return const_shape
 
-    def _get_block_size(self, optional_args: list[object]) -> object:
-        if len(optional_args) > 2:
-            raise ValueError(
-                "Expected tosa_mxfp.conv2d optional arguments to be omitted "
-                f"or provided as groups and block_size, got {optional_args}"
-            )
-
-        groups = optional_args[0] if len(optional_args) >= 1 else 1
+    def _get_conv2d_args(
+        self,
+        node: torch.fx.Node,
+    ) -> tuple[
+        Node,
+        Node,
+        Node,
+        Node | None,
+        list[int] | tuple[int, int],
+        list[int] | tuple[int, int],
+        list[int] | tuple[int, int],
+        int,
+        int,
+        MXFPDType,
+    ]:
+        input_node = cast(Node, node.args[0])
+        weight_qdata_node = cast(Node, node.args[1])
+        weight_scale_node = cast(Node, node.args[2])
+        bias_node = cast(
+            Node | None,
+            node.args[3] if len(node.args) > 3 else node.kwargs.get("bias"),
+        )
+        stride = cast(
+            list[int] | tuple[int, int],
+            node.args[4] if len(node.args) > 4 else node.kwargs["stride"],
+        )
+        padding = cast(
+            list[int] | tuple[int, int],
+            node.args[5] if len(node.args) > 5 else node.kwargs["padding"],
+        )
+        dilation = cast(
+            list[int] | tuple[int, int],
+            node.args[6] if len(node.args) > 6 else node.kwargs["dilation"],
+        )
+        groups = cast(
+            int,
+            node.args[7] if len(node.args) > 7 else node.kwargs.get("groups", 1),
+        )
         if groups != 1:
             raise ValueError(f"Only groups=1 is supported, got {groups}")
-
-        if len(optional_args) == 2:
-            return optional_args[1]
-        return 32
+        block_size = cast(
+            int,
+            node.args[8] if len(node.args) > 8 else node.kwargs.get("block_size", 32),
+        )
+        payload_dtype_str = cast(
+            str,
+            (
+                node.args[9]
+                if len(node.args) > 9
+                else node.kwargs.get(
+                    "weight_payload_dtype",
+                    node.kwargs.get("weight_dtype", ""),
+                )
+            ),
+        )
+        payload_dtype = _get_weights_payload_dtype(
+            weight_qdata_node,
+            payload_dtype_str,
+        )
+        return (
+            input_node,
+            weight_qdata_node,
+            weight_scale_node,
+            bias_node,
+            stride,
+            padding,
+            dilation,
+            groups,
+            block_size,
+            payload_dtype,
+        )
 
     def call(self, graph_module: GraphModule):
         """Rewrite MXFP Conv2d custom ops into TOSA MXFP ops.
@@ -172,9 +243,6 @@ class RewriteMXFPConv2dPass(ArmPass):
         If the source op has no bias, the pass inserts a persistent zero bias
         buffer because the TOSA op always expects one. The pass also expands
         2-D Conv2d padding into the 4-element TOSA padding format. The pass
-        expects the source MXFP custom op to use positional arguments emitted
-        by ``MxFPConv2dOp``. Export may omit default-valued trailing arguments.
-
         Args:
             graph_module (torch.fx.GraphModule): Graph module to rewrite.
 
@@ -186,45 +254,25 @@ class RewriteMXFPConv2dPass(ArmPass):
         graph = graph_module.graph
 
         for node in list(graph.nodes):
-            if (
-                node.op != "call_function"
-                or node.target != torch.ops.tosa_mxfp.conv2d.default
-            ):
+            if node.op != "call_function" or node.target not in self.target_ops:
                 continue
 
             modified = True
 
-            if len(node.args) not in (7, 8, 9) or node.kwargs:
-                raise ValueError(
-                    "Expected tosa_mxfp.conv2d to use 7-9 "
-                    f"positional arguments and no kwargs, got args={node.args} "
-                    f"kwargs={node.kwargs}"
-                )
-
             (
-                input_arg,
-                weight_qdata_arg,
-                weight_scale_arg,
-                bias_arg,
+                input_node,
+                weight_qdata_node,
+                weight_scale_node,
+                bias_node,
                 stride,
                 padding,
                 dilation,
-                *optional_args,
-            ) = node.args
-            block_size = self._get_block_size(optional_args)
-
-            input_node = _require_fx_node(input_arg, name="input")
-            weight_qdata_node = _require_fx_node(weight_qdata_arg, name="weight_qdata")
-            weight_scale_node = _require_fx_node(weight_scale_arg, name="weight_scale")
-            weight_dtype = _get_block_scaled_payload_dtype(
-                get_first_fake_tensor(weight_qdata_node)
-            )
-            _mark_fp4_payload(weight_qdata_node, weight_dtype)
-            bias_node = (
-                _require_fx_node(bias_arg, name="bias")
-                if bias_arg is not None
-                else None
-            )
+                _groups,
+                block_size,
+                payload_dtype,
+            ) = self._get_conv2d_args(node)
+            payload_dtype_str = mxfp_dtype_to_str(payload_dtype)
+            _mark_mxfp_payload(weight_qdata_node, payload_dtype)
 
             output_fake = get_first_fake_tensor(node)
             stride_list = list(stride)
@@ -250,14 +298,14 @@ class RewriteMXFPConv2dPass(ArmPass):
                     graph=graph,
                     op_target=exir_ops.backend.tosa.CAST_TO_BLOCK_SCALED.default,
                     args=(input_nhwc, block_size),
-                    kwargs={"output_dtype": weight_dtype},
+                    kwargs={"output_dtype": payload_dtype_str},
                     from_node=node,
                 )
                 cast_node.meta["val"] = (
                     exir_ops.backend.tosa.CAST_TO_BLOCK_SCALED.default(
                         get_first_fake_tensor(input_nhwc),
                         block_size,
-                        output_dtype=weight_dtype,
+                        output_dtype=payload_dtype_str,
                     )
                 )
 
@@ -269,7 +317,7 @@ class RewriteMXFPConv2dPass(ArmPass):
                     from_node=node,
                 )
                 _set_tensor_meta(input_qdata_node, cast_node.meta["val"][0])
-                _mark_fp4_payload(input_qdata_node, weight_dtype)
+                _mark_mxfp_payload(input_qdata_node, payload_dtype)
 
                 input_scale_node = create_node(
                     graph=graph,
@@ -313,7 +361,7 @@ class RewriteMXFPConv2dPass(ArmPass):
                         dilation_node,
                         block_size,
                     ),
-                    kwargs={},
+                    kwargs={"payload_dtype": payload_dtype_str},
                     from_node=node,
                 )
                 _set_tensor_meta(
@@ -328,6 +376,7 @@ class RewriteMXFPConv2dPass(ArmPass):
                         pad_list,
                         dilation_list,
                         block_size,
+                        payload_dtype=payload_dtype_str,
                     ),
                 )
 

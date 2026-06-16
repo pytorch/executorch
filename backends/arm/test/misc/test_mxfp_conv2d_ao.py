@@ -5,8 +5,10 @@
 
 import torch
 from executorch.backends.arm.ao_ext import MXFPOpConfig, to_mxfp
+from executorch.backends.arm.ao_ext.mxfp import mxfp_dtype_to_str, MXFPDType
 from executorch.backends.arm.ao_ext.ops import MXFPConv2dOp
 from torch.export import export
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
 
 
 IN_CHANNELS = 64
@@ -49,15 +51,23 @@ class Conv2dModule(torch.nn.Module):
         return self.conv(x)
 
 
-def test_mxfp_conv2d_quantize_swaps_module() -> None:
+def _test_mxfp_conv2d_quantize_swaps_module(
+    weight_dtype: MXFPDType,
+    expected_weight_qdata_dtype: torch.dtype,
+    expected_weight_qdata_shape: tuple[int, ...],
+) -> None:
     model = Conv2dModule().eval()
 
-    to_mxfp(model, MXFPOpConfig())
+    to_mxfp(
+        model,
+        MXFPOpConfig(weight_dtype=weight_dtype),
+    )
 
     assert isinstance(model.conv, MXFPConv2dOp)
-    assert model.conv.weight_qdata.dtype == torch.float8_e4m3fn
+    assert model.conv.weight_qdata.dtype == expected_weight_qdata_dtype
+    assert model.conv.weight_dtype == mxfp_dtype_to_str(weight_dtype)
     assert model.conv.weight_scale.dtype == torch.float8_e8m0fnu
-    assert tuple(model.conv.weight_qdata.shape) == (OUT_CHANNELS, 3, 3, IN_CHANNELS)
+    assert tuple(model.conv.weight_qdata.shape) == expected_weight_qdata_shape
     assert tuple(model.conv.weight_scale.shape) == (
         OUT_CHANNELS,
         3,
@@ -67,17 +77,61 @@ def test_mxfp_conv2d_quantize_swaps_module() -> None:
     assert torch.unique(model.conv.weight_scale.to(torch.float32)).numel() > 1
 
 
-def test_mxfp_conv2d_quantize_supports_e5m2_weights() -> None:
-    model = Conv2dModule().eval()
+def test_mxfp8_e4m3_conv2d_quantize_swaps_module() -> None:
+    _test_mxfp_conv2d_quantize_swaps_module(
+        torch.float8_e4m3fn,
+        torch.float8_e4m3fn,
+        (OUT_CHANNELS, 3, 3, IN_CHANNELS),
+    )
+
+
+def test_mxfp4_conv2d_quantize_swaps_module() -> None:
+    _test_mxfp_conv2d_quantize_swaps_module(
+        torch.float4_e2m1fn_x2,
+        torch.uint8,
+        (OUT_CHANNELS, 3, 3, IN_CHANNELS // 2),
+    )
+
+
+def test_mxfp6_e2m3_conv2d_quantize_swaps_module() -> None:
+    _test_mxfp_conv2d_quantize_swaps_module(
+        DTYPE_FP6_E2M3,
+        torch.uint8,
+        (OUT_CHANNELS, 3, 3, IN_CHANNELS),
+    )
+
+
+def test_mxfp6_e3m2_conv2d_quantize_swaps_module() -> None:
+    _test_mxfp_conv2d_quantize_swaps_module(
+        DTYPE_FP6_E3M2,
+        torch.uint8,
+        (OUT_CHANNELS, 3, 3, IN_CHANNELS),
+    )
+
+
+def test_mxfp_conv2d_quantize_filter_fn_selects_modules() -> None:
+    class TwoConv2dModule(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.selected = torch.nn.Conv2d(IN_CHANNELS, OUT_CHANNELS, 3, padding=1)
+            self.skipped = torch.nn.Conv2d(IN_CHANNELS, OUT_CHANNELS, 3, padding=1)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.selected(x) + self.skipped(x)
+
+    def _is_selected_conv2d(module: torch.nn.Module, fqn: str) -> bool:
+        return isinstance(module, torch.nn.Conv2d) and fqn == "selected"
+
+    model = TwoConv2dModule().eval()
 
     to_mxfp(
         model,
-        MXFPOpConfig(weight_dtype=torch.float8_e5m2),
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+        filter_fn=_is_selected_conv2d,
     )
 
-    assert isinstance(model.conv, MXFPConv2dOp)
-    assert model.conv.weight_qdata.dtype == torch.float8_e5m2
-    assert model.conv.weight_scale.dtype == torch.float8_e8m0fnu
+    assert isinstance(model.selected, MXFPConv2dOp)
+    assert isinstance(model.skipped, torch.nn.Conv2d)
 
 
 def test_mxfp_conv2d_quantize_supports_fp4_weights() -> None:
@@ -129,6 +183,18 @@ def test_mxfp8_e4m3_conv2d_export_preserves_custom_op() -> None:
 def test_mxfp4_conv2d_export_preserves_custom_op() -> None:
     _test_mxfp_conv2d_export_preserves_custom_op(
         MXFPOpConfig(weight_dtype=torch.float4_e2m1fn_x2)
+    )
+
+
+def test_mxfp6_e2m3_conv2d_export_preserves_custom_op() -> None:
+    _test_mxfp_conv2d_export_preserves_custom_op(
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E2M3)
+    )
+
+
+def test_mxfp6_e3m2_conv2d_export_preserves_custom_op() -> None:
+    _test_mxfp_conv2d_export_preserves_custom_op(
+        MXFPOpConfig(weight_dtype=DTYPE_FP6_E3M2)
     )
 
 
