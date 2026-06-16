@@ -8,22 +8,24 @@
 
 // W6A8 dp4a matvec for packed INT6 decode (M <= 4), used for GGUF Q6_K weights.
 //
-// Reads a genuine 6-bit packed weight (CudaDp4aPlanarInt6Tensor format), split into
-// two planes:
+// Reads a genuine 6-bit packed weight (CudaDp4aPlanarInt6Tensor format), split
+// into two planes:
 //   ql    : [N, K/2] uint8 — low-nibble plane, nibble-packed even/odd exactly
 //           like the INT4 path (ql[:,j] = lo[:,2j] | (lo[:,2j+1] << 4)).
 //   qh    : [N, K/4] uint8 — high-2-bit plane, 4 values/byte, arranged per
 //           32-weight chunk as hi_even_packed[4] then hi_odd_packed[4] (each
-//           byte holds the four 2-bit highs of one dp4a word in even/odd order).
+//           byte holds the four 2-bit highs of one dp4a word in even/odd
+//           order).
 //   scale : [N, K/gs] bf16 — per-group scales, row-major (coalesced; no zero).
-// The stored 6-bit value is u = q + 32 in [0, 63] (q in [-32, 31]); the constant
-// -32 offset is applied in the kernel, so Q6_K's symmetry means NO zero tensor.
+// The stored 6-bit value is u = q + 32 in [0, 63] (q in [-32, 31]); the
+// constant -32 offset is applied in the kernel, so Q6_K's symmetry means NO
+// zero tensor.
 //
-// Dynamically quantizes bf16 activations to INT8 (per-32-element blocks, even/odd
-// order, identical to the INT4 path), reconstructs full 6-bit weight bytes per
-// dp4a word (vfull = vi_lo | (spread2(hi_byte) << 4)), and uses dp4a for fused
-// int6xint8 dot products with vectorized weight loads and warp-cooperative
-// quantization.
+// Dynamically quantizes bf16 activations to INT8 (per-32-element blocks,
+// even/odd order, identical to the INT4 path), reconstructs full 6-bit weight
+// bytes per dp4a word (vfull = vi_lo | (spread2(hi_byte) << 4)), and uses dp4a
+// for fused int6xint8 dot products with vectorized weight loads and
+// warp-cooperative quantization.
 //
 // Symbol names are suffixed _i6 / distinct from int4_plain_mm.cuh and
 // int8_plain_mm.cuh so all three translation units can be linked together
@@ -80,9 +82,10 @@ __device__ __forceinline__ uint32_t spread2_i6(uint32_t b) {
 // blocks, EVEN/ODD order — identical to the INT4 path's Q8Block).
 // ---------------------------------------------------------------------------
 
-// alignas(16) pads sizeof(Q8Block_i6) to 48 so each block (and its qs_even/qs_odd
-// 16-byte halves) is 16-byte aligned, allowing two vectorized uint4 loads of a
-// block's int8 activations instead of eight scalar int32 loads.
+// alignas(16) pads sizeof(Q8Block_i6) to 48 so each block (and its
+// qs_even/qs_odd 16-byte halves) is 16-byte aligned, allowing two vectorized
+// uint4 loads of a block's int8 activations instead of eight scalar int32
+// loads.
 struct alignas(16) Q8Block_i6 {
   int8_t qs_even[Q8_BLOCK_SIZE_I6 / 2];
   int8_t qs_odd[Q8_BLOCK_SIZE_I6 / 2];
@@ -175,7 +178,8 @@ __global__ void __launch_bounds__(MV6_THREADS) int6_w6a8_matvec_kernel(
     uint2 qh_chunk = __ldg(&qhrow8[i]);
     int32_t k_base = i * 32;
     uint32_t words[4] = {packed16.x, packed16.y, packed16.z, packed16.w};
-    // qh_chunk.x bytes = hi_even_packed[0..3], qh_chunk.y = hi_odd_packed[0..3].
+    // qh_chunk.x bytes = hi_even_packed[0..3], qh_chunk.y =
+    // hi_odd_packed[0..3].
     uint32_t hi_even_word = qh_chunk.x;
     uint32_t hi_odd_word = qh_chunk.y;
 
