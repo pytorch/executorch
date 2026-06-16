@@ -214,19 +214,19 @@ Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
   }
 
 #ifndef _WIN32
-  // Schedule async flush for newly added regions only.
-  // MS_ASYNC returns immediately; OS flushes in the background.
+  // Synchronous flush for newly added regions. MS_SYNC blocks until the
+  // dirty pages are written to disk and marked clean
   if (mmap_regions_.size() > mmap_regions_synced_) {
     size_t new_count = mmap_regions_.size() - mmap_regions_synced_;
     for (size_t i = mmap_regions_synced_; i < mmap_regions_.size(); ++i) {
       if (mmap_regions_[i].addr != nullptr) {
-        msync(mmap_regions_[i].addr, mmap_regions_[i].size, MS_ASYNC);
+        msync(mmap_regions_[i].addr, mmap_regions_[i].size, MS_SYNC);
       }
     }
     mmap_regions_synced_ = mmap_regions_.size();
     ET_LOG(
         Info,
-        "Scheduled async flush: %zu new regions (%zu total), %zu MB packed weights",
+        "Synced %zu new regions (%zu total), %zu MB packed weights",
         new_count,
         mmap_regions_.size(),
         packed_file_used_ / (1024 * 1024));
