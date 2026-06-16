@@ -12,6 +12,7 @@ namespace native {
 
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_avg_pool2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
@@ -21,6 +22,7 @@ Tensor& quantized_avg_pool2d_out(
     const int64_t zero_point,
     const int64_t multiplier,
     const int64_t shift,
+    const Tensor& scratch,
     Tensor& out) {
   constexpr int32_t activation_min = std::numeric_limits<int8_t>::min();
   constexpr int32_t activation_max = std::numeric_limits<int8_t>::max();
@@ -46,7 +48,24 @@ Tensor& quantized_avg_pool2d_out(
 
   cmsis_nn_context cmsis_ctx;
   cmsis_ctx.buf = nullptr;
-  cmsis_ctx.size = 0;
+  cmsis_ctx.size = scratch.nbytes();
+  if (cmsis_ctx.size > 0) {
+    cmsis_ctx.buf = scratch.mutable_data_ptr<int8_t>();
+  }
+
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
+  const int32_t runtime_buffer_bytes = arm_avgpool_s8_get_buffer_size(
+      pool_config.output_dims.w, pool_config.input_dims.c);
+  if (scratch.nbytes() != static_cast<size_t>(runtime_buffer_bytes)) {
+    ET_LOG(
+        Error,
+        "quantized_avg_pool2d_out: scratch buffer size incorrect - actual: (%d) needed: (%d)",
+        static_cast<int>(scratch.nbytes()),
+        static_cast<int>(runtime_buffer_bytes));
+    context.fail(Error::Internal);
+    return out;
+  }
+#endif
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   int8_t* output_data = out.mutable_data_ptr<int8_t>();

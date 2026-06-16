@@ -14,8 +14,8 @@ import random
 import subprocess
 import sys
 import tempfile
+import types
 from dataclasses import dataclass, fields
-from pathlib import Path
 from typing import Callable, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -34,10 +34,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
+    QnnExecuTorchLpaiTargetEnv,
     QnnExecuTorchOpPackageOptions,
 )
 from executorch.backends.qualcomm.utils.constants import (
-    DSP_VERSION,
     HEXAGON_SDK_ROOT,
     HEXAGON_TOOLS_ROOT,
 )
@@ -53,7 +53,6 @@ from executorch.backends.qualcomm.utils.utils import (
     is_qnn_sdk_version_less_than,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.exir.backend.utils import get_delegates
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torchao.quantization.pt2e import MovingAverageMinMaxObserver
@@ -76,7 +75,7 @@ class QnnConfig:
         backend (str): The target backend, such as htp, gpu, etc. QnnConfig will then parse this to type QnnExecuTorchBackendType.
         soc_model (QcomChipset): The target Qualcomm System on Chip (SoC) model.
         build_folder (str): Path to cmake binary directory for target platform, e.g., /path/to/build-android.
-        direct_build_folder (str): Path to cmake binary directory for direct_mode. E.g., path/to/build-hexagon.
+        direct_build_folder (str): Path to cmake binary directory for direct_mode. E.g., path/to/build-direct.
         target (str): Target platform for deployment.
         online_prepare (bool): Compose QNN graph on device if set to True.
         shared_buffer (bool): Enables usage of shared buffer(zero-copy mechanism) between application and backend for graph I/O during runtime.
@@ -119,7 +118,7 @@ class QnnConfig:
     ci: Optional[bool] = False
     seed: Optional[int] = None
     htp_performance_mode: QnnExecuTorchHtpPerformanceMode = (
-        QnnExecuTorchHtpPerformanceMode.kHtpBurst,
+        QnnExecuTorchHtpPerformanceMode.kHtpBurst
     )
 
     def __post_init__(self):
@@ -149,7 +148,6 @@ class QnnConfig:
                     f"Target soc_model({self.soc_model}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
                     f"Current QNN SDK version: {get_sdk_build_id()}"
                 )
-
         if self.seed:
             torch.manual_seed(self.seed)
             np.random.seed(self.seed)
@@ -235,16 +233,14 @@ class SimpleADB:
             )
         self.runner = runner
         if qnn_config.direct_build_folder:
-            required_env = [HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT, DSP_VERSION]
+            required_env = [HEXAGON_SDK_ROOT, HEXAGON_TOOLS_ROOT]
             assert all(
                 var in os.environ for var in required_env
             ), f"Please ensure the following environment variables are set: {required_env}"
             self.hexagon_sdk_root = os.getenv(HEXAGON_SDK_ROOT)
             self.hexagon_tools_root = os.getenv(HEXAGON_TOOLS_ROOT)
-            self.dsp_arch = os.getenv(DSP_VERSION)
             logging.info(f"{HEXAGON_SDK_ROOT}={self.hexagon_sdk_root}")
             logging.info(f"{HEXAGON_TOOLS_ROOT}={self.hexagon_tools_root}")
-            logging.info(f"{DSP_VERSION}={self.dsp_arch}")
         self.qnn_config = qnn_config
         self.qnn_sdk = os.getenv("QNN_SDK_ROOT")
         self.build_path = qnn_config.build_folder
@@ -264,10 +260,6 @@ class SimpleADB:
         self.workspace = workspace
         self.device_id = qnn_config.device
         self.host_id = qnn_config.host
-        if len(self.pte_path) > 0:
-            self.working_dir = Path(self.pte_path[0]).parent.absolute()
-        else:
-            self.working_dir = Path.cwd()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.dump_intermediate_outputs = qnn_config.dump_intermediate_outputs
@@ -287,17 +279,25 @@ class SimpleADB:
         if self.direct_build_folder:
             direct_general_artifacts = [
                 f"{self.build_path}/examples/qualcomm/direct_executor_runner/libqnn_executorch_stub.so",
-                f"{self.direct_build_folder}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.direct_build_folder}/backends/qualcomm/qnn_executorch/direct_mode/libqnn_executorch_skel.so",
             ]
             self.backend_library_paths.update(
                 {
                     QnnExecuTorchBackendType.kHtpBackend: [
+                        f"{self.direct_build_folder}/backends/qualcomm/libqnn_executorch_backend.so",
+                        f"{self.direct_build_folder}/backends/qualcomm/qnn_executorch/direct_mode/libqnn_executorch_skel.so",
                         f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnHtpV{self.htp_arch}.so",
                         f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/unsigned/libQnnSystem.so",
                         f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++abi.so.1",
                         f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++.so.1",
-                    ]
+                    ],
+                    QnnExecuTorchBackendType.kLpaiBackend: [
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libqnn_executorch_backend.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libqnn_executorch_skel.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libQnnLpai.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libQnnSystem.so",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libc++abi.so.1",
+                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libc++.so.1",
+                    ],
                 }
             )
             for _, library_paths in self.backend_library_paths.items():
@@ -306,7 +306,6 @@ class SimpleADB:
             traditional_general_artifacts = [
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-                f"{self.qnn_sdk}/lib/{self.target}/libQnnModelDlc.so",
             ]
             self.backend_library_paths.update(
                 {
@@ -352,9 +351,11 @@ class SimpleADB:
             )
             output_callback(result)
         else:
-            subprocess.run(
-                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+            result = subprocess.run(
+                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.__stdout__
             )
+        if result.returncode != 0:
+            raise RuntimeError(f"adb command failed: {cmds}")
 
     def push(  # noqa: C901
         self,
@@ -378,6 +379,12 @@ class SimpleADB:
             # backend libraries
             for backend in backends:
                 artifacts.extend(self.backend_library_paths[backend])
+
+            # Ensure that all necessary library artifacts exists.
+            missing = [path for path in artifacts if not os.path.exists(path)]
+            assert not missing, "Missing the following libraries:\n" + "\n".join(
+                f"  {p}" for p in missing
+            )
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_list_file, input_files = generate_inputs(
                 tmp_dir, self.input_list_filename, inputs
@@ -417,6 +424,7 @@ class SimpleADB:
         custom_runner_cmd=None,
         method_index=0,
         output_callback: Optional[Callable[[str], None]] = None,
+        iteration=1,
     ):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
@@ -436,10 +444,18 @@ class SimpleADB:
                             else ""
                         ),
                         f"--method_index {method_index}",
+                        "" if self.direct_build_folder else f"--iteration {iteration}",
                     ]
                 )
                 + self.extra_cmds
             )
+            if self.qnn_config.direct_build_folder:
+                qnn_executor_runner_args = " ".join(
+                    [
+                        qnn_executor_runner_args,
+                        f"--domain_id {get_dsp_id(self.qnn_config.backend)}",
+                    ]
+                )
             qnn_executor_runner_cmds = " ".join(
                 [
                     f"cd {self.workspace} &&",
@@ -449,6 +465,7 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
+
         self._adb(
             ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
         )
@@ -465,9 +482,14 @@ class SimpleADB:
         if callback:
             callback()
 
-    def pull_debug_output(self, etdump_path, debug_ouput_path, callback=None):
+    def pull_debug_output(self, etdump_path, debug_buffer_path, callback=None):
         self._adb(["pull", self.etdump_path, etdump_path])
-        self._adb(["pull", self.debug_output_path, debug_ouput_path])
+        self._adb(["pull", self.debug_output_path, debug_buffer_path])
+        if callback:
+            callback()
+
+    def pull_heap_output(self, src_file_path, dst_folder, callback=None):
+        self._adb(["pull", src_file_path, dst_folder])
         if callback:
             callback()
 
@@ -526,7 +548,9 @@ def build_executorch_binary(
     ):
         raise RuntimeError("Currently LPAI backend only supports offline_prepare.")
     backend_options = {
-        QnnExecuTorchBackendType.kLpaiBackend: generate_lpai_compiler_spec(),
+        QnnExecuTorchBackendType.kLpaiBackend: generate_lpai_compiler_spec(
+            target_env=get_lpai_target_env(qnn_config)
+        ),
         QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(),
         QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
             use_fp16=False if quant_dtype is not None else True,
@@ -575,6 +599,7 @@ def build_executorch_binary(
             dep_table=passes_dependency,
             skip_node_id_set=qnn_config.skip_delegate_node_ids,
             skip_node_op_set=qnn_config.skip_delegate_node_ops,
+            generate_etrecord=qnn_intermediate_debugger is not None,
         )
     else:
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
@@ -585,20 +610,8 @@ def build_executorch_binary(
             passes_job=passes_job,
             skip_node_id_set=qnn_config.skip_delegate_node_ids,
             skip_node_op_set=qnn_config.skip_delegate_node_ops,
+            generate_etrecord=qnn_intermediate_debugger is not None,
         )
-
-    if qnn_intermediate_debugger:
-        lowered_module_nodes = get_delegates(edge_prog_mgr.exported_program().graph)
-        assert (
-            len(lowered_module_nodes) == 1
-        ), "Graph with partitions are currently unsupported."
-
-        lowered_module_node = lowered_module_nodes[0]
-        lower_module = getattr(
-            edge_prog_mgr.exported_program().graph_module, lowered_module_node.name
-        )
-        edge_module = lower_module.original_module.module()
-        qnn_intermediate_debugger.set_edge_module(edge_module=edge_module)
 
     allocate_io = not (qnn_config.shared_buffer or qnn_config.direct_build_folder)
     executorch_config = ExecutorchBackendConfig(
@@ -617,7 +630,16 @@ def build_executorch_binary(
     with open(pte_name, "wb") as file:
         exec_prog_mgr.write_to_file(file)
 
-    print(f"Successfully generated {pte_name}.")
+    if qnn_intermediate_debugger:
+        etrecord = exec_prog_mgr.get_etrecord()
+        etrecord.update_representative_inputs(qnn_intermediate_debugger.sample_input)
+        edge_ep = etrecord.graph_map[qnn_intermediate_debugger.reference_graph_name]
+        # Use this edge_ep since edge_ep after etrecord serialize/deserialize will lose quant_attrs info.
+        qnn_intermediate_debugger.set_edge_ep(edge_ep=edge_ep)
+        etrecord_file_path = f"{os.path.dirname(pte_name)}/debug.etrecord"
+        qnn_intermediate_debugger.set_etrecord_file_path(etrecord_file_path)
+        etrecord.save(etrecord_file_path)
+
     if qnn_config.compile_only:
         sys.exit(0)
 
@@ -653,13 +675,43 @@ def make_quantizer(
     return quantizer
 
 
+def get_lpai_target_env(qnn_config: QnnConfig):
+    if qnn_config.enable_x86_64:
+        return QnnExecuTorchLpaiTargetEnv.kX86
+    elif qnn_config.direct_build_folder:
+        return QnnExecuTorchLpaiTargetEnv.kAdsp
+    return QnnExecuTorchLpaiTargetEnv.kArm
+
+
 def get_backend_type(backend: str):
     return getattr(QnnExecuTorchBackendType, f"k{backend.title()}Backend")
 
 
-def setup_common_args_and_variables():
-    parser = argparse.ArgumentParser()
+def get_dsp_id(backend):
+    dsp_id_map = {
+        QnnExecuTorchBackendType.kLpaiBackend: 0,
+        QnnExecuTorchBackendType.kHtpBackend: 3,
+    }
+    if backend not in dsp_id_map:
+        raise ValueError(
+            f"Unsupported backend {backend} for direct mode. "
+            f"Supported: {list(dsp_id_map.keys())}"
+        )
+    return dsp_id_map[backend]
 
+
+def setup_common_args_and_variables(parser=None):
+    if parser is None:
+        # regular path
+        parser = argparse.ArgumentParser()
+    else:
+        # pytest path
+        parser.add_argument = types.MethodType(
+            lambda self, *opts, **attrs: self.addoption(*opts, **attrs),
+            parser,
+        )
+
+    # !prevent using short option for namespace collision
     parser.add_argument(
         "--config_file",
         help="To reduce the effort of providing a lot of command-line arguments, users can choose to save all arguments to a .json file and pass it in. Please refer to executorch/examples/qualcomm/executor_runner/sample_config.json for sample.",
@@ -668,16 +720,13 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-m",
         "--soc_model",
-        "--model",  # Deprecate this flag in future.
         help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
         type=str,
         default=None,
     )
 
     parser.add_argument(
-        "-b",
         "--build_folder",
         help="path to cmake binary directory for target platform, e.g., /path/to/build-android",
         type=str,
@@ -685,7 +734,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-H",
         "--host",
         help="hostname where android device is connected.",
         default=None,
@@ -714,7 +762,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-S",
         "--skip_delegate_node_ids",
         help="If specified, skip delegation for the specified node based on node ids. Node ids should be separated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
         default=None,
@@ -722,7 +769,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-f",
         "--skip_delegate_node_ops",
         help="If specified, skip delegation for the specified op. Node ops should be separated by comma. e.g., aten.add.Tensor,aten.relu.default",
         default=None,
@@ -730,7 +776,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-c",
         "--compile_only",
         help="If specified, only compile the model.",
         action="store_true",
@@ -738,7 +783,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-s",
         "--device",
         help="serial number for android device communicated via ADB.",
         type=str,
@@ -753,7 +797,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-z",
         "--shared_buffer",
         help="Enables usage of shared buffer(zero-copy mechanism) between application and backend for graph I/O.",
         action="store_true",
@@ -767,7 +810,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-D",
         "--dump_intermediate_outputs",
         help="If specified, enable dump intermediate outputs",
         action="store_true",
@@ -783,7 +825,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-x",
         "--enable_x86_64",
         help="Enable unittest to be executed on x86_64 platform",
         action="store_true",
@@ -803,7 +844,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-t",
         "--target",
         help="Target platform for deployment",
         choices=[
@@ -823,7 +863,7 @@ def setup_common_args_and_variables():
 
     parser.add_argument(
         "--direct_build_folder",
-        help="Path to cmake binary directory for direct_mode. E.g., path/to/build-hexagon."
+        help="Path to cmake binary directory for direct_mode. E.g., path/to/build-direct."
         "If enabled, run self-defined protocol to control fastrpc communication.",
         type=str,
     )

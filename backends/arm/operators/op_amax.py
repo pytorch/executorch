@@ -69,7 +69,7 @@ class MaxVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         nan_mode = ts.NanPropagationMode.PROPAGATE
-        attr.ReduceMaxAttribute(axis=input.dim_order.index(dim), nan_mode=nan_mode)
+        attr.ReduceMaxAttribute(axis=dim, nan_mode=nan_mode)
         self._serialize_operator(
             node,
             tosa_graph,

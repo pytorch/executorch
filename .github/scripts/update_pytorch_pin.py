@@ -8,12 +8,6 @@ import sys
 import urllib.request
 from pathlib import Path
 
-# torch_pin.py lives at the repo root. Locate it relative to this script so
-# the import works regardless of where the script is invoked from.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_REPO_ROOT))
-from torch_pin import CHANNEL, NIGHTLY_VERSION, torch_branch
-
 
 def parse_nightly_version(nightly_version):
     """
@@ -31,6 +25,23 @@ def parse_nightly_version(nightly_version):
 
     year, month, day = match.groups()
     return f"{year}-{month}-{day}"
+
+
+def get_torch_nightly_version():
+    """
+    Read NIGHTLY_VERSION from torch_pin.py.
+
+    Returns:
+        NIGHTLY_VERSION string
+    """
+    with open("torch_pin.py", "r") as f:
+        content = f.read()
+
+    match = re.search(r'NIGHTLY_VERSION\s*=\s*["\']([^"\']+)["\']', content)
+    if not match:
+        raise ValueError("Could not find NIGHTLY_VERSION in torch_pin.py")
+
+    return match.group(1)
 
 
 def get_commit_hash_for_nightly(date_str):
@@ -80,16 +91,17 @@ def extract_hash_from_title(title):
     return match.group(1)
 
 
-def update_pytorch_pin(ref):
+def update_pytorch_pin(commit_hash):
     """
-    Update .ci/docker/ci_commit_pins/pytorch.txt with the new ref.
+    Update .ci/docker/ci_commit_pins/pytorch.txt with the new commit hash.
 
     Args:
-        ref: Either a commit SHA (nightly) or a branch name (test/release).
+        commit_hash: Commit hash to write
     """
-    pin_file = _REPO_ROOT / ".ci/docker/ci_commit_pins/pytorch.txt"
-    pin_file.write_text(f"{ref}\n")
-    print(f"Updated {pin_file} with ref: {ref}")
+    pin_file = ".ci/docker/ci_commit_pins/pytorch.txt"
+    with open(pin_file, "w") as f:
+        f.write(f"{commit_hash}\n")
+    print(f"Updated {pin_file} with commit hash: {commit_hash}")
 
 
 def should_skip_file(filename):
@@ -106,20 +118,18 @@ def should_skip_file(filename):
     return filename in skip_files
 
 
-def fetch_file_content(ref, file_path):
+def fetch_file_content(commit_hash, file_path):
     """
     Fetch file content from GitHub API.
 
     Args:
-        ref: Commit SHA or branch name to fetch from
+        commit_hash: Commit hash to fetch from
         file_path: File path in the repository
 
     Returns:
         File content as bytes
     """
-    api_url = (
-        f"https://api.github.com/repos/pytorch/pytorch/contents/{file_path}?ref={ref}"
-    )
+    api_url = f"https://api.github.com/repos/pytorch/pytorch/contents/{file_path}?ref={commit_hash}"
 
     req = urllib.request.Request(api_url)
     req.add_header("Accept", "application/vnd.github.v3+json")
@@ -136,7 +146,7 @@ def fetch_file_content(ref, file_path):
         raise
 
 
-def sync_directory(et_dir, pt_path, ref):
+def sync_directory(et_dir, pt_path, commit_hash):
     """
     Sync files from PyTorch to ExecuTorch using GitHub API.
     Only syncs files that already exist in ExecuTorch - does not add new files.
@@ -144,7 +154,7 @@ def sync_directory(et_dir, pt_path, ref):
     Args:
         et_dir: ExecuTorch directory path
         pt_path: PyTorch directory path in the repository (e.g., "c10")
-        ref: Commit SHA or branch name to fetch from
+        commit_hash: Commit hash to fetch from
 
     Returns:
         Number of files grafted
@@ -171,12 +181,12 @@ def sync_directory(et_dir, pt_path, ref):
 
         # Fetch content from PyTorch and compare
         try:
-            pt_content = fetch_file_content(ref, pt_file_path)
+            pt_content = fetch_file_content(commit_hash, pt_file_path)
             et_content = et_file.read_bytes()
 
             if pt_content != et_content:
                 print(f"⚠️  Difference detected in {rel_path}")
-                print(f"📋 Grafting from PyTorch ref {ref}...")
+                print(f"📋 Grafting from PyTorch commit {commit_hash}...")
 
                 et_file.write_bytes(pt_content)
                 print(f"✅ Grafted {et_file}")
@@ -191,34 +201,37 @@ def sync_directory(et_dir, pt_path, ref):
     return files_grafted
 
 
-def sync_c10_directories(ref):
+def sync_c10_directories(commit_hash):
     """
     Sync c10 and torch/headeronly directories from PyTorch to ExecuTorch using GitHub API.
 
     Args:
-        ref: PyTorch commit SHA or branch name to sync from
+        commit_hash: PyTorch commit hash to sync from
 
     Returns:
         Total number of files grafted
     """
     print("\n🔄 Syncing c10 directories from PyTorch via GitHub API...")
 
+    # Get repository root
+    repo_root = Path.cwd()
+
     # Define directory pairs to sync (from check_c10_sync.sh)
     # Format: (executorch_dir, pytorch_path_in_repo)
     dir_pairs = [
         (
-            _REPO_ROOT / "runtime/core/portable_type/c10/c10",
+            repo_root / "runtime/core/portable_type/c10/c10",
             "c10",
         ),
         (
-            _REPO_ROOT / "runtime/core/portable_type/c10/torch/headeronly",
+            repo_root / "runtime/core/portable_type/c10/torch/headeronly",
             "torch/headeronly",
         ),
     ]
 
     total_grafted = 0
     for et_dir, pt_path in dir_pairs:
-        files_grafted = sync_directory(et_dir, pt_path, ref)
+        files_grafted = sync_directory(et_dir, pt_path, commit_hash)
         total_grafted += files_grafted
 
     if total_grafted > 0:
@@ -231,26 +244,27 @@ def sync_c10_directories(ref):
 
 def main():
     try:
-        print(f"CHANNEL: {CHANNEL}")
-        if CHANNEL == "nightly":
-            # Nightly pins to an immutable SHA looked up by date.
-            print(f"Found NIGHTLY_VERSION: {NIGHTLY_VERSION}")
-            date_str = parse_nightly_version(NIGHTLY_VERSION)
-            print(f"Parsed date: {date_str}")
-            pin_ref = get_commit_hash_for_nightly(date_str)
-        else:
-            # For test/release, pin to the branch name so CI picks up
-            # cherry-picks / security patches as they land on the branch.
-            pin_ref = torch_branch()
-        print(f"Pin ref: {pin_ref}")
+        # Read NIGHTLY_VERSION from torch_pin.py
+        nightly_version = get_torch_nightly_version()
+        print(f"Found NIGHTLY_VERSION: {nightly_version}")
+
+        # Parse to date string
+        date_str = parse_nightly_version(nightly_version)
+        print(f"Parsed date: {date_str}")
+
+        # Fetch commit hash from PyTorch nightly branch
+        commit_hash = get_commit_hash_for_nightly(date_str)
+        print(f"Found commit hash: {commit_hash}")
 
         # Update the pin file
-        update_pytorch_pin(pin_ref)
+        update_pytorch_pin(commit_hash)
 
-        # Sync c10 directories from PyTorch (ref param accepts branches too)
-        sync_c10_directories(pin_ref)
+        # Sync c10 directories from PyTorch
+        sync_c10_directories(commit_hash)
 
-        print("\n✅ Successfully updated PyTorch pin and synced c10 directories!")
+        print(
+            "\n✅ Successfully updated PyTorch commit pin and synced c10 directories!"
+        )
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

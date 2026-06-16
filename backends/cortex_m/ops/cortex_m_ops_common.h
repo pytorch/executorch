@@ -113,8 +113,7 @@ inline void validate_quantization_params(
     const int64_t shift2,
     const int64_t output_zero_point,
     const int64_t output_multiplier,
-    const int64_t output_shift,
-    Tensor& output) {
+    const int64_t output_shift) {
   validate_single_quant_params(
       zero_point1, multiplier1, shift1, "Single quant Input1");
   validate_single_quant_params(
@@ -346,6 +345,7 @@ inline bool prepare_cmsis_pool2d_config(
 // https://github.com/ARM-software/CMSIS-NN/blob/main/Include/arm_nnsupportfunctions.h#L1625
 // multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}
 // shift     : Range {-31, 30}
+// cppcheck-suppress unusedFunction
 inline bool validate_per_channel_quant_params(
     const Int64ArrayRef multipliers,
     const Int64ArrayRef shifts,

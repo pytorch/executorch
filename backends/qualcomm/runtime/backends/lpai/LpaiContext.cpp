@@ -16,11 +16,19 @@ using executorch::runtime::Error;
 
 LpaiContext::LpaiContext(
     QnnImplementation* implementation,
+    QnnSystemImplementation* system_implementation,
     QnnBackend* backend,
     QnnDevice* device,
     QnnBackendCache* cache,
     QnnDlcManager* qnn_dlc_manager)
-    : QnnContext(implementation, backend, device, cache, qnn_dlc_manager) {
+    : QnnContext(
+          implementation,
+          system_implementation,
+          backend,
+          device,
+          cache,
+          qnn_dlc_manager,
+          QnnExecuTorchProfileLevel::kProfileOff) {
   lpai_context_custom_config_ = std::make_unique<LpaiContextCustomConfig>();
 }
 
@@ -38,6 +46,14 @@ Error LpaiContext::MakeConfig(std::vector<const QnnContext_Config_t*>& config) {
     context_config_[i].customConfig = context_custom_config[i];
     config.push_back(&context_config_[i]);
   }
+
+#ifdef __hexagon__
+  QnnContext_Config_t adsp_context_config;
+  adsp_context_config.option = QNN_CONTEXT_CONFIG_PERSISTENT_BINARY;
+  adsp_context_config.isPersistentBinary = 1;
+  context_config_.push_back(adsp_context_config);
+  config.push_back(&context_config_.back());
+#endif
 
   config.push_back(nullptr);
   return Error::Ok;

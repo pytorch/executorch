@@ -147,6 +147,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             "//executorch/exir/backend/test:backend_with_compiler_demo",
+            "//executorch/exir/backend/test:device_util",
             "//executorch/exir:lib",
         ],
         visibility = [],  # Private
@@ -226,6 +227,7 @@ def define_common_targets():
         default_outs = ["."],
         visibility = [
             "//executorch/runtime/executor/test/...",
+            "//executorch/extension/module/test/...",
         ],
     )
 

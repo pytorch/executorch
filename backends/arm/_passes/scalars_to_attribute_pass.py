@@ -8,11 +8,9 @@ from typing import cast, Set, Type, Union
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import (
-    get_cond_while_submodules_nested,
-    get_first_fake_tensor,
-)
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.exir.graph_module import get_cond_while_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
@@ -39,12 +37,12 @@ class ScalarsToAttributePass(ArmPass):
         self,
         graph_module: GraphModule,
         n: Node,
-    ) -> None:
+    ) -> bool:
         """Convert scalar literal args of targeted_ops in node n of graph_module
         into attribute get_attr nodes with registered buffers.
         """
         if n.op != "call_function" or n.target not in self.targeted_ops:
-            return
+            return False
 
         biggest_rank = 1
         for arg in n.args:
@@ -52,6 +50,7 @@ class ScalarsToAttributePass(ArmPass):
                 shape = get_first_fake_tensor(arg).shape
                 biggest_rank = max(biggest_rank, len(shape))
 
+        modified = False
         output_fake_tensor = get_first_fake_tensor(n)
         new_args: list[Node | int] = []
         for arg in n.args:
@@ -93,21 +92,26 @@ class ScalarsToAttributePass(ArmPass):
                     n.replace_all_uses_with(sub)
                     sub.meta["val"] = n.meta["val"]
                 graph_module.graph.erase_node(n)
+            modified = True
+        return modified
 
-    def handle_control_nodes(self, graph_module: GraphModule) -> None:
+    def handle_control_nodes(self, graph_module: GraphModule) -> bool:
         """Apply scalar argument conversion on subgraphs of control-flow
         nodes.
         """
-        for _, submodule, _ in get_cond_while_submodules_nested(graph_module):
+        modified = False
+        for _, submodule, _ in get_cond_while_submodules(graph_module):
             for submodule_node in submodule.graph.nodes:
-                self._convert_scalar_args(submodule, submodule_node)
+                modified |= self._convert_scalar_args(submodule, submodule_node)
+        return modified
 
     def call(self, graph_module: GraphModule) -> PassResult:
         # convert scalars in control-flow subgraphs and main graph
+        modified = False
         for node in list(graph_module.graph.nodes):
             n = cast(Node, node)
-            self._convert_scalar_args(graph_module, n)
-        self.handle_control_nodes(graph_module)
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+            modified |= self._convert_scalar_args(graph_module, n)
+        modified |= self.handle_control_nodes(graph_module)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

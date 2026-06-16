@@ -48,9 +48,32 @@ set(CUDA_SHIM_TESTS
     test_aoti_torch_assign_tensors_out
 )
 
+# CUDA-specific tests requiring GPU kernels
+set(CUDA_KERNEL_TESTS test_aoti_torch_cuda__weight_int4pack_mm
+                      test_aoti_torch_cuda_int4_plain_mm
+)
+
 enable_testing()
 
 foreach(test_name ${CUDA_SHIM_TESTS})
+  add_executable(${test_name} ${test_name}.cpp)
+
+  target_include_directories(
+    ${test_name} PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
+                         ${CUDAToolkit_INCLUDE_DIRS}
+  )
+
+  target_compile_definitions(${test_name} PRIVATE CUDA_AVAILABLE=1)
+
+  target_link_libraries(
+    ${test_name} PRIVATE GTest::gtest GTest::gtest_main aoti_cuda_shims
+                         executorch_core CUDA::cudart
+  )
+
+  add_test(NAME ${test_name} COMMAND ${test_name})
+endforeach()
+
+foreach(test_name ${CUDA_KERNEL_TESTS})
   add_executable(${test_name} ${test_name}.cpp)
 
   target_include_directories(

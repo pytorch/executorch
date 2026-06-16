@@ -8,18 +8,18 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class RewritePadPass(ArmPass):
+class RewritePadPass(ArmOpTargetedPass):
     """Rewrite constant_pad_nd operator to TOSA Pad operator with constant
     mode.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
-    targeted_ops = {
+    target_ops = {
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.pad.default,
     }
@@ -145,7 +145,7 @@ class RewritePadPass(ArmPass):
         return output
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if op == exir_ops.edge.aten.constant_pad_nd.default:

@@ -19,10 +19,10 @@ aten_op = "torch.ops.aten.detach_copy.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten__detach_copy_default"
 
 test_data_suite = {
-    "zeros_2d": torch.zeros(3, 5),
-    "ones_3d": torch.ones(2, 3, 4),
-    "rand_2d": torch.rand(10, 10) - 0.5,
-    "ramp_1d": torch.arange(-8.0, 8.0, 0.5),
+    "zeros_2d": lambda: torch.zeros(3, 5),
+    "ones_3d": lambda: torch.ones(2, 3, 4),
+    "rand_2d": lambda: torch.rand(10, 10) - 0.5,
+    "ramp_1d": lambda: torch.arange(-8.0, 8.0, 0.5),
 }
 
 
@@ -38,7 +38,7 @@ class DetachCopy(torch.nn.Module):
 def test_detach_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         DetachCopy(),
-        (test_data,),
+        (test_data(),),
         aten_op=DetachCopy.aten_op,
         exir_op=DetachCopy.exir_op,
     )
@@ -49,7 +49,7 @@ def test_detach_tosa_FP(test_data: torch.Tensor):
 def test_detach_tosa_INT(test_data: torch.Tensor):
     pipeline = TosaPipelineINT[input_t1](
         DetachCopy(),
-        (test_data,),
+        (test_data(),),
         aten_op=DetachCopy.aten_op,
         exir_op=DetachCopy.exir_op,
     )

@@ -24,9 +24,12 @@ from executorch.backends.cadence.aot.reorder_ops import (
     AdvanceQuantizeOpAboveDefChainPass,
     AdvanceQuantizeOpAboveDefInBranchPass,
     MoveSliceBeforePermutePass,
+    MoveSliceBeforeViewPass,
     PostponeDequantizeOpBelowUseChainPass,
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
+    PropagateSlice,
     SinkOpsCloserToUsePass,
+    SplitDequantizedCatPass,
 )
 from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -761,3 +764,791 @@ class TestMoveSliceBeforePermutePass(unittest.TestCase):
             MoveSliceBeforePermutePass(),
         )
         self.assertTrue(result.modified)
+
+
+class TestMoveSliceBeforeViewPass(unittest.TestCase):
+    @staticmethod
+    def _shapes_by_target(
+        gm: torch.fx.GraphModule, target: object
+    ) -> list[tuple[int, ...]]:
+        """Output shapes of every node with the given target, in graph order."""
+        return [
+            tuple(node.meta["val"].shape)
+            for node in gm.graph.nodes
+            if node.target == target
+        ]
+
+    def _assert_slice_and_view_shapes(
+        self,
+        gm: torch.fx.GraphModule,
+        slice_shapes: list[tuple[int, ...]],
+        view_shapes: list[tuple[int, ...]],
+    ) -> None:
+        self.assertEqual(
+            self._shapes_by_target(gm, exir_ops.edge.aten.slice_copy.Tensor),
+            slice_shapes,
+        )
+        self.assertEqual(
+            self._shapes_by_target(gm, exir_ops.edge.aten.view_copy.default),
+            view_shapes,
+        )
+
+    def test_strided_innermost_move(self) -> None:
+        """Splitting the last dim into [...,2] then slicing that 2 (innermost,
+        width 1) becomes a strided slice on the pre-view tensor, then view."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 4, 0, 1, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.view_copy)
+        # The strided pre-view slice [0:255:2] keeps 128 of the 256 elements,
+        # then the view restores the (sliced) viewed shape.
+        self._assert_slice_and_view_shapes(
+            result.graph_module, [(1, 16, 128)], [(1, 16, 4, 32, 1)]
+        )
+
+    def test_fanout_both_slices_move(self) -> None:
+        """A view that fans out to even/odd slices: each is pushed before the
+        view independently and the now-dead shared view is removed."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        even = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 4, 0, 1, 1),
+        )
+        odd = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 4, 1, 2, 1),
+        )
+        builder.output([even, odd])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(sum(n == exir_ops.edge.aten.slice_copy for n in nodes), 2)
+        self.assertEqual(sum(n == exir_ops.edge.aten.view_copy for n in nodes), 2)
+        # Each fanned-out slice keeps half the elements and gets its own view.
+        self._assert_slice_and_view_shapes(
+            result.graph_module,
+            [(1, 16, 128), (1, 16, 128)],
+            [(1, 16, 4, 32, 1), (1, 16, 4, 32, 1)],
+        )
+
+    def test_contiguous_outermost_move(self) -> None:
+        """Slicing the outermost factor of a split dim → contiguous pre-view
+        slice, then view."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 2, 128]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 2, 0, 1, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.view_copy)
+        self._assert_slice_and_view_shapes(
+            result.graph_module, [(1, 16, 128)], [(1, 16, 1, 128)]
+        )
+
+    def test_contiguous_outer_factor_width_two_move(self) -> None:
+        """Slicing the first two of the outermost factor (size 4) is still a
+        contiguous pre-view slice [0:128], then view → (1,16,2,32,2)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 2, 0, 2, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            original,
+            (torch.randn(1, 16, 256),),
+            MoveSliceBeforeViewPass(),
+        )
+        self.assertTrue(result.modified)
+
+        nodes = get_compute_nodes_in_gm(result.graph_module)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(nodes[0], exir_ops.edge.aten.slice_copy)
+        self.assertEqual(nodes[1], exir_ops.edge.aten.view_copy)
+        self._assert_slice_and_view_shapes(
+            result.graph_module, [(1, 16, 128)], [(1, 16, 2, 32, 2)]
+        )
+
+    def test_strided_outer_factor_not_moved(self) -> None:
+        """A strided (step>1, width>1) selection of the outermost factor is a
+        block-strided pattern, not a single pre-view slice → left unchanged."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 32, 2]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 2, 0, 4, 2),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforeViewPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_block_strided_not_moved(self) -> None:
+        """Slicing a middle factor yields a block-strided selection that is not a
+        single pre-view slice → left unchanged."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        viewed = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(x, [1, 16, 4, 2, 32]),
+        )
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(viewed, 3, 0, 1, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforeViewPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_non_view_input_no_change(self) -> None:
+        """A slice whose input is not a view is left unchanged."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 256))
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 2, 0, 128, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, MoveSliceBeforeViewPass()(original))
+        self.assertFalse(result.modified)
+
+
+class TestPropagateSlice(unittest.TestCase):
+    def test_swap_quantize_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        slice_node = slice_nodes[0]
+        self.assertEqual(slice_node.args[0].name, "x")
+        self.assertEqual(list(slice_node.meta["val"].shape), [2, 60, 1, 1])
+
+        quant_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.cadence.quantize_per_tensor.default,
+        )
+        self.assertEqual(len(quant_nodes), 1)
+        self.assertEqual(quant_nodes[0].args[0], slice_node)
+        self.assertEqual(list(quant_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_swap_dequantize_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder(
+            "x", torch.randint(0, 255, (4, 60, 4, 4), dtype=torch.uint8)
+        )
+        dequant = builder.call_operator(
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(dequant, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "x")
+
+    def test_step_2_through_quantize(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[4], 2)
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_non_batch_dim_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 4, 4))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 1, 0, 30, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [4, 30, 4, 4])
+
+    def test_no_swap_when_multi_user(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 2),
+        )
+        builder.output([sliced, quant])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
+
+    def test_no_swap_noop_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        quant = builder.call_operator(
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            args=(x, 0.5, 0, 0, 255, torch.uint8),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(quant, 0, 0, 4, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
+
+    def test_unsupported_parent_not_swapped(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        relu = builder.call_operator(
+            exir_ops.edge.aten.relu.default,
+            args=(x,),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(relu, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
+
+    def test_swap_broadcast_mul_slice_on_broadcast_dim(self) -> None:
+        """[1,60,1,1] * [4,1,1,1] → [4,60,1,1] → slice(dim=0, step=2)
+        Only the [4,1,1,1] input should be sliced."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(1, 60, 1, 1))
+        b = builder.placeholder("b", torch.randn(4, 1, 1, 1))
+        mul = builder.call_operator(exir_ops.edge.aten.mul.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(mul, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "b")
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [2, 1, 1, 1])
+
+        mul_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mul.Tensor
+        )
+        self.assertEqual(len(mul_nodes), 1)
+        self.assertEqual(list(mul_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_swap_broadcast_add_lhs_broadcasts(self) -> None:
+        """[1,60,4,4] + [4,60,4,4] → [4,60,4,4] → slice(dim=0, step=2)
+        Only the [4,60,4,4] (rhs) should be sliced."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(1, 60, 4, 4))
+        b = builder.placeholder("b", torch.randn(4, 60, 4, 4))
+        add = builder.call_operator(exir_ops.edge.aten.add.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(add, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "b")
+
+    def test_swap_broadcast_mul_slice_on_non_broadcast_dim(self) -> None:
+        """[4,60,1,1] * [4,1,1,1] → [4,60,1,1] → slice(dim=1, start=0, end=30)
+        Only the [4,60,1,1] (lhs) should be sliced since rhs has dim1=1."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(4, 60, 1, 1))
+        b = builder.placeholder("b", torch.randn(4, 1, 1, 1))
+        mul = builder.call_operator(exir_ops.edge.aten.mul.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(mul, 1, 0, 30, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertTrue(result.modified)
+
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "a")
+        self.assertEqual(list(slice_nodes[0].meta["val"].shape), [4, 30, 1, 1])
+
+    def test_no_swap_binary_same_shape(self) -> None:
+        """Same-shape binary ops are not swapped (no broadcast)."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(4, 60, 4, 4))
+        b = builder.placeholder("b", torch.randn(4, 60, 4, 4))
+        add = builder.call_operator(exir_ops.edge.aten.add.Tensor, args=(a, b))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(add, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice().call(gm)
+
+        self.assertFalse(result.modified)
+
+
+class TestSplitDequantizedCat(unittest.TestCase):
+    def test_no_dequant_input_noop(self) -> None:
+        """Cat with only float (non-dequant) inputs should not be split."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(2, 4))
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([a, b], 0))
+        q = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.01, 0, -128, 127, torch.int8),
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q, 0.01, 0, -128, 127, torch.int8),
+        )
+        builder.output([dq])
+        gm = builder.get_graph_module()
+
+        result = SplitDequantizedCatPass().call(gm)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
+
+    def test_no_quant_output_noop(self) -> None:
+        """Cat with a dequant input but no quant consumer should not be split."""
+        builder = GraphBuilder()
+        x_int8 = builder.placeholder(
+            "x_int8", torch.randint(-128, 127, (2, 4), dtype=torch.int8)
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_int8, 0.01, 0, -128, 127, torch.int8),
+        )
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([dq, b], 0))
+        builder.output([cat])
+        gm = builder.get_graph_module()
+
+        result = SplitDequantizedCatPass().call(gm)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
+
+    def test_one_dequant_input_one_quant_output(self) -> None:
+        """Cat with one dequant input and one quant consumer should be split."""
+        builder = GraphBuilder()
+        x_int8 = builder.placeholder(
+            "x_int8", torch.randint(-128, 127, (2, 4), dtype=torch.int8)
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_int8, 0.01, 0, -128, 127, torch.int8),
+        )
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([dq, b], 0))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, args=(cat, 0, 0, 2)
+        )
+        q = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.02, -5, -128, 127, torch.int8),
+        )
+        q_dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q, 0.02, -5, -128, 127, torch.int8),
+        )
+        builder.output([sliced, q_dq])
+        gm = builder.get_graph_module()
+
+        result = SplitDequantizedCatPass().call(gm)
+
+        self.assertTrue(result.modified)
+        converted = result.graph_module
+        self.assertEqual(count_node(converted, exir_ops.edge.aten.cat.default), 2)
+
+        # The slice should still be on the original cat, which has no quant consumers.
+        slice_nodes = converted.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        for node in slice_nodes:
+            cat_input = node.args[0]
+            self.assertEqual(cat_input.target, exir_ops.edge.aten.cat.default)
+            quant_users = [
+                u
+                for u in cat_input.users
+                if u.target
+                == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+            ]
+            self.assertEqual(len(quant_users), 0)
+
+    def test_non_quant_consumers_stay_on_original_cat(self) -> None:
+        """All non-quant consumers should remain on the original cat."""
+        builder = GraphBuilder()
+        x_int8 = builder.placeholder(
+            "x_int8", torch.randint(-128, 127, (2, 4), dtype=torch.int8)
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_int8, 0.01, 0, -128, 127, torch.int8),
+        )
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([dq, b], 0))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, args=(cat, 0, 0, 2)
+        )
+        abs_val = builder.call_operator(exir_ops.edge.aten.abs.default, args=(cat,))
+        q = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.02, -5, -128, 127, torch.int8),
+        )
+        q_dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q, 0.02, -5, -128, 127, torch.int8),
+        )
+        builder.output([sliced, abs_val, q_dq])
+        gm = builder.get_graph_module()
+
+        result = SplitDequantizedCatPass().call(gm)
+
+        self.assertTrue(result.modified)
+        converted = result.graph_module
+        self.assertEqual(count_node(converted, exir_ops.edge.aten.cat.default), 2)
+
+        # Both non-quant consumers (slice and abs) should use the same cat.
+        slice_nodes = converted.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        abs_nodes = converted.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.abs.default
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(len(abs_nodes), 1)
+        self.assertIs(slice_nodes[0].args[0], abs_nodes[0].args[0])
+
+        # That shared cat should have no quant consumers.
+        original_cat = slice_nodes[0].args[0]
+        quant_users = [
+            u
+            for u in original_cat.users
+            if u.target
+            == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+        ]
+        self.assertEqual(len(quant_users), 0)
+
+    def test_two_quant_outputs_same_params_shared_cat(self) -> None:
+        """Two quant consumers with identical params should share one duplicate cat."""
+        builder = GraphBuilder()
+        x_int8 = builder.placeholder(
+            "x_int8", torch.randint(-128, 127, (2, 4), dtype=torch.int8)
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_int8, 0.01, 0, -128, 127, torch.int8),
+        )
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([dq, b], 0))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, args=(cat, 0, 0, 2)
+        )
+        q1 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.02, -5, -128, 127, torch.int8),
+        )
+        q2 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.02, -5, -128, 127, torch.int8),
+        )
+        dq1 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q1, 0.02, -5, -128, 127, torch.int8),
+        )
+        dq2 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q2, 0.02, -5, -128, 127, torch.int8),
+        )
+        builder.output([sliced, dq1, dq2])
+        gm = builder.get_graph_module()
+
+        result = SplitDequantizedCatPass().call(gm)
+
+        self.assertTrue(result.modified)
+        converted = result.graph_module
+        # Original cat + one shared duplicate = 2 cats total
+        self.assertEqual(count_node(converted, exir_ops.edge.aten.cat.default), 2)
+
+        # Both quant nodes should share the same cat input (the duplicate).
+        quant_nodes = converted.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )
+        quant_cat_inputs = {node.args[0] for node in quant_nodes}
+        self.assertEqual(len(quant_cat_inputs), 1)
+
+    def test_two_quant_outputs_different_params_separate_cats(self) -> None:
+        """Two quant consumers with different params should get separate duplicate cats."""
+        builder = GraphBuilder()
+        x_int8 = builder.placeholder(
+            "x_int8", torch.randint(-128, 127, (2, 4), dtype=torch.int8)
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_int8, 0.01, 0, -128, 127, torch.int8),
+        )
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([dq, b], 0))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, args=(cat, 0, 0, 2)
+        )
+        q1 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.02, -5, -128, 127, torch.int8),
+        )
+        q2 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.03, 10, -128, 127, torch.int8),
+        )
+        dq1 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q1, 0.02, -5, -128, 127, torch.int8),
+        )
+        dq2 = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q2, 0.03, 10, -128, 127, torch.int8),
+        )
+        builder.output([sliced, dq1, dq2])
+        gm = builder.get_graph_module()
+
+        result = SplitDequantizedCatPass().call(gm)
+
+        self.assertTrue(result.modified)
+        converted = result.graph_module
+        # Original cat + two separate duplicates = 3 cats total
+        self.assertEqual(count_node(converted, exir_ops.edge.aten.cat.default), 3)
+
+        # Each quant node should have a different cat input.
+        quant_nodes = converted.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )
+        quant_cat_inputs = {node.args[0] for node in quant_nodes}
+        self.assertEqual(len(quant_cat_inputs), 2)
+
+
+class TestAdvanceQuantAboveCat(unittest.TestCase):
+    def test_float_inputs_get_quantized(self) -> None:
+        """Float (non-dq) inputs to cat should get a quant inserted."""
+        builder = GraphBuilder()
+        a = builder.placeholder("a", torch.randn(2, 4))
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([a, b], 0))
+        q = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.01, 0, -128, 127, torch.int8),
+        )
+        builder.output([q])
+        gm = builder.get_graph_module()
+
+        result = AdvanceQuantizeOpAboveDefChainPass().call(gm)
+
+        self.assertTrue(result.modified)
+        converted = result.graph_module
+
+        # Two new quants (one per input) should exist; the original post-cat quant is gone.
+        self.assertEqual(
+            count_node(
+                converted,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            ),
+            2,
+        )
+
+        # Cat should take quantized inputs.
+        cat_nodes = converted.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.cat.default
+        )
+        self.assertEqual(len(cat_nodes), 1)
+        for inp in cat_nodes[0].args[0]:
+            self.assertEqual(
+                inp.target,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            )
+
+    def test_cat_with_multiple_users_not_advanced(self) -> None:
+        """Cat with multiple users should not be advanced (split pass handles this first)."""
+        builder = GraphBuilder()
+        x_int8 = builder.placeholder(
+            "x_int8", torch.randint(-128, 127, (2, 4), dtype=torch.int8)
+        )
+        dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_int8, 0.02, -5, -128, 127, torch.int8),
+        )
+        b = builder.placeholder("b", torch.randn(2, 4))
+        cat = builder.call_operator(exir_ops.edge.aten.cat.default, args=([dq, b], 0))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor, args=(cat, 0, 0, 2)
+        )
+        q = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(cat, 0.02, -5, -128, 127, torch.int8),
+        )
+        q_dq = builder.call_operator(
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q, 0.02, -5, -128, 127, torch.int8),
+        )
+        builder.output([sliced, q_dq])
+        gm = builder.get_graph_module()
+
+        result = AdvanceQuantizeOpAboveDefChainPass().call(gm)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)

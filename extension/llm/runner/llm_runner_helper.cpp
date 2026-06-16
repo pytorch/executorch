@@ -266,10 +266,15 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   // Create IOManager
   std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
 
+  // Read vocab_size for Sampler
+  int32_t vocab_size = static_cast<int32_t>(metadata.at(kVocabSize));
+  float init_temp = temperature == -1.0f ? 0.0f : temperature;
+  auto sampler = std::make_unique<Sampler>(vocab_size, init_temp);
+
   // Create text_decoder_runner
   ET_LOG(Info, "Using method: %s", method_name.c_str());
   auto text_decoder_runner = std::make_unique<TextDecoderRunner>(
-      module.get(), io_manager.get(), method_name);
+      module.get(), io_manager.get(), method_name, std::move(sampler));
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
@@ -334,9 +339,13 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
   // Create IOManager
   std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
 
+  // Read vocab_size for Sampler
+  int32_t vocab_size = static_cast<int32_t>(metadata.at(kVocabSize));
+  auto sampler = std::make_unique<Sampler>(vocab_size, 0.0f); // Default temp
+
   // Create text_decoder_runner
-  auto text_decoder_runner =
-      std::make_unique<MultimodalDecoderRunner>(module.get(), io_manager.get());
+  auto text_decoder_runner = std::make_unique<MultimodalDecoderRunner>(
+      module.get(), io_manager.get(), "forward", std::move(sampler));
 
   // Create multimodal_prefiller
   auto multimodal_prefiller = std::make_unique<MultimodalPrefiller>(

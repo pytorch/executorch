@@ -4,30 +4,49 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import operator
 
 import torch
 
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.ops_aliases import (
+    AddTensor,
+    Cat,
+    Clone,
+    CloneDimOrder,
+    DequantizePerChannel,
+    DequantizePerTensor,
+    MulTensor,
+    PermuteCopy,
+    QuantizePerChannel,
+    QuantizePerTensor,
+    SubTensor,
+    ViewCopy,
+)
 from torch.fx import GraphModule, Node
 from torch.fx.node import Argument
 from torch.nn import Parameter
 
 QUANTIZE_OPERATORS = [
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    QuantizePerChannel,
+    QuantizePerTensor,
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_channel.default,
 ]
 
 DEQUANTIZE_OPERATORS = [
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    DequantizePerChannel,
+    DequantizePerTensor,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_channel.default,
 ]
 
 # A set of operators which could possibly be no-ops in certain conditions. The operators in this set will be proclaimed
 #  as no-ops (and potentially not delegated), if their input and output tensors are equal (when run on random data).
 no_op_candidates = {
-    exir_ops.edge.aten.add.Tensor,
-    exir_ops.edge.aten.mul.Tensor,
-    exir_ops.edge.aten.sub.Tensor,
+    AddTensor,
+    MulTensor,
+    PermuteCopy,
+    SubTensor,
 }
 
 
@@ -107,21 +126,11 @@ def try_get_tensor_constant_from_node(
 
 
 def _is_dequantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in [
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
-        torch.ops.quantized_decomposed.dequantize_per_channel.default,
-    ]
+    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS
 
 
 def _is_quantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
-        torch.ops.quantized_decomposed.quantize_per_channel.default,
-    ]
+    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS
 
 
 def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
@@ -171,21 +180,11 @@ def get_non_qdq_users(node: Node) -> list[Node]:
     """
 
     quant_nodes = list(node.users)
-    if len(quant_nodes) != 1 or quant_nodes[0].target not in [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    ]:
+    if len(quant_nodes) != 1 or not _is_quantize(quant_nodes[0]):
         return []
 
     dequant_nodes = list(quant_nodes[0].users)
-    if any(
-        dequant_node.target
-        not in [
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        ]
-        for dequant_node in dequant_nodes
-    ):
+    if any(not _is_dequantize(dequant_node) for dequant_node in dequant_nodes):
         return []
 
     res = []
@@ -276,14 +275,14 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
         )
 
     if node.target in [
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.dim_order_ops._clone_dim_order.default,
-        exir_ops.edge.aten.clone.default,
+        Clone,
+        ViewCopy,
+        CloneDimOrder,
     ]:
         # Known operators which are always no-ops on Neutron.
         return True
 
-    if node.target == exir_ops.edge.aten.cat.default and len(node.args[0]) == 1:
+    if node.target == Cat and len(node.args[0]) == 1:
         # Concatenation with 1 input is a no-op.
         return True
 
@@ -317,7 +316,7 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
                         input_data = torch.rand(val.shape, dtype=val.dtype) * 10 - 5
                         args_with_random_data.append(input_data)
 
-                case list():
+                case list() if any(isinstance(a, Node) for a in arg):
                     # Lists of input nodes are not supported to keep the code simple. It is not crucial to support this
                     #  case as the affected operators are either not supported on Neutron, or are extremely unlikely to
                     #  be no-ops (e.g. GRU). One exception is `aten.cat`, which is explicitly supported above.
@@ -367,3 +366,105 @@ def node_has_well_defined_shape(node: Node) -> bool:
 
 def try_get_arg(node: Node, idx: int) -> Argument | None:
     return node.args[idx] if idx < len(node.args) else None
+
+
+def input_quantization_type(
+    node: Node, input_index: int | tuple[int, int]
+) -> torch.dtype | None:
+    """Return the quantization input datatype of the QDQ quantized `node`.
+
+    :param node: The compute node.
+    :param input_index: The index into the `node.args`. If a tuple of 2 ints is provided,
+                         `args[input_index[0]][input_index[1]]` is used instead.
+    :return: The input quantization datatype of the QDQ quantized `node`, or `None` if the graph does not follow the
+              QDQ pattern or some metadata is incomplete or an invalid input index is given.
+
+          │ <returned type>
+    ┌─────▼──────┐
+    │ Dequantize │
+    └─────┬──────┘
+          │ float
+      ┌───▼────┐
+      │ `node` │
+      └───┬────┘
+    """
+    try:
+        if isinstance(input_index, int):
+            dequantize_node = node.args[input_index]
+        elif (
+            isinstance(input_index, tuple)
+            and len(input_index) == 2
+            and all(isinstance(i, int) for i in input_index)
+        ):
+            dequantize_node = node.args[input_index[0]][input_index[1]]
+        else:
+            raise RuntimeError(
+                "NXP backend: edge_helper.input_quantization_type(): Invalid input index."
+            )
+    except IndexError:
+        return None  # Invalid input args index.
+
+    if not _is_dequantize(dequantize_node):
+        return None  # Broken QDQ schema.
+
+    if (dequantize_input_val := dequantize_node.args[0].meta.get("val")) is None:
+        return None  # Invalid metadata.
+
+    return dequantize_input_val.dtype
+
+
+def output_quantization_type(node: Node, output_index: int) -> torch.dtype | None:
+    """Return the quantization output datatype of the QDQ quantized `node`.
+
+    :param node: The compute node.
+    :param output_index: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                          index selects the output. If no `getitem` nodes follow it, the operator
+                          produces only 1 output (most common case), and the value `0` must be used.
+    :return: The output quantization datatype of the QDQ quantized `node`, or `None` if the graph does not follow the
+              QDQ pattern or some metadata is incomplete or an invalid input index is given.
+
+                                           ┌───▼────┐
+                                           │ `node` │
+     ┌───▼────┐                            └───┬────┘
+     │ `node` │                                │
+     └───┬────┘                             ┌──┴───────────────...──
+         │ float                  ┌─────────▼─────────────┐
+    ┌────▼─────┐         or       │ getitem(output_index) │    ...
+    │ Quantize │                  └─────────┬─────────────┘
+    └────┬─────┘                            │ float
+         │ <returned type>             ┌────▼─────┐
+                                       │ Quantize │
+                                       └────┬─────┘
+                                            │ <returned type>
+    """
+    users = list(node.users)
+    if len(users) == 1 and _is_quantize(quantize_node := users[0]):
+        # Basic QDQ case.
+        if output_index != 0:
+            # There is only 1 output. Cannot access non-zero index.
+            return None
+
+    else:  # Only `getitem` nodes should follow.
+        if not isinstance(output_index, int):
+            return None  # Invalid index.
+        if not all(user.target == operator.getitem for user in users):
+            # Broken QDQ schema (unexpected nodes). These nodes should be moved out by
+            #  `move_auxiliary_operator_into_separate_qdq_cluster_pass.py`.
+            return None
+
+        selected_getitems = list(
+            filter(lambda getitem: getitem.args[1] == output_index, users)
+        )
+        if len(selected_getitems) != 1:
+            return None  # Multiple getitems access the selected output -> broken QDQ schema.
+        selected_getitem_users = list(selected_getitems[0].users)
+        if not (
+            len(selected_getitem_users) == 1
+            and _is_quantize(quantize_node := selected_getitem_users[0])
+        ):
+            return None  # Broken QDQ schema.
+
+    if (quantize_val := quantize_node.meta.get("val")) is None:
+        return None  # Invalid metadata.
+
+    return quantize_val.dtype

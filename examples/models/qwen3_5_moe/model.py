@@ -21,7 +21,6 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.qwen3_5_moe.sampler import sample
 from torch.nn import functional as F
 
@@ -186,7 +185,6 @@ class RotaryEmbedding(nn.Module):
 
 
 class KVCache(nn.Module):
-
     def __init__(self, n_kv_heads, head_dim, max_seq_len):
         super().__init__()
         self.register_buffer(
@@ -207,7 +205,6 @@ class KVCache(nn.Module):
 
 
 class FullAttention(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.n_heads = config.num_attention_heads
@@ -318,7 +315,6 @@ class FullAttention(nn.Module):
 
 
 class GatedDeltaNet(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.num_k_heads = config.linear_num_key_heads
@@ -479,6 +475,7 @@ class FusedMoEExperts(nn.Module):
         self.hidden_size = config.hidden_size
         self.group_size = 32
         self.use_batched_moe = False
+        self.moe_activation_dtype = "bf16"
 
         self.w1_weight = nn.Parameter(
             torch.empty(
@@ -497,6 +494,19 @@ class FusedMoEExperts(nn.Module):
 
     def forward(self, x, expert_weights, expert_indices, top_k):
         if self.use_batched_moe:
+            if self.moe_activation_dtype == "int8":
+                return torch.ops.triton.fused_moe_batched_gemm_int8(
+                    x,
+                    self.w1,
+                    self.w1_scale,
+                    self.w2,
+                    self.w2_scale,
+                    expert_weights,
+                    expert_indices,
+                    top_k,
+                    self.num_experts,
+                    self.group_size,
+                )
             return torch.ops.triton.fused_moe_batched_gemm(
                 x,
                 self.w1,
@@ -523,6 +533,47 @@ class FusedMoEExperts(nn.Module):
         )
 
 
+class W4DequantLinear(nn.Module):
+    """Dense W4 linear with dual decode/prefill dispatch.
+
+    Replaces tinygemm-format dense linears with simple [N, K//2] packed INT4
+    weights (same format as MoE experts). The prefill/decode path is baked at
+    export time via use_dequant_prefill:
+
+        False → decode path: Triton int4_matvec (bandwidth-optimized vec-mat)
+        True  → prefill path: dequant_w4_to_bf16 + F.linear (Inductor Triton mm)
+    """
+
+    def __init__(self, in_features, out_features, group_size=32):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.group_size = group_size
+        self.use_dequant_prefill = False
+        self.register_buffer("w_packed", None)  # [N, K//2] int8
+        self.register_buffer("w_scale", None)  # [N, K//gs] bf16
+
+    def forward(self, x):
+        orig_shape = x.shape
+        x_2d = x.reshape(-1, self.in_features)
+
+        if self.use_dequant_prefill:
+            w_bf16 = torch.ops.triton.dequant_w4_to_bf16(
+                self.w_packed, self.w_scale, self.group_size
+            )
+            out = F.linear(x_2d, w_bf16)
+        else:
+            assert x_2d.shape[0] == 1, (
+                f"int4_matvec decode path requires M=1, got M={x_2d.shape[0]}. "
+                f"Set use_dequant_prefill=True for M>1."
+            )
+            out = torch.ops.triton.int4_matvec(
+                x_2d, self.w_packed, self.w_scale, self.group_size
+            )
+
+        return out.reshape(*orig_shape[:-1], self.out_features)
+
+
 class SwiGLU(nn.Module):
     """SwiGLU MLP with fused gate+up projection."""
 
@@ -540,7 +591,6 @@ class SwiGLU(nn.Module):
 
 
 class SparseMoE(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.top_k = config.num_experts_per_tok
@@ -574,7 +624,6 @@ class SparseMoE(nn.Module):
 
 
 class Block(nn.Module):
-
     def __init__(self, config, layer_idx):
         super().__init__()
         self.layer_type = config.layer_types[layer_idx]
@@ -599,7 +648,6 @@ class Block(nn.Module):
 
 
 class Qwen35MoE(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -620,12 +668,8 @@ class Qwen35MoE(nn.Module):
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        # When no sampling is requested, return the full ``[B, T, V]``
-        # logits so callers (eval, custom samplers) can inspect every
-        # position. Otherwise apply the prefill optimization and only
-        # materialize ``[B, V]`` for the last token.
         if temperature is None:
-            return self.lm_head(x).float()  # [B, T, V] float32
+            return self.lm_head(x)  # [B, T, V] in model dtype
         logits = self.lm_head(x[:, -1, :]).float()  # [B, V] float32
         # GPU-side Gumbel-max sampling: argmax(logits/T + gumbel_noise) is
         # equivalent to drawing from softmax(logits/T) but stays entirely

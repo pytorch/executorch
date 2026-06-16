@@ -649,7 +649,7 @@ class TestOpRepSets(unittest.TestCase):
     # -- Scalar args are skipped --
 
     def test_scalar_arg_skipped(self):
-        """Non-tensor args should be treated as ALL_STORAGES_REPSET."""
+        """Non-tensor args should be treated as ANY_STORAGE_INCL_PACKED_INT8."""
         tensor_arg = _make_tensor_arg_node((1, 3, 8, 8))
         # Second arg is a scalar (float)
         scalar_arg = 1.0
@@ -666,8 +666,8 @@ class TestOpRepSets(unittest.TestCase):
             DEFAULT_TEXTURE_LIMITS,
         )
         self.assertFalse(op_repsets.any_is_empty())
-        # The scalar arg should get ALL_STORAGES_REPSET
-        # self.assertEqual(op_repsets.get_arg_repset(1), ALL_STORAGES_REPSET, f"""{op_repsets.get_arg_repset(1)}""")
+        # The scalar arg should get ANY_STORAGE_INCL_PACKED_INT8
+        # self.assertEqual(op_repsets.get_arg_repset(1), ANY_STORAGE_INCL_PACKED_INT8, f"""{op_repsets.get_arg_repset(1)}""")
 
     # -- pick_representations --
 

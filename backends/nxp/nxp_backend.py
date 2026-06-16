@@ -14,7 +14,9 @@ from typing import final, List, Optional
 
 import numpy as np
 import torch
-
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
 from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -50,7 +52,6 @@ class NeutronCompileSpecBuilder:
         self.use_neutron_for_format_conversion = True
         self.fetch_constants_to_sram = False
         self.dump_kernel_selection_code = False
-        self.use_new_flow_neutron_c = False
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -66,7 +67,6 @@ class NeutronCompileSpecBuilder:
         use_neutron_for_format_conversion: bool = True,
         fetch_constants_to_sram: bool = False,
         dump_kernel_selection_code: bool = False,
-        use_new_flow_neutron_c: bool = False,
     ) -> "NeutronCompileSpecBuilder":
         """Generate compile spec for Neutron NPU
 
@@ -79,7 +79,6 @@ class NeutronCompileSpecBuilder:
         :param fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
         :param dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
-        :param use_new_flow_neutron_c: Enable experimental MLIR-based flow for Neutron-C with improved INT8 operator support.
         :return: self for method chaining
         """
 
@@ -102,7 +101,6 @@ class NeutronCompileSpecBuilder:
         self.use_neutron_for_format_conversion = use_neutron_for_format_conversion
         self.fetch_constants_to_sram = fetch_constants_to_sram
         self.dump_kernel_selection_code = dump_kernel_selection_code
-        self.use_new_flow_neutron_c = use_new_flow_neutron_c
 
         return self
 
@@ -131,10 +129,6 @@ class NeutronCompileSpecBuilder:
                     "dump_kernel_selection_code",
                     f"{self.dump_kernel_selection_code}".encode(),
                 ),
-                CompileSpec(
-                    "use_new_flow_neutron_c",
-                    f"{self.use_new_flow_neutron_c}".encode(),
-                ),
             ]
 
         return self.compile_spec
@@ -148,7 +142,6 @@ def generate_neutron_compile_spec(
     use_neutron_for_format_conversion: bool = True,
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
-    use_new_flow_neutron_c: bool = False,
 ) -> List[CompileSpec]:
     return (
         NeutronCompileSpecBuilder()
@@ -159,7 +152,6 @@ def generate_neutron_compile_spec(
             use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             fetch_constants_to_sram=fetch_constants_to_sram,
             dump_kernel_selection_code=dump_kernel_selection_code,
-            use_new_flow_neutron_c=use_new_flow_neutron_c,
         )
         .build()
     )
@@ -184,7 +176,6 @@ class NeutronBackend(BackendDetails):
         use_neutron_for_format_conversion = None
         fetch_constants_to_sram = False
         dump_kernel_selection_code = None
-        use_new_flow_neutron_c = False
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -198,8 +189,6 @@ class NeutronBackend(BackendDetails):
                 fetch_constants_to_sram = spec.value.decode() == "True"
             if spec.key == "dump_kernel_selection_code":
                 dump_kernel_selection_code = spec.value.decode() == "True"
-            if spec.key == "use_new_flow_neutron_c":
-                use_new_flow_neutron_c = spec.value.decode() == "True"
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -229,6 +218,7 @@ class NeutronBackend(BackendDetails):
                 edge_program,
                 neutron_target_spec=NeutronTargetSpec(target),
                 conversion_config=conversion_config,
+                custom_delegation_options=CustomDelegationOptions(),
             )
 
             neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
@@ -236,7 +226,6 @@ class NeutronBackend(BackendDetails):
                 target,
                 delegation_tag,
                 fetch_constants_to_sram,
-                use_new_flow_neutron_c,
             )
 
             # Dump the tflite file if logging level is enabled

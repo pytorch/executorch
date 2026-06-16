@@ -23,7 +23,10 @@
 #undef VMA_DYNAMIC_VULKAN_FUNCTIONS
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
-#define VMA_VULKAN_VERSION 1002000
+// Must match the 3.2.0 VulkanMemoryAllocatorInstantiated config
+// (vk_mem_alloc_instantiated.h) so struct layouts agree across translation
+// units and the pre-instantiated static lib.
+#define VMA_VULKAN_VERSION 1003000
 
 #ifdef __clang__
 #pragma clang diagnostic push

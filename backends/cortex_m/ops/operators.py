@@ -265,19 +265,50 @@ def quantized_mul_impl(
 
 
 # ===================================================================
+# QUANTIZED ACTIVATION (LUT) OPERATION DEFINITION
+# ===================================================================
+# Generic table-lookup activation. The 256-entry int8 LUT is precomputed AoT
+# from the input/output qparams and the activation function (sigmoid, tanh,
+# silu, ...), so the kernel is identical regardless of which activation it
+# evaluates: out[i] = lut[input[i] + 128].
+lib.define("quantized_activation(Tensor input, Tensor lut) -> Tensor")
+lib.define(
+    "quantized_activation.out(Tensor input, Tensor lut, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_activation")  # type: ignore[misc]
+def quantized_activation_meta(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    assert input.dtype == torch.int8, "quantized_activation input must be int8"
+    assert lut.dtype == torch.int8 and lut.numel() == 256, (
+        "quantized_activation lut must be int8 with 256 entries; "
+        f"got dtype={lut.dtype}, numel={lut.numel()}"
+    )
+    return torch.empty_like(input)
+
+
+@impl(lib, "quantized_activation", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_activation_impl(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    indices = input.to(torch.int32) + 128
+    return lut[indices].to(torch.int8)
+
+
+# ===================================================================
 # QUANTIZED BATCH MATMUL OPERATION DEFINITION
 # ===================================================================
 lib.define(
     "quantized_batch_matmul("
     "Tensor lhs, int lhs_zero_point, "
     "Tensor rhs_transposed, int rhs_zero_point, "
-    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "Tensor scratch) -> Tensor"
 )
 lib.define(
     "quantized_batch_matmul.out("
     "Tensor lhs, int lhs_zero_point, "
     "Tensor rhs_transposed, int rhs_zero_point, "
     "int output_zero_point, int output_multiplier, int output_shift, "
+    "Tensor scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -291,6 +322,7 @@ def quantized_batch_matmul_meta(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     batch, lhs_rows, inner = lhs.shape
     batch_rhs, rhs_cols, inner_rhs = rhs_transposed.shape
@@ -307,6 +339,7 @@ def quantized_batch_matmul_impl(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     # Offsets are negated zero points (CMSIS-NN convention)
     lhs_fp = lhs.to(torch.float32) + float(lhs_zero_point)
@@ -434,8 +467,8 @@ def quantized_linear_meta(
 def quantized_linear_impl(
     input: torch.Tensor,
     weights: torch.Tensor,
-    bias: torch.Tensor,
-    kernel_sum: torch.Tensor,
+    bias: torch.Tensor | None,
+    kernel_sum: torch.Tensor | None,
     input_offset: int,
     filter_offset: int,
     output_offset: int,
@@ -448,10 +481,11 @@ def quantized_linear_impl(
     Functional variant - creates output tensor and calls out variant
     """
 
-    # Leaving both implementations for debugging purposes.
-    compute_using_kernel_sum = True
-
-    if compute_using_kernel_sum:
+    # Mirror CMSIS-NN's arm_fully_connected_s8 contract: the MVE path reads
+    # kernel_sum (ctx.buf) and ignores bias; the DSP and scalar paths read
+    # bias and ignore kernel_sum. The AOT pass populates exactly one of them
+    # based on the target ISA, so dispatch off which one is present.
+    if kernel_sum is not None:
         weights_int32 = weights.to(torch.int32)
 
         input_int32 = input.to(torch.int32)
@@ -638,7 +672,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -657,6 +692,7 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -733,6 +769,7 @@ def quantized_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -762,6 +799,7 @@ def quantized_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError("quantized_conv2d expects 4D input and weight tensors")
@@ -830,7 +868,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -850,6 +889,7 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -870,6 +910,7 @@ def quantized_depthwise_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -900,6 +941,7 @@ def quantized_depthwise_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError(
@@ -973,7 +1015,9 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch"
     ") -> Tensor"
 )
 
@@ -992,6 +1036,8 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -1057,6 +1103,8 @@ def quantized_transpose_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -1095,6 +1143,8 @@ def quantized_transpose_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     """
     Reference implementation of quantized transposed convolution.
@@ -1167,7 +1217,8 @@ lib.define(
     "int[] padding, "
     "int zero_point, "
     "int multiplier, "
-    "int shift"
+    "int shift, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 lib.define(
@@ -1179,6 +1230,7 @@ lib.define(
     "int zero_point, "
     "int multiplier, "
     "int shift, "
+    "Tensor scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -1192,6 +1244,7 @@ def quantized_avg_pool2d_meta(
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
@@ -1221,6 +1274,7 @@ def quantized_avg_pool2d_impl(
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
 

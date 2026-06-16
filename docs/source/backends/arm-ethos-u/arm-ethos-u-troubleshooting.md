@@ -24,7 +24,7 @@ You can see how  this coupling between the memory mode and runtime application i
 
 ## Using Bundled.io and ETdump
 
-The arm_executor_runner supports [bundled-io](https://docs.pytorch.org/executorch/0.4/bundled-io.html) and [ETdump](https://docs.pytorch.org/executorch/stable/etdump.html) debugging tools.
+The arm_executor_runner supports [bundled-io](https://docs.pytorch.org/executorch/stable/bundled-io.html) and [ETdump](https://docs.pytorch.org/executorch/stable/etdump.html) debugging tools.
 
 To enable bundled-io, set `-DEXECUTORCH_BUILD_DEVTOOLS=ON` when building Executorch and `-DET_BUNDLE_IO=ON` when building the executor_runner. To enable ETdump, set `-DEXECUTORCH_BUILD_ARM_ETDUMP=ON` when building Executorch and `-DEXECUTORCH_ENABLE_EVENT_TRACER=ON` when building the executor_runner.
 

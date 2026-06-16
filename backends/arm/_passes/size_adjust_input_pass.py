@@ -63,9 +63,13 @@ def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
 
 
 def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
-    slices = []
+    slices: Slices = []
 
-    input_node, weight, _, stride_hw, pad_hw, dilation_hw, _, _, _ = conv_node.args
+    input_node, weight, _, stride_hw, pad_hw, dilation_hw, transposed, _, _ = (
+        conv_node.args
+    )
+    if transposed:
+        return slices
     weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
     spatial_rank = len(input_shape) - 2
@@ -214,7 +218,7 @@ class SizeAdjustInputPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
-        modified_graph = False
+        modified = False
         for node in graph.nodes:
             if node.op != "call_function":
                 continue
@@ -236,11 +240,9 @@ class SizeAdjustInputPass(ArmPass):
                     )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
-                modified_graph = True
+                modified = True
 
-        if modified_graph:
+        if modified:
             graph_module = super().call(graph_module).graph_module
-            graph.eliminate_dead_code()
-            graph_module.recompile()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

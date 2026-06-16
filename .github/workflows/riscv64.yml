@@ -1,0 +1,67 @@
+name: Test RISC-V Backend
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/trunk/*
+  pull_request:
+    paths:
+      - .github/workflows/riscv64.yml
+      - .ci/scripts/test_riscv_qemu.sh
+      - tools/cmake/preset/riscv64_linux.cmake
+      - examples/riscv/**
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * *'  # Runs daily at 2 AM PST
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  test-riscv:
+    name: test-riscv
+    uses: ./.github/workflows/_test_riscv.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - add
+          - mv2
+          - mobilebert
+          - llama2
+          - resnet18
+          - yolo26
+        xnnpack: [true, false]
+        quantize: [true, false]
+        exclude:
+          # We only enable quantization with XNNPACK
+          - xnnpack: false
+            quantize: true
+          # We don't test quantization for Yolo26
+          - model: yolo26
+            quantize: true
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      model: ${{ matrix.model }}
+      xnnpack: ${{ matrix.xnnpack }}
+      quantize: ${{ matrix.quantize }}
+      # If XNNPACK, test with multiple RVV length, disabled otherwise
+      qemu-cpu: >-
+        ${{
+          case(
+            matrix.xnnpack, '[
+              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=128,elen=64,vext_spec=v1.0",
+              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=256,elen=64,vext_spec=v1.0",
+              "rv64,zba=true,zbb=true,zbs=true,v=true,vlen=512,elen=64,vext_spec=v1.0"
+            ]',
+            '[
+              "rv64,zba=true,zbb=true,zbs=true,v=false"
+            ]'
+          )
+        }}

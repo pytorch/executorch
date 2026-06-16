@@ -25,11 +25,10 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include <stb_image_resize.h>
 
 #include <gflags/gflags.h>
 
+#include <executorch/extension/image/image_processor.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
@@ -56,47 +55,49 @@ DEFINE_bool(
 
 using ::executorch::extension::from_blob;
 using ::executorch::extension::Module;
+using ::executorch::extension::image::ColorFormat;
+using ::executorch::extension::image::ImageProcessor;
+using ::executorch::extension::image::ImageProcessorConfig;
+using ::executorch::extension::image::Normalization;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 
 namespace {
 
-// ImageNet normalization constants
-constexpr float kImageNetMean[] = {0.485f, 0.456f, 0.406f};
-constexpr float kImageNetStd[] = {0.229f, 0.224f, 0.225f};
-
 /**
- * Load an image file, resize to target_size x target_size, and apply
- * ImageNet normalization. Returns CHW float data.
+ * Load an image file, then resize to target_size x target_size and apply
+ * ImageNet normalization with ImageProcessor. Returns CHW float data.
  */
 std::vector<float> load_image(const std::string& path, int target_size) {
-  int width, height, channels;
-  unsigned char* raw = stbi_load(path.c_str(), &width, &height, &channels, 3);
-  if (!raw) {
+  int width = 0, height = 0, channels = 0;
+  // Decode as RGBA; ImageProcessor accepts BGRA/RGBA and discards alpha.
+  unsigned char* rgba = stbi_load(path.c_str(), &width, &height, &channels, 4);
+  if (!rgba) {
     ET_LOG(Error, "Failed to load image: %s", path.c_str());
     return {};
   }
 
-  // Resize to target_size x target_size
-  std::vector<unsigned char> resized(target_size * target_size * 3);
-  stbir_resize_uint8(
-      raw, width, height, 0, resized.data(), target_size, target_size, 0, 3);
-  stbi_image_free(raw);
+  ImageProcessorConfig config;
+  config.target_width = target_size;
+  config.target_height = target_size;
+  config.normalization = Normalization::imagenet();
 
-  // Convert to CHW float with ImageNet normalization
-  size_t spatial = target_size * target_size;
-  std::vector<float> chw_data(3 * spatial);
-  for (int h = 0; h < target_size; ++h) {
-    for (int w = 0; w < target_size; ++w) {
-      int hwc_idx = (h * target_size + w) * 3;
-      for (int c = 0; c < 3; ++c) {
-        float pixel = static_cast<float>(resized[hwc_idx + c]) / 255.0f;
-        chw_data[c * spatial + h * target_size + w] =
-            (pixel - kImageNetMean[c]) / kImageNetStd[c];
-      }
-    }
+  ImageProcessor processor(config);
+  auto result = processor.process(
+      rgba, width, height, /*stride_bytes=*/width * 4, ColorFormat::RGBA);
+  stbi_image_free(rgba);
+  if (!result.ok()) {
+    ET_LOG(
+        Error,
+        "Failed to preprocess image: %d",
+        static_cast<int>(result.error()));
+    return {};
   }
-  return chw_data;
+
+  // Copy the [1, 3, target_size, target_size] float output into a CHW vector.
+  const auto tensor = result.get();
+  const float* data = tensor->const_data_ptr<float>();
+  return std::vector<float>(data, data + tensor->numel());
 }
 
 /**
