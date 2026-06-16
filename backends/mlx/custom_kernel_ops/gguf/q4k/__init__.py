@@ -23,4 +23,4 @@ import os
 
 def emit_direct_gguf() -> bool:
     """Return True to emit fused kernels that read raw GGUF bytes (default)."""
-    return os.environ.get("ET_MLX_EMIT_DIRECT_GGUF", "1") != "0"
+    return os.environ.get("ET_MLX_EMIT_DIRECT_GGUF", "0") != "0"
