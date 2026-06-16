@@ -1045,6 +1045,20 @@ jobs:
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  llm-server:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: ./.github/workflows/_llm_server.yml
+    permissions:
+      id-token: write
+      contents: read
+
   test-models-windows:
     needs: run-decision
     if: |
