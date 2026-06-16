@@ -148,7 +148,6 @@ class QnnConfig:
                     f"Target soc_model({self.soc_model}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
                     f"Current QNN SDK version: {get_sdk_build_id()}"
                 )
-
         if self.seed:
             torch.manual_seed(self.seed)
             np.random.seed(self.seed)

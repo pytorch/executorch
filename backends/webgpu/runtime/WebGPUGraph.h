@@ -31,6 +31,7 @@ struct WebGPUDispatch {
   WGPUComputePipeline pipeline = nullptr;
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
+  std::string kernel_name; // bench label
 };
 
 struct OutputCopy {
@@ -104,6 +105,9 @@ class WebGPUGraph {
   }
   int64_t get_int(int id) const {
     return ints_[id];
+  }
+  bool get_bool(int id) const {
+    return bools_[id];
   }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.

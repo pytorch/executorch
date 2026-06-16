@@ -19,6 +19,7 @@ from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
+from .decompose_div_mode import DecomposeDivMode
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
@@ -53,6 +54,7 @@ from .insert_requantize import InsertRequantize
 from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
+from .lpai_partition_fallback_support import LpaiPartitionFallbackSupport
 from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
@@ -81,6 +83,7 @@ __all__ = [
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
+    DecomposeDivMode,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeFill,
@@ -115,6 +118,7 @@ __all__ = [
     InsertRequantize,
     LayoutTransform,
     LiftConstantScalarOperands,
+    LpaiPartitionFallbackSupport,
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
