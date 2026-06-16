@@ -104,6 +104,7 @@ from executorch.backends.arm._passes import (
     DecorateFp32toInt32CastingPass,
     DeduplicateGetAttrPass,
     EnsureUniqueOutputNodesPass,
+    ExirToTosaPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
     FuseConsecutiveConcatShapesPass,
@@ -622,6 +623,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 InsertConstShapesPass(),
+                ExirToTosaPass(exported_program),
             ]
         )
 
