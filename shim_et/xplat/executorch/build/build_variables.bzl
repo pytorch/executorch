@@ -494,6 +494,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/plan/xnn_subgraph.cpp",
     "runtime/plan/memory_plan.cpp",
     "runtime/executor/executor.cpp",
+    "runtime/FlatbufferGraphBuilder.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
