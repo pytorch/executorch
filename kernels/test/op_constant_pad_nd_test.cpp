@@ -10,6 +10,7 @@
 #include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -463,9 +464,9 @@ TEST_F(OpConstantPadNDOutTest, TooManyPaddingElementsFail) {
 }
 
 TEST_F(OpConstantPadNDOutTest, IncorrectOutputShapeFail) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle reshape output";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle reshape output");
 
   TensorFactory<ScalarType::Float> tf;
 

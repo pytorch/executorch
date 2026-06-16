@@ -916,7 +916,7 @@ struct promote_types {
 #define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...)            \
   [&] {                                                         \
     const auto& _st = TYPE;                                     \
-    constexpr const char* et_switch_name = NAME;                \
+    const char* et_switch_name = NAME;                          \
     (void)et_switch_name; /* Suppress unused var */             \
     C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wswitch-enum") \
     switch (_st) {                                              \

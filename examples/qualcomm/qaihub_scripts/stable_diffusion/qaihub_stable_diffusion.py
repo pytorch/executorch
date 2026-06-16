@@ -20,7 +20,6 @@ from executorch.backends.qualcomm.export_utils import (
 )
 
 from executorch.backends.qualcomm.utils.utils import (
-    ExecutorchBackendConfig,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -35,6 +34,7 @@ from executorch.examples.qualcomm.qaihub_scripts.utils.utils import (
     gen_pte_from_ctx_bin,
     get_encoding,
 )
+from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from PIL import Image
 from torchvision.transforms import ToTensor

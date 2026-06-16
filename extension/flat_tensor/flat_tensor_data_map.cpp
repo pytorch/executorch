@@ -21,6 +21,8 @@
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/compiler.h>
 
+#include <cinttypes>
+
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
@@ -52,7 +54,7 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
         flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>* named_data,
     const flatbuffers::Vector<
         flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>* segments,
-    size_t segment_end_offset) {
+    uint64_t segment_end_offset) {
   // Linear search by name.
   if (named_data == nullptr) {
     return Error::NotFound;
@@ -81,17 +83,32 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
               static_cast<uint64_t>(segments->Get(segment_index)->offset()),
               static_cast<uint64_t>(segments->Get(segment_index)->size()),
               &seg_end) &&
-              seg_end <= static_cast<uint64_t>(segment_end_offset),
+              seg_end <= segment_end_offset,
           InvalidExternalData,
           "Invalid segment offset %" PRIu64
           " is larger than the segment_base_offset + segment_data_size %" PRIu64
           "; malformed PTD file.",
           segments->Get(segment_index)->offset(),
-          static_cast<uint64_t>(segment_end_offset));
+          segment_end_offset);
       return found;
     }
   }
   return Error::NotFound;
+}
+
+Result<uint64_t> get_segment_end_offset(const FlatTensorHeader& header) {
+  uint64_t segment_end_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(
+          header.segment_base_offset,
+          header.segment_data_size,
+          &segment_end_offset),
+      InvalidExternalData,
+      "segment_base_offset %" PRIu64 " + segment_data_size %" PRIu64
+      " overflows uint64_t; malformed PTD file.",
+      header.segment_base_offset,
+      header.segment_data_size);
+  return segment_end_offset;
 }
 
 Result<const TensorLayout> create_tensor_layout(
@@ -111,11 +128,15 @@ Result<const TensorLayout> create_tensor_layout(
 
 ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_tensor_layout(
     executorch::aten::string_view key) const {
+  Result<uint64_t> segment_end_offset = get_segment_end_offset(header_);
+  if (!segment_end_offset.ok()) {
+    return segment_end_offset.error();
+  }
   Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
       key,
       flat_tensor_->named_data(),
       flat_tensor_->segments(),
-      header_.segment_base_offset + header_.segment_data_size);
+      segment_end_offset.get());
   if (!named_data.ok()) {
     return named_data.error();
   }
@@ -124,11 +145,15 @@ ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_tensor_layout(
 
 ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
     executorch::aten::string_view key) const {
+  Result<uint64_t> segment_end_offset = get_segment_end_offset(header_);
+  if (!segment_end_offset.ok()) {
+    return segment_end_offset.error();
+  }
   Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
       key,
       flat_tensor_->named_data(),
       flat_tensor_->segments(),
-      header_.segment_base_offset + header_.segment_data_size);
+      segment_end_offset.get());
   if (!named_data.ok()) {
     return named_data.error();
   }
@@ -148,11 +173,15 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
     ET_UNUSED executorch::aten::string_view key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
+  Result<uint64_t> segment_end_offset = get_segment_end_offset(header_);
+  if (!segment_end_offset.ok()) {
+    return segment_end_offset.error();
+  }
   Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
       key,
       flat_tensor_->named_data(),
       flat_tensor_->segments(),
-      header_.segment_base_offset + header_.segment_data_size);
+      segment_end_offset.get());
   if (!named_data.ok()) {
     return named_data.error();
   }

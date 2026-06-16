@@ -50,7 +50,10 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AsStridedNode,
     AsTypeNode,
     Atan2Node,
+    BitwiseAndNode,
     BitwiseInvertNode,
+    BitwiseOrNode,
+    BitwiseXorNode,
     BroadcastToNode,
     CeilNode,
     ClipNode,
@@ -117,6 +120,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     RepeatNode,
     ReshapeNode,
     RMSNormNode,
+    RollNode,
     RopeNode,
     RoundNode,
     RsqrtNode,
@@ -480,7 +484,26 @@ _BINARY_OPS: List[Tuple[List[Any], Any, str, bool]] = [
     ([torch.ops.aten.minimum.default], MinimumNode, "aten.minimum", False),
     ([torch.ops.aten.atan2.default], Atan2Node, "aten.atan2", False),
     ([torch.ops.aten.logaddexp.default], LogAddExpNode, "aten.logaddexp", False),
+    ([torch.ops.aten.logical_and.default], LogicalAndNode, "aten.logical_and", False),
     ([torch.ops.aten.logical_or.default], LogicalOrNode, "aten.logical_or", False),
+    (
+        [torch.ops.aten.bitwise_and.Tensor, torch.ops.aten.bitwise_and.Scalar],
+        BitwiseAndNode,
+        "aten.bitwise_and",
+        True,
+    ),
+    (
+        [torch.ops.aten.bitwise_or.Tensor, torch.ops.aten.bitwise_or.Scalar],
+        BitwiseOrNode,
+        "aten.bitwise_or",
+        True,
+    ),
+    (
+        [torch.ops.aten.bitwise_xor.Tensor, torch.ops.aten.bitwise_xor.Scalar],
+        BitwiseXorNode,
+        "aten.bitwise_xor",
+        True,
+    ),
     (
         [torch.ops.aten.lt.Tensor, torch.ops.aten.lt.Scalar],
         LessNode,
@@ -1673,6 +1696,45 @@ def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             x=P.slot_to_tid(x),
             out=P.slot_to_tid(out),
             reps=reps_int_or_vid,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.roll.default])
+def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 3, "aten.roll")
+    require_kwargs(P.kwargs(n), set(), "aten.roll")
+    x = args[0]
+    shifts_arg = args[1]
+    dims_arg = args[2] if len(args) > 2 else []
+
+    shifts = [shifts_arg] if isinstance(shifts_arg, int) else list(shifts_arg)
+    dims: List[int] = [dims_arg] if isinstance(dims_arg, int) else list(dims_arg)
+
+    # Flat roll (torch.roll with dims=[]) would require reshape + roll +
+    # reshape at the graph level. Not yet supported; Swin-style usage always
+    # passes explicit dims.
+    if not dims:
+        raise NotImplementedError(
+            "aten.roll without dims (flat roll) is not supported by the MLX "
+            "delegate yet."
+        )
+    if len(shifts) != len(dims):
+        raise ValueError(
+            f"aten.roll: shifts and dims must have the same length, got "
+            f"shifts={shifts} (len={len(shifts)}) dims={dims} (len={len(dims)})"
+        )
+    require_static_ints(dims, "dims", "aten.roll")
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        RollNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            shift=[P.to_int_or_vid(s) for s in shifts],
+            axes=dims,
         )
     )
     return out
@@ -2878,6 +2940,34 @@ def _clamp_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.hardtanh.default])
+def _hardtanh_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.hardtanh by clamping input to [min_val, max_val]."""
+    args = P.args(n)
+    require_args(args, 1, 3, "aten.hardtanh")
+    require_kwargs(P.kwargs(n), set(), "aten.hardtanh")
+
+    x = args[0]
+    min_val = float(args[1]) if len(args) > 1 else -1.0
+    max_val = float(args[2]) if len(args) > 2 else 1.0
+
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for hardtanh")
+    dtype = x_meta.dtype
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        ClipNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(out),
+            a_min=P.slot_to_tid(emit_lifted_constant(P, min_val, dtype)),
+            a_max=P.slot_to_tid(emit_lifted_constant(P, max_val, dtype)),
+        )
+    )
+    return out
+
+
 @REGISTRY.register(
     target=[torch.ops.aten.expand.default, torch.ops.aten.expand_copy.default]
 )
@@ -3100,34 +3190,6 @@ def _bitwise_not_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         raise NotImplementedError(
             f"aten.bitwise_not on dtype {x_meta.dtype} is not supported for MLX lowering"
         )
-    return out
-
-
-@REGISTRY.register(
-    target=[torch.ops.aten.logical_and.default, torch.ops.aten.bitwise_and.Tensor]
-)
-def _logical_and_handler(P: MLXProgramBuilder, n: Node) -> Slot:
-    """Handle aten.logical_and / aten.bitwise_and on bool tensors."""
-    args = P.args(n)
-    require_args(args, 2, 2, "aten.logical_and/bitwise_and")
-    require_kwargs(P.kwargs(n), set(), "aten.logical_and/bitwise_and")
-
-    # bitwise_and is only equivalent to logical_and for bool tensors.
-    if n.target == torch.ops.aten.bitwise_and.Tensor:
-        dtype = n.args[0].meta.get("val", None)
-        if dtype is not None and hasattr(dtype, "dtype") and dtype.dtype != torch.bool:
-            raise ValueError(
-                f"aten.bitwise_and on non-bool dtype {dtype.dtype} is not supported; "
-                "only bool tensors can be lowered via LogicalAndNode"
-            )
-    out = P.make_or_get_slot(n)
-    P.emit(
-        LogicalAndNode(
-            a=P.slot_to_tid(args[0]),
-            b=P.slot_to_tid(args[1]),
-            out=P.slot_to_tid(out),
-        )
-    )
     return out
 
 

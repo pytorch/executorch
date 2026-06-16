@@ -13,6 +13,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     create_shape_node,
     get_first_fake_tensor,
+    permute_fake_tensor_metadata,
 )
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -72,16 +73,16 @@ class RewriteUpsamplePass(ArmPass):
                     "We do not support align_corners=True for symbolic shapes."
                 )
 
-        # SymInt seems to not actually work for symbolic expressions, so use the underlying sympy objects instead
+        # Use the exported SymPy expressions for symbolic shapes.
         input_size = (
-            input_size.node._expr
+            sympy.sympify(input_size.node.expr)
             if isinstance(input_size, torch.SymInt)
-            else input_size
+            else sympy.sympify(input_size)
         )
         output_size = (
-            output_size.node._expr
+            sympy.sympify(output_size.node.expr)
             if isinstance(output_size, torch.SymInt)
-            else output_size
+            else sympy.sympify(output_size)
         )
         if align_corners and input_size > 1 and output_size > 1:
             scale_n = output_size - 1
@@ -91,17 +92,15 @@ class RewriteUpsamplePass(ArmPass):
             scale_d = input_size - 1
         else:
             scale_d = input_size
-        ratio = scale_n / scale_d
-        if not sympy.sympify(ratio).is_constant():
+        ratio = sympy.nsimplify(sympy.simplify(scale_n / scale_d))
+        if ratio.free_symbols:
             raise RuntimeError(
                 "Resize requires a constant ratio: " + str(ratio) + " is not constant!"
             )
-        gcd = sympy.gcd(scale_n, scale_d)
-        scale_n = 2 * scale_n // gcd
-        scale_d = 2 * scale_d // gcd
-        # These should always be whole integers, based on the above calculations
-        scale_n = int(scale_n.evalf())
-        scale_d = int(scale_d.evalf())
+        ratio_num, ratio_den = ratio.as_numer_denom()
+        # TOSA encodes resize scales as doubled rationals.
+        scale_n = int((2 * ratio_num).evalf())
+        scale_d = int((2 * ratio_den).evalf())
 
         if align_corners:
             offset = 0
@@ -111,9 +110,11 @@ class RewriteUpsamplePass(ArmPass):
 
         # Calculate border to maintain the correct the output size.
         # Note that this should always result in a constant value, as the ratio is constant.
-        border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+        border = sympy.simplify(
+            scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+        )
 
-        if not sympy.sympify(border).is_constant():
+        if border.free_symbols:
             raise RuntimeError(
                 "Resize requires a constant border: "
                 + str(border)
@@ -196,7 +197,7 @@ class RewriteUpsamplePass(ArmPass):
                     args=(x, list(self._NHWC_ORDER)),
                     from_node=node,
                 )
-                pre_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                pre_permute.meta["val"] = permute_fake_tensor_metadata(
                     get_first_fake_tensor(x), list(self._NHWC_ORDER)
                 )
 
@@ -255,9 +256,8 @@ class RewriteUpsamplePass(ArmPass):
                     args=(node_replacement, list(self._NHWC_INVERSE_ORDER)),
                     from_node=node,
                 )
-            post_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                node_replacement_fake,
-                list(self._NHWC_INVERSE_ORDER),
+            post_permute.meta["val"] = permute_fake_tensor_metadata(
+                node_replacement_fake, self._NHWC_INVERSE_ORDER
             )
             node.replace_all_uses_with(post_permute)
             graph_module.graph.erase_node(node)

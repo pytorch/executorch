@@ -43,6 +43,7 @@ SCALAR_OPS = {
     # For below cases, refer to LiftAddTensor Model in UT for sample
     aten.add.Tensor: TensorOpInfo(aten.add.Tensor, False, False),
     aten.div.Scalar: TensorOpInfo(aten.div.Tensor, False, False),
+    aten.div.Scalar_mode: TensorOpInfo(aten.div.Tensor_mode, False, False),
     aten.mul.Scalar: TensorOpInfo(aten.mul.Tensor, False, False),
     aten.rsub.Scalar: TensorOpInfo(aten.rsub.Tensor, False, False),
     aten.sub.Scalar: TensorOpInfo(aten.sub.Tensor, False, False),

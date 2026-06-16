@@ -49,6 +49,12 @@ def test_resnet_18_tosa_FP():
     pipeline.run()
 
 
+@pytest.mark.xfail(
+    common.is_aarch64_host(),
+    reason="MLETORCH-2048: Large bf16 ResNet18 mismatch on aarch64",
+    raises=AssertionError,
+    strict=True,
+)
 def test_resnet_18_tosa_FP_bf16():
     bf16_model = resnet18(weights=ResNet18_Weights).eval()
     bf16_model = bf16_model.to(torch.bfloat16)

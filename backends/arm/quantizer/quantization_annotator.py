@@ -21,6 +21,7 @@ from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.quantizer import QuantizationConfig
 
+from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 from torch.fx import Node
 from torchao.quantization.pt2e import (
@@ -441,7 +442,7 @@ def _match_pattern(
     return left_condition and right_condition
 
 
-_conv_ops = {
+_conv_ops: set[OpOverload] = {
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
     torch.ops.aten.conv2d.padding,
@@ -473,7 +474,7 @@ _fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
     },
 }
 
-_one_to_one = {
+_one_to_one: set[OpOverload] = {
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
@@ -481,6 +482,8 @@ _one_to_one = {
     torch.ops.aten.exp.default,
     torch.ops.aten.expm1.default,
     torch.ops.aten.elu.default,
+    torch.ops.aten.selu.default,
+    torch.ops.aten.celu.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
@@ -512,7 +515,7 @@ _one_to_one = {
     torch.ops.aten.tan.default,
 }
 
-_one_to_one_shared_input_qspec = {
+_one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
@@ -544,7 +547,6 @@ _one_to_one_shared_input_qspec = {
     torch.ops.aten.split.Tensor,
     torch.ops.aten.split_with_sizes.default,
     torch.ops.aten.split_copy.Tensor,
-    torch.ops.aten.transpose.Dimname,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
     torch.ops.aten.t_copy.default,
@@ -572,7 +574,16 @@ _one_to_one_shared_input_qspec = {
     torch.ops.aten.detach_copy.default,
 }
 
-_one_to_one_shared_input_or_input_act_qspec = {
+# Dimname has been removed from upstream PyTorch, but there may be a window
+# where developers in this backend are using a mainline build of this backend
+# with an older version of PyTorch.
+# TODO: remove this once the build has time to be propagated and majority of
+# dev expected to be unimpacted
+_transpose_dimname = getattr(torch.ops.aten.transpose, "Dimname", None)
+if _transpose_dimname is not None:
+    _one_to_one_shared_input_qspec.add(_transpose_dimname)
+
+_one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.alias.default,
     torch.ops.aten.clone.default,
     torch.ops.aten.hardtanh.default,
@@ -890,29 +901,33 @@ def get_quant_properties(  # noqa: C901
         submodule_args_pos = -1 if node.target == torch.ops.higher_order.cond else -2
         submodule_args = node.args[submodule_args_pos]
         output_qspec = output_act_qspec
-        if len(submodule_args) > 0:  # type: ignore[arg-type]
-            # The way the TOSA backend handles quantized inputs, arrays of input tensors (such as the input to a
-            # conditional graph) need shared quantization.
-            shared_qspec = SharedQuantizationSpec(
-                (cast(list[Node], submodule_args)[0], node)
-            )
-            quant_properties.quant_inputs = [
-                _QuantProperty(
-                    submodule_args_pos,
-                    [
-                        input_act_qspec,
-                        *([shared_qspec] * (len(submodule_args) - 1)),  # type: ignore[arg-type]
-                    ],
+        # Annotate each control-flow tensor independently using the default input qspec
+        if submodule_args:
+            if node.meta.get("additional_inputs", None):
+                qspecs = [input_act_qspec] * len(cast(Sequence[Node], submodule_args))  # type: ignore[arg-type]
+                quant_properties.quant_inputs = [
+                    _QuantProperty(submodule_args_pos, qspecs)
+                ]
+            else:
+                shared_qspec = SharedQuantizationSpec(
+                    (cast(list[Node], submodule_args)[0], node)
                 )
-            ]
-            if node.target == torch.ops.higher_order.while_loop:
-                # The output of the while loop body can either re-enter the body, or exit the while loop.
-                # Therefore, A and B in the diagram below need to share the same quantization parameters.
-                # A -> while ( RESCALE -> ... RESCALE -> ) -> B
-                output_qspec = shared_qspec
+                quant_properties.quant_inputs = [
+                    _QuantProperty(
+                        submodule_args_pos,
+                        [
+                            input_act_qspec,
+                            *([shared_qspec] * (len(submodule_args) - 1)),  # type: ignore[arg-type]
+                        ],
+                    )
+                ]
+                if node.target == torch.ops.higher_order.while_loop:
+                    # The output of the while loop body can either re-enter the body, or exit the while loop.
+                    # Therefore, A and B in the diagram below need to share the same quantization parameters.
+                    # A -> while ( RESCALE -> ... RESCALE -> ) -> B
+                    output_qspec = shared_qspec
 
         quant_properties.quant_output = _QuantProperty(0, output_qspec)
-
     else:
         return None
 

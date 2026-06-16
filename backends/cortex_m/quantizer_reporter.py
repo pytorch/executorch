@@ -383,7 +383,9 @@ class QuantizerReporter:
             non_quantized_nodes: list[Node] = []
         else:
             non_quantized_nodes = [
-                node for node in model.graph.nodes if Q_ANNOTATION_KEY not in node.meta
+                node
+                for node in model.graph.nodes
+                if Q_ANNOTATION_KEY not in node.meta and node.op != "get_attr"
             ]
 
         rows = []

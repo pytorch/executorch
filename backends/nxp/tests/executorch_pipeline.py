@@ -13,7 +13,6 @@ from typing import Callable, Iterable
 import eiq_neutron_sdk
 import numpy as np
 import torch
-
 from executorch import exir
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
@@ -98,7 +97,7 @@ def _get_default_quantizer(target_spec: NeutronTargetSpec, use_qat: bool) -> Qua
 
 
 def to_model_input_spec(
-    input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]]
+    input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
 ) -> tuple[ModelInputSpec, ...]:
     match input_spec:
         case _ if isinstance(input_spec, Iterable) and all(
@@ -122,7 +121,7 @@ GetCalibrationInputsFn = Callable[
 
 def get_calibration_inputs_fn_from_dataset_dir(dataset_dir) -> GetCalibrationInputsFn:
     def _nested(
-        input_spec: tuple[ModelInputSpec, ...]
+        input_spec: tuple[ModelInputSpec, ...],
     ) -> Iterable[tuple[torch.Tensor, ...]]:
         data = sorted(os.listdir(dataset_dir))
         inputs_needed = len(input_spec)
@@ -156,7 +155,7 @@ def get_calibration_inputs_fn_from_dataset_dir(dataset_dir) -> GetCalibrationInp
 
 
 def _get_example_input(
-    input_spec: tuple[ModelInputSpec, ...]
+    input_spec: tuple[ModelInputSpec, ...],
 ) -> tuple[torch.Tensor, ...]:
     example_input = []
     for spec in input_spec:
@@ -190,7 +189,6 @@ def to_quantized_edge_program(
     use_quant_state_dict: bool = True,
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
-    use_new_flow_neutron_c: bool = False,
     delegate_to_npu=True,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target)
@@ -223,7 +221,6 @@ def to_quantized_edge_program(
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         fetch_constants_to_sram=fetch_constants_to_sram,
         dump_kernel_selection_code=dump_kernel_selection_code,
-        use_new_flow_neutron_c=use_new_flow_neutron_c,
     )
     post_quant_state_dict = (
         exir_program_aten__module_quant.state_dict() if use_quant_state_dict else None
@@ -274,7 +271,8 @@ def to_quantized_executorch_program(
     use_neutron_for_format_conversion: bool = True,
     dataset_dir: str | None = None,
     delegate_to_npu=True,
-    use_new_flow_neutron_c: bool = False,
+    operators_not_to_delegate: list[str] = None,
+    remove_quant_io_ops: bool = False,
 ) -> ExecutorchProgramManager:
     if dataset_dir:
         # Extract calibration data from a directory.
@@ -293,7 +291,8 @@ def to_quantized_executorch_program(
         train_fn=train_fn,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         delegate_to_npu=delegate_to_npu,
-        use_new_flow_neutron_c=use_new_flow_neutron_c,
+        operators_not_to_delegate=operators_not_to_delegate,
+        remove_quant_io_ops=remove_quant_io_ops,
         **get_calibration_inputs_fn,
     )
 

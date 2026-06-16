@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import to_2tuple
 from executorch.backends.arm.constants import NHWC_INVERSE_ORDER, NHWC_ORDER
 from executorch.backends.arm.operators.operator_validation_utils import (
@@ -18,11 +18,11 @@ from executorch.exir.pass_base import ExportPass
 from .fuse_constant_ops_pass import ComputeConstantOpsAOTPass
 
 
-class RewriteAvgPool2dPass(ArmPass):
+class RewriteAvgPool2dPass(ArmOpTargetedPass):
     """Rewrite aten.avg_pool2d calls to TOSA AVG_POOL2D op."""
 
     # Target the original avg_pool2d operator
-    targeted_ops = {exir_ops.edge.aten.avg_pool2d.default}
+    target_ops = {exir_ops.edge.aten.avg_pool2d.default}
     _passes_required_after: Set[Type[ExportPass]] = {
         ComputeConstantOpsAOTPass,
     }
@@ -30,7 +30,7 @@ class RewriteAvgPool2dPass(ArmPass):
     def call_operator(self, op, args, kwargs, meta, updated=False):
 
         # Only rewrite avg_pool2d
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         x = args[0]
@@ -42,7 +42,7 @@ class RewriteAvgPool2dPass(ArmPass):
 
         pad_h, pad_w = to_2tuple(args[3]) if len(args) > 3 else (0, 0)
         # Make sure pad corresponds to TOSA
-        pad = [pad_h, pad_w, pad_h, pad_w]
+        pad = [pad_h, pad_h, pad_w, pad_w]
 
         ceil_mode = args[4] if len(args) > 4 else False
 
@@ -65,9 +65,11 @@ class RewriteAvgPool2dPass(ArmPass):
         # Materialize output zero-point as a scalar tensor
         output_zp = super().call_scalar(out_zp_val, meta)
 
-        # Determine accumulator dtype for AVG_POOL2D: INT32 for integer inputs, FP32 otherwise
+        # Determine accumulator dtype for AVG_POOL2D.
         if x.data.dtype in (torch.int8, torch.int16):
             acc_type = torch.int32
+        elif x.data.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+            acc_type = torch.float16
         else:
             acc_type = torch.float32
 

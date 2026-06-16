@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from executorch.examples.models.llama.norm import RMSNorm
+from executorch.examples.models.llama.norm import RMSNorm, RMSNormCoreML  # noqa: F401
 
 from executorch.examples.models.llama.rope import (
     hf_apply_rotary_emb,
@@ -107,65 +107,6 @@ class ModelArgs:
 
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
-
-
-class CoreMLRMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        """
-        Initialize the RMSNorm normalization layer.
-
-        Args:
-            dim (int): The dimension of the input tensor.
-            eps (float, optional): A small value added to the denominator for numerical stability. Default is 1e-6.
-
-        Attributes:
-            eps (float): A small value added to the denominator for numerical stability.
-            weight (nn.Parameter): Learnable scaling parameter.
-
-        """
-        super().__init__()
-        self.dim = dim
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def _norm(self, x):
-        """
-        Apply the RMSNorm normalization to the input tensor.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The normalized tensor.
-
-        """
-        # CoreML ignores casts to FP32, so existing implementation of RMSNorm was not stable
-        # We instead use (x * sqrt(n)) / norm(x, dim=-1)
-        # Using torch.norm and preserving this op in CoreML improves stability
-        # Note, we ignore eps, but could add it by using torch.norm(torch.concat(x, sqrt(n*eps))) in the denominator
-        # In future, we want to add CoreML support for the functional RMSNorm op
-        # We have yet to do large scale evaluations on the numeric stability of this solution, but note that
-        # it appears better than what exists currently (removing FP32 casts and using FP16)
-        rms_norm_eps0 = (
-            x
-            * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
-            * torch.reciprocal(torch.linalg.vector_norm(x, dim=-1, keepdim=True))
-        )
-        return rms_norm_eps0
-
-    def forward(self, x):
-        """
-        Forward pass through the RMSNorm layer.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The output tensor after applying RMSNorm.
-
-        """
-        output = self._norm(x)
-        return output * self.weight
 
 
 class Rope(torch.nn.Module):

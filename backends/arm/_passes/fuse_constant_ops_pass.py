@@ -204,7 +204,6 @@ class FuseConstantArgsPass(ArmPass):
                         f"{[input_node.name for input_node in input_nodes]}"
                     )
                     modified |= did_fuse
-                    graph_module.recompile()  # Recompile needed to catch chains of constant ops
                     input_nodes_to_maybe_delete.update(input_nodes)
             except Exception as e:
                 logger.warning(
@@ -219,7 +218,7 @@ class FuseConstantArgsPass(ArmPass):
 
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
 
 
 class ComputeConstantOpsAOTPass(ArmPass):
@@ -308,4 +307,4 @@ class ComputeConstantOpsAOTPass(ArmPass):
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

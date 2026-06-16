@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/UnaryUfuncRealHBBF16ToFloatHBF16Test.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 
 namespace torch::executor::testing {
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::test_bool_input() {
@@ -25,9 +26,9 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::test_bool_input() {
 }
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::test_mismatched_input_shapes_dies() {
-  if (get_supported_features()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched input shapes";
-  }
+  ET_SKIP_IF(
+      get_supported_features()->is_aten,
+      "ATen kernel can handle mismatched input shapes");
   TensorFactory<executorch::aten::ScalarType::Float> tf;
 
   executorch::aten::Tensor a = tf.ones(/*sizes=*/{4});
@@ -122,9 +123,9 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_float_output_unbound_dynamism_support() {
-  if (!get_supported_features()->is_aten) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported";
-  }
+  ET_SKIP_IF(
+      !get_supported_features()->is_aten,
+      "Dynamic shape unbound not supported");
 #define TEST_ENTRY(ctype, dtype)            \
   test_floating_point_op_out<               \
       executorch::aten::ScalarType::dtype,  \
@@ -136,9 +137,9 @@ void UnaryUfuncRealHBBF16ToFloatHBF16Test::
 
 void UnaryUfuncRealHBBF16ToFloatHBF16Test::
     test_all_real_input_double_output_unbound_dynamism_support() {
-  if (!get_supported_features()->is_aten) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported";
-  }
+  ET_SKIP_IF(
+      !get_supported_features()->is_aten,
+      "Dynamic shape unbound not supported");
 #define TEST_ENTRY(ctype, dtype)             \
   test_floating_point_op_out<                \
       executorch::aten::ScalarType::dtype,   \

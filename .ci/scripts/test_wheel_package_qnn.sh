@@ -150,26 +150,25 @@ run_core_tests () {
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
-  # runpy.run_path uses a relative path, so the caller must run this script
-  # from the executorch repo root (where torch_pin.py lives).
-  TORCH_SPEC=$(
+  TORCH_VERSION=$(
   "$PYBIN" - <<'PY'
 import runpy
 module_vars = runpy.run_path("torch_pin.py")
-print(module_vars["torch_spec"]())
+print(module_vars["TORCH_VERSION"])
 PY
 )
-  TORCH_INDEX=$(
-  "$PYBIN" - <<'PY'
-import runpy
-module_vars = runpy.run_path("torch_pin.py")
-print(module_vars["torch_index_url_base"]())
-PY
-)
-  echo "=== [$LABEL] Install $TORCH_SPEC from ${TORCH_INDEX}/cpu ==="
 
-  # Install torch based on the pinned PyTorch version from the channel index.
-  "$PIPBIN" install "$TORCH_SPEC" --index-url "${TORCH_INDEX}/cpu"
+#   NIGHTLY_VERSION=$(
+#   "$PYBIN" - <<'PY'
+# import runpy
+# module_vars = runpy.run_path("torch_pin.py")
+# print(module_vars["NIGHTLY_VERSION"])
+# PY
+# )
+  echo "=== [$LABEL] Install torch==${TORCH_VERSION} ==="
+
+  # Install torch based on the pinned PyTorch version, preferring the PyTorch test index
+  "$PIPBIN" install torch=="${TORCH_VERSION}" --extra-index-url "https://download.pytorch.org/whl/test"
   "$PIPBIN" install wheel
 
   # Install torchao based on the pinned commit from third-party/ao submodule

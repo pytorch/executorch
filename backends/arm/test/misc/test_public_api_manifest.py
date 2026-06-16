@@ -5,10 +5,12 @@
 
 from pathlib import Path
 
+import executorch.backends.arm as arm
 from executorch.backends.arm import LAZY_IMPORTS
 from executorch.backends.arm.scripts.generate_public_api_manifest import (
     _collect_entry,
     _collect_public_api,
+    _is_unstable_api,
     _render_manifest,
 )
 from executorch.exir._warnings import deprecated
@@ -32,9 +34,12 @@ def _entry_block(path: str, entry: dict[str, str]) -> str:
 
 def test_public_api_manifest_entries_are_well_formed():
     entries = _collect_public_api()
+    expected_top_level_entries = {
+        name for name in LAZY_IMPORTS if not _is_unstable_api(getattr(arm, name))
+    }
 
     assert entries
-    assert {path.split(".")[0] for path in entries} == set(LAZY_IMPORTS)
+    assert {path.split(".")[0] for path in entries} == expected_top_level_entries
 
     for path, entry in entries.items():
         assert entry["kind"] in {"class", "enum", "function"}

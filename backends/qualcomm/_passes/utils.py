@@ -7,10 +7,106 @@
 from typing import Callable, Dict, List
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor import q_ops
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_DTYPE, QCOM_ENCODING
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
+    QCOM_ENCODING,
+    QCOM_QUANT_ATTRS,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
+
+
+def _create_q_or_dq_node(
+    graph_module: torch.fx.GraphModule,
+    node: torch.fx.node,
+    target: torch.fx.node.Target,
+    quant_attrs: Dict = None,
+    pop_quant_attrs: bool = True,
+) -> torch.fx.node:
+    # pop_quant_attrs: Most cases it makes sense to pop quant attributes from source node.
+    # e.g., input(quant_attrs) -> q -> node -> ...
+    # In this case, pop input quant attr makes sense so node_visitor does not interpret input as quantized input.
+    # However, LPAI with partition case needs to keep the node as quantized. Check lpai_partition_fallback_support.py for more info.
+
+    def create_args(target: torch.fx.node.Target, quant_attrs: Dict):
+        ret = []
+
+        arg_schemas = list(target._schema.arguments)[1:]
+        for arg_schema in arg_schemas:
+            name = arg_schema.name
+            # TODO: Due to the new parameter "out_dtype" in the dequantize node,
+            # it could not be found in the quant_attrs of other nodes,
+            # and it will cause a key error. For now, the output type
+            # of our dequantize node is only float. (by default in pytorch)
+            if name == "out_dtype":
+                continue
+            value = quant_attrs[name]
+            if isinstance(arg_schema.type, torch.Tensor) and (
+                isinstance(value, int) or isinstance(value, float)
+            ):
+                value = torch.tensor(value)
+            ret.append(value)
+        return ret
+
+    # check if there has a specified quant_attrs
+    # if not, use the existent info. from current node
+    if quant_attrs is None:
+        quant_attrs = node.meta.get(QCOM_QUANT_ATTRS)
+
+    inserted_node = graph_module.graph.create_node(
+        "call_function",
+        target,
+        (node, *create_args(target, quant_attrs)),
+    )
+    meta_val = node.meta["val"]
+    if target in q_ops:
+        inserted_node.meta[QCOM_QUANT_ATTRS] = (
+            node.meta.pop(QCOM_QUANT_ATTRS)
+            if pop_quant_attrs
+            else node.meta.get(QCOM_QUANT_ATTRS)
+        )
+        meta_val = meta_val.to(quant_attrs["dtype"])
+
+    inserted_node.meta["val"] = meta_val
+    return inserted_node
+
+
+def insert_quant_node(
+    graph_module: torch.fx.GraphModule,
+    input_node: torch.fx.node,
+    output_node: torch.fx.node,
+    target: torch.fx.node.Target,
+    quant_attrs: Dict = None,
+    pop_quant_attrs: bool = True,
+) -> torch.fx.Node:
+    with graph_module.graph.inserting_after(input_node):
+        inserted_node = _create_q_or_dq_node(
+            graph_module=graph_module,
+            node=input_node,
+            target=target,
+            quant_attrs=quant_attrs,
+            pop_quant_attrs=pop_quant_attrs,
+        )
+        # If we found mix quantization pattern and reuse the existing q_node, we skip adding a new q node.
+        if output_node.target not in q_ops:
+            output_node.replace_input_with(input_node, inserted_node)
+    return inserted_node
+
+
+def insert_dequant_node(
+    graph_module: torch.fx.GraphModule,
+    input_node: torch.fx.node,
+    output_node: torch.fx.node,
+    target: torch.fx.node.Target,
+) -> None:
+    with graph_module.graph.inserting_after(input_node):
+        inserted_node = _create_q_or_dq_node(
+            graph_module=graph_module, node=input_node, target=target
+        )
+        output_node.replace_input_with(input_node, inserted_node)
+    return inserted_node
 
 
 def copy_meta(meta: Dict, callback=None):
@@ -48,83 +144,6 @@ def get_quant_attrs(
     return quant_attrs
 
 
-def get_passes_dependency_for_capture_program():
-    """
-    This function records the dependencies for passes used in the to_edge_transform_and_lower_to_qnn.
-
-    It returns a dictionary where the keys are pass classes and the values are lists of
-    dependencies required by each pass. This helps in managing and organizing the sequence
-    of passes needed for the to_edge_transform_and_lower_to_qnn to function correctly.
-
-    Returns:
-        dict: A dictionary mapping each pass to its corresponding list of dependencies.
-    """
-    from executorch.backends.qualcomm._passes import (
-        AnnotateAvgPool1D,
-        AnnotateQuantAttrs,
-        AnnotateStack,
-        AnnotateUnbind,
-        ConvertBmmToMatmul,
-        DecomposeAcos,
-        DecomposeAny,
-        DecomposeColIm,
-        DecomposeLinalgVectorNorm,
-        DecomposeLogVariants,
-        DecomposeMaxPool3d,
-        DecomposePad,
-        DecomposeRemainder,
-        DecomposeTrunc,
-        ExpandBroadcastTensorShape,
-        FixedLinearKeepDim,
-        FoldQDQ,
-        I64toI32,
-        LayoutTransform,
-        RecomposePadMaxPool2d,
-        RecomposePixelUnshuffle,
-        RecomposeRmsNorm,
-        RemoveRedundancy,
-        ResolveDebugHandle,
-        TagQuantIO,
-    )
-
-    return {
-        AnnotateAvgPool1D: [RemoveRedundancy],
-        AnnotateQuantAttrs: [
-            ConvertBmmToMatmul,
-            RecomposePixelUnshuffle,
-            RemoveRedundancy,
-        ],
-        AnnotateStack: [RemoveRedundancy],
-        AnnotateUnbind: [RemoveRedundancy],
-        ConvertBmmToMatmul: [RecomposePixelUnshuffle],
-        DecomposeAcos: [RemoveRedundancy],
-        DecomposeAny: [RemoveRedundancy],
-        DecomposeColIm: [FoldQDQ],
-        DecomposeLinalgVectorNorm: [RemoveRedundancy],
-        DecomposeLogVariants: [RemoveRedundancy],
-        DecomposeMaxPool3d: [RemoveRedundancy],
-        DecomposePad: [RemoveRedundancy],
-        DecomposeRemainder: [RemoveRedundancy],
-        DecomposeTrunc: [RemoveRedundancy],
-        ExpandBroadcastTensorShape: [FoldQDQ],
-        FixedLinearKeepDim: [FoldQDQ],
-        FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
-        I64toI32: [RemoveRedundancy],
-        LayoutTransform: [
-            AnnotateQuantAttrs,
-            ExpandBroadcastTensorShape,
-            FixedLinearKeepDim,
-        ],
-        RecomposePadMaxPool2d: [DecomposeMaxPool3d, FoldQDQ],
-        RecomposePixelUnshuffle: [RemoveRedundancy],
-        RecomposeRmsNorm: [RemoveRedundancy],
-        TagQuantIO: [LayoutTransform],
-        ResolveDebugHandle: [
-            TagQuantIO
-        ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
-    }
-
-
 def copy_nn_module_stack(src, target):
     """
     Copy meta["nn_module_stack"] from src node to target node if existing.
@@ -133,7 +152,23 @@ def copy_nn_module_stack(src, target):
         target.meta["nn_module_stack"] = value
 
 
-def merge_decomposed_graph(
+def _unify_fake_mode(node: torch.fx.Node, fake_mode) -> None:
+    val = node.meta.get("val")
+    if val is None:
+        return
+    if isinstance(val, FakeTensor) and val.fake_mode is not fake_mode:
+        node.meta["val"] = fake_mode.from_tensor(val)
+    elif isinstance(val, (list, tuple)):
+        unified = []
+        for v in val:
+            if isinstance(v, FakeTensor) and v.fake_mode is not fake_mode:
+                unified.append(fake_mode.from_tensor(v))
+            else:
+                unified.append(v)
+        node.meta["val"] = type(val)(unified)
+
+
+def merge_decomposed_graph(  # noqa: C901
     remap: Dict[str, torch.fx.Node],
     target_node: torch.fx.Node,
     target_graph: torch.fx.GraphModule,
@@ -144,6 +179,16 @@ def merge_decomposed_graph(
         [torch.fx.Node, torch.fx.Node, Dict[str, torch.fx.Node]], None
     ] = None,
 ) -> None:
+    target_fake_mode = None
+    target_val = target_node.meta.get("val")
+    if isinstance(target_val, FakeTensor):
+        target_fake_mode = target_val.fake_mode
+    elif isinstance(target_val, (list, tuple)):
+        for v in target_val:
+            if isinstance(v, FakeTensor):
+                target_fake_mode = v.fake_mode
+                break
+
     def default_output_process(node):
         for user in node.users.copy():
             # remap
@@ -166,10 +211,13 @@ def merge_decomposed_graph(
                 # replace node map from string to graph node
                 remap[decomposed_node] = remap.pop(decomposed_node.name)
             else:
-                remap[decomposed_node] = target_graph.node_copy(
+                copied = target_graph.node_copy(
                     decomposed_node,
                     arg_transform=lambda x, remap=remap: remap[x],
                 )
+                if target_fake_mode is not None:
+                    _unify_fake_mode(copied, target_fake_mode)
+                remap[decomposed_node] = copied
 
 
 def is_float_tensor(node: torch.fx.Node) -> bool:
@@ -315,3 +363,9 @@ def get_const_node(
         const_node = graph.get_attr(attr_name)
         const_node.meta["val"] = fake_mode.from_tensor(tensor)
     return const_node
+
+
+def create_node(graph, target, args, meta, callback=None):
+    node = graph.create_node("call_function", target, args)
+    node.meta = copy_meta(meta, callback)
+    return node

@@ -25,7 +25,8 @@
 Fused MoE Triton Kernels for ExecuTorch CUDA Backend.
 
 Performs grouped GEMM for Mixture-of-Experts with INT4 weight-only
-quantization (W4A16). Two kernel variants:
+quantization (W4A16) or INT4 weights + INT8 activations (W4A8).
+Two kernel families (bf16 and int8), each with two variants:
   - fused_moe: vec-mat per-pair kernel for decode (M=1).
   - fused_moe_batched_gemm: token-sorted tensor-core kernel for prefill (M>>1).
 
@@ -39,6 +40,131 @@ import torch
 import triton
 import triton.language as tl
 from torch.library import triton_op, wrap_triton
+
+
+# ---------------------------------------------------------------------------
+# W4A8 batched MoE kernels (INT8 activations + INT4 weights).
+#
+# Activation INT8 quantization is HOISTED out of the GEMM K-loop into a
+# dedicated pre-quantization kernel:
+#   - _quantize_activations_int8_kernel writes [max_padded, K] INT8 +
+#     [max_padded, num_k_tiles] float32 per-row-per-tile scales.
+#   - _fused_moe_batched_int8_kernel (GEMM1) loads pre-quantized INT8 + scale.
+#   - _silu_quantize_int8_kernel fuses SiLU(gate)*up with INT8 quantization
+#     between GEMM1 and GEMM2.
+#   - _fused_moe_silu_batched_int8_kernel (GEMM2) loads pre-quantized INT8.
+#
+# Hoisting eliminates ~256 redundant tl.max reductions per program
+# (cdiv(K, BLOCK_SIZE_K) tiles * BLOCK_SIZE_M rows) and halves activation HBM
+# bandwidth in the GEMM K-loop (bf16 -> int8).
+#
+# BLOCK_SIZE_K is fixed at PREQUANT_BLOCK_K (= 32, matches the llama.cpp
+# group_size) so the per-tile activation scales line up with the GEMM K-loop.
+# ---------------------------------------------------------------------------
+PREQUANT_BLOCK_K = 32
+
+
+@triton.jit
+def _quantize_activations_int8_kernel(
+    A,  # [M+1, K] bf16 input activations (with sentinel zero row)
+    A_int8,  # [max_padded, K] int8 output (sorted order)
+    A_scale,  # [max_padded, num_k_tiles] float32 per-row-per-tile scales
+    sorted_token_ids,  # [max_padded] int64 pair indices
+    K: tl.constexpr,
+    NUM_K_TILES: tl.constexpr,
+    top_k: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    stride_am,
+    stride_ak,
+    stride_qm,
+    stride_qk,
+    stride_sm,
+    stride_sk,
+):
+    """Quantize one sorted M-row to INT8 with per-tile scales.
+
+    Grid: (max_padded,) — one program per sorted row. Each program loops
+    over K-tiles. Sentinel pair_ids map to the appended zero row in A.
+    """
+    row_id = tl.program_id(0)
+    pair_id = tl.load(sorted_token_ids + row_id)
+    token_id = pair_id // top_k
+
+    offs_k = tl.arange(0, BLOCK_SIZE_K)
+
+    for k_tile in range(NUM_K_TILES):
+        k_offset = k_tile * BLOCK_SIZE_K
+        k_full_offs = k_offset + offs_k
+        k_mask = k_full_offs < K
+
+        # Load bf16 activation slice [BLOCK_SIZE_K]
+        a_ptrs = A + token_id * stride_am + k_full_offs * stride_ak
+        a_bf16 = tl.load(a_ptrs, mask=k_mask, other=0.0)
+
+        # Compute per-tile scale (scalar)
+        a_f32 = a_bf16.to(tl.float32)
+        a_absmax = tl.max(tl.abs(a_f32))
+        a_scale_val = a_absmax / 127.0 + 1e-12
+
+        # Quantize to INT8
+        a_scaled = a_f32 / a_scale_val
+        a_int8 = (a_scaled + tl.where(a_scaled >= 0, 0.5, -0.5)).to(tl.int8)
+
+        # Store quantized activations
+        q_ptrs = A_int8 + row_id * stride_qm + k_full_offs * stride_qk
+        tl.store(q_ptrs, a_int8, mask=k_mask)
+
+        # Store scale
+        s_ptr = A_scale + row_id * stride_sm + k_tile * stride_sk
+        tl.store(s_ptr, a_scale_val)
+
+
+@triton.jit
+def _silu_quantize_int8_kernel(
+    A,  # [num_tokens_post_padded, 2*inter] bf16 GEMM1 output (sorted)
+    A_int8,  # [num_tokens_post_padded, inter] int8 SiLU-quantized output
+    A_scale,  # [num_tokens_post_padded, num_k_tiles] float32 per-tile scales
+    K: tl.constexpr,  # intermediate_size
+    NUM_K_TILES: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    stride_am,
+    stride_ak,
+    stride_qm,
+    stride_qk,
+    stride_sm,
+    stride_sk,
+):
+    """SiLU(gate)*up + INT8 quantization for the batched GEMM2 input.
+
+    Grid: (max_padded,). Reads gate at columns [0, K), up at [K, 2K),
+    computes SiLU(gate)*up, quantizes to INT8 with per-tile scales.
+    """
+    row_id = tl.program_id(0)
+
+    offs_k = tl.arange(0, BLOCK_SIZE_K)
+
+    for k_tile in range(NUM_K_TILES):
+        k_offset = k_tile * BLOCK_SIZE_K
+        k_full_offs = k_offset + offs_k
+        k_mask = k_full_offs < K
+
+        gate_ptrs = A + row_id * stride_am + k_full_offs * stride_ak
+        up_ptrs = gate_ptrs + K * stride_ak
+
+        gate = tl.load(gate_ptrs, mask=k_mask, other=0.0).to(tl.float32)
+        up = tl.load(up_ptrs, mask=k_mask, other=0.0).to(tl.float32)
+        silu_out = gate * tl.sigmoid(gate) * up
+
+        a_absmax = tl.max(tl.abs(silu_out))
+        a_scale_val = a_absmax / 127.0 + 1e-12
+        a_scaled = silu_out / a_scale_val
+        a_int8 = (a_scaled + tl.where(a_scaled >= 0, 0.5, -0.5)).to(tl.int8)
+
+        q_ptrs = A_int8 + row_id * stride_qm + k_full_offs * stride_qk
+        tl.store(q_ptrs, a_int8, mask=k_mask)
+
+        s_ptr = A_scale + row_id * stride_sm + k_tile * stride_sk
+        tl.store(s_ptr, a_scale_val)
 
 
 # Autotune configs for GEMM1 (_fused_moe_kernel).
@@ -67,6 +193,7 @@ _GEMM2_CONFIGS = [
     triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=4, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128}, num_warps=2, num_stages=3),
     triton.Config({"BLOCK_SIZE_N": 32, "BLOCK_SIZE_K": 128}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 8, "BLOCK_SIZE_K": 256}, num_warps=2, num_stages=2),
 ]
 
 
@@ -450,9 +577,12 @@ def _fused_moe_fake(
 # ---------------------------------------------------------------------------
 
 # Fixed BLOCK_M for the batched kernel. Not autotuned because the token
-# sorting layout depends on it. 16 is the minimum for tl.dot and wastes
-# the least padding with typical Qwen3.5 expert load (~30 tokens/expert).
-_BATCHED_BLOCK_M = 16
+# sorting layout depends on it. Microbenchmarked on Qwen3.5 MoE prefill
+# (M=1696, top_k=8, 256 experts) — BLOCK_M=64 is ~1.32x faster than 16
+# despite the extra padding, because the per-expert M block (~30 tokens
+# × 8 top_k = ~53 active rows/expert) saturates 64-row tensor-core MMAs
+# and reduces total program count.
+_BATCHED_BLOCK_M = 64
 
 
 def moe_align_block_size(
@@ -711,6 +841,135 @@ def _fused_moe_batched_kernel(
     tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
 
 
+# Autotune configs for the prequant GEMM1 INT8 kernel.
+# BLOCK_SIZE_K is FIXED at PREQUANT_BLOCK_K — only N/warps/stages tunable.
+_BATCHED_GEMM1_INT8_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=2, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=2, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=2),
+]
+
+
+@triton.autotune(configs=_BATCHED_GEMM1_INT8_CONFIGS, key=["N", "K"])
+@triton.jit
+def _fused_moe_batched_int8_kernel(
+    # Pointers — A is INT8 pre-quantized in sorted order, A_scale per-tile
+    A_int8,  # [max_padded, K] int8 pre-quantized activations
+    A_scale,  # [max_padded, num_k_tiles] float32 per-tile scales
+    B,  # [E, N, K//2] int8 packed INT4 weights
+    C,  # [num_tokens_post_padded, N] bf16 output (sorted order)
+    B_scale,  # [E, N, K//group_size] bf16 scales
+    expert_ids,  # [num_expert_blocks] int64
+    # Dimensions
+    N: tl.constexpr,
+    K: tl.constexpr,
+    # Strides
+    stride_qm,
+    stride_qk,
+    stride_sm,
+    stride_sk,
+    stride_be,
+    stride_bk,
+    stride_bn,
+    stride_cm,
+    stride_cn,
+    stride_bse,
+    stride_bsk,
+    stride_bsn,
+    # Config
+    group_size: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    compute_type: tl.constexpr,
+):
+    """Batched GEMM1 (gate+up) with INT8 tensor cores, consuming pre-quantized
+    activations + per-row-per-tile scales. No quantization in the K-loop.
+    """
+    pid = tl.program_id(0)
+    num_n_blocks = tl.cdiv(N, BLOCK_SIZE_N)
+    expert_block_idx = pid // num_n_blocks
+    n_block = pid % num_n_blocks
+
+    expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
+
+    offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+
+    offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
+    n_mask = offs_n < N
+    offs_k = tl.arange(0, BLOCK_SIZE_K)
+
+    # A_int8 is in sorted order, indexed directly by offs_m
+    a_ptrs = A_int8 + offs_m[:, None] * stride_qm + offs_k[None, :] * stride_qk
+
+    b_ptrs = (
+        B
+        + expert_id * stride_be
+        + (offs_k[:, None] // 2) * stride_bk
+        + offs_n[None, :] * stride_bn
+    )
+    b_shifter = (offs_k[:, None] % 2) * 4
+
+    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+
+    for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+        k_remaining = K - k_step * BLOCK_SIZE_K
+        k_mask = offs_k < k_remaining
+
+        # Load pre-quantized INT8 activation tile [BLOCK_M, BLOCK_K]
+        a_int8 = tl.load(a_ptrs, mask=k_mask[None, :], other=0)
+
+        # Load pre-computed per-row-per-tile scale [BLOCK_M]
+        a_scale = tl.load(A_scale + offs_m * stride_sm + k_step * stride_sk)
+
+        # Load and unpack INT4 weights to INT8 [BLOCK_K, BLOCK_N]
+        b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
+        b = (b >> b_shifter) & 0xF
+        b_int8 = (b - 8).to(tl.int8)
+
+        # Per-group weight scale
+        if BLOCK_SIZE_K <= group_size:
+            group_idx = (BLOCK_SIZE_K * k_step) // group_size
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + group_idx * stride_bsk
+            )
+            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                tl.float32
+            )
+            dot_i32 = tl.dot(a_int8, b_int8)
+            acc += dot_i32.to(tl.float32) * a_scale[:, None] * b_scale
+        else:
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+            )
+            b_scale = tl.load(
+                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+            ).to(tl.float32)
+            b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
+            acc += (
+                tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
+                * a_scale[:, None]
+            )
+
+        a_ptrs += BLOCK_SIZE_K * stride_qk
+        b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
+
+    c_ptrs = C + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
+    tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
+
+
 @triton.autotune(configs=_BATCHED_GEMM2_CONFIGS, key=["N", "K"])
 @triton.jit
 def _fused_moe_silu_batched_kernel(
@@ -837,6 +1096,137 @@ def _fused_moe_silu_batched_kernel(
 
     # Scatter to original pair order: write at pair_ids positions
     # Sentinel pair_ids write to the extra row at end (ignored)
+    scatter_ids = tl.where(is_valid, pair_ids, num_pairs)
+    c_ptrs = C + scatter_ids[:, None] * stride_cm + offs_n[None, :] * stride_cn
+    tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
+
+
+_BATCHED_GEMM2_INT8_CONFIGS = [
+    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=2, num_stages=2),
+    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=2, num_stages=3),  # num_warps=2
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=4, num_stages=4),
+    triton.Config({"BLOCK_SIZE_N": 128}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 64}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_SIZE_N": 256}, num_warps=8, num_stages=2),
+]
+
+
+@triton.autotune(configs=_BATCHED_GEMM2_INT8_CONFIGS, key=["N", "K"])
+@triton.jit
+def _fused_moe_silu_batched_int8_kernel(
+    A_int8,  # [max_padded, K] int8 pre-quantized SiLU output
+    A_scale,  # [max_padded, num_k_tiles] float32 per-tile scales
+    B,  # [E, N, K//2] int8 packed INT4 weights
+    C,  # [M*top_k + 1, N] bf16 output (scatter to pair order)
+    B_scale,  # [E, N, K//group_size] bf16 scales
+    sorted_token_ids,  # [num_tokens_post_padded] int64 pair indices
+    expert_ids,  # [num_expert_blocks] int64
+    topk_weights,  # [M*top_k] float32 router weights
+    # Dimensions
+    N: tl.constexpr,
+    K: tl.constexpr,
+    num_pairs,
+    # Strides
+    stride_qm,
+    stride_qk,
+    stride_sm,
+    stride_sk,
+    stride_be,
+    stride_bk,
+    stride_bn,
+    stride_cm,
+    stride_cn,
+    stride_bse,
+    stride_bsk,
+    stride_bsn,
+    # Config
+    group_size: tl.constexpr,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+    BLOCK_SIZE_K: tl.constexpr,
+    compute_type: tl.constexpr,
+):
+    """GEMM2 with INT8 tensor cores, consuming pre-quantized SiLU(gate)*up
+    activations + per-row-per-tile scales. Scatter-back to pair order.
+    """
+    pid = tl.program_id(0)
+    num_n_blocks = tl.cdiv(N, BLOCK_SIZE_N)
+    expert_block_idx = pid // num_n_blocks
+    n_block = pid % num_n_blocks
+
+    expert_id = tl.load(expert_ids + expert_block_idx).to(tl.int64)
+
+    offs_m = expert_block_idx * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    pair_ids = tl.load(sorted_token_ids + offs_m)
+
+    offs_n = n_block * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)
+    n_mask = offs_n < N
+    offs_k = tl.arange(0, BLOCK_SIZE_K)
+
+    a_ptrs = A_int8 + offs_m[:, None] * stride_qm + offs_k[None, :] * stride_qk
+
+    b_ptrs = (
+        B
+        + expert_id * stride_be
+        + (offs_k[:, None] // 2) * stride_bk
+        + offs_n[None, :] * stride_bn
+    )
+    b_shifter = (offs_k[:, None] % 2) * 4
+
+    acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+
+    for k_step in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+        k_remaining = K - k_step * BLOCK_SIZE_K
+        k_mask = offs_k < k_remaining
+
+        a_int8 = tl.load(a_ptrs, mask=k_mask[None, :], other=0)
+        a_scale = tl.load(A_scale + offs_m * stride_sm + k_step * stride_sk)
+
+        b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
+        b = (b >> b_shifter) & 0xF
+        b_int8 = (b - 8).to(tl.int8)
+
+        if BLOCK_SIZE_K <= group_size:
+            group_idx = (BLOCK_SIZE_K * k_step) // group_size
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + group_idx * stride_bsk
+            )
+            b_scale = tl.load(scale_ptrs, mask=n_mask[None, :], other=0.0).to(
+                tl.float32
+            )
+            dot_i32 = tl.dot(a_int8, b_int8)
+            acc += dot_i32.to(tl.float32) * a_scale[:, None] * b_scale
+        else:
+            scale_ptrs = (
+                B_scale
+                + expert_id * stride_bse
+                + offs_n[None, :] * stride_bsn
+                + ((offs_k[:, None] + BLOCK_SIZE_K * k_step) // group_size) * stride_bsk
+            )
+            b_scale = tl.load(
+                scale_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0.0
+            ).to(tl.float32)
+            b_dequant = (b_int8.to(tl.float32) * b_scale).to(compute_type)
+            acc += (
+                tl.dot(a_int8.to(compute_type), b_dequant).to(tl.float32)
+                * a_scale[:, None]
+            )
+
+        a_ptrs += BLOCK_SIZE_K * stride_qk
+        b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
+
+    # Apply router weights per row
+    safe_pair_ids = tl.minimum(pair_ids, num_pairs - 1)
+    weights = tl.load(topk_weights + safe_pair_ids)
+    is_valid = pair_ids < num_pairs
+    weights = tl.where(is_valid, weights, 0.0)
+    acc = acc * weights[:, None]
+
     scatter_ids = tl.where(is_valid, pair_ids, num_pairs)
     c_ptrs = C + scatter_ids[:, None] * stride_cm + offs_n[None, :] * stride_cn
     tl.store(c_ptrs, acc.to(compute_type), mask=n_mask[None, :])
@@ -975,7 +1365,8 @@ def _fused_moe_batched_gemm_fake(
     return torch.empty_like(hidden_states)
 
 
-def fused_moe_batched(
+@triton_op("triton::fused_moe_batched_gemm_int8", mutates_args={})
+def fused_moe_batched_gemm_int8(
     hidden_states: torch.Tensor,
     w1: torch.Tensor,
     w1_scale: torch.Tensor,
@@ -987,7 +1378,218 @@ def fused_moe_batched(
     num_experts: int,
     group_size: int,
 ) -> torch.Tensor:
-    """Convenience wrapper for benchmarking (same as fused_moe_batched_gemm)."""
+    """Batched W4A8 GEMM1 + GEMM2+SiLU with INT8 tensor cores.
+
+    Pipeline:
+      1. moe_align_block_size: sort pairs by expert.
+      2. _quantize_activations_int8_kernel: quantize hidden_states to INT8
+         in sorted order with per-row-per-tile scales.
+      3. _fused_moe_batched_int8_kernel (GEMM1): consumes INT8 + scales.
+      4. _silu_quantize_int8_kernel: fuse SiLU(gate)*up + INT8 quantization
+         on the GEMM1 output.
+      5. _fused_moe_silu_batched_int8_kernel (GEMM2): consumes INT8 + scales,
+         scatter-back to original pair order.
+    """
+    M, K = hidden_states.shape
+    N1 = w1.shape[1]
+    intermediate = N1 // 2
+    N2 = w2.shape[1]
+    num_pairs = M * top_k
+    BLOCK_M = _BATCHED_BLOCK_M
+
+    sorted_token_ids, expert_ids, _ = moe_align_block_size(
+        topk_ids, BLOCK_M, num_experts
+    )
+    max_padded = sorted_token_ids.shape[0]
+    num_expert_blocks = expert_ids.shape[0]
+
+    hidden_padded = torch.cat(
+        [
+            hidden_states,
+            torch.zeros(1, K, dtype=hidden_states.dtype, device=hidden_states.device),
+        ],
+        dim=0,
+    )
+
+    topk_weights_flat = topk_weights.reshape(-1)
+
+    # ---- Pre-quantize activations for GEMM1 ----
+    BLOCK_K_QUANT = PREQUANT_BLOCK_K
+    num_k_tiles_g1 = (K + BLOCK_K_QUANT - 1) // BLOCK_K_QUANT
+
+    a_int8_g1 = torch.empty(
+        max_padded, K, dtype=torch.int8, device=hidden_states.device
+    )
+    a_scale_g1 = torch.empty(
+        max_padded, num_k_tiles_g1, dtype=torch.float32, device=hidden_states.device
+    )
+
+    grid_quant_g1 = (max_padded,)
+    wrap_triton(_quantize_activations_int8_kernel)[grid_quant_g1](
+        hidden_padded,
+        a_int8_g1,
+        a_scale_g1,
+        sorted_token_ids,
+        K=K,
+        NUM_K_TILES=num_k_tiles_g1,
+        top_k=top_k,
+        BLOCK_SIZE_K=BLOCK_K_QUANT,
+        stride_am=hidden_padded.stride(0),
+        stride_ak=hidden_padded.stride(1),
+        stride_qm=a_int8_g1.stride(0),
+        stride_qk=a_int8_g1.stride(1),
+        stride_sm=a_scale_g1.stride(0),
+        stride_sk=a_scale_g1.stride(1),
+    )
+
+    cache1 = torch.empty(
+        max_padded,
+        N1,
+        dtype=hidden_states.dtype,
+        device=hidden_states.device,
+    )
+
+    def grid1(meta):
+        return (num_expert_blocks * triton.cdiv(N1, meta["BLOCK_SIZE_N"]),)
+
+    wrap_triton(_fused_moe_batched_int8_kernel)[grid1](
+        a_int8_g1,
+        a_scale_g1,
+        w1,
+        cache1,
+        w1_scale,
+        expert_ids,
+        N=N1,
+        K=K,
+        stride_qm=a_int8_g1.stride(0),
+        stride_qk=a_int8_g1.stride(1),
+        stride_sm=a_scale_g1.stride(0),
+        stride_sk=a_scale_g1.stride(1),
+        stride_be=w1.stride(0),
+        stride_bk=w1.stride(2),
+        stride_bn=w1.stride(1),
+        stride_cm=cache1.stride(0),
+        stride_cn=cache1.stride(1),
+        stride_bse=w1_scale.stride(0),
+        stride_bsk=w1_scale.stride(2),
+        stride_bsn=w1_scale.stride(1),
+        group_size=group_size,
+        BLOCK_SIZE_M=BLOCK_M,
+        BLOCK_SIZE_K=BLOCK_K_QUANT,
+        compute_type=tl.bfloat16,
+    )
+
+    # ---- SiLU + pre-quantize for GEMM2 ----
+    num_k_tiles_g2 = (intermediate + BLOCK_K_QUANT - 1) // BLOCK_K_QUANT
+    a_int8_g2 = torch.empty(
+        max_padded, intermediate, dtype=torch.int8, device=hidden_states.device
+    )
+    a_scale_g2 = torch.empty(
+        max_padded, num_k_tiles_g2, dtype=torch.float32, device=hidden_states.device
+    )
+
+    grid_silu = (max_padded,)
+    wrap_triton(_silu_quantize_int8_kernel)[grid_silu](
+        cache1,
+        a_int8_g2,
+        a_scale_g2,
+        K=intermediate,
+        NUM_K_TILES=num_k_tiles_g2,
+        BLOCK_SIZE_K=BLOCK_K_QUANT,
+        stride_am=cache1.stride(0),
+        stride_ak=cache1.stride(1),
+        stride_qm=a_int8_g2.stride(0),
+        stride_qk=a_int8_g2.stride(1),
+        stride_sm=a_scale_g2.stride(0),
+        stride_sk=a_scale_g2.stride(1),
+    )
+
+    out_buf = torch.zeros(
+        num_pairs + 1,
+        N2,
+        dtype=hidden_states.dtype,
+        device=hidden_states.device,
+    )
+
+    def grid2(meta):
+        return (num_expert_blocks * triton.cdiv(N2, meta["BLOCK_SIZE_N"]),)
+
+    wrap_triton(_fused_moe_silu_batched_int8_kernel)[grid2](
+        a_int8_g2,
+        a_scale_g2,
+        w2,
+        out_buf,
+        w2_scale,
+        sorted_token_ids,
+        expert_ids,
+        topk_weights_flat,
+        N=N2,
+        K=intermediate,
+        num_pairs=num_pairs,
+        stride_qm=a_int8_g2.stride(0),
+        stride_qk=a_int8_g2.stride(1),
+        stride_sm=a_scale_g2.stride(0),
+        stride_sk=a_scale_g2.stride(1),
+        stride_be=w2.stride(0),
+        stride_bk=w2.stride(2),
+        stride_bn=w2.stride(1),
+        stride_cm=out_buf.stride(0),
+        stride_cn=out_buf.stride(1),
+        stride_bse=w2_scale.stride(0),
+        stride_bsk=w2_scale.stride(2),
+        stride_bsn=w2_scale.stride(1),
+        group_size=group_size,
+        BLOCK_SIZE_M=BLOCK_M,
+        BLOCK_SIZE_K=BLOCK_K_QUANT,
+        compute_type=tl.bfloat16,
+    )
+
+    return out_buf[:num_pairs].view(M, top_k, N2).sum(dim=1)
+
+
+@fused_moe_batched_gemm_int8.register_fake
+def _fused_moe_batched_gemm_int8_fake(
+    hidden_states: torch.Tensor,
+    w1: torch.Tensor,
+    w1_scale: torch.Tensor,
+    w2: torch.Tensor,
+    w2_scale: torch.Tensor,
+    topk_weights: torch.Tensor,
+    topk_ids: torch.Tensor,
+    top_k: int,
+    num_experts: int,
+    group_size: int,
+) -> torch.Tensor:
+    return torch.empty_like(hidden_states)
+
+
+def fused_moe_batched(
+    hidden_states: torch.Tensor,
+    w1: torch.Tensor,
+    w1_scale: torch.Tensor,
+    w2: torch.Tensor,
+    w2_scale: torch.Tensor,
+    topk_weights: torch.Tensor,
+    topk_ids: torch.Tensor,
+    top_k: int,
+    num_experts: int,
+    group_size: int,
+    activation_dtype: str = "bf16",
+) -> torch.Tensor:
+    """Convenience wrapper that dispatches to bf16 or int8 batched kernels."""
+    if activation_dtype == "int8":
+        return fused_moe_batched_gemm_int8(
+            hidden_states,
+            w1,
+            w1_scale,
+            w2,
+            w2_scale,
+            topk_weights,
+            topk_ids,
+            top_k,
+            num_experts,
+            group_size,
+        )
     return fused_moe_batched_gemm(
         hidden_states,
         w1,

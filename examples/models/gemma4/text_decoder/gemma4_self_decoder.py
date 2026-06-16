@@ -22,7 +22,6 @@ from torch import nn
 
 from .gemma4_config import Gemma4Config
 from .gemma4_decoder_layer import Gemma4DecoderLayer
-from .gemma4_norm import RMSNorm
 
 
 class Gemma4SelfDecoder(nn.Module):
@@ -63,7 +62,7 @@ class Gemma4SelfDecoder(nn.Module):
         )
 
         # Per-layer projection normalization
-        self.per_layer_projection_norm = RMSNorm(
+        self.per_layer_projection_norm = nn.RMSNorm(
             config.hidden_size_per_layer_input,
             eps=config.rms_norm_eps,
         )

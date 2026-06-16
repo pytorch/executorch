@@ -118,6 +118,9 @@ class Gemma4Config:
     enable_dynamic_shape: bool = False
     use_index_copy_for_kv_cache: bool = False
 
+    # Optimization flags
+    use_custom_sdpa: bool = True
+
     @classmethod
     def from_json(cls, json_path: str) -> "Gemma4Config":
         """Load config from JSON file."""

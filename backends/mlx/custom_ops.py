@@ -228,8 +228,16 @@ def rope(
         # final angles: [1, 1, T, half]
         angles = (pos_range * inv_freq) * float(scale)
     else:
-        # assume freqs is already per-position, just reshape to [1,1,T,half]
-        angles = freqs.to(torch.float32).view(1, 1, T, half)
+        if freqs.ndim == 1:
+            # 1D raw frequencies: compute angles = positions * (1/freqs)
+            inv_freq = (1.0 / freqs.to(torch.float32)).view(1, 1, 1, half)
+            pos_range = torch.arange(
+                pos, pos + T, device=x.device, dtype=torch.float32
+            ).view(1, 1, T, 1)
+            angles = (pos_range * inv_freq) * float(scale)
+        else:
+            # 2D per-position angles: reshape to [1,1,T,half]
+            angles = freqs.to(torch.float32).view(1, 1, T, half)
 
     cos = angles.cos().to(x.dtype)  # [1,1,T,half]
     sin = angles.sin().to(x.dtype)  # [1,1,T,half]

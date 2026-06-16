@@ -3,7 +3,7 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-_ENABLE_VGF = False  # Disabled: memfd_create blocked by seccomp on Sandcastle causes segfaults before Python pre-flight check can run
+_ENABLE_VGF = True
 
 def define_arm_tests():
     # TODO [fbonly] Add more tests
@@ -11,8 +11,6 @@ def define_arm_tests():
 
     # Passes
     test_files += native.glob(["passes/test_*.py"])
-    # https://github.com/pytorch/executorch/issues/8606
-    test_files.remove("passes/test_ioquantization_pass.py")
 
     # Operators
     test_files += [
@@ -25,15 +23,27 @@ def define_arm_tests():
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
         "ops/test_mul.py",
+        "ops/test_mxfp_linear.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
+        "ops/test_softmax.py",
         "ops/test_sub.py",
+        "ops/test_sum.py",
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
         "ops/test_to_copy.py",
+        "ops/test_exp.py",
+        "ops/test_reciprocal.py",
+        "ops/test_mean_dim.py",
+        "ops/test_var.py",
+        "ops/test_conv1d.py",
+        "ops/test_gelu.py",
+        "ops/test_bmm.py",
+        "ops/test_split.py",
+        "ops/test_custom_shader_lowering.py",
     ]
 
     # Quantization
@@ -47,13 +57,26 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
-        "misc/test_tosa_dialect_resize.py",
+        "misc/tosa_dialect/test_tosa_resize.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
+        "misc/test_custom_shader_payloads.py",
         "misc/test_debug_hook.py",
+        "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
+        "misc/test_vgf_check_env.py",
+        "misc/test_vgf_backend.py",
+        "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
+    ]
+
+    test_files += [
+        "runtime/test_vgf_aliasing_runtime.py",
+        "runtime/test_vgf_combinations_runtime.py",
+        "runtime/test_vgf_multi_segment_runtime.py",
+        "runtime/test_vgf_sampler_image_runtime.py",
+        "runtime/test_vgf_tensor_buffer_runtime.py",
     ]
 
     # Deprecation tests
@@ -84,20 +107,25 @@ def define_arm_tests():
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
             } if _ENABLE_VGF else {}),
-            preload_deps = [] if runtime.is_oss or not _ENABLE_VGF else [
+            preload_deps = [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
+            ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
-            ],
+            ]),
             deps = [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
+                "//executorch/backends/arm/test:custom_vgf_test_utils",
+                "//executorch/backends/arm/test:vgf_runtime_test_utils",
+                "//executorch/backends/arm:ao_ext",
                 "//executorch/backends/arm:ethosu",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
                 "//executorch/backends/arm:vgf",
                 "//executorch/backends/test:graph_builder",
+                "//executorch/backends/test:program_builder",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",

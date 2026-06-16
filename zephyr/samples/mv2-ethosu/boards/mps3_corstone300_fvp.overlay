@@ -9,9 +9,19 @@
  * DMA can access. The default board DTS routes Zephyr's general-purpose
  * SRAM to DTCM, which the NPU cannot reach. Override the choice so that
  * .data/.bss land in ISRAM (0x3100_0000) instead.
+ *
+ * The model PTE blob is placed in DDR (0x7000_0000) via a linker snippet
+ * to avoid overflowing the 2 MiB ISRAM and 512 KiB ITCM regions.
+ * The Ethos-U can DMA from DDR on the Corstone-300 FVP.
  */
 / {
 	chosen {
 		zephyr,sram = &isram;
+	};
+
+	model_ddr: memory@70000000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x70000000 DT_SIZE_M(16)>;
+		zephyr,memory-region = "MODEL_DDR";
 	};
 };

@@ -7,7 +7,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.norm import RMSNorm, RMSNormGated
+from executorch.examples.models.llama.norm import (
+    RMSNorm,
+    RMSNormGated,
+    ScalelessRMSNorm,
+)
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -375,6 +379,9 @@ class AttentionMHA(Attention):
         self.qk_norm_before_rope = args.qk_norm_before_rope
         self.use_q_gate = args.use_q_gate
         self.enable_dynamic_shape = args.enable_dynamic_shape
+        self.scale_query_by = args.scale_query_by
+        self.use_attn_o_gate = args.use_attn_o_gate
+        self.use_attn_o_norm = args.use_attn_o_norm
         q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
 
         # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
@@ -417,17 +424,26 @@ class AttentionMHA(Attention):
     def _init_norms(self, args: ModelArgs) -> None:
         """Initialize QK normalization layers."""
         if self.use_qk_norm:
-            self.q_norm_fn = RMSNorm(
-                self.head_dim,
-                eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
-            )
-            if self.has_kv_weights:
-                self.k_norm_fn = RMSNorm(
+            if args.qk_norm_affine:
+                self.q_norm_fn = RMSNorm(
                     self.head_dim,
                     eps=args.norm_eps,
                     add_unit_offset=args.rms_norm_add_unit_offset,
                 )
+                if self.has_kv_weights:
+                    self.k_norm_fn = RMSNorm(
+                        self.head_dim,
+                        eps=args.norm_eps,
+                        add_unit_offset=args.rms_norm_add_unit_offset,
+                    )
+            else:
+                self.q_norm_fn = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
+                if self.has_kv_weights:
+                    self.k_norm_fn = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
+        if self.use_attn_o_norm:
+            self.o_norm = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
+        if self.use_attn_o_gate:
+            self.og = nn.Linear(args.dim, self.n_heads * self.head_dim, bias=False)
 
     def _init_projections(self, args: ModelArgs, q_out_dim: int) -> None:
         """Initialize Q/K/V/O projection layers."""
@@ -478,6 +494,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
 
         # Apply RoPE to Q only (K already has RoPE from donor layer)
         q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
@@ -485,6 +503,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
 
         return q, k, v
 
@@ -508,6 +528,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
             k = self.k_norm_fn(k)
 
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
@@ -518,6 +540,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
             k = self.k_norm_fn(k)
 
         return q, k, v
@@ -582,8 +606,7 @@ class AttentionMHA(Attention):
                 )
 
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
-            if gate is not None:
-                output = output * torch.sigmoid(gate)
+            output = self._apply_output_transforms(output, x, gate, bsz, seqlen)
 
             if shared_kv is None and self.num_kv_shared_layers > 0:
                 update = {"kv_to_share": (k, v)}
@@ -602,12 +625,26 @@ class AttentionMHA(Attention):
         output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
         output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
-        if gate is not None:
-            output = output * torch.sigmoid(gate)
+        output = self._apply_output_transforms(output, x, gate, bsz, seqlen)
 
         output = self.wo(output)
 
         return output, None
+
+    def _apply_output_transforms(
+        self, output: torch.Tensor, x: torch.Tensor, gate, bsz: int, seqlen: int
+    ) -> torch.Tensor:
+        if self.use_attn_o_norm or self.use_attn_o_gate:
+            output_4d = output.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+            if self.use_attn_o_norm:
+                output_4d = self.o_norm(output_4d)
+            if self.use_attn_o_gate:
+                og = self.og(x).view(bsz, seqlen, self.n_local_heads, self.head_dim)
+                output_4d = torch.sigmoid(og) * output_4d
+            output = output_4d.reshape(bsz, seqlen, -1)
+        if gate is not None:
+            output = output * torch.sigmoid(gate)
+        return output
 
 
 def _l2norm(x: torch.Tensor, dim: int = -1, eps: float = 1e-6) -> torch.Tensor:

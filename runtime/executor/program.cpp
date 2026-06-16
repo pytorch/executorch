@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
@@ -26,6 +27,14 @@
  */
 #ifndef ET_ENABLE_PROGRAM_VERIFICATION
 #define ET_ENABLE_PROGRAM_VERIFICATION 1
+#endif
+
+/*
+ * The constant_buffer path is deprecated from ExecuTorch 0.7. Disable it by
+ * passing -DET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0.
+ */
+#ifndef ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+#define ET_ENABLE_DEPRECATED_CONSTANT_BUFFER 1
 #endif
 
 namespace executorch {
@@ -305,6 +314,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     // https://docs.pytorch.org/executorch/stable/api-life-cycle.html#deprecation-policy.
     // For support, contact the PyTorch Edge team or make an issue in:
     // https://github.com/pytorch/executorch/issues.
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     ET_LOG(
         Error,
         "!!DEPRECATED!! This branch is deprecated from ExecuTorch 0.7; re-export this PTE file to ensure support on newer runtimes.");
@@ -315,6 +325,13 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         flatbuffer_program,
         /*constant_segment_data=*/FreeableBuffer{},
         std::move(pte_data_map));
+#else
+    ET_LOG(
+        Error,
+        "PTE file relies on the constant_buffer path, which is disabled in this"
+        " build (ET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0). Please re-export the PTE file.");
+    return Error::InvalidProgram;
+#endif
   }
 }
 
@@ -354,7 +371,8 @@ Result<Method> Program::load_method(
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
     const NamedDataMap* named_data_map,
-    const LoadBackendOptionsMap* backend_options) const {
+    const LoadBackendOptionsMap* backend_options,
+    Span<const Kernel> kernel_registry) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -377,7 +395,8 @@ Result<Method> Program::load_method(
       memory_manager,
       event_tracer,
       named_data_map,
-      backend_options);
+      backend_options,
+      kernel_registry);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {
@@ -448,6 +467,7 @@ Result<const void*> Program::get_constant_buffer_data(
         static_cast<const unsigned char*>(constant_segment_data_.data()) +
         offset);
   } else {
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     // Otherwise, the constant data is stored inside Program.constant_buffer.
     const auto* constant_buffer_ptr = internal_program->constant_buffer();
     size_t num_elems =
@@ -474,6 +494,14 @@ Result<const void*> Program::get_constant_buffer_data(
         static_cast<size_t>(storage_size));
 
     return storage->data();
+#else
+    (void)buffer_index;
+    (void)nbytes;
+    ET_LOG(
+        Error,
+        "constant_buffer path is disabled (ET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0). Please re-export the PTE file.");
+    return Error::InvalidProgram;
+#endif
   }
 }
 
@@ -549,6 +577,11 @@ Result<FreeableBuffer> Program::LoadSegment(
     ET_LOG(Error, "No segments in program: requested index %zu", index);
     return Error::NotFound;
   }
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program: requested index %zu",
+      index);
   size_t num_segments = internal_program_->segments()->size();
   if (index >= num_segments) {
     ET_LOG(
@@ -560,8 +593,18 @@ Result<FreeableBuffer> Program::LoadSegment(
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
+  uint64_t seg_offset = segment->offset();
+  uint64_t absolute_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows<uint64_t>(
+          segment_base_offset_, seg_offset, &absolute_offset) &&
+          absolute_offset <= SIZE_MAX,
+      InvalidProgram,
+      "segment_base_offset %zu + segment offset %" PRIu64 " overflows",
+      segment_base_offset_,
+      seg_offset);
   return loader_->load(
-      segment_base_offset_ + segment->offset(), segment->size(), segment_info);
+      static_cast<size_t>(absolute_offset), segment->size(), segment_info);
 }
 
 Error Program::load_mutable_subsegment_into(
@@ -614,6 +657,10 @@ Error Program::load_mutable_subsegment_into(
   size_t offset = segment_offsets->offsets()->Get(offset_index);
 
   // Grab the segment index
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program");
   size_t num_segments = internal_program_->segments()->size();
   if (segment_offsets->segment_index() >= num_segments) {
     ET_LOG(
@@ -628,8 +675,15 @@ Error Program::load_mutable_subsegment_into(
   auto segment =
       internal_program_->segments()->Get(segment_offsets->segment_index());
 
-  // Check size
-  if (offset + size > segment->size()) {
+  // Check size (with overflow protection)
+  size_t end_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(offset, size, &end_offset),
+      InvalidProgram,
+      "offset %zu + size %zu overflows",
+      offset,
+      size);
+  if (end_offset > segment->size()) {
     ET_LOG(
         Error,
         "offset %zu + size %zu out of range > %" PRIu64,
@@ -644,9 +698,26 @@ Error Program::load_mutable_subsegment_into(
       segment_offsets->segment_index(),
       nullptr);
 
-  // Load the data
-  return loader_->load_into(
-      segment_base_offset_ + segment->offset() + offset, size, info, buffer);
+  // Load the data (with overflow protection on the addition chain)
+  uint64_t seg_offset = segment->offset();
+  uint64_t base_plus_seg_64 = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows<uint64_t>(
+          segment_base_offset_, seg_offset, &base_plus_seg_64) &&
+          base_plus_seg_64 <= SIZE_MAX,
+      InvalidProgram,
+      "segment_base_offset %zu + segment offset %" PRIu64 " overflows",
+      segment_base_offset_,
+      seg_offset);
+  size_t base_plus_seg = static_cast<size_t>(base_plus_seg_64);
+  size_t total_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(base_plus_seg, offset, &total_offset),
+      InvalidProgram,
+      "segment base+offset %zu + subsegment offset %zu overflows",
+      base_plus_seg,
+      offset);
+  return loader_->load_into(total_offset, size, info, buffer);
 }
 
 } // namespace ET_RUNTIME_NAMESPACE

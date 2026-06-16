@@ -21,6 +21,7 @@ from executorch.backends.qualcomm.export_utils import (
 )
 
 from executorch.backends.qualcomm.utils.utils import (
+    generate_gpu_compiler_spec,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_soc_to_chipset_map,
@@ -119,9 +120,15 @@ def compile(
             # because the encoder is quite sensitive and quantization can make it harder for the model to distinguish
             # between images within the same conversation.
             to_skip = len(args.image_path) > 1
-            backend_options = generate_htp_compiler_spec(
-                use_fp16=to_skip,
-            )
+            if args.backend == "htp":
+                backend_options = generate_htp_compiler_spec(
+                    use_fp16=to_skip,
+                )
+            elif args.backend == "gpu":
+                backend_options = generate_gpu_compiler_spec()
+            else:
+                raise ValueError(f"Unsupported backend {args.backend}")
+
             encoder_compile_specs = generate_qnn_executorch_compiler_spec(
                 soc_model=get_soc_to_chipset_map()[args.soc_model],
                 backend_options=backend_options,
@@ -131,27 +138,40 @@ def compile(
             skip_quantize[modality] = to_skip
             compile_specs[modality] = encoder_compile_specs
         elif is_multimodal and modality == TOK_EMBEDDING:
-            backend_options = generate_htp_compiler_spec(
-                use_fp16=False,
-                # x86 emulator does not support weight sharing
-                use_weight_sharing=not args.enable_x86_64,
-            )
+            if args.backend == "htp":
+                backend_options = generate_htp_compiler_spec(
+                    use_fp16=False,
+                    # x86 emulator does not support weight sharing
+                    use_weight_sharing=not args.enable_x86_64,
+                )
+            elif args.backend == "gpu":
+                backend_options = generate_gpu_compiler_spec()
+            else:
+                raise ValueError(f"Unsupported backend {args.backend}")
+
             compile_specs[modality] = [
                 generate_qnn_executorch_compiler_spec(
                     soc_model=get_soc_to_chipset_map()[args.soc_model],
                     backend_options=backend_options,
                     # x86 emulator does not support shared buffer
                     shared_buffer=not args.enable_x86_64,
+                    online_prepare=args.online_prepare,
                 )
             ] * len(TOK_EMBEDDING_GRAPH_NAMES)
         elif modality == TEXT_DECODER:
             # compile spec for text decoder
-            backend_options = generate_htp_compiler_spec(
-                use_fp16=False,
-                use_multi_contexts=decoder_model_config.num_sharding > 1,
-                # x86 emulator does not support weight sharing
-                use_weight_sharing=not args.enable_x86_64,
-            )
+            if args.backend == "htp":
+                backend_options = generate_htp_compiler_spec(
+                    use_fp16=args.use_fp16,
+                    use_multi_contexts=decoder_model_config.num_sharding > 1,
+                    # x86 emulator does not support weight sharing
+                    use_weight_sharing=not args.enable_x86_64,
+                )
+            elif args.backend == "gpu":
+                backend_options = generate_gpu_compiler_spec()
+            else:
+                raise ValueError(f"Unsupported backend {args.backend}")
+            skip_quantize[modality] = args.use_fp16
             compile_specs[modality] = [
                 generate_qnn_executorch_compiler_spec(
                     soc_model=get_soc_to_chipset_map()[args.soc_model],
@@ -159,6 +179,7 @@ def compile(
                     # x86 emulator does not support shared buffer
                     shared_buffer=not args.enable_x86_64,
                     use_mha2sha=True,
+                    online_prepare=args.online_prepare,
                 )
             ] * len(DECODER_GRAPH_NAMES)
 
@@ -172,7 +193,11 @@ def compile(
     )
 
     # perform compilation
-    multi_modal_mgr.compile(compile_specs=compile_specs, pte_filenames=pte_filenames)
+    multi_modal_mgr.compile(
+        compile_specs=compile_specs,
+        pte_filenames=pte_filenames,
+        skip_quantize=skip_quantize,
+    )
 
 
 def inference(
@@ -508,25 +533,56 @@ def _build_parser():
     )
 
     parser.add_argument(
-        "--tasks",
+        "--eval_tasks",
         nargs="+",
         type=str,
         default=None,
-        help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
+        help="list of lm-eluther tasks to evaluate usage: --eval_tasks task1 task2",
     )
 
     parser.add_argument(
-        "--limit",
+        "--eval_limit",
         type=int,
         default=1,
         help="number of samples to evalulate. If not set, evaluate all samples",
     )
     parser.add_argument(
-        "--num_fewshot",
+        "--eval_num_fewshot",
         type=int,
         default=None,
         metavar="N",
-        help="Number of examples in few-shot context",
+        help="Number of examples to eval in few-shot context",
+    )
+
+    parser.add_argument(
+        "--calib_tasks",
+        nargs="+",
+        type=str,
+        default=None,
+        help="list of lm-eluther tasks to calibrate usage: --calib_tasks task1 task2",
+    )
+
+    parser.add_argument(
+        "--calib_limit",
+        type=int,
+        default=1,
+        help="number of samples to calibrate. If not set, calibrate all samples",
+    )
+
+    parser.add_argument(
+        "--calib_num_fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of examples to calibrate in few-shot context",
+    )
+
+    parser.add_argument(
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
+        action="store_true",
+        default=False,
     )
 
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -544,6 +600,12 @@ def _build_parser():
         help="Enable automatic quant recipe suggestion in PTQ",
     )
 
+    parser.add_argument(
+        "--skip_user_prompt_calibration",
+        action="store_true",
+        help="Skip using user prompt for calibration. Useful when only dataset-based calibration is desired.",
+    )
+
     return parser
 
 
@@ -559,8 +621,8 @@ def export_llama(args) -> None:
         raise RuntimeError(
             "Eval device perplexity is only supported for KV mode. Hybrid mode will only use KV mode when evaluating tasks/sqnr."
         )
-    if TASKS_EVAL in args.eval_methods and args.tasks is None:
-        raise RuntimeError("Please provide --tasks to eval perplexity")
+    if TASKS_EVAL in args.eval_methods and args.eval_tasks is None:
+        raise RuntimeError("Please provide --eval_tasks to eval perplexity")
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
     ), f"Unknown decoder_model: {args.decoder_model}."
@@ -592,6 +654,12 @@ def export_llama(args) -> None:
         pte_filename = "lookahead_llama_qnn"
     else:
         raise RuntimeError(f"Unknown model_mode: {args.model_mode}.")
+
+    if args.model_mode == "hybrid" and args.online_prepare:
+        raise RuntimeError(
+            "Currently hybrid mode is not compatible with online_prepare."
+        )
+
     if args.decoder_model == "stories260k":
         pte_filename = f"{args.decoder_model}_" + pte_filename
     pte_filenames = {
@@ -637,6 +705,9 @@ def export_llama(args) -> None:
     assert (
         not is_multimodal or args.use_attention_sink is None
     ), "Multimodal models currently do not support attention sink feature."
+    assert (
+        not is_multimodal or not args.skip_user_prompt_calibration
+    ), "--skip_user_prompt_calibration is not supported for multimodal models (VLM/ALM) as they do not support task-based calibration yet."
 
     if args.pre_gen_pte:
         text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"
@@ -740,6 +811,7 @@ def export_llama(args) -> None:
 def main():
     parser = _build_parser()
     args = parser.parse_args()
+    args.build_folder = os.path.realpath(args.build_folder)
     try:
         export_llama(args)
     except Exception as e:

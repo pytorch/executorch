@@ -17,12 +17,12 @@ using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
 namespace example {
 
-template <typename T>
-PromptProcessor<T>::PromptProcessor(
+PromptProcessor::PromptProcessor(
     DecoderRunner* decoder_runner,
-    KVManager<T>* kv_manager,
+    KVManager* kv_manager,
     const std::string& method_name,
-    Metadata metadata)
+    Metadata metadata,
+    std::unique_ptr<MethodMeta> method_meta)
     : decoder_runner_(decoder_runner),
       kv_manager_(kv_manager),
       method_name_(method_name),
@@ -32,33 +32,41 @@ PromptProcessor<T>::PromptProcessor(
   k_cache_out_.resize(metadata_.num_layers);
   v_cache_out_.resize(metadata_.num_layers);
   // Calculate I/O size
+  Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(1);
+  Result<TensorInfo> logits = method_meta->output_tensor_meta(0);
   input_toks_.size = metadata_.ar_len * sizeof(int64_t);
-  if (is_bert())
+  if (is_bert()) {
     input_pos_.size = 0;
-  else
+  } else {
     input_pos_.size = metadata_.ar_len * sizeof(int32_t);
+  }
 
+  attention_mask_.dtype = attention_mask->scalar_type();
+  attention_mask_.size = metadata_.ar_len * metadata_.context_len *
+      attention_mask_.getElementSize();
   switch (metadata_.cache_mode) {
     case CacheMode::StaticCahce:
-      attention_mask_.size =
-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
       window_attention_mask_.size = 0;
       break;
-    case CacheMode::HybridCache:
-      attention_mask_.size =
-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
-      window_attention_mask_.size =
-          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+    case CacheMode::HybridCache: {
+      Result<TensorInfo> window_attention_mask =
+          method_meta->input_tensor_meta(2);
+      window_attention_mask_.dtype = window_attention_mask->scalar_type();
+      window_attention_mask_.size = metadata_.ar_len * metadata_.context_len *
+          window_attention_mask_.getElementSize();
       break;
+    }
     default:
       ET_CHECK_MSG(false, "Unsupported llama cache mode");
       break;
   }
 
-  logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(uint16_t);
+  logits_.dtype = logits->scalar_type();
+  logits_.size =
+      metadata_.ar_len * metadata_.vocab_size * logits_.getElementSize();
 };
-template <typename T>
-void PromptProcessor<T>::init_io(
+
+void PromptProcessor::init_io(
     IMemAlloc* buffer_manager,
     Result<MethodMeta> method_meta) {
   size_t idx = 0;
@@ -80,8 +88,7 @@ void PromptProcessor<T>::init_io(
 
   // [I]: attention_mask
   Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(idx++);
-  attention_mask_.data = reinterpret_cast<uint16_t*>(
-      buffer_manager->allocate(attention_mask_.size));
+  attention_mask_.data = buffer_manager->allocate(attention_mask_.size);
   attention_mask_.tensor = std::make_unique<TensorImpl>(
       attention_mask->scalar_type(),
       attention_mask->sizes().size(),
@@ -97,8 +104,8 @@ void PromptProcessor<T>::init_io(
   if (metadata_.cache_mode == CacheMode::HybridCache) {
     Result<TensorInfo> window_attention_mask =
         method_meta->input_tensor_meta(idx++);
-    window_attention_mask_.data = reinterpret_cast<uint16_t*>(
-        buffer_manager->allocate(window_attention_mask_.size));
+    window_attention_mask_.data =
+        buffer_manager->allocate(window_attention_mask_.size);
     window_attention_mask_.tensor = std::make_unique<TensorImpl>(
         window_attention_mask->scalar_type(),
         window_attention_mask->sizes().size(),
@@ -136,33 +143,30 @@ void PromptProcessor<T>::init_io(
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
       std::vector<std::unique_ptr<TensorImpl>>& cache =
           (cache_group == 0 ? k_cache_in_ : v_cache_in_);
-      std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
+      std::vector<KVCache> cache_ptrs = (cache_group == 0)
           ? kv_manager_->get_k_cache_()
           : kv_manager_->get_v_cache_();
       for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
         Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
 
-        T* cache_ptr = cache_ptrs[layer].buffer;
-
         cache[layer] = std::make_unique<TensorImpl>(
             kv_cache->scalar_type(),
             kv_cache->sizes().size(),
             const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-            cache_ptr,
+            cache_ptrs[layer].buffer,
             const_cast<TensorImpl::DimOrderType*>(
                 kv_cache->dim_order().data()));
         input_tensors_.emplace_back(cache[layer].get());
         cache_inputs_.emplace_back(input_tensors_.back());
         buffer_manager->add_memory_info(
-            cache_ptr, cache[layer]->nbytes(), kv_cache.get());
+            cache_ptrs[layer].buffer, cache[layer]->nbytes(), kv_cache.get());
       }
     }
   }
 
   // [O]: logits
   Result<TensorInfo> logits = method_meta->output_tensor_meta(0);
-  logits_.data =
-      reinterpret_cast<uint16_t*>(buffer_manager->allocate(logits_.size));
+  logits_.data = buffer_manager->allocate(logits_.size);
   logits_.tensor = std::make_unique<TensorImpl>(
       logits->scalar_type(),
       logits->sizes().size(),
@@ -177,21 +181,22 @@ void PromptProcessor<T>::init_io(
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
-    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
     for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
       Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
-      T* cache_ptr = cache_ptrs[layer].output_buffer;
       cache[layer] = std::make_unique<TensorImpl>(
           kv_cache->scalar_type(),
           kv_cache->sizes().size(),
           const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-          cache_ptr,
+          cache_ptrs[layer].output_buffer,
           const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
       output_tensors_.emplace_back(cache[layer].get());
       buffer_manager->add_memory_info(
-          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
+          cache_ptrs[layer].output_buffer,
+          cache[layer]->nbytes(),
+          kv_cache.get());
     }
   }
   // Prepare the vector of EValue to run inference
@@ -201,13 +206,11 @@ void PromptProcessor<T>::init_io(
   }
 }
 
-template <typename T>
-const std::vector<uint16_t>& PromptProcessor<T>::get_all_logits() {
+const std::vector<std::byte>& PromptProcessor::get_all_logits() {
   return prompt_all_logits_;
 }
 
-template <typename T>
-void PromptProcessor<T>::prepare_io(
+void PromptProcessor::prepare_io(
     const std::vector<uint64_t>& prompt_tokens,
     int64_t prompt_pos,
     int64_t start_pos) {
@@ -232,8 +235,7 @@ void PromptProcessor<T>::prepare_io(
   }
 }
 
-template <typename T>
-Result<uint64_t> PromptProcessor<T>::prefill(
+Result<uint64_t> PromptProcessor::prefill(
     std::vector<uint64_t> prompt_tokens,
     int64_t start_pos,
     bool dump_logits,
@@ -339,7 +341,9 @@ Result<uint64_t> PromptProcessor<T>::prefill(
       prompt_all_logits_.insert(
           prompt_all_logits_.end(),
           logits_.data,
-          logits_.data + metadata_.ar_len * metadata_.vocab_size);
+          logits_.data +
+              metadata_.ar_len * metadata_.vocab_size *
+                  logits_.getElementSize());
     }
     // In the last run, offset to the meaningful logits.
     if (i == num_iters - 1) {
@@ -368,9 +372,5 @@ Result<uint64_t> PromptProcessor<T>::prefill(
       (num_prompt_tokens + metadata_.ar_len - 1) % metadata_.ar_len);
   return cur_token;
 }
-
-// Explicit instantiations
-template class PromptProcessor<uint16_t>;
-template class PromptProcessor<uint8_t>;
 
 } // namespace example
