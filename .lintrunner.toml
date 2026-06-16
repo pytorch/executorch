@@ -391,6 +391,7 @@ exclude_patterns = [
     '**/*.gif',
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
+    'examples/llm_server',
     'backends/cadence/utils/FACTO',
     'examples/cuda',
     'examples/qualcomm',
