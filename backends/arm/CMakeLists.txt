@@ -7,6 +7,9 @@ project(arm_backend)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Pin to C++17 for embedded toolchain compatibility (not all support C++20).
+set(CMAKE_CXX_STANDARD 17)
+
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
