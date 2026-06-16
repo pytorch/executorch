@@ -145,15 +145,16 @@ class ClampConverter(NodeConverter):
 
         # Neutron cannot delegate a partition where ReLU or ReLU6 is the only operator
         # and at the same time the node does not satisfy delegation requirements.
-        # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfuly.
+        # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfully.
         if bounds in cls.RELU_COMPATIBLE_BOUNDS.values():
             is_alone_in_partition = cls.is_node_alone_in_partition(
                 node, partition_list, filter_fn=is_not_qdq_node
             )
             if is_alone_in_partition:
+                # noinspection PyTypeChecker
                 return is_clamp_preserved_under_quantization(
                     node,
-                    min_val=bounds[0],
+                    min_val=bounds[0] if bounds[0] is not None else 0,
                     max_val=bounds[1],
                 )
 

@@ -68,6 +68,36 @@ class AddClampModule(torch.nn.Module):
 
 
 class TestClamp:
+
+    @pytest.mark.parametrize(
+        "min, max",
+        [
+            pytest.param(-1, 2, id="min = -1, max = 2 (Max/Min)"),
+            pytest.param(0.0, None, id="min = 0, max = None (Relu)"),
+        ],
+    )
+    def test__qat(self, mocker, min, max, use_qat):
+        input_shape = (2, 7, 2)  # Indivisible by num_macs
+        model = AddClampModule(min, max)
+
+        x_input_spec = ModelInputSpec(input_shape)
+        comparator = NumericalStatsOutputComparator()
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={
+                AddTensor: 1,
+                Clamp: 1,
+            },
+            expected_non_delegated_ops={},
+        )
+
+        lower_run_compare(
+            model=model,
+            input_spec=[x_input_spec],
+            dlg_model_verifier=graph_verifier,
+            output_comparator=comparator,
+        )
+
     @pytest.mark.parametrize(
         "min, max",
         [
@@ -90,7 +120,7 @@ class TestClamp:
             pytest.param(0.0, None, id="min = 0, max = None (Relu)"),
         ],
     )
-    def test_convert_clamp__full_pipeline(self, mocker, request, min, max, use_qat):
+    def test_convert_clamp__full_pipeline(self, mocker, request, min, max):
         input_shape = (2, 7, 2)  # Indivisible by num_macs
         model = AddClampModule(min, max)
 
@@ -111,7 +141,6 @@ class TestClamp:
             dlg_model_verifier=graph_verifier,
             request=request,
             output_comparator=comparator,
-            use_qat=use_qat,
         )
 
     @pytest.mark.parametrize(
