@@ -152,6 +152,29 @@ class TestBucketizeOperator(unittest.TestCase):
             model, (x, bounds), "test_bucketize_tensor_empty_input.pte"
         )
 
+    def test_bucketize_tensor_inf_input(self):
+        """Test bucketize.Tensor_out: (Tensor, Tensor, bool, bool) -> Tensor."""
+        model = BucketizeModule(out_int32=False, right=False)
+        x = torch.tensor([-torch.inf, torch.inf], dtype=torch.float)
+        bounds = torch.tensor([0, 3, 5, 7, 9], dtype=torch.float)
+        self._run_and_compare(model, (x, bounds), "test_bucketize_tensor_inf_input.pte")
+
+    def test_bucketize_tensor_inf_boundary(self):
+        """Test bucketize.Tensor_out: (Tensor, Tensor, bool, bool) -> Tensor."""
+        model = BucketizeModule(out_int32=False, right=False)
+        x = torch.tensor([[1, 2, 3, 4]], dtype=torch.float)
+        bounds = torch.tensor([-torch.inf, torch.inf], dtype=torch.float)
+        self._run_and_compare(
+            model, (x, bounds), "test_bucketize_tensor_inf_boundary.pte"
+        )
+
+    def test_bucketize_scalar_inf_input(self):
+        """Test bucketize.Tensor_out: (Tensor, Tensor, bool, bool) -> Tensor."""
+        model = BucketizeModule(out_int32=False, right=False)
+        x = torch.inf
+        bounds = torch.tensor([0, 3, 5, 7, 9], dtype=torch.float)
+        self._run_and_compare(model, (x, bounds), "test_bucketize_scalar_inf_input.pte")
+
 
 if __name__ == "__main__":
     unittest.main()

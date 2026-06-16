@@ -4,8 +4,8 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
-
 #include <gtest/gtest.h>
+#include <limits>
 
 using namespace ::testing;
 using executorch::aten::Scalar;
@@ -70,6 +70,21 @@ TEST_F(OpBucketizeScalarTest, ScalarEmptyBoundaries) {
   Scalar value = 2.5;
   Tensor boundaries = tf_bound.make({0}, {});
   Tensor expected = tf_out.make({}, {0});
+  Tensor out = tf_out.zeros({});
+
+  Tensor ret = op_bucketize_out(value, boundaries, false, true, out);
+
+  EXPECT_TENSOR_EQ(ret, expected);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpBucketizeScalarTest, ScalarInfInput) {
+  TensorFactory<ScalarType::Long> tf_out;
+  TensorFactory<ScalarType::Int> tf_bound;
+
+  Scalar value = std::numeric_limits<float>::infinity();
+  Tensor boundaries = tf_bound.make({5}, {0, 2, 4, 6, 8});
+  Tensor expected = tf_out.make({}, {5});
   Tensor out = tf_out.zeros({});
 
   Tensor ret = op_bucketize_out(value, boundaries, false, true, out);
@@ -322,6 +337,42 @@ TEST_F(OpBucketizeTest, EmptyAll) {
   Tensor out = tf_out.zeros({0});
 
   Tensor ret = op_bucketize_out(values, boundaries, false, false, out);
+
+  EXPECT_TENSOR_EQ(ret, expected);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpBucketizeTest, InfInput) {
+  TensorFactory<ScalarType::Long> tf_out;
+  TensorFactory<ScalarType::Float> tf_dtype;
+
+  Tensor values = tf_dtype.make(
+      {2},
+      {-std::numeric_limits<float>::infinity(),
+       std::numeric_limits<float>::infinity()});
+  Tensor boundaries = tf_dtype.make({5}, {0, 3, 5, 7, 9});
+  Tensor expected = tf_out.make({2}, {0, 5});
+  Tensor out = tf_out.zeros({2});
+
+  Tensor ret = op_bucketize_out(values, boundaries, false, true, out);
+
+  EXPECT_TENSOR_EQ(ret, expected);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpBucketizeTest, InfBoundaries) {
+  TensorFactory<ScalarType::Long> tf_out;
+  TensorFactory<ScalarType::Float> tf_dtype;
+
+  Tensor values = tf_dtype.make({2, 2}, {1, 4, 6, 8});
+  Tensor boundaries = tf_dtype.make(
+      {2},
+      {-std::numeric_limits<float>::infinity(),
+       std::numeric_limits<float>::infinity()});
+  Tensor expected = tf_out.ones({2, 2});
+  Tensor out = tf_out.zeros({2, 2});
+
+  Tensor ret = op_bucketize_out(values, boundaries, false, true, out);
 
   EXPECT_TENSOR_EQ(ret, expected);
   EXPECT_TENSOR_EQ(out, expected);
