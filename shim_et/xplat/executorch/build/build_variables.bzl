@@ -492,6 +492,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/plan/execution_plan.cpp",
     "runtime/plan/schedule.cpp",
     "runtime/plan/xnn_subgraph.cpp",
+    "runtime/plan/memory_plan.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
