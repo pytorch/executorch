@@ -233,6 +233,13 @@ Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
   }
 #endif
 
+  // Auto-trigger save_packed_index when this compile session added new
+  // packed entries to the file.
+  if (!packed_cache_path_.empty() &&
+      mmap_regions_.size() > mmap_regions_at_last_save_) {
+    (void)save_packed_index();
+  }
+
   return packed_data_names;
 }
 
@@ -600,13 +607,21 @@ Error XNNWeightsCache::save_packed_index() {
   }
 
   mmap_regions_at_last_save_ = mmap_regions_.size();
+  // Advance packed_file_used_ PAST the trailer we just wrote. Without
+  // this, the next reserve_space (e.g. another PTE's compile inheriting
+  // this path) would write at index_start, overwriting the trailer we
+  // just wrote and breaking cross-process cache reuse (next launch's
+  // load_packed_cache reads garbage at file end → invalid magic →
+  // ftruncate(0) → all data lost). The old trailer becomes orphan dead
+  // bytes; the new save will write a new trailer at end of the new
+  // packs, keeping the trailer always at file end.
+  packed_file_used_ = index_start + buf.size();
 
-  // Close the fd so the next init re-enters load_packed_cache and reads
-  // the trailer we just wrote.
-  if (close(packed_file_fd_) != 0) {
-    ET_LOG(Error, "close of packed cache fd failed (errno=%d)", errno);
-  }
-  packed_file_fd_ = -1;
+  // Keep fd open. Subsequent finalize_for_runtime calls auto-trigger
+  // save, which needs a live fd. Closing here would force every init to
+  // re-enter load_packed_cache + open_locked round-trip — unnecessary
+  // since the fd remains valid for both reads and writes through the
+  // process lifetime.
 #endif
   return Error::Ok;
 }
@@ -723,9 +738,17 @@ bool XNNWeightsCache::load_packed_cache() {
     name_to_packed_data_metadata_[name] = meta;
   }
 
-  packed_file_used_ = index_start;
+  // Start writing new packs AFTER the existing trailer (not at the
+  // trailer's offset). Writing at index_start would overwrite the
+  // valid trailer this PTE just loaded, breaking cross-process reuse
+  // (next launch reads garbage at file end → magic invalid →
+  // ftruncate(0) → all data lost). The old trailer becomes orphan
+  // bytes in the middle of the file; save_packed_index writes a new
+  // trailer at the new end including all entries (old + new).
+  packed_file_used_ = file_size;
   // In-memory state matches the on-disk trailer; the next save would be
-  // a no-op. Initialize watermark so save_packed_index short-circuits.
+  // a no-op until new packs arrive. Initialize watermark so
+  // save_packed_index short-circuits.
   mmap_regions_at_last_save_ = mmap_regions_.size();
   return true;
 #else
