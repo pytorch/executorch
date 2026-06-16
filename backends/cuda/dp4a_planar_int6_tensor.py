@@ -15,9 +15,9 @@ format wastes no bits and carries no zero tensor — Q6_K is symmetric.
 
 Build one with :meth:`from_exportable_gguf` (from a native Q6_K
 ``ExportableGGUFTensor`` — it reuses the shared Q6_K block decode in
-``extension/llm/export/gguf.py``) or with the low-level :meth:`from_intx_int8`
-(from an already-decoded symmetric int8 tensor). Both feed the same ql/qh packer;
-this class owns only the 6-bit pack, never the Q6_K block decode.
+``extension/llm/export/gguf.py`` and then feeds the internal ql/qh packer
+:meth:`_from_intx_int8`). This class owns only the 6-bit pack, never the Q6_K
+block decode.
 
 The stored value is ``u = q + 32`` in ``[0, 63]`` (``q`` in ``[-32, 31]``); the
 constant ``-32`` offset is applied in the decode kernel. The 6 bits are split
@@ -169,8 +169,8 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
         )
 
     @classmethod
-    def from_intx_int8(cls, t: torch.Tensor) -> "CudaDp4aPlanarInt6Tensor":
-        """Build from a torchao ``IntxUnpackedToInt8Tensor`` decoded from Q6_K.
+    def _from_intx_int8(cls, t: torch.Tensor) -> "CudaDp4aPlanarInt6Tensor":
+        """Internal ql/qh packer: build from a symmetric int8 ``IntxUnpackedToInt8Tensor`` decoded from Q6_K.
 
         The source is symmetric (zero_point == 0), ``qdata`` is int8 in
         ``[-32, 31]`` and ``scale`` is ``(N, K/16)``. The ql/qh bit-pack is baked
@@ -179,7 +179,7 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
         q = t.qdata
         if not bool(torch.all(t.zero_point == 0)):
             raise ValueError(
-                "CudaDp4aPlanarInt6Tensor.from_intx_int8 requires symmetric Q6_K "
+                "CudaDp4aPlanarInt6Tensor._from_intx_int8 requires symmetric Q6_K "
                 "weights (zero_point == 0)"
             )
         q_min, q_max = int(q.min()), int(q.max())
@@ -203,7 +203,7 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
         Reuses the shared Q6_K block decode in
         ``extension/llm/export/gguf.py`` (``to_intx_unpacked_to_int8_tensor`` ->
         a symmetric int8 tensor in ``[-32, 31]``), then bit-packs into the ql/qh
-        planes via :meth:`from_intx_int8`. The Q6_K decode lives in one place;
+        planes via :meth:`_from_intx_int8`. The Q6_K decode lives in one place;
         this class only owns the 6-bit pack.
         """
         if gt.ggml_type != "q6_k":
@@ -211,7 +211,7 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
                 "CudaDp4aPlanarInt6Tensor.from_exportable_gguf requires a q6_k "
                 f"ExportableGGUFTensor, got {gt.ggml_type!r}"
             )
-        return cls.from_intx_int8(gt.to_intx_unpacked_to_int8_tensor())
+        return cls._from_intx_int8(gt.to_intx_unpacked_to_int8_tensor())
 
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """Dequantize to a dense tensor (symmetric: ``w = q * scale``).

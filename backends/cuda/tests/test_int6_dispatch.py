@@ -149,7 +149,7 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertLess(self._rel_err(out, ref), 0.02)
 
     def test_from_intx_int8_roundtrip(self):
-        """from_intx_int8 packs a symmetric int8 tensor and dispatch is correct."""
+        """_from_intx_int8 packs a symmetric int8 tensor and dispatch is correct."""
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
         N, K, gs = 16, 64, 16
@@ -164,7 +164,7 @@ class TestDispatchRouting(unittest.TestCase):
             dtype=torch.bfloat16,
             activation_quantization=None,
         )
-        t = CudaDp4aPlanarInt6Tensor.from_intx_int8(intx)
+        t = CudaDp4aPlanarInt6Tensor._from_intx_int8(intx)
         x = torch.randn(1, K, dtype=torch.bfloat16)
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
@@ -189,7 +189,7 @@ class TestDispatchRouting(unittest.TestCase):
             activation_quantization=None,
         )
         with self.assertRaises(ValueError):
-            CudaDp4aPlanarInt6Tensor.from_intx_int8(intx)
+            CudaDp4aPlanarInt6Tensor._from_intx_int8(intx)
 
     def test_from_exportable_gguf(self):
         """from_exportable_gguf reuses the gguf.py Q6_K decode then packs losslessly."""
