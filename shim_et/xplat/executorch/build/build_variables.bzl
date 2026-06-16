@@ -489,6 +489,9 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/executor/shape_env.cpp",
     "runtime/plan/partition.cpp",
     "runtime/plan/xnn_support.cpp",
+    "runtime/plan/execution_plan.cpp",
+    "runtime/plan/schedule.cpp",
+    "runtime/plan/xnn_subgraph.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
