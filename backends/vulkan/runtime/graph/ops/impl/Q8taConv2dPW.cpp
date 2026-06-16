@@ -182,6 +182,36 @@ ValueRef prepack_quantized_conv2d_pw_weight(
 }
 
 //
+// Resize
+//
+
+// resize_args = { input }
+//
+// The PW conv preserves spatial dims: for the standalone 1x1 pointwise conv the
+// output H/W equals the input H/W, and for the im2col path the im2col scratch
+// already carries the conv-output H_out/W_out (the GEMM only maps K -> OC). So
+// in both cases output H/W == input H/W. Without this resize the terminal PW
+// conv (the IW encoder's last op -> the graph OUTPUT) would freeze at the
+// build-time upper bound, leaving garbage rows in the final encoder output.
+// N/C are shape-independent and stay as currently allocated.
+void resize_q8ta_conv2d_pw_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = resize_args.at(0);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  std::vector<int64_t> new_sizes = graph->sizes_of(out);
+  const size_t out_ndim = new_sizes.size();
+  const size_t in_ndim = in_sizes.size();
+  // Copy H (dim -2) and W (dim -1) from the input; keep output N/C.
+  new_sizes.at(out_ndim - 2) = in_sizes.at(in_ndim - 2);
+  new_sizes.at(out_ndim - 1) = in_sizes.at(in_ndim - 1);
+  graph->virtual_resize(out, new_sizes);
+}
+
+//
 // Dispatch nodes
 //
 
@@ -266,7 +296,10 @@ void add_q8ta_conv2d_pw_node(
       param_buffers,
       push_constants,
       spec_constants,
-      {}));
+      // Resize args: { input }
+      {packed_int8_input},
+      // Resize function: PW conv preserves spatial dims (out H/W == in H/W).
+      resize_q8ta_conv2d_pw_node));
 }
 
 //
