@@ -4,8 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from executorch.backends.arm.quantizer import (
     get_symmetric_quantization_config,
@@ -14,6 +12,8 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeline
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 class SimpleMLP(torch.nn.Module):
@@ -28,13 +28,14 @@ class SimpleMLP(torch.nn.Module):
 
 
 class CloneAtIoBoundary(torch.nn.Module):
-    """zero-arithmetic cluster whose only adjacent annotated neighbours are
+    """Zero-arithmetic cluster whose only adjacent annotated neighbours are
     uint8-annotated IO nodes (input placeholder + graph output).
 
     With set_global(int8) + set_io(uint8), both the placeholder and the output
     node carry uint8 qspecs that _skip_shared_qspec_from_io filters out, leaving
     adjacent_qspecs empty. Before the IO-boundary fallback fix in
     SharedQspecQuantizer, this caused the cluster to stay in float.
+
     """
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -87,9 +88,9 @@ def test_io_boundary_shared_cluster_is_quantized():
     assert len(clone_nodes) == 1, f"Expected 1 clone node, got {len(clone_nodes)}"
     clone_node = clone_nodes[0]
 
-    assert Q_ANNOTATION_KEY in clone_node.meta, (
-        "clone node was not annotated — IO-boundary cluster stayed in float"
-    )
-    assert clone_node.meta[Q_ANNOTATION_KEY].output_qspec is not None, (
-        "clone node has no output_qspec — IO-boundary cluster stayed in float"
-    )
+    assert (
+        Q_ANNOTATION_KEY in clone_node.meta
+    ), "clone node was not annotated — IO-boundary cluster stayed in float"
+    assert (
+        clone_node.meta[Q_ANNOTATION_KEY].output_qspec is not None
+    ), "clone node has no output_qspec — IO-boundary cluster stayed in float"

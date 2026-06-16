@@ -553,19 +553,19 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         adjacent_qspecs.append(input_qspec)
 
     def _is_quantized_io_boundary(self, node: Node) -> bool:
-        """Return True if node is a model input/output annotated by the quantizer.
+        """Return True if node is a model input/output annotated by the
+        quantizer.
 
         Such a node sits on the quantized interface but its qspec is often
         filtered out of shared-cluster propagation: a uint8 IO qspec is skipped
         by _skip_shared_qspec_from_io, and an input-state placeholder may carry
         an annotation with no output_qspec. Its presence still signals that the
         cluster is on the quantized data path.
+
         """
         return node.op in ("placeholder", "output") and self._is_annotated(node)
 
-    def _get_shared_clique(
-        self, root_node: Node
-    ) -> tuple[set[Node], list[Any], bool]:
+    def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any], bool]:
         shared_nodes = set()
         bfs_queue = [root_node]
         adjacent_qspecs: list[Any] = []
