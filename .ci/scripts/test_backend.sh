@@ -65,11 +65,10 @@ if [[ "$FLOW" == *vulkan* ]]; then
 fi
 
 if [[ "$FLOW" == *webgpu* ]]; then
-    # Setup swiftshader (software Vulkan adapter for GPU-less runners) and wgpu-native,
-    # which are required to build and run the WebGPU delegate.
+    # Dawn (Tint) + SwiftShader, the spec-faithful headless WebGPU backend.
     source .ci/scripts/setup-webgpu-linux-deps.sh
 
-    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_WEBGPU=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_WEBGPU=ON -DDawn_DIR=$Dawn_DIR"
 fi
 
 if [[ "$FLOW" == *arm* ]]; then

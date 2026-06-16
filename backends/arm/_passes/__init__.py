@@ -43,6 +43,9 @@ from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # n
 from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
 from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
+from .decompose_dynamic_adaptive_avg_pool2d_pass import (  # noqa
+    DecomposeDynamicAdaptiveAvgPool2dPass,
+)
 from .decompose_dynamic_full_pass import DecomposeDynamicFullPass  # noqa
 from .decompose_einsum_pass import DecomposeEinsumPass  # noqa
 from .decompose_elu_pass import ConvertEluFamilyToEluPass, DecomposeEluPass  # noqa
@@ -101,6 +104,7 @@ from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # 
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
+from .exir_to_tosa_pass import ExirToTosaPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,

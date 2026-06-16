@@ -685,6 +685,22 @@ class CustomBuildPy(build_py):
     a file to a different relative location under the output package directory.
     """
 
+    def analyze_manifest(self):
+        super().analyze_manifest()
+        # Recent versions of setuptools may include bare directory symlinks from version
+        # control (e.g. src/executorch/{backends,codegen,data,...} ->
+        # ../../<name>) in manifest_files. These exist for editable mode but
+        # break regular installs: build_package_data passes them to copy_file,
+        # which calls os.path.isfile() and gets False for a symlink-to-directory.
+        if not self.editable_mode:
+            _root = os.path.dirname(os.path.abspath(__file__))
+            for _pkg in list(self.manifest_files):
+                self.manifest_files[_pkg] = [
+                    _f
+                    for _f in self.manifest_files[_pkg]
+                    if os.path.isfile(os.path.join(_root, _f))
+                ]
+
     def run(self):
         # Copy python files to the output directory. This set of files is
         # defined by the py_module list and package_data patterns.
@@ -1124,8 +1140,12 @@ setup(
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
                 ),
                 BuiltExtension(
-                    src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-                    src="PyQnnManagerAdaptor.*",
+                    src_dir="backends/qualcomm/%BUILD_TYPE%/",
+                    src=(
+                        "PyQnnManagerAdaptor*.pyd"
+                        if _is_windows()
+                        else "PyQnnManagerAdaptor.*"
+                    ),
                     modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
                 ),

@@ -49,17 +49,6 @@ cmake_minimum_required(VERSION 3.24)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Hexagon toolchain with release build complains about code in third party
-# libraries.
-if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
-                                                     STREQUAL "Release"
-)
-  add_compile_options(
-    -Wno-error=format -Wno-error=implicit-int-conversion
-    -Wno-error=unused-variable -Wno-error=unused-function
-  )
-endif()
-
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -89,6 +78,18 @@ endif()
 project(executorch
         VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
 )
+
+# Hexagon toolchain with release build complains about code in third party
+# libraries. Must come after project(), which runs the toolchain file that sets
+# CMAKE_SYSTEM_PROCESSOR, and before add_subdirectory(third-party).
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
 
 message(
   STATUS
@@ -764,6 +765,20 @@ if(EXECUTORCH_BUILD_CUDA
   find_package_torch()
 endif()
 
+# Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
+# vendored torch-tensorrt delegate). Built before backends/aoti and
+# backends/cuda, which link it.
+if(EXECUTORCH_BUILD_CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
+  install(
+    DIRECTORY extension/cuda/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/cuda
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_cuda)
+endif()
+
 # Build common AOTI functionality if needed by CUDA or Metal backends
 if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
@@ -1024,6 +1039,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_COREML AND APPLE)
     list(APPEND _dep_libs coremldelegate)
+  endif()
+
+  if(EXECUTORCH_BUILD_VGF)
+    list(APPEND _dep_libs vgf_backend)
   endif()
 
   if(EXECUTORCH_BUILD_MPS)

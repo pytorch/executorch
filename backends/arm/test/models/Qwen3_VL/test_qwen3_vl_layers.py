@@ -488,6 +488,16 @@ def test_qwen3_vl_tosa_FP(test_case: Qwen3VLTestCase):
 @common.parametrize(
     "test_case",
     TOSA_BF16_TEST_CASES,
+    xfails=(
+        {
+            "vision_patch_embed": (
+                "MLETORCH-2048: Large bf16 patch embedding mismatch on aarch64",
+                AssertionError,
+            ),
+        }
+        if common.is_aarch64_host()
+        else None
+    ),
 )
 def test_qwen3_vl_tosa_FP_bf16(test_case: Qwen3VLTestCase):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
