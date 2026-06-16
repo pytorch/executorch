@@ -37,6 +37,9 @@ class XnnpackBackendOptions {
   runtime::Result<WorkspaceSharingMode> resolve_sharing_mode(
       const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const;
 
+  bool resolve_graph_runtime(
+      const ET_RUNTIME_NAMESPACE::BackendInitContext& context) const;
+
   WorkspaceSharingMode get_sharing_mode() const;
   XNNWorkspaceManager& workspace_manager();
   const XNNWorkspaceManager& workspace_manager() const;
@@ -61,6 +64,7 @@ class XnnpackBackendOptions {
 #endif
 
   std::string packed_cache_path_;
+  std::atomic<bool> use_graph_runtime_{false};
 };
 
 } // namespace executorch::backends::xnnpack
