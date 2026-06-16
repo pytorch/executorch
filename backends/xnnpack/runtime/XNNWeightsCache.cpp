@@ -141,16 +141,19 @@ Error XNNWeightsCache::initialize_for_runtime(
     return Error::Ok;
   }
 
-  // Already loaded earlier this session; just reopen the write fd that
-  // save_packed_index() closed. Subsequent reserve_space can extend the
-  // file for any entries not in the saved trailer.
-  if (cache_loaded_) {
+  // Entries already in memory (from a prior load_packed_cache or a prior
+  // fresh-write session). Just reopen the write fd that save_packed_index
+  // closed; subsequent reserve_space can extend the file. Using metadata
+  // emptiness (not a separate flag) as the gate avoids a latent bug
+  // where fresh-write→save→re-init re-enters load_packed_cache and
+  // double-mmaps the same file.
+  if (!name_to_packed_data_metadata_.empty()) {
     packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR);
     return Error::Ok;
   }
 
-  // First init for this path: try to load the saved trailer; on success
-  // open a write fd for any new entries. If load fails, fall through to
+  // No in-memory entries: try to load the saved trailer; on success open
+  // a write fd for any new entries. If load fails, fall through to
   // fresh-write below.
   if (load_packed_cache()) {
     ET_LOG(
@@ -280,7 +283,6 @@ void XNNWeightsCache::full_unload() {
   packed_data_ptrs_.clear();
   ptr_to_file_offset_.clear();
   file_ptr_to_region_index_.clear();
-  cache_loaded_ = false;
   if (packed_file_fd_ >= 0) {
     close(packed_file_fd_);
     packed_file_fd_ = -1;
@@ -714,7 +716,6 @@ bool XNNWeightsCache::load_packed_cache() {
     name_to_packed_data_metadata_[name] = meta;
   }
 
-  cache_loaded_ = true;
   packed_file_used_ = index_start;
   // In-memory state matches the on-disk trailer; the next save would be
   // a no-op. Initialize watermark so save_packed_index short-circuits.

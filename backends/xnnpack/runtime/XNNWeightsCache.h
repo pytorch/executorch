@@ -39,10 +39,8 @@ struct PackedDataMeta {
   bool in_current_runtime{};
   // True if this entry's bytes are persisted in the on-disk cache file
   // (either originally loaded via load_packed_cache, or freshly packed
-  // and then save_packed_index-ed). Used by delete_packed_data to
-  // detect when all persistent entries are gone, at which point
-  // cache_loaded_ is auto-invalidated so the next init re-enters
-  // load_packed_cache and reuses the saved file instead of re-packing.
+  // and then save_packed_index-ed). delete_packed_data preserves these
+  // entries so the next init reuses the saved file instead of re-packing.
   bool from_load{false};
   // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
   // guarantees this is consistent across runs of the same ukernel; when
@@ -195,10 +193,6 @@ class XNNWeightsCache {
   std::string packed_cache_path_;
   int packed_file_fd_{-1};
   size_t packed_file_used_{0};
-  // True once load_packed_cache() has populated metadata from a saved
-  // index, OR once a fresh-write session has been persisted to disk via
-  // save_packed_index() (so subsequent inits can load from it).
-  bool cache_loaded_{false};
   // Tracks file offset of each file-backed allocation. Used by
   // save_packed_index() to serialize (name → offset, size) index.
   std::unordered_map<void*, size_t> ptr_to_file_offset_;
