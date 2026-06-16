@@ -704,6 +704,236 @@ TEST_F(XNNWeightsCacheTest, MultiplePTEsInSameInstance_NoFileGrowth) {
   ::unlink(cache_path.c_str());
 }
 
+namespace {
+
+// Little-endian decode helpers matching XNNWeightsCache's on-disk format.
+uint32_t read_le_u32(const uint8_t* p) {
+  uint32_t v = 0;
+  for (int i = 0; i < 4; ++i) {
+    v |= static_cast<uint32_t>(p[i]) << (8 * i);
+  }
+  return v;
+}
+uint64_t read_le_u64(const uint8_t* p) {
+  uint64_t v = 0;
+  for (int i = 0; i < 8; ++i) {
+    v |= static_cast<uint64_t>(p[i]) << (8 * i);
+  }
+  return v;
+}
+void write_le_u32(std::ostream& f, uint32_t v) {
+  for (int i = 0; i < 4; ++i) {
+    char b = static_cast<char>((v >> (8 * i)) & 0xff);
+    f.write(&b, 1);
+  }
+}
+void write_le_u64(std::ostream& f, uint64_t v) {
+  for (int i = 0; i < 8; ++i) {
+    char b = static_cast<char>((v >> (8 * i)) & 0xff);
+    f.write(&b, 1);
+  }
+}
+
+} // namespace
+
+// A cache file written by older code (kCacheVersion=1) carries no per-entry
+// seed field. Loading such a file with the current schema would yield
+// entries with seed=0 and mismatch every fresh look_up. The version bump
+// must reject it outright so the next init re-packs from scratch.
+TEST_F(XNNWeightsCacheTest, LoadPackedCache_RejectsV1Format) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_v1_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  // v1 layout: 64 bytes of dummy data, then 20-byte footer with version=1.
+  {
+    std::ofstream f(cache_path, std::ios::binary);
+    std::vector<char> data(64, 0);
+    f.write(data.data(), data.size());
+    write_le_u64(f, 64); // index_start
+    write_le_u32(f, 0); // entry_count
+    write_le_u32(f, 0x58505743); // kCacheMagic "XPWC"
+    write_le_u32(f, 1); // OLD kCacheVersion = 1
+  }
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(cache_path);
+  Error err =
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  ASSERT_EQ(err, Error::Ok);
+  // Version mismatch → load_packed_cache returned false → no entries.
+  EXPECT_EQ(cache.get_packed_data_names().size(), 0u);
+
+  ::unlink(cache_path.c_str());
+}
+
+// Verify save_packed_index writes the schema version 2 footer and embeds a
+// 4-byte seed field in each entry record. Guards against future refactors
+// silently dropping the seed write.
+TEST_F(XNNWeightsCacheTest, SavePackedIndex_EntryFormatIncludesSeed) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_format_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  std::vector<size_t> batches{1, 2, 3};
+  size_t input_channels = 3;
+  size_t output_channels = 4;
+  size_t num_batches = 1 * 2 * 3;
+  size_t padding = 32;
+  std::vector<float> input(num_batches * input_channels + padding, 1.0f);
+  std::vector<float> output(num_batches * output_channels, 0.0f);
+
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    BuildAndRunGraphWithWeightsCache(
+        cache,
+        batches,
+        input_channels,
+        output_channels,
+        input.data(),
+        output.data());
+    ASSERT_EQ(cache.save_packed_index(), Error::Ok);
+  }
+
+  // Parse footer at file_size - 20.
+  std::ifstream f(cache_path, std::ios::binary);
+  ASSERT_TRUE(f.is_open());
+  f.seekg(0, std::ios::end);
+  size_t file_size = f.tellg();
+  ASSERT_GE(file_size, 24u);
+
+  uint8_t footer[20];
+  f.seekg(file_size - 20);
+  f.read(reinterpret_cast<char*>(footer), 20);
+  uint32_t magic = read_le_u32(footer + 12);
+  uint32_t version = read_le_u32(footer + 16);
+  EXPECT_EQ(magic, 0x58505743u);
+  EXPECT_EQ(version, 2u);
+
+  // Walk first entry:
+  // [name_len:u32][name][file_offset:u64][data_size:u64][seed:u32]
+  uint64_t index_start = read_le_u64(footer);
+  uint32_t entry_count = read_le_u32(footer + 8);
+  ASSERT_GT(entry_count, 0u);
+
+  f.seekg(index_start);
+  uint8_t name_len_buf[4];
+  f.read(reinterpret_cast<char*>(name_len_buf), 4);
+  uint32_t name_len = read_le_u32(name_len_buf);
+
+  // The seed field sits at index_start + 4 + name_len + 8 + 8.
+  f.seekg(index_start + 4 + name_len + 8 + 8);
+  uint8_t seed_buf[4];
+  f.read(reinterpret_cast<char*>(seed_buf), 4);
+  // XNNPACK ukernel seeds are non-zero in practice. The signal here is
+  // simply that 4 well-formed bytes follow the size field — confirming
+  // the new entry layout was written, not the legacy 16-byte tail.
+  uint32_t stored_seed = read_le_u32(seed_buf);
+  EXPECT_NE(stored_seed, 0u);
+
+  ::unlink(cache_path.c_str());
+}
+
+// After loading a cache file whose entry seed has been tampered with
+// (simulating an XNNPACK upgrade where the same ukernel now emits a
+// different seed), the next inference must produce correct output. Either
+// look_up's seed check or look_up_or_insert's memcmp fallback drives the
+// re-pack; this test exercises the end-to-end safety net.
+TEST_F(
+    XNNWeightsCacheTest,
+    LoadPackedCache_CorruptedSeed_ProducesCorrectOutput) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_badseed_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  std::vector<size_t> batches{1, 2, 3};
+  size_t input_channels = 3;
+  size_t output_channels = 4;
+  size_t num_batches = 1 * 2 * 3;
+  size_t padding = 32;
+  std::vector<float> input(num_batches * input_channels + padding, 1.0f);
+
+  // Baseline: fresh pack, heap-only, no cache file.
+  std::vector<float> baseline(num_batches * output_channels, 0.0f);
+  {
+    XNNWeightsCache cache;
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    BuildAndRunGraphWithWeightsCache(
+        cache,
+        batches,
+        input_channels,
+        output_channels,
+        input.data(),
+        baseline.data());
+  }
+
+  // Write a valid cache file.
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    std::vector<float> out(num_batches * output_channels, 0.0f);
+    BuildAndRunGraphWithWeightsCache(
+        cache,
+        batches,
+        input_channels,
+        output_channels,
+        input.data(),
+        out.data());
+    ASSERT_EQ(cache.save_packed_index(), Error::Ok);
+  }
+
+  // Corrupt the seed field of the first entry to a value no real ukernel
+  // would emit (0xDEADBEEF).
+  {
+    std::fstream f(cache_path, std::ios::binary | std::ios::in | std::ios::out);
+    ASSERT_TRUE(f.is_open());
+    f.seekg(0, std::ios::end);
+    size_t file_size = f.tellg();
+    ASSERT_GE(file_size, 24u);
+
+    uint8_t footer_buf[20];
+    f.seekg(file_size - 20);
+    f.read(reinterpret_cast<char*>(footer_buf), 20);
+    uint64_t index_start = read_le_u64(footer_buf);
+    uint32_t entry_count = read_le_u32(footer_buf + 8);
+    ASSERT_GT(entry_count, 0u);
+
+    f.seekg(index_start);
+    uint8_t name_len_buf[4];
+    f.read(reinterpret_cast<char*>(name_len_buf), 4);
+    uint32_t name_len = read_le_u32(name_len_buf);
+
+    size_t seed_offset = index_start + 4 + name_len + 8 + 8;
+    f.seekp(seed_offset);
+    uint32_t corrupted = 0xDEADBEEFu;
+    f.write(reinterpret_cast<const char*>(&corrupted), 4);
+    f.close();
+  }
+
+  // Reload and run. Output must still match baseline.
+  std::vector<float> after_corruption(num_batches * output_channels, 0.0f);
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(cache_path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    ASSERT_GT(cache.get_packed_data_names().size(), 0u);
+    BuildAndRunGraphWithWeightsCache(
+        cache,
+        batches,
+        input_channels,
+        output_channels,
+        input.data(),
+        after_corruption.data());
+  }
+
+  EXPECT_EQ(after_corruption, baseline);
+
+  ::unlink(cache_path.c_str());
+}
+
 // save_packed_index must be a true no-op when no new reserve_space happened
 // since the last save — same content but writing would still bump mtime,
 // making the cache file look modified on every model load.

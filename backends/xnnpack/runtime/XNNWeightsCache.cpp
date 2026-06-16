@@ -348,6 +348,19 @@ size_t XNNWeightsCache::look_up(
   if (packed_weight_entry == context->name_to_packed_data_metadata_.end()) {
     return SIZE_MAX;
   }
+  // XNNPACK upgrade detection: a ukernel whose implementation changed
+  // produces a different seed. Reject the cached entry so look_up_or_insert
+  // falls through to re-pack with the current ukernel.
+  if (packed_weight_entry->second.seed != cache_key->seed) {
+    ET_LOG(
+        Info,
+        "look_up: seed mismatch for '%s' (cached=0x%08x, current=0x%08x); "
+        "treating as miss for re-pack",
+        weight_bias_name.c_str(),
+        packed_weight_entry->second.seed,
+        cache_key->seed);
+    return SIZE_MAX;
+  }
   packed_weight_entry->second.in_current_runtime = true;
   return packed_weight_entry->second.offset;
 }
@@ -474,6 +487,7 @@ size_t XNNWeightsCache::look_up_or_insert(
     packed_data_metadata.ref_count =
         0; // ref_count is only incremented after finalizing for runtime
     packed_data_metadata.in_current_runtime = true;
+    packed_data_metadata.seed = cache_key->seed;
     context->name_to_packed_data_metadata_[weight_bias_name] =
         packed_data_metadata;
   } else {
@@ -524,7 +538,7 @@ Error XNNWeightsCache::save_packed_index() {
   std::vector<uint8_t> buf;
   uint32_t entry_count = 0;
 
-  // Index entry: [name_len:u32][name][file_offset:u64][data_size:u64]
+  // Index entry: [name_len:u32][name][file_offset:u64][data_size:u64][seed:u32]
   for (const auto& [name, meta] : name_to_packed_data_metadata_) {
     void* ptr = packed_data_ptrs_[meta.offset];
     auto it = ptr_to_file_offset_.find(ptr);
@@ -536,6 +550,7 @@ Error XNNWeightsCache::save_packed_index() {
     buf.insert(buf.end(), name.begin(), name.end());
     append_le(buf, static_cast<uint64_t>(it->second));
     append_le(buf, static_cast<uint64_t>(meta.data_size));
+    append_le(buf, meta.seed);
   }
 
   // Footer: [index_start:u64][entry_count:u32][magic:u32][version:u32]
@@ -635,7 +650,8 @@ bool XNNWeightsCache::load_packed_cache() {
   for (uint32_t i = 0; i < entry_count && cursor + 4 <= end; ++i) {
     uint32_t name_len = read_le<uint32_t>(cursor);
     cursor += 4;
-    if (cursor + name_len + 16 > end) {
+    // [file_offset:u64][data_size:u64][seed:u32] = 20 bytes
+    if (cursor + name_len + 20 > end) {
       // Truncated entry header: trailer doesn't match the entry_count we
       // read from the footer, so the cache is corrupt. Apply the same
       // full rollback as the invalid-bounds branch below — otherwise the
@@ -660,6 +676,8 @@ bool XNNWeightsCache::load_packed_cache() {
     cursor += 8;
     uint64_t data_size = read_le<uint64_t>(cursor);
     cursor += 8;
+    uint32_t seed = read_le<uint32_t>(cursor);
+    cursor += 4;
 
     // Bounds check: the entry's bytes must lie entirely inside the
     // packed-data region.
@@ -692,6 +710,7 @@ bool XNNWeightsCache::load_packed_cache() {
     meta.ref_count = 0;
     meta.in_current_runtime = false;
     meta.from_load = true;
+    meta.seed = seed;
     name_to_packed_data_metadata_[name] = meta;
   }
 
