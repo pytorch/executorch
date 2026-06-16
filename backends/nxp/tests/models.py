@@ -952,17 +952,14 @@ class BatchMatMulModel(torch.nn.Module):
         return torch.bmm(x, y)
 
 
-class BatchMatMulConvModel(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.conv = Conv1dModule(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            stride=1,
-            padding=1,
-            kernel_size=3,
-        )
+class BatchMatMulMaxPoolModel(torch.nn.Module):
+
+    @staticmethod
+    def noop_max_pool_1d(x):
+        """Call `torch.max_pool1d` that is a NoOp, but it enforces the ChannelsFirst format in the `NodeFormatInference`."""
+        return torch.max_pool1d(x, kernel_size=1)
 
     def forward(self, x, y):
-        x = self.conv(x)
-        return torch.bmm(x, y)
+        x = torch.bmm(x, y)
+        x = self.noop_max_pool_1d(x)
+        return x
