@@ -576,11 +576,18 @@ Error XNNWeightsCache::save_packed_index() {
     ET_LOG(Error, "fsync of packed cache failed (errno=%d)", errno);
     // Continue — data is in page cache; durability is best-effort.
   }
+  // Log the final file size (= index_start + trailer) so production
+  // logs surface unbounded growth from orphan packs: a same-name
+  // re-pack leaves the old packed bytes in the file even though the
+  // trailer drops the old entry. Monitoring file_bytes over time tells
+  // us when GC or a size cap is needed.
+  const size_t file_bytes = index_start + buf.size();
   ET_LOG(
       Info,
-      "Saved packed weight index: %u entries at offset %zu",
+      "Saved packed weight index: %u entries at offset %zu, file_bytes=%zu",
       entry_count,
-      index_start);
+      index_start,
+      file_bytes);
 
   // Promote freshly-packed entries to from_load now that they're durable
   // on disk, so delete_packed_data preserves them across unload/reload.
