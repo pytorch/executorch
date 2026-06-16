@@ -69,6 +69,8 @@ class _AddTiedConst(torch.nn.Module):
         self.w2 = torch.nn.Parameter(
             torch.arange(N * N, dtype=torch.float32).reshape(N, N)
         )
+        # Pin the tied premise; the dedup to one key is assumed, not asserted.
+        assert torch.equal(self.w1, self.w2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.w1 + self.w2
@@ -90,13 +92,21 @@ def _export(model, inputs):
 
 class TestPrepack(unittest.TestCase):
     def test_export_delegates(self) -> None:
-        et = _export(_AddConst(), _inputs())
-        found = any(
-            d.id == "VulkanBackend"
-            for plan in et.executorch_program.execution_plan
-            for d in plan.delegates
-        )
-        self.assertTrue(found, "Expected a VulkanBackend delegate (x + w fusion)")
+        # Each model must fully delegate -- every constant wrapped in a prepack
+        # node inside a VulkanBackend delegate (single, multi-const, tied).
+        for name, model in (
+            ("x + w", _AddConst()),
+            ("x + w1 + w2", _AddTwoConst()),
+            ("x + w + w (tied)", _AddTiedConst()),
+        ):
+            with self.subTest(model=name):
+                et = _export(model, _inputs())
+                found = any(
+                    d.id == "VulkanBackend"
+                    for plan in et.executorch_program.execution_plan
+                    for d in plan.delegates
+                )
+                self.assertTrue(found, f"Expected a VulkanBackend delegate: {name}")
 
 
 def _write(model, pte_path: str, golden_path: str) -> None:

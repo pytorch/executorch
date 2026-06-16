@@ -40,6 +40,9 @@ void prepack_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // Sole materialization: write the .pte bytes once, straight into the
   // consumer's buffer (no eager src buffer, no buffer->buffer copy).
+  // Correctness of this write-once relies on `out` being a dedicated buffer
+  // (the partitioner gives prepack outputs mem_obj_id=-1, so it is never
+  // memory-plan aliased with a transient that execute() would later overwrite).
   graph.materialize_constant(args.at(0), out.buffer);
 }
 

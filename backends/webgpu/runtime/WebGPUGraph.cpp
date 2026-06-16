@@ -308,18 +308,14 @@ void WebGPUGraph::build(
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
 
-        // Constants are dedicated. A prepack-routed constant is recorded as a
-        // ConstantSource (materialized once by its prepack node); if it is used
-        // ONLY via prepack it is deferred (no eager GPU buffer).
+        // Constants are dedicated. Every constant is recorded as a
+        // ConstantSource and materialized via materialize_constant (one
+        // CPU->GPU write); a constant consumed ONLY via prepack is deferred
+        // (no eager buffer -- its prepack node performs that one write).
         if (constant_id >= 0 || mem_obj_id < 0) {
           tensor_mem_obj_ids_[i] = -1;
 
-          // Record the source for every prepack-routed constant (metadata only,
-          // resolved straight from the constants table) so materialize_constant
-          // always has a source -- independent of the defer decision below.
-          const bool is_prepack_src =
-              constant_id >= 0 && prepack_src_ids.count(i) != 0;
-          if (is_prepack_src) {
+          if (constant_id >= 0) {
             const auto* constants = graph->constants();
             if (!constants ||
                 constant_id >= static_cast<int>(constants->size())) {
@@ -342,7 +338,8 @@ void WebGPUGraph::build(
           }
 
           // Defer constants consumed solely via prepack: skip the eager buffer.
-          const bool defer = is_prepack_src && direct_use_ids.count(i) == 0;
+          const bool defer = constant_id >= 0 &&
+              prepack_src_ids.count(i) != 0 && direct_use_ids.count(i) == 0;
           if (!defer) {
             WGPUBufferDescriptor buf_desc = {};
             buf_desc.size = std::max(tensor.nbytes, size_t(4));
@@ -351,50 +348,10 @@ void WebGPUGraph::build(
             buf_desc.mappedAtCreation = false;
             tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
 
-            if (constant_id >= 0 && constant_data && tensor.nbytes > 0) {
-              const auto* constants = graph->constants();
-              if (constants &&
-                  constant_id < static_cast<int>(constants->size())) {
-                const auto* vk_bytes = constants->Get(constant_id);
-                if (vk_bytes->offset() != UINT64_MAX) {
-                  const uint8_t* src = constant_data + vk_bytes->offset();
-                  wgpuQueueWriteBuffer(
-                      queue_, tensor.buffer, 0, src, tensor.nbytes);
-                } else if (
-                    vk_bytes->named_key() != nullptr &&
-                    named_data_map != nullptr) {
-                  // Constant stored in the PTE named-data map.
-                  auto buf =
-                      named_data_map->get_data(vk_bytes->named_key()->c_str());
-                  if (!buf.ok()) {
-                    throw std::runtime_error(
-                        std::string("WebGPU: named constant '") +
-                        vk_bytes->named_key()->c_str() +
-                        "' not found in NamedDataMap");
-                  }
-                  if (buf->size() < tensor.nbytes) {
-                    throw std::runtime_error(
-                        std::string("WebGPU: named constant '") +
-                        vk_bytes->named_key()->c_str() + "' undersized: have " +
-                        std::to_string(buf->size()) + " bytes, need " +
-                        std::to_string(tensor.nbytes));
-                  }
-                  wgpuQueueWriteBuffer(
-                      queue_, tensor.buffer, 0, buf->data(), tensor.nbytes);
-                  buf->Free();
-                } else {
-                  throw std::runtime_error(
-                      "WebGPU: constant has no inline offset and no named-data key");
-                }
-              } else {
-                throw std::runtime_error(
-                    "WebGPU: constant_id set but the constants table is missing "
-                    "or the id is out of range");
-              }
-            } else if (constant_id >= 0 && tensor.nbytes > 0) {
-              // constant_id set but constant_data null -> fail loud.
-              throw std::runtime_error(
-                  "WebGPU: constant_id set but constant_data is null");
+            // Same single CPU->GPU write the prepack node uses (no
+            // duplication).
+            if (constant_id >= 0) {
+              materialize_constant(i, tensor.buffer);
             }
           }
         } else {
@@ -544,7 +501,7 @@ void WebGPUGraph::materialize_constant(int const_value_id, WGPUBuffer dst) {
   auto it = constant_sources_.find(const_value_id);
   if (it == constant_sources_.end()) {
     throw std::runtime_error(
-        "WebGPU prepack: no source recorded for constant id " +
+        "WebGPU: no source recorded for constant id " +
         std::to_string(const_value_id));
   }
   const ConstantSource& cs = it->second;
@@ -553,7 +510,7 @@ void WebGPUGraph::materialize_constant(int const_value_id, WGPUBuffer dst) {
   }
   if (cs.inline_offset != UINT64_MAX) {
     if (constant_data_ == nullptr) {
-      throw std::runtime_error("WebGPU prepack: inline constant data is null");
+      throw std::runtime_error("WebGPU: inline constant data is null");
     }
     wgpuQueueWriteBuffer(
         queue_, dst, 0, constant_data_ + cs.inline_offset, cs.nbytes);
@@ -561,16 +518,16 @@ void WebGPUGraph::materialize_constant(int const_value_id, WGPUBuffer dst) {
     auto buf = named_data_map_->get_data(cs.named_key.c_str());
     if (!buf.ok()) {
       throw std::runtime_error(
-          "WebGPU prepack: named constant '" + cs.named_key + "' not found");
+          "WebGPU: named constant '" + cs.named_key + "' not found");
     }
     if (buf->size() < cs.nbytes) {
       throw std::runtime_error(
-          "WebGPU prepack: named constant '" + cs.named_key + "' undersized");
+          "WebGPU: named constant '" + cs.named_key + "' undersized");
     }
     wgpuQueueWriteBuffer(queue_, dst, 0, buf->data(), cs.nbytes);
     buf->Free();
   } else {
-    throw std::runtime_error("WebGPU prepack: constant has no source");
+    throw std::runtime_error("WebGPU: constant has no source");
   }
 }
 
