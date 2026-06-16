@@ -973,3 +973,135 @@ TEST(TestE2E, quantize_quint8) {
   EXPECT_EQ(d[2], 2);
   EXPECT_EQ(d[3], 3);
 }
+
+// LayerNorm is an in-tree (non-XNNPACK) operator, so these exercise the
+// create_operator -> setup -> execute path and its error propagation.
+TEST(TestE2E, layer_norm_basic) {
+  auto builder = GraphBuilder();
+  auto spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(1), DimSizeSpec::constant(4)}};
+  auto input = builder.createInput(spec);
+  auto ln = builder.createOperator(
+      Operator::LayerNorm,
+      spec,
+      {input},
+      {ConstantArg{int64_t(1)}, ConstantArg{double(1e-5)}});
+  builder.createOutput(ln);
+
+  auto graph = builder.build();
+  auto executor_result = Executor::build(graph);
+  ASSERT_TRUE(executor_result.ok());
+  auto& executor = *executor_result;
+
+  Tensor ti;
+  ti.dtype = DType::Float32;
+  ti.sizes = {1, 4};
+  ti.storage = make_owned(4 * sizeof(float));
+  auto* di = ti.data_mut<float>();
+  di[0] = 1;
+  di[1] = 2;
+  di[2] = 3;
+  di[3] = 4;
+  std::vector<Tensor> inputs;
+  inputs.push_back(std::move(ti));
+
+  auto outputs_result = executor.run({inputs.data(), inputs.size()});
+  ASSERT_TRUE(outputs_result.ok());
+  auto* d = (*outputs_result)[0].data_const<float>();
+  // mean 2.5, inv_std = 1/sqrt(1.25) ~= 0.894427
+  EXPECT_NEAR(d[0], -1.341641f, 1e-3f);
+  EXPECT_NEAR(d[1], -0.447214f, 1e-3f);
+  EXPECT_NEAR(d[2], 0.447214f, 1e-3f);
+  EXPECT_NEAR(d[3], 1.341641f, 1e-3f);
+}
+
+TEST(TestE2E, layer_norm_weight_bias) {
+  auto builder = GraphBuilder();
+  auto spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(1), DimSizeSpec::constant(4)}};
+  auto input = builder.createInput(spec);
+
+  auto weight_tensor = std::make_shared<Tensor>();
+  weight_tensor->dtype = DType::Float32;
+  weight_tensor->sizes = {4};
+  weight_tensor->storage = make_owned(4 * sizeof(float));
+  for (int i = 0; i < 4; i++) {
+    weight_tensor->data_mut<float>()[i] = 2.0f;
+  }
+  auto weight = builder.createConstant(weight_tensor);
+
+  auto bias_tensor = std::make_shared<Tensor>();
+  bias_tensor->dtype = DType::Float32;
+  bias_tensor->sizes = {4};
+  bias_tensor->storage = make_owned(4 * sizeof(float));
+  for (int i = 0; i < 4; i++) {
+    bias_tensor->data_mut<float>()[i] = 1.0f;
+  }
+  auto bias = builder.createConstant(bias_tensor);
+
+  auto ln = builder.createOperator(
+      Operator::LayerNorm,
+      spec,
+      {input, weight, bias},
+      {ConstantArg{int64_t(1)}, ConstantArg{double(1e-5)}});
+  builder.createOutput(ln);
+
+  auto graph = builder.build();
+  auto executor_result = Executor::build(graph);
+  ASSERT_TRUE(executor_result.ok());
+  auto& executor = *executor_result;
+
+  Tensor ti;
+  ti.dtype = DType::Float32;
+  ti.sizes = {1, 4};
+  ti.storage = make_owned(4 * sizeof(float));
+  auto* di = ti.data_mut<float>();
+  di[0] = 1;
+  di[1] = 2;
+  di[2] = 3;
+  di[3] = 4;
+  std::vector<Tensor> inputs;
+  inputs.push_back(std::move(ti));
+
+  auto outputs_result = executor.run({inputs.data(), inputs.size()});
+  ASSERT_TRUE(outputs_result.ok());
+  auto* d = (*outputs_result)[0].data_const<float>();
+  // normalized * 2 + 1
+  EXPECT_NEAR(d[0], -1.683282f, 1e-3f);
+  EXPECT_NEAR(d[1], 0.105573f, 1e-3f);
+  EXPECT_NEAR(d[2], 1.894427f, 1e-3f);
+  EXPECT_NEAR(d[3], 3.683282f, 1e-3f);
+}
+
+TEST(TestE2E, layer_norm_bad_normalized_dims_errors) {
+  // normalized dims (3) exceeds the input rank (2): execute must return an
+  // error that propagates out of run() rather than reading out of bounds.
+  auto builder = GraphBuilder();
+  auto spec = TensorSpec{
+      .dtype = DType::Float32,
+      .sizes = {DimSizeSpec::constant(1), DimSizeSpec::constant(4)}};
+  auto input = builder.createInput(spec);
+  auto ln = builder.createOperator(
+      Operator::LayerNorm,
+      spec,
+      {input},
+      {ConstantArg{int64_t(3)}, ConstantArg{double(1e-5)}});
+  builder.createOutput(ln);
+
+  auto graph = builder.build();
+  auto executor_result = Executor::build(graph);
+  ASSERT_TRUE(executor_result.ok());
+  auto& executor = *executor_result;
+
+  Tensor ti;
+  ti.dtype = DType::Float32;
+  ti.sizes = {1, 4};
+  ti.storage = make_owned(4 * sizeof(float));
+  std::vector<Tensor> inputs;
+  inputs.push_back(std::move(ti));
+
+  auto outputs_result = executor.run({inputs.data(), inputs.size()});
+  EXPECT_FALSE(outputs_result.ok());
+}
