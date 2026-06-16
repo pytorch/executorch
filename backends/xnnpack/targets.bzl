@@ -44,6 +44,7 @@ def define_common_targets():
                 "runtime/core/*.h",
                 "runtime/graph/*.h",
                 "runtime/operators/*.h",
+                "runtime/kernels/**/*.h",
                 "runtime/executor/*.h",
                 "runtime/plan/*.h",
             ]),
