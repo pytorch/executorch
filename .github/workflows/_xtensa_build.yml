@@ -50,7 +50,10 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.CADENCE_CI_AWS_ROLE }}
-          aws-region: ${{ vars.CADENCE_CI_AWS_REGION }}
+          # Region is not sensitive (the repo hardcodes us-east-1 in apple.yml /
+          # cuda-perf.yml); hardcode it so the job never depends on a CI variable
+          # being set for the region.
+          aws-region: us-east-1
 
       - name: Cross-compile cadence_executor_runner
         env:
