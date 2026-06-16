@@ -330,9 +330,13 @@ TEST_F(XNNWeightsCacheTest, PackedWeightsToMmapFile) {
   ASSERT_EQ(::stat(cache_path.c_str(), &st), 0);
   ASSERT_GT(st.st_size, 0);
 
-  // delete_packed_data should release the mmap region without crashing.
+  // delete_packed_data on entries that have been persisted to disk
+  // (from_load=true after the auto-save in finalize_for_runtime) is a
+  // ref_count decrement, not a metadata erase. The entries remain so a
+  // subsequent loadModel can look them up without re-packing — matches
+  // production semantics where cache survives unload/reload.
   weight_cache.delete_packed_data(weight_cache.get_packed_data_names());
-  ASSERT_EQ(weight_cache.get_packed_data_names().size(), 0);
+  ASSERT_GT(weight_cache.get_packed_data_names().size(), 0);
 
   ::unlink(cache_path.c_str());
 }
