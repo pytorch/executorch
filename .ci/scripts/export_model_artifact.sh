@@ -406,8 +406,9 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
 
   # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
   LOCAL_MODEL_DIR=$(mktemp -d)
-  INDUCTOR_CACHE=$(mktemp -d)
-  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
 
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
@@ -427,6 +428,7 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
   EXPORT_LOG=$(mktemp)
+  TMPDIR="$INDUCTOR_TMPDIR" \
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.qwen3_5_moe.export \
       --prequantized "$LOCAL_MODEL_DIR" \
@@ -473,8 +475,9 @@ if [ "$MODEL_NAME" = "gemma4_31b" ]; then
 
   # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
   LOCAL_MODEL_DIR=$(mktemp -d)
-  INDUCTOR_CACHE=$(mktemp -d)
-  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
 
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
@@ -498,6 +501,7 @@ if [ "$MODEL_NAME" = "gemma4_31b" ]; then
 
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
+  TMPDIR="$INDUCTOR_TMPDIR" \
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.gemma4_31b.export \
       --prequantized "$LOCAL_MODEL_DIR" \
