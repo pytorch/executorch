@@ -253,7 +253,9 @@ class NodeConverter(ABC):
 
     @staticmethod
     def is_node_alone_in_partition(
-        node: Node, partition_list: list[Partition], filter_fn: Callable[[Node], bool]
+        node: Node,
+        partition_list: list[Partition],
+        filter_fn: Callable[[Node], bool] | None = None,
     ) -> bool:
         """Return True if `node` is the only node in its partition for which `filter_fn`
         returns True.
@@ -264,10 +266,12 @@ class NodeConverter(ABC):
 
         :param node: The torch.fx.Node to check.
         :param partition_list: List of proposed partitions.
-        :param filter_fn: Predicate applied to nodes in the partition.
-                        `node` is considered alone if it is the only node
-                        for which this predicate returns True.
+        :param filter_fn: Predicate applied to nodes in the partition. `node` is considered alone if it is the only node
+                           for which this predicate returns True. By default, Q/Dq nodes are ignored.
         """
+        if filter_fn is None:
+            filter_fn = is_not_qdq_node
+
         partitions = [p for p in partition_list if node in p.nodes]
         if len(partitions) != 1:
             raise ValueError(
