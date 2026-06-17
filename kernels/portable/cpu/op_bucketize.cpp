@@ -177,6 +177,8 @@ Tensor& bucketize_tensor_out(
   ET_KERNEL_CHECK(
       context, tensors_have_same_shape(self, out), InvalidArgument, out);
   ET_KERNEL_CHECK(
+      context, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
       context, tensor_is_realhbf16_type(self), InvalidArgument, out);
 
   ScalarType common_type =
