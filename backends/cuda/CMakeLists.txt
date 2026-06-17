@@ -114,6 +114,7 @@ if(CMAKE_CUDA_COMPILER)
     _aoti_cuda_shim_sources
     runtime/shims/int4mm.cu
     runtime/shims/int4_plain_mm.cu
+    runtime/shims/int6_plain_mm.cu
     runtime/shims/int8_plain_mm.cu
     runtime/shims/sort.cu
     runtime/shims/rand.cu
@@ -184,7 +185,9 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp
+                               runtime/cuda_mutable_state.cpp
+)
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
   # symbols exported from aoti_cuda_shims.dll.
@@ -236,3 +239,13 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+if(BUILD_TESTING)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+  et_cxx_test(
+    test_cuda_mutable_state SOURCES runtime/test/test_cuda_mutable_state.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
+endif()
