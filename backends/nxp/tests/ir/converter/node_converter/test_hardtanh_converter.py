@@ -48,7 +48,13 @@ class AddHardTanhModule(HardTanhModule):
 class TestHardTanh:
     # noinspection PyMethodMayBeStatic
     def assert_delegated(
-        self, model, input_shape, mocker, use_qat=False, expected_delegated_ops=None
+        self,
+        model,
+        input_shape,
+        mocker,
+        request,
+        use_qat=False,
+        expected_delegated_ops=None,
     ):
         graph_verifier = DetailedGraphVerifier(
             mocker,
@@ -67,6 +73,7 @@ class TestHardTanh:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
             use_qat=use_qat,
         )
@@ -82,17 +89,17 @@ class TestHardTanh:
         "inplace", [True, False], ids=lambda ip: "Inplace" if ip else "Not inplace"
     )
     def test__qat(
-        self, mocker, activation_range: tuple[float, float], use_qat, inplace
+        self, mocker, request, activation_range: tuple[float, float], use_qat, inplace
     ):
         input_shape = (23,)
         model = HardTanhModule(*activation_range, inplace)
 
-        self.assert_delegated(model, input_shape, mocker, use_qat=use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "inplace", [True, False], ids=lambda ip: "Inplace" if ip else "Not inplace"
     )
-    def test__from_relu6__after_conv(self, mocker, inplace: bool):
+    def test__from_relu6__after_conv(self, mocker, request, inplace: bool):
         # The torch.nn.Relu6 inherits from torch.nn.Hardtanh, and hence represented as HardTanh in ATen.
         # Testing the hardtanh originated from torch.nn.Relu6 op.
         input_shape = (1, 3, 4, 5)
@@ -106,6 +113,7 @@ class TestHardTanh:
             model,
             input_shape,
             mocker,
+            request,
             expected_delegated_ops={HardTanh: 1, Convolution: 1},
         )
 
@@ -124,6 +132,7 @@ class TestHardTanh:
     def test__hardtanh__mappable_to_relu__after_conv(
         self,
         mocker,
+        request,
         activation_range: tuple[float, float],
         inplace: bool,
     ):
@@ -138,6 +147,7 @@ class TestHardTanh:
             model,
             input_shape,
             mocker,
+            request,
             expected_delegated_ops={HardTanh: 1, Convolution: 1},
         )
 
@@ -153,12 +163,13 @@ class TestHardTanh:
     def test__hardtanh__not_mappable_to_relu(
         self,
         mocker,
+        request,
         activation_range: tuple[float, float],
     ):
         input_shape = (23,)
         model = HardTanhModule(*activation_range)
 
-        self.assert_delegated(model, input_shape, mocker)
+        self.assert_delegated(model, input_shape, mocker, request)
 
     def test__unsupported_bounds(self):
         # TODO ONLY WHEN ALONE IN PARTITION
@@ -184,7 +195,7 @@ class TestHardTanh:
             _ = HardTanhModule(*activation_range)
 
     @pytest.mark.parametrize(
-        "min, max, expected_tflite_ops",
+        "min, max, expected_neutron_ir_ops",
         [
             pytest.param(
                 0.1,
@@ -207,9 +218,23 @@ class TestHardTanh:
                 [Ops.ADD, Ops.RELU],
                 id="min = 0, max = infinity (Relu)",
             ),
+            pytest.param(
+                0,
+                1.0,
+                [Ops.ADD, Ops.RELU_0_TO_1],
+                id="min = 0, max = 1 (Relu0To1)",
+            ),
+            pytest.param(
+                0,
+                6.0,
+                [Ops.ADD, Ops.RELU6],
+                id="min = 0, max = 6 (Relu6)",
+            ),
         ],
     )
-    def test_convert_clamp__relu_vs_maxmin(self, mocker, min, max, expected_tflite_ops):
+    def test_convert_clamp__relu_vs_maxmin(
+        self, mocker, min, max, expected_neutron_ir_ops
+    ):
         input_shape = (23,)
         model = AddHardTanhModule(min, max)
 
@@ -228,15 +253,17 @@ class TestHardTanh:
         intermediate_ep = converter_spy.call_args.args[1]
         quant_node = list(intermediate_ep.graph.nodes)[-2]
         dequant_node = list(intermediate_ep.graph.nodes)[-4]
-        tflite_internal_ops = [
+        neutron_ir_internal_ops = [
             op.builtin_code for op in neutron_ir_spy.spy_return.operator_codes.vector
         ]
 
         assert graph_contains_any_of_ops(intermediate_ep.graph, [HardTanh])
-        assert len(tflite_internal_ops) == len(expected_tflite_ops) + 1  # Transpose
-        assert all(op in tflite_internal_ops for op in expected_tflite_ops)
+        assert (
+            len(neutron_ir_internal_ops) == len(expected_neutron_ir_ops) + 1
+        )  # Transpose
+        assert all(op in neutron_ir_internal_ops for op in expected_neutron_ir_ops)
 
-        if len(expected_tflite_ops) == 3:
+        if len(expected_neutron_ir_ops) == 3:
             # Min/Max variant should have same input and output quantization
             assert all(
                 q == dq for q, dq in zip(quant_node.args[1:], dequant_node.args[1:])
