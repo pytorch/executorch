@@ -101,12 +101,19 @@ jobs:
       script: |
         #!/bin/bash
 
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+        set -euo pipefail
+
+        # Zephyr requires a Python 3.12 venv; keep this independent of the
+        # base image's default ExecuTorch Python environment.
+        python3.12 -m venv zephyr_test_venv
+        source zephyr_test_venv/bin/activate
+
+        # The Zephyr SDK host tools carry their own runtime. The CI Docker image
+        # sets a global LD_LIBRARY_PATH for other jobs, which can make SDK tools
+        # pick host libs.
+        unset LD_LIBRARY_PATH
 
         # Test zephyr backend
-        set -e
-
         .ci/scripts/test_zephyr.sh \
           --targets "${TARGET_LIST:-${{ matrix.target }}}" \
           --zephyr-samples-readme-path "${{ matrix.readme }}"
@@ -1038,6 +1045,20 @@ jobs:
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  llm-server:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: ./.github/workflows/_llm_server.yml
+    permissions:
+      id-token: write
+      contents: read
+
   test-models-windows:
     needs: run-decision
     if: |
@@ -1075,4 +1096,13 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_e2e.yml
     with:
       models: '["mv2", "mv3"]'
-      targets: '["cortex-m55", "cortex-m7"]'
+      targets: '["cortex-m55", "cortex-m7", "cortex-m0plus"]'
+
+  test-cortex-m-ops:
+    name: test-cortex-m-ops
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_ops.yml
+    with:
+      targets: '["cortex-m7", "cortex-m0plus"]'

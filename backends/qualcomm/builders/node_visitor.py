@@ -98,6 +98,15 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
 
+q_dq_map = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+}
+
 
 class NodeVisitor:
     """
@@ -109,10 +118,19 @@ class NodeVisitor:
         external_ids,
         edge_program: torch.export.ExportedProgram,
         enable_tensor_dump,
+        is_qnn_partitioner=True,
     ) -> None:
+        # is_qnn_partitioner: True for the real qnn_partitioner / qnn_preprocess
+        # flows, where external_ids is built from the program being processed so
+        # graph-input ids resolve correctly.
+        # Set False for lpai_partition_fallback_support pass, where constructor
+        # takes an older exported_program whose node objects differ from the
+        # live graph; the input_{id} naming would mismatch there, so we skip
+        # it during op validation.
         self.external_ids = external_ids or {}
         self.edge_program = edge_program
         self.enable_tensor_dump = enable_tensor_dump
+        self.is_qnn_partitioner = is_qnn_partitioner
 
     def get_node(self, node):
         """
@@ -362,9 +380,11 @@ class NodeVisitor:
         is_output = is_graph_output(node)
         # handle logic for input/output tensors
         if is_input or is_output:
-            assert (
-                node in self.external_ids
-            ), f"Node {node}, is_input: {is_input}, is_output: {is_output}, ext_ids: {self.external_ids.keys()}"
+            # For more info about existence of self.is_qnn_partitioner, check constructor for explanation.
+            assert not self.is_qnn_partitioner or node in self.external_ids, (
+                f"Node {node}, is_input: {is_input}, is_output: {is_output}, "
+                f"ext_ids: {self.external_ids.keys()}"
+            )
             if is_input:
                 return PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE
             if is_output:
@@ -413,21 +433,24 @@ class NodeVisitor:
         # the input order between QNN and the original graph’s forward function may differ.
         # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.
         # The `output_` is identified as the graph’s output at runtime to prevent confusion with per_tensor_dump.
-        if is_mutable_buffer_input(node, self.edge_program):
-            fqn = self.edge_program.graph_signature.inputs_to_buffers[node.target]
-            position_index = list(
-                self.edge_program.graph_signature.buffers_to_mutate.values()
-            ).index(fqn)
-            tensor_name = f"input_{str(self.external_ids[node])}_mutbuf_{str(position_index)}_{tensor_name}"
-        elif is_graph_input(node, self.edge_program):
-            tensor_name = f"input_{str(self.external_ids[node])}_{tensor_name}"
-        elif is_mutable_buffer_output(node, self.edge_program):
-            position_index = list(
-                self.edge_program.graph_signature.buffers_to_mutate.keys()
-            ).index(node.name)
-            tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
-        elif is_graph_output(node):
-            tensor_name = f"output_{tensor_name}"
+
+        # For more info about self.is_qnn_partitioner, check constructor for explanation.
+        if self.is_qnn_partitioner:
+            if is_mutable_buffer_input(node, self.edge_program):
+                fqn = self.edge_program.graph_signature.inputs_to_buffers[node.target]
+                position_index = list(
+                    self.edge_program.graph_signature.buffers_to_mutate.values()
+                ).index(fqn)
+                tensor_name = f"input_{str(self.external_ids[node])}_mutbuf_{str(position_index)}_{tensor_name}"
+            elif is_graph_input(node, self.edge_program):
+                tensor_name = f"input_{str(self.external_ids[node])}_{tensor_name}"
+            elif is_mutable_buffer_output(node, self.edge_program):
+                position_index = list(
+                    self.edge_program.graph_signature.buffers_to_mutate.keys()
+                ).index(node.name)
+                tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
+            elif is_graph_output(node):
+                tensor_name = f"output_{tensor_name}"
 
         # Only add qcom_tensor_name when enable tensor dump.
         # Only runs in qnn_preprocess (not op validation) since that's when

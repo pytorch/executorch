@@ -25,7 +25,9 @@ find_package(CUDAToolkit REQUIRED)
 add_library(extension_cuda SHARED caller_stream.cpp)
 target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
 target_include_directories(extension_cuda PUBLIC ${_common_include_directories})
-target_compile_options(extension_cuda PUBLIC ${_common_compile_options})
+target_compile_options(
+  extension_cuda PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_common_compile_options}>"
+)
 target_compile_definitions(
   extension_cuda PRIVATE EXECUTORCH_EXTENSION_CUDA_BUILDING
 )

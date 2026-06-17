@@ -2039,6 +2039,13 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
         if any(d != 1 for d in dilation):
             return False
 
+        # When channel_last=True (NHWC layout), im2row rearranges data from
+        # kp-major (NHWC natural order) to channel-major output layout.
+        # A simple view_copy cannot perform this data rearrangement.
+        channel_last = node.args[6] if len(node.args) > 6 else False
+        if channel_last:
+            return False
+
         # im2row works on 3D or 4D tensors.
         # Output shape[1:-1] will be unit if input spatial dimensions are the same as kernel spatial dimensions.
         output_shape = node.meta["val"].shape

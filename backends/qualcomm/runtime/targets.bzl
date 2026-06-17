@@ -35,6 +35,29 @@ def define_common_targets():
         ],
     )
 
+    # Platform Abstraction Layer. The headers are included as <pal/...> (matching
+    # the CMake build's `include_directories(runtime/pal/include)`). They are
+    # exposed through a header map (dict `exported_headers` with an empty
+    # namespace) instead of an `-I` flag, so the short <pal/...> include resolves
+    # identically under both the fbcode (`cpp_library`) and xplat
+    # (`fb_xplat_cxx_library`) rules, which do not share an include-dir attribute.
+    # Kept in their own library so the mapping does not disturb the runtime
+    # target's namespaced <executorch/...> exported headers.
+    runtime.cxx_library(
+        name = "pal",
+        srcs = glob([
+            "pal/src/linux/*.cpp",
+        ]),
+        exported_headers = {
+            "pal/DynamicLoading.h": "pal/include/pal/DynamicLoading.h",
+            "pal/Path.h": "pal/include/pal/Path.h",
+        },
+        header_namespace = "",
+        define_static_target = True,
+        platforms = [ANDROID],
+        visibility = ["PUBLIC"],
+    )
+
     # "runtime" target is used for offline compile, can be renamed to runtime_aot_build as a BE.
     for include_aot_qnn_lib in (True, False):
         qnn_build_suffix = ("" if include_aot_qnn_lib else "_android_build")
@@ -84,6 +107,7 @@ def define_common_targets():
                 "//executorch/extension/tensor:tensor",
             ],
             exported_deps = [
+                ":pal",
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util",
                 "//executorch/runtime/core:event_tracer",

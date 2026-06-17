@@ -390,11 +390,6 @@ test_smaller_stories_llama_vkml() {
     _test_smaller_stories_llama vgf
 }
 
-test_smaller_stories_llama() {
-    test_smaller_stories_llama_tosa
-    test_smaller_stories_llama_vkml
-}
-
 test_memory_allocation() {
     echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
 

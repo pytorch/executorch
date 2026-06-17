@@ -12,9 +12,10 @@
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <executorch/runtime/core/named_data_map.h>
 
+#include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
-#include <webgpu/wgpu.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -59,6 +60,86 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   return buffer;
 }
 
+void WebGPUGraph::update_symints_from_inputs(
+    const std::vector<std::pair<const void*, size_t>>& inputs) {
+  for (const auto& src : symint_sources_) {
+    int pos = -1;
+    for (size_t i = 0; i < input_ids_.size(); i++) {
+      if (input_ids_[i] == src.input_tensor_id) {
+        pos = static_cast<int>(i);
+        break;
+      }
+    }
+    if (pos < 0 || pos >= static_cast<int>(inputs.size())) {
+      throw std::runtime_error(
+          "select_as_symint: source tensor is not a graph input");
+    }
+    const auto& dims = tensors_[src.input_tensor_id].dims;
+    int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
+    if (dim < 0 || dim >= static_cast<int>(dims.size())) {
+      throw std::runtime_error("select_as_symint: dim out of range");
+    }
+    int index = src.index;
+    if (index < 0) {
+      index += static_cast<int>(dims[dim]);
+    }
+    if (index < 0 || index >= static_cast<int>(dims[dim])) {
+      throw std::runtime_error("select_as_symint: index out of range");
+    }
+    int64_t numel = 1;
+    for (int64_t d : dims) {
+      numel *= d;
+    }
+    if (numel <= 0) {
+      throw std::runtime_error("select_as_symint: empty input tensor");
+    }
+    int64_t stride = 1;
+    for (size_t i = static_cast<size_t>(dim) + 1; i < dims.size(); i++) {
+      stride *= dims[i];
+    }
+    // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
+    const int64_t offset = static_cast<int64_t>(index) * stride;
+    // elem_size back-derived from build-time numel (sources are static-shaped).
+    const void* host = inputs[pos].first;
+    const size_t elem_size = inputs[pos].second / static_cast<size_t>(numel);
+    int32_t val;
+    if (elem_size == sizeof(int64_t)) {
+      val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
+    } else if (elem_size == sizeof(int32_t)) {
+      val = static_cast<const int32_t*>(host)[offset];
+    } else {
+      throw std::runtime_error(
+          "select_as_symint: unsupported input element size");
+    }
+    set_symint(src.symint_id, val);
+  }
+}
+
+void WebGPUGraph::set_symint(int id, int32_t val) {
+  auto it = symints_.find(id);
+  if (it == symints_.end()) {
+    throw std::runtime_error("WebGPUGraph::set_symint: id is not a SymInt");
+  }
+  if (it->second.value != val) {
+    it->second.value = val;
+    wgpuQueueWriteBuffer(
+        queue_, it->second.buffer, 0, &it->second.value, sizeof(int32_t));
+    dirty_symints_.insert(id);
+  }
+}
+
+void WebGPUGraph::propagate_resize() {
+  if (dirty_symints_.empty()) {
+    return;
+  }
+  for (auto& hook : resize_hooks_) {
+    if (dirty_symints_.count(hook.symint_id) != 0) {
+      hook.fn(*this);
+    }
+  }
+  dirty_symints_.clear();
+}
+
 WebGPUGraph::~WebGPUGraph() {
   for (size_t i = 0; i < tensors_.size(); i++) {
     if (tensors_[i].buffer &&
@@ -74,6 +155,16 @@ WebGPUGraph::~WebGPUGraph() {
   for (auto& buf : scratch_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& buf : owned_uniform_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& kv : symints_) {
+    if (kv.second.buffer) {
+      wgpuBufferRelease(kv.second.buffer);
     }
   }
   for (auto& buf : output_staging_buffers_) {
@@ -236,6 +327,27 @@ void WebGPUGraph::build(
         bools_[i] = val->value_as_Bool()->bool_val();
         break;
       }
+      case vkgraph::GraphTypes::SymInt: {
+        // Live scalar: small Uniform buffer the CPU rewrites per execute.
+        value_types_[i] = ValueType::SymInt;
+        SymIntSlot slot;
+        slot.value = static_cast<int32_t>(val->value_as_SymInt()->value());
+        // 16B matches the backend uniform-struct alignment; int32 in first 4.
+        constexpr size_t kSymIntUniformBytes = 16;
+        WGPUBufferDescriptor d = {};
+        d.size = kSymIntUniformBytes;
+        d.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+        d.mappedAtCreation = true;
+        slot.buffer = wgpuDeviceCreateBuffer(device_, &d);
+        void* mapped =
+            wgpuBufferGetMappedRange(slot.buffer, 0, kSymIntUniformBytes);
+        std::memset(mapped, 0, kSymIntUniformBytes);
+        std::memcpy(mapped, &slot.value, sizeof(int32_t));
+        wgpuBufferUnmap(slot.buffer);
+        symints_[i] = slot;
+        add_uniform_buffer_bytes(kSymIntUniformBytes);
+        break;
+      }
       default:
         value_types_[i] = ValueType::Null;
         break;
@@ -385,18 +497,57 @@ void WebGPUGraph::copy_inputs(
   }
 }
 
+namespace {
+// Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
+// WEBGPU_TIMESTAMP_QUERY env var enables per-pass GPU timestamp queries.
+bool should_timestamp_query() {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  static const bool enabled = std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
+  return enabled;
+#else
+  return false;
+#endif
+}
+} // namespace
+
 void WebGPUGraph::execute() {
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
 
   if (chunk == 0 || n <= chunk) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    // Bench: timestamp-query pool, null unless env-gated + feature present.
+    WebGPUQueryPool* qp = nullptr;
+    if (should_timestamp_query() && n > 0) {
+      if (auto* ctx = get_default_webgpu_context()) {
+        if (ctx->timestamp_supported) {
+          if (!ctx->querypool || ctx->querypool->capacity() < n) {
+            ctx->querypool = std::make_unique<WebGPUQueryPool>();
+            ctx->querypool->initialize(device_, static_cast<uint32_t>(n));
+          }
+          qp = ctx->querypool.get();
+          qp->reset(static_cast<uint32_t>(n));
+        }
+      }
+    }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
     WGPUCommandEncoderDescriptor enc_desc = {};
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     // One pass per dispatch: enforces storage RAW ordering across deps.
-    for (const auto& dispatch : dispatches_) {
+    for (size_t i = 0; i < n; i++) {
+      const auto& dispatch = dispatches_[i];
       WGPUComputePassDescriptor pass_desc = {};
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+      // tw must outlive BeginComputePass (the descriptor points at it).
+      WGPUPassTimestampWrites tw = {};
+      if (qp) {
+        tw = qp->writes_for(static_cast<uint32_t>(i));
+        pass_desc.timestampWrites = &tw;
+      }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
@@ -406,6 +557,15 @@ void WebGPUGraph::execute() {
           pass, dispatch.workgroup_count_x, 1, 1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+      if (qp) {
+        qp->record(
+            static_cast<uint32_t>(i),
+            dispatch.kernel_name,
+            {dispatch.workgroup_count_x, 1, 1},
+            {1, 1, 1});
+      }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
     }
 
     for (const auto& copy : output_copies_) {
@@ -413,13 +573,33 @@ void WebGPUGraph::execute() {
           encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
     }
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    if (qp) {
+      qp->resolve(encoder);
+    }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
     WGPUCommandBufferDescriptor cmd_desc = {};
     WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
     wgpuQueueSubmit(queue_, 1, &cmd);
 
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    if (qp) {
+      qp->extract_results(instance_);
+      qp->print_results();
+    }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
     return;
+  }
+
+  // GPU timestamp queries assume one submit; chunked execute is multi-submit.
+  if (should_timestamp_query()) {
+    throw std::runtime_error(
+        "WebGPU: WEBGPU_TIMESTAMP_QUERY is incompatible with chunked execute "
+        "(multi-submit); disable chunking to use GPU timestamp queries");
   }
 
   const size_t first_chunk = execute_config_.initial_chunk_size > 0
@@ -471,7 +651,6 @@ void WebGPUGraph::execute() {
 namespace {
 
 struct MapCallbackData {
-  bool done = false;
   WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
 };
 
@@ -482,7 +661,6 @@ void buffer_map_callback(
     void* /*userdata2*/) {
   auto* data = static_cast<MapCallbackData*>(userdata1);
   data->status = status;
-  data->done = true;
 }
 
 } // namespace
@@ -491,18 +669,18 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
 
   std::vector<MapCallbackData> cb_data(count);
+  std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
 
   for (size_t i = 0; i < count; i++) {
     if (outputs[i].second == 0) {
-      cb_data[i].done = true;
       cb_data[i].status = WGPUMapAsyncStatus_Success;
       continue;
     }
     WGPUBufferMapCallbackInfo cb_info = {};
-    cb_info.mode = WGPUCallbackMode_AllowSpontaneous;
+    cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
     cb_info.callback = buffer_map_callback;
     cb_info.userdata1 = &cb_data[i];
-    wgpuBufferMapAsync(
+    map_futures[i] = wgpuBufferMapAsync(
         output_staging_buffers_[i],
         WGPUMapMode_Read,
         0,
@@ -510,7 +688,12 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
         cb_info);
   }
 
-  wgpuDevicePoll(device_, true, nullptr);
+  for (size_t i = 0; i < count; i++) {
+    if (outputs[i].second != 0 &&
+        webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
+      throw std::runtime_error("WebGPU: WaitAny failed for output map");
+    }
+  }
 
   for (size_t i = 0; i < count; i++) {
     if (outputs[i].second == 0) {
