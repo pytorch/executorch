@@ -41,9 +41,9 @@
     "buildPresets": [
         {
             "name": "qwen3-5-moe-cuda",
-            "displayName": "Build Qwen3.5 MoE runner (CUDA)",
+            "displayName": "Build Qwen3.5 MoE runner + no-bleed test (CUDA)",
             "configurePreset": "qwen3-5-moe-cuda",
-            "targets": ["qwen3_5_moe_runner"]
+            "targets": ["qwen3_5_moe_runner", "test_qwen35_moe_nobleed"]
         },
         {
             "name": "qwen3-5-moe-metal",

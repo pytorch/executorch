@@ -61,11 +61,9 @@ from executorch.backends.qualcomm._passes import (
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
-    ReduceDynamicRange,
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceInfValues,
     ResolveDebugHandle,
     TagQuantIO,
 )
@@ -158,7 +156,6 @@ class QnnPassManager(PassManager):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
         return [
             RemoveRedundancy,
-            ReduceDynamicRange,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ReplaceArangeArgs,
@@ -186,7 +183,6 @@ class QnnPassManager(PassManager):
             DecomposeSelectScatter,
             DecomposeLinalgVectorNorm,
             DecomposeLogVariants,
-            ReplaceInfValues,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
         ]
