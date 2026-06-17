@@ -2161,13 +2161,7 @@ class KVCacheIntTest(OpTestCase):
         return (input_pos, k_val, v_val)
 
     def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
-        # A single write can't exceed max_write_len (defaults to the window).
-        seq_max = (
-            self.max_write_len
-            if self.max_write_len is not None
-            else self.max_context_length
-        )
-        seq_dim = Dim("seq_step", min=1, max=seq_max)
+        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
         return {
             "input_pos": None,
             "k_val": {2: seq_dim},
@@ -2815,7 +2809,13 @@ class RingBufferKVCacheTest(OpTestCase):
         return (input_pos, k_val, v_val)
 
     def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
-        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        # A single write can't exceed max_write_len (defaults to the window).
+        seq_max = (
+            self.max_write_len
+            if self.max_write_len is not None
+            else self.max_context_length
+        )
+        seq_dim = Dim("seq_step", min=1, max=seq_max)
         return {
             "input_pos": None,
             "k_val": {2: seq_dim},
