@@ -21,7 +21,6 @@ TOSA_INT_SPEC = TosaSpecification.create_from_string("TOSA-1.0+INT")
 TOSA_FP_SPEC = TosaSpecification.create_from_string("TOSA-1.0+FP")
 PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
 RESCALE_TARGET = exir_ops.backend.tosa.RESCALE.default
-TABLE_TARGET = exir_ops.backend.tosa.TABLE.default
 MUL_TARGET = exir_ops.edge.aten.mul.Tensor
 ADD_TARGET = exir_ops.edge.aten.add.Tensor
 ERF_TARGET = exir_ops.edge.aten.erf.default
