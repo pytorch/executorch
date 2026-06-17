@@ -172,7 +172,6 @@ def test_div_tensor_mode_u85_INT(data):
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.tester.use_portable_ops = True
     pipeline.run()
 
 

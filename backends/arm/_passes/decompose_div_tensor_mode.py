@@ -46,7 +46,7 @@ aten_unary = {
     "logical_xor": torch.ops.aten.logical_xor.default,
     "mul": torch.ops.aten.mul.Tensor,
     "sub": torch.ops.aten.sub.Tensor,
-    "to": torch.ops.dim_order_ops._to_dim_order_copy.default,
+    "to": torch.ops.aten.to.dtype,
     "where": torch.ops.aten.where.self,
 }
 

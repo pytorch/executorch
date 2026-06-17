@@ -20,6 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
+input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
 class Cast(torch.nn.Module):
@@ -38,6 +39,40 @@ class CastAdd(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         return x.to(dtype=self.target_dtype) + x.to(dtype=self.target_dtype)
+
+
+class CastAddTensor(torch.nn.Module):
+    def __init__(self, target_dtype):
+        super().__init__()
+        self.target_dtype = target_dtype
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return x.to(dtype=self.target_dtype) + y
+
+
+class AddModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return x + y
+
+
+class CastToAddModule(torch.nn.Module):
+    def __init__(self, target_dtype):
+        super().__init__()
+        self.target_dtype = target_dtype
+        self.add = AddModule()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return self.add(x.to(dtype=self.target_dtype), y)
+
+
+class CastCatTensor(torch.nn.Module):
+    def __init__(self, target_dtype, dim: int):
+        super().__init__()
+        self.target_dtype = target_dtype
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return torch.cat((x.to(dtype=self.target_dtype), y), dim=self.dim)
 
 
 """
@@ -262,14 +297,6 @@ exir_ops.edge.dim_order_ops._to_dim_order_copy.default. We should reject this op
 in ToCopySupported::is_node_tosa_supported() before it goes into the delegated graph.
 """
 _TO_COPY_TEST_DATA_INT = {
-    "rand_int8_fp32": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int8),
-        torch.float32,
-    ),
-    "rand_int16_fp32": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int16),
-        torch.float32,
-    ),
     "rand_int32_fp32": lambda: (
         torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
         torch.float32,
@@ -296,6 +323,95 @@ def test_to_tosa_INT_not_delegated(test_data: Tuple):
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
         },
         quantize=True,
+    )
+    pipeline.run()
+
+
+_TO_COPY_QUANTIZED_IDENTITY_CAST_DATA = {
+    "int8_cast_add": lambda: (
+        (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int8),
+        torch.randn(1, 3, 4, 4),
+        torch.float32,
+    ),
+    "int16_cast_add": lambda: (
+        (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int16),
+        torch.randn(1, 3, 4, 4),
+        torch.float32,
+    ),
+    "int32_cast_add": lambda: (
+        (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int32),
+        torch.randn(1, 3, 4, 4),
+        torch.float32,
+    ),
+}
+
+
+_TO_COPY_QUANTIZED_IDENTITY_CAST_CAT_DATA = {
+    "int8_cast_cat": lambda: (
+        (torch.randn(1, 2, 4, 4) * 10).to(dtype=torch.int8),
+        torch.randn(1, 2, 4, 1),
+        torch.float32,
+        3,
+    ),
+    "int16_cast_cat": lambda: (
+        (torch.randn(1, 2, 4, 4) * 10).to(dtype=torch.int16),
+        torch.randn(1, 2, 4, 1),
+        torch.float32,
+        3,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_IDENTITY_CAST_DATA)
+def test_to_tosa_INT_quantized_identity_cast_add(test_data: Tuple):
+    x, y, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t2](
+        CastAddTensor(new_dtype),
+        (x, y),
+        aten_op=["torch.ops.aten.add.Tensor"],
+        exir_op=["executorch_exir_dialects_edge__ops_aten_add_Tensor"],
+        qtol=1,
+    )
+    pipeline.change_args(
+        "check_count.exir",
+        {
+            "torch.ops.higher_order.executorch_call_delegate": 1,
+        },
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_IDENTITY_CAST_CAT_DATA)
+def test_to_tosa_INT_quantized_identity_cast_cat(test_data: Tuple):
+    x, y, new_dtype, dim = test_data()
+    pipeline = TosaPipelineINT[input_t2](
+        CastCatTensor(new_dtype, dim),
+        (x, y),
+        aten_op=["torch.ops.aten.cat.default"],
+        exir_op=["executorch_exir_dialects_edge__ops_aten_cat_default"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_IDENTITY_CAST_DATA)
+def test_to_tosa_INT_quantized_identity_cast_to_unquantized_add_delegated(
+    test_data: Tuple,
+):
+    x, y, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t2](
+        CastToAddModule(new_dtype),
+        (x, y),
+        aten_op=["torch.ops.aten.add.Tensor"],
+        exir_op=["executorch_exir_dialects_edge__ops_aten_add_Tensor"],
+    )
+    pipeline.quantizer.set_module_name("add", None)
+    pipeline.pop_stage("check_not.exir")
+    pipeline.change_args(
+        "check_count.exir",
+        {
+            "torch.ops.higher_order.executorch_call_delegate": 1,
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 0,
+        },
     )
     pipeline.run()
 
