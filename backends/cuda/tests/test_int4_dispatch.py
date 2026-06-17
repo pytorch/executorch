@@ -208,5 +208,36 @@ class TestLargeShapes(unittest.TestCase):
         self._check(module(x), F.linear(x, w_ref))
 
 
+class TestLimitConsistency(unittest.TestCase):
+    """The Python export-side GEMM limit must match the C++ shim's GEMM_MAX_M.
+
+    ``SHIM_GEMM_MAX_M`` is a hand-maintained Python copy of the C++ constant; if
+    they drift, export can capture a shape the runtime shim rejects (or block one
+    it supports). No CUDA needed -- this just compares the two source constants.
+    """
+
+    def test_shim_gemm_max_m_matches_cuh(self):
+        import os
+        import re
+
+        import executorch.backends.cuda.int4_dispatch as int4_dispatch
+
+        cuh = os.path.join(
+            os.path.dirname(int4_dispatch.__file__),
+            "runtime",
+            "shims",
+            "int4_plain_mm.cuh",
+        )
+        with open(cuh) as f:
+            m = re.search(r"\bGEMM_MAX_M\s*=\s*(\d+)", f.read())
+        self.assertIsNotNone(m, "GEMM_MAX_M not found in int4_plain_mm.cuh")
+        self.assertEqual(
+            int(m.group(1)),
+            int4_dispatch.SHIM_GEMM_MAX_M,
+            "SHIM_GEMM_MAX_M (int4_dispatch.py) is out of sync with the C++ "
+            "GEMM_MAX_M (int4_plain_mm.cuh)",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
