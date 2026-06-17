@@ -30,6 +30,10 @@ from executorch.backends.webgpu.test.ops.add.test_add import (
     AddModule,
     AddSelfModule,
 )
+from executorch.backends.webgpu.test.ops.mul.test_mul import (
+    CONFIGS as _MUL_CONFIGS,
+    MulModule,
+)
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _CASES,
     _linspace_weight,
@@ -106,3 +110,14 @@ def _rms_norm_suite() -> WebGPUTestSuite:
             )
         )
     return WebGPUTestSuite(module_factory=_rms_norm_factory, cases=cases)
+
+
+@register_op_test("mul")
+def _mul_suite() -> WebGPUTestSuite:
+    # Full numeric coverage incl. broadcast (binary_mul.wgsl over a TensorMeta UBO); fp64 golden.
+    return WebGPUTestSuite(
+        module_factory=lambda: MulModule(),
+        cases=[
+            Case(name=name, inputs=(sa, sb)) for name, (sa, sb) in _MUL_CONFIGS.items()
+        ],
+    )
