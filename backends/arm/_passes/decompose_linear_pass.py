@@ -33,11 +33,13 @@ class DecomposeLinearPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}
 
     def call(self, graph_module):
+        modified = False
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
             if node.target != exir_ops.edge.aten.linear.default:
                 continue
+            modified = True
             args = node.args
             input = args[0]
             weights = args[1]
@@ -109,6 +111,6 @@ class DecomposeLinearPass(ArmPass):
             node.replace_all_uses_with(output)
             graph_module.graph.erase_node(node)
             graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

@@ -623,8 +623,9 @@ def _materialize_buffers(model, config):
 
     Replaces meta buffers with real tensors on CPU, recomputes RoPE
     inv_freq and causal masks. State buffers (KV cache, conv/recurrent
-    state) are zero-initialized registered buffers that will be shared
-    across methods via share_mutable_buffers.
+    state) are zero-initialized registered buffers. On the CUDA/AOTI backend
+    they are lifted into the delegate as named constants; per-session sharing
+    and isolation are handled by runtime rebinding.
     """
     # Masks stay bool, inv_freq stays float32.
     for fqn, buf in list(model.named_buffers()):
@@ -913,6 +914,47 @@ def _export_metal(model, config, args):
     print("Done!")
 
 
+def _qwen_mutable_buffer_fqns(model):
+    from executorch.examples.models.qwen3_5_moe.model import GatedDeltaNet, KVCache
+
+    fqns = []
+    for prefix, module in model.named_modules():
+        if module.__class__.__name__ == "TurboQuantKVCache":
+            fqns += [
+                f"{prefix}.k_packed",
+                f"{prefix}.k_norms",
+                f"{prefix}.v_packed",
+                f"{prefix}.v_norms",
+            ]
+        elif isinstance(module, KVCache):
+            fqns += [f"{prefix}.k_cache", f"{prefix}.v_cache"]
+        elif isinstance(module, GatedDeltaNet):
+            fqns += [f"{prefix}.conv_state", f"{prefix}.recurrent_state"]
+
+    named = dict(model.named_buffers())
+    missing = [f for f in fqns if f not in named]
+    if missing:
+        raise RuntimeError(
+            f"Qwen mutable-buffer contract references missing buffers: {missing}"
+        )
+    if not fqns:
+        raise RuntimeError("Qwen mutable-buffer contract is empty")
+    return sorted(fqns)
+
+
+def _mutable_buffer_metadata_json(model):
+    import json
+
+    fqns = _qwen_mutable_buffer_fqns(model)
+    named = dict(model.named_buffers())
+    total = sum(named[f].numel() * named[f].element_size() for f in fqns)
+    print(
+        f"  Recorded {len(fqns)} mutable buffers "
+        f"({total} B / {total / 1024:.1f} KiB per session)"
+    )
+    return json.dumps({"version": 1, "mutable_buffers": fqns})
+
+
 def _export_cuda(model, config, args):
     """Export model to .pte via torch.export + CUDA backend.
 
@@ -921,9 +963,9 @@ def _export_cuda(model, config, args):
       - "prefill": prefill path (T>=2), batched tensor-core MoE kernel
         via fused_moe_batched_gemm, with dynamic sequence length.
 
-    Both methods share mutable state buffers (KV cache, conv_state,
-    recurrent_state) via share_mutable_buffers=True. The model uses
-    registered buffers with in-place updates — no state in/out args.
+    The model uses registered buffers with in-place updates for KV,
+    conv_state, and recurrent_state. The export records which named buffers
+    are per-session mutable state.
     """
     import torch._inductor.config as inductor_config
 
@@ -1000,6 +1042,7 @@ def _export_cuda(model, config, args):
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
+        "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
@@ -1033,7 +1076,6 @@ def _export_cuda(model, config, args):
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                share_mutable_buffers=True,
             ),
             emit_mutable_buffer_names=True,
         ),

@@ -69,6 +69,7 @@ def define_arm_tests():
         "misc/test_post_quant_device_switch.py",
         "misc/test_vgf_check_env.py",
         "misc/test_vgf_backend.py",
+        "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
 
