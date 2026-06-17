@@ -44,8 +44,9 @@ from torch.library import triton_op, wrap_triton
 # path is appropriate (enough rows to amortize a tiled kernel).
 MIDM_MAX_M = 8
 
-# Number of key-range partitions for split-K. The verify method exports a static
-# M / B / H / D, so the partial buffers and grid are static-shaped; only the
+# Number of key-range partitions for split-K. B / H / D are static for the
+# exported verify method; M is the dynamic verify length (bounded by MIDM_MAX_M,
+# BLOCK_M covers it), so the grid (NUM_SPLITS x B*H) is static-shaped; the
 # per-split chunk size (derived from the dynamic valid_len) is a runtime scalar.
 # 32 splits x (B*H) heads gives ~1K CTAs at the gemma4 global shape -- ample
 # occupancy on an A100 while keeping the fp32 partials small.
@@ -89,9 +90,9 @@ def _sdpa_midm_splitk_kernel(
     valid_len,
     chunk_size,
     scale,
+    M,
     H: tl.constexpr,
     HKV: tl.constexpr,
-    M: tl.constexpr,
     D: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -200,8 +201,8 @@ def _sdpa_midm_reduce_kernel(
     soh,
     som,
     sod,
+    M,
     NUM_SPLITS: tl.constexpr,
-    M: tl.constexpr,
     D: tl.constexpr,
     BLOCK_M: tl.constexpr,
 ):
@@ -267,13 +268,17 @@ def _sdpa_midm_op(
 
     ``valid_len`` (max valid position + 1) bounds the key range; it is split into
     NUM_SPLITS chunks of ``chunk_size`` keys computed in parallel, then reduced.
-    M / B / H / D are static for the exported verify method, so only chunk_size is
-    a runtime (backed-SymInt) scalar -- the grid and partial buffers are static.
+    B / H / D are static for the exported verify method; M is the dynamic verify
+    length (bounded by MIDM_MAX_M). chunk_size (from the dynamic valid_len) is a
+    runtime (backed-SymInt) scalar; the grid (NUM_SPLITS x B*H) is static.
     """
     B, H, M, D = q.shape
     HKV = k.shape[1]
     out = torch.empty_like(q)
-    BLOCK_M = max(16, triton.next_power_of_2(M))
+    # M <= MIDM_MAX_M (8) => next_pow2(M) <= 8 => max(16, .) is always 16. Hardcode
+    # so M can be a runtime (dynamic verify) dim -- next_power_of_2 can't take a
+    # SymInt, and M is a kernel runtime arg used only for the offs_m < M masks.
+    BLOCK_M = 16
     # gemma4 global layers use D=512; a wide key tile + pipelining overflow SMEM
     # there, so shrink both. Small D can afford more.
     BLOCK_N, num_stages = (32, 1) if D >= 512 else (64, 2)
@@ -381,8 +386,9 @@ def midm_sdpa(
 ) -> torch.Tensor:
     """Dispatch: the mid-M op for a small query window when enabled; otherwise
     the standard F.sdpa the model already uses (which the replacement pass swaps
-    for triton::sdpa). M is static per exported method, so the branch resolves at
-    trace time. ``valid_len`` is the shared per-forward key bound."""
+    for triton::sdpa). M (q.shape[2]) is the dynamic verify length; its exported
+    range [2, MIDM_MAX_M] satisfies this guard, so the branch resolves at export.
+    ``valid_len`` is the shared per-forward key bound."""
     M = q.shape[2]
     if enable and 2 <= M <= MIDM_MAX_M:
         return sdpa_midm(q, k, v, input_pos, scale, valid_len=valid_len)

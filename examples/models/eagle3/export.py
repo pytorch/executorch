@@ -9,7 +9,8 @@
 Three methods are lowered together so they share mutable state:
   - "prefill":       target prompt prefill (T in [get_min_prefill_chunk,
                      get_max_prefill_chunk]) -> next token + fused feature.
-  - "target_verify": target forward over the candidate chain (static T=chain+1)
+  - "target_verify": target forward over the candidate chain (dynamic T in
+                     [2, MATVEC_MAX_M] = K+1; --chain selects K at runtime)
                      -> per-position greedy ids + fused feature.
   - "draft_decode":  draft proposal over its KV cache (T>=1; seed with T>1, step
                      with T=1) -> proposed target ids + recurrent feature.
@@ -34,9 +35,12 @@ draft from a vLLM-speculator checkpoint; only the CUDA (AOTI) backend is
 supported.
 
 Scope (this is a fixed-shape ExecuTorch artifact, not a generic EAGLE runtime):
-chain length, the chain_len+1 verify window, the prefill/draft dynamic ranges,
-the CUDA backend, and the small-M INT4 dispatch policy are all baked at export —
-vary the target, chain length, or backend by re-exporting. The caller is
+the target, the prefill/draft/verify dynamic ranges, the CUDA backend, and the
+small-M INT4 dispatch policy are all baked at export — vary the target or backend
+by re-exporting. Chain length K is NOT baked: target_verify is dynamic over
+T in [2, MATVEC_MAX_M], so one .pte serves any K in [1, MATVEC_MAX_M - 1]
+(get_chain_len is only the default) and the runner selects K with --chain. The
+caller is
 responsible for pairing a target, draft, and tokenizer that were trained
 together: only target/draft hidden size is checked here; tokenizer identity,
 target vocab size, the d2t/t2d mapping, the tap-layer convention, and the draft's
@@ -56,8 +60,9 @@ from executorch.examples.models.eagle3.draft import Eagle3Draft
 from executorch.examples.models.eagle3.speculator import Eagle3Speculator
 from executorch.examples.models.eagle3.target import TARGETS
 
-# Route the static chain_len+1 verify forward to the small-M INT4 GEMM. Must be
-# <= the shim's GEMM_MAX_M (8 in int4_plain_mm.cuh) and >= the largest chain+1.
+# Route the verify forward to the small-M INT4 GEMM. target_verify is dynamic
+# over T in [2, _MATVEC_MAX_M] (chain_len+1 is only the export example), and the
+# whole range must be <= the shim's GEMM_MAX_M (8 in int4_plain_mm.cuh).
 # Set locally on int4_dispatch (not the global default) so other models' exports
 # keep MATVEC_MAX_M=4 and their dynamic prefill ranges are unaffected.
 _MATVEC_MAX_M = 8
@@ -138,8 +143,9 @@ def _export_cuda(
     hidden = spec.draft.config.hidden_size
     draft_vocab_size = spec.draft.config.draft_vocab_size
     # Verify re-feeds the last confirmed token (its logits are the folded bonus)
-    # plus the K proposals: a fixed chain_len+1 window in one target forward. With
-    # chain_len+1 <= MATVEC_MAX_M the verify forward stays on the small-M GEMM
+    # plus the K proposals: a chain_len+1 window -- only the export example.
+    # target_verify is lowered dynamic over T in [2, MATVEC_MAX_M], and with the
+    # whole range <= MATVEC_MAX_M the verify forward stays on the small-M GEMM
     # rather than the dequant path.
     verify_len = chain_len + 1
     # prefill's dynamic length must take a single INT4 dispatch branch over its
@@ -164,10 +170,18 @@ def _export_cuda(
         )
     _lap("export prefill")
 
-    print(f"Exporting target_verify (T = {verify_len})...")
+    # Dynamic chain length: verify window T = K+1 dynamic in [2, MATVEC_MAX_M]
+    # so K is a runtime parameter (one .pte serves K in [1, MATVEC_MAX_M-1], the
+    # runner picks it with --chain). max == MATVEC_MAX_M so M never straddles the
+    # INT4 dispatch threshold -> resolves to the small-M GEMM over the whole
+    # range. min=2 is the K=1 window; the target's min_forward_len was a
+    # conservative export note -- the gemma4 mask traces correctly down to T=2.
+    verify_max = int4_dispatch.MATVEC_MAX_M
+    verify_dim = Dim("verify_len", min=2, max=verify_max)
+    print(f"Exporting target_verify (T in [2, {verify_max}], example {verify_len})...")
     # The mid-M SDPA key bound is the dynamic length of kv_window: valid KV
-    # positions = anchor_pos + chain + 1, in [verify_len, max_seq_len].
-    kv_dim = Dim("kv_len", min=verify_len, max=target_config.max_seq_len)
+    # positions = anchor_pos + K + 1, in [2, max_seq_len].
+    kv_dim = Dim("kv_len", min=2, max=target_config.max_seq_len)
     with torch.no_grad():
         verify_ep = export(
             _TargetVerify(spec),
@@ -176,7 +190,7 @@ def _export_cuda(
                 torch.arange(verify_len, dtype=torch.long),
                 torch.zeros((8 * verify_len,), dtype=torch.int32),
             ),
-            dynamic_shapes=({}, {}, {0: kv_dim}),
+            dynamic_shapes=({1: verify_dim}, {0: verify_dim}, {0: kv_dim}),
             strict=True,
         )
     _lap("export target_verify")
@@ -359,28 +373,31 @@ def main() -> None:
             f"--max-prefill (got {args.max_prefill}) or --max-seq-len (got "
             f"{args.max_seq_len})"
         )
-    # target_verify is a single static forward of chain+1 tokens: it must fit the
-    # small-M GEMM (chain+1 <= _MATVEC_MAX_M) and the target's per-forward bounds
-    # [min_forward_len, max_forward].
+    # target_verify is exported dynamic over T in [2, _MATVEC_MAX_M] (see
+    # verify_dim), so --chain only sets the default/example K baked as
+    # get_chain_len; one .pte serves any K in [1, _MATVEC_MAX_M - 1]. The example
+    # K+1 must still fit the small-M GEMM (<= _MATVEC_MAX_M), the dynamic lower
+    # bound (K >= 1 => window >= 2), and the target's per-forward max.
+    # min_forward_len is a conservative prefill note and does NOT bound verify.
     verify_len = args.chain + 1
     if verify_len > _MATVEC_MAX_M:
         p.error(
             f"--chain {args.chain} (verify window {verify_len}) exceeds the "
             f"INT4 small-M GEMM limit {_MATVEC_MAX_M}"
         )
-    if verify_len < spec_t.min_forward_len:
+    if verify_len < 2:
         p.error(
             f"--chain {args.chain} (verify window {verify_len}) is below the "
-            f"target's minimum forward length {spec_t.min_forward_len}"
+            f"minimum verify window of 2 (need --chain >= 1)"
         )
     if verify_len > min(args.max_seq_len - 1, max_forward):
         p.error(
             f"--chain {args.chain} (verify window {verify_len}) exceeds the "
             f"target's per-forward limit {min(args.max_seq_len - 1, max_forward)}"
         )
-    # Route the static chain_len+1 verify forward to the small-M INT4 GEMM by
-    # raising the dispatch threshold for this export only; restore it so the
-    # process-global default (4) is unchanged for any later use.
+    # Route the verify forward (dynamic T in [2, _MATVEC_MAX_M]) to the small-M
+    # INT4 GEMM by raising the dispatch threshold for this export only; restore
+    # it so the process-global default (4) is unchanged for any later use.
     import executorch.backends.cuda.int4_dispatch as int4_dispatch
 
     saved_threshold = int4_dispatch.MATVEC_MAX_M

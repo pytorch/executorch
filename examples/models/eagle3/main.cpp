@@ -109,6 +109,11 @@ DEFINE_bool(
     "current export feeds target_verify a kv_window whose length changes every "
     "round, so capture is unsafe (stale-shape replay). Only enable for an "
     "export whose target_verify inputs all have stable shapes.");
+DEFINE_int32(
+    chain,
+    -1,
+    "Override chain length K at runtime (<=0 uses the .pte's get_chain_len). "
+    "Requires a dynamic-T verify export; clamped to [1, 7] (verify M=K+1<=8).");
 // Chat template + stop tokens default to Gemma 4 IT; override for other models.
 DEFINE_string(
     chat_prefix,
@@ -265,7 +270,8 @@ int main(int argc, char** argv) {
   const int64_t max_prefill = meta("get_max_prefill_chunk");
   const int64_t min_prefill = meta("get_min_prefill_chunk");
   const int64_t max_seq_len = meta("get_max_seq_len");
-  const int64_t K = chain_len;
+  const int64_t K_req = (FLAGS_chain > 0) ? FLAGS_chain : chain_len;
+  const int64_t K = (K_req < 1) ? 1 : (K_req > 7 ? 7 : K_req);
 
   // EOS: tokenizer/metadata ids, the configured eos, any --stop_ids, and the
   // encoded --stop_token delimiter (all default to the Gemma 4 IT conventions).

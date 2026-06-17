@@ -380,8 +380,9 @@ class Gemma4Attention(nn.Module):
         # layers; falls back to F.sdpa otherwise (M==1 decode, large-M prefill,
         # sliding layers, or when disabled). Imported lazily and only when
         # enabled so a CPU / non-mid-M import of the model never pulls in triton
-        # or the CUDA backend. M is static per exported method, so the mid-M
-        # branch resolves at trace time.
+        # or the CUDA backend. M (the verify window) is the dynamic verify length
+        # bounded to [2, MIDM_MAX_M] by the export, so the mid-M branch resolves
+        # at trace time.
         if self.use_midm_sdpa:
             from executorch.backends.cuda.triton.kernels.sdpa_midm import midm_sdpa
 

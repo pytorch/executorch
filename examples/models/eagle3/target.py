@@ -73,9 +73,10 @@ class TargetSpec:
     # config -> max tokens accepted in one target forward (e.g. a sliding ring
     # buffer caps it at 2*window; a flat-cache model uses max_seq_len-1).
     max_forward_len: Callable[[Any], int]
-    # Minimum tokens in ANY single target forward the export accepts (some
+    # Minimum tokens the export specializes for a target forward (some
     # attention-mask implementations specialize a lower bound under
-    # torch.export). Applies to both prefill and the static target_verify window.
+    # torch.export). Bounds prefill only; target_verify is exported dynamic over
+    # T in [2, MATVEC_MAX_M] and is not constrained by it.
     min_forward_len: int
 
 
