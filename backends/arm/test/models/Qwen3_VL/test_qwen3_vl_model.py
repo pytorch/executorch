@@ -34,6 +34,33 @@ def _make_qwen3_vl_2b_instruct_layer_config():
     return config
 
 
+def _make_qwen3_vl_e2e_test_config():
+    config = _make_qwen3_vl_2b_instruct_layer_config()
+
+    config.text_config.vocab_size = 1024
+    config.text_config.bos_token_id = 1
+    config.text_config.eos_token_id = 2
+    config.text_config.hidden_size = 128
+    config.text_config.intermediate_size = 384
+    config.text_config.num_hidden_layers = 2
+    config.text_config.num_attention_heads = 4
+    config.text_config.num_key_value_heads = 2
+    config.text_config.head_dim = 32
+    config.text_config.max_position_embeddings = 1024
+    config.text_config.rope_parameters["mrope_section"] = [4, 4, 4]
+    config.text_config.rope_scaling["mrope_section"] = [4, 4, 4]
+
+    config.vision_config.deepstack_visual_indexes = [0]
+    config.vision_config.depth = 2
+    config.vision_config.hidden_size = 128
+    config.vision_config.intermediate_size = 512
+    config.vision_config.num_heads = 4
+    config.vision_config.num_position_embeddings = 16
+    config.vision_config.out_hidden_size = 128
+
+    return config
+
+
 def _make_text_position_ids(
     batch_size: int, seq_length: int, device: torch.device
 ) -> torch.Tensor:
@@ -98,7 +125,7 @@ class TextModelWrapper(Qwen3VLModelTestModule):
     @classmethod
     def prepare_model_and_inputs(cls):
         torch.manual_seed(0)
-        config = _make_qwen3_vl_2b_instruct_layer_config()
+        config = _make_qwen3_vl_e2e_test_config()
         model = cls(config).eval()
         input_ids = torch.randint(0, 128, (2, 8), dtype=torch.long)
         attention_mask = torch.ones_like(input_ids)
@@ -161,7 +188,7 @@ class LowerableVisionModelWrapper(Qwen3VLModelTestModule):
     @classmethod
     def prepare_model_and_inputs(cls):
         torch.manual_seed(0)
-        config = _make_qwen3_vl_2b_instruct_layer_config()
+        config = _make_qwen3_vl_e2e_test_config()
         model = cls(config).eval()
         pixel_values = _make_pixel_values(config, torch.device("cpu"))
         return model, (pixel_values,)
