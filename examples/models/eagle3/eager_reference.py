@@ -115,8 +115,23 @@ def speculative_decode(draft, target, prompt_ids, num_gen, chain_len):
     accepted = [0] * chain_len
     accept_lengths = []
 
+    # This reference recomputes the whole sequence each round through the
+    # stateful gemma target, whose sliding layers assert positions fit one ring
+    # (2*sliding_window). It is a short-prompt correctness reference, not a
+    # long-context path, so fail early with a clear message instead of letting
+    # the RingKVCache assertion fire mid-run.
+    max_ctx = 2 * target.model.config.sliding_window
+
     while len(emitted) < num_gen:
         L = len(seq)
+        if L + chain_len > max_ctx:
+            raise RuntimeError(
+                f"eager reference is limited to 2*sliding_window={max_ctx} "
+                f"positions (seq={L} + chain={chain_len} exceeds it); it "
+                f"recomputes through the stateful RingKVCache and does not "
+                f"support long context. Use a shorter prompt or smaller "
+                f"--num-gen."
+            )
         _, taps = target.forward(seq)
         proposals = draft_chain(draft, seq, taps, chain_len)
 
