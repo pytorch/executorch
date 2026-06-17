@@ -8,9 +8,10 @@
 
 import uuid
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import auto, Enum
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import torch
 from torch.fx.node import Node
@@ -73,6 +74,54 @@ class SlotManager:
         self.tid_managers: Dict[IdSpace, IdManager] = defaultdict(IdManager)
         self.vid_managers: Dict[IdSpace, IdManager] = defaultdict(IdManager)
         self.name_to_slot: Dict[str, Slot] = {}
+        # Stack of active temp-slot scopes (see ``tmp_scope``). Temp tids/vids
+        # allocated via make_tmp_slot()/make_tmp_value_slot() are registered on
+        # the innermost scope and their ids returned for reuse on scope exit.
+        self._tmp_scopes: List[List[Slot]] = []
+
+    @contextmanager
+    def tmp_scope(self) -> Iterator[None]:
+        """Scope temporary slot allocations so their ids can be reused.
+
+        Temp tids/vids allocated via :meth:`make_tmp_slot` /
+        :meth:`make_tmp_value_slot` inside this context are returned to their
+        id pools when the context exits, so later allocations (temp or node)
+        can reuse them. Allocating a temp slot outside any ``tmp_scope`` raises
+        ``RuntimeError``.
+
+        Scopes may be nested; each allocation is tied to the innermost scope.
+        The Slot objects stay in ``name_to_slot`` (mirroring node-slot reclaim
+        via ``return_id``) so serialization still sees every distinct slot.
+        """
+        self._tmp_scopes.append([])
+        try:
+            yield
+        finally:
+            scope = self._tmp_scopes.pop()
+            for slot in scope:
+                if slot.id_type == IdType.Tensor:
+                    self.tid_managers[slot.id_space].return_id(slot.idx)
+                else:
+                    self.vid_managers[slot.id_space].return_id(slot.idx)
+
+    def _new_tmp_slot(self, id_type: IdType, prefix: str) -> Tuple[str, Slot]:
+        if not self._tmp_scopes:
+            raise RuntimeError(
+                f"{prefix}() must be called within a SlotManager.tmp_scope() "
+                "context so temporary ids can be reclaimed and reused."
+            )
+        name = f"{prefix}_{uuid.uuid4().hex}"
+        id_space = IdSpace.Temp
+        manager = (
+            self.tid_managers[id_space]
+            if id_type == IdType.Tensor
+            else self.vid_managers[id_space]
+        )
+        idx = manager.get_id()
+        slot = Slot(id_type=id_type, id_space=id_space, idx=idx)
+        self.name_to_slot[name] = slot
+        self._tmp_scopes[-1].append(slot)
+        return name, slot
 
     def set_slot(self, node_or_name: Union[Node, str], slot: Slot):
         if isinstance(node_or_name, Node):
@@ -129,23 +178,11 @@ class SlotManager:
         return slot
 
     def make_tmp_slot(self) -> Tuple[str, Slot]:
-        name = f"tmp_{uuid.uuid4().hex}"
-        id_space = IdSpace.Temp
-        manager = self.tid_managers[id_space]
-        idx = manager.get_id()
-        slot = Slot(id_type=IdType.Tensor, id_space=id_space, idx=idx)
-        self.name_to_slot[name] = slot
-        return name, slot
+        return self._new_tmp_slot(IdType.Tensor, "tmp")
 
     def make_tmp_value_slot(self) -> Tuple[str, Slot]:
         """Create a temporary SymInt slot and register it."""
-        name = f"tmp_val_{uuid.uuid4().hex}"
-        id_space = IdSpace.Temp
-        manager = self.vid_managers[id_space]
-        idx = manager.get_id()
-        slot = Slot(id_type=IdType.SymInt, id_space=id_space, idx=idx)
-        self.name_to_slot[name] = slot
-        return name, slot
+        return self._new_tmp_slot(IdType.SymInt, "tmp_val")
 
     def make_or_get_slots(
         self, node: Node, id_space: IdSpace = IdSpace.Temp
