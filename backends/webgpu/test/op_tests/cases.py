@@ -40,6 +40,10 @@ from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _ramp,
     RmsNormModule,
 )
+from executorch.backends.webgpu.test.ops.select.test_select import (
+    CONFIGS as _SELECT_CONFIGS,
+    SelectModule,
+)
 from executorch.backends.webgpu.test.ops.view_copy.test_view_copy import (
     CONFIGS as _VIEW_CONFIGS,
     ViewModule,
@@ -144,3 +148,8 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
 @register_op_test("view_copy")
 def _view_copy_suite() -> WebGPUTestSuite:
     return _fn_config_suite(ViewModule, _VIEW_CONFIGS)
+
+
+@register_op_test("select")
+def _select_suite() -> WebGPUTestSuite:
+    return _fn_config_suite(SelectModule, _SELECT_CONFIGS)
