@@ -53,21 +53,22 @@ class LayerNormVisitor(NodeVisitor):
             return
         axis = [len(input_tensor.shape) - 1]
         axis_shape = [len(axis)]
+        layer_norm_input_tensors = [input_tensor_wrapper]
 
         weight_node = self.get_node(node.args[2])
-        weight_tensor = get_parameter(weight_node, self.edge_program)
-        weight_tensor_wrapper = self.define_tensor(
-            weight_node,
-            node,
-            weight_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
-            nodes_to_wrappers,
-        )
-
-        layer_norm_input_tensors = [input_tensor_wrapper, weight_tensor_wrapper]
+        if weight_node:
+            weight_tensor = get_parameter(weight_node, self.edge_program)
+            weight_tensor_wrapper = self.define_tensor(
+                weight_node,
+                node,
+                weight_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+            )
+            layer_norm_input_tensors.append(weight_tensor_wrapper)
 
         bias_node = self.get_node(node.args[3])
-        if bias_node is not None:
+        if bias_node:
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,

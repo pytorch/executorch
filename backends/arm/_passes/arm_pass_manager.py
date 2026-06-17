@@ -15,6 +15,7 @@ from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
+    CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -29,7 +30,6 @@ from executorch.backends.arm._passes import (
     ConvertInt64OutputOpsToInt32Pass,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
-    ConvertPermuteSingletonToViewPass,
     ConvertSplitToSlicePass,
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
@@ -146,6 +146,7 @@ from executorch.backends.arm._passes import (
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewriteMaxPool2dPass,
+    RewriteMXFPLinearPass,
     RewritePadPass,
     RewriteSlicePass,
     RewriteUpsamplePass,
@@ -164,9 +165,6 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
     FuseCascadedTransposeOrPermuteOps,
-)
-from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
-    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
 )
 
 from executorch.exir import ExportedProgram
@@ -612,13 +610,13 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMaxPool2dPass(),
                 DecomposeAdaptiveMaxPool2dPass(),
                 RewriteConvPass(exported_program),
+                RewriteMXFPLinearPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
                 RemovePermutesAroundElementwiseTosaOps(),
-                PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
+                CanonicalizeViewCopyPermutePass(),
                 FuseCascadedTransposeOrPermuteOps(),
-                ConvertPermuteSingletonToViewPass(),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
