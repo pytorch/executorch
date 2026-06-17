@@ -1,0 +1,29 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "eagle3-cuda",
+            "displayName": "EAGLE-3 speculator runner (CUDA)",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/eagle3",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out",
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "eagle3-cuda",
+            "displayName": "Build EAGLE-3 speculator runner (CUDA)",
+            "configurePreset": "eagle3-cuda",
+            "targets": ["eagle3_speculator_runner"]
+        }
+    ]
+}
