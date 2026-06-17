@@ -82,8 +82,11 @@ class _TargetVerify(nn.Module):
         super().__init__()
         self.spec = spec
 
-    def forward(self, tokens, input_pos):
-        return self.spec.target_verify(tokens, input_pos)
+    def forward(self, tokens, input_pos, kv_window):
+        # kv_window length = number of valid KV positions; its dynamic dim is a
+        # backed SymInt that bounds the mid-M SDPA key loop (ignored if mid-M is
+        # off). Only its shape matters, not its contents.
+        return self.spec.target_verify(tokens, input_pos, kv_window)
 
 
 class _DraftDecode(nn.Module):
@@ -118,6 +121,15 @@ def _export_cuda(
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
+    import time
+
+    _t = [time.time()]
+
+    def _lap(msg: str) -> None:
+        now = time.time()
+        print(f"[export +{now - _t[0]:6.1f}s] {msg}", flush=True)
+        _t[0] = now
+
     # Register Int4Tensor dispatch -> executorch_cuda::int4_plain_mm for the
     # target. main() sets MATVEC_MAX_M (and restores it) around this call.
     import executorch.backends.cuda.int4_dispatch as int4_dispatch
@@ -150,17 +162,24 @@ def _export_cuda(
             dynamic_shapes=({1: prefill_dim}, {0: prefill_dim}),
             strict=True,
         )
+    _lap("export prefill")
 
     print(f"Exporting target_verify (T = {verify_len})...")
+    # The mid-M SDPA key bound is the dynamic length of kv_window: valid KV
+    # positions = anchor_pos + chain + 1, in [verify_len, max_seq_len].
+    kv_dim = Dim("kv_len", min=verify_len, max=target_config.max_seq_len)
     with torch.no_grad():
         verify_ep = export(
             _TargetVerify(spec),
             (
                 torch.zeros((1, verify_len), dtype=torch.long),
                 torch.arange(verify_len, dtype=torch.long),
+                torch.zeros((8 * verify_len,), dtype=torch.int32),
             ),
+            dynamic_shapes=({}, {}, {0: kv_dim}),
             strict=True,
         )
+    _lap("export target_verify")
 
     # draft_decode: T>1 seeds the draft KV (prompt / newly confirmed tokens), T=1
     # steps the chain. The feature is hidden-size for both (fused target feature
@@ -181,6 +200,7 @@ def _export_cuda(
             dynamic_shapes=({1: draft_dim}, {1: draft_dim}, {0: draft_dim}),
             strict=True,
         )
+    _lap("export draft_decode")
 
     del spec
     gc.collect()
@@ -226,6 +246,7 @@ def _export_cuda(
     )
     del prefill_ep, verify_ep, draft_ep
     gc.collect()
+    _lap("to_edge_transform_and_lower (AOTI compile)")
 
     et_program = et_prog.to_executorch(
         config=ExecutorchBackendConfig(
@@ -240,6 +261,7 @@ def _export_cuda(
     )
     del et_prog
     gc.collect()
+    _lap("to_executorch")
 
     os.makedirs(output_dir, exist_ok=True)
     pte_path = os.path.join(output_dir, "model.pte")
@@ -250,6 +272,7 @@ def _export_cuda(
     if et_program._tensor_data:
         et_program.write_tensor_data_to_file(output_dir)
         print(f"  Saved tensor data (.ptd) to {output_dir}/")
+    _lap("write .pte + .ptd")
     print("Done.")
 
 
@@ -278,6 +301,12 @@ def main() -> None:
     p.add_argument(
         "--chain", type=int, default=4, help="Draft chain length K (verify K+1)."
     )
+    p.add_argument(
+        "--no-midm-sdpa",
+        action="store_true",
+        help="Disable the length-bounded mid-M SDPA kernel for target_verify "
+        "(it accelerates full-attention layers at long context).",
+    )
     args = p.parse_args()
 
     spec_t = TARGETS[args.target_model]
@@ -286,6 +315,13 @@ def main() -> None:
 
     print(f"Loading {args.target_model} target from {args.target}...")
     target = spec_t.load(args.target, args.max_seq_len)
+
+    # Route the target's full-attention layers' verify SDPA (M=chain+1) through
+    # the length-bounded mid-M Triton kernel. Only affects target_verify (prefill
+    # M is out of range, decode isn't exported); huge win at long context.
+    if not args.no_midm_sdpa and hasattr(target, "set_midm_sdpa"):
+        target.set_midm_sdpa(True)
+        print("Enabled mid-M SDPA for target_verify.")
 
     print(f"Loading draft head from {args.draft}...")
     draft, _ = Eagle3Draft.from_checkpoint(

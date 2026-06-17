@@ -52,8 +52,14 @@ class TapTarget(Protocol):
         tokens: torch.Tensor,
         input_pos: torch.Tensor,
         last_logits_only: bool = True,
+        kv_window: torch.Tensor = None,
     ):
-        """Return (logits, taps): logits (B,1|T,vocab); taps (B,T,len(aux)*hidden)."""
+        """Return (logits, taps): logits (B,1|T,vocab); taps (B,T,len(aux)*hidden).
+
+        ``kv_window`` (optional) is a length-(valid KV positions) tensor used by
+        targets that support a length-bounded verify attention kernel; targets
+        that don't may ignore it.
+        """
         ...
 
 
