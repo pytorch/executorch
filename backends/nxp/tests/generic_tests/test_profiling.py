@@ -86,6 +86,7 @@ class TestProfiling:
             input_shape,
             dlg_model_verifier=BaseGraphVerifier(1, []),
             output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
             use_profiling=True,
         )
         neutron_map = extract_map_from_logs(caplog)
@@ -113,11 +114,12 @@ class TestProfiling:
             input_shape,
             dlg_model_verifier=BaseGraphVerifier(1, []),
             output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
             use_profiling=True,
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (),  # Pad
+            0: (10,),  # Pad
             1: (10, 11),  # Conv2DStandardV1 (Pad + Conv2d)
             2: (12,),  # MaxPool
             3: (13, 14),  # Conv2DStandardV1 (Pad + Conv2d)
@@ -140,6 +142,7 @@ class TestProfiling:
             input_shape,
             dlg_model_verifier=BaseGraphVerifier(1, []),
             output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
             use_profiling=True,
         )
         neutron_map = extract_map_from_logs(caplog)

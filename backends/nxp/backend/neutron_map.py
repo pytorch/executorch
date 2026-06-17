@@ -294,12 +294,29 @@ class NeutronMap:
             #     (i.e., sharing a common prefix separated by "/").
             result = 0
             for tf_name in tf_names:
+                # Determine if the tensor name corresponds to a special operation input.
+                # Matches names like "perm0", "perm1", etc. used by Transpose ops,
+                # and names like "padding0", "padding1", etc. used by Pad ops.
+                special_op = (
+                    "permutation"
+                    if re.fullmatch(r"perm(\d+)?", tf_name)
+                    else (
+                        "padding"
+                        if re.fullmatch(r"padding(s)?(\d+)?", tf_name)
+                        else None
+                    )
+                )
                 for neutron_name in neutron_names:
                     if (
                         neutron_name == tf_name
                         or neutron_name + "/" in tf_name
                         or tf_name + "/" in neutron_name
                     ):
+                        result += 1
+                        break
+
+                    # Check if the neutron input is also the special op (Pad or Transpose)
+                    if special_op and special_op in neutron_name:
                         result += 1
                         break
             return result

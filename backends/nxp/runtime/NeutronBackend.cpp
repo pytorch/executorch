@@ -26,8 +26,8 @@ namespace neutron {
 #define ALIGN_SIZE(size) \
   ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
 
-#define KOPC_CALLARGS 6  // The operation for TileIR
-  
+#define KOPC_CALLARGS 6 // The operation for TileIR
+
 // clang-format off
 /* Header schema:
      +----------------------------+-----------------------------+------------------------+
