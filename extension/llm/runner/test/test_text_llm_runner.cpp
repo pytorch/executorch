@@ -709,6 +709,26 @@ TEST_F(RunnerTest, TextTokenGeneratorProcessorChainMasksMultipleTokens) {
   EXPECT_EQ(generated_tokens, expected);
 }
 
+TEST_F(RunnerTest, TextTokenGeneratorRejectsTemperatureOutOfRange) {
+  auto tokenizer = createMockTokenizer();
+  auto text_decoder_runner = createMockTextDecoderRunner();
+  Stats stats;
+  auto generator = createTextTokenGenerator(
+      tokenizer.get(), text_decoder_runner.get(), &stats);
+
+  std::vector<uint64_t> tokens = {1, 2, 3};
+  EXPECT_CALL(*text_decoder_runner, step(_, _)).Times(0);
+
+  EXPECT_EQ(
+      generator->generate(tokens, 3, 3, -0.1f, [](const std::string&) {})
+          .error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      generator->generate(tokens, 3, 3, 1.1f, [](const std::string&) {})
+          .error(),
+      Error::InvalidArgument);
+}
+
 // Without any processors, greedy argmax picks token 3 (zero-overhead path).
 TEST_F(RunnerTest, TextTokenGeneratorWithoutProcessorPicksArgmax) {
   auto tokenizer = createMockTokenizer();

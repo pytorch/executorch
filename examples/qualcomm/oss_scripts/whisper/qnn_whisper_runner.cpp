@@ -13,7 +13,9 @@
  *
  */
 
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/examples/qualcomm/oss_scripts/whisper/runner/runner.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/log.h>
 #include <gflags/gflags.h>
 #include <fstream>
@@ -95,6 +97,8 @@ std::vector<std::vector<std::vector<char>>> parse_input_list_file(
 }
 
 int main(int argc, char** argv) {
+  QnnExecuTorchBackendRegister(
+      reinterpret_cast<void*>(executorch::runtime::register_backend));
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   // create llama runner
   example::Runner runner(FLAGS_model_path, FLAGS_tokenizer_json_path);
