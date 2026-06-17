@@ -11,8 +11,13 @@
 // Loads the speculator .pte (examples/models/eagle3/export.py) exposing three
 // methods that share the target / draft KV caches:
 //   prefill(tokens[1,T], pos[T])        -> (next_token[1,1], feat[1,T,H])
-//   target_verify(tokens[1,C], pos[C])  -> (greedy_ids[1,C], feat[1,C,H])
-//   draft_decode(tokens[1,T], feat[1,T,H], pos[T]) -> (target_ids[1,T], g[1,T,H])
+//   target_verify(tokens[1,C], pos[C], kv_window[V]) -> (greedy_ids[1,C],
+//   feat[1,C,H])  -- kv_window's dynamic length V (= valid KV positions =
+//   anchor_pos+C) bounds the mid-M SDPA key loop (ignored if mid-M is off).
+//   Its growing per-round shape means target_verify can't be a CUDA graph when
+//   mid-M is on, so pass --cuda_graph=false there.
+//   draft_decode(tokens[1,T], feat[1,T,H], pos[T]) -> (target_ids[1,T],
+//   g[1,T,H])
 // where feat is the fused (hidden-size) draft feature and H is the draft hidden
 // size. Verification is greedy (argmax), so emitted tokens equal greedy target
 // decoding (lossless) by construction.
@@ -30,23 +35,24 @@
 // negligible next to the INT4 31B target forward, and it keeps device-tensor
 // lifetimes simple.
 //
-// Run (after exporting model.pte + aoti_cuda_blob.ptd via export.py, sourcing the
-// CUDA env, and building the eagle3-cuda preset):
+// Run (after exporting model.pte + aoti_cuda_blob.ptd via export.py, sourcing
+// the CUDA env, and building the eagle3-cuda preset):
 //   eagle3_speculator_runner --model_path <dir>/model.pte \
 //     --data_path <dir>/aoti_cuda_blob.ptd --tokenizer_path <tokenizer.json> \
 //     --prompt "..." --max_new_tokens 128
 // The chat template and stop tokens default to Gemma 4 IT; override
-// --chat_prefix/--chat_suffix/--stop_ids/--stop_token (and --bos_id -1) for other
-// target/tokenizer pairs. Per-run timing counters (tau, verify/draft ms) print at
-// the end.
+// --chat_prefix/--chat_suffix/--stop_ids/--stop_token (and --bos_id -1) for
+// other target/tokenizer pairs. Per-run timing counters (tau, verify/draft ms)
+// print at the end.
 //
 // Scope: a single-sequence, greedy, fixed-shape demo runner -- not a generic
-// EAGLE serving path. No batching, sampler stack (top-k/p/temperature), grammar/
-// tool constraints, streaming API, or integration with the standard ExecuTorch
-// LLM runner. The host feature round-trip above is a first-implementation choice
-// (the target forward dominates here); a device-resident handoff is future work.
-// The target, draft, and tokenizer must be a matched, co-trained set -- a
-// mismatch can pass export and silently degrade acceptance/output.
+// EAGLE serving path. No batching, sampler stack (top-k/p/temperature),
+// grammar/ tool constraints, streaming API, or integration with the standard
+// ExecuTorch LLM runner. The host feature round-trip above is a
+// first-implementation choice (the target forward dominates here); a
+// device-resident handoff is future work. The target, draft, and tokenizer must
+// be a matched, co-trained set -- a mismatch can pass export and silently
+// degrade acceptance/output.
 
 #include <gflags/gflags.h>
 
@@ -96,9 +102,18 @@ DEFINE_bool(raw_prompt, false, "Skip the Gemma 4 IT chat template.");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_int32(bos_id, 2, "BOS token id (-1 to skip; Gemma convention: 2).");
 DEFINE_int32(eos_id, 1, "EOS token id (Gemma convention: 1).");
-DEFINE_bool(cuda_graph, true, "Capture target_verify as a CUDA graph (CUDA only).");
+DEFINE_bool(
+    cuda_graph,
+    false,
+    "Capture target_verify as a CUDA graph (CUDA only). Off by default: the "
+    "current export feeds target_verify a kv_window whose length changes every "
+    "round, so capture is unsafe (stale-shape replay). Only enable for an "
+    "export whose target_verify inputs all have stable shapes.");
 // Chat template + stop tokens default to Gemma 4 IT; override for other models.
-DEFINE_string(chat_prefix, "<|turn>user\n", "Chat-template text before the prompt.");
+DEFINE_string(
+    chat_prefix,
+    "<|turn>user\n",
+    "Chat-template text before the prompt.");
 DEFINE_string(
     chat_suffix,
     "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>",
@@ -130,7 +145,8 @@ std::vector<uint8_t> to_host_bytes(const executorch::aten::Tensor& t) {
   cudaPointerAttributes attrs{};
   if (cudaPointerGetAttributes(&attrs, ptr) == cudaSuccess &&
       attrs.type == cudaMemoryTypeDevice) {
-    cudaError_t err = cudaMemcpy(out.data(), ptr, out.size(), cudaMemcpyDeviceToHost);
+    cudaError_t err =
+        cudaMemcpy(out.data(), ptr, out.size(), cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
       ET_LOG(Error, "D2H copy failed: %s", cudaGetErrorString(err));
       exit(1);
@@ -183,7 +199,10 @@ int main(int argc, char** argv) {
 
   auto tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (tokenizer->load(FLAGS_tokenizer_path) != tokenizers::Error::Ok) {
-    ET_LOG(Error, "Failed to load tokenizer from %s", FLAGS_tokenizer_path.c_str());
+    ET_LOG(
+        Error,
+        "Failed to load tokenizer from %s",
+        FLAGS_tokenizer_path.c_str());
     return 1;
   }
 
@@ -208,10 +227,12 @@ int main(int argc, char** argv) {
     executorch::runtime::set_option("CudaBackend", backend_options.view());
   }
   if (FLAGS_cuda_graph) {
-    // target_verify is the one target forward per round and has a static shape
-    // (chain+1 tokens), so capture it as a CUDA graph to avoid paying the
-    // 60-layer per-kernel launch overhead every round (the dominant cost
-    // otherwise). Its input tensors must wrap stable host buffers (below).
+    // Opt-in only (default off): capturing target_verify avoids the 60-layer
+    // per-kernel launch overhead every round, but it is only sound when every
+    // target_verify input has a stable shape across rounds. This export does
+    // not satisfy that -- kv_window's length is the per-round valid-KV count
+    // (see the kvwin_buf NOTE below) -- so enabling capture here risks stale-
+    // shape replay. The flag is kept for a future fixed-shape verify export.
     executorch::runtime::BackendOptions<1> g;
     g.set_option("enable_cuda_graph_for_method", "target_verify");
     executorch::runtime::set_option("CudaBackend", g.view());
@@ -282,24 +303,38 @@ int main(int argc, char** argv) {
   }
   const int64_t L = static_cast<int64_t>(prompt.size());
   // The runner does not chunk: the whole prompt must fit one prefill, and its
-  // length must be within the exported prefill range [min_prefill, max_prefill].
+  // length must be within the exported prefill range [min_prefill,
+  // max_prefill].
   if (L > max_prefill) {
-    ET_LOG(Error, "Prompt (%" PRId64 " tokens) exceeds max_prefill %" PRId64
-           "; this runner does not chunk prefill.", L, max_prefill);
+    ET_LOG(
+        Error,
+        "Prompt (%" PRId64 " tokens) exceeds max_prefill %" PRId64
+        "; this runner does not chunk prefill.",
+        L,
+        max_prefill);
     return 1;
   }
   if (L < min_prefill) {
-    ET_LOG(Error, "Prompt (%" PRId64 " tokens) is below the exported prefill "
-           "minimum %" PRId64 "; use a longer prompt.", L, min_prefill);
+    ET_LOG(
+        Error,
+        "Prompt (%" PRId64
+        " tokens) is below the exported prefill "
+        "minimum %" PRId64 "; use a longer prompt.",
+        L,
+        min_prefill);
     return 1;
   }
   // The prefill bonus token is always emittable (no KV write past the prompt).
-  // Each speculative round, however, writes a K-token verify window, so it needs
-  // anchor_pos + K <= max_seq_len - 1 (enforced in the loop below). Cap the total
-  // at the positions available; max_new >= 1 since L <= max_prefill < max_seq_len.
+  // Each speculative round, however, writes a K-token verify window, so it
+  // needs anchor_pos + K <= max_seq_len - 1 (enforced in the loop below). Cap
+  // the total at the positions available; max_new >= 1 since L <= max_prefill <
+  // max_seq_len.
   int64_t max_new = std::min<int64_t>(FLAGS_max_new_tokens, max_seq_len - L);
-  printf("Prompt tokens: %" PRId64 ", chain K=%" PRId64 ", max_new=%" PRId64
-         "\n", L, K, max_new);
+  printf(
+      "Prompt tokens: %" PRId64 ", chain K=%" PRId64 ", max_new=%" PRId64 "\n",
+      L,
+      K,
+      max_new);
 
   auto S = [](int64_t v) { return static_cast<SizesType>(v); };
 
@@ -309,11 +344,15 @@ int main(int argc, char** argv) {
 
   auto long_tensor = [&](std::vector<int64_t>& buf) {
     return from_blob(
-        buf.data(), {1, S((int64_t)buf.size())}, executorch::aten::ScalarType::Long);
+        buf.data(),
+        {1, S((int64_t)buf.size())},
+        executorch::aten::ScalarType::Long);
   };
   auto pos_tensor = [&](std::vector<int64_t>& buf) {
     return from_blob(
-        buf.data(), {S((int64_t)buf.size())}, executorch::aten::ScalarType::Long);
+        buf.data(),
+        {S((int64_t)buf.size())},
+        executorch::aten::ScalarType::Long);
   };
 
   // draft_decode over (tokens, feat rows, positions); returns proposals + the
@@ -333,7 +372,9 @@ int main(int argc, char** argv) {
     feat_buf.assign(feat_rows, feat_rows + feat_T * H);
     auto t_tok = long_tensor(tok_buf);
     auto t_feat = from_blob(
-        feat_buf.data(), {1, S(feat_T), S(H)}, executorch::aten::ScalarType::BFloat16);
+        feat_buf.data(),
+        {1, S(feat_T), S(H)},
+        executorch::aten::ScalarType::BFloat16);
     auto t_pos = pos_tensor(pos_buf);
     auto r = module->execute(
         "draft_decode", {EValue(t_tok), EValue(t_feat), EValue(t_pos)});
@@ -345,8 +386,7 @@ int main(int argc, char** argv) {
     HostFeature g = read_feature(r->at(1).toTensor());
     out_last_g.T = 1;
     out_last_g.H = g.H;
-    out_last_g.data.assign(
-        g.data.end() - g.H, g.data.end()); // last row of g
+    out_last_g.data.assign(g.data.end() - g.H, g.data.end()); // last row of g
   };
 
   // Run a draft chain seeded by (seed_tokens, seed_feat) at seed positions; the
@@ -358,16 +398,26 @@ int main(int argc, char** argv) {
     std::vector<int64_t> ids;
     HostFeature last_g;
     draft_decode(
-        seed_tokens, seed_feat.data.data(), seed_feat.T, seed_feat.H,
-        seed_start_pos, ids, last_g);
+        seed_tokens,
+        seed_feat.data.data(),
+        seed_feat.T,
+        seed_feat.H,
+        seed_start_pos,
+        ids,
+        last_g);
     proposals.push_back(ids.back());
     int64_t last_pos = seed_start_pos + seed_feat.T - 1;
     for (int64_t k = 1; k < K; k++) {
       std::vector<int64_t> step_ids;
       HostFeature step_g;
       draft_decode(
-          {proposals.back()}, last_g.data.data(), 1, last_g.H,
-          last_pos + k, step_ids, step_g);
+          {proposals.back()},
+          last_g.data.data(),
+          1,
+          last_g.H,
+          last_pos + k,
+          step_ids,
+          step_g);
       proposals.push_back(step_ids[0]);
       last_g = step_g;
     }
@@ -377,7 +427,8 @@ int main(int argc, char** argv) {
   stats.model_load_end_ms = llm::time_in_ms();
   stats.inference_start_ms = stats.model_load_end_ms;
 
-  // --- Prefill: target over the prompt -> bonus token + per-position feature. ---
+  // --- Prefill: target over the prompt -> bonus token + per-position feature.
+  // ---
   tok_buf = prompt;
   pos_buf.resize(L);
   for (int64_t i = 0; i < L; i++) {
@@ -389,7 +440,8 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "prefill failed");
     return 1;
   }
-  int64_t anchor = read_ids(pf->at(0).toTensor())[0]; // bonus token at position L
+  int64_t anchor =
+      read_ids(pf->at(0).toTensor())[0]; // bonus token at position L
   HostFeature feat_prompt = read_feature(pf->at(1).toTensor());
   const int64_t H = feat_prompt.H;
   int64_t anchor_pos = L;
@@ -401,13 +453,16 @@ int main(int argc, char** argv) {
   uint64_t prev = static_cast<uint64_t>(prompt.back());
   {
     auto s = tokenizer->decode(prev, static_cast<uint64_t>(anchor));
-    if (s.ok()) { printf("%s", s->c_str()); fflush(stdout); }
+    if (s.ok()) {
+      printf("%s", s->c_str());
+      fflush(stdout);
+    }
     prev = static_cast<uint64_t>(anchor);
   }
 
   // We only run the speculative loop if more than the (already emitted) prefill
-  // bonus is wanted, the bonus wasn't EOS, and there is room for a K-token verify
-  // window. Otherwise we are done -- no draft seeding needed.
+  // bonus is wanted, the bonus wasn't EOS, and there is room for a K-token
+  // verify window. Otherwise we are done -- no draft seeding needed.
   bool hit_eos = eos_ids.count(static_cast<uint64_t>(anchor)) > 0;
   bool speculate = max_new > 1 && !hit_eos && anchor_pos + K <= max_seq_len - 1;
   std::vector<int64_t> proposals;
@@ -427,6 +482,13 @@ int main(int argc, char** argv) {
       vtok_buf.data(), {1, S(K + 1)}, executorch::aten::ScalarType::Long);
   auto vpos_t = from_blob(
       vpos_buf.data(), {S(K + 1)}, executorch::aten::ScalarType::Long);
+  // kv_window: its dynamic length (= valid KV positions this round) is the
+  // mid-M SDPA key bound (ignored if the export has mid-M off). Contents are
+  // unused -- only the shape matters -- so one max-size buffer is reused and
+  // viewed at the per-round length. NOTE: this per-round shape change is why
+  // target_verify can't be captured as a CUDA graph for this export -- hence
+  // --cuda_graph defaults to false.
+  std::vector<int32_t> kvwin_buf(max_seq_len, 0);
 
   // --- Speculative rounds: one target forward (target_verify) per round. ---
   int64_t rounds = 0;
@@ -442,8 +504,13 @@ int main(int argc, char** argv) {
     for (int64_t i = 0; i <= K; i++) {
       vpos_buf[i] = anchor_pos + i;
     }
+    // Valid KV positions after writing this round = [0, anchor_pos+K].
+    int64_t valid_len = anchor_pos + K + 1;
+    auto kvwin_t = from_blob(
+        kvwin_buf.data(), {S(valid_len)}, executorch::aten::ScalarType::Int);
     int64_t t_v = llm::time_in_ms();
-    auto vr = module->execute("target_verify", {EValue(vtok_t), EValue(vpos_t)});
+    auto vr = module->execute(
+        "target_verify", {EValue(vtok_t), EValue(vpos_t), EValue(kvwin_t)});
     if (vr.error() != Error::Ok) {
       ET_LOG(Error, "target_verify failed");
       return 1;
@@ -467,10 +534,14 @@ int main(int argc, char** argv) {
     std::vector<int64_t> newly(proposals.begin(), proposals.begin() + a);
     newly.push_back(corrected);
     for (int64_t t : newly) {
-      if ((int64_t)emitted.size() >= max_new) break;
+      if ((int64_t)emitted.size() >= max_new)
+        break;
       emitted.push_back(t);
       auto s = tokenizer->decode(prev, static_cast<uint64_t>(t));
-      if (s.ok()) { printf("%s", s->c_str()); fflush(stdout); }
+      if (s.ok()) {
+        printf("%s", s->c_str());
+        fflush(stdout);
+      }
       prev = static_cast<uint64_t>(t);
       if (eos_ids.count(static_cast<uint64_t>(t)) > 0) {
         // Stop at the first accepted EOS; do not emit the rest of this batch.
@@ -481,13 +552,15 @@ int main(int argc, char** argv) {
         break;
       }
     }
-    if (hit_eos || (int64_t)emitted.size() >= max_new) break;
+    if (hit_eos || (int64_t)emitted.size() >= max_new)
+      break;
 
     // Reseed the draft (shifted): slot anchor_pos+i holds (verify_feat[i],
-    // token_{anchor_pos+i+1}) where token = p_i (i<a) / corrected (i=a). The last
-    // slot predicts the next chain's proposal 0. verify_feat already holds the
-    // target hidden states for these positions -- no extra target forward.
-    std::vector<int64_t> reseed_tokens(proposals.begin(), proposals.begin() + a);
+    // token_{anchor_pos+i+1}) where token = p_i (i<a) / corrected (i=a). The
+    // last slot predicts the next chain's proposal 0. verify_feat already holds
+    // the target hidden states for these positions -- no extra target forward.
+    std::vector<int64_t> reseed_tokens(
+        proposals.begin(), proposals.begin() + a);
     reseed_tokens.push_back(corrected);
     HostFeature reseed_feat;
     reseed_feat.T = a + 1;
@@ -501,11 +574,14 @@ int main(int argc, char** argv) {
     anchor_pos = anchor_pos + 1 + a;
   }
   printf("\n");
-  printf("[timing] verify=%" PRId64 "ms draft=%" PRId64 "ms over %" PRId64
-         " rounds (%.1f / %.1f ms per round)\n",
-         verify_ms, draft_ms, rounds,
-         rounds ? (double)verify_ms / rounds : 0.0,
-         rounds ? (double)draft_ms / rounds : 0.0);
+  printf(
+      "[timing] verify=%" PRId64 "ms draft=%" PRId64 "ms over %" PRId64
+      " rounds (%.1f / %.1f ms per round)\n",
+      verify_ms,
+      draft_ms,
+      rounds,
+      rounds ? (double)verify_ms / rounds : 0.0,
+      rounds ? (double)draft_ms / rounds : 0.0);
 
   stats.inference_end_ms = llm::time_in_ms();
   stats.num_prompt_tokens = L;
@@ -517,13 +593,14 @@ int main(int argc, char** argv) {
 
   // tau = mean tokens emitted per verify round; emitted[0] is the free prefill
   // bonus (not produced by a round), so exclude it.
-  double tau =
-      rounds ? static_cast<double>(emitted.size() - 1) / rounds : 0.0;
-  double gen_s =
-      (stats.inference_end_ms - stats.prompt_eval_end_ms) / 1000.0;
+  double tau = rounds ? static_cast<double>(emitted.size() - 1) / rounds : 0.0;
+  double gen_s = (stats.inference_end_ms - stats.prompt_eval_end_ms) / 1000.0;
   printf("\n--- EAGLE-3 speculative decode ---\n");
-  printf("generated %zu tokens in %" PRId64 " rounds (tau=%.3f)\n",
-         emitted.size(), rounds, tau);
+  printf(
+      "generated %zu tokens in %" PRId64 " rounds (tau=%.3f)\n",
+      emitted.size(),
+      rounds,
+      tau);
   if (gen_s > 0) {
     printf("decode: %.2f tok/s (%.3f s)\n", emitted.size() / gen_s, gen_s);
   }
