@@ -198,18 +198,18 @@ TEST_F(OpBucketizeTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf_comp;
 
   Tensor values = tf_comp.make(
-      {2, 4, 4}, {0, 4, 6, 8, 1, 4, 5, 8, 1,  5, 6, 8, -1, 4, 6, 9,
+      {2, 2, 2, 4}, {0, 4, 6, 8, 1, 4, 5, 8, 1,  5, 6, 8, -1, 4, 6, 9,
 
-                  1, 4, 6, 8, 1, 4, 7, 8, -2, 4, 6, 8, 1,  4, 6, 8});
+                     1, 4, 6, 8, 1, 4, 7, 8, -2, 4, 6, 8, 1,  4, 6, 8});
 
   Tensor boundaries = tf_comp.make({5}, {0, 3, 5, 7, 9});
 
-  Tensor expected =
-      tf_out.make({2, 4, 4}, {1, 2, 3, 4, 1, 2, 3, 4, 1, 3, 3, 4, 0, 2, 3, 5,
+  Tensor expected = tf_out.make(
+      {2, 2, 2, 4}, {1, 2, 3, 4, 1, 2, 3, 4, 1, 3, 3, 4, 0, 2, 3, 5,
 
-                              1, 2, 3, 4, 1, 2, 4, 4, 0, 2, 3, 4, 1, 2, 3, 4});
+                     1, 2, 3, 4, 1, 2, 4, 4, 0, 2, 3, 4, 1, 2, 3, 4});
 
-  Tensor out = tf_out.zeros({2, 4, 4});
+  Tensor out = tf_out.zeros({2, 2, 2, 4});
 
   // The execution of the operator
   Tensor ret = op_bucketize_out(values, boundaries, false, true, out);
