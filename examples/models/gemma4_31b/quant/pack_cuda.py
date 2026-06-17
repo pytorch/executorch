@@ -70,8 +70,13 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         # decode (gguf.py) then bakes the bit-pack into the weight constant, once.
         w = CudaDp4aPlanarInt6Tensor.from_exportable_gguf(w)
     elif isinstance(w, IntxUnpackedToInt8Tensor):
-        # Genuine INT8 weight: left unchanged for the int8 path. Q6_K never reaches
-        # here (it arrives as an ExportableGGUFTensor), so this is unambiguous.
+        # Genuine INT8 weight: left unchanged for the int8 dp4a path. The
+        # mixed-precision HQQ-INT4 ("sensitive") checkpoint reaches this branch
+        # for its int8 tensors — edge-layer v_proj/down_proj are quantized to
+        # INT8 while the rest is INT4 (see GEMMA4_31B_SENSITIVE_RECIPE in
+        # quantize_and_save.py). Q6_K never reaches here (it arrives as an
+        # ExportableGGUFTensor, handled above), so int4 vs int6 vs int8 routing
+        # stays unambiguous.
         pass
     else:
         raise ValueError(f"Unsupported weight type: {type(w).__name__}")

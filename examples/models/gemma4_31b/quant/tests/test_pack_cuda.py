@@ -233,6 +233,80 @@ class TestPackLinearInt6(unittest.TestCase):
         rel_error = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
         self.assertLess(rel_error.item(), 0.02)
 
+    def test_e2e_q6k_export_lower_decode(self):
+        """Q6_K -> pack -> export + CUDA lower -> run, vs the Q6_K dequant reference.
+
+        Builds a synthetic Q6_K ExportableGGUFTensor, packs it into a
+        CudaDp4aPlanarInt6Tensor, exports a decode-shaped (M=1) nn.Linear, and
+        asserts:
+          * the exported graph captured ``executorch_cuda.int6_plain_mm`` (the
+            decode custom op chosen for M<=4),
+          * lowering through the CUDA backend produces an ``executorch_call_delegate``,
+          * running the exported graph matches the Q6_K dequant reference.
+
+        The lowered .pte is not executed here (that needs the built C-shim
+        runtime); the eager exported graph already exercises the int6 decode op
+        through its registered CUDA impl.
+        """
+        _require_cuda(self)
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from torch.export import export
+
+        gt = self._make_q6k_gguf(64, nb=1)  # (64, 256)
+        # Reference: the shared Q6_K int8 decode, dequantized (w = q * scale).
+        intx = gt.to_intx_unpacked_to_int8_tensor()
+        w_ref = (
+            intx.qdata.to(torch.bfloat16)
+            * intx.scale.to(torch.bfloat16).repeat_interleave(16, dim=-1)
+        ).cuda()
+
+        module = nn.Linear(256, 64, bias=False)
+        pack_linear_for_cuda(module, {"weight": gt})
+        self.assertIsInstance(module.weight.data, CudaDp4aPlanarInt6Tensor)
+        module = module.cuda().eval()
+
+        x = torch.randn(1, 256, dtype=torch.bfloat16, device="cuda")  # decode M=1
+        with torch.no_grad():
+            ep = export(module, (x,), strict=True)
+
+        # The decode (M<=4) path must capture the int6 decode custom op.
+        targets = [str(n.target) for n in ep.graph.nodes if n.op == "call_function"]
+        self.assertTrue(
+            any("int6_plain_mm" in t for t in targets),
+            f"int6_plain_mm not found in exported graph: {targets}",
+        )
+
+        # Run the exported graph and compare against the Q6_K dequant reference.
+        with torch.no_grad():
+            out = ep.module()(x)
+        ref = torch.nn.functional.linear(x, w_ref)
+        rel_error = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+        self.assertLess(rel_error.item(), 0.02)
+
+        # Lower through the CUDA backend: the int6 weight + decode op must land in
+        # an executorch_call_delegate.
+        lowered = to_edge_transform_and_lower(
+            ep,
+            partitioner=[
+                CudaPartitioner(
+                    [CudaBackend.generate_method_name_compile_spec("forward")]
+                )
+            ],
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=True
+            ),
+        )
+        lowered_ep = lowered.exported_program()
+        self.assertTrue(
+            any(
+                n.op == "call_function" and "executorch_call_delegate" in str(n.target)
+                for n in lowered_ep.graph.nodes
+            ),
+            "CUDA lowering produced no delegate call",
+        )
+
 
 class TestPackEmbedding(unittest.TestCase):
     """pack_embedding_for_cuda with INT8 per-axis weights."""

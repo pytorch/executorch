@@ -137,6 +137,24 @@ class TestDispatchRouting(unittest.TestCase):
         ref = F.linear(x, _ref_weight(q, scale, 16), bias)
         self.assertLess(self._rel_err(out, ref), 0.02)
 
+    def test_with_bias_kwarg(self):
+        """Bias passed as a keyword (F.linear(x, w, bias=b)) is applied, not dropped."""
+        t, q, scale = _make_int6_tensor(16, 64)
+        bias = torch.randn(16, dtype=torch.bfloat16)
+        x = torch.randn(1, 64, dtype=torch.bfloat16)
+        with _record_int6_plain_mm():
+            out = F.linear(x, t, bias=bias)
+        ref = F.linear(x, _ref_weight(q, scale, 16), bias)
+        self.assertLess(self._rel_err(out, ref), 0.02)
+        # Guard against a regression to dropping the keyword bias: the no-bias
+        # result must differ from the bias result by exactly the bias.
+        with _record_int6_plain_mm():
+            out_no_bias = F.linear(x, t)
+        self.assertTrue(
+            torch.allclose(out, out_no_bias + bias, atol=1e-2),
+            "keyword bias was not applied",
+        )
+
     def test_3d_batched_input(self):
         """3D input is flattened and the output shape is restored."""
         t, q, scale = _make_int6_tensor(16, 64)

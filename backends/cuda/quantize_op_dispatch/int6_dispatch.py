@@ -94,7 +94,7 @@ _implements_torch_function_i6 = CudaDp4aPlanarInt6Tensor.implements_torch_functi
 def _(func, types, args, kwargs):
     input_tensor = args[0]
     weight_tensor = args[1]
-    bias = args[2] if len(args) > 2 else None
+    bias = args[2] if len(args) > 2 else kwargs.get("bias", None)
 
     orig_shape = input_tensor.shape
     x_2d = input_tensor.reshape(-1, orig_shape[-1])
