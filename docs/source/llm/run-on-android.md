@@ -61,7 +61,7 @@ Kotlin:
 val module = LlmModule(
     "/data/local/tmp/llama-3.2-instruct.pte",
     "/data/local/tmp/tokenizer.model",
-    0.8f,
+    0.8f
 )
 ```
 
@@ -243,6 +243,7 @@ int[] pixels = ...;       // length == channels * height * width
 module.prefillImages(pixels, /*width=*/336, /*height=*/336, /*channels=*/3);
 
 // As direct ByteBuffer (preferred for large images)
+byte[] rawBytes = ...;  // length == channels * height * width
 ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 336 * 336);
 buffer.put(rawBytes).rewind();
 module.prefillImages(buffer, 336, 336, 3);
@@ -255,6 +256,7 @@ val pixels: IntArray = ...       // length == channels * height * width
 module.prefillImages(pixels, /* width = */ 336, /* height = */ 336, /* channels = */ 3)
 
 // As direct ByteBuffer (preferred for large images)
+val rawBytes: ByteArray = ...  // length == channels * height * width
 val buffer = ByteBuffer.allocateDirect(3 * 336 * 336).apply {
     put(rawBytes)
     rewind()
@@ -351,7 +353,7 @@ module.generate(
     "What's in this image?",
     /* seqLen = */ 768,
     callback,
-    /* echo = */ false,
+    /* echo = */ false
 )
 ```
 
