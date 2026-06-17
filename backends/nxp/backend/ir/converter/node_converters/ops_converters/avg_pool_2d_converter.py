@@ -5,7 +5,6 @@
 
 import numpy as np
 import torch
-
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
     common,
@@ -22,7 +21,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     average_pool_2d_options,
 )
-
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
@@ -66,20 +64,17 @@ class AvgPool2dConverter(NodeConverter):
         kernel = node.args[1]
         stride = node.args[2]
 
-        if custom_delegation_options.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0], [0]
+        ):
+            return False
 
-            supported_types = [torch.int8, torch.uint8]
-            if not NodeConverter.uses_quantization_type_for_io(
-                node, supported_types, [0], [0]
-            ):
-                return False
+        if any(k > 4096 for k in kernel):
+            return False
 
-            if any(k > 4096 for k in kernel):
-                return False
-
-            if any(s > 4096 for s in stride):
-                return False
+        if any(s > 4096 for s in stride):
+            return False
 
         return True
 

@@ -533,25 +533,48 @@ def _build_parser():
     )
 
     parser.add_argument(
-        "--tasks",
+        "--eval_tasks",
         nargs="+",
         type=str,
         default=None,
-        help="list of lm-eluther tasks to evaluate usage: --tasks task1 task2",
+        help="list of lm-eluther tasks to evaluate usage: --eval_tasks task1 task2",
     )
 
     parser.add_argument(
-        "--limit",
+        "--eval_limit",
         type=int,
         default=1,
         help="number of samples to evalulate. If not set, evaluate all samples",
     )
     parser.add_argument(
-        "--num_fewshot",
+        "--eval_num_fewshot",
         type=int,
         default=None,
         metavar="N",
-        help="Number of examples in few-shot context",
+        help="Number of examples to eval in few-shot context",
+    )
+
+    parser.add_argument(
+        "--calib_tasks",
+        nargs="+",
+        type=str,
+        default=None,
+        help="list of lm-eluther tasks to calibrate usage: --calib_tasks task1 task2",
+    )
+
+    parser.add_argument(
+        "--calib_limit",
+        type=int,
+        default=1,
+        help="number of samples to calibrate. If not set, calibrate all samples",
+    )
+
+    parser.add_argument(
+        "--calib_num_fewshot",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of examples to calibrate in few-shot context",
     )
 
     parser.add_argument(
@@ -577,6 +600,12 @@ def _build_parser():
         help="Enable automatic quant recipe suggestion in PTQ",
     )
 
+    parser.add_argument(
+        "--skip_user_prompt_calibration",
+        action="store_true",
+        help="Skip using user prompt for calibration. Useful when only dataset-based calibration is desired.",
+    )
+
     return parser
 
 
@@ -592,8 +621,8 @@ def export_llama(args) -> None:
         raise RuntimeError(
             "Eval device perplexity is only supported for KV mode. Hybrid mode will only use KV mode when evaluating tasks/sqnr."
         )
-    if TASKS_EVAL in args.eval_methods and args.tasks is None:
-        raise RuntimeError("Please provide --tasks to eval perplexity")
+    if TASKS_EVAL in args.eval_methods and args.eval_tasks is None:
+        raise RuntimeError("Please provide --eval_tasks to eval perplexity")
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
     ), f"Unknown decoder_model: {args.decoder_model}."
@@ -676,6 +705,9 @@ def export_llama(args) -> None:
     assert (
         not is_multimodal or args.use_attention_sink is None
     ), "Multimodal models currently do not support attention sink feature."
+    assert (
+        not is_multimodal or not args.skip_user_prompt_calibration
+    ), "--skip_user_prompt_calibration is not supported for multimodal models (VLM/ALM) as they do not support task-based calibration yet."
 
     if args.pre_gen_pte:
         text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"

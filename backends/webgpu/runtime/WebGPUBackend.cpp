@@ -76,7 +76,7 @@ Result<DelegateHandle*> WebGPUBackend::init(
   }
 
   try {
-    graph->build(flatbuffer_data, constant_data);
+    graph->build(flatbuffer_data, constant_data, context.get_named_data_map());
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
@@ -105,6 +105,15 @@ Error WebGPUBackend::execute(
     inputs.emplace_back(tensor.const_data_ptr(), tensor.nbytes());
   }
   graph->copy_inputs(inputs);
+
+  // Fail loud as a runtime Error so a throw never crosses the backend boundary.
+  try {
+    graph->update_symints_from_inputs(inputs);
+    graph->propagate_resize();
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "WebGPU symint refresh/resize failed: %s", e.what());
+    return Error::Internal;
+  }
 
   // Execute the compute graph
   graph->execute();

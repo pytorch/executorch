@@ -12,13 +12,38 @@ from collections.abc import Mapping, Sequence
 from typing import Any, cast, Optional, Union
 
 import torch
+
+from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch._inductor.decomposition import remove_decompositions
 from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
 
 logger: logging.Logger = logging.getLogger(__name__)
 QuantArgs = tuple[float, int, int, int, torch.dtype]
+TRANSPARENT_OPS: frozenset[torch._ops.OpOverloadPacket] = frozenset(
+    {
+        torch.ops.aten.view,
+        torch.ops.aten.view_copy,
+        torch.ops.aten._unsafe_view,
+        torch.ops.aten.reshape,
+        torch.ops.aten.permute,
+        torch.ops.aten.permute_copy,
+        torch.ops.aten.transpose,
+        torch.ops.aten.transpose_copy,
+        torch.ops.aten.squeeze,
+        torch.ops.aten.squeeze_copy,
+        torch.ops.aten.unsqueeze,
+        torch.ops.aten.unsqueeze_copy,
+        torch.ops.aten.slice,
+        torch.ops.aten.slice_copy,
+        torch.ops.aten.contiguous,
+        torch.ops.aten.clone,
+        torch.ops.aten.to,
+        torch.ops.aten._to_copy,
+    }
+)
 
 
 @torch.no_grad()
@@ -158,6 +183,40 @@ def extract_output_dequant_params(
     raise ValueError("Could not find dequantize_per_tensor at the output of the graph")
 
 
+def extract_all_output_dequant_params(
+    module: torch.fx.GraphModule,
+) -> list[QuantArgs | None]:
+    """
+    Extract per-output dequantization parameters from a multi-output model.
+
+    Returns a QuantArgs tuple for outputs ending in dequantize_per_tensor
+    or None for outputs that aren't dequantized.
+    """
+    output_nodes = module.graph.find_nodes(op="output")
+    if not output_nodes:
+        raise ValueError("No output node in graph")
+    output_args = output_nodes[0].args[0]
+    if not isinstance(output_args, (tuple, list)):
+        output_args = (output_args,)
+
+    dequant_ops = _get_dequantize_ops()
+    params: list[QuantArgs | None] = []
+    for out in output_args:
+        if not isinstance(out, torch.fx.Node) or out.target not in dequant_ops:
+            params.append(None)
+            continue
+        params.append(
+            (
+                float(get_arg(out, "scale", float)),
+                int(get_arg(out, "zero_point", int)),
+                int(get_arg(out, "quant_min", int)),
+                int(get_arg(out, "quant_max", int)),
+                get_arg(out, "dtype", torch.dtype),
+            )
+        )
+    return params
+
+
 def extract_output_dequant_params_through_permute(
     module: torch.fx.GraphModule,
 ) -> QuantArgs:
@@ -207,6 +266,11 @@ def extract_input_quant_params_from_graph(
 ) -> dict[int, QuantArgs]:
     """
     Extract quantization parameters from the FX graph for model inputs.
+
+    For each name in ``input_names``, walk forward from the matching input
+    node through value-preserving "transparent" ops (reshape, permute, ...)
+    until reaching the ``quantize_per_tensor`` that fixes that input's scale
+    and zero-point. Results are keyed by the index into ``input_names``.
     """
     quant_args: dict[int, QuantArgs] = {}
     found_names: set[str] = set()
@@ -214,29 +278,39 @@ def extract_input_quant_params_from_graph(
     if not input_names:
         return quant_args
 
-    for idx, name in enumerate(input_names):
-        for node in module.graph.nodes:
-            if node.op != "call_function":
-                continue
+    # Inputs are referenced by node name, which may be a placeholder or a node
+    # that unpacks/derives the input (e.g. a `getitem` off a tuple/multi-output
+    # input, as the modai eye-tracking model does), so look the start node up
+    # across all nodes -- not just placeholders. Build the name->node map once
+    # and reuse it for every requested input.
+    nodes_by_name = {n.name: n for n in module.graph.nodes}
 
-            if (
-                node.args
-                and isinstance(node.args[0], torch.fx.Node)
-                and node.args[0].name == name
-                and not node.name.startswith("_assert_tensor_metadata")
-                and "quantize_per_tensor" in str(node.target)
-            ):
-                args = node.args[1:]
-                if len(args) >= 5:
-                    quant_args[idx] = (
-                        float(args[0]),  # scale
-                        int(args[1]),  # zero_point
-                        int(args[2]),  # qmin
-                        int(args[3]),  # qmax
-                        args[4],  # dtype
-                    )
-                    found_names.add(name)
+    quantize_ops = _get_quantize_ops()
+    for idx, name in enumerate(input_names):
+        start = nodes_by_name.get(name)
+        if start is None:
+            continue
+        seen: set[torch.fx.Node] = set()
+        to_visit: list[torch.fx.Node] = list(start.users)
+        while to_visit:
+            node = to_visit.pop()
+            if node in seen or node.op != "call_function":
+                continue
+            seen.add(node)
+            if node.target in quantize_ops:
+                # Normalize args→kwargs so params passed positionally or as
+                # kwargs (or via defaults) are all handled uniformly.
+                quant_args[idx] = (
+                    float(get_arg(node, "scale", float)),
+                    int(get_arg(node, "zero_point", int)),
+                    int(get_arg(node, "quant_min", int)),
+                    int(get_arg(node, "quant_max", int)),
+                    get_arg(node, "dtype", torch.dtype),
+                )
+                found_names.add(name)
                 break
+            if getattr(node.target, "overloadpacket", None) in TRANSPARENT_OPS:
+                to_visit.extend(node.users)
 
     missing_names = set(input_names) - found_names
     if missing_names:
@@ -399,33 +473,60 @@ class QuantizedInputWrapper(torch.nn.Module):
 
 class QuantizedOutputWrapper(torch.nn.Module):
     """
-    Wrapper that quantizes a model's output so it produces uint8 tensors.
+    Wrapper that quantizes a model's output(s) so they produce quantized tensors.
 
     Mirrors QuantizedInputWrapper: the wrapper adds a quantize_per_tensor after
-    the model's output. When the graph is traced, the dequant (from the model) →
+    each output. When the graph is traced, the dequant (from the model) →
     quant (from the wrapper) pair with matching parameters folds away, leaving
     the output in its quantized form.
 
     Args:
         module: The module to wrap (may already be a QuantizedInputWrapper).
-        output_quant_args: (scale, zero_point, qmin, qmax, dtype) for the output.
+        output_quant_args: Quantization parameters — either a single QuantArgs
+            tuple or a list with one entry per output.
     """
 
     def __init__(
         self,
         module: torch.nn.Module,
-        output_quant_args: QuantArgs,
+        output_quant_args: Union[QuantArgs, list[QuantArgs | None]],
     ) -> None:
         super().__init__()
         self.module: torch.nn.Module = module
-        self.output_quant_args: QuantArgs = output_quant_args
+        if isinstance(output_quant_args, list):
+            self._multi_output: bool = True
+            self._per_output_args: list[QuantArgs | None] = output_quant_args
+        else:
+            self._multi_output = False
+            self._per_output_args = [output_quant_args]
 
     def forward(self, *args: torch.Tensor) -> Any:
-        result = self.module(*args)
-        scale, zp, qmin, qmax, dtype = self.output_quant_args
-        return torch.ops.quantized_decomposed.quantize_per_tensor.default(
-            result, scale, zp, qmin, qmax, dtype
-        )
+        model_output = self.module(*args)
+        if not self._multi_output:
+            quant_args = self._per_output_args[0]
+            assert quant_args is not None
+            scale, zero_point, quant_min, quant_max, dtype = quant_args
+            return torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                model_output, scale, zero_point, quant_min, quant_max, dtype
+            )
+
+        quantized_outputs: list[torch.Tensor] = []
+        for output_index, output_tensor in enumerate(model_output):
+            quant_args = (
+                self._per_output_args[output_index]
+                if output_index < len(self._per_output_args)
+                else None
+            )
+            if quant_args is None:
+                quantized_outputs.append(output_tensor)
+            else:
+                scale, zero_point, quant_min, quant_max, dtype = quant_args
+                quantized_outputs.append(
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                        output_tensor, scale, zero_point, quant_min, quant_max, dtype
+                    )
+                )
+        return tuple(quantized_outputs)
 
 
 def _get_transparent_ops() -> set[Any]:
@@ -607,3 +708,32 @@ def sink_input_dequant_through_transparent_ops(
         graph_module.recompile()
 
     return modified
+
+
+class QuantFusionPass(PassBase):
+    """
+    Iterates patterns, finds anchor ops in the converted graph, and calls
+    pattern.fuse() to replace dq-op-q subgraphs with fused ops.
+    """
+
+    def __init__(self, patterns: Sequence[object]) -> None:
+        super().__init__()
+        self.patterns = patterns
+
+    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+        changed = False
+        for pattern in self.patterns:
+            pattern_changed = False
+            for target in pattern.anchor_ops():  # pyre-ignore[16]
+                for node in graph_module.graph.find_nodes(
+                    op="call_function", target=target
+                ):
+                    result = pattern.fuse(graph_module, node)  # pyre-ignore[16]
+                    if result is not None:
+                        changed = True
+                        pattern_changed = True
+            if pattern_changed:
+                graph_module.graph.eliminate_dead_code()
+        if changed:
+            graph_module.recompile()
+        return PassResult(graph_module, changed)

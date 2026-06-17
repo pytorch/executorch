@@ -212,3 +212,20 @@ def nodes_not_adjacent_in_gm(
 def none_throws(x: Optional[PassResult]) -> PassResult:
     assert x is not None
     return x
+
+
+def replace_with_op(
+    gm: torch.fx.GraphModule,
+    insert_after: torch.fx.Node,
+    replacement_op: torch._ops.OpOverload,
+    args: tuple,  # pyre-ignore[2]
+    kwargs: dict,  # pyre-ignore[2]
+    node_to_replace: torch.fx.Node,
+) -> torch.fx.Node:
+    """Insert ``replacement_op`` after ``insert_after`` and replace all uses of
+    ``node_to_replace`` with the new node."""
+    with gm.graph.inserting_after(insert_after):
+        new_node = gm.graph.call_function(replacement_op, args, kwargs)
+    new_node.meta = node_to_replace.meta
+    node_to_replace.replace_all_uses_with(new_node)
+    return new_node

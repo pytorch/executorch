@@ -55,6 +55,17 @@ class TransposeConv2d(torch.nn.Module):
         return self.deconv(x)
 
 
+class TransposeConv2dFP8(TransposeConv2d):
+    def __init__(self, **kwargs):
+        dtype = kwargs.pop("dtype")
+        super().__init__(**kwargs)
+        self.dtype = dtype
+        self.deconv = self.deconv.to(dtype)
+
+    def get_inputs(self):
+        return (torch.randn(1, self.deconv.in_channels, 10, 10).to(self.dtype),)
+
+
 test_data_FP = {
     "basic": lambda: TransposeConv2d(
         in_channels=16, out_channels=8, kernel_size=4, stride=2, padding=1
@@ -232,6 +243,30 @@ test_data_BF16 = {
         dtype=torch.bfloat16,
     ),
 }
+test_data_FP8 = {
+    "basic_fp8e4m3": lambda: (
+        TransposeConv2dFP8(
+            in_channels=16,
+            out_channels=8,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "basic_fp8e5m2": lambda: (
+        TransposeConv2dFP8(
+            in_channels=16,
+            out_channels=8,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 
 
 @common.parametrize("test_data", test_data_FP | test_data_FP_fp16 | test_data_BF16)
@@ -246,6 +281,21 @@ def test_conv_transpose2d_tosa_FP(test_data):
         run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP8)
+def test_conv_transpose2d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"TRANSPOSE_CONV2D": 1, "CAST": 1})
     pipeline.run()
 
 

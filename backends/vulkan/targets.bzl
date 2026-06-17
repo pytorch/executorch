@@ -191,7 +191,7 @@ def define_common_targets(is_fbcode = False):
 
         if vma_dep == "instantiated":
             VK_API_DEPS = [
-                "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocatorInstantiated",
+                "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocatorInstantiated",
             ]
         else:
             VK_API_DEPS = [

@@ -19,14 +19,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Emits PR diff file list; non-PR events emit '*' so the per-job
-  # `if:` short-circuits via `event_name != 'pull_request'`.
+  # Emits the list of changed files for the current PR or push commit.
+  # On PR: PR diff. On push: diff against `github.event.before`.
+  # On events without a diff base (workflow_dispatch, tag creation,
+  # initial push), emits '*' — note that `contains('*', 'path')` is
+  # false (literal substring match, not glob), so path-filtered jobs
+  # rely on run-decision's is-full-run output for those events.
   changed-files:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      # Opt in to push-event diff so path-filtered jobs can skip pushes
+      # that don't touch their relevant paths. Without this, push events
+      # emit '*' and `contains('*', 'path')` is always false.
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
 
   test-models-macos-cpu:
     name: test-models-macos-cpu
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -84,12 +101,19 @@ jobs:
       script: |
         #!/bin/bash
 
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+        set -euo pipefail
+
+        # Zephyr requires a Python 3.12 venv; keep this independent of the
+        # base image's default ExecuTorch Python environment.
+        python3.12 -m venv zephyr_test_venv
+        source zephyr_test_venv/bin/activate
+
+        # The Zephyr SDK host tools carry their own runtime. The CI Docker image
+        # sets a global LD_LIBRARY_PATH for other jobs, which can make SDK tools
+        # pick host libs.
+        unset LD_LIBRARY_PATH
 
         # Test zephyr backend
-        set -e
-
         .ci/scripts/test_zephyr.sh \
           --targets "${TARGET_LIST:-${{ matrix.target }}}" \
           --zephyr-samples-readme-path "${{ matrix.readme }}"
@@ -146,6 +170,10 @@ jobs:
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -169,6 +197,10 @@ jobs:
 
   test-selective-build-macos:
     name: test-selective-build-macos
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -232,7 +264,8 @@ jobs:
           - test_arm_backend: test_pytest_ops_ethos_u85
           - test_arm_backend: test_pytest_models_ethos_u85
           - test_arm_backend: test_run_ethos_u85
-          - test_arm_backend: test_smaller_stories_llama
+          - test_arm_backend: test_smaller_stories_llama_tosa
+          - test_arm_backend: test_model_smollm2_135M_ethos_u85
           - test_arm_backend: test_memory_allocation
           - test_arm_backend: test_ootb_tests_ethos_u
           - test_arm_backend: test_ootb_tests_tosa
@@ -278,7 +311,9 @@ jobs:
       matrix:
         include:
           - test_arm_backend: test_pytest_ops_vkml
+          - test_arm_backend: test_pytest_models_vkml
           - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -309,14 +344,15 @@ jobs:
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-coreml-delegate:
-    needs: changed-files
+    needs: [changed-files, run-decision]
+    # Path-filtered: see _ci-run-decision.yml for the sampling policy.
     if: |
-      github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-conda.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
@@ -336,9 +372,8 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/build_all.sh
 
   test-static-llama-ane:
-    needs: changed-files
+    needs: [changed-files, run-decision]
     if: |
-      github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
@@ -346,7 +381,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_ane_static_llama.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
@@ -371,6 +407,10 @@ jobs:
 
   test-llama-torchao-lowbit:
     name: test-llama-torchao-lowbit
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -450,11 +490,10 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
   test-llama-runner-macos:
-    needs: changed-files
+    needs: [changed-files, run-decision]
     # Whole-job gate (matrix cells can't be individually if'd):
     # mps / coreml / xnnpack+custom+quantize_kv.
     if: |
-      github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
@@ -466,7 +505,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/sampler') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-llama-runner-mac
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -550,7 +590,13 @@ jobs:
         bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} --test_with_runner ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
   test-multimodal-macos:
-    if: ${{ !github.event.pull_request.head.repo.fork }}
+    needs: run-decision
+    if: |
+      !github.event.pull_request.head.repo.fork &&
+      (
+        github.event_name == 'pull_request' ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     name: test-multimodal-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
@@ -643,15 +689,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
   test-models-macos-coreml:
-    needs: changed-files
+    needs: [changed-files, run-decision]
     if: |
-      github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-models-macos-coreml
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -694,9 +740,8 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-models-macos-mps:
-    needs: changed-files
+    needs: [changed-files, run-decision]
     if: |
-      github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/apple/mps') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/models') ||
@@ -705,7 +750,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-models-macos-mps
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -820,19 +866,19 @@ jobs:
         echo "::endgroup::"
 
   test-huggingface-transformers-macos:
-    needs: changed-files
+    needs: [changed-files, run-decision]
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: |
       !github.event.pull_request.head.repo.fork &&
       (
-        github.event_name != 'pull_request' ||
         contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_huggingface_optimum_model.py') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/optimum-executorch.txt') ||
         contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
         contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
-        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml')
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
       )
     name: test-huggingface-transformers-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -999,7 +1045,25 @@ jobs:
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  llm-server:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: ./.github/workflows/_llm_server.yml
+    permissions:
+      id-token: write
+      contents: read
+
   test-models-windows:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
       fail-fast: false
@@ -1032,3 +1096,13 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_e2e.yml
     with:
       models: '["mv2", "mv3"]'
+      targets: '["cortex-m55", "cortex-m7", "cortex-m0plus"]'
+
+  test-cortex-m-ops:
+    name: test-cortex-m-ops
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_ops.yml
+    with:
+      targets: '["cortex-m7", "cortex-m0plus"]'

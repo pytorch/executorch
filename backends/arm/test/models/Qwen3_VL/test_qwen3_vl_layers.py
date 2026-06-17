@@ -33,7 +33,7 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
     Qwen3VLVisionRotaryEmbedding,
 )
 
-input_t = Tuple[torch.Tensor, ...]
+input_t = Tuple[torch.Tensor | int, ...]
 
 
 def _make_qwen3_vl_2b_instruct_layer_config():
@@ -97,6 +97,19 @@ class Qwen3VLTestModule(torch.nn.Module):
     @classmethod
     def prepare_model_and_inputs(cls):
         raise NotImplementedError
+
+
+def _to_bfloat16(
+    model: torch.nn.Module, inputs: input_t
+) -> tuple[torch.nn.Module, input_t]:
+    return model.to(torch.bfloat16), tuple(
+        (
+            x.to(torch.bfloat16)
+            if isinstance(x, torch.Tensor) and x.is_floating_point()
+            else x
+        )
+        for x in inputs
+    )
 
 
 class Qwen3VLVisionMLPModel(Qwen3VLTestModule):
@@ -442,6 +455,18 @@ TOSA_FP_TEST_CASES: dict[str, Qwen3VLTestCase] = {
 
 VGF_NO_QUANT_TEST_CASES: dict[str, Qwen3VLTestCase] = TOSA_FP_TEST_CASES
 
+TOSA_BF16_TEST_CASES: dict[str, Qwen3VLTestCase] = {
+    "vision_mlp": TOSA_FP_TEST_CASES["vision_mlp"],
+    "vision_patch_embed": TOSA_FP_TEST_CASES["vision_patch_embed"],
+    "vision_rotary_embedding": TOSA_FP_TEST_CASES["vision_rotary_embedding"],
+    "vision_rotary_apply": TOSA_FP_TEST_CASES["vision_rotary_apply"],
+    "vision_attention": TOSA_FP_TEST_CASES["vision_attention"],
+    "vision_block": TOSA_FP_TEST_CASES["vision_block"],
+    "vision_patch_merger": TOSA_FP_TEST_CASES["vision_patch_merger"],
+    "text_rms_norm": TOSA_FP_TEST_CASES["text_rms_norm"],
+    "qk_norm": TOSA_FP_TEST_CASES["qk_norm"],
+}
+
 
 @common.parametrize(
     "test_case",
@@ -456,6 +481,37 @@ def test_qwen3_vl_tosa_FP(test_case: Qwen3VLTestCase):
             aten_op=[],
             exir_op=[],
             transform_passes=list(test_case.transform_passes),
+        )
+        pipeline.run()
+
+
+@common.parametrize(
+    "test_case",
+    TOSA_BF16_TEST_CASES,
+    xfails=(
+        {
+            "vision_patch_embed": (
+                "MLETORCH-2048: Large bf16 patch embedding mismatch on aarch64",
+                AssertionError,
+            ),
+        }
+        if common.is_aarch64_host()
+        else None
+    ),
+)
+def test_qwen3_vl_tosa_FP_bf16(test_case: Qwen3VLTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    model, inputs = _to_bfloat16(model, inputs)
+    with torch.no_grad():
+        pipeline = TosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=[],
+            exir_op=[],
+            transform_passes=list(test_case.transform_passes),
+            tosa_extensions=["bf16"],
+            atol=1e-2,
+            rtol=1e-2,
         )
         pipeline.run()
 

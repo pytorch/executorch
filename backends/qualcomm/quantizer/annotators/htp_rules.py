@@ -193,17 +193,18 @@ class BatchNorm(GeneralOpDef):
             return
 
         annotated_args = [act]
-        annotate_input_qspec_map(
-            node,
-            act,
-            quantization_config.input_activation,
-        )
+        input_act = quantization_config.input_activation
+        annotate_input_qspec_map(node, act, input_act)
         # QNN requires uint8 instead of int8 in 'weight' config
         if weight is not None:
             annotate_input_qspec_map(
                 node,
                 weight,
-                quantization_config.input_activation,
+                (
+                    quantization_config.weight
+                    if input_act.dtype == torch.int32
+                    else input_act
+                ),
             )
             annotated_args.append(weight)
 
@@ -234,33 +235,33 @@ class Cat(GeneralOpDef):
         if _is_annotated([node]) or not _is_float_tensor(node):
             return
 
-        input_qspec_map, input_nodes = {}, node.args[0]
-        for input in input_nodes:
-            input_qspec = input.meta.get(Q_ANNOTATION_KEY, None)
-            qspec = getattr(input_qspec, "output_qspec", None)
-            # keep shared qspec here for propagation the data range
-            # without introducing extra requantizations
-            if isinstance(qspec, SharedQuantizationSpec):
-                input_qspec_map[input] = SharedQuantizationSpec(input)
-            else:
-                input_qspec_map[input] = quantization_config.input_activation
+        input_qspec_map, input_nodes, output_qspec = {}, node.args[0], None
+        if quantization_config.input_activation is not None:
+            for input in input_nodes:
+                input_qspec = input.meta.get(Q_ANNOTATION_KEY, None)
+                qspec = getattr(input_qspec, "output_qspec", None)
+                # keep shared qspec here for propagation the data range
+                # without introducing extra requantizations
+                if isinstance(qspec, SharedQuantizationSpec):
+                    input_qspec_map[input] = SharedQuantizationSpec(input)
+                else:
+                    input_qspec_map[input] = quantization_config.input_activation
 
-        output_qspec = QuantizationSpec(
-            dtype=quantization_config.output_activation.dtype,
-            qscheme=quantization_config.output_activation.qscheme,
-            quant_max=quantization_config.output_activation.quant_max,
-            quant_min=quantization_config.output_activation.quant_min,
-            observer_or_fake_quant_ctr=ConcatObserver.with_args(
-                # we need to know the concat node in order to hack all the input observers' data range
-                # since deep copy of fake tensor (node.meta["val"]) is inhibited
-                # we could only ship grap & node name and perform postprocess inside observer currently
-                **{
-                    "node_name": node.name,
-                    "graph": node.graph,
-                }
-            ),
-        )
-
+            output_qspec = QuantizationSpec(
+                dtype=quantization_config.output_activation.dtype,
+                qscheme=quantization_config.output_activation.qscheme,
+                quant_max=quantization_config.output_activation.quant_max,
+                quant_min=quantization_config.output_activation.quant_min,
+                observer_or_fake_quant_ctr=ConcatObserver.with_args(
+                    # we need to know the concat node in order to hack all the input observers' data range
+                    # since deep copy of fake tensor (node.meta["val"]) is inhibited
+                    # we could only ship grap & node name and perform postprocess inside observer currently
+                    **{
+                        "node_name": node.name,
+                        "graph": node.graph,
+                    }
+                ),
+            )
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
             output_qspec=output_qspec,
@@ -311,8 +312,12 @@ class Chunk(GeneralOpDef):
         input_qspec_map = {}
         input_act = node.args[0]
         assert isinstance(input_act, Node)
-        input_qspec_map[input_act] = quantization_config.input_activation
-        share_qparams_with_input_node_qspec = SharedQuantizationSpec((input_act, node))
+        share_qparams_with_input_node_qspec = None
+        if quantization_config.input_activation is not None:
+            input_qspec_map[input_act] = quantization_config.input_activation
+            share_qparams_with_input_node_qspec = SharedQuantizationSpec(
+                (input_act, node)
+            )
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
@@ -526,12 +531,14 @@ class Div(GeneralOpDef):
                 return
 
             input_act_qspec = quantization_config.input_activation
-            output_act_qspec = _derived_inp1_const_div_quant_spec(
-                node, quantization_config.output_activation
-            )
+            output_act_qspec = None
+            if input_act_qspec is not None:
+                output_act_qspec = _derived_inp1_const_div_quant_spec(
+                    node, quantization_config.output_activation
+                )
             input_qspec_map = {}
             input_act0 = node.args[0]
-            if _is_float_tensor(input_act0):
+            if _is_float_tensor(input_act0) and input_act_qspec is not None:
                 input_qspec_map[input_act0] = input_act_qspec
 
             node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -685,24 +692,24 @@ class GroupNorm(GeneralOpDef):
     def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
         act_node = node.args[0]
         weight_node = node.args[2]
-        bias_node = None
-        if len(node.args) > 2:
-            bias_node = node.args[3]
+        bias_node = node.args[3]
 
         if _is_annotated([node]):
             return
 
+        nodes_to_mark_annotated = [node]
         annotate_input_qspec_map(
             node,
             act_node,
             quantization_config.input_activation,
         )
-        annotate_input_qspec_map(
-            node,
-            weight_node,
-            quantization_config.weight,
-        )
-        nodes_to_mark_annotated = [node, weight_node]
+        if weight_node:
+            annotate_input_qspec_map(
+                node,
+                weight_node,
+                quantization_config.weight,
+            )
+            nodes_to_mark_annotated.append(weight_node)
         if bias_node:
             annotate_input_qspec_map(
                 node,
@@ -710,6 +717,7 @@ class GroupNorm(GeneralOpDef):
                 quantization_config.bias,
             )
             nodes_to_mark_annotated.append(bias_node)
+
         annotate_output_qspec(node, quantization_config.output_activation)
         _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
@@ -726,38 +734,28 @@ class HardSigmoid(GeneralOpDef):
 
         input_qspec_map = {}
         input_act = node.args[0]
-        input_qspec_map[input_act] = quantization_config.input_activation
+        input_qspec = quantization_config.input_activation
+        out_act_quantization_spec = None
+        if input_qspec is not None:
+            input_qspec_map[input_act] = input_qspec
 
-        assert isinstance(input_act, Node)
-        out_qconf = quantization_config.output_activation
+            assert isinstance(input_act, Node)
+            out_qconf = quantization_config.output_activation
 
-        q_max = (
-            torch.iinfo(out_qconf.dtype).max
-            if out_qconf.quant_max is None
-            else out_qconf.quant_max
-        )
-        q_min = (
-            torch.iinfo(out_qconf.dtype).min
-            if out_qconf.quant_min is None
-            else out_qconf.quant_min
-        )
+            q_max = (
+                torch.iinfo(out_qconf.dtype).max
+                if out_qconf.quant_max is None
+                else out_qconf.quant_max
+            )
+            q_min = (
+                torch.iinfo(out_qconf.dtype).min
+                if out_qconf.quant_min is None
+                else out_qconf.quant_min
+            )
 
-        scale = 1 / (q_max - q_min + 1)
+            scale = 1 / (q_max - q_min + 1)
 
-        output_obs_ctr = observer = FixedQParamsObserver.with_args(
-            scale=scale,
-            zero_point=0,
-            dtype=quantization_config.output_activation.dtype,
-            qscheme=torch.torch.per_tensor_affine,
-            quant_max=q_max,
-            quant_min=q_min,
-        )
-        if quantization_config in (
-            get_8a8w_qnn_qat_config(),
-            get_16a4w_qnn_qat_config(),
-        ):
-            output_obs_ctr = FixedQParamsFakeQuantize.with_args(
-                observer=observer,
+            output_obs_ctr = observer = FixedQParamsObserver.with_args(
                 scale=scale,
                 zero_point=0,
                 dtype=quantization_config.output_activation.dtype,
@@ -765,15 +763,28 @@ class HardSigmoid(GeneralOpDef):
                 quant_max=q_max,
                 quant_min=q_min,
             )
+            if quantization_config in (
+                get_8a8w_qnn_qat_config(),
+                get_16a4w_qnn_qat_config(),
+            ):
+                output_obs_ctr = FixedQParamsFakeQuantize.with_args(
+                    observer=observer,
+                    scale=scale,
+                    zero_point=0,
+                    dtype=quantization_config.output_activation.dtype,
+                    qscheme=torch.torch.per_tensor_affine,
+                    quant_max=q_max,
+                    quant_min=q_min,
+                )
 
-        # make sigmoid map to the range between 0~1
-        out_act_quantization_spec = QuantizationSpec(
-            dtype=quantization_config.output_activation.dtype,
-            quant_max=q_max,
-            quant_min=q_min,
-            observer_or_fake_quant_ctr=output_obs_ctr,
-            qscheme=torch.torch.per_tensor_affine,
-        )
+            # make sigmoid map to the range between 0~1
+            out_act_quantization_spec = QuantizationSpec(
+                dtype=quantization_config.output_activation.dtype,
+                quant_max=q_max,
+                quant_min=q_min,
+                observer_or_fake_quant_ctr=output_obs_ctr,
+                qscheme=torch.torch.per_tensor_affine,
+            )
 
         if _is_float_tensor(node):
             node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -802,11 +813,15 @@ class IndexCopy(GeneralOpDef):
         value = node.args[3]
 
         input_qspec_map = {}
-        input_qspec_map[value] = quantization_config.input_activation
+        input_qspec = quantization_config.input_activation
+        output_qspec = None
+        if input_qspec is not None:
+            input_qspec_map[value] = input_qspec
+            output_qspec = SharedQuantizationSpec((value, node))
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((value, node)),
+            output_qspec=output_qspec,
             _annotated=True,
         )
 
@@ -822,11 +837,15 @@ class IndexPut(GeneralOpDef):
         value = node.args[2]
 
         input_qspec_map = {}
-        input_qspec_map[value] = quantization_config.input_activation
+        input_qspec = quantization_config.input_activation
+        output_qspec = None
+        if input_qspec is not None:
+            input_qspec_map[value] = input_qspec
+            output_qspec = SharedQuantizationSpec((value, node))
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((value, node)),
+            output_qspec=output_qspec,
             _annotated=True,
         )
 
@@ -840,6 +859,8 @@ class LayerNorm(GeneralOpDef):
         act_node = node.args[0]
         weight_node = node.args[2]
         bias_node = None
+        if len(node.args) > 1:
+            weight_node = node.args[2]
         if len(node.args) > 2:
             bias_node = node.args[3]
 
@@ -852,19 +873,21 @@ class LayerNorm(GeneralOpDef):
             act_node,
             input_act_qspec,
         )
-        if input_act_qspec.dtype == torch.int32:
-            annotate_input_qspec_map(
-                node,
-                weight_node,
-                get_16a16w_qnn_ptq_config().weight,
-            )
-        else:
-            annotate_input_qspec_map(
-                node,
-                weight_node,
-                input_act_qspec,
-            )
-        nodes_to_mark_annotated = [node, weight_node]
+        nodes_to_mark_annotated = [node]
+        if weight_node:
+            if input_act_qspec.dtype == torch.int32:
+                annotate_input_qspec_map(
+                    node,
+                    weight_node,
+                    get_16a16w_qnn_ptq_config().weight,
+                )
+            else:
+                annotate_input_qspec_map(
+                    node,
+                    weight_node,
+                    input_act_qspec,
+                )
+            nodes_to_mark_annotated.append(weight_node)
         if bias_node:
             annotate_input_qspec_map(
                 node,
@@ -946,7 +969,8 @@ class Linear(GeneralOpDef):
         act_node = node.args[0]
         assert isinstance(act_node, Node)
         input_spec = quantization_config.input_activation
-        input_qspec_map[act_node] = input_spec
+        if input_spec is not None:
+            input_qspec_map[act_node] = input_spec
 
         weight_node = node.args[1]
         assert isinstance(weight_node, Node)
@@ -1031,18 +1055,22 @@ class MaskedFill(GeneralOpDef):
             return
 
         input_qspec_map = {}
-        for input_node in node.args:
-            assert isinstance(input_node, Node)
-            if _is_float_tensor(input_node):
-                input_qspec_map[input_node] = quantization_config.input_activation
-
-        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=(
+        input_spec = quantization_config.input_activation
+        output_spec = None
+        if input_spec is not None:
+            for input_node in node.args:
+                assert isinstance(input_node, Node)
+                if _is_float_tensor(input_node):
+                    input_qspec_map[input_node] = input_spec
+            output_spec = (
                 quantization_config.output_activation
                 if _is_float_tensor(node)
                 else None
-            ),
+            )
+
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=output_spec,
             _annotated=True,
         )
 
@@ -1062,16 +1090,16 @@ class MatMul(GeneralOpDef):
 
         input_qspec_map = {}
         input_act0 = node.args[0]
-        if isinstance(input_act0, Node):
+        if isinstance(input_act0, Node) and input_act_qspec is not None:
             input_qspec_map[input_act0] = input_act_qspec
 
         input_act1 = node.args[1]
         if isinstance(input_act1, Node):
             # In matmul, QNN_DATATYPE_SFIXED_POINT_16 Input1 must have QNN_DATATYPE_UFIXED_POINT_16 Input0 and must be symmetric quantized.
-            if input_act_qspec.dtype == torch.int32:
+            if input_act_qspec is not None and input_act_qspec.dtype == torch.int32:
                 # we should use int16 for mm / bmm instead of int4
                 input_qspec_map[input_act1] = get_16a16w_qnn_ptq_config().weight
-            else:
+            elif input_act_qspec is not None:
                 input_qspec_map[input_act1] = input_act_qspec
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -1327,6 +1355,7 @@ class ExpandAs(GeneralOpDef):
         torch.ops.aten.reshape.default,
         torch.ops.aten.squeeze.default,
         torch.ops.aten.squeeze.dim,
+        torch.ops.aten.squeeze.dims,
         torch.ops.aten.squeeze_copy.dims,
         torch.ops.aten.unflatten.int,
         torch.ops.aten._unsafe_view.default,
@@ -1380,7 +1409,8 @@ class Rsqrt(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.round.default], QnnConstants.OpElementWiseRound.op_name
+    [torch.ops.aten.round.default, torch.ops.aten.round.decimals],
+    QnnConstants.OpElementWiseRound.op_name,
 )
 class Round(GeneralOpDef):
     pass
@@ -1441,38 +1471,28 @@ class Sigmoid(GeneralOpDef):
 
         input_qspec_map = {}
         input_act = node.args[0]
-        input_qspec_map[input_act] = quantization_config.input_activation
+        input_qspec = quantization_config.input_activation
+        out_act_quantization_spec = None
+        if input_qspec is not None:
+            input_qspec_map[input_act] = input_qspec
 
-        assert isinstance(input_act, Node)
-        out_qconf = quantization_config.output_activation
+            assert isinstance(input_act, Node)
+            out_qconf = quantization_config.output_activation
 
-        q_max = (
-            torch.iinfo(out_qconf.dtype).max
-            if out_qconf.quant_max is None
-            else out_qconf.quant_max
-        )
-        q_min = (
-            torch.iinfo(out_qconf.dtype).min
-            if out_qconf.quant_min is None
-            else out_qconf.quant_min
-        )
+            q_max = (
+                torch.iinfo(out_qconf.dtype).max
+                if out_qconf.quant_max is None
+                else out_qconf.quant_max
+            )
+            q_min = (
+                torch.iinfo(out_qconf.dtype).min
+                if out_qconf.quant_min is None
+                else out_qconf.quant_min
+            )
 
-        scale = 1 / (q_max - q_min + 1)
+            scale = 1 / (q_max - q_min + 1)
 
-        output_obs_ctr = observer = FixedQParamsObserver.with_args(
-            scale=scale,
-            zero_point=0,
-            dtype=quantization_config.output_activation.dtype,
-            qscheme=torch.torch.per_tensor_affine,
-            quant_max=q_max,
-            quant_min=q_min,
-        )
-        if quantization_config in (
-            get_8a8w_qnn_qat_config(),
-            get_16a4w_qnn_qat_config(),
-        ):
-            output_obs_ctr = FixedQParamsFakeQuantize.with_args(
-                observer=observer,
+            output_obs_ctr = observer = FixedQParamsObserver.with_args(
                 scale=scale,
                 zero_point=0,
                 dtype=quantization_config.output_activation.dtype,
@@ -1480,15 +1500,28 @@ class Sigmoid(GeneralOpDef):
                 quant_max=q_max,
                 quant_min=q_min,
             )
+            if quantization_config in (
+                get_8a8w_qnn_qat_config(),
+                get_16a4w_qnn_qat_config(),
+            ):
+                output_obs_ctr = FixedQParamsFakeQuantize.with_args(
+                    observer=observer,
+                    scale=scale,
+                    zero_point=0,
+                    dtype=quantization_config.output_activation.dtype,
+                    qscheme=torch.torch.per_tensor_affine,
+                    quant_max=q_max,
+                    quant_min=q_min,
+                )
 
-        # make sigmoid map to the range between 0~1
-        out_act_quantization_spec = QuantizationSpec(
-            dtype=quantization_config.output_activation.dtype,
-            quant_max=q_max,
-            quant_min=q_min,
-            observer_or_fake_quant_ctr=output_obs_ctr,
-            qscheme=torch.torch.per_tensor_affine,
-        )
+            # make sigmoid map to the range between 0~1
+            out_act_quantization_spec = QuantizationSpec(
+                dtype=quantization_config.output_activation.dtype,
+                quant_max=q_max,
+                quant_min=q_min,
+                observer_or_fake_quant_ctr=output_obs_ctr,
+                qscheme=torch.torch.per_tensor_affine,
+            )
 
         if _is_float_tensor(node):
             node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -1522,12 +1555,16 @@ class SliceScatter(GeneralOpDef):
         value = node.args[1]
 
         input_qspec_map = {}
-        input_qspec_map[input] = quantization_config.input_activation
-        input_qspec_map[value] = SharedQuantizationSpec((input, node))
+        input_act_qspec = quantization_config.input_activation
+        output_qspec = None
+        if input_act_qspec is not None:
+            input_qspec_map[input] = input_act_qspec
+            input_qspec_map[value] = SharedQuantizationSpec((input, node))
+            output_qspec = SharedQuantizationSpec((input, node))
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((input, node)),
+            output_qspec=output_qspec,
             _annotated=True,
         )
 
@@ -1563,16 +1600,19 @@ class Stack(GeneralOpDef):
 
         first_input_node = input_nodes[0]
         input_qspec_map = {}
-        assert isinstance(first_input_node, Node)
-        input_qspec_map[first_input_node] = quantization_config.input_activation
-        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
-            (first_input_node, node)
-        )
+        input_act_qspec = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = None
+        if input_act_qspec is not None:
+            assert isinstance(first_input_node, Node)
+            input_qspec_map[first_input_node] = input_act_qspec
+            share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+                (first_input_node, node)
+            )
 
-        for input_node in input_nodes[1:]:
-            if input_node not in input_qspec_map:
-                assert isinstance(input_node, Node)
-                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+            for input_node in input_nodes[1:]:
+                if input_node not in input_qspec_map:
+                    assert isinstance(input_node, Node)
+                    input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
@@ -1612,29 +1652,19 @@ class Tanh(GeneralOpDef):
             return
 
         input_qspec_map = {}
-        input_act = node.args[0]
-        assert isinstance(input_act, Node)
-        input_qspec_map[input_act] = quantization_config.input_activation
+        input_act_qspec = quantization_config.input_activation
+        out_act_quantization_spec = None
+        if input_act_qspec is not None:
+            input_act = node.args[0]
+            assert isinstance(input_act, Node)
+            input_qspec_map[input_act] = input_act_qspec
 
-        out_act_quantization_spec = quantization_config.output_activation
-        # Based on quantization constraints in QNN document, for the uint16 data type, the scale should be set to 1/32768.0 and the zero_point should be 32768.
-        if out_act_quantization_spec.dtype == torch.int32:
-            scale = 1 / 32768.0
-            zero_point = 32768
-            output_obs_ctr = observer = FixedQParamsObserver.with_args(
-                scale=scale,
-                zero_point=zero_point,
-                dtype=quantization_config.output_activation.dtype,
-                qscheme=torch.torch.per_tensor_affine,
-                quant_max=quantization_config.output_activation.quant_max,
-                quant_min=quantization_config.output_activation.quant_min,
-            )
-            if isinstance(
-                quantization_config.output_activation.observer_or_fake_quant_ctr,
-                torch.ao.quantization.fake_quantize.FakeQuantizeBase,
-            ):
-                output_obs_ctr = FixedQParamsFakeQuantize.with_args(
-                    observer=observer,
+            out_act_quantization_spec = quantization_config.output_activation
+            # Based on quantization constraints in QNN document, for the uint16 data type, the scale should be set to 1/32768.0 and the zero_point should be 32768.
+            if out_act_quantization_spec.dtype == torch.int32:
+                scale = 1 / 32768.0
+                zero_point = 32768
+                output_obs_ctr = observer = FixedQParamsObserver.with_args(
                     scale=scale,
                     zero_point=zero_point,
                     dtype=quantization_config.output_activation.dtype,
@@ -1642,14 +1672,27 @@ class Tanh(GeneralOpDef):
                     quant_max=quantization_config.output_activation.quant_max,
                     quant_min=quantization_config.output_activation.quant_min,
                 )
+                if isinstance(
+                    quantization_config.output_activation.observer_or_fake_quant_ctr,
+                    torch.ao.quantization.fake_quantize.FakeQuantizeBase,
+                ):
+                    output_obs_ctr = FixedQParamsFakeQuantize.with_args(
+                        observer=observer,
+                        scale=scale,
+                        zero_point=zero_point,
+                        dtype=quantization_config.output_activation.dtype,
+                        qscheme=torch.torch.per_tensor_affine,
+                        quant_max=quantization_config.output_activation.quant_max,
+                        quant_min=quantization_config.output_activation.quant_min,
+                    )
 
-            out_act_quantization_spec = QuantizationSpec(
-                dtype=quantization_config.output_activation.dtype,
-                quant_max=quantization_config.output_activation.quant_max,
-                quant_min=quantization_config.output_activation.quant_min,
-                observer_or_fake_quant_ctr=output_obs_ctr,
-                qscheme=torch.torch.per_tensor_affine,
-            )
+                out_act_quantization_spec = QuantizationSpec(
+                    dtype=quantization_config.output_activation.dtype,
+                    quant_max=quantization_config.output_activation.quant_max,
+                    quant_min=quantization_config.output_activation.quant_min,
+                    observer_or_fake_quant_ctr=output_obs_ctr,
+                    qscheme=torch.torch.per_tensor_affine,
+                )
 
         if _is_float_tensor(node):
             node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -1667,14 +1710,18 @@ class Topk(GeneralOpDef):
             return
 
         input_qspec_map = {}
-        if _is_float_tensor(node.args[0]):
-            input_act = node.args[0]
-            assert isinstance(input_act, Node)
-            input_qspec_map[input_act] = quantization_config.input_activation
+        input_act_qspec = quantization_config.input_activation
+        out_act_quantization_spec = None
+        if input_act_qspec is not None:
+            if _is_float_tensor(node.args[0]):
+                input_act = node.args[0]
+                assert isinstance(input_act, Node)
+                input_qspec_map[input_act] = input_act_qspec
+                out_act_quantization_spec = SharedQuantizationSpec((input_act, node))
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((input_act, node)),
+            output_qspec=out_act_quantization_spec,
             _annotated=True,
         )
 
@@ -1743,10 +1790,14 @@ class Ubind(GeneralOpDef):
         if _is_annotated([node]) or not _is_float_tensor(input_act):
             return
         input_qspec_map = {}
-
-        assert isinstance(input_act, Node)
-        share_qparams_with_out_node0_qspec = SharedQuantizationSpec((input_act, node))
-        input_qspec_map[input_act] = quantization_config.input_activation
+        input_act_qspec = quantization_config.input_activation
+        share_qparams_with_out_node0_qspec = None
+        if input_act_qspec is not None:
+            assert isinstance(input_act, Node)
+            share_qparams_with_out_node0_qspec = SharedQuantizationSpec(
+                (input_act, node)
+            )
+            input_qspec_map[input_act] = input_act_qspec
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
@@ -1794,17 +1845,21 @@ class Where(GeneralOpDef):
             return
 
         input_qspec_map = {}
-        for input_node in node.args:
-            assert isinstance(input_node, Node)
-            if _is_float_tensor(input_node):
-                input_qspec_map[input_node] = quantization_config.input_activation
-        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=(
+        input_act_qspec = quantization_config.input_activation
+        output_qspec = None
+        if input_act_qspec is not None:
+            for input_node in node.args:
+                assert isinstance(input_node, Node)
+                if _is_float_tensor(input_node):
+                    input_qspec_map[input_node] = input_act_qspec
+            output_qspec = (
                 quantization_config.output_activation
                 if _is_float_tensor(node)
                 else None
-            ),
+            )
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=output_qspec,
             _annotated=True,
         )
 

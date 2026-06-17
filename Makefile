@@ -261,7 +261,8 @@ parakeet-vulkan:
 
 dinov2-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
-	cmake --workflow --preset llm-release-cuda
+	cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-release-cuda-install
 	@echo "==> Building DINOv2 runner with CUDA..."
 	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda
 	@echo ""
@@ -270,7 +271,8 @@ dinov2-cuda:
 
 dinov2-cuda-debug:
 	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
-	cmake --workflow --preset llm-debug-cuda
+	cmake --preset llm-debug-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-debug-cuda-install
 	@echo "==> Building DINOv2 runner with CUDA (debug mode)..."
 	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda-debug
 	@echo ""
@@ -431,11 +433,12 @@ voxtral_tts-cuda:
 qwen3_5_moe-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
-	@echo "==> Building Qwen3.5 MoE runner with CUDA..."
+	@echo "==> Building Qwen3.5 MoE runner and no-bleed test with CUDA..."
 	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+	@echo "  Test:   cmake-out/examples/models/qwen3_5_moe/test_qwen35_moe_nobleed"
 
 gemma4_31b-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
