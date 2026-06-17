@@ -390,10 +390,27 @@ int main(int argc, char** argv) {
   auto decode_pos_cpu = from_blob(
       decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
 #ifdef EXECUTORCH_BUILD_CUDA
-  // The token input is the aliased on-device output (device_out_token); only
-  // the position still needs a fixed device buffer refreshed by a per-round
-  // H2D (one int64 / round).
+  // Fixed device-resident position input slot: the decode method always reads
+  // the position from this same address every step (cuda-graph-safe). Seeded
+  // once here with a one-time H2D; refreshed each step by an on-device D2D.
   auto decode_pos = clone_tensor_ptr_to(decode_pos_cpu, cuda_device);
+  // Upload the FULL decode position array to device ONCE (a single H2D - the
+  // one-time copy we keep). Each step copies its position from here into the
+  // fixed slot with a device-to-device copy, so there is NO per-round pos H2D.
+  std::vector<int64_t> pos_seq_data(FLAGS_max_new_tokens);
+  for (int32_t i = 0; i < FLAGS_max_new_tokens; i++) {
+    pos_seq_data[i] = num_prompt_tokens + i;
+  }
+  auto pos_seq_dev = clone_tensor_ptr_to(
+      from_blob(
+          pos_seq_data.data(),
+          {S(FLAGS_max_new_tokens)},
+          executorch::aten::ScalarType::Long),
+      cuda_device);
+  auto* pos_seq_dev_ptr =
+      static_cast<int64_t*>(pos_seq_dev->mutable_data_ptr());
+  auto* decode_pos_slot_ptr =
+      static_cast<int64_t*>(decode_pos->mutable_data_ptr());
 #else
   // Non-CUDA (MLX) path: keep host token/pos buffers; the backend stages them
   // and the host samples from the returned logits.
@@ -406,19 +423,23 @@ int main(int argc, char** argv) {
   uint64_t prev_token = cur_token;
   bool hit_eos = eos_ids.find(cur_token) != eos_ids.end();
   for (int32_t step = 0; step < FLAGS_max_new_tokens && !hit_eos; step++) {
-    decode_pos_data[0] = pos;
-
 #ifdef EXECUTORCH_BUILD_CUDA
-    // Token stays on device (aliased from the previous forward's output); only
-    // the 8-byte position is uploaded each round. No token D2H->H2D round-trip.
+    // No per-round H2D: copy this step's position from the pre-uploaded device
+    // position array into the fixed position slot with an on-device D2D. With
+    // the token aliased on device (Option A) and the position staged via D2D,
+    // the per-round HtoD count is zero (independent of decode length).
+    // cudaMemcpy D2D is host-synchronous, so the slot is updated before the
+    // decode kernels read it; with cuda graph enabled this becomes a captured
+    // cudaMemcpyAsync on the decode stream into this same fixed slot.
     ET_CHECK_MSG(
         cudaMemcpy(
-            decode_pos->mutable_data_ptr(),
-            decode_pos_data.data(),
+            decode_pos_slot_ptr,
+            pos_seq_dev_ptr + step,
             sizeof(int64_t),
-            cudaMemcpyHostToDevice) == cudaSuccess,
-        "Failed to upload decode position H2D");
+            cudaMemcpyDeviceToDevice) == cudaSuccess,
+        "Failed to copy decode position D2D");
 #else
+    decode_pos_data[0] = pos;
     decode_token_data[0] = static_cast<int64_t>(cur_token);
 #endif
 
