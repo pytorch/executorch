@@ -29,7 +29,6 @@ from executorch.backends.arm._passes import (
     ConvertInt64OutputOpsToInt32Pass,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
-    ConvertPermuteSingletonToViewPass,
     ConvertSplitToSlicePass,
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
@@ -128,6 +127,8 @@ from executorch.backends.arm._passes import (
     NormalizeIndexPutNoneIndicesPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
+    PropagatePermuteViewsDownPass,
+    PropagatePermuteViewsUpPass,
     QuantizeClampArgumentsPass,
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
@@ -140,7 +141,6 @@ from executorch.backends.arm._passes import (
     RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
     RewriteConvPass,
-    RewriteHighRankSingletonPermutePass,
     RewriteIndexPutPass,
     RewriteInplaceArithmeticPass,
     RewriteLeLtToGeGtPass,
@@ -161,12 +161,6 @@ from executorch.backends.arm.tosa.specification import (
     tosa_spec_in_set,
     TosaLoweringContext,
     TosaSpecification,
-)
-from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
-    FuseCascadedTransposeOrPermuteOps,
-)
-from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
-    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
 )
 
 from executorch.exir import ExportedProgram
@@ -615,11 +609,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
+                PropagatePermuteViewsDownPass(exported_program),
+                PropagatePermuteViewsUpPass(exported_program),
                 RemovePermutesAroundElementwiseTosaOps(),
-                PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
-                FuseCascadedTransposeOrPermuteOps(),
-                ConvertPermuteSingletonToViewPass(),
-                RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 InsertConstShapesPass(),
