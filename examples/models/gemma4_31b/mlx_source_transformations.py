@@ -158,6 +158,7 @@ def mlx_source_transformations(
     model: nn.Module,
     dtype: torch.dtype = torch.bfloat16,
     use_turboquant: bool = False,
+    max_write_len: int | None = None,
 ) -> None:
     """Apply MLX source transformations to a Gemma 4 31B model in-place.
 
@@ -177,6 +178,11 @@ def mlx_source_transformations(
         use_turboquant: If True, swap full-attention layers' KV caches
             for ``MLXTurboQuantKVCache`` (~3.8× cache memory savings).
             Sliding-window layers are unaffected.
+        max_write_len: Largest single prefill chunk written to the sliding
+            ring caches (the export-time max prefill / dynamic seq_len bound).
+            Sizes the ring buffer to ``sliding_window + max_write_len - 1``
+            instead of ``2 * sliding_window``. If None, defaults to the full
+            window (the original 2× buffer).
     """
     config = model.config
 
@@ -190,6 +196,7 @@ def mlx_source_transformations(
                 n_heads=attn.n_kv_heads,
                 head_dim=attn.head_dim,
                 dtype=dtype,
+                max_write_len=max_write_len,
             )
             attn.is_turboquant = False
         elif use_turboquant:
