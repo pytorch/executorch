@@ -251,6 +251,7 @@ def _export_cuda(
             "get_n_layers": target_config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
             "get_min_prefill_chunk": target_min,
+            "get_sliding_window": target_config.sliding_window,
             "get_chain_len": chain_len,
             "get_draft_vocab_size": draft_vocab_size,
             "use_kv_cache": True,
@@ -308,9 +309,10 @@ def main() -> None:
         "--max-prefill",
         type=int,
         default=512,
-        help="Max prefill length: AOTI compiles prefill kernels for up to this T "
-        "and the whole prompt must fit in one prefill (the runner does not chunk). "
-        "Smaller compiles faster.",
+        help="Max prefill chunk: AOTI compiles prefill kernels for up to this T. "
+        "The runner chunks the prompt into <= this many tokens per prefill (a "
+        "longer prompt is fed as multiple chunks), so this bounds compile time, "
+        "not prompt length. Smaller compiles faster.",
     )
     p.add_argument(
         "--chain", type=int, default=4, help="Draft chain length K (verify K+1)."
