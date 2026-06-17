@@ -15,7 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
-from tosa import TosaGraph  # type: ignore[import-untyped]
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
 
 
 SHAPE_VISITOR_TARGETS = {
