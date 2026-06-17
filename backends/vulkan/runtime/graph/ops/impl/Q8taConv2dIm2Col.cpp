@@ -327,7 +327,14 @@ void q8ta_conv2d_im2col(
       packed_bias,
       activation_type_val,
       packed_int8_output,
-      groups_val);
+      groups_val,
+      // Original activation + conv geometry so the PW output H/W is recomputed
+      // from the true conv result, not the width-padded im2col scratch.
+      packed_int8_input,
+      kernel_size,
+      stride,
+      padding,
+      dilation);
 }
 
 REGISTER_OPERATORS {
