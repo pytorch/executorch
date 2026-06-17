@@ -232,8 +232,8 @@ class RingBufferKVCache(nn.Module):
 
     ``max_write_len`` bounds the largest single ``update`` write and sets the
     buffer slack beyond the window (buffer_size = window_size + max_write_len -
-    1). It defaults to the full context length (a ~2× buffer); pass the chunk
-    size when doing chunked prefill to avoid the 2× window allocation.
+    1). It defaults to the full context length, i.e. ``2 * window_size - 1``; pass the chunk size when doing
+    chunked prefill to shrink it further.
 
     Example:
         >>> cache = RingBufferKVCache(

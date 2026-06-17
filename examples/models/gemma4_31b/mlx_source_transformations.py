@@ -179,10 +179,10 @@ def mlx_source_transformations(
             for ``MLXTurboQuantKVCache`` (~3.8× cache memory savings).
             Sliding-window layers are unaffected.
         max_write_len: Largest single prefill chunk written to the sliding
-            ring caches (the export-time max prefill / dynamic seq_len bound).
-            Sizes the ring buffer to ``sliding_window + max_write_len - 1``
-            instead of ``2 * sliding_window``. If None, defaults to the full
-            window (the original 2× buffer).
+            ring caches (the export-time max prefill / dynamic seq_len bound),
+            clamped to ``sliding_window``. Sizes the ring buffer to
+            ``sliding_window + max_write_len - 1``. If None, defaults to the
+            full window, i.e. ``2 * sliding_window - 1``.
     """
     config = model.config
 
@@ -190,13 +190,21 @@ def mlx_source_transformations(
         attn = layer.self_attn
 
         if attn.is_sliding:
+            # A single write into a sliding ring buffer can never exceed the
+            # window, so clamp the chunk size to the window. Tiny test configs
+            # can have sliding_window < the export max prefill.
+            sliding_write_len = (
+                min(max_write_len, config.sliding_window)
+                if max_write_len is not None
+                else None
+            )
             attn.kv_cache = MLXRingKVCache(
                 max_batch_size=1,
                 max_context_length=config.sliding_window,
                 n_heads=attn.n_kv_heads,
                 head_dim=attn.head_dim,
                 dtype=dtype,
-                max_write_len=max_write_len,
+                max_write_len=sliding_write_len,
             )
             attn.is_turboquant = False
         elif use_turboquant:
