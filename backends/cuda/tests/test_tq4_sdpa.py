@@ -584,6 +584,97 @@ class TestTQ4Sdpa(unittest.TestCase):
         )
         return cos
 
+    def _run_splitk_vs_fused_test(
+        self,
+        *,
+        H_q,
+        H_kv,
+        D,
+        Lq,
+        kv_len,
+        buffer_len,
+        seed=42,
+    ):
+        """Verify split-K output matches fused kernel output for same inputs.
+        
+        Runs tq4_sdpa twice: once with kv_len (triggers split-K for Lq=1, kv_len>=256),
+        and once without kv_len (forces fused kernel path). Both outputs must match
+        within fp tolerance, proving split-K computes the same result.
+        """
+        torch.manual_seed(seed)
+        centroids, boundaries, rotation = _make_codebook_and_rotation(D)
+        centroids = centroids.cuda()
+        boundaries = boundaries.cuda()
+        rotation = rotation.cuda()
+
+        B = 1
+        k = torch.randn(B, H_kv, buffer_len, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, buffer_len, D, dtype=torch.bfloat16, device="cuda")
+        # Add garbage tail to ensure split-K respects kv_len bound
+        if buffer_len > kv_len:
+            g = buffer_len - kv_len
+            k[:, :, kv_len:, :] = (
+                torch.randn(B, H_kv, g, D, dtype=torch.bfloat16, device="cuda") * 1000.0
+            )
+            v[:, :, kv_len:, :] = (
+                torch.randn(B, H_kv, g, D, dtype=torch.bfloat16, device="cuda") * 1000.0
+            )
+
+        q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+
+        k_packed, k_norms = _compress(k, boundaries, rotation)
+        v_packed, v_norms = _compress(v, boundaries, rotation)
+
+        # Split-K path: with kv_len (triggers split-K for Lq=1, kv_len>=256)
+        kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+        out_splitk = self.tq4_sdpa(
+            q,
+            k_packed,
+            k_norms,
+            v_packed,
+            v_norms,
+            centroids,
+            rotation,
+            attn_mask=None,
+            is_causal=False,
+            scale=None,
+            kv_len=kv_len_t,
+            mask_is_causal=False,
+        )
+
+        # Fused kernel path: without kv_len (forces fused kernel)
+        # But we need to slice the buffer to kv_len to avoid garbage
+        k_packed_sliced = k_packed[:, :, :kv_len, :]
+        k_norms_sliced = k_norms[:, :, :kv_len, :]
+        v_packed_sliced = v_packed[:, :, :kv_len, :]
+        v_norms_sliced = v_norms[:, :, :kv_len, :]
+        
+        out_fused = self.tq4_sdpa(
+            q,
+            k_packed_sliced,
+            k_norms_sliced,
+            v_packed_sliced,
+            v_norms_sliced,
+            centroids,
+            rotation,
+            attn_mask=None,
+            is_causal=False,
+            scale=None,
+            kv_len=None,
+            mask_is_causal=False,
+        )
+
+        # Both outputs must match (split-K computes same result as fused)
+        self.assertFalse(torch.isnan(out_splitk).any(), "NaN in split-K output")
+        self.assertFalse(torch.isnan(out_fused).any(), "NaN in fused output")
+        cos = _cosine_sim(out_splitk, out_fused)
+        self.assertGreater(
+            cos,
+            0.99,
+            f"Split-K vs Fused cosine {cos:.5f} < 0.99 "
+            f"(H_q={H_q} H_kv={H_kv} D={D} kv_len={kv_len})",
+        )
+
     def test_kv_len_clamp_decode_gemma_global(self):
         """Decode (Lq=1) kv_len clamp at Gemma-4 31B global-layer shape
         (head_dim=512, GQA 8:4). N=8192 leaves a 24k garbage tail in a 32k
@@ -594,12 +685,43 @@ class TestTQ4Sdpa(unittest.TestCase):
                     H_q=8, H_kv=4, D=512, Lq=1, kv_len=N, buffer_len=32768
                 )
 
+    def test_kv_len_clamp_decode_gemma_global_splitk(self):
+        """Split-K decode (Lq=1) at Gemma global shape with long KV.
+        Verifies split-K output matches BOTH (a) fp32 reference over first
+        kv_len positions AND (b) existing fused-kernel output (byte-identical
+        within fp tolerance). Uses garbage tail as negative control."""
+        for N in (8192, 32768):
+            with self.subTest(N=N):
+                # Run with split-K (kv_len >= 256 triggers split-K)
+                cos = self._run_long_kv_test(
+                    H_q=8, H_kv=4, D=512, Lq=1, kv_len=N, buffer_len=32768,
+                    min_cosine=0.99
+                )
+                # Also verify split-K matches fused kernel by running without kv_len
+                # (which forces fused kernel path) and comparing outputs
+                self._run_splitk_vs_fused_test(
+                    H_q=8, H_kv=4, D=512, Lq=1, kv_len=N, buffer_len=32768
+                )
+
     def test_kv_len_clamp_decode_qwen(self):
         """Decode (Lq=1) kv_len clamp at Qwen 3.5 MoE shape
         (head_dim=256, GQA 16:2)."""
         for N in (8192, 32768):
             with self.subTest(N=N):
                 self._run_long_kv_test(
+                    H_q=16, H_kv=2, D=256, Lq=1, kv_len=N, buffer_len=32768
+                )
+
+    def test_kv_len_clamp_decode_qwen_splitk(self):
+        """Split-K decode (Lq=1) at Qwen shape with long KV.
+        Verifies split-K output matches BOTH fp32 reference AND fused kernel."""
+        for N in (8192, 32768):
+            with self.subTest(N=N):
+                cos = self._run_long_kv_test(
+                    H_q=16, H_kv=2, D=256, Lq=1, kv_len=N, buffer_len=32768,
+                    min_cosine=0.99
+                )
+                self._run_splitk_vs_fused_test(
                     H_q=16, H_kv=2, D=256, Lq=1, kv_len=N, buffer_len=32768
                 )
 
