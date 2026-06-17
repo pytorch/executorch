@@ -92,6 +92,11 @@ class SlotManager:
         Scopes may be nested; each allocation is tied to the innermost scope.
         The Slot objects stay in ``name_to_slot`` (mirroring node-slot reclaim
         via ``return_id``) so serialization still sees every distinct slot.
+
+        Invariant: the slots yielded here are dead after the context exits.
+        Never ``set_slot`` a temp slot as a node's persistent output because its id is
+        reclaimed on scope exit and would be reused (and coalesced) by a later
+        node while still live. Node outputs must come from ``make_or_get_slot``.
         """
         self._tmp_scopes.append([])
         try:

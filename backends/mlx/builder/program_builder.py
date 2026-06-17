@@ -701,6 +701,12 @@ class MLXProgramBuilder:
         # same slot reused across disjoint lifetimes (delete-as-you-go reclaim /
         # tmp_scope) and are coalesced to a single global id below, so they must
         # be counted once. (For non-tensors, SymInt/SymBool share the vid pool.)
+        #
+        # NOTE: the key here is (is_tensor, id_space, idx), while
+        # _create_slot_mappings keys only on (id_space, idx). The two stay
+        # equivalent only because tids and vids are coalesced in separate passes
+        # there (is_tensor is constant within each), so this count matches the
+        # number of distinct global ids per space. Keep the two in sync.
         num_tensors: Dict[IdSpace, int] = defaultdict(int)
         num_values: Dict[IdSpace, int] = defaultdict(int)
         seen_keys: Set[Tuple[bool, IdSpace, int]] = set()

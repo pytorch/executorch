@@ -21,7 +21,7 @@ Two invariants are guarded here:
 
 Run::
 
-    python -m unittest executorch.backends.mlx.builder.test_slot_recycling
+    python -m unittest executorch.backends.mlx.test.test_slot_recycling
 """
 
 import unittest
@@ -123,7 +123,9 @@ class SlotCoalescingTest(unittest.TestCase):
         slot_to_tid, _ = P._create_slot_mappings(used)
 
         self.assertEqual(slot_to_tid[a], slot_to_tid[b], "reused idx must coalesce")
-        self.assertNotEqual(slot_to_tid[a], slot_to_tid[c], "distinct idx stays distinct")
+        self.assertNotEqual(
+            slot_to_tid[a], slot_to_tid[c], "distinct idx stays distinct"
+        )
         # Counts reflect distinct (id_space, idx), not distinct Slot objects.
         self.assertEqual(num_tensors[IdSpace.Temp], 2)
         self.assertEqual(sum(num_tensors.values()), len(set(slot_to_tid.values())))
@@ -142,10 +144,54 @@ class SlotCoalescingTest(unittest.TestCase):
         used, _, num_values = P._collect_used_slots()
         _, slot_to_vid = P._create_slot_mappings(used)
 
-        self.assertEqual(slot_to_vid[v0], slot_to_vid[v0b], "shared vid idx must coalesce")
+        self.assertEqual(
+            slot_to_vid[v0], slot_to_vid[v0b], "shared vid idx must coalesce"
+        )
         self.assertNotEqual(slot_to_vid[v0], slot_to_vid[v1])
         self.assertEqual(num_values[IdSpace.Temp], 2)
         self.assertEqual(sum(num_values.values()), len(set(slot_to_vid.values())))
+
+
+class SlotRecyclingIntegrationTest(unittest.TestCase):
+    """End-to-end: ``tmp_scope`` must be wired into ``_process_nodes`` so that
+    handler-local temp ids are reclaimed (and coalesced) across a real build.
+
+    A stack of ``nn.Linear`` layers exercises this: each ``aten.linear`` handler
+    allocates one temp tid (the weight transpose). Because those temps are
+    reclaimed and reused across layers, the total ``num_temp_tensors`` is
+    *independent of depth* and stays far below the layer count. If reclaim were
+    broken the count would grow ~one per layer; if ``tmp_scope`` were not wired
+    in at all, the ``make_tmp`` guard would fail the build outright. The
+    synthetic coalescing tests above would pass in either of those broken
+    states -- this one would not.
+    """
+
+    class _LinearStack(nn.Module):
+        def __init__(self, dim: int, depth: int):
+            super().__init__()
+            self.layers = nn.ModuleList(
+                [nn.Linear(dim, dim, bias=False) for _ in range(depth)]
+            )
+
+        def forward(self, x):
+            for layer in self.layers:
+                x = layer(x)
+            return x
+
+    def _num_temp_tensors(self, depth: int) -> int:
+        model = self._LinearStack(dim=8, depth=depth).eval()
+        ep = torch.export.export(model, (torch.randn(2, 8),))
+        return MLXProgramBuilder(ep).build().num_temp_tensors
+
+    def test_temp_count_independent_of_depth(self):
+        # 8x the layers means 8x the per-layer temps allocated, but the
+        # serialized temp count must NOT increase -- the ids are recycled and
+        # coalesced across handlers. Without reclaim the count would grow ~one
+        # temp per layer (so shallow != deep), which is what makes this equality
+        # a proof that reuse happens through the real _process_nodes build.
+        shallow = self._num_temp_tensors(depth=4)
+        deep = self._num_temp_tensors(depth=32)
+        self.assertEqual(shallow, deep)
 
 
 if __name__ == "__main__":
