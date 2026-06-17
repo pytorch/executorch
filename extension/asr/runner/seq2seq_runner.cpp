@@ -113,19 +113,13 @@ Error Seq2SeqRunner::load() {
   // The backend's init() is called during load_method(), which creates CUDA
   // streams. We must configure shared stream mode before any init() calls.
   //
-  // Skip copying outputs to CPU. When a sampler exists, keep both encoder and
-  // decoder outputs on device and pass decoder logits directly into sampler.
-  // The backend will use a shared CUDA stream for all methods when skip-copy
-  // is enabled to ensure proper ordering.
-  executorch::runtime::BackendOptions<2> backend_options;
-  std::string skip_methods = kEncoderMethodName;
-  if (sampler_method_present_) {
-    skip_methods.append(",").append(kDecoderMethodName);
-  }
-  ET_CHECK_OK_OR_RETURN_ERROR(backend_options.set_option(
-      "skip_copy_output_to_cpu_for_method", skip_methods.c_str()));
-  // Enable shared CUDA stream for all methods when skip-copy is used.
-  // This ensures proper ordering between encoder/decoder/sampler outputs.
+  // Keep encoder/decoder outputs on device and pass decoder logits directly
+  // into the sampler. With device memory planning, delegate inputs/outputs are
+  // GPU-resident and graph-level et_copy ops handle host<->device transfers;
+  // the export-time skip_d2h_for_method_outputs / skip_h2d_for_method_inputs
+  // flags elide the unnecessary copies. A shared CUDA stream is still required
+  // to guarantee correct ordering across methods when outputs stay on GPU.
+  executorch::runtime::BackendOptions<1> backend_options;
   ET_CHECK_OK_OR_RETURN_ERROR(
       backend_options.set_option("use_shared_cuda_stream", true));
 
