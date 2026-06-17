@@ -800,12 +800,15 @@ def tq4_sdpa(
 
     # Split-K decode dispatch: L_q == 1 AND kv_len >= threshold (256)
     # Uses flash-decoding to partition KV across many CTAs for better occupancy
+    # Dispatch is static (based on buffer size N_KV, not runtime kv_len value)
+    # to be export/AOTI traceable. The kernel still uses kv_len on-device
+    # via tl.load for bounds checking (CUDA-graph safe).
     _SPLITK_LKV_THRESHOLD = 256
     use_splitk = (
         N_Q == 1
         and HAS_KV_LEN
         and kv_len_t is not None
-        and kv_len_t.item() >= _SPLITK_LKV_THRESHOLD
+        and N_KV >= _SPLITK_LKV_THRESHOLD
     )
 
     if use_splitk:
