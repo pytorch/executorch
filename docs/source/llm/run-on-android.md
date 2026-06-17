@@ -1,6 +1,6 @@
 # Running LLMs on Android
 
-ExecuTorch's LLM-specific runtime components provide an experimental Java interface around the core C++ LLM runtime, available through the `executorch-android` AAR.
+ExecuTorch's LLM-specific runtime components provide experimental Java APIs, callable from Java or Kotlin, around the core C++ LLM runtime. These APIs are available through the `executorch-android` AAR.
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ import java.nio.ByteOrder
 
 ### LlmModule
 
-The `LlmModule` class provides a simple Java interface for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt.
+The `LlmModule` class provides a simple interface, usable from Java and Kotlin, for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt.
 
 This API is experimental and subject to change.
 
@@ -230,7 +230,7 @@ This is the equivalent of `reset()` on the iOS runner and `reset()` on the C++ `
 
 ### Multimodal Inputs
 
-For models declared as `MODEL_TYPE_TEXT_VISION` or `MODEL_TYPE_MULTIMODAL`, image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call `generate()` with the text prompt to produce the response.
+For models declared as `MODEL_TYPE_TEXT_VISION` (`MODEL_TYPE_MULTIMODAL` is currently an alias), image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call `generate()` with the text prompt to produce the response.
 
 #### Images
 
