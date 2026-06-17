@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
-import os
 
 import numpy as np
 import torch
@@ -52,7 +51,7 @@ def test_generate_case_writes_artifacts(tmp_path):
 
 
 def test_generate_manifest(tmp_path):
-    entries = g.generate(str(tmp_path), ops=["add"])
+    g.generate(str(tmp_path), ops=["add"])
     manifest = tmp_path / "manifest.json"
     assert manifest.exists()
     data = json.loads(manifest.read_text())
