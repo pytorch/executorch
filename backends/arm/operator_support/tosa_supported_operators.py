@@ -29,6 +29,11 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+# Importing this registers the ``tosa_mxfp::linear`` custom op that
+# ``MXOpsSupportList`` references at class-definition time below. Without it,
+# importing this module outside the Arm test suite (which imports ``ao_ext``)
+# fails with: AttributeError: '_OpNamespace' 'tosa_mxfp' has no attribute 'linear'.
+from executorch.backends.arm.ao_ext.ops import mxfp_linear_op  # noqa: F401
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.control_flow_support import (
     ControlFlowOpSupported,
