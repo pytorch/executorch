@@ -30,12 +30,25 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 
 struct PackedDataMeta {
-  size_t offset;
+  size_t offset{};
+  size_t data_size{0};
   // Count number of xnn_runtime_t this packed data is used in
-  size_t ref_count;
+  size_t ref_count{};
   // true if this packed data was inserted or looked up for the
   // current runtime being created
-  bool in_current_runtime;
+  bool in_current_runtime{};
+  // True if this entry's bytes are persisted in the on-disk cache file
+  // (either originally loaded via load_packed_cache, or freshly packed
+  // and then save_packed_index-ed). delete_packed_data preserves these
+  // entries so the next init reuses the saved file instead of re-packing.
+  bool from_load{false};
+  // Per-ukernel seed from xnn_weights_cache_look_up_key.seed. XNNPACK
+  // guarantees this is consistent across runs of the same ukernel; when
+  // XNNPACK upgrades and a ukernel implementation changes, the seed
+  // changes. look_up rejects entries whose stored seed doesn't match
+  // the caller's seed so that stale cache entries don't deliver wrongly
+  // packed weights to a newer ukernel.
+  uint32_t seed{0};
 };
 
 class XNNWeightsCache {
@@ -138,7 +151,20 @@ class XNNWeightsCache {
    */
   void set_packed_cache_path(const std::string& path);
 
+  /** Save packed weight index so subsequent loads skip packing. */
+  Error save_packed_index();
+
  private:
+  static constexpr uint32_t kCacheMagic = 0x58505743; // "XPWC"
+  // Bump when the on-disk layout (footer or per-entry record) changes.
+  // v2: per-entry seed added — old v1 files don't carry seeds and would
+  // load with seed=0, mismatching every fresh look_up with a non-zero
+  // seed, causing a stampede of re-packs. Reject v1 outright.
+  static constexpr uint32_t kCacheVersion = 2;
+  bool load_packed_cache();
+  void reset_for_fresh_write();
+  void release_entry(void* packed_data_ptr);
+  void full_unload();
   // Runtime Allocator used to reserve memory for packed weights
   MemoryAllocator* runtime_allocator_;
 
@@ -167,18 +193,24 @@ class XNNWeightsCache {
   std::string packed_cache_path_;
   int packed_file_fd_{-1};
   size_t packed_file_used_{0};
-  // Set after an unrecoverable mmap/ftruncate failure. Prevents re-opening
-  // the cache file on subsequent initialize_for_runtime() calls — re-opening
-  // with O_TRUNC would truncate the inode beneath any still-live mmap pages
-  // and the next access would raise SIGBUS. Once disabled, all reserve_space
-  // calls fall back to heap allocation for the lifetime of this cache.
-  bool packed_file_disabled_{false};
+  // Tracks file offset of each file-backed allocation. Used by
+  // save_packed_index() to serialize (name → offset, size) index.
+  std::unordered_map<void*, size_t> ptr_to_file_offset_;
   struct MmapRegion {
     void* addr;
     size_t size;
   };
   std::vector<MmapRegion> mmap_regions_;
   size_t mmap_regions_synced_{0};
+  // Number of regions present at the time of the most recent successful
+  // save_packed_index. Used to skip no-op saves: identical bytes would
+  // still bump mtime via pwrite/fsync, making the cache file appear
+  // modified on every load when nothing has actually changed. A successful
+  // save closes packed_file_fd_ before returning, so the no-op check is
+  // unreachable except after a load_packed_cache (or fresh-write path)
+  // re-opens the fd — both paths populate at least one mmap region, so
+  // the "zero regions saved" edge case never lives long enough to matter.
+  size_t mmap_regions_at_last_save_{0};
   // For file-backed packed allocations, maps the returned ptr to its index
   // in mmap_regions_, so delete_packed_data() can munmap when ref_count==0.
   std::unordered_map<void*, size_t> file_ptr_to_region_index_;
