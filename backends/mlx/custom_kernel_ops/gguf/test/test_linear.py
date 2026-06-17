@@ -249,23 +249,20 @@ class GGUFLinearTest(OpTestCase):
         # fits CI-runner GPU buffer limits; the mat-vec N-tiling path is the
         # same at any N.
         cfgs.append(cls(M=1, N=16384, K=5376, dtype=torch.bfloat16))  # lm_head
-        # Q4_K fused Metal kernels (mat-vec / mat-mat).
-        cfgs.append(cls(M=1, N=512, K=512, dtype=torch.bfloat16, ggml_type="q4_k"))
-        cfgs.append(cls(M=8, N=512, K=512, dtype=torch.bfloat16, ggml_type="q4_k"))
-        cfgs.append(cls(M=1, N=5376, K=5376, dtype=torch.bfloat16, ggml_type="q4_k"))
-        cfgs.append(
-            cls(M=1, N=512, K=512, dtype=torch.bfloat16, bias=False, ggml_type="q4_k")
-        )
-        cfgs.append(
-            cls(
-                M=1,
-                N=512,
-                K=512,
-                dtype=torch.bfloat16,
-                ggml_type="q4_k",
-                emit_direct_gguf=False,
-            )
-        )
+        # Q4_K: exercise both the fused direct path and the legacy MLX-native
+        # repack path on each shape. Each path uses its own reference oracle
+        # (see compute_expected_outputs).
+        q4k_shapes = [
+            {"M": 1, "N": 512, "K": 512, "dtype": torch.bfloat16},
+            {"M": 8, "N": 512, "K": 512, "dtype": torch.bfloat16},
+            {"M": 1, "N": 5376, "K": 5376, "dtype": torch.bfloat16},
+            {"M": 1, "N": 512, "K": 512, "dtype": torch.bfloat16, "bias": False},
+        ]
+        for shape in q4k_shapes:
+            for emit_direct in (True, False):
+                cfgs.append(
+                    cls(ggml_type="q4_k", emit_direct_gguf=emit_direct, **shape)
+                )
         return cfgs
 
     def generate_test_files(self, verbose: bool = False):
@@ -307,6 +304,7 @@ class GGUFLinearDynamicTest(OpTestCase):
         K: int = 512,
         dtype: torch.dtype = torch.bfloat16,
         ggml_type: str = "q6_k",
+        emit_direct_gguf: bool = True,
     ):
         self.export_M = export_M
         self.test_M = test_M
@@ -314,27 +312,56 @@ class GGUFLinearDynamicTest(OpTestCase):
         self.K = K
         self.dtype = dtype
         self.ggml_type = ggml_type
+        self.emit_direct_gguf = emit_direct_gguf
         self.rtol, self.atol = _DTYPE_TOL[dtype]
-        self.name = (
+        name = (
             f"gguf_linear_dyn_{ggml_type}_exp{export_M}_test{test_M}_n{N}_k{K}_"
             f"{_DTYPE_TAG[dtype]}"
         )
+        if ggml_type == "q4_k" and not emit_direct_gguf:
+            name += "_mlx_native"
+        self.name = name
 
     @classmethod
     def get_test_configs(cls) -> List["GGUFLinearDynamicTest"]:
-        return [
+        cfgs = [
             cls(export_M=4, test_M=1, dtype=torch.bfloat16),  # decode / else
             cls(export_M=4, test_M=8, dtype=torch.bfloat16),  # prefill / then
             cls(export_M=4, test_M=4, dtype=torch.bfloat16),  # control
             cls(export_M=4, test_M=1, dtype=torch.float16),
             cls(export_M=4, test_M=40, N=300, K=256, dtype=torch.bfloat16),  # ragged
-            cls(export_M=4, test_M=1, dtype=torch.bfloat16, ggml_type="q4_k"),
-            cls(export_M=4, test_M=8, dtype=torch.bfloat16, ggml_type="q4_k"),
         ]
+        # Q4_K: exercise both the fused direct path and the legacy MLX-native
+        # repack path on each shape. Each path needs its own reference oracle
+        # (see compute_expected_outputs).
+        for emit_direct in (True, False):
+            cfgs.append(
+                cls(
+                    export_M=4,
+                    test_M=1,
+                    dtype=torch.bfloat16,
+                    ggml_type="q4_k",
+                    emit_direct_gguf=emit_direct,
+                )
+            )
+            cfgs.append(
+                cls(
+                    export_M=4,
+                    test_M=8,
+                    dtype=torch.bfloat16,
+                    ggml_type="q4_k",
+                    emit_direct_gguf=emit_direct,
+                )
+            )
+        return cfgs
 
     def get_dynamic_shapes(self):
         seq_dim = torch.export.Dim("seq_len", min=1, max=64)
         return {"x": {0: seq_dim}}
+
+    def generate_test_files(self, verbose: bool = False):
+        with _emit_direct_gguf_env(self.emit_direct_gguf):
+            return super().generate_test_files(verbose=verbose)
 
     def get_edge_compile_config(self):
         return _edge_compile_config()
@@ -356,6 +383,8 @@ class GGUFLinearDynamicTest(OpTestCase):
         return (torch.randn(self.test_M, self.K, dtype=self.dtype),)
 
     def compute_expected_outputs(self, model, test_inputs):
+        if self.ggml_type == "q4_k" and not self.emit_direct_gguf:
+            return _fp32_linear_mlx_native_reference(model, test_inputs[0])
         return _fp32_linear_reference(model, test_inputs[0])
 
 
