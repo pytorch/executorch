@@ -31,6 +31,7 @@ class TestMM:
         model,
         input_shape,
         mocker,
+        request,
         use_qat=False,
         expected_delegated_ops: dict[Operator, int] | None = None,
     ):
@@ -50,6 +51,7 @@ class TestMM:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
             use_qat=use_qat,
         )
@@ -63,9 +65,9 @@ class TestMM:
         ],
         ids=lambda s: f"input_shape = {s}",
     )
-    def test__from_mm(self, mocker, use_qat, input_shape: tuple[int, ...]):
+    def test__from_mm(self, mocker, request, use_qat, input_shape: tuple[int, ...]):
         model = MmModule(input_shape[-1])
-        self.assert_delegated(model, input_shape, mocker, use_qat=use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "input_shape",
@@ -76,13 +78,14 @@ class TestMM:
         ids=lambda s: f"input_shape = {s}",
     )
     def test__from_linear_without_bias(
-        self, mocker, use_qat, input_shape: tuple[int, ...]
+        self, mocker, request, use_qat, input_shape: tuple[int, ...]
     ):
         model = LinearModule(bias=False, in_features=input_shape[-1], out_features=7)
         self.assert_delegated(
             model,
             input_shape,
             mocker,
+            request,
             use_qat=use_qat,
             expected_delegated_ops={MM: 1, PermuteCopy: 1},
         )
@@ -97,7 +100,7 @@ class TestMM:
         ids=lambda s: f"input_shape = {s}",
     )
     def test__from_linear_without_bias__higher_ranks(
-        self, mocker, use_qat, input_shape: tuple[int, ...]
+        self, mocker, request, use_qat, input_shape: tuple[int, ...]
     ):
         # More than 2D cases get reshaped to 2D, so two extra view_copy nodes are delegated.
 
@@ -106,6 +109,7 @@ class TestMM:
             model,
             input_shape,
             mocker,
+            request,
             use_qat=use_qat,
             expected_delegated_ops={MM: 1, PermuteCopy: 1, ViewCopy: 2},
         )

@@ -258,10 +258,13 @@ class AddmmModule(torch.nn.Module):
         out_channels: int = 7,
         alpha: float | None = None,
         beta: float | None = None,
+        bias_shape=None,
     ):
+        if bias_shape is None:
+            bias_shape = (out_channels,)
         super().__init__()
         self.weight = torch.nn.Parameter(torch.empty(in_channels, out_channels))
-        self.bias = torch.nn.Parameter(torch.empty(out_channels))
+        self.bias = torch.nn.Parameter(torch.empty(bias_shape))
         torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
         bound = 1 / math.sqrt(fan_in)

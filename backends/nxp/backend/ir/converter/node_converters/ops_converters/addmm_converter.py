@@ -51,6 +51,15 @@ class AddMMConverter(NodeConverter):
             # As these cases seem rare, conversion is not implemented for the time being.
             return False
 
+        # The `aten.addmm` operator allows any bias shape, as long as it is broadcastable with the result of the matrix
+        #  multiplication. That means it supports 4 different shapes: [N, P], [1, P], [P], [1] (provided the MM result
+        #  has shape [N, P]). Out of these 4, Neutron IR allows only [1, P] and [P], both of which are supported on
+        #  Neutron.
+        bias_shape = list(node.args[BIAS_IDX].meta["val"].shape)
+        _, p = node.meta["val"].shape
+        if bias_shape not in [[1, p], [p]]:
+            return False
+
         return True
 
     @staticmethod

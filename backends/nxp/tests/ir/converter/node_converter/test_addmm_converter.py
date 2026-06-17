@@ -39,6 +39,7 @@ class TestAddMM:
         model,
         input_shape,
         mocker,
+        request,
         use_qat=False,
         expected_delegated_ops: dict[Operator, int] | None = None,
     ):
@@ -58,6 +59,7 @@ class TestAddMM:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
             use_qat=use_qat,
         )
@@ -80,9 +82,37 @@ class TestAddMM:
         ],
         ids=lambda s: f"input_shape = {s}",
     )
-    def test__from_addmm(self, mocker, use_qat, input_shape: tuple[int, ...]):
+    def test__from_addmm(self, mocker, request, use_qat, input_shape: tuple[int, ...]):
         model = AddmmModule(input_shape[-1])
-        self.assert_delegated(model, input_shape, mocker, use_qat=use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
+
+    @pytest.mark.parametrize(
+        "bias_shape",
+        [
+            (1, 7),
+            (7,),
+        ],
+        ids=lambda s: f"bias_shape = {s}",
+    )
+    def test__from_addmm__bias_shapes__supported(
+        self, mocker, request, use_qat, bias_shape: tuple[int, ...]
+    ):
+        input_shape = (3, 11)
+        model = AddmmModule(input_shape[-1], bias_shape=bias_shape)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
+
+    @pytest.mark.parametrize(
+        "bias_shape",
+        [
+            (3, 7),
+            (1,),
+        ],
+        ids=lambda s: f"bias_shape = {s}",
+    )
+    def test__from_addmm__bias_shapes__unsupported(self, bias_shape: tuple[int, ...]):
+        input_shape = (3, 11)
+        model = AddmmModule(input_shape[-1], bias_shape=bias_shape)
+        self.assert_not_delegated(model, input_shape)
 
     def test__from_addmm__unsupported_alpha(self):
         input_shape = (1, 8)
@@ -99,20 +129,20 @@ class TestAddMM:
         [1, 1.0],
         ids=lambda a: f"alpha = {a}",
     )
-    def test__from_addmm__supported_alpha(self, mocker, use_qat, alpha):
+    def test__from_addmm__supported_alpha(self, mocker, request, use_qat, alpha):
         input_shape = (1, 8)
         model = AddmmModule(input_shape[-1], alpha=alpha)
-        self.assert_delegated(model, input_shape, mocker, use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
         "beta",
         [1, 1.0],
         ids=lambda b: f"beta = {b}",
     )
-    def test__from_addmm__supported_beta(self, mocker, use_qat, beta):
+    def test__from_addmm__supported_beta(self, mocker, request, use_qat, beta):
         input_shape = (1, 8)
         model = AddmmModule(input_shape[-1], beta=beta)
-        self.assert_delegated(model, input_shape, mocker, use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
         "input_shape",
@@ -123,13 +153,14 @@ class TestAddMM:
         ids=lambda s: f"input_shape = {s}",
     )
     def test__from_linear_with_bias__2d(
-        self, mocker, use_qat, input_shape: tuple[int, ...]
+        self, mocker, request, use_qat, input_shape: tuple[int, ...]
     ):
         model = LinearModule(bias=True, in_features=input_shape[-1], out_features=7)
         self.assert_delegated(
             model,
             input_shape,
             mocker,
+            request,
             use_qat=use_qat,
             expected_delegated_ops={AddMM: 1, PermuteCopy: 1},
         )
@@ -144,7 +175,7 @@ class TestAddMM:
         ids=lambda s: f"input_shape = {s}",
     )
     def test__from_linear_with_bias__higher_ranks(
-        self, mocker, use_qat, input_shape: tuple[int, ...]
+        self, mocker, request, use_qat, input_shape: tuple[int, ...]
     ):
         # More than 2D cases get reshaped to 2D, so two extra view_copy nodes are delegated.
 
@@ -153,6 +184,7 @@ class TestAddMM:
             model,
             input_shape,
             mocker,
+            request,
             use_qat=use_qat,
             expected_delegated_ops={AddMM: 1, PermuteCopy: 1, ViewCopy: 2},
         )
