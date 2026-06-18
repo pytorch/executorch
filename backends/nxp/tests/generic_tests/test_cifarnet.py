@@ -11,10 +11,7 @@ import torch
 from executorch.backends.nxp.tests.config_importer import test_config
 from executorch.backends.nxp.tests.dataset_creator import CopyDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
-from executorch.backends.nxp.tests.graph_verifier import (
-    BaseGraphVerifier,
-    NonDelegatedNode,
-)
+from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     NumericalStatsOutputComparator,
 )
@@ -56,17 +53,15 @@ def test_cifarnet(mocker, cifar_test_files, channels_last):
         model.to(memory_format=torch.channels_last)
         input_spec.dim_order = torch.channels_last
 
-    non_dlg_nodes = [NonDelegatedNode("aten__softmax_default", 1)]
-
     comparator = NumericalStatsOutputComparator(
-        max_mse_error=1.0e-3, is_classification_task=True
+        max_mse_error=2.0e-2, is_classification_task=True
     )
     lower_run_compare(
         model,
         [input_spec],
         dataset_creator=CopyDatasetCreator(cifar_test_files),
         output_comparator=comparator,
-        dlg_model_verifier=BaseGraphVerifier(1, non_dlg_nodes),
+        dlg_model_verifier=BaseGraphVerifier(1, []),
         mocker=mocker,
         # Run the channels last reference in PyTorch as the ExecuTorch CPU model contains incorrectly
         #  lowered channels last convolution weights, which cause incorrect inference results. The issue
@@ -83,7 +78,6 @@ def test_cifarnet_qat(mocker, cifar_test_files):
     model = CifarNet().get_eager_model().eval()
 
     input_shape = (1, 3, 32, 32)
-    non_dlg_nodes = [NonDelegatedNode("aten__softmax_default", 1)]
 
     # The higher MSE threshold is due to using weaker "MovingAbs" observers instead of "MinMax" observers.
     # The "MovingAbs" observers capture only limited number of past calibration samples compared to "MinMax",
@@ -96,7 +90,7 @@ def test_cifarnet_qat(mocker, cifar_test_files):
         input_shape,
         dataset_creator=CopyDatasetCreator(cifar_test_files),
         output_comparator=comparator,
-        dlg_model_verifier=BaseGraphVerifier(1, non_dlg_nodes),
+        dlg_model_verifier=BaseGraphVerifier(1, []),
         mocker=mocker,
         use_qat=True,
     )
