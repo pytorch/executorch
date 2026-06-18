@@ -498,6 +498,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | PyTorch Op | Decomposition Pass |
 |---|---|
 | `aten.acos` | `DecomposeAcos` |
+| `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |

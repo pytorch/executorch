@@ -144,6 +144,16 @@ class AddConstantLong(torch.nn.Module):
         return 10 + x
 
 
+class AddMM(torch.nn.Module):
+    def __init__(self, alpha=1, beta=1):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, bias, input, mat2):
+        return torch.addmm(bias, input, mat2, alpha=self.alpha, beta=self.beta)
+
+
 class Any(torch.nn.Module):
     def __init__(self, dim=None, keepdim=False):
         super().__init__()

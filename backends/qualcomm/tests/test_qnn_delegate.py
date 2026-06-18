@@ -190,6 +190,30 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_addmm(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [AddMM()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(8), torch.randn(4, 3), torch.randn(3, 8)),
+                ],
+            },
+            {
+                QCOM_MODULE: [AddMM(alpha=2, beta=3)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(8), torch.randn(4, 3), torch.randn(3, 8)),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
         sample_input = (torch.randn(1, 10),)
@@ -2968,6 +2992,31 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module_one = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module_one, sample_input)
+
+    def test_qnn_backend_addmm(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [AddMM()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(8), torch.randn(4, 3), torch.randn(3, 8)),
+                ],
+            },
+            {
+                QCOM_MODULE: [AddMM(alpha=2, beta=3)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(8), torch.randn(4, 3), torch.randn(3, 8)),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_alias(self):
         module = Alias()  # noqa: F405
