@@ -39,6 +39,8 @@ set(WEBGPU_SRCS
     runtime/ops/select_as_symint/SelectAsSymint.cpp
     runtime/ops/quantized_linear/QuantizedLinear.cpp
     runtime/ops/mul/BinaryOp.cpp
+    runtime/ops/view_copy/ViewCopy.cpp
+    runtime/ops/select/Select.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
