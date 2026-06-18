@@ -1201,7 +1201,15 @@ def _launch_tq4_decode_splitk(
 
     if pack_gqa:
         H_grid = H_KV
-        BLOCK_M = 64  # Pack GQA uses larger BLOCK_M for efficiency
+        # Size BLOCK_M to the actually-packed rows (L_q * num_groups; for decode
+        # L_q=1 so == num_groups), rounded up to the bf16 tensor-core MMA minimum
+        # of 16 -- instead of a fixed 64. Gemma4 global has num_groups=8, so the
+        # old BLOCK_M=64 left 56/64 M-rows idle (the QK/PV MMAs still computed all
+        # 64 rows) AND made acc[BLOCK_M, HEAD_DIM] fp32 = 64*512*4 = 128 KB/CTA,
+        # which blows past the register file and spills to local memory. Matching
+        # BLOCK_M to num_groups removes both the wasted MMA rows and the spills.
+        _packed_m = L_Q * num_groups
+        BLOCK_M = max(16, 1 << (_packed_m - 1).bit_length())
     else:
         H_grid = H_Q
         BLOCK_M = 32
