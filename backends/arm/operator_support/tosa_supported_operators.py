@@ -14,6 +14,10 @@ import operator
 import typing
 from typing import final, Optional, Sequence, Type
 
+# Register Arm-specific torch.library ops and MXFP transforms at package
+# import time.
+import executorch.backends.arm.ao_ext  # noqa: F401
+
 import torch
 import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -27,7 +31,6 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
-from executorch.backends.arm.ao_ext.ops import mxfp_linear_op  # noqa: F401
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.control_flow_support import (
