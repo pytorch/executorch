@@ -7,7 +7,7 @@
 # Local mirror of riscv64.yml's matrix using two docker containers:
 #
 #   - executorch-riscv-linux (ubuntu:24.04 + gcc-14).
-#   - executorch-riscv-baremetal (ubuntu:26.04 + gcc-15).
+#   - executorch-riscv-baremetal (ubuntu:26.04 + gcc-14).
 #     26.04 is the only release shipping libstdc++-riscv64-unknown-elf-picolibc.
 #
 # Usage:

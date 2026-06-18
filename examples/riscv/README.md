@@ -33,4 +33,4 @@ The baremetal runner embeds the `.bpte` directly in `.rodata` via the same `exam
 
 ## CI
 
-`.github/workflows/riscv64.yml` is the entry point; it fans out into `_test_riscv.yml` over a `(model, backend, os, arch, quantize)` matrix and sweeps `qemu-cpu-ext` per backend. Runs on the `executorch-ubuntu-26.04-gcc15` docker image (needed for the `riscv64-unknown-elf` picolibc + libstdc++ packages - see [setup-linux.sh](setup-linux.sh) or [setup-baremetal.sh](setup-baremetal.sh)).
+`.github/workflows/riscv64.yml` is the entry point; it fans out into `_test_riscv.yml` over a `(model, backend, os, arch, quantize)` matrix and sweeps `qemu-cpu-ext` per backend. Runs on the `executorch-ubuntu-26.04-gcc14` docker image (needed for the `riscv64-unknown-elf` picolibc + libstdc++ packages - see [setup-linux.sh](setup-linux.sh) or [setup-baremetal.sh](setup-baremetal.sh)).
