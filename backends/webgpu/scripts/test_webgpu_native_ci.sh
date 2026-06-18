@@ -165,3 +165,25 @@ fi
 [[ -x "${BIN_DIR}/webgpu_scratch_buffer_test" ]] && "${BIN_DIR}/webgpu_scratch_buffer_test"
 
 echo "=== WebGPU native tests on Dawn: all run targets passed ==="
+
+# ── Op-test codegen framework: generate manifest → build → run (Dawn+SwiftShader) ──
+# Reconfigure the SAME build dir adding GTest (EXECUTORCH_BUILD_TESTS=ON), then run
+# every op in cases.py against its torch golden. Self-skips if the generator can't run.
+OP_TEST_DIR="/tmp/webgpu_op_tests"
+if $PYTHON_EXECUTABLE -m executorch.backends.webgpu.test.op_tests.generate_op_tests \
+    --output "${OP_TEST_DIR}"; then
+  echo "=== Reconfigure with GTest + build/run op-test framework ==="
+  cmake -DEXECUTORCH_BUILD_TESTS=ON -B "${BUILD_DIR}" "${EXECUTORCH_ROOT}"
+  OP_DEFINED="$(cmake --build "${BUILD_DIR}" --target help 2>/dev/null || true)"
+  if printf '%s\n' "${OP_DEFINED}" | grep -qw webgpu_op_test_util_test; then
+    cmake --build "${BUILD_DIR}" --target webgpu_op_test_util_test -j"${NPROC}"
+    "${BIN_DIR}/webgpu_op_test_util_test"
+  fi
+  if printf '%s\n' "${OP_DEFINED}" | grep -qw webgpu_op_test; then
+    cmake --build "${BUILD_DIR}" --target webgpu_op_test -j"${NPROC}"
+    "${BIN_DIR}/webgpu_op_test" --manifest "${OP_TEST_DIR}/manifest.json"
+  fi
+  echo "=== WebGPU op-test framework on Dawn: passed ==="
+else
+  echo "WARN: op-test manifest generation failed (needs the executorch wheel); skipping"
+fi
