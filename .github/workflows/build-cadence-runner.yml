@@ -29,7 +29,6 @@ jobs:
   cpu-build:
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
       contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -60,7 +59,6 @@ jobs:
     needs: cpu-build
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
       contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     permissions:
@@ -77,7 +75,6 @@ jobs:
   hifi-build:
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
       contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     permissions:
@@ -91,7 +88,6 @@ jobs:
   vision-build:
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
       contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     permissions:
@@ -107,9 +103,7 @@ jobs:
   # PR head SHA so each cadence job shows up as its own check on the export PR,
   # linking to its logs. Same-repo PRs run via pull_request and report natively.
   export-checks-start:
-    if: >-
-      github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported')
+    if: github.event_name == 'pull_request'  # TEST: post API checks on pull_request to verify they surface on the PR
     runs-on: ubuntu-latest
     permissions:
       checks: write
@@ -144,9 +138,7 @@ jobs:
 
   export-checks-finish:
     needs: [cpu-build, cpu-test, hifi-build, vision-build, export-checks-start]
-    if: >-
-      always() && github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported')
+    if: always() && github.event_name == 'pull_request'  # TEST
     runs-on: ubuntu-latest
     permissions:
       checks: write
