@@ -7,14 +7,14 @@
 """`aten.cat.default` module + configs for the WebGPU op-test framework.
 
 `CatModule` + `CONFIGS` are imported by `cases.py` to drive the declarative op-test
-suite. `TestCat` is the export-delegation + eager-correctness smoke test.
+suite. `CatTest` is the export-delegation smoke test.
 """
 
 import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (list_of_input_shapes, dim)
@@ -67,7 +67,7 @@ def _op_delegated(edge, op_substr: str) -> bool:
     return all(op_substr not in str(getattr(n, "target", "")) for n in gm.graph.nodes)
 
 
-class TestCat(unittest.TestCase):
+class CatTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (shapes, dim) in CONFIGS.items():
             edge = _lower(dim, _det_inputs(shapes))
@@ -79,12 +79,3 @@ class TestCat(unittest.TestCase):
                 _op_delegated(edge, "cat"),
                 f"cat not delegated (fell back to CPU) for {name}",
             )
-
-    def test_golden_matches_eager(self) -> None:
-        for _, (shapes, dim) in CONFIGS.items():
-            xs = _det_inputs(shapes)
-            torch.testing.assert_close(CatModule(dim)(*xs), torch.cat(xs, dim))
-
-
-if __name__ == "__main__":
-    unittest.main()

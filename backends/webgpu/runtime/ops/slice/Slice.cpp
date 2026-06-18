@@ -71,6 +71,9 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // Clamp start to [0, in_size] (guards the gather offset; out size is AOT).
   start = start < 0 ? 0 : (start > in_size ? in_size : start);
   const int64_t step = read_scalar(graph, args.at(4), 1, "step");
+  if (step < 1) {
+    throw std::runtime_error("slice: step must be >= 1");
+  }
 
   TensorMeta out_meta;
   TensorMeta in_meta;
