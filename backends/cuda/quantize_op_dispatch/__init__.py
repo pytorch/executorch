@@ -11,9 +11,11 @@ weight tensors so that torch.export traces through ExecuTorch's custom ops and
 dequant logic instead of torchao's defaults. It registers:
 
   * INT4 (``CudaCoalescedInt4Tensor``)  → ``executorch_cuda::int4_plain_mm``
+  * INT6 (``CudaDp4aPlanarInt6Tensor``) → ``executorch_cuda::int6_plain_mm``
   * INT8 (``IntxUnpackedToInt8Tensor``) → ``executorch_cuda::int8_plain_mm``
 
-See ``int4_dispatch`` and ``int8_dispatch`` for the per-dtype details.
+See ``int4_dispatch``, ``int6_dispatch`` and ``int8_dispatch`` for the per-dtype
+details.
 
 Import this package before using nn.Linear with quantized weights::
 
@@ -22,5 +24,6 @@ Import this package before using nn.Linear with quantized weights::
 
 from executorch.backends.cuda.quantize_op_dispatch import (  # noqa: F401
     int4_dispatch,
+    int6_dispatch,
     int8_dispatch,
 )

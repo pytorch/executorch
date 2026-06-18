@@ -144,6 +144,16 @@ class AddConstantLong(torch.nn.Module):
         return 10 + x
 
 
+class AddMM(torch.nn.Module):
+    def __init__(self, alpha=1, beta=1):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, bias, input, mat2):
+        return torch.addmm(bias, input, mat2, alpha=self.alpha, beta=self.beta)
+
+
 class Any(torch.nn.Module):
     def __init__(self, dim=None, keepdim=False):
         super().__init__()
@@ -1495,9 +1505,14 @@ class LargeTensorLinear(torch.nn.Module):
 
 
 class LayerNorm(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, elementwise_affine=True, bias=True):
         super().__init__()
-        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6, bias=bias)
+        self.layer_norm = torch.nn.LayerNorm(
+            [768],
+            eps=1e-6,
+            elementwise_affine=elementwise_affine,
+            bias=bias,
+        )
         self.linear = torch.nn.Linear(768, 196)
 
     def forward(self, x):

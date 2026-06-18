@@ -33,11 +33,17 @@ class TensorOpInfo:
 
 SCALAR_OPS = {
     aten.eq.Scalar: TensorOpInfo(aten.eq.Tensor, False, False),
+    aten.eq.Tensor: TensorOpInfo(aten.eq.Tensor, False, False),
     aten.ge.Scalar: TensorOpInfo(aten.ge.Tensor, False, False),
+    aten.ge.Tensor: TensorOpInfo(aten.ge.Tensor, False, False),
     aten.gt.Scalar: TensorOpInfo(aten.gt.Tensor, False, False),
+    aten.gt.Tensor: TensorOpInfo(aten.gt.Tensor, False, False),
     aten.le.Scalar: TensorOpInfo(aten.le.Tensor, False, False),
+    aten.le.Tensor: TensorOpInfo(aten.le.Tensor, False, False),
     aten.lt.Scalar: TensorOpInfo(aten.lt.Tensor, False, False),
+    aten.lt.Tensor: TensorOpInfo(aten.lt.Tensor, False, False),
     aten.ne.Scalar: TensorOpInfo(aten.ne.Tensor, False, False),
+    aten.ne.Tensor: TensorOpInfo(aten.ne.Tensor, False, False),
     aten.add.Scalar: TensorOpInfo(aten.add.Tensor, False, False),
     aten.add_.Scalar: TensorOpInfo(aten.add_.Tensor, False, False),
     # For below cases, refer to LiftAddTensor Model in UT for sample
@@ -88,6 +94,7 @@ class LiftConstantScalarOperands(ExportPass):
     ) -> TensorConstant:
         # For dtype, in some cases, we cannot use node.args[0] as scalar dtype.
         # Ex: Where op args[0] can be bool, however, we probably want args[1] and args[2] to be dtype same as node.meta["val"] instead of bool type
+
         first_arg = node.args[0]
         tensor = torch.tensor(
             const_val,

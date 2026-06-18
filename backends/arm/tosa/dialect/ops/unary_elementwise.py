@@ -5,7 +5,7 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -107,7 +107,7 @@ def _validate_negate_dtype(dtype: torch.dtype) -> None:
     _validate_float_dtype(dtype, "NEGATE")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "ABS(Tensor input1) -> Tensor",
     DUAL_PROFILE_SPECS,
 )
@@ -116,7 +116,7 @@ def ABS(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "BITWISE_NOT(Tensor input1) -> Tensor",
     INT_SPECS,
 )
@@ -125,7 +125,7 @@ def BITWISE_NOT(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "CEIL(Tensor input1) -> Tensor",
     FP_SPECS,
 )
@@ -134,7 +134,7 @@ def CEIL(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "CLZ(Tensor input1) -> Tensor",
     INT_SPECS,
 )
@@ -143,7 +143,7 @@ def CLZ(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "COS(Tensor input1) -> Tensor",
     FP_SPECS,
 )
@@ -152,7 +152,7 @@ def COS(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "EXP(Tensor input1) -> Tensor",
     FP_SPECS,
 )
@@ -161,7 +161,7 @@ def EXP(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "FLOOR(Tensor input1) -> Tensor",
     FP_SPECS,
 )
@@ -170,7 +170,7 @@ def FLOOR(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "LOG(Tensor input1) -> Tensor",
     FP_SPECS,
 )
@@ -179,7 +179,7 @@ def LOG(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "LOGICAL_NOT(Tensor input1) -> Tensor",
     DUAL_PROFILE_SPECS,
 )
@@ -188,7 +188,7 @@ def LOGICAL_NOT(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "NEGATE(Tensor input1) -> Tensor",
     DUAL_PROFILE_SPECS,
 )
@@ -197,7 +197,7 @@ def NEGATE(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "RECIPROCAL(Tensor input1) -> Tensor",
     FP_SPECS,
 )
@@ -206,7 +206,7 @@ def RECIPROCAL(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "RSQRT(Tensor input1) -> Tensor",
     FP_SPECS,
 )
@@ -215,7 +215,7 @@ def RSQRT(input1: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input1, dtype=input1.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "SIN(Tensor input1) -> Tensor",
     FP_SPECS,
 )

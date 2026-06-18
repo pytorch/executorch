@@ -11,10 +11,12 @@ little-endian fp32, and emit `manifest.json` for the C++ gtest driver to consume
 Run: `python -m ...generate_op_tests --output <dir> [--ops add,rms_norm]`.
 """
 
+from __future__ import annotations
+
 import argparse
+import copy
 import json
 import os
-from typing import Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -47,7 +49,7 @@ def _materialize(spec) -> torch.Tensor:
     raise ValueError(f"unknown input gen: {gen!r}")
 
 
-def export_case(suite: WebGPUTestSuite, case) -> Tuple[torch.nn.Module, tuple, object]:
+def export_case(suite: WebGPUTestSuite, case) -> tuple[torch.nn.Module, tuple, object]:
     """Build the module + forward inputs and export to an ExecuTorch program."""
     module = suite.module_factory(**case.construct)
     # Seed so an unseeded-randn input is reproducible across generations (the golden uses
@@ -73,14 +75,17 @@ def _write_fp32(t: torch.Tensor, path: str) -> None:
     t.detach().contiguous().cpu().numpy().astype("<f4").tofile(path)
 
 
-def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> Dict:
+def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> dict:
     """Export one case, write its .pte + input/golden .bin, return its manifest entry."""
     module, inputs, prog = export_case(suite, case)
     if not _has_vulkan_delegate(prog):
-        print(
-            f"WARNING: {op}/{case.name or 'case'} produced NO VulkanBackend delegate "
+        msg = (
+            f"{op}/{case.name or 'case'} produced NO VulkanBackend delegate "
             "(silent CPU fallback) — this case would not exercise the WebGPU path."
         )
+        if case.required:
+            raise RuntimeError(msg)
+        print(f"WARNING: {msg}")
     golden_dtype = getattr(suite, "golden_dtype", "float64")
     out_index = 0
     with torch.no_grad():
@@ -90,8 +95,9 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> Dict:
         if case.golden_fn is not None:
             golden = case.golden_fn(module, inputs)
         elif golden_dtype == "float64":
-            module.double()  # truth ~1e-15; .pte already exported (fp32) above
-            golden = module(*[x.double() for x in inputs])
+            # fp64 oracle (~1e-15); deepcopy keeps the original module fp32.
+            double_module = copy.deepcopy(module).double()
+            golden = double_module(*[x.double() for x in inputs])
         else:
             golden = eager  # gather/copy: fp64 is bit-identical, skip it
     golden_t = golden[out_index] if isinstance(golden, (tuple, list)) else golden
@@ -110,7 +116,7 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> Dict:
     with open(os.path.join(out_dir, pte_rel), "wb") as f:
         f.write(prog.buffer)
 
-    input_entries: List[Dict] = []
+    input_entries: list[dict] = []
     for i, t in enumerate(inputs):
         rel = f"{case_id}.in{i}.bin"
         _write_fp32(t, os.path.join(out_dir, rel))
@@ -138,8 +144,8 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> Dict:
 
 
 def generate(
-    out_dir: str, ops: Optional[List[str]] = None, include_unverified: bool = False
-) -> List[Dict]:
+    out_dir: str, ops: list[str] | None = None, include_unverified: bool = False
+) -> list[dict]:
     os.makedirs(out_dir, exist_ok=True)
     if ops:
         # Explicit selection is honored verbatim (lets you target a single
@@ -154,7 +160,7 @@ def generate(
             if include_unverified or suite.verified
         ]
     heavy_enabled = bool(os.environ.get("WEBGPU_TEST_HEAVY"))
-    entries: List[Dict] = []
+    entries: list[dict] = []
     for op in selected:
         suite = op_test_registry[op]
         for case in suite.cases:
