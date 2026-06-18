@@ -35,7 +35,7 @@ class LogModule(torch.nn.Module):
 
 
 class TestLog:
-    def test__basic_nsys_inference(self, mocker):
+    def test__basic_nsys_inference(self, mocker, request):
         # Use 256 elements so that, after quantization to int8, the input can
         # cover the full discrete range [-128, 127].
         # The dataset is generated as a linear float ramp and later quantized,
@@ -49,6 +49,7 @@ class TestLog:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator=LinearRampDatasetCreator(low=0.0, high=1.0),
         )
 
@@ -60,7 +61,7 @@ class TestLog:
             pytest.param((1, 3, 16, 16), id="4D"),
         ],
     )
-    def test__basic_nsys_inference__qat(self, mocker, input_shape, use_qat):
+    def test__basic_nsys_inference__qat(self, mocker, request, input_shape, use_qat):
         model = LogModule()
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={Log: 1}, expected_non_delegated_ops={}
@@ -69,6 +70,7 @@ class TestLog:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator=RandomDatasetCreator(low=1.0, high=10.0),
             use_qat=use_qat,
         )
