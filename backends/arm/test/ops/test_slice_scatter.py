@@ -132,6 +132,28 @@ test_data_bf16 = {
         1,
     ),
 }
+test_data_fp8_step1 = {
+    "rank2_step1_fp8e4m3": lambda: (
+        torch.rand((5, 9), dtype=torch.float32).to(torch.float8_e4m3fn),
+        torch.rand((5, 5), dtype=torch.float32).to(torch.float8_e4m3fn),
+        1,
+        2,
+        7,
+        1,
+        "fp8e4m3",
+    ),
+}
+test_data_fp8_stepN = {
+    "rank3_step2_fp8e5m2": lambda: (
+        torch.rand((2, 4, 6), dtype=torch.float32).to(torch.float8_e5m2),
+        torch.rand((2, 4, 2), dtype=torch.float32).to(torch.float8_e5m2),
+        2,
+        1,
+        5,
+        2,
+        "fp8e5m2",
+    ),
+}
 
 
 class SliceScatter(torch.nn.Module):
@@ -184,6 +206,20 @@ def test_slice_scatter_tosa_FP(test_module: input_t):
         aten_op=SliceScatter.fp_aten_op,
         exir_op=SliceScatter.fp_exir_op,
         tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_fp8_step1 | test_data_fp8_stepN)
+def test_slice_scatter_tosa_FP_fp8(test_module):
+    x, y, dim, start, end, step, tosa_extension = test_module()
+    pipeline = TosaPipelineFP[input_t](
+        SliceScatter(),
+        (x, y, dim, start, end, step),
+        aten_op=SliceScatter.fp_aten_op,
+        exir_op=SliceScatter.fp_exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
     )
     pipeline.run()
 
