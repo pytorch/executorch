@@ -6,14 +6,14 @@
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops.conv2d import validate_conv2d_args_dtypes
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "TRANSPOSE_CONV2D(Tensor input, "
     "Tensor weight, "
     "Tensor bias, "
