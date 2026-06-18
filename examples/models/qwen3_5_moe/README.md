@@ -302,6 +302,63 @@ python -m executorch.examples.models.qwen3_5_moe.run \
     --max-new-tokens 50
 ```
 
+### Serving (MLX, multi-session)
+
+The MLX worker hosts multiple isolated sessions on **one** weight load, so an
+OpenAI-compatible server can serve concurrent conversations without duplicating
+the ~weights. `make qwen3_5_moe-mlx` builds both `qwen3_5_moe_runner` and
+`qwen3_5_moe_worker` (each with `mlx.metallib` copied alongside).
+
+Start the server (it auto-locates the worker binary):
+
+```bash
+# tokenizer.json the C++ worker opens (resolve from the HF cache)
+TOKENIZER_JSON=$(ls "${HF_HOME:-$HOME/.cache/huggingface}"/hub/models--Qwen--Qwen3.5-35B-A3B/snapshots/*/tokenizer.json | head -n1)
+
+python -m executorch.examples.models.qwen3_5_moe.serve \
+    --model-path ./qwen35_moe_mlx/model.pte \
+    --tokenizer-path "$TOKENIZER_JSON" \
+    --hf-tokenizer Qwen/Qwen3.5-35B-A3B \
+    --max-sessions 4 \
+    --host 127.0.0.1 \
+    --port 8000
+```
+
+- `--tokenizer-path` is the raw `tokenizer.json` **file** the worker loads;
+  `--hf-tokenizer` (HF id or local dir) supplies the chat template on the Python
+  side. No `--data-path` (the MLX `.pte` is self-contained).
+- `--max-sessions N` caps physical sessions on the single weight load. One slot
+  is reserved for anonymous requests (requests sent without a session id), so
+  `N` allows `N-1` concurrently named sessions.
+
+Query it (OpenAI-compatible) from another terminal. Route each conversation to a
+session with the `session_id` header:
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H "Content-Type: application/json" -H "session_id: alice" \
+  -d '{"model":"qwen3.5-moe",
+       "messages":[{"role":"user","content":"What is the capital of France?"}],
+       "max_tokens":50,"chat_template_kwargs":{"enable_thinking":false}}'
+```
+
+Endpoints: `GET /health`, `GET /v1/models`, `POST /v1/chat/completions`,
+`DELETE /v1/sessions/{id}` (free a session + its slot), `POST /v1/sessions/{id}/reset`.
+
+Session/memory semantics on MLX:
+- This server uses the standard **stateless** OpenAI contract — send the full
+  `messages` history each request. `session_id` + warm-resume is a KV-cache reuse
+  optimization for the shared prefix, not server-side memory.
+- Each session adds **one** set of mutable buffers (KV + recurrent/conv state) on
+  top of the shared weights; per-session cost scales with `max_seq_len`. Weights
+  are never duplicated.
+- KV persists across requests for a live session and is **released on close**
+  (`DELETE`/reset). Named sessions are not auto-closed — close them to free slots.
+  MLX's Metal allocator pools freed buffers (so RSS may not shrink immediately),
+  but they are reused by later sessions, keeping memory bounded.
+- Sessions interleave rather than run in parallel (MLX serializes GPU dispatch via
+  a global mutex).
+
 ### Tiny Model Test
 
 For CI or quick pipeline validation (no model download needed):
