@@ -131,6 +131,15 @@ class SlotManager:
     def set_slot(self, node_or_name: Union[Node, str], slot: Slot):
         if isinstance(node_or_name, Node):
             node_or_name = node_or_name.name
+        # A slot still tracked by an active tmp_scope has its id reclaimed when the
+        # scope exits, so it must never be bound as a node's persistent output (a
+        # later node would read it as dead). Node outputs must come from
+        # make_or_get_slot(). See SlotManager.tmp_scope().
+        assert not any(slot in scope for scope in self._tmp_scopes), (
+            f"Cannot bind temporary slot {slot} as the output of {node_or_name}; "
+            f"its id is reclaimed on tmp_scope exit. Use make_or_get_slot() for "
+            f"node outputs."
+        )
         # Allow setting a slot to the same value (e.g., for in-place ops like SLICE_UPDATE)
         existing = self.name_to_slot.get(node_or_name)
         if existing is not None:
