@@ -42,6 +42,8 @@ set(WEBGPU_SRCS
     runtime/ops/view_copy/ViewCopy.cpp
     runtime/ops/select/Select.cpp
     runtime/ops/sigmoid/UnaryOp.cpp
+    runtime/ops/squeeze/Squeeze.cpp
+    runtime/ops/unsqueeze/Unsqueeze.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
