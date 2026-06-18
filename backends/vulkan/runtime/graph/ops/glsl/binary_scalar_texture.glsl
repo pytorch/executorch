@@ -6,9 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// Binary comparison ops require that the output is boolean and not the same as
+// input. IS_COMPARISON_OP is set explicitly per shader variant in the .yaml.
+
 #version 450 core
 
 ${define_required_extensions(STORAGE, DTYPE)}
+$if IS_COMPARISON_OP:
+  ${define_required_extensions(STORAGE, "uint8")}
 
 #define PRECISION ${PRECISION}
 
@@ -16,6 +21,10 @@ ${define_required_extensions(STORAGE, DTYPE)}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 #define T ${texel_load_component_type(DTYPE, STORAGE)}
+$if IS_COMPARISON_OP:
+  #define VEC4_OUT_T ${texel_load_type("uint8", STORAGE)}
+$else:
+  #define VEC4_OUT_T VEC4_T
 
 #define op(X, Y) ${OPERATOR}
 
@@ -25,7 +34,11 @@ layout(std430) buffer;
 
 #include "indexing.glslh"
 
-${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+$if IS_COMPARISON_OP:
+  ${layout_declare_tensor(B, "w", "t_out", "uint8", STORAGE)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
+
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 
 ${layout_declare_ubo(B, "TextureMetadata", "outp")}
@@ -37,7 +50,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#include "binary_op_defs.glslh"
+$if not IS_COMPARISON_OP:
+  #include "binary_op_defs.glslh"
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -47,7 +61,7 @@ void main() {
   }
 
   VEC4_T in_texel = texelFetch(t_in, pos, 0);
-  VEC4_T out_texel = VEC4_T(op(in_texel, VEC4_T(scalar_value)));
+  VEC4_OUT_T out_texel = VEC4_OUT_T(op(in_texel, VEC4_T(scalar_value)));
 
   imageStore(t_out, pos, out_texel);
 }

@@ -7,9 +7,8 @@
 binary_scalar_texture:
   parameter_names_with_default_values:
     OPERATOR: power_of(X, Y)
-    NDIM: 3
+    IS_COMPARISON_OP: false
     DTYPE: float
-    PACKING: C_packed
     STORAGE: texture3d
   generate_variant_forall:
     DTYPE:
@@ -18,3 +17,6 @@ binary_scalar_texture:
       - VALUE: int32
   shader_variants:
     - NAME: pow_scalar_texture3d
+    - NAME: eq_scalar_texture3d
+      OPERATOR: equal(X, Y)
+      IS_COMPARISON_OP: true

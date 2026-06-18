@@ -2237,3 +2237,32 @@ def get_pow_tensor_scalar_inputs():
     ]
     test_suite.dtypes = ["at::kFloat"]
     return test_suite
+
+
+@register_test_suite("aten.eq.Scalar")
+def get_eq_scalar_inputs():
+    # Scalars are chosen to fall within the make_seq_tensor range (1..numel),
+    # so each case exercises a genuine mix of equal / not-equal elements rather
+    # than a trivially all-false comparison.
+    test_suite = VkTestSuite(
+        [
+            ((M1,), 5),
+            ((M2, M1), 100),
+            ((S1, M1, M2), 1000),
+            ((S1, S2, S2, M2), 2000),
+            ((S, S1, S2), 50),
+            ((M1, M2), 700),
+            ((S1, S2), 20),
+        ]
+    )
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = ["at::kInt"]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite

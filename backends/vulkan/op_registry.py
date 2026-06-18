@@ -327,6 +327,17 @@ def register_pow_tensor_scalar():
     )
 
 
+@update_features(exir_ops.edge.aten.eq.Scalar)
+def register_eq_scalar():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 # =============================================================================
 # ToCopy.cpp
 # =============================================================================
