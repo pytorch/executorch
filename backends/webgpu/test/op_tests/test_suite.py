@@ -12,8 +12,10 @@ registered via a decorator — but the reference engine is a torch golden
 loaded in C++ (the WebGPU native binary has no ATen), not an inline ATen call.
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple, Union
 
 # Prime-number dim sizes, mirroring backends/vulkan/test/op_tests/cases.py.
 XL = 113
@@ -32,13 +34,12 @@ class InputSpec:
     """A single forward input. The materialized tensor feeds both the torch golden
     and the exported .pte (no C++ reconstruction)."""
 
-    shape: Tuple[int, ...]
-    dtype: str = "float32"
-    gen: Union[str, Callable] = "randn"  # "randn"/"ramp" or a callable(shape)->Tensor
+    shape: tuple[int, ...]
+    gen: str | Callable = "randn"  # "randn"/"ramp" or a callable(shape)->Tensor
 
 
 # A forward input is either a bare shape tuple (-> default-randn fp32) or an InputSpec.
-Input = Union[Tuple[int, ...], InputSpec]
+Input = tuple[int, ...] | InputSpec
 
 
 @dataclass
@@ -49,14 +50,14 @@ class Case:
     `heavy` -> export-gated behind WEBGPU_TEST_HEAVY; `golden_fn` overrides the fp64 oracle.
     """
 
-    construct: Dict[str, object] = field(default_factory=dict)
-    inputs: Tuple[Input, ...] = ()
-    name: Optional[str] = None
-    atol: Optional[float] = None
-    rtol: Optional[float] = None
+    construct: dict[str, object] = field(default_factory=dict)
+    inputs: tuple[Input, ...] = ()
+    name: str | None = None
+    atol: float | None = None
+    rtol: float | None = None
     required: bool = True
     heavy: bool = False
-    golden_fn: Optional[Callable] = None
+    golden_fn: Callable | None = None
 
     def __post_init__(self) -> None:
         # Mirror kQ4gswConfigs: every heavy config is required=False (export-gated, never FAILs on absence).
@@ -69,7 +70,7 @@ class WebGPUTestSuite:
     """A per-op suite: a module factory + the list of cases to generate."""
 
     module_factory: Callable[..., object]
-    cases: List[Case]
+    cases: list[Case]
     atol: float = 1e-3
     rtol: float = 1e-3
     # Golden oracle dtype. "float64" (default) computes the golden via an fp64 forward;
@@ -80,10 +81,10 @@ class WebGPUTestSuite:
     verified: bool = True
 
 
-op_test_registry: Dict[str, WebGPUTestSuite] = {}
+op_test_registry: dict[str, WebGPUTestSuite] = {}
 
 
-def register_op_test(name_or_names: Union[str, List[str]]) -> Callable:
+def register_op_test(name_or_names: str | list[str]) -> Callable:
     """Decorator: register the suite returned by `fn()` under one or more op names
     (list-aware, mirroring Vulkan's register_test_suite)."""
 
