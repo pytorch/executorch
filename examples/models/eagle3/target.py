@@ -61,9 +61,10 @@ class TapTarget(Protocol):
 class TargetSpec:
     """How to load a target for export and its export-shape constraints."""
 
-    # (target_dir, max_seq_len) -> a CPU TapTarget with runtime buffers
-    # materialized (export keeps the model on the host).
-    load: Callable[[str, int], TapTarget]
+    # (target_dir, max_seq_len, backend) -> a CPU TapTarget with runtime buffers
+    # materialized (export keeps the model on the host). ``backend`` selects the
+    # weight packing ("cuda" or "mlx").
+    load: Callable[..., TapTarget]
     # config -> max tokens accepted in one target forward (e.g. a sliding ring
     # buffer caps it at 2*window; a flat-cache model uses max_seq_len-1).
     max_forward_len: Callable[[Any], int]
@@ -73,12 +74,14 @@ class TargetSpec:
     min_forward_len: int
 
 
-def _load_gemma4_31b(target_dir: str, max_seq_len: int) -> TapTarget:
+def _load_gemma4_31b(
+    target_dir: str, max_seq_len: int, backend: str = "cuda"
+) -> TapTarget:
     from executorch.examples.models.gemma4_31b.export import load_prequantized_model
     from executorch.examples.models.gemma4_31b.model import materialize_runtime_buffers
 
     target, _ = load_prequantized_model(
-        target_dir, max_seq_len=max_seq_len, backend="cuda"
+        target_dir, max_seq_len=max_seq_len, backend=backend
     )
     materialize_runtime_buffers(target, dtype=torch.bfloat16, device="cpu")
     return target.eval()

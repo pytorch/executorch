@@ -16,6 +16,21 @@
                 "string": "${hostSystemName}",
                 "list": ["Linux", "Windows"]
             }
+        },
+        {
+            "name": "eagle3-mlx",
+            "displayName": "EAGLE-3 speculator runner (MLX)",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/eagle3",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -24,6 +39,30 @@
             "displayName": "Build EAGLE-3 speculator runner (CUDA)",
             "configurePreset": "eagle3-cuda",
             "targets": ["eagle3_speculator_runner"]
+        },
+        {
+            "name": "eagle3-mlx",
+            "displayName": "Build EAGLE-3 speculator runner (MLX)",
+            "configurePreset": "eagle3-mlx",
+            "targets": ["eagle3_speculator_runner"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "eagle3-cuda",
+            "displayName": "Configure and build EAGLE-3 speculator runner (CUDA)",
+            "steps": [
+                {"type": "configure", "name": "eagle3-cuda"},
+                {"type": "build", "name": "eagle3-cuda"}
+            ]
+        },
+        {
+            "name": "eagle3-mlx",
+            "displayName": "Configure and build EAGLE-3 speculator runner (MLX)",
+            "steps": [
+                {"type": "configure", "name": "eagle3-mlx"},
+                {"type": "build", "name": "eagle3-mlx"}
+            ]
         }
     ]
 }
