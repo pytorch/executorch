@@ -665,3 +665,90 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .run_passes(self.PassStage)
             .run_method_and_compare_outputs()
         )
+
+    class DynamicQuantPerChannelBinaryChain(torch.nn.Module):
+        """A per-channel broadcasting binary op that is the first consumer of an
+        input activation, followed by a dynamically-quantized convolution.
+
+        This reproduces the graph shape that the dynamic-quant path of
+        ``input_to_nhwc`` mishandles. The input activation feeds a per-channel
+        ``mul``/``add`` (an NCHW ``[1, C, 1, 1]`` constant operand), and the
+        convolution chain runs *through* that binary op. When the convolution
+        requests NHWC, ``input_to_nhwc`` traces back through the binary op to the
+        input activation and calls ``replace_all_uses_with``, switching the binary
+        op's activation operand to NHWC while its constant operand stays NCHW. At
+        runtime XNNPACK then fails in ``xnn_reshape_binary_elementwise_nd`` with
+        ``xnn_status_invalid_parameter`` because ``[1, H, W, C]`` and
+        ``[1, C, 1, 1]`` are not broadcast-compatible -- unless the pass
+        re-converges the binary op's operands.
+
+        The quantize/dequantize ops are emitted directly (rather than via the
+        quantizer) so the graph reliably reproduces the shared back-traced source;
+        the whole graph delegates to XNNPACK.
+        """
+
+        def __init__(self):
+            super().__init__()
+            out_channels, in_channels, kernel = 8, 8, 3
+            self.register_buffer(
+                "weight",
+                torch.randint(
+                    -127,
+                    127,
+                    (out_channels, in_channels, kernel, kernel),
+                    dtype=torch.int8,
+                ),
+            )
+            self.register_buffer(
+                "weight_scale", torch.rand(out_channels) * 0.02 + 0.001
+            )
+            self.register_buffer(
+                "weight_zero_point", torch.zeros(out_channels, dtype=torch.int64)
+            )
+            self.register_buffer("scale", torch.rand(1, out_channels, 1, 1) + 0.5)
+            self.register_buffer("bias", torch.rand(1, out_channels, 1, 1))
+
+        def forward(self, activation):
+            qd = torch.ops.quantized_decomposed
+            # Per-channel binary op as the first consumer of the input activation.
+            scaled = activation * self.scale + self.bias
+            relued = torch.relu(scaled)
+            # Dynamic (runtime-chosen) quantization feeding the convolution.
+            q_scale, q_zero_point = qd.choose_qparams.tensor(
+                relued, -128, 127, 1e-5, torch.int8
+            )
+            dequantized = qd.dequantize_per_tensor.tensor(
+                qd.quantize_per_tensor.tensor(
+                    relued, q_scale, q_zero_point, -128, 127, torch.int8
+                ),
+                q_scale,
+                q_zero_point,
+                -128,
+                127,
+                torch.int8,
+            )
+            weight = qd.dequantize_per_channel(
+                self.weight,
+                self.weight_scale,
+                self.weight_zero_point,
+                0,
+                -127,
+                127,
+                torch.int8,
+            )
+            return torch.nn.functional.conv2d(dequantized, weight, padding=1)
+
+    def test_dynamic_quant_per_channel_binary_chain_lowers_and_runs(self):
+        # Regression test: the full XNNPACK lowering of this graph must run
+        # without an xnn_status_invalid_parameter from a binary op whose operands
+        # ended up in mismatched (NHWC vs NCHW) memory formats.
+        model = self.DynamicQuantPerChannelBinaryChain().eval()
+        activation = torch.randn(1, 8, 16, 16)
+        (
+            Tester(model, (activation,))
+            .export()
+            .to_edge_transform_and_lower()
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
