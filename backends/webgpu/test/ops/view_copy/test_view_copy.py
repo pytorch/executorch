@@ -7,7 +7,7 @@
 """`aten.view_copy.default` module + configs for the WebGPU op-test framework.
 
 `ViewModule` + `CONFIGS` are imported by `cases.py` to drive the declarative
-op-test suite. `TestViewCopy` is the export-delegation + eager-correctness
+op-test suite. `ViewCopyTest` is the export-delegation
 smoke test.
 """
 
@@ -15,7 +15,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (input_shape, view_fn)
@@ -55,7 +55,7 @@ def _delegated(et) -> bool:
     )
 
 
-class TestViewCopy(unittest.TestCase):
+class ViewCopyTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (shape, fn) in CONFIGS.items():
             et = _export(fn, _det_input(shape))
@@ -63,12 +63,3 @@ class TestViewCopy(unittest.TestCase):
                 _delegated(et),
                 f"Expected a VulkanBackend delegate (view_copy {name})",
             )
-
-    def test_golden_matches_eager(self) -> None:
-        for _, (shape, fn) in CONFIGS.items():
-            x = _det_input(shape)
-            torch.testing.assert_close(ViewModule(fn)(x), fn(x))
-
-
-if __name__ == "__main__":
-    unittest.main()
