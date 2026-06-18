@@ -380,6 +380,21 @@ class IndexTensor(torch.nn.Module):
             (torch.arange(2, dtype=torch.int32),),
         ),
     }
+    test_data_fp8: dict[input_params] = {
+        "test_2d_1_idx_fp8e4m3": (
+            torch.rand(5, 2, dtype=torch.float32).to(torch.float8_e4m3fn),
+            (torch.arange(5, dtype=torch.int32),),
+            "fp8e4m3",
+        ),
+        "test_2d_2_idx_fp8e5m2": (
+            torch.rand(5, 2, dtype=torch.float32).to(torch.float8_e5m2),
+            (
+                torch.randint(5, size=(5,), dtype=torch.int32),
+                torch.randint(2, size=(5,), dtype=torch.int32),
+            ),
+            "fp8e5m2",
+        ),
+    }
 
     # xfail - None (unsqueeze) unsupported
     test_data_none: dict[input_params] = {
@@ -449,6 +464,23 @@ def test_index_tensor_tosa_FP(test_data: input_params):
                 tosa_extensions=["bf16"],
             ).run()
         )
+
+
+@common.parametrize("test_data", IndexTensor.test_data_fp8)
+def test_index_tensor_tosa_FP_fp8(test_data):
+    input_, indices, tosa_extension = test_data
+    with torch.no_grad():
+        pipeline = TosaPipelineFP[input_params](
+            IndexTensor(),
+            (input_, indices),
+            IndexTensorTestCommon.aten_op,
+            IndexTensorTestCommon.exir_op,
+            atol=IndexTensorTestCommon.atol,
+            rtol=IndexTensorTestCommon.rtol,
+            compare_tosa_ref_model_outputs=False,
+            tosa_extensions=[tosa_extension],
+        )
+        pipeline.run()
 
 
 @common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
