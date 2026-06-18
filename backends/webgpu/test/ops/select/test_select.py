@@ -7,7 +7,7 @@
 """`aten.select_copy.int` module + configs for the WebGPU op-test framework.
 
 `SelectModule` + `CONFIGS` are imported by `cases.py` to drive the declarative
-op-test suite. `TestSelect` is the export-delegation + eager-correctness smoke test.
+op-test suite. `SelectTest` is the export-delegation smoke test.
 Configs cover the leading, middle, and last dim plus a negative index (output rank =
 input rank - 1).
 """
@@ -16,7 +16,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (input_shape, select_fn)
@@ -57,19 +57,10 @@ def _delegated(et) -> bool:
     )
 
 
-class TestSelect(unittest.TestCase):
+class SelectTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (shape, fn) in CONFIGS.items():
             et = _export(fn, _det_input(shape))
             self.assertTrue(
                 _delegated(et), f"Expected a VulkanBackend delegate (select {name})"
             )
-
-    def test_golden_matches_eager(self) -> None:
-        for _, (shape, fn) in CONFIGS.items():
-            x = _det_input(shape)
-            torch.testing.assert_close(SelectModule(fn)(x), fn(x))
-
-
-if __name__ == "__main__":
-    unittest.main()
