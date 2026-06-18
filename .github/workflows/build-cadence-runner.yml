@@ -9,7 +9,8 @@ on:
       - release/*
     tags:
       - ciflow/nightly/*
-  pull_request:
+  # TEMP TEST: pull_request trigger removed so the ONLY cadence run on this PR is
+  # pull_request_target, to verify the prt run surfaces on the PR.
   pull_request_target:
     types: [labeled]
   workflow_dispatch:
