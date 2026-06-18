@@ -687,8 +687,9 @@ vkapi::VulkanBuffer allocate_buffer(
   // otherwise read past the end of the buffer, which silently zeroes the value
   // on NVIDIA GPUs. This only grows the allocation; the tensor's
   // physical_numel() is unchanged.
-  const size_t alloc_nbytes =
-      utils::align_up(element_size(dtype) * numel, static_cast<size_t>(16));
+  const size_t alloc_nbytes = utils::align_up(
+      element_size(dtype) * static_cast<size_t>(numel),
+      static_cast<size_t>(16));
 
   // TODO: this check is incorrect. max_buffer_numel() returns
   // maxStorageBufferRange, which is a size in bytes, so the comparison should
