@@ -7,7 +7,7 @@
 """`aten.sigmoid.default` module + input for the WebGPU op-test framework.
 
 `SigmoidModule`, `N`, and `_det_input` are imported by `cases.py` to drive the
-declarative op-test suite. `TestSigmoid` is the export-delegation + eager-correctness
+declarative op-test suite. `SigmoidTest` is the export-delegation
 smoke test. Sigmoid is on the Llama critical path (`F.silu` -> `sigmoid` + `mul`); the
 deterministic input spans the saturation tails.
 """
@@ -16,7 +16,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # Input length; the deterministic input spans the saturation tails.
@@ -40,7 +40,7 @@ def _export(m: torch.nn.Module, x: torch.Tensor):
     ).to_executorch()
 
 
-class TestSigmoid(unittest.TestCase):
+class SigmoidTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         et = _export(SigmoidModule().eval(), _det_input())
         found = any(
@@ -49,11 +49,3 @@ class TestSigmoid(unittest.TestCase):
             for d in plan.delegates
         )
         self.assertTrue(found, "Expected a VulkanBackend delegate (sigmoid)")
-
-    def test_golden_matches_eager(self) -> None:
-        x = _det_input()
-        torch.testing.assert_close(SigmoidModule()(x), torch.sigmoid(x))
-
-
-if __name__ == "__main__":
-    unittest.main()
