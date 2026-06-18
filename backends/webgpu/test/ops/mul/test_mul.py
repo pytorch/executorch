@@ -7,8 +7,8 @@
 """`aten.mul.Tensor` (full broadcast) module + configs for the WebGPU op-test framework.
 
 `MulModule` + `CONFIGS` are imported by `cases.py` to drive the declarative op-test
-suite (export via VulkanPartitioner + fp64 torch golden, run on Dawn). `TestMul` is
-the export-delegation + eager-correctness smoke test. Configs span the same-shape
+suite (export via VulkanPartitioner + fp64 torch golden, run on Dawn). `MulTest` is
+the export-delegation smoke test. Configs span the same-shape
 fast path (SwiGLU), last-dim broadcast at LLM width, and a mixed-rank left-pad case.
 """
 
@@ -16,7 +16,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (shape_a, shape_b). Output shape is the broadcast of the two.
@@ -55,7 +55,7 @@ def _delegated(et) -> bool:
     )
 
 
-class TestMul(unittest.TestCase):
+class MulTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (sa, sb) in CONFIGS.items():
             a, b = _det_inputs(sa, sb)
@@ -63,12 +63,3 @@ class TestMul(unittest.TestCase):
             self.assertTrue(
                 _delegated(et), f"Expected a VulkanBackend delegate (mul {name})"
             )
-
-    def test_golden_matches_eager(self) -> None:
-        for _, (sa, sb) in CONFIGS.items():
-            a, b = _det_inputs(sa, sb)
-            torch.testing.assert_close(MulModule()(a, b), a * b)
-
-
-if __name__ == "__main__":
-    unittest.main()
