@@ -55,6 +55,10 @@ constexpr const char* kPrefillMethod = "prefill";
 constexpr const char* kDecodeMethod = "decode";
 #endif
 
+// Constant method exported by the MLX .pte giving the largest prefill chunk the
+// `forward` method was compiled for. Read into the metadata map in create().
+constexpr const char* kMaxPrefillChunk = "get_max_prefill_chunk";
+
 Result<uint64_t> read_sampled_token(
     const executorch::aten::Tensor& output,
     float temperature) {
@@ -264,7 +268,13 @@ class Qwen35MoESession : public LLMSession {
     // pass. Only the final chunk's sampled token is kept; the recurrence/KV
     // state from earlier chunks persists via pos_ advancement.
 #ifdef EXECUTORCH_BUILD_MLX
-    const int64_t chunk_size = kPrefillChunkSize;
+    // Chunk size = compiled max prefill chunk from model metadata, falling back
+    // to the default if the model didn't export it. Clamp to >= 1.
+    int64_t chunk_size = kPrefillChunkSize;
+    if (auto it = metadata_.find(kMaxPrefillChunk);
+        it != metadata_.end() && it->second > 0) {
+      chunk_size = it->second;
+    }
 #else
     const int64_t chunk_size = T;
 #endif
@@ -492,6 +502,14 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
     ET_LOG(Error, "Qwen35MoEEngine: failed to read metadata");
     return metadata_result.error();
   }
+#ifdef EXECUTORCH_BUILD_MLX
+  // Surface the compiled max prefill chunk (a constant method get_llm_metadata
+  // doesn't harvest) into the metadata map so the session can chunk long
+  // prompts within the shape `forward` was compiled for.
+  if (auto mpc = meta_module->get(kMaxPrefillChunk); mpc.ok()) {
+    metadata_result.get()[kMaxPrefillChunk] = mpc->toScalar().to<int64_t>();
+  }
+#endif
   auto eos_ids = get_eos_ids(tokenizer.get(), meta_module.get());
   // This export's metadata doesn't carry the chat-turn EOS (config.json has no
   // eos_token_id and the .pte exports no get_eos_ids method), so get_eos_ids()

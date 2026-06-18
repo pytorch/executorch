@@ -161,6 +161,12 @@ jobs:
         fi
         echo "::endgroup::"
 
+        echo "::group::Verify chunked == unchunked prefill"
+        QWEN_TINY_PTE=/tmp/qwen35_moe_mlx_tiny/model.pte \
+          ${CONDA_RUN} python -m pytest \
+          examples/models/qwen3_5_moe/test_chunked_prefill.py -v
+        echo "::endgroup::"
+
         echo "::group::Build Qwen 3.5 MoE MLX C++ runner"
         # Validates the MLX C++ runner build wiring (compile + link + metallib).
         # The tiny model has no compatible tokenizer (vocab 256, random weights),
