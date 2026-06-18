@@ -10,7 +10,7 @@ from executorch.backends.arm.tosa.dialect.ops._common import (
     require_same_dtype,
     validate_nan_mode,
 )
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -134,7 +134,7 @@ def _validate_and_infer_mul_output_dtype(dtype: torch.dtype) -> torch.dtype:  # 
     _raise_unsupported_dtype(dtype, "MUL")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "ADD(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -143,7 +143,7 @@ def ADD(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "ADD")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "ARITHMETIC_RIGHT_SHIFT(Tensor input1, Tensor input2, *, bool round=False) -> Tensor",
     INT_SPECS,
 )
@@ -157,7 +157,7 @@ def ARITHMETIC_RIGHT_SHIFT(
     return _binary_meta(input1, input2, "ARITHMETIC_RIGHT_SHIFT")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "BITWISE_AND(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -166,7 +166,7 @@ def BITWISE_AND(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "BITWISE_AND")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "BITWISE_OR(Tensor input1, Tensor input2) -> Tensor",
     INT_SPECS,
 )
@@ -175,7 +175,7 @@ def BITWISE_OR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "BITWISE_OR")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "BITWISE_XOR(Tensor input1, Tensor input2) -> Tensor",
     INT_SPECS,
 )
@@ -184,7 +184,7 @@ def BITWISE_XOR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "BITWISE_XOR")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "EQUAL(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -193,7 +193,7 @@ def EQUAL(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "EQUAL", output_dtype=torch.bool)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "GREATER(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -202,7 +202,7 @@ def GREATER(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "GREATER", output_dtype=torch.bool)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "GREATER_EQUAL(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -211,7 +211,7 @@ def GREATER_EQUAL(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "GREATER_EQUAL", output_dtype=torch.bool)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "INTDIV(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -220,7 +220,7 @@ def INTDIV(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "INTDIV")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "LOGICAL_AND(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -229,7 +229,7 @@ def LOGICAL_AND(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "LOGICAL_AND")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "LOGICAL_LEFT_SHIFT(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -238,7 +238,7 @@ def LOGICAL_LEFT_SHIFT(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tens
     return _binary_meta(input1, input2, "LOGICAL_LEFT_SHIFT")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "LOGICAL_RIGHT_SHIFT(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -247,7 +247,7 @@ def LOGICAL_RIGHT_SHIFT(input1: torch.Tensor, input2: torch.Tensor) -> torch.Ten
     return _binary_meta(input1, input2, "LOGICAL_RIGHT_SHIFT")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "LOGICAL_OR(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -256,7 +256,7 @@ def LOGICAL_OR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "LOGICAL_OR")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "LOGICAL_XOR(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -265,7 +265,7 @@ def LOGICAL_XOR(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "LOGICAL_XOR")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "MAXIMUM(Tensor input1, Tensor input2, *, str nan_mode='PROPAGATE') -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -280,7 +280,7 @@ def MAXIMUM(
     return _binary_meta(input1, input2, "MAXIMUM")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "MINIMUM(Tensor input1, Tensor input2, *, str nan_mode='PROPAGATE') -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -295,7 +295,7 @@ def MINIMUM(
     return _binary_meta(input1, input2, "MINIMUM")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "MUL(Tensor input1, Tensor input2, *, int shift=0) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -318,7 +318,7 @@ def MUL(
     return _binary_meta(input1, input2, "MUL", output_dtype=output_dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "POW(Tensor input1, Tensor input2) -> Tensor",
     FP_SPECS,
 )
@@ -327,7 +327,7 @@ def POW(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
     return _binary_meta(input1, input2, "POW")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "SUB(Tensor input1, Tensor input2) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )

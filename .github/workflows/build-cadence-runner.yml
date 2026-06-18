@@ -10,14 +10,45 @@ on:
     tags:
       - ciflow/nightly/*
   pull_request:
+  pull_request_target:
+    types: [labeled]
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run-cadence: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          HAS_CLA: ${{ contains(github.event.pull_request.labels.*.name, 'CLA Signed') }}
+          HAS_EXPORT: ${{ contains(github.event.pull_request.labels.*.name, 'meta-exported') }}
+        run: |
+          run=false
+          case "${EVENT}" in
+            push|schedule|workflow_dispatch)
+              run=true
+              ;;
+            pull_request)
+              [ "${IS_FORK}" = "false" ] && run=true
+              ;;
+            pull_request_target)
+              if [ "${IS_FORK}" = "true" ] && [ "${HAS_CLA}" = "true" ] && [ "${HAS_EXPORT}" = "true" ]; then
+                run=true
+              fi
+              ;;
+          esac
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
   cpu-build:
+    if: github.event_name != 'pull_request_target'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -44,6 +75,7 @@ jobs:
 
   cpu-test:
     needs: cpu-build
+    if: github.event_name != 'pull_request_target'
     permissions:
       id-token: write
       contents: read
@@ -56,19 +88,23 @@ jobs:
   # lives in _xtensa_build.yml. fusion_g3 is omitted until the upstream fusion_g3
   # <-> nnlib-FusionG3 API skew is fixed (its runner does not link).
   hifi-build:
+    needs: gate
+    if: needs.gate.outputs.run-cadence == 'true'
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/_xtensa_build.yml
     with:
       backend: hifi4
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
 
   vision-build:
+    needs: gate
+    if: needs.gate.outputs.run-cadence == 'true'
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/_xtensa_build.yml
     with:
       backend: vision
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}

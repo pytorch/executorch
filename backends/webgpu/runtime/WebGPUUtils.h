@@ -57,7 +57,15 @@ make_uniform(WGPUDevice device, const void* data, size_t size) {
   desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
   desc.mappedAtCreation = true;
   WGPUBuffer buf = wgpuDeviceCreateBuffer(device, &desc);
-  std::memcpy(wgpuBufferGetMappedRange(buf, 0, size), data, size);
+  if (!buf) {
+    throw std::runtime_error("make_uniform: buffer creation failed");
+  }
+  void* ptr = wgpuBufferGetMappedRange(buf, 0, size);
+  if (!ptr) {
+    wgpuBufferRelease(buf);
+    throw std::runtime_error("make_uniform: mapped range is null");
+  }
+  std::memcpy(ptr, data, size);
   wgpuBufferUnmap(buf);
   return buf;
 }
