@@ -98,6 +98,17 @@ jobs:
       backend: hifi4
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
 
+  hifi-op-test:
+    needs: [gate, hifi-build]
+    if: needs.gate.outputs.run-cadence == 'true'
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_test.yml
+    with:
+      backend: hifi4
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+
   vision-build:
     needs: gate
     if: needs.gate.outputs.run-cadence == 'true'
