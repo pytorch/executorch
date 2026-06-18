@@ -19,36 +19,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      run-cadence: ${{ steps.decide.outputs.run }}
-    steps:
-      - id: decide
-        env:
-          EVENT: ${{ github.event_name }}
-          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
-          HAS_CLA: ${{ contains(github.event.pull_request.labels.*.name, 'CLA Signed') }}
-          HAS_EXPORT: ${{ contains(github.event.pull_request.labels.*.name, 'meta-exported') }}
-        run: |
-          run=false
-          case "${EVENT}" in
-            push|schedule|workflow_dispatch)
-              run=true
-              ;;
-            pull_request)
-              [ "${IS_FORK}" = "false" ] && run=true
-              ;;
-            pull_request_target)
-              if [ "${IS_FORK}" = "true" ] && [ "${HAS_CLA}" = "true" ] && [ "${HAS_EXPORT}" = "true" ]; then
-                run=true
-              fi
-              ;;
-          esac
-          echo "run=${run}" >> "${GITHUB_OUTPUT}"
-
+  # The cadence build/test jobs run when:
+  #   - push / schedule / workflow_dispatch, OR
+  #   - a same-repo pull_request (head is this repo, not a fork), OR
+  #   - a pull_request_target from a fork labeled CLA Signed + meta-exported
+  #     (Meta-exported PRs; the only path that runs credentialed CI on fork code).
+  # GitHub Actions has no YAML anchors and env is unavailable in job-level if, so
+  # this condition is duplicated per job below; keep the copies in sync.
   cpu-build:
-    if: github.event_name != 'pull_request_target'
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -58,7 +41,7 @@ jobs:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: cadence-runner-build
       script: |
@@ -75,21 +58,28 @@ jobs:
 
   cpu-test:
     needs: cpu-build
-    if: github.event_name != 'pull_request_target'
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/_test_cadence.yml
     with:
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
 
   # Cross-compile cadence_executor_runner for each Cadence Xtensa core, one job
   # per backend so they show as separate lines (no matrix grouping). Shared logic
   # lives in _xtensa_build.yml. fusion_g3 is omitted until the upstream fusion_g3
   # <-> nnlib-FusionG3 API skew is fixed (its runner does not link).
   hifi-build:
-    needs: gate
-    if: needs.gate.outputs.run-cadence == 'true'
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     permissions:
       id-token: write
       contents: read
@@ -99,8 +89,11 @@ jobs:
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
 
   vision-build:
-    needs: gate
-    if: needs.gate.outputs.run-cadence == 'true'
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     permissions:
       id-token: write
       contents: read
@@ -108,3 +101,101 @@ jobs:
     with:
       backend: vision
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+
+  # Fork exports run via pull_request_target, whose native check runs attach to
+  # the base SHA and never surface on the PR. Mirror per-job check runs onto the
+  # PR head SHA so each cadence job shows up as its own check on the export PR,
+  # linking to its logs. Same-repo PRs run via pull_request and report natively.
+  export-checks-start:
+    if: >-
+      github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported')
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+    outputs:
+      ids: ${{ steps.create.outputs.ids }}
+    steps:
+      - id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const jobs = ['cpu-build', 'cpu-test', 'hifi-build', 'vision-build'];
+            const ids = {};
+            for (const job of jobs) {
+              const res = await github.rest.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: `cadence (export) / ${job}`,
+                head_sha: context.payload.pull_request.head.sha,
+                status: 'in_progress',
+                details_url: runUrl,
+                output: {
+                  title: 'Running on the export workflow run',
+                  summary: `Mirrored from the pull_request_target run (native checks attach to the base SHA). See ${runUrl}`,
+                },
+              });
+              ids[job] = res.data.id;
+              // Persist after each create so a mid-loop failure still propagates
+              // partial IDs to the finish job (which then updates, not duplicates).
+              core.setOutput('ids', JSON.stringify(ids));
+            }
+
+  export-checks-finish:
+    needs: [cpu-build, cpu-test, hifi-build, vision-build, export-checks-start]
+    if: >-
+      always() && github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported')
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      actions: read
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          IDS: ${{ needs.export-checks-start.outputs.ids }}
+        with:
+          script: |
+            const needs = JSON.parse(process.env.NEEDS);
+            const ids = JSON.parse(process.env.IDS || '{}');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const jobs = ['cpu-build', 'cpu-test', 'hifi-build', 'vision-build'];
+            // Link each check to its inner reusable-workflow job for a direct log
+            // link; fall back to the run page when a job name is not matchable.
+            const { data } = await github.rest.actions.listJobsForWorkflowRun({
+              owner, repo, run_id: context.runId, per_page: 100,
+            });
+            const urlFor = (job) => {
+              const m = data.jobs.find(j => j.name === job || j.name.startsWith(`${job} /`));
+              return m ? m.html_url : runUrl;
+            };
+            // Valid check-run conclusions; anything unexpected fails closed.
+            const allowed = ['success', 'failure', 'cancelled', 'skipped', 'timed_out'];
+            for (const job of jobs) {
+              const result = (needs[job] && needs[job].result) || 'unknown';
+              const conclusion = allowed.includes(result) ? result : 'failure';
+              const fields = {
+                owner,
+                repo,
+                status: 'completed',
+                conclusion,
+                details_url: urlFor(job),
+                output: {
+                  title: `${job}: ${result}`,
+                  summary: `Result mirrored from the export workflow run: ${runUrl}`,
+                },
+              };
+              if (ids[job]) {
+                await github.rest.checks.update({ ...fields, check_run_id: ids[job] });
+              } else {
+                await github.rest.checks.create({
+                  ...fields,
+                  name: `cadence (export) / ${job}`,
+                  head_sha: context.payload.pull_request.head.sha,
+                });
+              }
+            }
