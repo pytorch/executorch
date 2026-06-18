@@ -11,6 +11,8 @@ eager model and checks that both forms produce matching outputs.
 The export script then:
 
 - calibrates PT2E quantization with 16 kHz mono WAV audio;
+- derives recurrent-state quantization parameters from the calibration audio
+  and stores the state in an internal int8 mutable buffer;
 - lowers the quantized model to Ethos-U85-256; and
 - writes a `.pte` file and reference probabilities for validation.
 
@@ -58,11 +60,8 @@ other options.
 
 ## Delegation
 
-The exported PTE accepts a `(1, 576)` float audio tensor and a
-`(2, 1, 128)` float recurrent-state tensor. It returns a speech probability
-and the state for the next audio frame.
-
-The convolutional path is lowered to Ethos-U. The LSTMCell state update remains
-portable because the Arm partitioner cannot yet delegate the complete recurrent
-pattern as one subgraph. The runtime build generates portable registrations
-from the PTE instead of linking every portable operator.
+The exported PTE accepts one `(1, 576)` float audio frame and owns the LSTM
+hidden and cell state as an internal mutable buffer. The state is stored as
+int8, and the LSTM gate activations and recurrent update are part of the
+Ethos-U delegated subgraph. Small quantize/dequantize operations at the model
+boundary and the mutable-buffer write remain portable runtime operations.

@@ -15,7 +15,7 @@
 #include <array>
 #include <cinttypes>
 #include <cstdint>
-#include <cstring>
+#include <string_view>
 #include <vector>
 
 #include "arm_memory_allocator.h"
@@ -40,8 +40,6 @@ constexpr size_t kSampleRate = 16000;
 constexpr size_t kWindowSize = 512;
 constexpr size_t kContextSize = 64;
 constexpr size_t kInputSize = kWindowSize + kContextSize;
-constexpr size_t kHiddenDim = 128;
-constexpr size_t kStateSize = 2 * kHiddenDim;
 constexpr float kFrameDuration =
     static_cast<float>(kWindowSize) / static_cast<float>(kSampleRate);
 
@@ -55,16 +53,16 @@ int semihosting_call(int operation, void* arguments) {
 }
 
 void write_semihosting_file(
-    const char* output_path,
+    std::string_view output_path,
     const void* data,
     size_t size_bytes) {
   uintptr_t open_args[] = {
-      reinterpret_cast<uintptr_t>(output_path),
+      reinterpret_cast<uintptr_t>(output_path.data()),
       5,
-      std::strlen(output_path),
+      output_path.size(),
   };
   int handle = semihosting_call(0x01, open_args);
-  ET_CHECK_MSG(handle >= 0, "Failed to open %s", output_path);
+  ET_CHECK_MSG(handle >= 0, "Failed to open semihosting output file");
 
   uintptr_t write_args[] = {
       static_cast<uintptr_t>(handle),
@@ -77,11 +75,11 @@ void write_semihosting_file(
   int close_status = semihosting_call(0x02, close_args);
 
   ET_CHECK_MSG(unwritten_bytes == 0, "Failed to write all probability values");
-  ET_CHECK_MSG(close_status == 0, "Failed to close %s", output_path);
+  ET_CHECK_MSG(close_status == 0, "Failed to close semihosting output file");
 }
 
 void write_probabilities(
-    const char* output_path,
+    std::string_view output_path,
     const std::vector<float>& probabilities) {
   write_semihosting_file(
       output_path, probabilities.data(), probabilities.size() * sizeof(float));
@@ -104,36 +102,29 @@ void copy_input_frame(
     std::array<float, kContextSize>& context,
     size_t frame_index) {
   float* input_data = input_tensor.mutable_data_ptr<float>();
-  std::memcpy(input_data, context.data(), kContextSize * sizeof(float));
+  std::copy_n(context.data(), kContextSize, input_data);
 
   size_t offset = frame_index * kWindowSize;
   size_t remaining = audio_data_len > offset ? audio_data_len - offset : 0;
   size_t chunk_len = std::min(kWindowSize, remaining);
 
   if (chunk_len > 0) {
-    std::memcpy(
-        input_data + kContextSize,
-        audio_data + offset,
-        chunk_len * sizeof(float));
+    std::copy_n(audio_data + offset, chunk_len, input_data + kContextSize);
   }
   if (chunk_len < kWindowSize) {
-    std::memset(
-        input_data + kContextSize + chunk_len,
-        0,
-        (kWindowSize - chunk_len) * sizeof(float));
+    std::fill_n(
+        input_data + kContextSize + chunk_len, kWindowSize - chunk_len, 0.0f);
   }
 
   if (chunk_len >= kContextSize) {
-    std::memcpy(
-        context.data(),
+    std::copy_n(
         audio_data + offset + chunk_len - kContextSize,
-        kContextSize * sizeof(float));
+        kContextSize,
+        context.data());
   } else if (chunk_len > 0) {
     size_t keep = kContextSize - chunk_len;
-    std::memmove(
-        context.data(), context.data() + chunk_len, keep * sizeof(float));
-    std::memcpy(
-        context.data() + keep, audio_data + offset, chunk_len * sizeof(float));
+    std::move(context.begin() + chunk_len, context.end(), context.begin());
+    std::copy_n(audio_data + offset, chunk_len, context.data() + keep);
   }
 }
 
@@ -192,39 +183,29 @@ int main() {
 
   size_t num_inputs = method->inputs_size();
   ET_LOG(Info, "Number of input tensors = %zu", num_inputs);
-  ET_CHECK_MSG(num_inputs == 2, "Silero VAD expects audio and state inputs");
+  ET_CHECK_MSG(num_inputs == 1, "Silero VAD expects one audio input");
 
   EValue* input_evalues = method_allocator.allocateList<EValue>(num_inputs);
   Error input_status = method->get_inputs(input_evalues, num_inputs);
   ET_CHECK_MSG(input_status == Error::Ok, "Get inputs failed");
   Tensor& audio_input = input_evalues[0].toTensor();
-  Tensor& state_input = input_evalues[1].toTensor();
 
   ET_CHECK_MSG(
       audio_input.scalar_type() == ScalarType::Float,
       "Audio input must be float");
   ET_CHECK_MSG(
-      state_input.scalar_type() == ScalarType::Float,
-      "State input must be float");
-  ET_CHECK_MSG(
       audio_input.numel() == kInputSize,
       "Audio input expects %zu elements, got %zu",
       kInputSize,
       audio_input.numel());
-  ET_CHECK_MSG(
-      state_input.numel() == kStateSize,
-      "State input expects %zu elements, got %zu",
-      kStateSize,
-      state_input.numel());
 
   std::array<float, kContextSize> context{};
-  std::array<float, kStateSize> state{};
   size_t num_frames = (audio_data_len + kWindowSize - 1) / kWindowSize;
 #if defined(ENABLE_SEMIHOSTING_OUTPUT)
   std::vector<float> probabilities(num_frames, 0.0f);
 #endif
   size_t num_outputs = method->outputs_size();
-  ET_CHECK_MSG(num_outputs == 2, "Silero VAD expects probability and state");
+  ET_CHECK_MSG(num_outputs == 1, "Silero VAD expects one probability output");
   std::vector<EValue> outputs(num_outputs);
 
   bool speech_active = false;
@@ -241,10 +222,6 @@ int main() {
 
   for (size_t frame_index = 0; frame_index < num_frames; ++frame_index) {
     copy_input_frame(audio_input, context, frame_index);
-    std::memcpy(
-        state_input.mutable_data_ptr<float>(),
-        state.data(),
-        kStateSize * sizeof(float));
 
     Error inference_status = method->execute();
     ET_CHECK_MSG(
@@ -259,16 +236,10 @@ int main() {
         outputs_status);
 
     Tensor probability_output = outputs[0].toTensor();
-    Tensor state_output = outputs[1].toTensor();
     float probability = probability_output.const_data_ptr<float>()[0];
 #if defined(ENABLE_SEMIHOSTING_OUTPUT)
     probabilities[frame_index] = probability;
 #endif
-
-    std::memcpy(
-        state.data(),
-        state_output.const_data_ptr<float>(),
-        kStateSize * sizeof(float));
 
     bool is_speech = probability > VAD_THRESHOLD;
     if (is_speech) {
@@ -321,8 +292,8 @@ int main() {
       static_cast<double>(speech_percent));
 
 #if defined(ENABLE_SEMIHOSTING_OUTPUT)
-  const char* output_path = "vad_probs.bin";
-  ET_LOG(Info, "Writing probability dump to %s", output_path);
+  constexpr std::string_view output_path = "vad_probs.bin";
+  ET_LOG(Info, "Writing probability dump to %s", output_path.data());
   write_probabilities(output_path, probabilities);
 #endif
 

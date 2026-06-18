@@ -180,7 +180,6 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-
 from executorch.exir import ExportedProgram
 from executorch.exir._program_utils import _get_updated_graph_signature
 from executorch.exir.pass_base import (
@@ -807,4 +806,4 @@ class ArmPassManager(ExportedProgramPassManager):
                 ]
             )
 
-            return self._transform_graph_module(graph_module)
+            return GraphModulePassManager(self.passes)(graph_module).graph_module

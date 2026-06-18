@@ -458,6 +458,7 @@ run_silero_vad_e2e_ethos_u() {
     local pte_path="${export_dir}/silero_vad_ethos_u.pte"
     local expected_path="${export_dir}/expected_probs.bin"
     local fvp_log_path="${fvp_out_dir}/fvp.log"
+    local validation_threshold="0.55"
     local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
     local export_pythonpath="${et_root_dir}/third-party/ao:${python_package_dir}:${PYTHONPATH:-}"
     local codegen_pythonpath="${et_root_dir}:${PYTHONPATH:-}"
@@ -573,6 +574,7 @@ run_silero_vad_e2e_ethos_u() {
         -DAUDIO_PATH="${validation_audio_path}" \
         -DET_BUILD_DIR_PATH="${et_build_dir}" \
         -DMAX_AUDIO_SAMPLES=40000 \
+        -DVAD_THRESHOLD="${validation_threshold}" \
         -DPYTHON_EXECUTABLE="$(command -v python3)" \
         "${platform_cmake_args[@]}"
 
@@ -597,7 +599,7 @@ run_silero_vad_e2e_ethos_u() {
     python3 "${example_dir}/runtime/compare_vad_probs.py" \
         --expected "${expected_path}" \
         --actual-log "${fvp_log_path}" \
-        --threshold 0.5 \
+        --threshold "${validation_threshold}" \
         --atol 0.25 \
         --mean-atol 0.02
 

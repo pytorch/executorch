@@ -1,8 +1,8 @@
 # Silero VAD Runtime Example
 
 This bare-metal Corstone-320 application embeds the Ethos-U85 Silero VAD PTE
-and a 16 kHz mono WAV file. It passes one 32 ms audio frame and the recurrent
-state to the model at a time, then reuses the returned state for the next call.
+and a 16 kHz mono WAV file. It passes one 32 ms audio frame to the model at a
+time; the ExecuTorch program keeps the recurrent state between calls.
 
 For each frame the application prints the speech probability and decision. It
 also merges consecutive speech frames into segments:
