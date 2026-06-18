@@ -40,12 +40,14 @@ void add_flat_copy(WebGPUGraph& graph, int in_id, int out_id) {
 
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
+  // Flat byte copy assumes dense row-major operands; the WebGPU buffer
+  // backend only produces contiguous tensors, so a strided/transposed
+  // view cannot reach here.
 
   // 4-byte (fp32) alignment guard on both operands; also the dtype guard.
   if (in_tensor.nbytes % sizeof(float) != 0 ||
       out_tensor.nbytes % sizeof(float) != 0) {
-    throw std::runtime_error(
-        "flat_copy: operand not 4-byte aligned (expected fp32)");
+    throw std::runtime_error("flat_copy: operand not 4-byte aligned");
   }
 
   const uint32_t in_numel =
