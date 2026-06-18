@@ -19,6 +19,8 @@
 #include <cmath>
 #include <cstring>
 
+#include <algorithm>
+
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
@@ -38,6 +40,20 @@ using ::executorch::runtime::Result;
 using SizesType = executorch::aten::SizesType;
 
 namespace {
+
+#ifdef EXECUTORCH_BUILD_MLX
+// The MLX export emits a single dynamic-seq `forward` method that handles both
+// prefill (T>=2) and decode (T=1). Mirror gemma4_31b's MLX runner, which loads
+// and calls `forward` for both phases.
+constexpr const char* kPrefillMethod = "forward";
+constexpr const char* kDecodeMethod = "forward";
+// Prefill is chunked on MLX to cap peak memory and the compiled prefill shape.
+constexpr int64_t kPrefillChunkSize = 1024;
+#else
+// CUDA/Metal exports emit two separate methods.
+constexpr const char* kPrefillMethod = "prefill";
+constexpr const char* kDecodeMethod = "decode";
+#endif
 
 Result<uint64_t> read_sampled_token(
     const executorch::aten::Tensor& output,
@@ -98,8 +114,10 @@ Result<std::unique_ptr<Module>> build_qwen_module(
   }
 #endif
 
-  ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("prefill"));
-  ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("decode"));
+  ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kPrefillMethod));
+  if (std::string(kDecodeMethod) != std::string(kPrefillMethod)) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kDecodeMethod));
+  }
   return module;
 }
 
@@ -240,34 +258,51 @@ class Qwen35MoESession : public LLMSession {
     }
 
     stop_.store(false, std::memory_order_relaxed);
-    std::vector<int64_t> token_data(tokens.begin(), tokens.end());
-    std::vector<int64_t> pos_data(T);
-    for (int64_t i = 0; i < T; ++i) {
-      pos_data[i] = pos_ + i;
-    }
-    auto tokens_tensor = from_blob(
-        token_data.data(),
-        {1, static_cast<SizesType>(T)},
-        executorch::aten::ScalarType::Long);
-    auto pos_tensor = from_blob(
-        pos_data.data(),
-        {static_cast<SizesType>(T)},
-        executorch::aten::ScalarType::Long);
 
-    const char* method = (T >= 2) ? "prefill" : "decode";
-    std::vector<EValue> inputs;
-    inputs.push_back(tokens_tensor);
-    inputs.push_back(pos_tensor);
-#ifdef EXECUTORCH_BUILD_CUDA
-    set_temp(first_token_temp);
-    inputs.push_back(EValue(temp_tensor_));
+    // On MLX, run prefill in fixed-size chunks (caps peak memory and the
+    // compiled prefill shape). Other backends prefill the whole prompt in one
+    // pass. Only the final chunk's sampled token is kept; the recurrence/KV
+    // state from earlier chunks persists via pos_ advancement.
+#ifdef EXECUTORCH_BUILD_MLX
+    const int64_t chunk_size = kPrefillChunkSize;
+#else
+    const int64_t chunk_size = T;
 #endif
-    auto sampled =
-        run_locked(method, inputs, first_token_temp, /*sync_after=*/true);
-    ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
-    pending_ = sampled.get();
+
+    uint64_t sampled_token = 0;
+    for (int64_t off = 0; off < T; off += chunk_size) {
+      const int64_t len = std::min(chunk_size, T - off);
+      std::vector<int64_t> token_data(
+          tokens.begin() + off, tokens.begin() + off + len);
+      std::vector<int64_t> pos_data(len);
+      for (int64_t i = 0; i < len; ++i) {
+        pos_data[i] = pos_ + i;
+      }
+      auto tokens_tensor = from_blob(
+          token_data.data(),
+          {1, static_cast<SizesType>(len)},
+          executorch::aten::ScalarType::Long);
+      auto pos_tensor = from_blob(
+          pos_data.data(),
+          {static_cast<SizesType>(len)},
+          executorch::aten::ScalarType::Long);
+
+      const char* method = (len >= 2) ? kPrefillMethod : kDecodeMethod;
+      std::vector<EValue> inputs;
+      inputs.push_back(tokens_tensor);
+      inputs.push_back(pos_tensor);
+#ifdef EXECUTORCH_BUILD_CUDA
+      set_temp(first_token_temp);
+      inputs.push_back(EValue(temp_tensor_));
+#endif
+      auto sampled =
+          run_locked(method, inputs, first_token_temp, /*sync_after=*/true);
+      ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
+      sampled_token = sampled.get();
+      pos_ += len;
+    }
+    pending_ = sampled_token;
     prev_decode_token_.reset();
-    pos_ += T;
     return Error::Ok;
   }
 
@@ -334,7 +369,7 @@ class Qwen35MoESession : public LLMSession {
     inputs.push_back(EValue(temp_tensor_));
 #endif
     auto sampled =
-        run_locked("decode", inputs, temperature_, /*sync_after=*/false);
+        run_locked(kDecodeMethod, inputs, temperature_, /*sync_after=*/false);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
     pending_ = sampled.get();
     prev_decode_token_ = token;
