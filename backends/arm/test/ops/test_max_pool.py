@@ -9,6 +9,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 
 from executorch.backends.arm.test import common
 
@@ -77,6 +80,31 @@ test_data_suite_bf16 = {
     "rand_bf16": lambda: (
         torch.rand(1, 8, 20, 20, dtype=torch.bfloat16),
         [3, 2, 1],
+    ),
+}
+test_data_suite_fp8 = {
+    "rand_fp8e4m3": lambda: (
+        torch.rand(1, 8, 20, 20).to(torch.float8_e4m3fn),
+        [3, 2, 1],
+        "fp8e4m3",
+    ),
+    "rand_fp8e5m2": lambda: (
+        torch.rand(1, 8, 20, 20).to(torch.float8_e5m2),
+        [3, 2, 1],
+        "fp8e5m2",
+    ),
+}
+
+test_data_suite_fp8_dilation = {
+    "dilation_fp8e4m3": lambda: (
+        torch.rand(1, 1, 8, 8).to(torch.float8_e4m3fn),
+        [3, 1, 0, 2],
+        "fp8e4m3",
+    ),
+    "dilation_fp8e5m2": lambda: (
+        torch.rand(1, 1, 8, 8).to(torch.float8_e5m2),
+        [3, 1, 0, 2],
+        "fp8e5m2",
     ),
 }
 
@@ -151,6 +179,21 @@ def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
         exir_op,
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+def test_max_pool2d_tosa_FP_fp8(test_data: torch.Tensor):
+    input_tensor, model_params, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params),
+        (input_tensor,),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+        compare_tosa_ref_model_outputs=False,
+    )
+    pipeline.count_tosa_ops({"MAX_POOL2D": 1})
     pipeline.run()
 
 
@@ -300,6 +343,21 @@ def test_max_pool2d_tosa_FP_dilation(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_suite_fp8_dilation)
+def test_max_pool2d_tosa_FP_fp8_dilation(test_data):
+    data, model_params, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+        compare_tosa_ref_model_outputs=False,
+    )
+    pipeline.count_tosa_ops({"MAX_POOL2D": 1})
+    pipeline.run()
+
+
 @common.parametrize("test_data", dilation_test_data)
 def test_max_pool2d_tosa_INT_dilation(test_data):
     """TOSA INT pipeline with dilation > 1 (and dilation=1 sanity cases)."""
@@ -340,6 +398,22 @@ def test_max_pool2d_vgf_quant(test_data: torch.Tensor):
         exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_quant_a16w8(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
 
 

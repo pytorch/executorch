@@ -22,6 +22,7 @@ ATTENTION_SINK_EVICTOR = "attention_sink_evictor"
 
 # Mapping of input flags for the runner
 MODALITY_INPUT_FLAG_MAP = {
+    AUDIO_ENCODER: "audio_path",
     VISION_ENCODER: "image_path",
 }
 
@@ -51,6 +52,7 @@ DECODER_MODEL_VERSION = {
     "gemma2-2b": "gemma2",
     "gemma3-1b": "gemma3",
     "granite_3_3-2b_instruct": "granite",
+    "granite_speech_3_3-2b": "granite_speech",
     "phi_4_mini": "phi_4_mini",
     "qwen2_5-0_5b": "qwen2_5",
     "qwen2_5-1_5b": "qwen2_5",

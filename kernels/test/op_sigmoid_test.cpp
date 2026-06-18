@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -89,9 +90,9 @@ class OpSigmoidOutTest : public OperatorTest {
 };
 
 TEST_F(OpSigmoidOutTest, AllRealInputHalfOutputSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Test Half support only for ExecuTorch mode");
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_sigmoid_out<ScalarType::dtype, ScalarType::Half>();
   ET_FORALL_REALH_TYPES(TEST_ENTRY);
@@ -124,9 +125,9 @@ TEST_F(OpSigmoidOutTest, BooleanInputDoubleOutputSupport) {
 
 // Mismatched shape tests.
 TEST_F(OpSigmoidOutTest, MismatchedShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shapes");
 
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Float> tf_out;

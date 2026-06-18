@@ -834,6 +834,29 @@ def get_upsample_bilinear2d_inputs():
     return VkTestSuite(inputs_list)
 
 
+@register_test_suite("aten.pixel_shuffle.default")
+def get_pixel_shuffle_inputs():
+    test_suite = VkTestSuite(
+        [
+            # (input tensor shape (N, C*r*r, H, W), upscale_factor r)
+            ((1, 4, 2, 2), 2),
+            ((1, 9, 3, 3), 3),
+            ((1, 16, 2, 2), 4),
+            ((2, 4, 3, 5), 2),
+            ((1, 8, 4, 4), 2),
+            ((1, 12, 3, 4), 2),
+        ]
+    )
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
+    test_suite.layouts = [
+        "utils::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+    ]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    return test_suite
+
+
 @register_test_suite(["aten.full.default", "aten.full_like.default"])
 def get_full_inputs():
     test_suite = VkTestSuite(
@@ -1208,6 +1231,74 @@ def get_gather_inputs():
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
     test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+
+    return test_suite
+
+
+@register_test_suite("aten.grid_sampler_2d.default")
+def get_grid_sampler_2d_inputs():
+    # Schema: aten::grid_sampler_2d(Tensor input, Tensor grid,
+    #   int interpolation_mode, int padding_mode, bool align_corners) -> Tensor
+    # The Vulkan implementation only supports the configuration used by RIFE's
+    # WarpModule: bilinear (mode=0), border padding (mode=1), align_corners=True.
+    # input layout: [N, C, Hin, Win] - channels-packed texture3d
+    # grid  layout: [N, Hout, Wout, 2] - contiguous (width-packed) buffer
+    Test = namedtuple(
+        "GridSampler2dTest",
+        ["input", "grid", "interpolation_mode", "padding_mode", "align_corners"],
+    )
+
+    test_cases = [
+        # Same Hout/Wout as input - identity-ish warp
+        Test(
+            input=[1, 4, 8, 8],
+            grid=[1, 8, 8, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Downsample
+        Test(
+            input=[1, 8, 16, 16],
+            grid=[1, 8, 8, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Upsample
+        Test(
+            input=[1, 4, 8, 8],
+            grid=[1, 16, 16, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Non-square + multiple channel slices (C=12 -> 3 slices)
+        Test(
+            input=[1, 12, 11, 13],
+            grid=[1, 7, 17, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+        # Batched
+        Test(
+            input=[2, 4, 9, 9],
+            grid=[2, 6, 6, 2],
+            interpolation_mode=0,
+            padding_mode=1,
+            align_corners=True,
+        ),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    test_suite.layouts = ["utils::kChannelsPacked"]
+    test_suite.storage_types = ["utils::kTexture3D"]
+    # input/out are channels-packed texture3d; grid is a contiguous buffer.
+    test_suite.arg_storage_types = {"grid": "utils::kBuffer"}
+    test_suite.arg_memory_layouts = {"grid": "utils::kWidthPacked"}
 
     return test_suite
 

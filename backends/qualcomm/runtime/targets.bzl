@@ -1,9 +1,10 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
+    "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
+load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -21,18 +22,41 @@ def define_common_targets():
             "Logging.h",
         ],
         define_static_target = True,
-        platforms = [ANDROID],
+        platforms = [ANDROID, CXX],
         visibility = ["PUBLIC"],
         deps = [
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-            "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
+            qnn_third_party_dep("api"),
+            qnn_third_party_dep("app_sources"),
             "//executorch/runtime/backend:interface",
         ],
         exported_deps = [
-            "fbsource//third-party/toolchains:log",
+            qnn_third_party_dep("log"),
             "//executorch/backends/qualcomm:schema",
             "//executorch/runtime/core:core",
         ],
+    )
+
+    # Platform Abstraction Layer. The headers are included as <pal/...> (matching
+    # the CMake build's `include_directories(runtime/pal/include)`). They are
+    # exposed through a header map (dict `exported_headers` with an empty
+    # namespace) instead of an `-I` flag, so the short <pal/...> include resolves
+    # identically under both the fbcode (`cpp_library`) and xplat
+    # (`fb_xplat_cxx_library`) rules, which do not share an include-dir attribute.
+    # Kept in their own library so the mapping does not disturb the runtime
+    # target's namespaced <executorch/...> exported headers.
+    runtime.cxx_library(
+        name = "pal",
+        srcs = glob([
+            "pal/src/linux/*.cpp",
+        ]),
+        exported_headers = {
+            "pal/DynamicLoading.h": "pal/include/pal/DynamicLoading.h",
+            "pal/Path.h": "pal/include/pal/Path.h",
+        },
+        header_namespace = "",
+        define_static_target = True,
+        platforms = [ANDROID],
+        visibility = ["PUBLIC"],
     )
 
     # "runtime" target is used for offline compile, can be renamed to runtime_aot_build as a BE.
@@ -68,15 +92,15 @@ def define_common_targets():
             ),
             define_static_target = True,
             link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
-            platforms = [ANDROID],
+            platforms = [ANDROID, CXX],
             visibility = ["PUBLIC"],
             resources = ({
-                "qnn_lib": "fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs".format(get_qnn_library_version()),
+                "qnn_lib": qnn_third_party_dep("qnn_offline_compile_libs"),
                 } if include_aot_qnn_lib else {
             }),
             deps = [
-                "fbsource//third-party/qualcomm/qnn/qnn-{0}:api".format(get_qnn_library_version()),
-                "fbsource//third-party/qualcomm/qnn/qnn-{0}:app_sources".format(get_qnn_library_version()),
+                qnn_third_party_dep("api"),
+                qnn_third_party_dep("app_sources"),
                 ":logging",
                 "//executorch/backends/qualcomm:schema",
                 "//executorch/backends/qualcomm/aot/wrappers:wrappers",
@@ -84,6 +108,7 @@ def define_common_targets():
                 "//executorch/extension/tensor:tensor",
             ],
             exported_deps = [
+                ":pal",
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util",
                 "//executorch/runtime/core:event_tracer",

@@ -88,6 +88,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
@@ -175,6 +176,7 @@ jobs:
     needs: set-version
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
@@ -315,6 +317,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
+      default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'

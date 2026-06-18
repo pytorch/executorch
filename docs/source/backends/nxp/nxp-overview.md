@@ -24,10 +24,10 @@ Among currently supported machine learning models are:
 
 - [MCUXpresso IDE](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE) or [MCUXpresso Visual Studio Code extension](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC)
 - [MCUXpresso SDK 25.12](https://mcuxpresso.nxp.com/mcuxsdk/25.12.00/html/index.html)
-- eIQ Neutron SDK version 3.0.0, what you can download from eIQ PyPI:
+- eIQ Neutron SDK version 3.1.2, what you can download from eIQ PyPI:
 
 ```commandline
-$ pip install --index-url https://eiq.nxp.com/repository eiq_neutron_sdk==3.0.0
+$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.1.2
 ```
 
 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: 
@@ -39,7 +39,7 @@ $ ./examples/nxp/setup.sh
 
 To test the eIQ Neutron Backend, both AoT flow for model preparation and Runtime for execution, refer to the [Getting started with eIQ Neutron NPU ExecuTorch backend](tutorials/nxp-basic-tutorial.md)
 
-For a quick overview how to convert a custom PyTorch model, take a look at our [example python script](https://github.com/pytorch/executorch/tree/release/1.0/examples/nxp/aot_neutron_compile.py).
+For a quick overview how to convert a custom PyTorch model, take a look at our [example python script](https://github.com/pytorch/executorch/tree/main/examples/nxp/aot_neutron_compile.py).
 
 
 ## Runtime Integration

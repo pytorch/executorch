@@ -2270,6 +2270,44 @@ class TestRefImplementations(unittest.TestCase):
                     dtype=torch.float32,
                 ),
             ),
+            # Multi-channel input, 2x2 kernel, stride 1, no padding, NHWC.
+            # Same channel values as nchw_multi_channel above, just laid out
+            # in NHWC order. Expected output is byte-for-byte identical to
+            # the NCHW case — this asserts that NHWC im2row produces the
+            # channel-major [c][kp] layout (matching torch.nn.functional.unfold
+            # after NHWC->NCHW conversion). A [kp][c] layout (the prior bug)
+            # would instead produce [1, 10, 2, 11, 4, 13, 5, 14, ...].
+            (
+                "nhwc_multi_channel",
+                torch.tensor(
+                    [
+                        [
+                            [[1, 10], [2, 11], [3, 12]],
+                            [[4, 13], [5, 14], [6, 15]],
+                            [[7, 16], [8, 17], [9, 18]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # (N=1, H=3, W=3, C=2)
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                None,
+                True,  # channel_last
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 2, 4, 5, 10, 11, 13, 14],
+                            [2, 3, 5, 6, 11, 12, 14, 15],
+                            [4, 5, 7, 8, 13, 14, 16, 17],
+                            [5, 6, 8, 9, 14, 15, 17, 18],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
             # Multi-channel input and multi-channel zero-point
             (
                 "nchw_multi_channel_and_zero_point_no_padding",
@@ -2901,9 +2939,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.ones((12, 4), dtype=torch.int8),  # weights_hidden: 12x4 (3*4 x 4)
                 0.1,  # w_h_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "invalid_batch_size_2",
@@ -2918,9 +2955,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.ones((12, 4), dtype=torch.int8),  # weights_hidden: 12x4
                 0.1,  # w_h_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "non_zero_biases",
@@ -2933,11 +2969,10 @@ class TestRefImplementations(unittest.TestCase):
                 torch.tensor(
                     [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3], dtype=torch.int8
                 ),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.tensor(
                     [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3], dtype=torch.int8
                 ),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "negative_weights",
@@ -2954,9 +2989,8 @@ class TestRefImplementations(unittest.TestCase):
                 ),  # weights_hidden: 12x4 (alternating pattern)
                 0.1,  # w_h_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_inputs: 12
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(12, dtype=torch.int8),  # bias_hidden: 12
-                0.1,  # b_h_scale
             ),
             (
                 "hidden_dim_8",
@@ -2969,9 +3003,8 @@ class TestRefImplementations(unittest.TestCase):
                 torch.ones((24, 8), dtype=torch.int8),  # weights_hidden: 24x8 (3*8 x 8)
                 0.1,  # w_h_scale
                 torch.zeros(24, dtype=torch.int8),  # bias_inputs: 24
-                0.1,  # b_i_scale
+                0.1,  # b_scale
                 torch.zeros(24, dtype=torch.int8),  # bias_hidden: 24
-                0.1,  # b_h_scale
             ),
         ]
     )
@@ -2985,9 +3018,8 @@ class TestRefImplementations(unittest.TestCase):
         weights_hidden: torch.Tensor,
         w_h_scale: float,
         bias_inputs: torch.Tensor,
-        b_i_scale: float,
+        b_scale: float,
         bias_hidden: torch.Tensor,
-        b_h_scale: float,
     ) -> None:
 
         if name == "invalid_batch_size_2":
@@ -3000,9 +3032,8 @@ class TestRefImplementations(unittest.TestCase):
                     weights_hidden,
                     w_h_scale,
                     bias_inputs,
-                    b_i_scale,
+                    b_scale,
                     bias_hidden,
-                    b_h_scale,
                 )
             self.assertIn(
                 "Leading dimension 0 of hidden state must be 1", str(context.exception)
@@ -3017,9 +3048,8 @@ class TestRefImplementations(unittest.TestCase):
             weights_hidden,
             w_h_scale,
             bias_inputs,
-            b_i_scale,
+            b_scale,
             bias_hidden,
-            b_h_scale,
         )
 
         # Verify output properties
@@ -3028,10 +3058,11 @@ class TestRefImplementations(unittest.TestCase):
             torch.float32,
             f"Output dtype should be float32 in {name}",
         )
+        expected_shape = (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1])
         self.assertEqual(
             output.shape,
-            (2, *hidden.shape),
-            f"Output shape should match {(2, *hidden.shape)} in {name}",
+            expected_shape,
+            f"Output shape should match {expected_shape} in {name}",
         )
         assert isinstance(output, torch.Tensor)
 
@@ -3064,7 +3095,6 @@ class TestRefImplementations(unittest.TestCase):
                 bias_inputs,
                 0.1,
                 bias_hidden,
-                0.1,
             )
 
         self.assertIn(

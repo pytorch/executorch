@@ -19,6 +19,8 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
             "//executorch/backends/aoti/slim/c10/cuda:exception",
             "//executorch/backends/aoti/slim/cuda:guard",
+            "//executorch/backends/cuda/runtime:cuda_allocator",
+            "//executorch/extension/cuda:caller_stream",
         ],
     )
 

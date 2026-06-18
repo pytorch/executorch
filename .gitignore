@@ -9,6 +9,7 @@ __pycache__/
 
 # Build and tool-generated files
 arm_test/
+riscv_test/
 buck-out/
 buck2-bin/
 build/
@@ -16,9 +17,10 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+backends/webgpu/third-party/
 build-android/
 build-x86/
-build-hexagon/
+build-direct/
 dist/
 arm-scratch/
 executorch.egg-info
@@ -75,6 +77,9 @@ xcuserdata/
 *.dll
 *.pyd
 
+# Zephyr
+zephyr_dev_root/
+zephyr_dev_root.backup.*/
 
 # Agents
 .claude/*.local.*

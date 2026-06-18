@@ -84,7 +84,7 @@ void inline _typed_quantized_matmul(
             static_cast<int32_t>(out_shift), // out_shift
             static_cast<int32_t>(out_zero_point)); // out_zero_bias
 
-        ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+        ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
       } else {
         WORD32 ret_val = xa_nn_matmul_asym8sxasym8s_asym8s(
             (int8_t*)z, // p_out
@@ -104,7 +104,7 @@ void inline _typed_quantized_matmul(
             static_cast<int32_t>(out_shift), // out_shift
             static_cast<int32_t>(out_zero_point)); // out_zero_bias
 
-        ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+        ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
       }
     } else {
       /* Assuming matmul is 2D always */
@@ -129,7 +129,7 @@ void inline _typed_quantized_matmul(
           num_out_dims,
           num_inp_dims);
 
-      ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+      ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
 
       if (out.scalar_type() == exec_aten::ScalarType::Byte) {
         WORD32 ret_val = xa_nn_matmul_asym8uxasym8u_asym8u(
@@ -150,7 +150,7 @@ void inline _typed_quantized_matmul(
             static_cast<int32_t>(out_shift), // out_shift
             static_cast<int32_t>(out_zero_point)); // out_zero_bias
 
-        ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+        ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
       } else {
         WORD32 ret_val = xa_nn_matmul_asym8sxasym8s_asym8s(
             (int8_t*)z, // p_out
@@ -170,7 +170,7 @@ void inline _typed_quantized_matmul(
             static_cast<int32_t>(out_shift), // out_shift
             static_cast<int32_t>(out_zero_point)); // out_zero_bias
 
-        ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+        ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
       }
     }
   }

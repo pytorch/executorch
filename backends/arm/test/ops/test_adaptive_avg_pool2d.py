@@ -7,6 +7,9 @@ from typing import Tuple
 
 import torch
 
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -109,6 +112,19 @@ test_modules = {
     ),
 }
 
+test_modules_fp8 = {
+    "output_2x2_fp8e4m3": lambda: (
+        AdaptiveAvgPool2d((2, 2)),
+        (torch.rand(1, 4, 10, 10).to(torch.float8_e4m3fn),),
+        "fp8e4m3",
+    ),
+    "output_2x2_fp8e5m2": lambda: (
+        AdaptiveAvgPool2d((2, 2)),
+        (torch.rand(1, 4, 10, 10).to(torch.float8_e5m2),),
+        "fp8e5m2",
+    ),
+}
+
 
 @common.parametrize("test_module", test_modules)
 def test_adaptive_avg_pool2d_tosa_FP(test_module):
@@ -120,6 +136,22 @@ def test_adaptive_avg_pool2d_tosa_FP(test_module):
         aten_op=[],
         exir_op=exir_op,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_fp8)
+def test_adaptive_avg_pool2d_tosa_FP_fp8(test_module):
+    model, input_tensor, tosa_extension = test_module()
+
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        input_tensor,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_extensions=[tosa_extension],
+        compare_tosa_ref_model_outputs=False,
+    )
+    pipeline.count_tosa_ops({"AVG_POOL2D": 4})
     pipeline.run()
 
 
@@ -243,4 +275,20 @@ def test_adaptive_avg_pool2d_vgf_quant(test_module):
         exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_quant_a16w8(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        [],
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()

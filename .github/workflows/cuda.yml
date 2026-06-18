@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 12.8, 12.9, 13.0) using the command:
+# across different CUDA versions (12.6, 13.0) using the command:
 #   ./install_executorch.sh
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
@@ -20,18 +20,46 @@ on:
       - .github/workflows/cuda.yml
       - backends/cuda/**
       - backends/aoti/**
+      - .ci/scripts/test-cuda-build.sh
+      - .ci/scripts/export_model_artifact.sh
+      - .ci/scripts/test_model_e2e.sh
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-cuda-builds:
+    needs: [changed-files, run-decision]
+    # Path-filtered: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch CUDA-relevant paths skip
+    # this job on non-sampled commits.
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "12.8", "12.9", "13.0"]
+        cuda-version: ["12.6", "13.0"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -55,9 +83,22 @@ jobs:
 
   # This job will fail if any of the CUDA versions fail
   check-all-cuda-builds:
-    needs: test-cuda-builds
+    needs: [changed-files, run-decision, test-cuda-builds]
     runs-on: ubuntu-latest
-    if: always()
+    # Run only if the test-cuda-builds matrix actually ran (i.e. the same
+    # path/sample gate as test-cuda-builds itself). Otherwise this job
+    # would fire on every commit and fail because needs.result == 'skipped'.
+    if: |
+      always() &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     steps:
       - name: Check if all CUDA builds succeeded
         run: |
@@ -66,11 +107,20 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9, 13.0) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 13.0) completed successfully!"
           fi
 
   test-models-cuda:
     name: test-models-cuda
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -79,7 +129,7 @@ jobs:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -106,6 +156,15 @@ jobs:
 
   unittest-cuda:
     name: unittest-cuda
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -114,7 +173,7 @@ jobs:
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -145,14 +204,32 @@ jobs:
         # Run CUDA backend Python tests
         python -m pytest backends/cuda/tests backends/cuda/passes/tests -v -o "addopts="
 
-        # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache)
-        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py -v -o "addopts="
+        # Run Qwen 3.5 MoE tests (quantize roundtrip + TurboQuant KV cache + sampler)
+        python -m pytest examples/models/qwen3_5_moe/test_quantize_roundtrip.py examples/models/qwen3_5_moe/test_turboquant.py examples/models/qwen3_5_moe/test_sampler.py -v -o "addopts="
+
+        # Run Gemma 4 31B tests (quant unit tests + pipeline integration tests)
+        pip install gguf
+        python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
-    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
+    # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch CUDA-relevant paths skip
+    # this job on non-sampled commits.
+    needs: [changed-files, run-decision]
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -181,6 +258,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
+          - repo: "unsloth"
+            name: "gemma-4-31B-it-GGUF"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -199,6 +278,15 @@ jobs:
           - model:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "quantized-int4-weight-only"
+          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
+            quant: "non-quantized"
+          - model:
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -252,11 +340,11 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
-      timeout: 90
+      timeout: 150
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
@@ -265,6 +353,14 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch"
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
@@ -273,10 +369,11 @@ jobs:
         # Setup Huggingface only for models that need it (not parakeet or dinov2)
         if [ "${{ matrix.model.name }}" != "parakeet-tdt" ] && [ "${{ matrix.model.name }}" != "dinov2-small-imagenet1k-1-layer" ]; then
           echo "::group::Setup Huggingface"
-          pip install -U "huggingface_hub[cli]<1.0" accelerate
-          huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+          pip install -U "huggingface_hub[cli]>=1.2.1,<2.0" accelerate "optimum~=2.0.0" "transformers==5.0.0rc1"
+          HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
+          hf auth login --token "$HF_AUTH_TOKEN"
           OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-          pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+          pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
           echo "::endgroup::"
         fi
 
@@ -284,8 +381,24 @@ jobs:
 
   test-model-cuda-e2e:
     name: test-model-cuda-e2e
-    needs: export-model-cuda-artifact
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    # Same path filter as export-model-cuda-artifact above. Also explicitly
+    # gated on the export job succeeding — when needs: jobs are *skipped*
+    # (e.g. fork PR), GitHub still evaluates this if:, so without the
+    # explicit success-check this job would run and then fail trying
+    # to download an artifact that was never produced.
+    needs: [changed-files, export-model-cuda-artifact, run-decision]
+    if: |
+      needs.export-model-cuda-artifact.result == 'success' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -311,6 +424,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
+          - repo: "unsloth"
+            name: "gemma-4-31B-it-GGUF"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -329,6 +444,15 @@ jobs:
           - model:
               repo: "SocialLocalMobile"
               name: "Qwen3.5-35B-A3B-HQQ-INT4"
+            quant: "quantized-int4-weight-only"
+          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
+          - model:
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
+            quant: "non-quantized"
+          - model:
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -378,20 +502,42 @@ jobs:
             quant: "non-quantized"
     with:
       timeout: 90
-      runner: ${{ matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-cuda-pybind:
     name: test-cuda-pybind
-    needs: export-model-cuda-artifact
     # This job downloads models exported by export-model-cuda-artifact and runs them using pybind.
+    # Same gating as test-model-cuda-e2e — explicit success-check on the
+    # export job so a skipped export (fork PR, non-sampled push, no path
+    # match) auto-skips this job too.
+    needs: [changed-files, export-model-cuda-artifact, run-decision]
+    if: |
+      needs.export-model-cuda-artifact.result == 'success' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -416,7 +562,7 @@ jobs:
       download-artifact: ${{ matrix.artifact }}
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
-      gpu-arch-version: 12.6
+      gpu-arch-version: "13.0"
       use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -443,13 +589,15 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        pip install -U "huggingface_hub[cli]<1.0"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        pip install -U "huggingface_hub[cli]>=1.2.1,<2.0"
+        HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
+        hf auth login --token "$HF_AUTH_TOKEN"
         echo "::endgroup::"
 
         echo "::group::Install optimum-executorch"
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        pip install "optimum~=2.0.0" "transformers==5.0.0rc1"
+        pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
         echo "::group::Test CUDA Model: ${{ matrix.model }} ${{ matrix.quantize }}"

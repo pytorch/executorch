@@ -6,10 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-
 import operator
 import traceback
+from abc import ABC, abstractmethod
 from contextlib import nullcontext
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -27,9 +28,7 @@ from typing import (
 
 import torch
 from executorch.exir import memory
-
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
-
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
@@ -37,6 +36,7 @@ from torch._dispatch.python import enable_python_dispatcher
 from torch._subclasses import FakeTensorMode, UnsupportedFakeTensorException
 from torch._subclasses.fake_tensor import FakeTensor
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
+from torch.export import ExportedProgram
 from torch.fx import traceback as fx_traceback
 from torch.fx.experimental.proxy_tensor import PythonKeyTracer
 from torch.fx.graph import CodeGen
@@ -97,6 +97,52 @@ def _unstack_pytree(xs) -> List[PyTree]:  # pyre-ignore
     return pytrees
 
 
+@dataclass(frozen=True)
+class _SymbolicTensorSnapshot:
+    shape: Tuple[Optional[str], ...]
+
+
+def _symbolic_scalar_snapshot(
+    value: Argument,
+) -> Optional[Tuple[str, str]]:
+    if isinstance(value, torch.SymInt):
+        return ("SymInt", str(value))
+    if isinstance(value, torch.SymFloat):
+        return ("SymFloat", str(value))
+    if isinstance(value, torch.SymBool):
+        return ("SymBool", str(value))
+    return None
+
+
+def _leaf_symbolic_snapshot(value: Argument) -> Any:
+    scalar_snapshot = _symbolic_scalar_snapshot(value)
+    if scalar_snapshot is not None:
+        return scalar_snapshot
+
+    if isinstance(value, FakeTensor):
+        dims = []
+        has_symbolic_dim = False
+        for dim in value.shape:
+            dim_snapshot = _symbolic_scalar_snapshot(dim)
+            if dim_snapshot is None:
+                dims.append(None)
+            else:
+                has_symbolic_dim = True
+                dims.append(dim_snapshot[1])
+        if has_symbolic_dim:
+            return _SymbolicTensorSnapshot(tuple(dims))
+
+    return None
+
+
+def _extract_symbolic_snapshot(value: Argument) -> Any:
+    snapshot = pytree.tree_map(_leaf_symbolic_snapshot, value)
+    leaves = pytree.tree_leaves(snapshot)
+    if any(leaf is not None for leaf in leaves):
+        return snapshot
+    return None
+
+
 class NodeMetadata:
     def __init__(self, data: Dict[str, Any]) -> None:
         self.data: Dict[str, Any] = data.copy()
@@ -150,11 +196,88 @@ class ProxyValue:
         yield from self.data
 
     def __bool__(self) -> bool:
+        if isinstance(self.data, (torch.SymInt, torch.SymFloat, torch.SymBool)):
+            raise ExportPassBaseError(
+                "ProxyValue with symbolic data cannot be used in boolean context."
+            )
         return bool(self.data)
+
+    def __int__(self):
+        if isinstance(self.data, torch.SymInt):
+            raise ExportPassBaseError(
+                "ProxyValue with SymInt data cannot be converted to int."
+            )
+        return int(self.data)
+
+    def __float__(self):
+        if isinstance(self.data, torch.SymFloat):
+            raise ExportPassBaseError(
+                "ProxyValue with SymFloat data cannot be converted to float."
+            )
+        return float(self.data)
+
+    def __index__(self):
+        if isinstance(self.data, torch.SymInt):
+            raise ExportPassBaseError(
+                "ProxyValue with SymInt data cannot be used in index context."
+            )
+        return self.__int__()
 
 
 class ExportPassBaseError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ExportedProgramPassResult:
+    exported_program: ExportedProgram
+    modified: bool
+
+
+class ExportedProgramPassBase(ABC):
+    """
+    Base interface for implementing passes that operate on ExportedProgram.
+    """
+
+    def __call__(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        """
+        Runs the precondition check, the pass itself, and the postcondition check.
+        """
+
+        self.requires(exported_program)
+        res = self.call(exported_program)
+        self.ensures(exported_program)
+        return res
+
+    @abstractmethod
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        """
+        The pass that is run through the given exported program. To implement a
+        pass, it is required to implement this function.
+
+        Args:
+            exported_program: The exported program we will run a pass on
+        """
+
+    def requires(self, exported_program: ExportedProgram) -> None:  # noqa: B027
+        """
+        This function will be called before the pass is run and will check that
+        the given exported program contains the preconditions needed to run the
+        pass. It is not required to implement this function.
+
+        Args:
+            exported_program: The exported program we will run checks on
+        """
+
+    def ensures(self, exported_program: ExportedProgram) -> None:  # noqa: B027
+        """
+        This function will be called after the pass is run and will check that
+        the given exported program contains the postconditions needed to run the
+        pass. It is not required to implement this function.
+
+        Args:
+            exported_program: The exported program we will run checks on
+        """
 
 
 class _ExportPassBase(PassBase):
@@ -403,6 +526,50 @@ class _ExportPassBase(PassBase):
         self._initialized = True
         self.node_debug_str: Optional[str] = None
 
+    def should_preserve_symbolic_input_metadata(self) -> bool:
+        """Returns whether replay should validate symbolic input preservation.
+
+        Override to ``False`` for passes that intentionally change symbolic
+        input metadata during replay.
+        """
+        return True
+
+    def _capture_symbolic_input_snapshots(
+        self, graph_module: fx.GraphModule
+    ) -> List[Any]:
+        return [
+            _extract_symbolic_snapshot(node.meta.get("val"))
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder"
+        ]
+
+    def _validate_symbolic_input_snapshots(
+        self,
+        graph_module: fx.GraphModule,
+        new_graph_module: fx.GraphModule,
+    ) -> None:
+        if not self.should_preserve_symbolic_input_metadata():
+            return
+
+        symbolic_inputs = self._capture_symbolic_input_snapshots(graph_module)
+        if all(snapshot is None for snapshot in symbolic_inputs):
+            return
+
+        new_symbolic_inputs = self._capture_symbolic_input_snapshots(new_graph_module)
+        for input_index, snapshot in enumerate(symbolic_inputs):
+            if snapshot is None:
+                continue
+            if input_index >= len(new_symbolic_inputs):
+                raise ExportPassBaseError(
+                    f"Input at position {input_index} did not preserve symbolic metadata across pass replay."
+                )
+
+            current_snapshot = new_symbolic_inputs[input_index]
+            if current_snapshot != snapshot:
+                raise ExportPassBaseError(
+                    f"Input at position {input_index} did not preserve symbolic metadata across pass replay."
+                )
+
     def _fx(
         self,
         kind: str,
@@ -614,6 +781,10 @@ class _ExportPassBase(PassBase):
             interpreter.run(*inputs_data)
 
         new_graph_module = torch.fx.GraphModule(self.tracer.root, self.tracer.graph)
+        self._validate_symbolic_input_snapshots(graph_module, new_graph_module)
+
+        # Preserve GraphModule-level metadata from the input module.
+        new_graph_module.meta = graph_module.meta.copy()
 
         self.tracer = prev_tracer
         self.interpreter = prev_interpreter

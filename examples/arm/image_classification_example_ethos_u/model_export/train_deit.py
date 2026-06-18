@@ -9,8 +9,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from datasets import DatasetDict, load_dataset
-from evaluate import load as load_metric
+from datasets import DatasetDict, load_dataset  # type: ignore[import]
+from evaluate import load as load_metric  # type: ignore[import]
 from transformers import AutoImageProcessor, set_seed, Trainer, TrainingArguments
 
 from transformers.models.vit.modeling_vit import ViTForImageClassification

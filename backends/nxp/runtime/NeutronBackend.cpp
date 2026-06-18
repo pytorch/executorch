@@ -433,12 +433,12 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The tensor is already permuted.
-          ET_LOG(Info, "Using channels last dim order for input %d.\n", i);
+          ET_LOG(Debug, "Using channels last dim order for input %d.\n", i);
           cfg->dcfg.inputs[i] = arg.const_data_ptr();
         } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
           // Transpose the data to channels last.
 
-          ET_LOG(Info, "Transposing input %d to channels last.\n", i);
+          ET_LOG(Debug, "Transposing input %d to channels last.\n", i);
 
           // Allocate buffer, the allocator is reset after each PTE instruction.
           void* buffer = context.allocate(arg.nbytes(), 16);
@@ -542,10 +542,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The rest of the model expects the `channels_last` dim order, which
           //  the data already matches.
-          ET_LOG(Info, "Using channels last dim order for output %d.\n", i);
+          ET_LOG(Debug, "Using channels last dim order for output %d.\n", i);
         } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
           // Transpose the data to channels first.
-          ET_LOG(Info, "Transposing output %d to channels first.\n", i);
+          ET_LOG(Debug, "Transposing output %d to channels first.\n", i);
           transposeOutput(
               cfg->dcfg.outputs[i],
               arg.mutable_data_ptr(),

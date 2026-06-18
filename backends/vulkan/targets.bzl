@@ -130,7 +130,6 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
         },
         cmd = genrule_cmd,
         default_outs = ["."],
-        labels = ["uses_dotslash"],
     )
 
     suffix = "_no_volk" if no_volk else ""
@@ -192,7 +191,7 @@ def define_common_targets(is_fbcode = False):
 
         if vma_dep == "instantiated":
             VK_API_DEPS = [
-                "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocatorInstantiated",
+                "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocatorInstantiated",
             ]
         else:
             VK_API_DEPS = [

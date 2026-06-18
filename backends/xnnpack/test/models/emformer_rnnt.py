@@ -50,6 +50,12 @@ class TestEmformerModel(unittest.TestCase):
 
     def test_fp32_emformer_joiner_dynamic(self):
         joiner = self.Joiner()
+        example_inputs = (
+            torch.rand([2, 128, 1024]),
+            torch.tensor([128]),
+            torch.rand([2, 128, 1024]),
+            torch.tensor([128]),
+        )
         dynamic_shapes = (
             {0: torch.export.Dim("batch", min=1, max=4)},
             None,
@@ -57,7 +63,7 @@ class TestEmformerModel(unittest.TestCase):
             None,
         )
         (
-            Tester(joiner, joiner.get_example_inputs(), dynamic_shapes=dynamic_shapes)
+            Tester(joiner, example_inputs, dynamic_shapes=dynamic_shapes)
             .export()
             .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
@@ -117,6 +123,10 @@ class TestEmformerModel(unittest.TestCase):
 
     def test_fp32_emformer_transcriber_dynamic(self):
         transcriber = self.Transcriber()
+        example_inputs = (
+            torch.randn(2, 128, 80),
+            torch.tensor([128]),
+        )
         dynamic_shapes = (
             {0: torch.export.Dim("batch", min=1, max=4)},
             None,
@@ -124,7 +134,7 @@ class TestEmformerModel(unittest.TestCase):
         (
             Tester(
                 transcriber,
-                transcriber.get_example_inputs(),
+                example_inputs,
                 dynamic_shapes=dynamic_shapes,
             )
             .export()

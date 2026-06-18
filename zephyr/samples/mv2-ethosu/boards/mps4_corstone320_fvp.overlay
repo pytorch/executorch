@@ -1,0 +1,25 @@
+/* Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * Copyright 2026 Arm Limited and/or its affiliates.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Override zephyr,sram to the 4 MiB ISRAM (0x3100_0000) so the allocator
+ * pools (~3 MiB total) fit alongside code in the same region.  The default
+ * sram@12000000 is only 2 MiB which is too small for MV2.
+ *
+ * The model PTE blob is placed in DDR (0x7000_0000) via a linker snippet.
+ * The Ethos-U can DMA from DDR on the Corstone-320 FVP.
+ */
+/ {
+	chosen {
+		zephyr,sram = &isram;
+	};
+
+	model_ddr: memory@70000000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x70000000 DT_SIZE_M(16)>;
+		zephyr,memory-region = "MODEL_DDR";
+	};
+};

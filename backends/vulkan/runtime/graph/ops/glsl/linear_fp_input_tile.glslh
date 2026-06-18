@@ -13,12 +13,19 @@
  * Macro Settings:
  * - TILE_M
  * - TILE_K4
+ *
+ * Optional:
+ * - LINEAR_FP_INPUT_TILE_VEC4_T — input tile vec4 type (default: VEC4_T).
  */
 
 #extension GL_EXT_control_flow_attributes : require
 
+#ifndef LINEAR_FP_INPUT_TILE_VEC4_T
+#define LINEAR_FP_INPUT_TILE_VEC4_T VEC4_T
+#endif
+
 struct FPInputTile {
-  VEC4_T data[TILE_M][TILE_K4];
+  LINEAR_FP_INPUT_TILE_VEC4_T data[TILE_M][TILE_K4];
 };
 
 #ifdef DEBUG_MODE

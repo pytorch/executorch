@@ -604,11 +604,37 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "",
             "",
             "def _build_int_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:",
-            '    """Build a vector of int32."""',
+            '    """Pre-build a vector of int32 values (must be called before table Start)."""',
             "    builder.StartVector(4, len(vec), 4)",
             "    for v in reversed(vec):",
             "        builder.PrependInt32(v)",
             "    return builder.EndVector()",
+            "",
+            "",
+            "def _build_int8_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:",
+            '    """Pre-build a vector of int8 values (must be called before table Start)."""',
+            "    builder.StartVector(1, len(vec), 1)",
+            "    for v in reversed(vec):",
+            "        builder.PrependInt8(v)",
+            "    return builder.EndVector()",
+            "",
+            "",
+            "def _build_uint8_vector(builder: flatbuffers.Builder, vec: List[int]) -> int:",
+            '    """Pre-build a vector of uint8 values (must be called before table Start)."""',
+            "    builder.StartVector(1, len(vec), 1)",
+            "    for v in reversed(vec):",
+            "        builder.PrependUint8(v)",
+            "    return builder.EndVector()",
+            "",
+            "",
+            "def _shared_string(builder: flatbuffers.Builder, s):",
+            '    """CreateString with per-buffer dedup so identical strings share one offset."""',
+            "    if s is None:",
+            "        return None",
+            "    # flatbuffers' Builder dedups identical strings via its built-in",
+            "    # sharedStrings cache; fall back to CreateString on old flatbuffers.",
+            '    create = getattr(builder, "CreateSharedString", None) or builder.CreateString',
+            "    return create(s)",
             "",
             "",
             "class GeneratedOpBuilders:",
@@ -694,6 +720,16 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "            builder.PrependUint32(tid.idx)",
             "        return builder.EndVector()",
             "",
+            "    def _build_string_vector(",
+            "        self, builder: flatbuffers.Builder, vec: List[str]",
+            "    ) -> int:",
+            '        """Pre-build a vector of strings (offsets must be created before table Start)."""',
+            "        offsets = [_shared_string(builder, s) for s in vec]",
+            "        builder.StartVector(4, len(offsets), 4)",
+            "        for off in reversed(offsets):",
+            "            builder.PrependUOffsetTRelative(off)",
+            "        return builder.EndVector()",
+            "",
         ]
     )
 
@@ -766,17 +802,20 @@ def _generate_op_builder_method(table: FBSTable) -> str:
 
 _PY_PREBUILD_VECTOR = {
     "list_int": "_build_int_vector(builder, op.{name})",
+    "list_int8": "_build_int8_vector(builder, op.{name})",
+    "list_uint8": "_build_uint8_vector(builder, op.{name})",
     "list_int_or_vid": "self._build_int_or_vid_vector(builder, op.{name})",
     "list_tid": "self._build_tid_vector(builder, op.{name})",
+    "list_str": "self._build_string_vector(builder, op.{name})",
 }
 
 _PY_PREBUILD_OFFSET = {
-    "str": "builder.CreateString(op.{name})",
+    "str": "_shared_string(builder, op.{name})",
     "int_or_vid": "self._build_int_or_vid(builder, op.{name})",
     "float_or_vid": "self._build_float_or_vid(builder, op.{name})",
     "vid_or_tid": "self._build_vid_or_tid(builder, op.{name})",
     "int_or_vid_or_tid": "self._build_int_or_vid_or_tid(builder, op.{name})",
-    "optional_str": "builder.CreateString(op.{name}) if op.{name} is not None else None",
+    "optional_str": "_shared_string(builder, op.{name})",
 }
 
 
@@ -818,7 +857,14 @@ def _emit_py_add(
     if kind in ("str", "int_or_vid", "float_or_vid", "vid_or_tid", "int_or_vid_or_tid"):
         return [f"        {add}(builder, {n}_off)"]
     # Pre-built vectors (required vs optional)
-    if kind in ("list_int", "list_int_or_vid", "list_tid"):
+    if kind in (
+        "list_int",
+        "list_int8",
+        "list_uint8",
+        "list_int_or_vid",
+        "list_tid",
+        "list_str",
+    ):
         if fld.required:
             return [f"        {add}(builder, {n}_vec)"]
         return [
@@ -859,11 +905,17 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
     if t.startswith("[") and t.endswith("]"):
         inner = t[1:-1]
         if inner in FBS_INTEGER_TYPES:
+            if inner == "int8":
+                return "list_int8"
+            if inner == "uint8":
+                return "list_uint8"
             return "list_int"
         if inner == "IntOrVid":
             return "list_int_or_vid"
         if inner == "Tid":
             return "list_tid"
+        if inner == "string":
+            return "list_str"
         raise ValueError(
             f"Unrecognized array element type '{inner}' for field '{fld.name}' in table '{table.name}'. "
             f"Add a handler in _get_field_kind()."
@@ -954,6 +1006,19 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
     return header + result
 
 
+def _is_interned_str(table, field_name) -> bool:
+    """Whether a string field should be loaded as an interned shared_ptr.
+
+    Only large, frequently-duplicated kernel blobs (MetalKernelNode source/
+    header) are interned so identical text shares one std::string at runtime.
+    """
+    return (
+        table is not None
+        and getattr(table, "name", None) == "MetalKernelNode"
+        and field_name in ("source", "header")
+    )
+
+
 def _fbs_type_to_cpp(
     fbs_type: str,
     required: bool,
@@ -980,6 +1045,10 @@ def _fbs_type_to_cpp(
         return f"std::vector<{inner_cpp}>"
 
     cpp_type = FBS_TO_CPP.get(fbs_type, fbs_type)
+
+    # Interned strings (deduped + shared at load time) use a shared_ptr handle.
+    if _is_interned_str(table, fld.name if fld is not None else None):
+        return "std::shared_ptr<const std::string>"
 
     # Handle optional types
     if not required:
@@ -1071,7 +1140,7 @@ def _generate_loader_case(table: FBSTable) -> List[str]:
 
         fb_field_name = fld.name
         kind = _get_field_kind(fld, table)
-        load_lines = _emit_cpp_load(kind, fld.name, fb_field_name)
+        load_lines = _emit_cpp_load(kind, fld.name, fb_field_name, table)
         if load_lines is None:
             raise ValueError(
                 f"Unhandled field kind '{kind}' for field '{fld.name}' in table '{table.name}'. "
@@ -1103,8 +1172,13 @@ _CPP_CONVERTER = {
 }
 
 
-def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
+def _emit_cpp_load(
+    kind: str, name: str, fb_name: str, table=None
+) -> "List[str] | None":
     """Emit C++ load lines for a field kind, or None if kind is unrecognized."""
+    # Interned string fields share one std::string via the load-time pool.
+    if _is_interned_str(table, name) and kind in ("str", "optional_str"):
+        return [f"      node.{name} = strpool.intern(fb->{fb_name}());"]
     # Required struct / compound via converter
     if kind in _CPP_CONVERTER:
         conv = _CPP_CONVERTER[kind]
@@ -1140,7 +1214,7 @@ def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
             "      }",
         ]
     # Integer/bool vector via to_vector
-    if kind == "list_int":
+    if kind in ("list_int", "list_int8", "list_uint8"):
         return [f"      node.{name} = to_vector(fb->{fb_name}());"]
     # Int-or-vid vector (indexed access)
     if kind == "list_int_or_vid":
@@ -1157,6 +1231,15 @@ def _emit_cpp_load(kind: str, name: str, fb_name: str) -> "List[str] | None":
             f"      if (fb->{fb_name}()) {{",
             f"        for (auto fb_tid : *fb->{fb_name}()) {{",
             f"          node.{name}.push_back(convert_tid(fb_tid));",
+            "        }",
+            "      }",
+        ]
+    # String vector
+    if kind == "list_str":
+        return [
+            f"      if (fb->{fb_name}()) {{",
+            f"        for (const auto* s : *fb->{fb_name}()) {{",
+            f"          node.{name}.push_back(s ? s->str() : std::string{{}});",
             "        }",
             "      }",
         ]
@@ -1258,6 +1341,9 @@ _INSPECTOR_KIND_MAP = {
     "list_int": "int_list",
     "list_int_or_vid": "int_or_vid_list",
     "list_tid": "tid_list",
+    "list_str": "string_list",
+    "list_int8": "int_list",
+    "list_uint8": "int_list",
     "int": "scalar",
     "optional_int": "scalar",
     "float": "scalar",
@@ -1290,7 +1376,7 @@ def generate_inspector(schema: "Schema") -> str:  # noqa: F821
             "# Field kinds and their extractors",
             "# Each field is a tuple of (display_name, accessor_name, kind)",
             "# where kind is one of: 'tid', 'vid', 'int_or_vid', 'float_or_vid',",
-            "# 'int_list', 'int_or_vid_list', 'tid_list', 'scalar', 'string'",
+            "# 'int_list', 'int_or_vid_list', 'tid_list', 'string_list', 'scalar', 'string'",
             "",
             "FieldSpec = Tuple[str, str, str]  # (display_name, accessor_name, kind)",
             "",

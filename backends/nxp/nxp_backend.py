@@ -14,7 +14,9 @@ from typing import final, List, Optional
 
 import numpy as np
 import torch
-
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
 from executorch.backends.nxp.backend.data_format import DataFormat
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
@@ -65,20 +67,19 @@ class NeutronCompileSpecBuilder:
         use_neutron_for_format_conversion: bool = True,
         fetch_constants_to_sram: bool = False,
         dump_kernel_selection_code: bool = False,
-    ):
-        """
-        Generate compile spec for Neutron NPU
+    ) -> "NeutronCompileSpecBuilder":
+        """Generate compile spec for Neutron NPU
 
-        Args:
-            config: Neutron accelerator configuration, e.g. "imxrt700"
-            extra_flags: Extra flags for the Neutron compiler
-            operators_not_to_delegate: List of operators that should not be delegated
-            use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
+        :param config: Neutron accelerator configuration, e.g. "imxrt700"
+        :param extra_flags: Extra flags for the Neutron compiler
+        :param operators_not_to_delegate: List of operators that should not be delegated
+        :param use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
                                                 ensure that the IO matches the executorch partition, which will be
                                                 delegated to Neutron.
-            fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
+        :param fetch_constants_to_sram: If True, the Neutron Converter will insert microinstructions to prefetch weights
                                      from FLASH to SRAM. This should be used when the whole model does not fit into SRAM.
-            dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
+        :param dump_kernel_selection_code: Whether Neutron converter dumps kernel selection code.
+        :return: self for method chaining
         """
 
         self.config = NeutronTargetSpec(config)
@@ -217,10 +218,14 @@ class NeutronBackend(BackendDetails):
                 edge_program,
                 neutron_target_spec=NeutronTargetSpec(target),
                 conversion_config=conversion_config,
+                custom_delegation_options=CustomDelegationOptions(),
             )
 
             neutron_model = NeutronConverterManager(dump_kernel_selection_code).convert(
-                tflite_model, target, delegation_tag, fetch_constants_to_sram
+                tflite_model,
+                target,
+                delegation_tag,
+                fetch_constants_to_sram,
             )
 
             # Dump the tflite file if logging level is enabled

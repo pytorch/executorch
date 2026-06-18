@@ -54,7 +54,7 @@ class SDPACustom(torch.nn.Module):
                 q,
                 k,
                 v,
-                input_pos[0].item(),
+                0,  # start_pos: unused when mask is provided (is_causal=False)
                 mask,  # Attention mask
                 0,  # dropout probability. Ignored by the code
                 False,  # is_causal
@@ -168,7 +168,7 @@ class QuantizedSDPA(torch.nn.Module):
                 q_quantized,
                 k_quantized,
                 v_quantized,
-                start_pos,
+                0,  # start_pos: unused when mask is provided (is_causal=False)
                 mask,
                 0,
                 False,

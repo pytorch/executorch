@@ -89,8 +89,10 @@ def mlx_sdpa_with_start_pos_forward(
 
 def sdpa_mask_passthrough(
     batch_size: int,
-    cache_position: torch.Tensor,
-    kv_length: int,
+    cache_position: Optional[torch.Tensor] = None,
+    q_length: Optional[int] = None,
+    kv_length: Optional[int] = None,
+    q_offset: Optional[Union[int, torch.Tensor]] = None,
     kv_offset: int = 0,
     mask_function: Optional[Callable] = None,
     attention_mask: Optional[torch.Tensor] = None,
@@ -139,6 +141,27 @@ def get_mlx_sliding_window_sdpa(exportable_module) -> Callable:
         Attention function compatible with HuggingFace's attention interface.
     """
 
+    def _resolve_cache_layer_idx(module: torch.nn.Module, cache) -> Optional[int]:
+        """
+        Map a transformer layer index to the backing cache slot index.
+
+        Hybrid/shared-KV models like Gemma 4 only allocate cache entries for the
+        non-shared KV layers. Shared layers expose `kv_shared_layer_index`, which
+        points at the earlier cache-producing layer they reuse.
+        """
+        layer_idx = getattr(module, "layer_idx", None)
+        if layer_idx is None:
+            return None
+
+        if layer_idx < len(cache.kv_cache):
+            return layer_idx
+
+        shared_layer_idx = getattr(module, "kv_shared_layer_index", None)
+        if shared_layer_idx is not None and shared_layer_idx < len(cache.kv_cache):
+            return shared_layer_idx
+
+        return None
+
     def _sliding_window_sdpa_forward(
         module: torch.nn.Module,
         query: torch.Tensor,  # [B, num_heads, seq_len, head_dim] - BHSD
@@ -165,6 +188,7 @@ def get_mlx_sliding_window_sdpa(exportable_module) -> Callable:
         attn_mask = None
         start_pos = 0
 
+        layer_cache = None
         if layer_idx is not None and position_ids is not None:
             start_pos = position_ids[0][0].item()
 
@@ -173,7 +197,9 @@ def get_mlx_sliding_window_sdpa(exportable_module) -> Callable:
             cache = getattr(exportable_module, "cache", None)
 
             if cache is not None:
-                layer_cache = cache.kv_cache[layer_idx]
+                cache_layer_idx = _resolve_cache_layer_idx(module, cache)
+                if cache_layer_idx is not None:
+                    layer_cache = cache.kv_cache[cache_layer_idx]
                 if isinstance(layer_cache, RingBufferKVCache):
                     attn_mask = layer_cache.create_sliding_window_mask(
                         start_pos, seq_len
@@ -182,11 +208,19 @@ def get_mlx_sliding_window_sdpa(exportable_module) -> Callable:
                     # stop_pos = start_pos + seq_len = buffer_size
                     start_pos = layer_cache.buffer_size - seq_len
 
+        # Hybrid models use one global HF attention implementation. Sliding
+        # layers need the ring-buffer mask path, while full-attention layers
+        # should keep the regular causal SDPA path even under the same hook.
         if attn_mask is None:
-            raise RuntimeError(
-                f"Sliding window attention at layer {layer_idx} requires a "
-                f"RingBufferKVCache, but none was found. Ensure the model's "
-                f"cache is set up with RingBufferKVCache for sliding window layers."
+            return mlx_sdpa_with_start_pos_forward(
+                module,
+                query,
+                key,
+                value,
+                attention_mask,
+                position_ids=position_ids,
+                scaling=scaling,
+                **kwargs,
             )
 
         output = torch.ops.mlx.custom_sdpa(

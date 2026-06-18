@@ -17,10 +17,11 @@ This is done in the example depending on the board you build for so if you build
 Set up FVP paths and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone300 FVP
-<!-- RUN setup_corstone300_fvp -->
+<!-- RUN setup_corstone300 -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
 export ARMFVP_EXTRA_FLAGS="-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_macs=128"
 ```
 
@@ -31,7 +32,7 @@ export ARMFVP_EXTRA_FLAGS="-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_m
 Prepare the Ethos-U55 PTE model
 <!-- RUN test_ethos-u55_generate_pte -->
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --delegate --target=ethos-u55-128 --output=add_u55_128.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --delegate --target=ethos-u55-128 --output=add_u55_128.pte
 ```
 
 `--delegate` tells the `aot_arm_compiler` to use Ethos-U backend and `-t ethos-u55-128` specifies the used Ethos-U variant and numbers of macs used, this must match your hardware or FVP config.
@@ -51,10 +52,10 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-e
 Prepare the Cortex-M55 PTE model
 <!-- RUN test_cortex-m55_generate_pte -->
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55 --output=add_m55.pte
 ```
 
-`--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
+`--target=cortex-m55` plus `--quantize` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
 
 
 #### Build and run
@@ -72,11 +73,11 @@ west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/hello-e
 Set up FVP paths, libs and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
 
 Config Zephyr Corstone320 FVP
-<!-- RUN setup_corstone320_fvp -->
+<!-- RUN setup_corstone320 -->
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
-export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
 export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256"
 ```
 
@@ -87,7 +88,7 @@ export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.s
 Prepare the Ethos-U85 PTE model
 <!-- RUN test_ethos-u85_generate_pte -->
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --delegate --target=ethos-u85-256 --output=add_u85_256.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --delegate --target=ethos-u85-256 --output=add_u85_256.pte
 ```
 
 `--delegate` tells the `aot_arm_compiler` to use Ethos-U backend and `-t ethos-u85-256` specifies the used Ethos-U variant and numbers of macs used, this must match your hardware or FVP config.
@@ -129,10 +130,10 @@ export PATH=$PATH:~/STMicroelectronics/STM32Cube/STM32CubeProgrammer/bin
 
 Prepare the Cortex-M55 PTE model
 ```
-python -m modules.lib.executorch.examples.arm.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55+int8 --output=add_m55.pte
+python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=modules/lib/executorch/zephyr/samples/hello-executorch/models/add.py --quantize --target=cortex-m55 --output=add_m55.pte
 ```
 
-`--target=cortex-m55+int8` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
+`--target=cortex-m55` plus `--quantize` selects the Cortex-M/CMSIS-NN portable kernel path (no NPU delegation). This produces a `.pte` optimized for Cortex-M55 with INT8 quantization.
 
 #### Build and run
 

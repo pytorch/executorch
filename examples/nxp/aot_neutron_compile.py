@@ -12,7 +12,6 @@ from collections import defaultdict
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
-
 import torch
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (

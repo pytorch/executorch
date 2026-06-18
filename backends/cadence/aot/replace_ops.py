@@ -28,6 +28,9 @@ from executorch.backends.cadence.aot.pass_utils import (
     RemoveOrReplacePassInterface,
 )
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
+from executorch.backends.transforms.replace_nop_transpose_or_permute_with_view import (
+    ReplaceNopTransposeOrPermuteWithViewPass as _SharedReplaceNopTransposeOrPermuteWithViewPass,
+)
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
@@ -159,14 +162,31 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         ns = exir_ops.edge if isinstance(node.target, EdgeOpOverload) else torch.ops
+        out_dtype = node.kwargs.get("out_dtype")
+        kwargs = {k: v for k, v in node.kwargs.items() if k != "out_dtype"}
         with node.graph.inserting_before(node):
             new_node = node.graph.call_function(
                 ns.cadence.dequantize_per_tensor.default,
                 args=node.args,
-                kwargs=node.kwargs,
+                kwargs=kwargs,
             )
-            new_node.meta = node.meta
-        node.replace_all_uses_with(new_node)
+            new_node.meta = node.meta.copy()
+            if (
+                out_dtype is not None
+                and out_dtype != torch.float32
+                and "val" in new_node.meta
+            ):
+                new_node.meta["val"] = new_node.meta["val"].to(torch.float32)
+        if out_dtype is not None and out_dtype != torch.float32:
+            with node.graph.inserting_after(new_node):
+                cast_node = node.graph.call_function(
+                    ns.aten.to.dtype,
+                    args=(new_node, out_dtype),
+                )
+                cast_node.meta = node.meta.copy()
+            node.replace_all_uses_with(cast_node)
+        else:
+            node.replace_all_uses_with(new_node)
         return True
 
 
@@ -612,6 +632,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
         value = 0 if len(node.args) == 2 else node.args[2]
 
         arg_shape = input_node.meta["val"].shape
+        dtype = input_node.meta["val"].dtype
 
         # Convert orig_padding to a list for manipulation
         # pyre-ignore[6]: Argument type
@@ -643,7 +664,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         left_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 left_padding_node.meta = node.meta
             cat_tensors.append(left_padding_node)
@@ -663,7 +684,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         right_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 right_padding_node.meta = node.meta
             cat_tensors.append(right_padding_node)
@@ -1030,6 +1051,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
             exir_ops.edge.cadence.conv2d.default,
             exir_ops.edge.cadence.conv3d.default,
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         ]
 
@@ -1114,6 +1136,7 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         assert isinstance(node.target, EdgeOpOverload)
         quantized_op = node.target in {
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
         }
 
@@ -1132,7 +1155,15 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
                 new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
             else:
                 assert len(input_shape) == 3
-                new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+                if (
+                    node.target
+                    == exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor
+                ):
+                    new_op = (
+                        exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.per_tensor
+                    )
+                else:
+                    new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
         else:
             new_op = node.target
 
@@ -1735,77 +1766,10 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class ReplaceNopTransposeOrPermuteWithViewPass(RemoveOrReplacePassInterface):
-    """
-    If the transpose/permute op does not change the byte order (e.g.,
-    transpose/permute from Nx1xHxW to NxHx1xW), then it can be replaced
-    by view op.
-    """
-
-    @property
-    def targets(self) -> list[EdgeOpOverload]:
-        return [
-            exir_ops.edge.aten.transpose_copy.int,
-            exir_ops.edge.aten.permute_copy.default,
-        ]
-
-    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Get the input tensor and shape
-        in_tensor_node = node.args[0]
-        assert isinstance(in_tensor_node, torch.fx.Node)
-        in_shape = in_tensor_node.meta["val"].shape
-        # Get the output tensor shape
-        out_shape = node.meta["val"].shape
-
-        if node.target == exir_ops.edge.aten.transpose_copy.int:
-            # Get the two dims to be transposed
-            dim0 = cast(int, node.args[1])
-            dim1 = cast(int, node.args[2])
-            dim0 = dim0 if dim0 >= 0 else len(in_shape) + dim0
-            dim1 = dim1 if dim1 >= 0 else len(in_shape) + dim1
-            # We can eliminate transpose if (a) the size at dim0 and dim1 is 1;
-            # (b) the size at dim0 or dim1 is 1, and dim0 and dim1 are consecutive.
-            both_one = in_shape[dim0] == 1 and in_shape[dim1] == 1
-            either_one_and_consecutive = abs(dim0 - dim1) == 1 and (
-                in_shape[dim0] == 1 or in_shape[dim1] == 1
-            )
-            if both_one or either_one_and_consecutive:
-                with node.graph.inserting_before(node):
-                    new_node = node.graph.call_function(
-                        exir_ops.edge.aten.view_copy.default,
-                        args=(in_tensor_node, list(out_shape)),
-                    )
-                    new_node.meta = node.meta
-                node.replace_all_uses_with(new_node)
-                return True
-
-        elif node.target == exir_ops.edge.aten.permute_copy.default:
-            old_dims = list(range(len(in_shape)))
-            new_dims = cast(Sequence[int], node.args[1])
-            # If the permute does not change anything, return the input as output.
-            if old_dims == list(new_dims):
-                node.replace_all_uses_with(in_tensor_node)
-                return True
-            # Get the old dim order, and the permuted dim order for all dims that
-            # are not 1.
-            old_order = [
-                dim for dim, shape_dim in zip(old_dims, in_shape) if shape_dim != 1
-            ]
-            new_order = [
-                dim for dim, shape_dim in zip(new_dims, out_shape) if shape_dim != 1
-            ]
-            # If the byte ordering for non-unit dims is unchanged, this is a nop.
-            if old_order == new_order:
-                with node.graph.inserting_before(node):
-                    new_node = node.graph.call_function(
-                        exir_ops.edge.aten.view_copy.default,
-                        args=(in_tensor_node, list(out_shape)),
-                    )
-                    new_node.meta = node.meta
-                node.replace_all_uses_with(new_node)
-                return True
-
-        return False
+class ReplaceNopTransposeOrPermuteWithViewPass(
+    _SharedReplaceNopTransposeOrPermuteWithViewPass
+):
+    pass
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=2))
@@ -2075,6 +2039,13 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
         if any(d != 1 for d in dilation):
             return False
 
+        # When channel_last=True (NHWC layout), im2row rearranges data from
+        # kp-major (NHWC natural order) to channel-major output layout.
+        # A simple view_copy cannot perform this data rearrangement.
+        channel_last = node.args[6] if len(node.args) > 6 else False
+        if channel_last:
+            return False
+
         # im2row works on 3D or 4D tensors.
         # Output shape[1:-1] will be unit if input spatial dimensions are the same as kernel spatial dimensions.
         output_shape = node.meta["val"].shape
@@ -2266,7 +2237,8 @@ class ReplaceSplitWithSlicePass(RemoveOrReplacePassInterface):
 class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
     """
     Replace the pow op with successive mul ops when the exponent is an
-    integer between 2 and 4 (inclusive).
+    integer between 2 and 4 (inclusive). Float exponents that are whole
+    numbers (e.g., 2.0, 3.0, 4.0) are also accepted.
     """
 
     @property
@@ -2274,11 +2246,16 @@ class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
         return [exir_ops.edge.aten.pow.Tensor_Scalar]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Check if we have at least 2 args and the exponent is an int
-        if len(node.args) < 2 or not isinstance(node.args[1], int):
+        # Check if we have at least 2 args and the exponent is an int or float
+        if len(node.args) < 2 or not isinstance(node.args[1], (int, float)):
             return False
 
-        exponent = cast(int, node.args[1])
+        exponent_val = node.args[1]
+        if isinstance(exponent_val, float):
+            if not exponent_val.is_integer():
+                return False
+            exponent_val = int(exponent_val)
+        exponent = cast(int, exponent_val)
 
         # Only replace if exponent is between 2 and 4 (inclusive)
         if exponent < 2 or exponent > 4:

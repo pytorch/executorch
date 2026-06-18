@@ -8,14 +8,14 @@ from typing import Optional
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
 
 
-def validate_conv2d_args_dtypes(
+def validate_conv2d_args_dtypes(  # noqa: C901
     tosa_spec: TosaSpecification,
     x: torch.Tensor,
     weight: torch.Tensor,
@@ -30,6 +30,10 @@ def validate_conv2d_args_dtypes(
     ]
     if tosa_spec.support_extension("bf16"):
         supported_float_types.append(torch.bfloat16)
+    if tosa_spec.support_extension("fp8e4m3"):
+        supported_float_types.append(torch.float8_e4m3fn)
+    if tosa_spec.support_extension("fp8e5m2"):
+        supported_float_types.append(torch.float8_e5m2)
     if x.dtype in supported_int_types:
         if not tosa_spec.support_integer():
             raise TosaValueError(
@@ -59,12 +63,20 @@ def validate_conv2d_args_dtypes(
                 f"TOSA spec {tosa_spec} requires weights {weight.dtype} to be of the same type as input {x.dtype}",
                 op=op,
             )
-        if bias is not None and bias.dtype != x.dtype:
+        if x.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+            output_dtype = torch.float16
+        else:
+            output_dtype = x.dtype
+        if bias is not None and bias.dtype != output_dtype:
+            if output_dtype != x.dtype:
+                raise TosaValueError(
+                    f"TOSA spec {tosa_spec} requires bias {bias.dtype} to be of the same type as output {output_dtype}",
+                    op=op,
+                )
             raise TosaValueError(
                 f"TOSA spec {tosa_spec} requires bias {bias.dtype} to be of the same type as input {x.dtype}",
                 op=op,
             )
-        output_dtype = x.dtype
     else:
         supported_types = (
             *(supported_int_types if tosa_spec.support_integer() else ()),
@@ -77,7 +89,7 @@ def validate_conv2d_args_dtypes(
     return output_dtype
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "CONV2D(Tensor input, "
     "Tensor weight, "
     "Tensor bias, "
@@ -101,14 +113,14 @@ def CONV2D(
     torch_pad = [pad[0], pad[2]]
     N = x.shape[0]
     C_out = weight.shape[0]
-    H_in, W_in = x.shape[2:]
+    H_in, W_in = x.shape[1], x.shape[2]
     H_out = math.floor(
-        (H_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[2] - 1) - 1) / stride[0]
+        (H_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[1] - 1) - 1) / stride[0]
         + 1
     )
     W_out = math.floor(
-        (W_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[3] - 1) - 1) / stride[1]
+        (W_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[2] - 1) - 1) / stride[1]
         + 1
     )
-    output_shape = [N, C_out, H_out, W_out]
+    output_shape = [N, H_out, W_out, C_out]
     return torch.empty(size=output_shape, dtype=output_dtype)

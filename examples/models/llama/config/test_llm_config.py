@@ -25,7 +25,9 @@ from executorch.extension.llm.export.config.llm_config import (
 class TestValidation(unittest.TestCase):
     def test_invalid_attention_sink(self):
         with self.assertRaises(ValueError):
-            ModelConfig(use_attention_sink="4,2048")
+            ModelConfig(use_attention_sink="4")
+        with self.assertRaises(ValueError):
+            ModelConfig(use_attention_sink="4,2048,1024")
 
     def test_invalid_local_global_attention_format(self):
         with self.assertRaises(ValueError):
@@ -79,7 +81,7 @@ class TestValidConstruction(unittest.TestCase):
             ),
             model=ModelConfig(
                 dtype_override="fp32",
-                use_attention_sink="4,2048,1024",
+                use_attention_sink="4,2048",
                 use_kv_cache=True,
                 local_global_attention="[16, 32]",
             ),

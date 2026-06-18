@@ -14,33 +14,47 @@
 #   ./devtools/scripts/benchmark_android.sh <model.pte> [options]
 #
 # Options:
+#   --build-tool <tool>  Build system: cmake (default) or buck
 #   --warmup <N>         Number of warmup executions (default: 1)
 #   --iterations <N>     Number of timed executions (default: 10)
 #   --num-threads <N>    CPU threads for inference (default: -1, auto-detect)
 #   --method <name>      Method to run (default: first method in the program)
 #   --backends <list>    Comma-separated backends (default: xnnpack)
 #                        Supported: xnnpack, coreml, vulkan, qnn
+#                        (cmake only; buck links all backends)
 #   --device <serial>    ADB device serial (for multiple devices)
 #   --etdump             Enable event tracer and pull etdump back to host
 #   --no-cleanup         Leave model file on device after benchmarking
-#   --rebuild            Force cmake reconfigure and rebuild
-#   --build-dir <path>   Reuse existing build directory (skip build step)
+#   --rebuild            Force cmake reconfigure and rebuild (cmake only)
+#   --build-dir <path>   Reuse existing build directory (cmake only)
 
 set -euo pipefail
 
-# --- Locate ExecuTorch root from script path ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Pre-scan for --build-tool (needed before ExecuTorch root validation).
+BUILD_TOOL="cmake"
+_prev=""
+for _arg in "$@"; do
+  if [[ "$_prev" == "--build-tool" ]]; then BUILD_TOOL="$_arg"; break; fi
+  _prev="$_arg"
+done
+unset _prev _arg
 
-if [[ ! -f "$EXECUTORCH_ROOT/CMakeLists.txt" ]] || [[ ! -d "$EXECUTORCH_ROOT/devtools" ]]; then
-  echo "Error: Could not locate ExecuTorch root from script path: $SCRIPT_DIR"
-  exit 1
+# --- Locate ExecuTorch root from script path (cmake only) ---
+if [[ "$BUILD_TOOL" != "buck" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+  if [[ ! -f "$EXECUTORCH_ROOT/CMakeLists.txt" ]] || [[ ! -d "$EXECUTORCH_ROOT/devtools" ]]; then
+    echo "Error: Could not locate ExecuTorch root from script path: $SCRIPT_DIR"
+    exit 1
+  fi
+
+  cd "$EXECUTORCH_ROOT"
 fi
-
-cd "$EXECUTORCH_ROOT"
 
 # --- Defaults ---
 MODEL_PATH=""
+# BUILD_TOOL is set by pre-scan above; re-declare here for documentation.
 WARMUP=1
 ITERATIONS=10
 NUM_THREADS=-1
@@ -60,23 +74,25 @@ usage() {
 Usage: $0 <model.pte> [options]
 
 Options:
+  --build-tool <tool>  Build system: cmake (default) or buck
   --warmup <N>         Number of warmup executions (default: 1)
   --iterations <N>     Number of timed executions (default: 10)
   --num-threads <N>    CPU threads for inference (default: -1, auto-detect)
   --method <name>      Method to run (default: first method in the program)
   --backends <list>    Comma-separated backends to build (default: xnnpack)
-                       Supported: xnnpack, vulkan, qnn
+                       Supported: xnnpack, vulkan, qnn (cmake only)
   --device <serial>    ADB device serial (for multiple devices)
   --etdump             Enable event tracer and pull etdump back to host
   --no-cleanup         Leave model file on device after benchmarking
-  --rebuild            Force cmake reconfigure and rebuild
-  --build-dir <path>   Reuse existing build directory (skip build step)
+  --rebuild            Force cmake reconfigure and rebuild (cmake only)
+  --build-dir <path>   Reuse existing build directory (cmake only)
 EOF
   exit 1
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --build-tool) BUILD_TOOL="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
     --iterations) ITERATIONS="$2"; shift 2 ;;
     --num-threads) NUM_THREADS="$2"; shift 2 ;;
@@ -167,7 +183,34 @@ find_ndk() {
 }
 
 # --- Build executor_runner ---
-if [[ -z "$BUILD_DIR" ]]; then
+if [[ "$BUILD_TOOL" == "buck" ]]; then
+  BUCK_TARGET="fbsource//xplat/executorch/examples/portable/executor_runner:executor_runner_optAndroid#android-arm64"
+  BUCK_ARGS=(
+    @fbsource//fbandroid/mode/static_linking
+    @fbsource//fbandroid/mode/opt
+    --config cxx.default_platform=android-arm64
+  )
+  if [[ "$ETDUMP" == true ]]; then
+    BUCK_ARGS+=(-c executorch.event_tracer_enabled=true)
+  fi
+  echo "Building executor_runner with Buck..."
+  BUCK_BUILD_OUTPUT=$(mktemp)
+  if ! buck2 build "${BUCK_ARGS[@]}" "$BUCK_TARGET" --show-output >"$BUCK_BUILD_OUTPUT" 2>&1; then
+    echo "Error: Buck build failed."
+    cat "$BUCK_BUILD_OUTPUT"
+    rm -f "$BUCK_BUILD_OUTPUT"
+    exit 1
+  fi
+  # --show-output strips the #flavor suffix, so match on target without it.
+  BUCK_TARGET_NO_FLAVOR="${BUCK_TARGET%%#*}"
+  RUNNER_BIN=$(grep "$BUCK_TARGET_NO_FLAVOR" "$BUCK_BUILD_OUTPUT" | awk '{print $2}')
+  rm -f "$BUCK_BUILD_OUTPUT"
+  if [[ -z "$RUNNER_BIN" || ! -f "$RUNNER_BIN" ]]; then
+    echo "Error: Could not locate output binary from buck build."
+    exit 1
+  fi
+  echo "Build complete."
+elif [[ -z "$BUILD_DIR" ]]; then
   BUILD_DIR="cmake-out-android-benchmark"
 
   ANDROID_NDK=$(find_ndk)
@@ -244,18 +287,22 @@ else
   echo "Using existing build directory: $BUILD_DIR"
 fi
 
-RUNNER_BIN="$BUILD_DIR/executor_runner"
-if [[ ! -f "$RUNNER_BIN" ]]; then
-  echo "Error: executor_runner not found at $RUNNER_BIN"
-  exit 1
+# RUNNER_BIN is set by the buck build path above; for cmake, derive it here.
+if [[ "$BUILD_TOOL" != "buck" ]]; then
+  RUNNER_BIN="$BUILD_DIR/executor_runner"
+  if [[ ! -f "$RUNNER_BIN" ]]; then
+    echo "Error: executor_runner not found at $RUNNER_BIN"
+    exit 1
+  fi
 fi
 
 # --- Push to device ---
+RUNNER_NAME=$(basename "$RUNNER_BIN")
 echo "Pushing files to device..."
 adb_cmd shell mkdir -p "$DEVICE_DIR"
 adb_cmd push --sync "$RUNNER_BIN" "$DEVICE_DIR/"
 adb_cmd push --sync "$MODEL_PATH" "$DEVICE_DIR/"
-adb_cmd shell chmod +x "$DEVICE_DIR/executor_runner"
+adb_cmd shell chmod +x "$DEVICE_DIR/$RUNNER_NAME"
 
 DEVICE_MODEL="$DEVICE_DIR/$MODEL_NAME"
 
@@ -263,7 +310,7 @@ DEVICE_MODEL="$DEVICE_DIR/$MODEL_NAME"
 runner_args=(
   "--model_path=$DEVICE_MODEL"
   "--cpu_threads=$NUM_THREADS"
-  "--print_output=false"
+  "--print_output=none"
 )
 
 if [[ -n "$METHOD" ]]; then
@@ -274,7 +321,7 @@ fi
 RUNNER_OUTPUT=$(mktemp)
 run_on_device() {
   local rc=0
-  adb_cmd shell "$DEVICE_DIR/executor_runner" "$@" > "$RUNNER_OUTPUT" 2>&1 || rc=$?
+  adb_cmd shell "$DEVICE_DIR/$RUNNER_NAME" "$@" > "$RUNNER_OUTPUT" 2>&1 || rc=$?
   if [[ "$rc" -ne 0 ]]; then
     echo ""
     echo "Error: executor_runner exited with code $rc"
@@ -293,7 +340,12 @@ run_on_device() {
 # --- Warmup ---
 if [[ "$WARMUP" -gt 0 ]]; then
   echo "Running $WARMUP warmup iteration(s)..."
-  run_on_device "${runner_args[@]}" "--num_executions=$WARMUP"
+  warmup_args=("${runner_args[@]}" "--num_executions=$WARMUP")
+  if [[ "$ETDUMP" == true ]]; then
+    warmup_args+=("--etdump_path=$DEVICE_DIR/warmup.etdump")
+  fi
+  run_on_device "${warmup_args[@]}"
+  adb_cmd shell rm -f "$DEVICE_DIR/warmup.etdump"
 fi
 
 # Clear logcat after warmup so the benchmark progress reader doesn't pick up
@@ -362,9 +414,17 @@ if [[ "$ETDUMP" == true ]]; then
 
   # Run the inspector CLI to print a tabular summary.
   echo ""
-  "$EXECUTORCH_ROOT/run_python_script.sh" \
-    "$EXECUTORCH_ROOT/devtools/inspector/inspector_cli.py" \
-    --etdump_path="$ETDUMP_LOCAL"
+  if [[ "$BUILD_TOOL" == "buck" ]]; then
+    if ! buck2 run fbcode//executorch/devtools/inspector:inspector_cli -- \
+        --etdump_path="$ETDUMP_LOCAL" 2>&1; then
+      echo "Warning: inspector CLI failed. Analyze the ETDump manually:"
+      echo "  buck2 run fbcode//executorch/devtools/inspector:inspector_cli -- --etdump_path=$ETDUMP_LOCAL"
+    fi
+  else
+    "$EXECUTORCH_ROOT/run_python_script.sh" \
+      "$EXECUTORCH_ROOT/devtools/inspector/inspector_cli.py" \
+      --etdump_path="$ETDUMP_LOCAL"
+  fi
 fi
 
 # --- Cleanup ---

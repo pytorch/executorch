@@ -120,8 +120,26 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.float32,
         ],
     }
+    SUPPORTED_FP8E4M3_EXTENSION_DTYPES: SupportedTypeDict = {
+        torch.float16: [torch.float8_e4m3fn],
+        torch.float32: [torch.float8_e4m3fn],
+        torch.float8_e4m3fn: [torch.float16, torch.float32],
+    }
+    SUPPORTED_FP8E5M2_EXTENSION_DTYPES: SupportedTypeDict = {
+        torch.float16: [torch.float8_e5m2],
+        torch.float32: [torch.float8_e5m2],
+        torch.float8_e5m2: [torch.float16, torch.float32],
+    }
+    SUPPORTED_BF16_FP8E4M3_EXTENSION_DTYPES: SupportedTypeDict = {
+        torch.bfloat16: [torch.float8_e4m3fn],
+        torch.float8_e4m3fn: [torch.bfloat16],
+    }
+    SUPPORTED_BF16_FP8E5M2_EXTENSION_DTYPES: SupportedTypeDict = {
+        torch.bfloat16: [torch.float8_e5m2],
+        torch.float8_e5m2: [torch.bfloat16],
+    }
 
-    def is_node_tosa_supported(
+    def is_node_tosa_supported(  # noqa: C901
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
         """Return True if the node is supported by TOSA.
@@ -147,6 +165,26 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if tosa_spec.support_extension("bf16"):
             supported_dtypes = self._merge_supported_types(
                 self.SUPPORTED_BF16_EXTENSION_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_extension("fp8e4m3"):
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_FP8E4M3_EXTENSION_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_extension("fp8e5m2"):
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_FP8E5M2_EXTENSION_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_extension("bf16") and tosa_spec.support_extension(
+            "fp8e4m3"
+        ):
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_BF16_FP8E4M3_EXTENSION_DTYPES, supported_dtypes
+            )
+        if tosa_spec.support_extension("bf16") and tosa_spec.support_extension(
+            "fp8e5m2"
+        ):
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_BF16_FP8E5M2_EXTENSION_DTYPES, supported_dtypes
             )
 
         if len(node.all_input_nodes) != 1:

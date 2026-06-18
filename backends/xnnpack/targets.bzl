@@ -14,6 +14,8 @@ def _get_preprocessor_flags():
     if native.read_config("executorch", "xnnpack_weights_cache", "0") != "0":
         preprocessor_flags.append("-DENABLE_XNNPACK_WEIGHTS_CACHE")
 
+    preprocessor_flags.append("-DXNNPACK_WORKSPACE_ALWAYS_LOCK")
+
     # Enable if not disabled through config
     return preprocessor_flags
 

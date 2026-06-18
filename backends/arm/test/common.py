@@ -5,6 +5,7 @@
 
 
 import os
+import platform
 
 from datetime import datetime
 
@@ -17,6 +18,7 @@ from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,
+    corstone300_u65_installed,
     corstone320_installed,
     model_converter_installed,
     vkml_emulation_layer_installed,
@@ -24,6 +26,10 @@ from executorch.backends.arm.test.runner_utils import (
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
+
+
+def is_aarch64_host() -> bool:
+    return platform.machine().lower() in ("aarch64", "arm64")
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
@@ -155,11 +161,48 @@ def get_u85_compile_spec(
     return compile_spec  # type: ignore[return-value]
 
 
+def get_u65_compile_spec(
+    macs: int = 256,
+    system_config: str = "Ethos_U65_High_End",
+    memory_mode: str = "Dedicated_Sram_384KB",
+    extra_flags: str = "--arena-cache-size=393216",
+    custom_path: Optional[str] = None,
+    config: Optional[str] = None,
+    tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
+) -> EthosUCompileSpec:
+    """Default compile spec for Ethos-U65 tests."""
+    if not custom_path:
+        custom_path = maybe_get_tosa_collate_path()
+    if custom_path is not None:
+        os.makedirs(custom_path, exist_ok=True)
+
+    assert macs in [256, 512], "Unsupported MACs value"
+
+    if extra_flags is not None:
+        extra_flags_list = extra_flags.split(" ")
+    else:
+        extra_flags_list = []
+
+    compile_spec = (
+        EthosUCompileSpec(
+            f"ethos-u65-{macs}",
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags=extra_flags_list,
+            config_ini=config,
+        )
+        .dump_intermediate_artifacts_to(custom_path)
+        .dump_debug_info(tosa_debug_mode)
+    )
+    return compile_spec
+
+
 def get_vgf_compile_spec(
     tosa_spec: str | TosaSpecification,
     compiler_flags: Optional[str] = "",
     custom_path: Optional[str] = None,
     tosa_debug_mode: VgfCompileSpec.DebugMode | None = None,
+    preserve_io_quantization: bool = False,
 ) -> VgfCompileSpec:
     """Get the ArmCompileSpec for the default VGF tests, to modify the compile
     spec before calling .build() to finalize it.
@@ -188,6 +231,9 @@ def get_vgf_compile_spec(
         .dump_debug_info(tosa_debug_mode)
     )
 
+    if preserve_io_quantization:
+        compile_spec._set_preserve_io_quantization(True)
+
     return compile_spec
 
 
@@ -201,6 +247,19 @@ XfailIfNoCorstone300 = pytest.mark.xfail(
 """Xfails a test if Corsone300 FVP is not installed, or if the executor runner
 is not built.
 """
+
+
+XfailIfNoCorstone300_u65 = pytest.mark.xfail(
+    condition=not (
+        corstone300_u65_installed() and arm_executor_runner_exists("corstone-300-u65")
+    ),
+    raises=FileNotFoundError,
+    reason="Did not find Corstone-300-u65 FVP or executor_runner on path",
+)
+"""Xfails a test if Corsone300-u65 FVP is not installed, or if the executor
+runner is not built.
+"""
+
 
 XfailIfNoCorstone320 = pytest.mark.xfail(
     condition=not (

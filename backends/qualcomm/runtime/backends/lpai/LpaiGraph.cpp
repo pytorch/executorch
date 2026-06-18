@@ -17,6 +17,56 @@ using executorch::runtime::Error;
 Error LpaiGraph::AfterRetrieveGraph(const std::string& graph_name) {
   std::vector<QnnGraph_CustomConfig_t> graph_custom_config;
   QnnLpaiGraph_CustomConfig_t* p_custom_config = nullptr;
+  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
+  Qnn_ErrorHandle_t error;
+
+#ifdef __hexagon__
+  uint32_t scratch_size = 0;
+  uint32_t persistent_size = 0;
+  QnnLpaiGraph_CustomProperty_t custom_props[2];
+  custom_props[0].option = QNN_LPAI_GRAPH_GET_PROP_SCRATCH_MEM_SIZE;
+  custom_props[0].property = &scratch_size;
+  custom_props[1].option = QNN_LPAI_GRAPH_GET_PROP_PERSISTENT_MEM_SIZE;
+  custom_props[1].property = &persistent_size;
+
+  QnnGraph_Property_t graph_props[2];
+  graph_props[0].option = QNN_GRAPH_PROPERTY_OPTION_CUSTOM;
+  graph_props[0].customProperty = &custom_props[0];
+  graph_props[1].option = QNN_GRAPH_PROPERTY_OPTION_CUSTOM;
+  graph_props[1].customProperty = &custom_props[1];
+  QnnGraph_Property_t* graph_prop_ptrs[3] = {0};
+  graph_prop_ptrs[0] = &graph_props[0];
+  graph_prop_ptrs[1] = &graph_props[1];
+
+  error = qnn_interface.qnn_graph_get_property(
+      handle_[graph_name], graph_prop_ptrs);
+
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "failed to get graph property: %d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+
+  scratch_buf_.resize(scratch_size);
+  p_custom_config = AllocGraphCustomConfig();
+  p_custom_config->option = QNN_LPAI_GRAPH_SET_CFG_SCRATCH_MEM;
+  auto p_scratch_config = AllocMem();
+  p_scratch_config->memType = QNN_LPAI_MEM_TYPE_DDR;
+  p_scratch_config->size = scratch_size;
+  p_scratch_config->addr = scratch_buf_.data();
+  p_custom_config->config = p_scratch_config;
+  graph_custom_config.push_back(p_custom_config);
+
+  persistent_buf_.resize(persistent_size);
+  p_custom_config = AllocGraphCustomConfig();
+  p_custom_config->option = QNN_LPAI_GRAPH_SET_CFG_PERSISTENT_MEM_DEFAULT;
+  auto p_persistent_config = AllocMem();
+  p_persistent_config->memType = QNN_LPAI_MEM_TYPE_DDR;
+  p_persistent_config->size = persistent_size;
+  p_persistent_config->addr = persistent_buf_.data();
+  p_custom_config->config = p_persistent_config;
+  graph_custom_config.push_back(p_custom_config);
+#endif
 
   // perf config
   p_custom_config = AllocGraphCustomConfig();
@@ -56,8 +106,7 @@ Error LpaiGraph::AfterRetrieveGraph(const std::string& graph_name) {
   config.push_back(nullptr);
 
   // LPAI specific configs can only be set after graph create
-  const QnnInterface& qnn_interface = implementation_->GetQnnInterface();
-  Qnn_ErrorHandle_t error =
+  error =
       qnn_interface.qnn_graph_set_config(handle_[graph_name], config.data());
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_ERROR(

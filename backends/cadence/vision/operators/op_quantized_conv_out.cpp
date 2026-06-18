@@ -582,6 +582,7 @@ void quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     int64_t out_multiplier,
     int64_t out_shift,
+    ET_UNUSED const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
   quantized_conv_per_tensor_out(
       ctx,

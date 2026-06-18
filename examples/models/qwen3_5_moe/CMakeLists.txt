@@ -15,6 +15,9 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_json_include
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
+)
 
 # gflags
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
@@ -42,21 +45,44 @@ list(
   extension_flat_tensor
 )
 
-# CUDA backend (required)
-find_package(CUDAToolkit REQUIRED)
-list(APPEND link_libraries aoti_cuda_backend)
-executorch_target_link_options_shared_lib(aoti_cuda_backend)
+# Backend selection
+if(EXECUTORCH_BUILD_METAL)
+  list(APPEND link_libraries metal_backend)
+  executorch_target_link_options_shared_lib(metal_backend)
+elseif(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  list(APPEND link_libraries aoti_cuda_backend)
+  executorch_target_link_options_shared_lib(aoti_cuda_backend)
+  add_compile_definitions(EXECUTORCH_BUILD_CUDA)
+else()
+  message(
+    FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_METAL=ON"
+  )
+endif()
 
 # Tokenizer
 list(APPEND link_libraries tokenizers::tokenizers)
 
-add_executable(qwen3_5_moe_runner main.cpp)
+add_executable(qwen3_5_moe_runner main.cpp qwen35_moe_engine.cpp)
 target_include_directories(
-  qwen3_5_moe_runner PUBLIC ${_common_include_directories}
+  qwen3_5_moe_runner PUBLIC ${_common_include_directories} ${_json_include}
 )
 target_link_libraries(qwen3_5_moe_runner PUBLIC ${link_libraries})
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(qwen3_5_moe_runner)
   target_link_options(qwen3_5_moe_runner PRIVATE "LINKER:-s")
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  enable_testing()
+  add_executable(
+    test_qwen35_moe_nobleed test_qwen35_moe_nobleed.cpp qwen35_moe_engine.cpp
+  )
+  target_include_directories(
+    test_qwen35_moe_nobleed PUBLIC ${_common_include_directories}
+                                   ${_json_include}
+  )
+  target_link_libraries(test_qwen35_moe_nobleed PUBLIC ${link_libraries})
+  add_test(NAME qwen_nobleed COMMAND test_qwen35_moe_nobleed)
 endif()

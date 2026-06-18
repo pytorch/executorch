@@ -334,7 +334,7 @@ def export_all(
     programs = {}
 
     # Determine device based on backend (preprocessor always stays on CPU)
-    device = torch.device("cuda" if backend == "cuda" else "cpu")
+    device = torch.device("cuda:0" if backend == "cuda" else "cpu")
 
     # Get audio parameters from model config
     sample_rate = model.preprocessor._cfg.sample_rate
@@ -360,8 +360,8 @@ def export_all(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
-            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
+            # min=10 frames = 0.1 sec @ 16kHz, max aligned with encoder limit.
+            "audio": {0: Dim.AUTO(min=1600, max=max_audio_samples)},
             "length": {},
         },
         strict=False,
@@ -370,7 +370,7 @@ def export_all(
 
     # Move model to CUDA after preprocessor export (preprocessor must stay on CPU)
     if backend == "cuda":
-        model.cuda()
+        model.to(device)
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
     # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.
@@ -498,10 +498,11 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
-def _create_metal_partitioners(programs):
+def _create_metal_partitioners(programs, codesign_identity=None):
     """Create Metal partitioners for all programs except preprocessor."""
     from executorch.backends.apple.metal.metal_backend import MetalBackend
     from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
 
     print("\nLowering to ExecuTorch with Metal...")
 
@@ -521,6 +522,10 @@ def _create_metal_partitioners(programs):
             partitioner[key] = []
         else:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            if codesign_identity:
+                compile_specs.append(
+                    CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+                )
             partitioner[key] = [MetalPartitioner(compile_specs)]
     return partitioner, updated_programs
 
@@ -586,12 +591,18 @@ def _create_vulkan_partitioners(programs, vulkan_force_fp16=False):
 
 
 def lower_to_executorch(
-    programs, metadata=None, backend="portable", vulkan_force_fp16=False
+    programs,
+    metadata=None,
+    backend="portable",
+    vulkan_force_fp16=False,
+    codesign_identity=None,
 ):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
     elif backend == "metal":
-        partitioner, programs = _create_metal_partitioners(programs)
+        partitioner, programs = _create_metal_partitioners(
+            programs, codesign_identity=codesign_identity
+        )
     elif backend == "mlx":
         partitioner, programs = _create_mlx_partitioners(programs)
     elif backend in ("cuda", "cuda-windows"):
@@ -714,6 +725,13 @@ def main():
     )
 
     parser.add_argument("--vulkan_force_fp16", action="store_true")
+    parser.add_argument(
+        "--codesign-identity",
+        default=None,
+        help="macOS code signing identity for the Metal backend .so. "
+        "Use '-' for ad-hoc or a Developer ID for notarized apps. "
+        "If omitted, the .so is not signed.",
+    )
 
     args = parser.parse_args()
 
@@ -767,6 +785,7 @@ def main():
         metadata=metadata,
         backend=args.backend,
         vulkan_force_fp16=args.vulkan_force_fp16,
+        codesign_identity=args.codesign_identity,
     )
 
     pte_path = os.path.join(args.output_dir, "model.pte")

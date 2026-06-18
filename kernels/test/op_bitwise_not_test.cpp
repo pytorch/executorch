@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -96,9 +97,9 @@ TEST_F(OpBitwiseNotOutTest, BoolInputOutputSupport) {
 
 // Mismatched shape tests.
 TEST_F(OpBitwiseNotOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shapes");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor a = tf.ones(/*sizes=*/{4});
@@ -155,8 +156,8 @@ TEST_F(OpBitwiseNotOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpBitwiseNotOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape unbound not supported";
+// DISABLED: Dynamic shape unbound not supported
+TEST_F(OpBitwiseNotOutTest, DISABLED_DynamicShapeUnbound) {
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op) */

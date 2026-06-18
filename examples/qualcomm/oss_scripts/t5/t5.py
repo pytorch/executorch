@@ -11,6 +11,12 @@ import subprocess
 from multiprocessing.connection import Client
 
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
@@ -32,12 +38,8 @@ from executorch.examples.qualcomm.oss_scripts.t5.t5_model import (
 )
 from executorch.examples.qualcomm.utils import (
     evaluate_squad,
-    get_backend_type,
     get_seq2seq_dataset_from_squad_csv,
-    make_quantizer,
     replace_module_with_custom_class,
-    setup_common_args_and_variables,
-    SimpleADB,
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -102,9 +104,7 @@ class T5:
         self.exported_decoder = None
         self.quant_dtype = None
 
-    def quantize(
-        self, backend, soc_model, inputs, quant_dtype, targets=None, metrics=None
-    ):
+    def quantize(self, qnn_config, inputs, quant_dtype, targets=None, metrics=None):
         assert quant_dtype is not None, "quant_dtype must be specified"
         self.quant_dtype = quant_dtype
 
@@ -123,8 +123,8 @@ class T5:
                 per_channel_linear=True,
                 quant_dtype=quant_dtype,
                 eps=2**-20,
-                backend=backend,
-                soc_model=soc_model,
+                backend=qnn_config.backend,
+                soc_model=qnn_config.soc_model,
             )
 
             self.exported_encoder = prepare_pt2e(self.exported_encoder, quantizer)
@@ -233,6 +233,7 @@ class T5:
 def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     data_size = 100
     max_hidden_seq_length = 384
@@ -256,18 +257,17 @@ def main(args):
             max_hidden_seq_length=max_hidden_seq_length,
             max_cache_length=max_cache_length,
         )
-        backend = get_backend_type(args.backend)
         quant_dtype = {
             QnnExecuTorchBackendType.kGpuBackend: None,
             QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_16a8w,
-        }[backend]
+        }[qnn_config.backend]
         if quant_dtype:
-            t5.quantize(backend, args.model, inputs, quant_dtype)
+            t5.quantize(qnn_config, inputs, quant_dtype)
         t5.lowering_modules(
             args.artifact,
-            soc_model=getattr(QcomChipset, args.model),
+            soc_model=getattr(QcomChipset, args.soc_model),
             use_fp16=True if quant_dtype is None else False,
-            backend=backend,
+            backend=qnn_config.backend,
             online_prepare=args.online_prepare,
         )
 
@@ -323,23 +323,15 @@ def main(args):
                 runner_args,
             ]
         )
-        backend = get_backend_type(args.backend)
         adb = SimpleADB(
-            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-            build_path=f"{args.build_folder}",
+            qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
-            device_id=args.device,
-            host_id=args.host,
-            soc_model=args.model,
-            shared_buffer=args.shared_buffer,
-            target=args.target,
             runner="examples/qualcomm/oss_scripts/t5/qnn_t5_runner",
         )
         adb.push(
             inputs=inputs,
             files=[runtime_tokenizer_path],
-            backends={backend},
         )
         adb.execute(custom_runner_cmd=runner_cmd)
         adb.pull(host_output_path=args.artifact, callback=post_process)
@@ -377,7 +369,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

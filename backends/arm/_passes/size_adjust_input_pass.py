@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import cast, Sequence, Set, Type, TypeAlias
 
+import torch
 import torch.fx
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -11,6 +12,10 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     expand_around_channel,
 )
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
+from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPool2dPass
+from executorch.backends.arm._passes.symbolic_value_range import (
+    evaluate_symbolic_expr_values,
+)
 from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -48,6 +53,9 @@ def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
     """Returns whether an int or SymInt is greater than another value."""
     if isinstance(input, torch.SymInt):
         shape_env = get_context_shape_env()
+        exact_values = evaluate_symbolic_expr_values(input.node.expr, shape_env)
+        if exact_values is not None:
+            return max(exact_values) > other
         value_ranges = shape_env.bound_sympy(input.node.expr)
         return value_ranges.upper > other
     else:
@@ -55,9 +63,13 @@ def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
 
 
 def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
-    slices = []
+    slices: Slices = []
 
-    input_node, weight, _, stride_hw, pad_hw, dilation_hw, _, _, _ = conv_node.args
+    input_node, weight, _, stride_hw, pad_hw, dilation_hw, transposed, _, _ = (
+        conv_node.args
+    )
+    if transposed:
+        return slices
     weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
     spatial_rank = len(input_shape) - 2
@@ -201,11 +213,12 @@ class SizeAdjustInputPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {
         RewriteConvPass,
+        RewriteMaxPool2dPass,
     }
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
-        modified_graph = False
+        modified = False
         for node in graph.nodes:
             if node.op != "call_function":
                 continue
@@ -227,11 +240,9 @@ class SizeAdjustInputPass(ArmPass):
                     )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
-                modified_graph = True
+                modified = True
 
-        if modified_graph:
+        if modified:
             graph_module = super().call(graph_module).graph_module
-            graph.eliminate_dead_code()
-            graph_module.recompile()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

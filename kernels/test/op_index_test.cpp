@@ -10,6 +10,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -433,9 +434,9 @@ TEST_F(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
 }
 
 TEST_F(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   test_indices_with_only_null_tensors_enumerate_in_types();
 }
 
@@ -452,9 +453,9 @@ TEST_F(OpIndexTensorOutTest, TooManyNullIndices) {
 }
 
 TEST_F(OpIndexTensorOutTest, EmptyIndicesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   TensorFactory<ScalarType::Float> tf;
 
   // Using empty tensors as input.
@@ -622,9 +623,7 @@ TEST_F(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
 }
 
 TEST_F(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "";
-  }
+  ET_SKIP_IF(torch::executor::testing::SupportedFeatures::get()->is_aten, "");
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 

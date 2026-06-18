@@ -219,9 +219,117 @@ void apply_rotary_emb_hf(
       graph, args[0], args[1], args[2], args[3], args[4], xq_out, xk_out);
 }
 
+//
+// EdgeTAM-style RoPE variant with fused [cos, sin] freqs tensor
+//
+// Operates on a single tensor (Q or K) of shape [B, N, C] with pair-interleaved
+// (real, imag) components along the last dim, and a freqs tensor with a total
+// element count of N * C that packs (cos, sin) pairs in the same interleaved
+// order as the x tensor. The freqs tensor may be passed in at any rank whose
+// flattened layout is [N, C] — e.g. 2D `[N, C]` or 4D `[1, N, C/2, 2]`. This
+// avoids callers having to emit a `view` dispatch (view_copy) purely to
+// normalize rank.
+//
+
+void resize_rotary_embedding_interleaved_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+
+  graph->virtual_resize(out, graph->sizes_of(in));
+}
+
+utils::uvec3 rotary_embedding_interleaved_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+
+  const ValueRef out = args.at(0).refs.at(0);
+
+  const std::vector<int64_t> out_sizes = graph->sizes_of(out);
+  VK_CHECK_COND(out_sizes.size() == 3);
+
+  const uint32_t B = static_cast<uint32_t>(out_sizes.at(0));
+  const uint32_t N = static_cast<uint32_t>(out_sizes.at(1));
+  const uint32_t C = static_cast<uint32_t>(out_sizes.at(2));
+
+  // One thread per output texel of 4 elements along C.
+  return {utils::div_up_4(C), N, B};
+}
+
+void add_rotary_embedding_interleaved_node(
+    ComputeGraph& graph,
+    const ValueRef x,
+    const ValueRef freqs_cis,
+    const ValueRef out) {
+  const std::vector<int64_t> x_sizes = graph.sizes_of(x);
+  const std::vector<int64_t> freqs_sizes = graph.sizes_of(freqs_cis);
+
+  VK_CHECK_COND(x_sizes.size() == 3);
+  VK_CHECK_COND(x_sizes.at(2) % 4 == 0);
+
+  // freqs_cis may arrive at any rank (commonly 2D [N, C] or 4D [1, N, C/2, 2]
+  // from `torch.view_as_real(...).unsqueeze(0)`). Validate via numel rather
+  // than per-dim equality so callers do not need to emit a view_copy purely
+  // to flatten the shape.
+  int64_t freqs_numel = 1;
+  for (const int64_t s : freqs_sizes) {
+    freqs_numel *= s;
+  }
+  const int64_t expected_numel = x_sizes.at(1) * x_sizes.at(2);
+  VK_CHECK_COND(freqs_numel == expected_numel);
+
+  VK_CHECK_COND(graph.packed_dim_of(x) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.has_standard_axis_map(x));
+  VK_CHECK_COND(graph.has_standard_axis_map(out));
+  // freqs_cis is pinned to buffer storage via op_registry so the shader can
+  // use flat (row, col) indexing regardless of its declared rank.
+  VK_CHECK_COND(graph.is_buffer_storage(freqs_cis));
+
+  std::string kernel_name = "apply_rotary_emb_interleaved";
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out)};
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      rotary_embedding_interleaved_global_wg_size,
+      default_pick_local_wg_size,
+      // Inputs and Outputs
+      {{out, vkapi::kWrite}, {{x, freqs_cis}, vkapi::kRead}},
+      // Parameter buffers
+      param_ubos,
+      // Push Constants
+      {},
+      // Specialization Constants
+      {graph.hashed_layout_of(out)},
+      // Resize Args
+      {},
+      // Resizing Logic
+      resize_rotary_embedding_interleaved_node));
+}
+
+void apply_rotary_emb_interleaved(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  add_rotary_embedding_interleaved_node(graph, args[0], args[1], args[2]);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.apply_rotary_emb.default, apply_rotary_emb);
   VK_REGISTER_OP(et_vk.apply_rotary_emb_hf.default, apply_rotary_emb_hf);
+  VK_REGISTER_OP(
+      et_vk.apply_rotary_emb_interleaved.default, apply_rotary_emb_interleaved);
 }
 
 } // namespace vkcompute

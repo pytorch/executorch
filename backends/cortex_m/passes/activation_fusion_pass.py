@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,7 +8,10 @@ import logging
 
 import executorch.backends.cortex_m.ops.operators  # noqa: F401
 from executorch.backends.arm._passes.quant_args import QuantArgs
-from executorch.backends.cortex_m.passes.passes_utils import quantize_val
+from executorch.backends.cortex_m.passes.passes_utils import (
+    get_activation_bounds,
+    quantize_val,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -23,7 +26,7 @@ class ActivationFusionPass(ExportPass):
     """Fuse activations into preceding Cortex-M quantized operators.
 
     Supported activation patterns:
-        q-> [conv2d, linear] -> [relu, hardtanh, hardsigmoid] -> dq
+        q-> [conv2d, linear, max_pool2d] -> [relu, hardtanh, hardsigmoid, clamp] -> dq
 
     Fusing works by clamping the quantized output range (and zero-point when
     required) of the preceding Cortex-M operator, then removing the activation
@@ -37,10 +40,17 @@ class ActivationFusionPass(ExportPass):
         exir_ops.edge.aten.clamp.default,
     }
 
+    MAX_POOL_OPS = {
+        exir_ops.edge.aten.max_pool2d.default,
+        exir_ops.edge.aten.max_pool2d_with_indices.default,
+    }
+
     FUSE_OPS = {
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.max_pool2d.default,
+        exir_ops.edge.aten.max_pool2d_with_indices.default,
     }
 
     def _get_validated_qparams(self, node, input_node):
@@ -63,30 +73,38 @@ class ActivationFusionPass(ExportPass):
             )
             return None
 
-        match node.target:
-            case exir_ops.edge.aten.relu.default:
-                quantized_min_val = quantize_val(0, scale, zp, qmin, qmax)
-                quantized_max_val = qmax
-            case exir_ops.edge.aten.hardtanh.default:
-                quantized_min_val = quantize_val(node.args[1], scale, zp, qmin, qmax)
-                quantized_max_val = quantize_val(node.args[2], scale, zp, qmin, qmax)
-            case exir_ops.edge.aten.hardsigmoid.default:
-                quantized_min_val = quantize_val(0, scale, zp, qmin, qmax)
-                quantized_max_val = quantize_val(1, scale, zp, qmin, qmax)
-            case exir_ops.edge.aten.clamp.default:
-                quantized_min_val = (
-                    quantize_val(node.args[1], scale, zp, qmin, qmax)
-                    if node.args[1] is not None
-                    else qmin
+        bounds = get_activation_bounds(node)
+        if bounds is None:
+            logger.warning(
+                "Cannot fuse activation %s because bounds are not compile-time scalars.",
+                node.name,
+            )
+            return None
+        min_val, max_val = bounds
+
+        quantized_min_val = (
+            quantize_val(min_val, scale, zp, qmin, qmax)
+            if min_val is not None
+            else qmin
+        )
+        quantized_max_val = (
+            quantize_val(max_val, scale, zp, qmin, qmax)
+            if max_val is not None
+            else qmax
+        )
+
+        if input_node.target in self.MAX_POOL_OPS:
+            if node.target == exir_ops.edge.aten.hardsigmoid.default:
+                logger.warning(
+                    "Cannot fuse hardsigmoid %s after max_pool2d because max_pool2d requires matching input/output qparams.",
+                    node.name,
                 )
-                # Last arg is removed if none, so check length of args here
-                quantized_max_val = (
-                    quantize_val(node.args[2], scale, zp, qmin, qmax)
-                    if len(node.args) == 3
-                    else qmax
-                )
-            case _:
-                raise RuntimeError(f"Unexpected target {node.target}.")
+                return None
+            # Max-pool keeps scale and zero-point unchanged and lowers fused
+            # activation bounds separately, so only qmin/qmax need updating here.
+            qparams_dict["qmin"] = int(quantized_min_val)
+            qparams_dict["qmax"] = int(quantized_max_val)
+            return qparams_dict
 
         # If the minimal quantized value is larger than the qmin, it means that the quantized range contains
         # invalid values [qmin, ..., quantized_min_val-1], indicating bad quantization parameters.

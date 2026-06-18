@@ -85,8 +85,10 @@ const_rhs_test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_dialect_batch_matmul(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_batch_matmul(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -95,8 +97,10 @@ def test_dialect_batch_matmul(test_case):
 
 
 @parametrize("test_case", const_rhs_test_cases)
-def test_dialect_batch_matmul_const_rhs(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_batch_matmul_const_rhs(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -105,12 +109,16 @@ def test_dialect_batch_matmul_const_rhs(test_case):
 
 
 @parametrize("test_case", test_cases)
-def test_implementation_batch_matmul(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_batch_matmul(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)
 
 
 @parametrize("test_case", const_rhs_test_cases)
-def test_implementation_batch_matmul_const_rhs(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_batch_matmul_const_rhs(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)

@@ -42,6 +42,7 @@ backends/qualcomm
 |   ├── wrappers # Wrapper of QNN data structures for ease of use.
 |   └── python # Python interface for using QNN libraries.
 ├── builders # Codes for lowering each operators (AoT Part).
+├── custom_op # APIs for using custom ops with QNN backend
 ├── partition # QNN Partitioner (AoT Part).
 ├── _passes # Various private passes helping lower models to QNN backend (AoT Part).
 ├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc (AoT Part).
@@ -61,7 +62,6 @@ backends/qualcomm
 examples/qualcomm
 ├── executor_runner # A general runner that is capable of running most of the basic models.
 ├── oss_scripts # Scripts for OSS(Open Source Software) models and customized runner for some specific models.
-├── qaihub_scripts # Scripts for Qaihub models and corresponding customized runner for these models.
 └── scripts # Scripts for models provided by executorch.
 ```
 
