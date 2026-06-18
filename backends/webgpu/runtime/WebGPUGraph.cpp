@@ -331,6 +331,7 @@ void WebGPUGraph::build(
         value_types_[i] = ValueType::ValueList;
         const auto* items = val->value_as_ValueList()->items();
         if (items) {
+          value_lists_[i].reserve(items->size());
           for (unsigned j = 0; j < items->size(); j++) {
             value_lists_[i].push_back(static_cast<int>(items->Get(j)));
           }

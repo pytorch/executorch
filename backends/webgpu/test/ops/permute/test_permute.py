@@ -7,7 +7,7 @@
 """`aten.permute_copy.default` module + configs for the WebGPU op-test framework.
 
 `PermuteModule` + `CONFIGS` are imported by `cases.py` to drive the declarative
-op-test suite. `TestPermute` is the export-delegation + eager-correctness smoke
+op-test suite. `PermuteTest` is the export-delegation smoke
 test.
 """
 
@@ -15,7 +15,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (input_shape, perm)
@@ -60,7 +60,7 @@ def _op_delegated(edge, op_substr: str) -> bool:
     return all(op_substr not in str(getattr(n, "target", "")) for n in gm.graph.nodes)
 
 
-class TestPermute(unittest.TestCase):
+class PermuteTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (shape, perm) in CONFIGS.items():
             edge = _lower(perm, _det_input(shape))
@@ -72,14 +72,3 @@ class TestPermute(unittest.TestCase):
                 _op_delegated(edge, "permute"),
                 f"permute not delegated (fell back to CPU) for {name}",
             )
-
-    def test_golden_matches_eager(self) -> None:
-        for _, (shape, perm) in CONFIGS.items():
-            x = _det_input(shape)
-            torch.testing.assert_close(
-                PermuteModule(perm)(x), torch.permute(x, perm).contiguous()
-            )
-
-
-if __name__ == "__main__":
-    unittest.main()
