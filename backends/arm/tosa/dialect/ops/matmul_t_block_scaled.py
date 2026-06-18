@@ -8,7 +8,7 @@ from __future__ import annotations
 import torch
 
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -99,7 +99,7 @@ def _validate_shapes(
     return N, H, W
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "MATMUL_T_BLOCK_SCALED(Tensor A_data, Tensor A_scale, Tensor B_data, Tensor B_scale, SymInt block_size) -> Tensor",
     [TosaSpecification.create_from_string("TOSA-1.1+FP")],
 )
