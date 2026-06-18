@@ -36,8 +36,7 @@ void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // 4-byte (fp32) alignment guard on both operands; also the dtype guard.
   if (in_tensor.nbytes % sizeof(float) != 0 ||
       out_tensor.nbytes % sizeof(float) != 0) {
-    throw std::runtime_error(
-        "sigmoid: operand not 4-byte aligned (expected fp32)");
+    throw std::runtime_error("sigmoid: operand not 4-byte aligned");
   }
 
   uint32_t num_elements =
