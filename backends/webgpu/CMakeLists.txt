@@ -44,6 +44,7 @@ set(WEBGPU_SRCS
     runtime/ops/sigmoid/UnaryOp.cpp
     runtime/ops/squeeze/Squeeze.cpp
     runtime/ops/unsqueeze/Unsqueeze.cpp
+    runtime/ops/slice/Slice.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
