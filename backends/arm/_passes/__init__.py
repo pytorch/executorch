@@ -9,6 +9,7 @@ from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
+from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
@@ -170,6 +171,7 @@ from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noq
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_max_pool2d_pass import RewriteMaxPool2dPass  # noqa
+from .rewrite_mxfp_linear import RewriteMXFPLinearPass  # noqa
 from .rewrite_pad import RewritePadPass  # noqa
 from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
