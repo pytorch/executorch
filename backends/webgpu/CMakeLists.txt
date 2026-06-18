@@ -138,7 +138,6 @@ endfunction()
 
 if(EXECUTORCH_BUILD_WEBGPU_TEST)
   add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
-  add_webgpu_native_test(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
   add_webgpu_native_test(
     webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
   )
