@@ -44,6 +44,11 @@ from executorch.backends.webgpu.test.ops.select.test_select import (
     CONFIGS as _SELECT_CONFIGS,
     SelectModule,
 )
+from executorch.backends.webgpu.test.ops.sigmoid.test_sigmoid import (
+    _det_input as _sigmoid_det_input,
+    N as _SIGMOID_N,
+    SigmoidModule,
+)
 from executorch.backends.webgpu.test.ops.view_copy.test_view_copy import (
     CONFIGS as _VIEW_CONFIGS,
     ViewModule,
@@ -153,3 +158,29 @@ def _view_copy_suite() -> WebGPUTestSuite:
 @register_op_test("select")
 def _select_suite() -> WebGPUTestSuite:
     return _fn_config_suite(SelectModule, _SELECT_CONFIGS)
+
+
+def _sigmoid_full_range(_shape) -> torch.Tensor:
+    # Reuses the monolith's saturation-tail input (linspace(-12, 12)).
+    return _sigmoid_det_input()
+
+
+@register_op_test("sigmoid")
+def _sigmoid_suite() -> WebGPUTestSuite:
+    # sigmoid has no CONFIGS table; cover unary shapes directly (tol 1e-4).
+    return WebGPUTestSuite(
+        module_factory=lambda: SigmoidModule(),
+        cases=[
+            Case(name="vec", inputs=((M1,),)),
+            Case(name="mat", inputs=((M1, M2),)),
+            Case(name="rank3", inputs=((S1, M1, M2),)),
+            Case(name="rank4", inputs=((S1, S2, S2, M2),)),
+            # Saturation tails sigmoid(+-12) (~6e-6 / 0.999994) that randn shapes miss.
+            Case(
+                name="saturation",
+                inputs=(InputSpec(shape=(_SIGMOID_N,), gen=_sigmoid_full_range),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-4,
+    )
