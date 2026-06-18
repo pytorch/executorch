@@ -8,14 +8,14 @@ from __future__ import annotations
 import torch
 
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "CAST_TO_BLOCK_SCALED(Tensor input, SymInt block_size, ScalarType output_dtype) -> (Tensor, Tensor)",
     [TosaSpecification.create_from_string("TOSA-1.1+FP")],
 )
