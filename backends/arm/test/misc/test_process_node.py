@@ -14,7 +14,7 @@ from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir import to_edge
 from torch._export.utils import is_param
-from tosa.TosaGraph import TosaGraph  # type: ignore[import-untyped]
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
 from tosa_serializer.numpy_utils import pack_6bit_array
 
 
