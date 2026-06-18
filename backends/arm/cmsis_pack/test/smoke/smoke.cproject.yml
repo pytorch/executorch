@@ -1,0 +1,21 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+project:
+  packs:
+    - pack: PyTorch::ExecuTorch@1.3.0-stage
+
+  components:
+    - component: ARM::CMSIS:CORE
+    - component: ARM::Device:Startup&C Startup
+    - component: Machine Learning:ExecuTorch:Runtime
+    - component: Machine Learning:ExecuTorch:Kernel Utils
+    - component: Machine Learning:ExecuTorch:Kernel Registration
+    - component: Machine Learning:ExecuTorch Operators:Portable add
+
+  groups:
+    - group: App
+      files:
+        - file: ./main.cpp

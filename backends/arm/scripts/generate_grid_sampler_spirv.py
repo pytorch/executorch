@@ -65,7 +65,13 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         spirv_path = Path(tmpdir) / "grid_sampler.spirv"
         subprocess.run(  # nosec B603 - glslc path is resolved explicitly.
-            [glslc, str(args.source), "-o", str(spirv_path)],
+            [
+                glslc,
+                "-fshader-stage=compute",
+                str(args.source),
+                "-o",
+                str(spirv_path),
+            ],
             check=True,
         )
         _write_base64_spirv(spirv_path, args.output)

@@ -31,6 +31,8 @@ std::string join(const std::string& a, const std::string& b) {
 std::vector<ManifestEntry> parse_manifest(const std::string& manifest_path) {
   std::ifstream in(manifest_path);
   if (!in.good()) {
+    std::fprintf(
+        stderr, "ERROR: cannot open manifest: %s\n", manifest_path.c_str());
     return {};
   }
   nlohmann::json j;
@@ -87,6 +89,10 @@ bool within_tol(
   float ma = 0.0f, mr = 0.0f;
   bool ok = true;
   for (int i = 0; i < n; i++) {
+    if (std::isnan(out[i]) || std::isnan(golden[i])) {
+      ok = false; // NaN never passes a tolerance check
+      continue;
+    }
     const float ae = std::abs(out[i] - golden[i]);
     const float re = ae / std::max(std::abs(golden[i]), 1e-6f);
     ma = std::max(ma, ae);
@@ -103,8 +109,11 @@ bool within_tol(
 size_t numel(const std::vector<int>& shape) {
   size_t n = 1;
   for (int d : shape) {
+    if (d <= 0) {
+      return 0; // empty or malformed dim
+    }
     const auto dd = static_cast<size_t>(d);
-    if (dd != 0 && n > SIZE_MAX / dd) {
+    if (n > SIZE_MAX / dd) {
       return 0; // overflow: malformed shape
     }
     n *= dd;
