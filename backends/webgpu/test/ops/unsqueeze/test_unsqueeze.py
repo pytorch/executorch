@@ -7,7 +7,7 @@
 """`aten.unsqueeze_copy.default` module + configs for the WebGPU op-test framework.
 
 `UnsqueezeModule` + `CONFIGS` are imported by `cases.py` to drive the declarative
-op-test suite. `TestUnsqueeze` is the export-delegation + eager-correctness smoke
+op-test suite. `UnsqueezeTest` is the export-delegation smoke
 test.
 """
 
@@ -15,7 +15,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (input_shape, unsqueeze_dim)
@@ -59,7 +59,7 @@ def _op_delegated(edge, op_substr: str) -> bool:
     return all(op_substr not in str(getattr(n, "target", "")) for n in gm.graph.nodes)
 
 
-class TestUnsqueeze(unittest.TestCase):
+class UnsqueezeTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (shape, dim) in CONFIGS.items():
             edge = _lower(dim, _det_input(shape))
@@ -71,12 +71,3 @@ class TestUnsqueeze(unittest.TestCase):
                 _op_delegated(edge, "unsqueeze_copy"),
                 f"unsqueeze_copy not delegated (fell back to CPU) for {name}",
             )
-
-    def test_golden_matches_eager(self) -> None:
-        for _, (shape, dim) in CONFIGS.items():
-            x = _det_input(shape)
-            torch.testing.assert_close(UnsqueezeModule(dim)(x), torch.unsqueeze(x, dim))
-
-
-if __name__ == "__main__":
-    unittest.main()

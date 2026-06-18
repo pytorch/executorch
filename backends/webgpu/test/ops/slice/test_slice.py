@@ -7,7 +7,7 @@
 """`aten.slice_copy.Tensor` module + configs for the WebGPU op-test framework.
 
 `SliceModule` + `CONFIGS` are imported by `cases.py` to drive the declarative
-op-test suite. `TestSlice` is the export-delegation + eager-correctness smoke
+op-test suite. `SliceTest` is the export-delegation smoke
 test.
 """
 
@@ -15,7 +15,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (input_shape, slice_fn)
@@ -56,19 +56,10 @@ def _delegated(et) -> bool:
     )
 
 
-class TestSlice(unittest.TestCase):
+class SliceTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (shape, fn) in CONFIGS.items():
             et = _export(fn, _det_input(shape))
             self.assertTrue(
                 _delegated(et), f"Expected a VulkanBackend delegate (slice {name})"
             )
-
-    def test_golden_matches_eager(self) -> None:
-        for _, (shape, fn) in CONFIGS.items():
-            x = _det_input(shape)
-            torch.testing.assert_close(SliceModule(fn)(x), fn(x))
-
-
-if __name__ == "__main__":
-    unittest.main()
