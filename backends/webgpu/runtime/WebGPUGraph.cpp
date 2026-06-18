@@ -225,6 +225,7 @@ void WebGPUGraph::build(
   tensor_mem_obj_ids_.resize(num_vals, -1);
   ints_.resize(num_vals, 0);
   int_lists_.resize(num_vals);
+  value_lists_.resize(num_vals);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
 
@@ -323,6 +324,16 @@ void WebGPUGraph::build(
         const auto* items = val->value_as_IntList()->items();
         if (items) {
           int_lists_[i].assign(items->cbegin(), items->cend());
+        }
+        break;
+      }
+      case vkgraph::GraphTypes::ValueList: {
+        value_types_[i] = ValueType::ValueList;
+        const auto* items = val->value_as_ValueList()->items();
+        if (items) {
+          for (unsigned j = 0; j < items->size(); j++) {
+            value_lists_[i].push_back(static_cast<int>(items->Get(j)));
+          }
         }
         break;
       }
