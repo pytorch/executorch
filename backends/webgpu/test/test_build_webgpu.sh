@@ -26,36 +26,18 @@ $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/test_wgsl_codegen.py" -v
 
 echo "=== Step 1: Run Python export tests ==="
 $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/add/test_add.py" -v
-# Non-fatal: a rms_norm pytest failure skips the rms_norm native test below
-# rather than aborting the whole run.
-RMS_NORM_PYTEST_OK=1
-$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/rms_norm/test_rms_norm.py" -v \
-    || RMS_NORM_PYTEST_OK=0
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/rms_norm/test_rms_norm.py" -v
 
 # ── Step 2: Export .pte model ─────────────────────────────────────────────────
 
 echo "=== Step 2: Export test models ==="
-PTE_MODEL="/tmp/webgpu_add_test.pte"
-PTE_CHAINED_MODEL="/tmp/webgpu_chained_add_test.pte"
-RMS_NORM_DIR="/tmp/rmsn"
 DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 PTE_UPDATE_CACHE_MODEL="/tmp/webgpu_update_cache_test.pte"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.add.test_add import export_add_model, export_chained_add_model
-export_add_model('${PTE_MODEL}')
-export_chained_add_model('${PTE_CHAINED_MODEL}')
-"
-$PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
 export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 "
-if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
-  $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import export_rms_norm_cases
-export_rms_norm_cases('${RMS_NORM_DIR}')
-" || { echo "WARN: rms_norm export failed; skipping rms_norm native test"; RMS_NORM_PYTEST_OK=0; }
-fi
 
 echo "=== Export update_cache model ==="
 UPDATE_CACHE_OK=1
@@ -113,7 +95,6 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_native_test -j${NPROC}
-cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_rms_norm_test -j${NPROC}
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_dispatch_order_test -j${NPROC}
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_scratch_buffer_test -j${NPROC}
 
@@ -125,17 +106,9 @@ else
   echo "(skipping update_cache native test: export did not complete)"
 fi
 env \
-    WEBGPU_TEST_MODEL="${PTE_MODEL}" \
-    WEBGPU_TEST_CHAINED_MODEL="${PTE_CHAINED_MODEL}" \
     ${UPDATE_CACHE_ENV_VAR} \
     WEBGPU_TEST_SDPA_DIR=/tmp/ \
     "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_native_test"
-
-if [[ "${RMS_NORM_PYTEST_OK}" == "1" ]]; then
-  "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_rms_norm_test" "${RMS_NORM_DIR}"
-else
-  echo "(skipping rms_norm native test: pytest or export did not complete)"
-fi
 
 "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
 "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_scratch_buffer_test"

@@ -851,7 +851,8 @@ class IndexPut(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.layer_norm.default], QnnConstants.OpLayerNorm.op_name
+    [torch.ops.aten.layer_norm.default, torch.ops.aten.native_layer_norm.default],
+    QnnConstants.OpLayerNorm.op_name,
 )
 class LayerNorm(GeneralOpDef):
     @staticmethod
@@ -1076,7 +1077,11 @@ class MaskedFill(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.bmm.default, torch.ops.aten.matmul.default],
+    [
+        torch.ops.aten.bmm.default,
+        torch.ops.aten.matmul.default,
+        torch.ops.aten.mm.default,
+    ],
     QnnConstants.OpMatMul.op_name,
 )
 class MatMul(GeneralOpDef):

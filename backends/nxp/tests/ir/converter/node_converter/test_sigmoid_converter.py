@@ -30,7 +30,9 @@ def reseed_model_per_test_run():
 
 class TestSigmoid:
     # noinspection PyMethodMayBeStatic
-    def assert_delegated(self, model, input_shape, mocker, use_qat=False, atol=None):
+    def assert_delegated(
+        self, model, input_shape, mocker, request, use_qat=False, atol=None
+    ):
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={Sigmoid: 1},
@@ -47,15 +49,16 @@ class TestSigmoid:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
             output_comparator,
             use_qat=use_qat,
         )
 
-    def test__basic_nsys_inference__qat(self, mocker, use_qat):
+    def test__basic_nsys_inference__qat(self, mocker, request, use_qat):
         input_shape = (23,)
         model = nn.Sigmoid()
-        self.assert_delegated(model, input_shape, mocker, use_qat=use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "input_shape",
@@ -68,13 +71,13 @@ class TestSigmoid:
         ],
         ids=lambda shape: f"{len(shape)}D",
     )
-    def test__input_shapes(self, mocker, input_shape):
+    def test__input_shapes(self, mocker, request, input_shape):
         model = nn.Sigmoid()
 
         output_scale = 1.0 / 256.0
         lowering_spy = mocker.spy(NeutronPartitioner, "partition")
         self.assert_delegated(
-            model, input_shape, mocker, atol=output_scale
+            model, input_shape, mocker, request, atol=output_scale
         )  # Allow single bit error.
 
         # Verify that the `atol` is indeed equal to the output scale.
