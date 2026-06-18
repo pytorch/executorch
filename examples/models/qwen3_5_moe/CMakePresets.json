@@ -41,7 +41,9 @@
             "name": "qwen3-5-moe-mlx",
             "displayName": "Qwen3.5 MoE runner (MLX)",
             "inherits": ["qwen3-5-moe-base"],
-            "cacheVariables": {},
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
