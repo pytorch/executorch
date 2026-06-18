@@ -74,6 +74,32 @@ class IndexCopyModule(torch.nn.Module):
             ("in_place", True),
         )
     }
+    test_data_fp8 = {
+        "rand_single_index_fp8e4m3_out_of_place": (
+            lambda: (
+                (
+                    0,
+                    torch.rand((4, 5), dtype=torch.float32).to(torch.float8_e4m3fn),
+                    torch.LongTensor([0]),
+                    torch.zeros((1, 5), dtype=torch.float32).to(torch.float8_e4m3fn),
+                ),
+                False,
+                "fp8e4m3",
+            )
+        ),
+        "rand_3d_dim_1_fp8e5m2_in_place": (
+            lambda: (
+                (
+                    1,
+                    torch.rand((4, 2, 3), dtype=torch.float32).to(torch.float8_e5m2),
+                    torch.LongTensor([0, 1]),
+                    torch.ones((4, 2, 3), dtype=torch.float32).to(torch.float8_e5m2),
+                ),
+                True,
+                "fp8e5m2",
+            )
+        ),
+    }
 
     aten_ops = {
         False: ["torch.ops.aten.index_put.default"],
@@ -108,6 +134,21 @@ def test_index_copy_tosa_FP(test_data):
         test_data=inputs,
         aten_op=[],
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", IndexCopyModule.test_data_fp8)
+def test_index_copy_tosa_FP_fp8(test_data):
+    inputs, inplace, tosa_extension = test_data()
+    module = IndexCopyModule(inplace=inplace)
+    pipeline = TosaPipelineFP(
+        module=module,
+        test_data=inputs,
+        aten_op=[],
+        compare_tosa_ref_model_outputs=False,
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        tosa_extensions=[tosa_extension],
     )
     pipeline.run()
 

@@ -84,6 +84,8 @@ class _OpQuantProperties:
 class _QParams(NamedTuple):
     scale: float
     zero_point: int
+    quant_min: int | None = None
+    quant_max: int | None = None
 
 
 def _as_list(x):
@@ -472,7 +474,52 @@ _fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
         8: _QParams((0.999 - (-0.999)) / (1 << 8), 0),
         16: _QParams((0.99999 - (-0.99999)) / (1 << 16), 0),
     },
+    # grid_sampler image input/output use SNORM-compatible qparams. The grid
+    # coordinate tensor is intentionally left unquantized.
+    torch.ops.aten.grid_sampler.default: {
+        8: _QParams(1.0 / 127.0, 0, -127, 127),
+    },
 }
+
+
+_fixed_output_qspec_ops: dict[Any, dict[int, _QParams]] = {
+    torch.ops.aten.grid_sampler.default: {
+        8: _QParams(1.0 / 127.0, 0, -127, 127),
+    },
+}
+
+
+def _get_fixed_qparams_qspec(
+    node_target: Any,
+    qparams_table: dict[Any, dict[int, _QParams]],
+    input_act_qspec: QuantizationSpecBase,
+) -> FixedQParamsQuantizationSpec | None:
+    if not isinstance(input_act_qspec, QuantizationSpec):
+        raise ValueError("Fixed qparams require a QuantizationSpec input.")
+
+    num_bits = torch.iinfo(input_act_qspec.dtype).bits
+    qparams = qparams_table[node_target].get(num_bits)
+    if qparams is None:
+        return None
+
+    return FixedQParamsQuantizationSpec(
+        dtype=input_act_qspec.dtype,
+        scale=qparams.scale,
+        zero_point=qparams.zero_point,
+        quant_min=(
+            input_act_qspec.quant_min
+            if qparams.quant_min is None
+            else qparams.quant_min
+        ),
+        quant_max=(
+            input_act_qspec.quant_max
+            if qparams.quant_max is None
+            else qparams.quant_max
+        ),
+        qscheme=input_act_qspec.qscheme,
+        is_dynamic=input_act_qspec.is_dynamic,
+    )
+
 
 _one_to_one: set[OpOverload] = {
     torch.ops.aten.abs.default,
@@ -762,6 +809,16 @@ def get_quant_properties(  # noqa: C901
             _QuantProperty(1, input_act_qspec),
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif node.target == torch.ops.aten.grid_sampler.default:
+        image_node = ensure_type(Node, node.args[0])
+        grid_sampler_image_qspec = quantization_config.get_input_act_qspec(
+            node, image_node
+        )
+        grid_sampler_output_qspec = quantization_config.get_output_act_qspec(node)
+        if grid_sampler_image_qspec is None or grid_sampler_output_qspec is None:
+            return None
+        quant_properties.quant_inputs = [_QuantProperty(0, grid_sampler_image_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, grid_sampler_output_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         true_node = ensure_type(Node, node.args[1])
         input_qspec = (
@@ -825,21 +882,15 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in _fixed_input_qspec_ops:
-        num_bits = torch.iinfo(input_act_qspec.dtype).bits
-        qparams = _fixed_input_qspec_ops[node.target][num_bits]
-
+        fixed_input_qspec = _get_fixed_qparams_qspec(
+            node.target, _fixed_input_qspec_ops, input_act_qspec
+        )
+        if fixed_input_qspec is None:
+            return None
         quant_properties.quant_inputs = [
             _QuantProperty(
                 0,
-                FixedQParamsQuantizationSpec(
-                    dtype=input_act_qspec.dtype,
-                    scale=qparams.scale,
-                    zero_point=qparams.zero_point,
-                    quant_min=input_act_qspec.quant_min,
-                    quant_max=input_act_qspec.quant_max,
-                    qscheme=input_act_qspec.qscheme,
-                    is_dynamic=input_act_qspec.is_dynamic,
-                ),
+                fixed_input_qspec,
             )
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
