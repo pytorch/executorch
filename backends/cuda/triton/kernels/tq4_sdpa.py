@@ -1158,9 +1158,7 @@ def _tq4_sdpa_decode_reduce_kernel(
         o_s = tl.load(o_ptrs)
 
         # Rescale by exp(m_s - m_global)
-        alpha = tl.where(
-            m_global > -float("inf"), tl.math.exp2(m_s - m_global), 0.0
-        )
+        alpha = tl.where(m_global > -float("inf"), tl.math.exp2(m_s - m_global), 0.0)
         acc += o_s * alpha
         l_global += l_s * alpha
 

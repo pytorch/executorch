@@ -20,7 +20,6 @@ import unittest
 import numpy as np
 import torch
 import torch.nn.functional as F
-
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.triton.kernels.tq4_sdpa import tq4_sdpa
@@ -596,7 +595,7 @@ class TestTQ4Sdpa(unittest.TestCase):
         seed=42,
     ):
         """Verify split-K output matches fused kernel output for same inputs.
-        
+
         Runs tq4_sdpa twice: once with kv_len (triggers split-K for Lq=1, kv_len>=256),
         and once without kv_len (forces fused kernel path). Both outputs must match
         within fp tolerance, proving split-K computes the same result.
@@ -648,7 +647,7 @@ class TestTQ4Sdpa(unittest.TestCase):
         k_norms_sliced = k_norms[:, :, :kv_len, :]
         v_packed_sliced = v_packed[:, :, :kv_len, :]
         v_norms_sliced = v_norms[:, :, :kv_len, :]
-        
+
         out_fused = self.tq4_sdpa(
             q,
             k_packed_sliced,
@@ -693,9 +692,14 @@ class TestTQ4Sdpa(unittest.TestCase):
         for N in (8192, 32768):
             with self.subTest(N=N):
                 # Run with split-K (kv_len >= 256 triggers split-K)
-                cos = self._run_long_kv_test(
-                    H_q=8, H_kv=4, D=512, Lq=1, kv_len=N, buffer_len=32768,
-                    min_cosine=0.99
+                _ = self._run_long_kv_test(
+                    H_q=8,
+                    H_kv=4,
+                    D=512,
+                    Lq=1,
+                    kv_len=N,
+                    buffer_len=32768,
+                    min_cosine=0.99,
                 )
                 # Also verify split-K matches fused kernel by running without kv_len
                 # (which forces fused kernel path) and comparing outputs
@@ -717,9 +721,14 @@ class TestTQ4Sdpa(unittest.TestCase):
         Verifies split-K output matches BOTH fp32 reference AND fused kernel."""
         for N in (8192, 32768):
             with self.subTest(N=N):
-                cos = self._run_long_kv_test(
-                    H_q=16, H_kv=2, D=256, Lq=1, kv_len=N, buffer_len=32768,
-                    min_cosine=0.99
+                _ = self._run_long_kv_test(
+                    H_q=16,
+                    H_kv=2,
+                    D=256,
+                    Lq=1,
+                    kv_len=N,
+                    buffer_len=32768,
+                    min_cosine=0.99,
                 )
                 self._run_splitk_vs_fused_test(
                     H_q=16, H_kv=2, D=256, Lq=1, kv_len=N, buffer_len=32768
