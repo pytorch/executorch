@@ -47,8 +47,6 @@ namespace {
 // and calls `forward` for both phases.
 constexpr const char* kPrefillMethod = "forward";
 constexpr const char* kDecodeMethod = "forward";
-// Prefill is chunked on MLX to cap peak memory and the compiled prefill shape.
-constexpr int64_t kPrefillChunkSize = 1024;
 #else
 // CUDA/Metal exports emit two separate methods.
 constexpr const char* kPrefillMethod = "prefill";
@@ -268,9 +266,15 @@ class Qwen35MoESession : public LLMSession {
     // pass. Only the final chunk's sampled token is kept; the recurrence/KV
     // state from earlier chunks persists via pos_ advancement.
 #ifdef EXECUTORCH_BUILD_MLX
-    // Chunk size = compiled max prefill chunk from model metadata, falling back
-    // to the default if the model didn't export it. Clamp to >= 1.
-    int64_t chunk_size = kPrefillChunkSize;
+    // Chunk size: default to the compiled max (kMaxSeqLen - 1), overridden by
+    // the exported get_max_prefill_chunk constant when present (mirrors
+    // gemma4_31b). Falls back to T (single pass) if no metadata is available at
+    // all.
+    int64_t chunk_size = T;
+    if (auto it = metadata_.find(kMaxSeqLen);
+        it != metadata_.end() && it->second > 1) {
+      chunk_size = it->second - 1;
+    }
     if (auto it = metadata_.find(kMaxPrefillChunk);
         it != metadata_.end() && it->second > 0) {
       chunk_size = it->second;
