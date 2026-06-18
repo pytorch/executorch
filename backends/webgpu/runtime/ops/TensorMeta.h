@@ -10,6 +10,7 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 
@@ -29,6 +30,11 @@ struct TensorMeta {
 static_assert(
     sizeof(TensorMeta) == 48,
     "TensorMeta std140 layout must be 48 bytes to match the WGSL uniform");
+// Lock the std140 field offsets the WGSL uniform reads, not just total size.
+static_assert(offsetof(TensorMeta, ndim) == 0);
+static_assert(offsetof(TensorMeta, numel) == 4);
+static_assert(offsetof(TensorMeta, sizes) == 16);
+static_assert(offsetof(TensorMeta, strides) == 32);
 
 // Fill TensorMeta from NCHW dims: contiguous strides, padded trailing slots.
 inline void fill_tensor_meta(const WebGPUTensor& t, TensorMeta* m) {

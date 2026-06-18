@@ -31,6 +31,7 @@ HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
 LeakyRelu = exir_ops.edge.aten.leaky_relu.default
 Log = exir_ops.edge.aten.log.default
+MaxPool2D = exir_ops.edge.aten.max_pool2d.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
 MeanDim = exir_ops.edge.aten.mean.dim
 MulTensor = exir_ops.edge.aten.mul.Tensor
