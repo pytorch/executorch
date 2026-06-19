@@ -6,7 +6,6 @@
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_int64_const_ops_to_int32 import (
     ConvertInt64ConstOpsToInt32Pass,
@@ -66,6 +65,8 @@ class DecomposeSelectScatterPass(ArmOpTargetedPass):
         ConvertInt64ConstOpsToInt32Pass,
     }
     target_ops = edge_scatter_ops + aten_scatter_ops
+
+    targeted_ops = {*edge_scatter_ops, *aten_scatter_ops}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
