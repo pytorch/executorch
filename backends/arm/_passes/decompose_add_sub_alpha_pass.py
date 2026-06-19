@@ -61,6 +61,8 @@ class DecomposeAddSubAlphaPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
     target_ops = _ADD_OPS + _SUB_OPS
 
+    targeted_ops = {*_ADD_OPS, *_SUB_OPS}
+
     def call_operator(self, op, args, kwargs, meta, updated: bool | None = False):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
