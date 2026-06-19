@@ -14,6 +14,7 @@
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/llm/sampler/logit_processor.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -145,6 +146,10 @@ class CallbackCounter {
 // Test fixture for Runner tests - minimal setup
 class RunnerTest : public Test {
  protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+  }
+
   // Helper functions to create and set up mock objects
   std::unique_ptr<MockTokenizer> createMockTokenizer() {
     auto tokenizer = std::make_unique<MockTokenizer>();
