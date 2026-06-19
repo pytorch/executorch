@@ -23,6 +23,7 @@ from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer.quantization_config import (
     QuantizationConfig,
     TOSAQuantizationConfig,
+    VGFQuantizationConfig,
 )
 from executorch.backends.arm.quantizer.quantizer_support import (
     TOSA_QUANTIZER_SUPPORT_DICT,
@@ -105,6 +106,24 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _wrap_vgf_quantization_config(
+    quantization_config: Optional[QuantizationConfig],
+) -> Optional[QuantizationConfig]:
+    if (
+        quantization_config is None
+        or isinstance(quantization_config, VGFQuantizationConfig)
+        or not isinstance(quantization_config, TOSAQuantizationConfig)
+    ):
+        return quantization_config
+    return VGFQuantizationConfig(
+        quantization_config.input_activation,
+        quantization_config.output_activation,
+        quantization_config.weight,
+        quantization_config.bias,
+        quantization_config.label,
+    )
 
 
 def get_cond_while_submodules_ao(
@@ -1322,3 +1341,31 @@ class VgfQuantizer(TOSAQuantizer):
         use_composable_quantizer: bool = False,
     ) -> None:
         super().__init__(compile_spec, use_composable_quantizer)
+
+    def set_global(
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set the global quantization config for VGF lowering."""
+        return super().set_global(_wrap_vgf_quantization_config(quantization_config))
+
+    def set_module_type(
+        self, module_type: Callable, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set the quantization config for a specific module type."""
+        return super().set_module_type(
+            module_type, _wrap_vgf_quantization_config(quantization_config)
+        )
+
+    def set_module_name(
+        self, module_name: str, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set the quantization config for a specific module name."""
+        return super().set_module_name(
+            module_name, _wrap_vgf_quantization_config(quantization_config)
+        )
+
+    def set_io(
+        self, quantization_config: Optional[QuantizationConfig]
+    ) -> TOSAQuantizer:
+        """Set the quantization config used for model inputs and outputs."""
+        return super().set_io(_wrap_vgf_quantization_config(quantization_config))
