@@ -269,7 +269,7 @@ class TestDecomposeSplit:
             pytest.param((3, 5, 7), 4, -1, id="3D, with sizes, no num_macs_multiples"),
         ],
     )
-    def test__full_pipeline(self, mocker, input_shape, size_or_sections, dim):
+    def test__full_pipeline(self, mocker, request, input_shape, size_or_sections, dim):
         if isinstance(size_or_sections, list):
             model = SplitWithSections(size_or_sections, dim)
             num_slices = len(size_or_sections)
@@ -284,4 +284,4 @@ class TestDecomposeSplit:
             expected_delegated_ops={SliceCopy: num_slices},
             expected_non_delegated_ops={},
         )
-        lower_run_compare(model, input_shape, graph_verifier)
+        lower_run_compare(model, input_shape, graph_verifier, request)
