@@ -150,6 +150,34 @@ class GenAIPipeline:
         stage_name: str,
         skip: set,
     ):
+        """Build one stage from the registry, or ``None`` if it is skipped.
+
+        Args:
+            engine_proxy: Routes each stage to its engine.
+            stage_name: The stage to resolve.
+            skip: Stage names to skip entirely.
+
+        Returns:
+            The constructed stage, or ``None`` when the stage is skipped.
+
+        Raises:
+            ValueError: If no strategy is registered for the stage's engine.
+
+        .. note::
+            Strategies are constructed with **no arguments**, so each gets its
+            default adapter. That suffices for model preparation and
+            quantization, but not for compilation or inference: the default
+            compiler adapter has no body yet, and the inference strategy
+            requires an injected device runner. A pipeline built purely from the
+            registry therefore cannot reach a working adapter for those two
+            stages.
+
+            Injecting adapters today means constructing ``GenAIPipeline`` and
+            the stages directly rather than going through ``from_proxy``.
+            Threading adapters through this path lands together with the adapter
+            bodies, so the hook is shaped by what its callers actually need
+            rather than guessed at now.
+        """
         if stage_name in skip:
             return None
 
@@ -241,6 +269,8 @@ class GenAIPipeline:
                 soc_model=context.soc_model,
                 backend_type=self._engine_proxy.backend_type,
                 model=model,
+                # Export inputs come from the model, not from calibration_data.
+                example_inputs=model_prep_output.example_inputs,
                 artifact_dir=Path(context.artifact_dir),
             )
             output = self._compilation_stage.invoke(context, input_config)
