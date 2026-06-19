@@ -52,3 +52,12 @@ fbcode_target(_kind = python_library,
         "//caffe2:torch",
     ],
 )
+
+fbcode_target(_kind = python_library,
+    name = "mlperf_tiny",
+    srcs = glob(["mlperf_tiny/*.py"]),
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models:model_base",
+    ],
+)
