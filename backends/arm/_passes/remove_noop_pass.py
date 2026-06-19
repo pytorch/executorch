@@ -9,7 +9,6 @@ import logging
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -27,6 +26,14 @@ class RemoveNoopPass(ArmOpTargetedPass):
         exir_ops.edge.aten.copy.default,
         exir_ops.edge.aten.detach_copy.default,
     )
+
+    targeted_ops = {
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        exir_ops.edge.aten.alias_copy.default,
+        exir_ops.edge.aten.copy.default,
+        exir_ops.edge.aten.detach_copy.default,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
