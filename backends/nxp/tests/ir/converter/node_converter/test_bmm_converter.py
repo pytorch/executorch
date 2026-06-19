@@ -39,6 +39,7 @@ class TestBMM:
         input_1_shape,
         input_2_shape,
         mocker,
+        request,
         use_qat=False,
         expected_delegated_ops=None,
     ):
@@ -62,17 +63,18 @@ class TestBMM:
             model,
             [ModelInputSpec(input_1_shape), ModelInputSpec(input_2_shape)],
             graph_verifier,
+            request,
             dataset_creator,
             output_comparator=output_comparator,
             use_qat=use_qat,
             remove_quant_io_ops=remove_quant_io_ops,
         )
 
-    def test__qat(self, mocker, use_qat):
+    def test__qat(self, mocker, request, use_qat):
         input_1_shape, input_2_shape = (1, 24, 16), (1, 16, 24)
         model = BatchMatMulModel()
         self.assert_delegated(
-            model, input_1_shape, input_2_shape, mocker, use_qat=use_qat
+            model, input_1_shape, input_2_shape, mocker, request, use_qat=use_qat
         )
 
     # Input shape parameters used by 2 tests in this class.
@@ -91,21 +93,22 @@ class TestBMM:
         "input_1_shape, input_2_shape",
         BMM_SHAPES,
     )
-    def test__nsys_inference(self, mocker, input_1_shape, input_2_shape):
+    def test__nsys_inference(self, mocker, request, input_1_shape, input_2_shape):
         model = BatchMatMulModel()
-        self.assert_delegated(model, input_1_shape, input_2_shape, mocker)
+        self.assert_delegated(model, input_1_shape, input_2_shape, mocker, request)
 
     @pytest.mark.parametrize(
         "input_1_shape, input_2_shape",
         BMM_SHAPES,
     )
-    def test__channels_first(self, mocker, input_1_shape, input_2_shape):
+    def test__channels_first(self, mocker, request, input_1_shape, input_2_shape):
         model = BatchMatMulMaxPoolModel()
         self.assert_delegated(
             model,
             input_1_shape,
             input_2_shape,
             mocker,
+            request,
             expected_delegated_ops={
                 BMM: 1,
                 MaxPool2DWithIndices: 1,
