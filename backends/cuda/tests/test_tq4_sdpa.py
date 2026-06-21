@@ -192,6 +192,21 @@ class TestTQ4Sdpa(unittest.TestCase):
             f"(B={B} H_q={H_q} H_kv={H_kv} Lq={Lq} Lk={Lk} D={D})",
         )
 
+    def _make_valid_tq4_args(self, B=1, H_q=4, H_kv=4, Lq=1, Lk=64, D=64):
+        torch.manual_seed(42)
+        centroids, boundaries, rotation = _make_codebook_and_rotation(D)
+        centroids, boundaries, rotation = (
+            centroids.cuda(),
+            boundaries.cuda(),
+            rotation.cuda(),
+        )
+        q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+        k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+        k_packed, k_norms = _compress(k, boundaries, rotation)
+        v_packed, v_norms = _compress(v, boundaries, rotation)
+        return q, k_packed, k_norms, v_packed, v_norms, centroids, rotation
+
     # ------------------------------------------------------------------
     # MHA (H_q == H_kv)
     # ------------------------------------------------------------------
@@ -677,6 +692,53 @@ class TestTQ4Sdpa(unittest.TestCase):
     # ------------------------------------------------------------------
     # Validation errors
     # ------------------------------------------------------------------
+
+    def test_3d_query_rejected(self):
+        """3D query raises RuntimeError before shape unpacking."""
+        args = self._make_valid_tq4_args()
+        q, k_p, k_n, v_p, v_n, centroids, rotation = args
+        q_3d = q.squeeze(2)
+        with self.assertRaisesRegex(RuntimeError, "query must be 4D"):
+            self.tq4_sdpa(q_3d, k_p, k_n, v_p, v_n, centroids, rotation)
+
+    def test_3d_mask_rejected(self):
+        """3D attention mask raises RuntimeError before shape indexing."""
+        args = self._make_valid_tq4_args()
+        q, k_p, k_n, v_p, v_n, centroids, rotation = args
+        mask_3d = torch.ones(1, 1, 64, dtype=torch.bool, device="cuda")
+        with self.assertRaisesRegex(RuntimeError, "attn_mask must be 4D"):
+            self.tq4_sdpa(q, k_p, k_n, v_p, v_n, centroids, rotation, mask_3d)
+
+    def test_wrong_rotation_shape_rejected(self):
+        """Rotation shape must match query head_dim."""
+        args = self._make_valid_tq4_args()
+        q, k_p, k_n, v_p, v_n, centroids, rotation = args
+        bad_rotation = rotation[:-1, :]
+        with self.assertRaisesRegex(RuntimeError, "rotation must have shape"):
+            self.tq4_sdpa(q, k_p, k_n, v_p, v_n, centroids, bad_rotation)
+
+    def test_wrong_centroids_shape_rejected(self):
+        """Centroids shape must be length 16."""
+        args = self._make_valid_tq4_args()
+        q, k_p, k_n, v_p, v_n, centroids, rotation = args
+        bad_centroids = centroids[:-1]
+        with self.assertRaisesRegex(RuntimeError, "centroids must have shape"):
+            self.tq4_sdpa(q, k_p, k_n, v_p, v_n, bad_centroids, rotation)
+
+    def test_cpu_k_norms_with_cuda_query_rejected(self):
+        """k_norms must be on the same CUDA device as query."""
+        args = self._make_valid_tq4_args()
+        q, k_p, k_n, v_p, v_n, centroids, rotation = args
+        with self.assertRaisesRegex(RuntimeError, "same CUDA device as query"):
+            self.tq4_sdpa(q, k_p, k_n.cpu(), v_p, v_n, centroids, rotation)
+
+    def test_v_packed_shape_mismatch_rejected(self):
+        """v_packed must match the packed K layout."""
+        args = self._make_valid_tq4_args()
+        q, k_p, k_n, v_p, v_n, centroids, rotation = args
+        bad_v_p = v_p[:, :, :-1, :]
+        with self.assertRaisesRegex(RuntimeError, "v_packed shape mismatch"):
+            self.tq4_sdpa(q, k_p, k_n, bad_v_p, v_n, centroids, rotation)
 
     def test_hq_not_divisible_by_hkv_rejected(self):
         """H_Q not divisible by H_KV raises RuntimeError."""
