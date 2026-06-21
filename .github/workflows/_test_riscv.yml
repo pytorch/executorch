@@ -61,10 +61,12 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        # Allows failure in `echo | jq | while read` pipeline to bubble up and fail the workflow
+        # Allows failure in `echo | jq` pipeline to bubble up and fail the workflow
         set -o pipefail
 
-        echo '${{ inputs.qemu-cpu-ext }}' | jq -r '.[]' | while IFS= read -r qemu_cpu_ext; do
+        # Using process substitution so subprocesses inside the loop (called from .ci/scripts/test_riscv_qemu.sh)
+        # don't inherit and consume bytes from the jq pipe, corrupting iteration.
+        while IFS= read -r qemu_cpu_ext; do
           variant_slug="${qemu_cpu_ext//,/_}"; variant_slug="${variant_slug//=/_}"; variant_slug="${variant_slug:-base}"
           build_dir="riscv_test/${{ inputs.model }}${{ inputs.quantize && '_q' || '' }}/${{ inputs.backend }}/${{ inputs.os }}-${{ inputs.arch }}-${variant_slug}"
 
@@ -103,4 +105,4 @@ jobs:
               echo
             ) >> $GITHUB_STEP_SUMMARY
           fi
-        done
+        done < <(echo '${{ inputs.qemu-cpu-ext }}' | jq -r '.[]')
