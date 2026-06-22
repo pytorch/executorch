@@ -79,6 +79,7 @@ jobs:
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
           backends/mlx/test/test_serialization_dedup.py \
+          backends/mlx/test/test_slot_recycling.py \
           examples/models/gemma4_31b/quant/tests/test_pack_mlx.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
