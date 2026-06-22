@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
 )
@@ -14,32 +14,31 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class ConvertFullLikeToFullPass(ArmPass):
+class ConvertFullLikeToFullPass(ArmOpTargetedPass):
     """Convert edge aten full_like to full.
 
     As per the full_like PyTorch documentation, `torch.full_like(input,
     fill_value)` is equivalent to:
 
-    ```
-    torch.full(
-        input.size(),
-        fill_value,
-        dtype=input.dtype,
-        layout=input.layout,
-        device=input.device,
-    )
-    ```
+    ::
+
+        torch.full(
+            input.size(),
+            fill_value,
+            dtype=input.dtype,
+            layout=input.layout,
+            device=input.device,
+        )
 
     Skip layout and device since it's not relevant for our backend.
 
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
+    target_ops = (exir_ops.edge.aten.full_like.default,)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [
-            exir_ops.edge.aten.full_like.default,
-        ]:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         tensor = args[0].data

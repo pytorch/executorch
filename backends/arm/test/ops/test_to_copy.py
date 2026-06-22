@@ -116,6 +116,130 @@ def test_to_tosa_FP_bf16_with_extension():
     pipeline.run()
 
 
+_TO_COPY_TEST_DATA_FP_FP8 = {
+    "fp32_to_fp8e4m3": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.float8_e4m3fn,
+        "fp8e4m3",
+    ),
+    "fp16_to_fp8e5m2": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float16),
+        torch.float8_e5m2,
+        "fp8e5m2",
+    ),
+    "fp8e4m3_to_fp32": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32).to(torch.float8_e4m3fn),
+        torch.float32,
+        "fp8e4m3",
+    ),
+    "fp8e5m2_to_fp16": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32).to(torch.float8_e5m2),
+        torch.float16,
+        "fp8e5m2",
+    ),
+}
+
+
+def test_to_tosa_FP_fp8e4m3_requires_extension():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.float32)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(torch.float8_e4m3fn),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+    )
+    pipeline.run()
+
+
+def test_to_tosa_FP_fp8e5m2_requires_extension():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.float16)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(torch.float8_e5m2),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+    )
+    pipeline.run()
+
+
+def test_to_tosa_FP_bf16_to_fp8e4m3_requires_both_extensions():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.bfloat16)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(torch.float8_e4m3fn),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+        tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+def test_to_tosa_FP_bf16_to_fp8e5m2_requires_both_extensions():
+    test_tensor = torch.rand((1, 2, 3, 4), dtype=torch.bfloat16)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(torch.float8_e5m2),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+        tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP_FP8)
+def test_to_tosa_FP_fp8_with_extension(test_data: Tuple):
+    test_tensor, new_dtype, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.run()
+
+
+_TO_COPY_TEST_DATA_BF16_FP8 = {
+    "bf16_to_fp8e4m3": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.bfloat16),
+        torch.float8_e4m3fn,
+        ["bf16", "fp8e4m3"],
+    ),
+    "fp8e4m3_to_bf16": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32).to(torch.float8_e4m3fn),
+        torch.bfloat16,
+        ["bf16", "fp8e4m3"],
+    ),
+    "bf16_to_fp8e5m2": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.bfloat16),
+        torch.float8_e5m2,
+        ["bf16", "fp8e5m2"],
+    ),
+    "fp8e5m2_to_bf16": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32).to(torch.float8_e5m2),
+        torch.bfloat16,
+        ["bf16", "fp8e5m2"],
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_BF16_FP8)
+def test_to_tosa_FP_bf16_fp8_with_extensions(test_data: Tuple):
+    test_tensor, new_dtype, tosa_extensions = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+        tosa_extensions=tosa_extensions,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", _TO_COPY_TEST_DATA_FP)
 @common.SkipIfNoModelConverter
 def test_to_vgf_no_quant(test_data: Tuple):
@@ -206,15 +330,18 @@ _TO_COPY_TEST_DATA_REDUNDANT_CAST = {
     ),
 }
 
-redundant_xfails = {
-    "rand_fp16_fp16": "FP16 is not supported",
+redundant_xfails_FP = {
     "rand_int8_int8": "Tracing graph with quantized input is not supported.",
     "rand_int16_int16": "Tracing graph with quantized input is not supported.",
 }
 
+redundant_xfails_INT = redundant_xfails_FP | {
+    "rand_fp16_fp16": "FP16 is not supported",
+}
+
 
 @common.parametrize(
-    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails
+    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_FP
 )
 def test_to_tosa_FP_REDUNDANT_CAST(test_data: Tuple):
     test_tensor, new_dtype = test_data()
@@ -229,7 +356,7 @@ def test_to_tosa_FP_REDUNDANT_CAST(test_data: Tuple):
 
 
 @common.parametrize(
-    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails
+    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_INT
 )
 def test_to_tosa_INT_REDUNDANT_CAST(test_data: Tuple):
     test_tensor, new_dtype = test_data()

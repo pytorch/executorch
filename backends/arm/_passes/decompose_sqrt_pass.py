@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 from typing import Set, Tuple, Type, Union
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -27,24 +27,17 @@ def get_sqrt_decomposition(op) -> Union[Tuple, torch._ops.OpOverload]:
     raise RuntimeError(f"Can't get sqrt decomposition for op {op}")
 
 
-class DecomposeSqrtPass(ArmPass):
+class DecomposeSqrtPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
+    target_ops = edge_sqrt_ops + aten_sqrt_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        """
-        Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support.
-        """
+        """Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support."""
 
-        if op not in (edge_sqrt_ops + aten_sqrt_ops) or not self.allowed_to_transform(
-            meta
-        ):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 

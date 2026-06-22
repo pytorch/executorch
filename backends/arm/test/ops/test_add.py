@@ -15,6 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU65PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -39,6 +40,16 @@ class Add(torch.nn.Module):
         "1d_randn": lambda: (10 * torch.randn(8),),
         "4d_ones_1": lambda: (torch.ones(1, 1, 4, 4),),
         "4d_ones_2": lambda: (torch.ones(1, 3, 4, 2),),
+    }
+
+    test_data_fp16 = {
+        "1d_ones_fp16": lambda: (torch.ones(8, dtype=torch.float16),),
+        "4d_ones_fp16": lambda: (torch.ones(1, 2, 3, 4, dtype=torch.float16),),
+    }
+
+    test_data_bf16 = {
+        "1d_ones_bf16": lambda: (torch.ones(8, dtype=torch.bfloat16),),
+        "4d_ones_bf16": lambda: (torch.ones(1, 2, 3, 4, dtype=torch.bfloat16),),
     }
 
 
@@ -70,6 +81,14 @@ class Add2(torch.nn.Module):
             torch.randn(1, 10, 20, 30),
         ),
     }
+
+    test_data_fp16 = {
+        "4d_big_small_fp16": lambda: (
+            (10e10) * torch.randn(1, 10, 20, 30, dtype=torch.float16),
+            torch.randn(1, 10, 20, 30, dtype=torch.float16),
+        ),
+    }
+
     test_data_bf16 = {
         "4d_big_small_bf16": lambda: (
             (10e10) * torch.randn(1, 10, 20, 30, dtype=torch.bfloat16),
@@ -88,18 +107,27 @@ class Add3(torch.nn.Module):
         "4d_randn_diff_rank_2": lambda: (torch.randn(4, 1), torch.randn(1, 1, 4, 5)),
     }
 
+    test_data_fp16: list[input_t2] = {
+        "4d_randn_diff_rank_fp16": lambda: (
+            torch.randn(1, 1, 4, 4, dtype=torch.float16),
+            torch.randn(4, 1, dtype=torch.float16),
+        ),
+    }
 
-@common.parametrize("test_data", Add.test_data)
+    test_data_bf16: list[input_t2] = {
+        "4d_randn_diff_rank_bf16": lambda: (
+            torch.randn(1, 1, 4, 4, dtype=torch.bfloat16),
+            torch.randn(4, 1, dtype=torch.bfloat16),
+        ),
+    }
+
+
+@common.parametrize(
+    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
+)
 def test_add_tensor_tosa_FP(test_data: input_t1):
-    pipeline = TosaPipelineFP[input_t1](Add(), test_data(), aten_op, exir_op)
-    pipeline.run()
-
-
-@common.parametrize("test_data", Add.test_data)
-def test_add_tensor_tosa_FP_bf16(test_data: input_t1):
-    x = test_data()[0].to(torch.bfloat16)
     pipeline = TosaPipelineFP[input_t1](
-        Add(), (x,), aten_op, exir_op, tosa_extensions=["bf16"]
+        Add(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
     )
     pipeline.run()
 
@@ -156,6 +184,18 @@ def test_add_tensor_u55_INT(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
+@common.XfailIfNoCorstone300
+def test_add_tensor_u65_INT(test_data: input_t1):
+    pipeline = EthosU65PipelineINT[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone320
 def test_add_tensor_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -167,7 +207,9 @@ def test_add_tensor_u85_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add2.test_data | Add2.test_data_bf16)
+@common.parametrize(
+    "test_data", Add2.test_data | Add2.test_data_fp16 | Add2.test_data_bf16
+)
 def test_add_tensor_tosa_FP_2(test_data: input_t2):
     pipeline = TosaPipelineFP[input_t2](
         Add2(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
@@ -175,9 +217,13 @@ def test_add_tensor_tosa_FP_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add3.test_data)
+@common.parametrize(
+    "test_data", Add3.test_data | Add3.test_data_fp16 | Add3.test_data_bf16
+)
 def test_add_tensor_tosa_FP_3(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](Add3(), test_data(), aten_op, exir_op)
+    pipeline = TosaPipelineFP[input_t2](
+        Add3(), test_data(), aten_op, exir_op, tosa_extensions=["bf16"]
+    )
     pipeline.run()
 
 
@@ -217,7 +263,7 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data)
+@common.parametrize("test_data", Add.test_data | Add.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -246,8 +292,157 @@ def test_add_tensor_vgf_quant(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_tensor_vgf_quant_a16w8(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        run_on_vulkan_runtime=True,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+class AddConvResidual(torch.nn.Module):
+    """Conv(x) + x — residual block.
+
+    Creates non-unit IFM scales
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv(x) + x
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+def test_add_conv_residual_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+@common.XfailIfNoCorstone300
+def test_add_conv_residual_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+@common.XfailIfNoCorstone320
+def test_add_conv_residual_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+class AddDualConv(torch.nn.Module):
+    """Conv1(x) + conv2(x) — both inputs have Rescale producers."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv2 = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv1(x) + self.conv2(x)
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+def test_add_dual_conv_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](AddDualConv(), test_data(), aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+@common.XfailIfNoCorstone300
+def test_add_dual_conv_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+@common.XfailIfNoCorstone320
+def test_add_dual_conv_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+class AddMultiReader(torch.nn.Module):
+    """Conv2(conv1(x)) + conv3(conv1(x)) — conv1's output Rescale has two
+    readers.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv2 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv3 = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        y = self.conv1(x)
+        return self.conv2(y) + self.conv3(y)
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+def test_add_multi_reader_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+@common.XfailIfNoCorstone300
+def test_add_multi_reader_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+@common.XfailIfNoCorstone320
+def test_add_multi_reader_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_INT_16a8w(test_data: input_t1):
-    """Test add operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test add operation with 16A8W quantization (16-bit activations, 8-bit
+    weights)
+    """
     per_channel_quantization = False
 
     pipeline = TosaPipelineINT[input_t1](
@@ -269,7 +464,9 @@ def test_add_tensor_tosa_INT_16a8w(test_data: input_t1):
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone300
 def test_add_tensor_u55_INT_16a8w(test_data: input_t1):
-    """Test add operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test add operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU55PipelineINT[input_t1](
@@ -290,7 +487,9 @@ def test_add_tensor_u55_INT_16a8w(test_data: input_t1):
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone320
 def test_add_tensor_u85_INT_16a8w(test_data: input_t1):
-    """Test add operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test add operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
 
     pipeline = EthosU85PipelineINT[input_t1](

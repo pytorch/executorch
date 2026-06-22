@@ -14,6 +14,7 @@ import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
 from executorch.backends.cadence.aot.compiler_funcs import (
     prepare as prepare_fn,
+    QuantFusionPass,
     QuantizedInputWrapper,
     trace as trace_fn,
 )
@@ -21,7 +22,7 @@ from executorch.backends.cadence.aot.memory_planning import (
     CadenceMemoryPlanning,
     print_memory_planning_info,
 )
-from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
+from executorch.backends.cadence.aot.quantizer.passes.fuse_ops import FuseQATConvBN
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceDefaultQuantizer,
     CadenceQuantizer,
@@ -37,12 +38,14 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
 )
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import ToOutVarPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.program._program import _transform, to_edge
+from executorch.exir.program._program import to_edge
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
 
+from .pass_utils import EdgePassesConfig
 from .passes import apply_exir_ops_passes, apply_torch_ops_passes
 from .utils import print_ops_info
 
@@ -54,6 +57,7 @@ def trace(
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
     ops_to_keep: Optional[list[torch._ops.OpOverload]] = None,
+    is_qat: bool = False,
 ) -> ExportedProgram:
     """
     Trace the model with export and return an ExportedProgram.
@@ -61,7 +65,7 @@ def trace(
     if ops_to_keep is None:
         ops_to_keep = []
     program = trace_fn(
-        model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
+        model, inputs, is_qat=is_qat, strict=True, ops_to_keep=ops_to_keep
     )
 
     if dump_graphs:
@@ -76,6 +80,7 @@ def prepare_pt2(
     inputs: tuple[object, ...],
     quantizer: CadenceQuantizer,
     dump_graphs: bool = False,
+    is_qat: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Trace and Prepare a model using the given quantizer.
@@ -88,10 +93,10 @@ def prepare_pt2(
 
     ops_to_keep = quantizer.get_ops_to_preserve_from_decomposition()
     traced_program = trace(
-        model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep
+        model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep, is_qat=is_qat
     )
     prepared_program = prepare_traced_pt2(
-        traced_program, quantizer, dump_graphs=dump_graphs
+        traced_program, quantizer, dump_graphs=dump_graphs, is_qat=is_qat
     )
 
     return prepared_program
@@ -101,6 +106,7 @@ def prepare_traced_pt2(
     program: ExportedProgram,
     quantizer: CadenceQuantizer,
     dump_graphs: bool = False,
+    is_qat: bool = False,
 ) -> torch.fx.GraphModule:
     """
     Prepare a model using the given quantizer.
@@ -111,7 +117,7 @@ def prepare_traced_pt2(
     Returns a GraphModule with the prepared model.
     """
 
-    prepared_model = prepare_fn(program, quantizer, is_qat=False)
+    prepared_model = prepare_fn(program, quantizer, is_qat=is_qat)
 
     if dump_graphs:
         logging.info("Graph after preparation:")
@@ -148,16 +154,27 @@ def apply_pre_edge_transform_passes(
     quantizer: CadenceQuantizer,
 ) -> ExportedProgram:
     """
-    Fuse a converted exported program using the given quantizer.
+    Apply pre-edge transform passes including QuantFusionPass and torch ops passes.
+    This mirrors the Cadence AOT compiler flow:
+    1. QuantFusionPass - fuses dq->op->q patterns
+    2. apply_torch_ops_passes - applied just before to_edge()
+
     The quantizer must be the same as the one used to convert the model.
     If you do not expect that behavior, please use quantize_pt2 instead,
     which will instantiate a default quantizer for you if needed.
     Returns an ExportedProgram with the fused model.
     """
-    # Get patterns and apply fusion of dq -> op -> q to qop
     # pyre-ignore[16]: no attribute
     patterns = [q.pattern for q in quantizer.quantizers]
-    fused_program = _transform(converted_program, QuantFusion(patterns))
+    PassManager(
+        [
+            FuseQATConvBN(converted_program),
+            QuantFusionPass(patterns),
+        ]
+    )(converted_program.graph_module)
+
+    # Apply torch ops passes (e.g., ReplaceMulTensorWithMulAndFullOpsPass)
+    fused_program = apply_torch_ops_passes(converted_program)
 
     return fused_program
 
@@ -232,6 +249,11 @@ def quantize_pt2(
 
     # Apply quant fusion to the exported program
     program = torch.export.export(converted_gm, inputs, strict=True)
+
+    # Sink dequant nodes through transparent ops so they fuse per-branch.
+    if quant_input_args is not None:
+        QuantizedInputWrapper.sink_dequants(program)
+
     fused_program = apply_pre_edge_transform_passes(program, quantizer)
 
     if dump_graphs:
@@ -343,12 +365,15 @@ def _lower_ep_to_cadence(
     program: ExportedProgram,
     dump_graphs: bool = False,
     opt_level: int = 1,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     """
     Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
     """
     edge_prog_manager = _lower_ep_to_edge(program, dump_graphs=dump_graphs)
-    cadence_prog_manager = apply_exir_ops_passes(opt_level, edge_prog_manager)
+    cadence_prog_manager = apply_exir_ops_passes(
+        opt_level, edge_prog_manager, edge_passes_config
+    )
     return cadence_prog_manager
 
 
@@ -357,9 +382,12 @@ def export_to_cadence(
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
     opt_level: int = 1,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     edge_prog_manager = export_to_edge(model, inputs, dump_graphs=dump_graphs)
-    cadence_prog_manager = apply_exir_ops_passes(opt_level, edge_prog_manager)
+    cadence_prog_manager = apply_exir_ops_passes(
+        opt_level, edge_prog_manager, edge_passes_config
+    )
     return cadence_prog_manager
 
 
@@ -368,6 +396,7 @@ def quantize_and_export_to_cadence(
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
     opt_level: int = 1,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     """
     Trace, quantize, lower a model/inputs pair to edge IR and apply frontend
@@ -379,6 +408,7 @@ def quantize_and_export_to_cadence(
         quantized_model,
         opt_level=opt_level,
         dump_graphs=dump_graphs,
+        edge_passes_config=edge_passes_config,
     )
 
 

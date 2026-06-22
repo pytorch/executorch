@@ -5,11 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torchao.quantization.pt2e import UniformQuantizationObserverBase
+from executorch.backends.qualcomm.utils.constants import DEFAULT_EPS_FP32
+from torchao.quantization.pt2e import (
+    PerChannelMinMaxObserver,
+    UniformQuantizationObserverBase,
+)
 
 
 # TODO move to torch/ao/quantization/observer.py.
-class PerChannelParamObserver(UniformQuantizationObserverBase):
+class PerChannelParamObserverWithLossEvaluation(UniformQuantizationObserverBase):
     """
     Minimize quantization loss caused by outlier via linear search. More details can be found at https://arxiv.org/pdf/2209.13325
     """
@@ -25,7 +29,7 @@ class PerChannelParamObserver(UniformQuantizationObserverBase):
         quant_min=None,
         quant_max=None,
         factory_kwargs=None,
-        eps=torch.finfo(torch.float32).eps,  # noqa: B008
+        eps=DEFAULT_EPS_FP32,
         is_dynamic=False,
         **kwargs,
     ) -> None:
@@ -111,3 +115,43 @@ class PerChannelParamObserver(UniformQuantizationObserverBase):
 
     def calculate_qparams(self):
         return self._calculate_qparams(self.min_val, self.max_val)
+
+
+class PerChannelParamObserver(PerChannelMinMaxObserver):
+    """
+    Bypass redundant calibration for static parameters
+    """
+
+    def __init__(
+        self,
+        ch_axis=0,
+        dtype=torch.quint8,
+        qscheme=torch.per_channel_affine,
+        reduce_range=False,
+        quant_min=None,
+        quant_max=None,
+        factory_kwargs=None,
+        eps=DEFAULT_EPS_FP32,
+        is_dynamic=False,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            ch_axis=ch_axis,
+            dtype=dtype,
+            qscheme=qscheme,
+            reduce_range=reduce_range,
+            quant_min=quant_min,
+            quant_max=quant_max,
+            factory_kwargs=factory_kwargs,
+            eps=eps,
+            is_dynamic=is_dynamic,
+            **kwargs,
+        )
+        self.calibrated = False
+
+    def forward(self, x_orig):
+        if self.calibrated:
+            return x_orig
+
+        self.calibrated = True
+        return self._forward(x_orig)

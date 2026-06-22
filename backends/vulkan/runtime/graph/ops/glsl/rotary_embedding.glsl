@@ -38,6 +38,9 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "xqout_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "freqs_layout", "CONTIG_LAYOUT_INT")}
+
 /*
  * This shader computes rotary positional embeddings which are used in the Llama
  * model architecture. There are 4 input tensors with the following shapes.
@@ -99,12 +102,15 @@ void main() {
   VEC4_T x_tex_2 = t_xq[x_texel_bufi_2];
 
 #else // USING_TEXTURE
-  const ivec3 freqs_pos = tensor4d_idx_to_texel_pos_simple(freqs_cos, freqs_tidx);
+  const ivec3 freqs_pos =
+      tensor4d_idx_to_texel_pos_simple(freqs_cos, freqs_tidx, freqs_layout);
   VEC4_T cos_tex = texelFetch(t_freqs_cos, freqs_pos, 0);
   VEC4_T sin_tex = texelFetch(t_freqs_sin, freqs_pos, 0);
 
-  const ivec3 x_pos_1 = tensor4d_idx_to_texel_pos_simple(xqout, out_tidx_1);
-  const ivec3 x_pos_2 = tensor4d_idx_to_texel_pos_simple(xqout, out_tidx_2);
+  const ivec3 x_pos_1 =
+      tensor4d_idx_to_texel_pos_simple(xqout, out_tidx_1, xqout_layout);
+  const ivec3 x_pos_2 =
+      tensor4d_idx_to_texel_pos_simple(xqout, out_tidx_2, xqout_layout);
   VEC4_T x_tex_1 = texelFetch(t_xq, x_pos_1, 0);
   VEC4_T x_tex_2 = texelFetch(t_xq, x_pos_2, 0);
 #endif

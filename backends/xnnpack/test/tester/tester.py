@@ -102,6 +102,8 @@ class ToExecutorch(BaseStages.ToExecutorch):
 
 
 class Tester(TesterBase):
+    __test__ = False
+
     def __init__(
         self,
         module: torch.nn.Module,

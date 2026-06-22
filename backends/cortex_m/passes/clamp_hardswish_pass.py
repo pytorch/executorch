@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import cast, Dict
 
 import torch
 
@@ -32,6 +32,6 @@ class ClampHardswishPass(ExportPass):
             clamped_input = super().call_operator(
                 torch.ops.aten.clamp.default, clamped_args, {}, meta
             )
-            args = (clamped_input,)
+            args = cast(tuple[Argument, ...], (clamped_input,))
 
         return super().call_operator(op, args, kwargs, meta)

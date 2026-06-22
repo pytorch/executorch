@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -26,10 +26,10 @@ def _get_decorated_ops(op):
         raise RuntimeError(f"Can't get decorated ops for op {op}")
 
 
-class DecorateFp32toInt32CastingPass(ArmPass):
-    """
-    To lower pytorch fp32 -> int32 casting to TOSA,
-    we need to transform the value with Ceil, Floor, and Where.
+class DecorateFp32toInt32CastingPass(ArmOpTargetedPass):
+    """To lower pytorch fp32 -> int32 casting to TOSA, we need to transform the
+    value with Ceil, Floor, and Where.
+
     Before:
         output = to_dim_order_copy(x, dtype=torch.int32)
     After:
@@ -39,6 +39,7 @@ class DecorateFp32toInt32CastingPass(ArmPass):
         ceil_x = ceil(x)
         decorated_x = where(is_non_negative, floor_x, ceil_x)
         output = to_dim_order_copy(decorated_x, dtype=torch.int32)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -46,9 +47,10 @@ class DecorateFp32toInt32CastingPass(ArmPass):
     targets = [
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
+    target_ops = targets
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self.targets:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         input = get_node_arg(args, 0)

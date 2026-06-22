@@ -13,8 +13,22 @@
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
 #include <executorch/backends/aoti/slim/util/size_util.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 
 namespace executorch::backends::cuda {
+
+namespace {
+struct PalInitializer final {
+  PalInitializer() {
+    // aoti_cuda_shims is loaded as a separate DLL on Windows and has its own
+    // PAL static state. Initialize PAL when this module is loaded.
+    et_pal_init();
+  }
+};
+
+const PalInitializer kPalInitializer{};
+} // namespace
 
 namespace c10 = executorch::backends::aoti::slim::c10;
 using c10::Device;
@@ -77,6 +91,61 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
           static_cast<DeviceType>(device_type),
           static_cast<DeviceIndex>(device_index)),
       storage_offset));
+
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_create_tensor_from_blob(
+    void* data,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nullptr,
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob: data is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob: ret_new_tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob: sizes_ptr is null but ndim > 0");
+
+  IntArrayRef sizes(sizes_ptr, static_cast<size_t>(ndim));
+
+  if (strides_ptr == nullptr) {
+    std::vector<int64_t> contig_strides =
+        executorch::backends::aoti::slim::compute_contiguous_strides(sizes);
+    *ret_new_tensor = new SlimTensor(from_blob(
+        data,
+        sizes,
+        makeArrayRef(contig_strides),
+        static_cast<ScalarType>(dtype),
+        Device(
+            static_cast<DeviceType>(device_type),
+            static_cast<DeviceIndex>(device_index)),
+        storage_offset));
+  } else {
+    IntArrayRef strides(strides_ptr, static_cast<size_t>(ndim));
+    *ret_new_tensor = new SlimTensor(from_blob(
+        data,
+        sizes,
+        strides,
+        static_cast<ScalarType>(dtype),
+        Device(
+            static_cast<DeviceType>(device_type),
+            static_cast<DeviceIndex>(device_index)),
+        storage_offset));
+  }
 
   return Error::Ok;
 }
@@ -159,6 +228,36 @@ AOTITorchError aoti_torch_new_tensor_handle(
   // the storage will be freed.
   *new_handle = new SlimTensor(*orig_handle);
 
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_clone_preserve_strides(
+    SlimTensor* self,
+    SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr,
+      InvalidArgument,
+      "aoti_torch_clone_preserve_strides: self is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_clone_preserve_strides: ret_new_tensor is null");
+
+  *ret_new_tensor = new SlimTensor(self->clone());
+  return Error::Ok;
+}
+
+AOTITorchError aoti_torch_clone(SlimTensor* self, SlimTensor** ret_new_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr, InvalidArgument, "aoti_torch_clone: self is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_clone: ret_new_tensor is null");
+
+  *ret_new_tensor = new SlimTensor(self->clone());
   return Error::Ok;
 }
 
@@ -273,6 +372,14 @@ AOTITorchError aoti_torch_assign_tensors_out(
   *ret_dst = new SlimTensor(std::move(dst_tensor));
 
   return Error::Ok;
+}
+
+void aoti_torch_warn(
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg) {
+  ET_LOG(Error, "[%s:%u] %s: %s", file, line, func, msg);
 }
 
 } // extern "C"

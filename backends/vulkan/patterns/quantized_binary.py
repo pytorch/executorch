@@ -133,7 +133,7 @@ def make_add_q8ta_q8ta_q8to_custom_op(
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.add_.Tensor,
     }:
-        op_target = exir_ops.edge.et_vk.add_q8ta_q8ta_q8to.default
+        op_target = exir_ops.edge.et_vk.q8ta_add.default
     else:
         # For future binary operations, add more mappings here
         raise NotImplementedError(

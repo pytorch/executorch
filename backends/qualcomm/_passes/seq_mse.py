@@ -11,8 +11,10 @@ import torchao
 from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer import (
     PerBlockParamObserver,
 )
+from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+    PerChannelParamObserver,
+)
 from executorch.exir.pass_base import ExportPass, PassResult
-from torchao.quantization.pt2e import PerChannelMinMaxObserver
 
 
 class SeqMseModule(torch.nn.Module):
@@ -42,9 +44,10 @@ class SeqMseModule(torch.nn.Module):
         self.nominal_weight = nominal_weight
         self.nominal_bias = nominal_bias
         self.observer = observer
-        self.steps = torch.linspace(
+        self.coarse_steps = torch.linspace(
             1 / num_candidates, 1, steps=num_candidates
         ).tolist()
+        self.num_fine = num_candidates
         self.operator = self._make_operator(operator)
         self.best_candidate_step = 1.0
 
@@ -96,29 +99,39 @@ class SeqMseModule(torch.nn.Module):
 
     def _fake_quant(self, scale, zero_point):
         dispatcher = {
-            PerChannelMinMaxObserver: self._per_channel_qdq,
+            PerChannelParamObserver: self._per_channel_qdq,
             PerBlockParamObserver: self._per_block_qdq,
         }
         return dispatcher[type(self.observer)](scale, zero_point)
 
     def _find_best_candidate(self, nominal_input, nominal_output):
-        # calculate current baseline
         scale, zero_point = self.observer.calculate_qparams()
         zero_point = zero_point.to(torch.int32)
-        self.operator.weight.data = self._fake_quant(scale, zero_point)
-        candidate, current_loss = (
-            1,
-            torch.nn.functional.mse_loss(
-                self.operator(nominal_input), nominal_output
-            ).item(),
-        )
-        for step in self.steps:
+
+        def _eval_step(step):
             self.operator.weight.data = self._fake_quant(scale * step, zero_point)
-            loss = torch.nn.functional.mse_loss(
+            return torch.nn.functional.mse_loss(
                 self.operator(nominal_input), nominal_output
             ).item()
+
+        candidate, current_loss = 1, _eval_step(1.0)
+
+        # Coarse sweep
+        coarse_resolution = 1.0 / len(self.coarse_steps)
+        for step in self.coarse_steps:
+            loss = _eval_step(step)
             if loss < current_loss:
                 candidate, current_loss = step, loss
+
+        # Fine sweep around coarse best (same resolution window on each side)
+        fine_start = max(candidate - coarse_resolution, 0.001)
+        fine_end = min(candidate + coarse_resolution, 1.0)
+        fine_steps = torch.linspace(fine_start, fine_end, steps=self.num_fine).tolist()
+        for step in fine_steps:
+            loss = _eval_step(step)
+            if loss < current_loss:
+                candidate, current_loss = step, loss
+
         return candidate
 
     def forward(self, nominal_input, nominal_output):
@@ -134,7 +147,7 @@ class InsertSeqMse(ExportPass):
 
     seq_mse_ops = {torch.ops.aten.conv2d.default}
 
-    def __init__(self, num_candidates=1000):
+    def __init__(self, num_candidates=50):
         super(InsertSeqMse, self).__init__()
         self.num_candidates = num_candidates
 

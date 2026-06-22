@@ -10,18 +10,29 @@ import unittest
 from executorch.devtools.backend_debug import get_delegation_info
 
 try:
-    from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        EthosUQuantizer,
+        TOSAQuantizer,
+        VgfQuantizer,
+    )
 
     HAS_ARM_BACKEND = True
 except ImportError:
     HAS_ARM_BACKEND = False
+    EthosUQuantizer = None
     TOSAQuantizer = None
+    VgfQuantizer = None
+
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
     get_quantizer_and_quant_params,
 )
-from executorch.extension.llm.export.config.llm_config import LlmConfig, Pt2eQuantize
+from executorch.extension.llm.export.config.llm_config import (
+    LlmConfig,
+    Pt2eQuantize,
+    VgfQuantizeScope,
+)
 
 UNWANTED_OPS = [
     "aten_permute_copy_default",
@@ -73,3 +84,75 @@ class ExportLlamaLibTest(unittest.TestCase):
         self.assertIsNone(quant_dtype)
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], TOSAQuantizer)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_get_quantizer_and_quant_params_returns_ethosu_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.ethosu.enabled = True
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.ethosu_8a8w
+
+        pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertIsNone(pt2e_quant_params)
+        self.assertIsNone(quant_dtype)
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], EthosUQuantizer)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_get_quantizer_and_quant_params_returns_vgf_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_8a8w
+
+        pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertIsNone(pt2e_quant_params)
+        self.assertIsNone(quant_dtype)
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_get_quantizer_and_quant_params_returns_vgf_linear_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_8a8w
+
+        _pt2e_quant_params, quantizers, _quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_vgf_16a8w_requires_int16_compile_spec_extension(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_16a8w
+
+        with self.assertRaisesRegex(ValueError, "INT16 support"):
+            get_quantizer_and_quant_params(llm_config)
+
+    @unittest.skipUnless(HAS_ARM_BACKEND, "ARM backend not available")
+    def test_vgf_16a8w_accepts_int16_compile_spec_extension(self):
+        llm_config = LlmConfig()
+        llm_config.backend.vgf.enabled = True
+        llm_config.backend.vgf.compile_spec = "TOSA-1.0+INT+int16"
+        llm_config.backend.vgf.quantize_scope = VgfQuantizeScope.linear
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.vgf_16a8w
+
+        _pt2e_quant_params, quantizers, _quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], VgfQuantizer)

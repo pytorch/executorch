@@ -10,10 +10,10 @@ from typing import cast
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
-from executorch.backends.cadence.aot.graph_builder import single_op_builder
 from executorch.backends.cadence.aot.pass_utils import count_node
 from executorch.backends.cadence.aot.type_dispatch import CompileTimeTypeDispatchPass
 from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.backends.test.graph_builder import single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -299,63 +299,6 @@ class TestTypeDispatchPasses(unittest.TestCase):
             placeholders=(x, w, b),
             op=original_op,
             args=(x, w, b, [1, 1], [0, 0], [2, 2], 1, 0, 0, 1.0, 1.0, 0, 1, 1),
-        )
-        p = CompileTimeTypeDispatchPass()
-        gm = cast(PassResult, p(gm)).graph_module
-        # Original op should be replaced
-        self.assertEqual(count_node(gm, original_op), 0)
-        # Should be replaced with dtype-specific variant
-        self.assertEqual(count_node(gm, expected_op), 1)
-
-    @expand(
-        [
-            (
-                "int8_nchw_1d",
-                torch.int8,
-                (1, 3, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor,
-            ),
-            (
-                "uint8_nchw_1d",
-                torch.uint8,
-                (1, 3, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor,
-            ),
-            (
-                "int8_nhwc_1d",
-                torch.int8,
-                (1, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor,
-            ),
-            (
-                "uint8_nhwc_1d",
-                torch.uint8,
-                (1, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor,
-            ),
-        ]
-    )
-    def test_dispatch_quantized_conv_1d(
-        self,
-        _: str,
-        dtype: torch.dtype,
-        x_shape: tuple[int, ...],
-        original_op: torch._ops.OpOverload,
-        expected_op: torch._ops.OpOverload,
-    ) -> None:
-        """Test quantized_conv_1d (nchw/nhwc) dispatches to correct dtype-specific variant"""
-        min_val, max_val = torch.iinfo(dtype).min, torch.iinfo(dtype).max
-        x = torch.randint(min_val, max_val, x_shape, dtype=dtype)
-        w = torch.randint(min_val, max_val, (16, 3, 3), dtype=dtype)
-        b = torch.randint(-2147483648, 2147483647, (16,), dtype=torch.int32)
-        gm = single_op_builder(
-            placeholders=(x, w, b),
-            op=original_op,
-            args=(x, w, b, [1, 1], [0, 0], [1, 1], 1, 0, 0, 1.0, 1.0, 0, 1, 1),
         )
         p = CompileTimeTypeDispatchPass()
         gm = cast(PassResult, p(gm)).graph_module

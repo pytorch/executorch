@@ -17,6 +17,7 @@ declare -A CUDA_DRIVER_MAP=(
     ["12.6"]="12.6.3:561.17"
     ["12.8"]="12.8.1:572.61"
     ["12.9"]="12.9.1:576.57"
+    ["13.0"]="13.0.2:"
 )
 
 install_mingw() {
@@ -48,19 +49,22 @@ get_torch_cuda_version() {
 }
 
 install_windows_cuda() {
-    # Get CUDA version from torch
-    TORCH_CUDA_VERSION=$(get_torch_cuda_version)
+    # Use CUDA_VERSION env var if set (from Docker build arg), otherwise query PyTorch
+    if [ -n "${CUDA_VERSION:-}" ]; then
+        echo "Using CUDA version from environment: ${CUDA_VERSION}"
+        CUDA_MAJOR_MINOR=$(echo "${CUDA_VERSION}" | cut -d. -f1,2)
+    else
+        TORCH_CUDA_VERSION=$(get_torch_cuda_version)
 
-    if [ -z "${TORCH_CUDA_VERSION}" ] || [ "${TORCH_CUDA_VERSION}" = "None" ]; then
-        echo "ERROR: Could not detect CUDA version from PyTorch."
-        echo "Make sure PyTorch with CUDA support is installed before running this script."
-        exit 1
+        if [ -z "${TORCH_CUDA_VERSION}" ] || [ "${TORCH_CUDA_VERSION}" = "None" ]; then
+            echo "ERROR: Could not detect CUDA version from PyTorch."
+            echo "Make sure PyTorch with CUDA support is installed or set CUDA_VERSION."
+            exit 1
+        fi
+
+        echo "Detected PyTorch CUDA version: ${TORCH_CUDA_VERSION}"
+        CUDA_MAJOR_MINOR=$(echo "${TORCH_CUDA_VERSION}" | cut -d. -f1,2)
     fi
-
-    echo "Detected PyTorch CUDA version: ${TORCH_CUDA_VERSION}"
-
-    # Extract major.minor version (e.g., "12.8" from "12.8.1" or "12.8")
-    CUDA_MAJOR_MINOR=$(echo "${TORCH_CUDA_VERSION}" | cut -d. -f1,2)
 
     # Look up the full version and driver version
     if [ -z "${CUDA_DRIVER_MAP[${CUDA_MAJOR_MINOR}]}" ]; then
@@ -73,19 +77,26 @@ install_windows_cuda() {
     CUDA_VERSION=$(echo "${CUDA_INFO}" | cut -d: -f1)
     CUDA_DRIVER_VERSION=$(echo "${CUDA_INFO}" | cut -d: -f2)
 
-    echo "Using CUDA ${CUDA_VERSION} with driver ${CUDA_DRIVER_VERSION}"
+    if [ -n "${CUDA_DRIVER_VERSION}" ]; then
+        echo "Using CUDA ${CUDA_VERSION} with driver ${CUDA_DRIVER_VERSION}"
+        CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
+    else
+        echo "Using CUDA ${CUDA_VERSION}"
+        CUDA_INSTALLER="cuda_${CUDA_VERSION}_windows.exe"
+    fi
 
     echo "Installing Windows CUDA toolkit ${CUDA_VERSION}..."
 
     mkdir -p "${INSTALL_DIR}"
     cd "${INSTALL_DIR}"
 
-    CUDA_INSTALLER="cuda_${CUDA_VERSION}_${CUDA_DRIVER_VERSION}_windows.exe"
     CUDA_URL="https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/${CUDA_INSTALLER}"
 
     # Check if already downloaded and extracted
     if [ -d "${INSTALL_DIR}/extracted/cuda_cudart" ]; then
         echo "Windows CUDA toolkit already installed, skipping download..."
+        chmod -R a+rX "${INSTALL_DIR}"
+        chmod -R a+rwX "${INSTALL_DIR}/extracted/cuda_cudart/cudart/lib"
         return 0
     fi
 
@@ -95,8 +106,11 @@ install_windows_cuda() {
     echo "Extracting CUDA toolkit..."
     7z x "${CUDA_INSTALLER}" -o"extracted" -y
 
-    # Fix permissions so ci-user can access the files
+    # Fix permissions so ci-user can access the files. PyTorch Inductor also
+    # needs to write a MinGW import library beside cudart.lib during Windows
+    # cross-compilation.
     chmod -R a+rX "${INSTALL_DIR}"
+    chmod -R a+rwX "${INSTALL_DIR}/extracted/cuda_cudart/cudart/lib"
 
     # Clean up installer to save space
     rm -f "${CUDA_INSTALLER}"

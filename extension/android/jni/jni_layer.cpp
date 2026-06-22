@@ -31,6 +31,9 @@
 #ifdef ET_USE_THREADPOOL
 #include <cpuinfo.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#ifdef EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD
+#include <executorch/extension/threadpool/fb/threadpool_use_n_threads.h>
+#endif
 #endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
@@ -58,14 +61,15 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     // Java wrapper currently only supports contiguous tensors.
 
     const auto scalarType = tensor.scalar_type();
-    int jdtype = scalar_type_to_java_dtype.at(scalarType);
     if (scalar_type_to_java_dtype.count(scalarType) == 0) {
       std::stringstream ss;
-      ss << "executorch::aten::Tensor scalar [java] type: " << jdtype
-         << " is not supported on java side";
+      ss << "executorch::aten::Tensor scalar type "
+         << static_cast<int>(scalarType) << " is not supported on java side";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
+    int jdtype = scalar_type_to_java_dtype.at(scalarType);
 
     const auto& tensor_shape = tensor.sizes();
     std::vector<jlong> tensor_shape_vec;
@@ -131,6 +135,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
       ss << "Unknown Tensor jdtype: [" << jdtype << "]";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
     ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
     const jlong dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
@@ -139,6 +144,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
       ss << "Tensor buffer is not direct or has invalid capacity";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
     const size_t elementSize = executorch::runtime::elementSize(scalar_type);
     const jlong expectedElements = static_cast<jlong>(numel);
@@ -153,6 +159,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
          << " (element size bytes: " << elementSize << ")";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
+      return nullptr;
     }
     return from_blob(
         jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
@@ -242,6 +249,10 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
   friend HybridBase;
   std::unique_ptr<Module> module_;
+#if defined(ET_USE_THREADPOOL) && \
+    defined(EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD)
+  int num_threads_{0};
+#endif
 
  public:
   constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/Module;";
@@ -273,8 +284,18 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #else
     auto etdump_gen = nullptr;
 #endif
-    module_ = std::make_unique<Module>(
-        modelPath->toStdString(), load_mode, std::move(etdump_gen));
+    try {
+      module_ = std::make_unique<Module>(
+          modelPath->toStdString(), load_mode, std::move(etdump_gen));
+    } catch (const std::exception& e) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          std::string("Failed to create Module: ") + e.what());
+    } catch (...) {
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(Error::Internal),
+          "Failed to create Module: unknown native error");
+    }
 
 #ifdef ET_USE_THREADPOOL
     // Default to using cores/2 threadpool threads. The long-term plan is to
@@ -284,14 +305,18 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     // Based on testing, this is almost universally faster than using all
     // cores, as efficiency cores can be quite slow. In extreme cases, using
     // all cores can be 10x slower than using cores/2.
+    int thread_count =
+        numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
+#ifdef EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD
+    num_threads_ = thread_count;
+#else
     auto threadpool = executorch::extension::threadpool::get_threadpool();
     if (threadpool) {
-      int thread_count =
-          numThreads != 0 ? numThreads : cpuinfo_get_processors_count() / 2;
       if (thread_count > 0) {
         threadpool->_unsafe_reset_threadpool(thread_count);
       }
     }
+#endif
 #endif
   }
 
@@ -359,16 +384,31 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         tensors.emplace_back(JEValue::JEValueToTensorImpl(jevalue));
         evalues.emplace_back(tensors.back());
       } else if (typeCode == JEValue::kTypeCodeInt) {
-        int64_t value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toIntMethod =
+            JEValue::javaClassStatic()->getMethod<jlong()>("toInt");
+        evalues.emplace_back(static_cast<int64_t>(toIntMethod(jevalue)));
       } else if (typeCode == JEValue::kTypeCodeDouble) {
-        double value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toDoubleMethod =
+            JEValue::javaClassStatic()->getMethod<jdouble()>("toDouble");
+        evalues.emplace_back(static_cast<double>(toDoubleMethod(jevalue)));
       } else if (typeCode == JEValue::kTypeCodeBool) {
-        bool value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toBoolMethod =
+            JEValue::javaClassStatic()->getMethod<jboolean()>("toBool");
+        evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
+      } else {
+        std::stringstream ss;
+        ss << "Unsupported input EValue type code: " << typeCode;
+        jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(Error::InvalidArgument), ss.str());
+        return {};
       }
     }
+
+#if defined(ET_USE_THREADPOOL) && \
+    defined(EXECUTORCH_HAS_THREADPOOL_USE_N_THREADS_GUARD)
+    ::executorch::extension::threadpool::UseNThreadsThreadPoolGuard
+        thread_pool_guard(num_threads_);
+#endif
 
 #ifdef EXECUTORCH_ANDROID_PROFILING
     auto start = std::chrono::high_resolution_clock::now();
@@ -442,34 +482,15 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   }
 
   jboolean etdump() {
-#ifdef EXECUTORCH_ANDROID_PROFILING
-    executorch::etdump::ETDumpGen* etdumpgen =
-        (executorch::etdump::ETDumpGen*)module_->event_tracer();
-    auto etdump_data = etdumpgen->get_etdump_data();
+    return etdump_to_path("/data/local/tmp/result.etdump");
+  }
 
-    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
-      int etdump_file =
-          open("/data/local/tmp/result.etdump", O_WRONLY | O_CREAT, 0644);
-      if (etdump_file == -1) {
-        ET_LOG(Error, "Cannot create result.etdump error: %d", errno);
-        return false;
-      }
-      ssize_t bytes_written =
-          write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
-      if (bytes_written == -1) {
-        ET_LOG(Error, "Cannot write result.etdump error: %d", errno);
-        return false;
-      } else {
-        ET_LOG(Info, "ETDump written %d bytes to file.", bytes_written);
-      }
-      close(etdump_file);
-      free(etdump_data.buf);
-      return true;
-    } else {
-      ET_LOG(Error, "No ETDump data available!");
+  jboolean etdumpTo(facebook::jni::alias_ref<jstring> outputPath) {
+    if (!outputPath) {
+      ET_LOG(Error, "etdumpTo called with null outputPath");
+      return false;
     }
-#endif
-    return false;
+    return etdump_to_path(outputPath->toStdString().c_str());
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getMethods() {
@@ -500,10 +521,24 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> getUsedBackends(
       facebook::jni::alias_ref<jstring> methodName) {
-    auto methodMeta = module_->method_meta(methodName->toStdString()).get();
+    auto method_name = methodName->toStdString();
+    auto methodMetaResult = module_->method_meta(method_name);
+    if (!methodMetaResult.ok()) {
+      std::stringstream ss;
+      ss << "Cannot get method meta for '" << method_name
+         << "' [Native Error: 0x" << std::hex << std::uppercase
+         << static_cast<uint32_t>(methodMetaResult.error()) << "]";
+      jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(methodMetaResult.error()), ss.str());
+      return {};
+    }
+    auto methodMeta = methodMetaResult.get();
     std::unordered_set<std::string> backends;
     for (auto i = 0; i < methodMeta.num_backends(); i++) {
-      backends.insert(methodMeta.get_backend_name(i).get());
+      auto backend_name_result = methodMeta.get_backend_name(i);
+      if (backend_name_result.ok()) {
+        backends.insert(backend_name_result.get());
+      }
     }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret =
@@ -526,10 +561,51 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),
         makeNativeMethod(
             "readLogBufferStaticNative", ExecuTorchJni::readLogBufferStatic),
-        makeNativeMethod("etdump", ExecuTorchJni::etdump),
-        makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
+        makeNativeMethod("etdumpNative", ExecuTorchJni::etdump),
+        makeNativeMethod("etdumpToNative", ExecuTorchJni::etdumpTo),
+        makeNativeMethod("getMethodsNative", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),
     });
+  }
+
+ private:
+  jboolean etdump_to_path(const char* path) {
+#ifdef EXECUTORCH_ANDROID_PROFILING
+    auto* tracer = module_->event_tracer();
+    if (!tracer) {
+      ET_LOG(Error, "ETDump not available: no event tracer attached");
+      return false;
+    }
+    auto* etdumpgen = static_cast<executorch::etdump::ETDumpGen*>(tracer);
+    auto etdump_data = etdumpgen->get_etdump_data();
+
+    if (etdump_data.buf != nullptr && etdump_data.size > 0) {
+      int etdump_file = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      if (etdump_file == -1) {
+        ET_LOG(Error, "Cannot create %s error: %d", path, errno);
+        free(etdump_data.buf);
+        return false;
+      }
+      ssize_t bytes_written =
+          write(etdump_file, (uint8_t*)etdump_data.buf, etdump_data.size);
+      if (bytes_written == -1) {
+        ET_LOG(Error, "Cannot write %s error: %d", path, errno);
+        close(etdump_file);
+        free(etdump_data.buf);
+        return false;
+      } else {
+        ET_LOG(Info, "ETDump written %zd bytes to %s.", bytes_written, path);
+      }
+      close(etdump_file);
+      free(etdump_data.buf);
+      return true;
+    } else {
+      ET_LOG(Error, "No ETDump data available!");
+    }
+#else
+    (void)path;
+#endif
+    return false;
   }
 };
 } // namespace executorch::extension

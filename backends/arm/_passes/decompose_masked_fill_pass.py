@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,7 +8,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -34,17 +34,19 @@ def _get_decomposition(op) -> tuple:
     raise RuntimeError(f"Unable to get decomposition for op {op}")
 
 
-class DecomposeMaskedFillPass(ArmPass):
-    """
-    Masked fill takes in a boolean mask, a tensor and a scalar value.
+class DecomposeMaskedFillPass(ArmOpTargetedPass):
+    """Masked fill takes in a boolean mask, a tensor and a scalar value.
+
     Fills the tensor with the scalar value according to the boolean mask.
     Decomposed to a where and a full_like operator.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ConvertFullLikeToFullPass}
+    target_ops = aten_ops + edge_ops
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in (*aten_ops, *edge_ops):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         x, mask, scalar = args

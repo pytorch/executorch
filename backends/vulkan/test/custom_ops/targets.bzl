@@ -6,14 +6,13 @@ load(
     "vulkan_spv_shader_lib",
 )
 
-def define_custom_op_test_binary(custom_op_name, extra_deps = [], src_file = None):
+def define_custom_op_test_binary(custom_op_name, extra_deps = [], src_file = None, include_torch = False):
     deps_list = [
         ":prototyping_utils",
         ":operator_implementations",
         ":custom_ops_shaderlib",
         "//executorch/backends/vulkan:vulkan_graph_runtime",
-        runtime.external_dep_location("libtorch"),
-    ] + extra_deps
+    ] + ([runtime.external_dep_location("libtorch")] if include_torch else []) + extra_deps
 
     src_file_str = src_file if src_file else "{}.cpp".format(custom_op_name)
 
@@ -86,14 +85,26 @@ def define_common_targets(is_fbcode = False):
         link_whole = True,
     )
 
-    define_custom_op_test_binary("add")
-    define_custom_op_test_binary("q8csw_linear")
-    define_custom_op_test_binary("q8csw_conv2d")
-    define_custom_op_test_binary("choose_qparams_per_row")
-    define_custom_op_test_binary("q4gsw_linear")
+    define_custom_op_test_binary("test_add")
+    define_custom_op_test_binary("test_q8csw_linear")
+    define_custom_op_test_binary("test_q8csw_conv2d")
+    define_custom_op_test_binary("test_choose_qparams_per_row")
+    define_custom_op_test_binary("test_q4gsw_linear")
     define_custom_op_test_binary("test_q8ta_qdq")
     define_custom_op_test_binary("test_q8ta_clone")
+    define_custom_op_test_binary("test_q8ta_binary")
     define_custom_op_test_binary("test_q8ta_conv2d")
     define_custom_op_test_binary("test_q8ta_conv2d_pw")
     define_custom_op_test_binary("test_q8ta_conv2d_dw")
-    define_custom_op_test_binary("q8ta_q8ta_q8to_add")
+    define_custom_op_test_binary("test_q8ta_linear")
+    define_custom_op_test_binary("test_q8ta_conv2d_transposed")
+    define_custom_op_test_binary("test_q8ta_pixel_shuffle")
+    define_custom_op_test_binary("test_q8ta_unary")
+    define_custom_op_test_binary("test_mm")
+    define_custom_op_test_binary("test_conv2d")
+    define_custom_op_test_binary("test_conv2d_pw")
+    define_custom_op_test_binary("test_conv2d_dw")
+    define_custom_op_test_binary("test_embedding_q4gsw")
+    define_custom_op_test_binary("test_conv1d_pw")
+    define_custom_op_test_binary("test_conv1d_dw")
+    define_custom_op_test_binary("test_fpa_q4gsw_linear")

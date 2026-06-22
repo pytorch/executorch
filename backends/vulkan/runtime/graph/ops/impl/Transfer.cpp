@@ -103,7 +103,7 @@ void add_transfer_copy_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
       // Resize Args
       resize_args,
       // Resizing Logic

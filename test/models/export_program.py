@@ -13,7 +13,6 @@ import sys
 from typing import Any, Dict, List, Type
 
 import torch
-from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import ExecutorchProgramManager
 from torch import nn
@@ -140,7 +139,7 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
 
     @staticmethod
     def get_export_kwargs():
-        return {"capture_config": CaptureConfig(pt2_mode=True, enable_aot=True)}
+        return {}
 
 
 class ModuleAddMul(torch.nn.Module):

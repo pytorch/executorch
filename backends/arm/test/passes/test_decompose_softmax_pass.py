@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,9 +14,7 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 
 class Softmax(torch.nn.Module):
-    """
-    Basic torch.nn.softmax layer model
-    """
+    """Basic torch.nn.softmax layer model."""
 
     def __init__(self):
         super(Softmax, self).__init__()
@@ -31,9 +29,7 @@ class Softmax(torch.nn.Module):
 
 
 class SoftmaxLog(torch.nn.Module):
-    """
-    Basic torch.nn.log_softmax layer model
-    """
+    """Basic torch.nn.log_softmax layer model."""
 
     def __init__(self):
         super(SoftmaxLog, self).__init__()
@@ -99,5 +95,38 @@ def test_decompose_softmax_tosa_FP_log():
             "executorch_exir_dialects_edge__ops_aten__log_softmax_default"
         ],
         pass_list=[DecomposeSoftmaxPass],
+    )
+    pipeline.run()
+
+
+class _DecomposeSoftmaxPassSkipSafe(DecomposeSoftmaxPass):
+    """DecomposeSoftmaxPass with skip_safe_softmax=True for testing."""
+
+    def __init__(self, **kwargs):
+        super().__init__(skip_safe_softmax=True, **kwargs)
+
+
+def test_decompose_softmax_tosa_FP_skip_safe_softmax():
+    """Verify skip_safe_softmax=True still decomposes regular softmax using the
+    stable algorithm (with amax and sub).
+    """
+    module = Softmax()
+    pipeline = PassPipeline[input_t](
+        module,
+        module.get_inputs(),
+        quantize=False,
+        ops_before_pass={
+            "executorch_exir_dialects_edge__ops_aten__softmax_default": 1,
+        },
+        ops_after_pass={
+            "executorch_exir_dialects_edge__ops_aten_amax_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1,
+            "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+            "executorch_exir_dialects_edge__ops_aten_exp_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_reciprocal_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+        },
+        ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten__softmax_default"],
+        pass_list=[_DecomposeSoftmaxPassSkipSafe],
     )
     pipeline.run()

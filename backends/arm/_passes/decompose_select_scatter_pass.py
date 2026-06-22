@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_int64_const_ops_to_int32 import (
     ConvertInt64ConstOpsToInt32Pass,
 )
@@ -44,9 +44,10 @@ def get_select_scatter_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get select_scatter decomposition for op {op}")
 
 
-class DecomposeSelectScatterPass(ArmPass):
-    """select_scatter is decomposed into other ops during export, however this is only
-    suppported for the fp profile and for the int profile we need to decompose it here.
+class DecomposeSelectScatterPass(ArmOpTargetedPass):
+    """select_scatter is decomposed into other ops during export, however this
+    is only suppported for the fp profile and for the int profile we need to
+    decompose it here.
 
     The decomposition is as follows:
     - Build a boolean mask the size of x
@@ -57,15 +58,17 @@ class DecomposeSelectScatterPass(ArmPass):
         where(mask, expanded_source, x)
 
     This reflects the decomposition for the fp profile implemented in torch._refs
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
         ReplaceScalarWithTensorByProfilePass,
         ConvertInt64ConstOpsToInt32Pass,
     }
+    target_ops = edge_scatter_ops + aten_scatter_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_scatter_ops + aten_scatter_ops):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         (

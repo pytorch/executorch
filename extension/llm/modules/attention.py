@@ -302,11 +302,9 @@ class MultiHeadAttention(nn.Module):
             k, v = calculate_kv(y)
         else:
             # Expecting the k, v returning here to be the same size of self.kv_cache
-            # In eager, we expect this predicate to specialize. In export, this will
-            # become a SymBool so it's not specialized.
-            k, v, cache_pos = torch.cond(
-                torch.isnan(y).all().item(), true_fn, false_fn, (y,)
-            )
+            # In eager, we expect this predicate to specialize. In export, keep it
+            # as a tensor predicate so AOTI does not introduce unbacked symbols.
+            k, v, cache_pos = torch.cond(torch.isnan(y).all(), true_fn, false_fn, (y,))
             # Update key-value cache
             self.kv_cache.k_cache.copy_(k)
             self.kv_cache.v_cache.copy_(v)
@@ -375,7 +373,7 @@ class SDPA(nn.Module):
             is_causal=self.kv_cache is None and mask is None and self.is_causal,
         )
         # Reshape the output to be the same shape as the input
-        return output.transpose(1, 2).contiguous().view(bsz, seq_len, -1)
+        return output.transpose(1, 2).reshape(bsz, seq_len, -1)
 
 
 def _replace_mha_with_inference_mha(module: torch.nn.Module) -> None:

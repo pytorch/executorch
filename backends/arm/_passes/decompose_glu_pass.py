@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -20,7 +20,9 @@ aten_glu = torch.ops.aten.glu.default
 
 
 def get_ops(op):
-    """Returns the appropriate operator functions based on the input operator."""
+    """Returns the appropriate operator functions based on the input
+    operator.
+    """
     if op == edge_glu:
         return (
             exir_ops.edge.aten.mul.Tensor,
@@ -37,13 +39,14 @@ def get_ops(op):
         raise ValueError(f"Unsupported operator: {op}")
 
 
-class DecomposeGluPass(ArmPass):
+class DecomposeGluPass(ArmOpTargetedPass):
     """Decomposes the GLU operator into hadamard product and sigmoid."""
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
+    target_ops = (edge_glu, aten_glu)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_glu, aten_glu] or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         hadamard_prod, sigmoid, slice_op = get_ops(op)

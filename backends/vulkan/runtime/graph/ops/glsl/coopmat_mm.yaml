@@ -1,0 +1,39 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Unified KHR Cooperative Matrix MM kernel (linear + matmul).
+# Three shader variants over two weight layouts:
+#   matmul_coopmat       row_major weight, no bias  (aten.mm runtime mat2)
+#   linear_coopmat       prepacked weight, no bias  (aten.linear)
+#   linear_coopmat_bias  prepacked weight, +bias    (aten.linear with bias)
+
+coopmat_mm:
+  parameter_names_with_default_values:
+    DTYPE: float
+    PRECISION: highp
+    WEIGHT_LAYOUT: row_major
+    HAS_BIAS: false
+    MMA_M: 16
+    MMA_N: 16
+    MMA_K: 16
+    WG_TILE_M: 64
+    WG_TILE_N: 64
+    WG_TILE_K: 32
+    SG_GRID_X: 2
+    SG_GRID_Y: 2
+    SUBGROUP_SIZE: 64
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: matmul_coopmat
+      WEIGHT_LAYOUT: row_major
+    - NAME: linear_coopmat
+      WEIGHT_LAYOUT: prepacked
+    - NAME: linear_coopmat_bias
+      WEIGHT_LAYOUT: prepacked
+      HAS_BIAS: true

@@ -7,16 +7,16 @@
 # pyre-strict
 
 import inspect
+import operator
 import unittest
 from typing import Callable
 
 import torch
-from executorch.backends.cadence.aot.graph_builder import (
-    GraphBuilder,
-    single_op_builder,
-)
 from executorch.backends.cadence.aot.quantizer import quantizer as quantizer_module
-from executorch.backends.cadence.aot.quantizer.patterns import AddmmPattern
+from executorch.backends.cadence.aot.quantizer.patterns import (
+    AddmmPattern,
+    Conv2dBNReluPattern0,
+)
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceAtenQuantizer,
     CadenceDefaultQuantizer,
@@ -35,6 +35,7 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
     qconfig_A8W8,
     qconfig_A8W8sym,
 )
+from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.pass_base import NodeMetadata
 from parameterized import parameterized
 from torch._ops import OpOverload
@@ -42,6 +43,7 @@ from torchao.quantization.pt2e.quantizer.quantizer import (
     Q_ANNOTATION_KEY,
     QuantizationAnnotation,
     QuantizationSpec,
+    SharedQuantizationSpec,
 )
 
 # Type alias for graph builder functions.
@@ -206,7 +208,35 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         # Use None to skip comparison for bias since it's a DerivedQuantizationSpec
         [None, qconfig_A8W8.input_activation, qconfig_A8W8.weight],
     ),
+    (
+        "default_max_pool2d_A8W8",
+        lambda self: self._build_max_pool2d_graph(),
+        CadenceDefaultQuantizer(),
+        torch.ops.aten.max_pool2d_with_indices.default,
+        # Output uses SharedQuantizationSpec (shares qparams with input)
+        SharedQuantizationSpec,
+        # For max_pool2d: only input_activation (no weights, order-preserving op)
+        [qconfig_A8W8.input_activation],
+    ),
     # CadenceFusedConvReluQuantizer test cases
+    (
+        "fused_add_relu_A8W8",
+        lambda self: self._build_add_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8.output_activation,
+        # For fused add+relu: both inputs are activations from add node
+        [qconfig_A8W8.input_activation, qconfig_A8W8.input_activation],
+    ),
+    (
+        "fused_conv1d_relu_A8W8sym",
+        lambda self: self._build_conv1d_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8sym.output_activation,
+        # For fused conv1d+relu: [input_activation, weight] from conv1d node
+        [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
+    ),
     (
         "fused_conv2d_relu_A8W8sym",
         lambda self: self._build_conv2d_relu_graph(),
@@ -214,6 +244,15 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         torch.ops.aten.relu.default,
         qconfig_A8W8sym.output_activation,
         # For fused conv2d+relu: [input_activation, weight] from conv2d node
+        [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
+    ),
+    (
+        "fused_conv1d_bn_relu_A8W8sym",
+        lambda self: self._build_conv1d_bn_relu_graph(),
+        CadenceFusedConvReluQuantizer(),
+        torch.ops.aten.relu.default,
+        qconfig_A8W8sym.output_activation,
+        # For fused conv1d+bn+relu: [input_activation, weight] from conv1d node
         [qconfig_A8W8sym.input_activation, qconfig_A8W8sym.weight],
     ),
 ]
@@ -457,6 +496,95 @@ class QuantizerAnnotationTest(unittest.TestCase):
         self.assertEqual(len(addmm_nodes), 1, "Should find exactly one addmm node")
         return gm, addmm_nodes[0]
 
+    def _build_max_pool2d_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with max_pool2d_with_indices followed by getitem[0].
+
+        Returns:
+            A tuple of (graph_module, getitem_node, max_pool_node).
+            The getitem_node is where the output annotation is placed.
+            The max_pool_node is where the input annotation is placed.
+        """
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 8, 8))
+        max_pool = builder.call_operator(
+            op=torch.ops.aten.max_pool2d_with_indices.default,
+            args=(x, [2, 2], [2, 2], [0, 0], [1, 1], False),
+            meta=NodeMetadata(
+                {
+                    "source_fn_stack": [
+                        (
+                            "max_pool2d_with_indices",
+                            torch.ops.aten.max_pool2d_with_indices.default,
+                        )
+                    ]
+                }
+            ),
+        )
+        getitem = builder.call_operator(
+            op=operator.getitem,
+            args=(max_pool, 0),
+        )
+        builder.output([getitem])
+        gm = builder.get_graph_module()
+
+        max_pool_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.max_pool2d_with_indices.default,
+        )
+        self.assertEqual(len(max_pool_nodes), 1)
+        getitem_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=operator.getitem,
+        )
+        self.assertEqual(len(getitem_nodes), 1)
+        return gm, getitem_nodes[0], max_pool_nodes[0]
+
+    def _build_add_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with an add followed by relu (fused pattern).
+
+        Returns:
+            A tuple of (graph_module, relu_node, add_node).
+            The relu_node is the target node where the annotation is placed.
+            The add_node is the input source node whose args contain the quantized inputs.
+        """
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 10))
+        y = builder.placeholder("y", torch.randn(1, 10))
+        add = builder.call_operator(
+            op=torch.ops.aten.add.Tensor,
+            args=(x, y),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("add", torch.ops.aten.add.Tensor)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(add,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.relu.default,
+        )
+        self.assertEqual(len(relu_nodes), 1, "Should find exactly one relu node")
+
+        add_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.add.Tensor,
+        )
+        self.assertEqual(len(add_nodes), 1, "Should find exactly one add node")
+
+        return gm, relu_nodes[0], add_nodes[0]
+
     def _build_conv2d_relu_graph(
         self,
     ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
@@ -503,6 +631,110 @@ class QuantizerAnnotationTest(unittest.TestCase):
 
         return gm, relu_nodes[0], conv2d_nodes[0]
 
+    def _build_conv1d_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with a conv1d followed by relu (fused pattern).
+
+        Returns:
+            A tuple of (graph_module, relu_node, conv_node).
+            The relu_node is the target node where the annotation is placed.
+            The conv_node is the input source node whose args contain the quantized inputs.
+        """
+        builder = GraphBuilder()
+        # Input shape: (batch, in_channels, length)
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        # Weight shape: (out_channels, in_channels, kernel_size)
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(conv1d,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.relu.default,
+        )
+        self.assertEqual(len(relu_nodes), 1, "Should find exactly one relu node")
+
+        conv1d_nodes = gm.graph.find_nodes(
+            op="call_function",
+            target=torch.ops.aten.conv1d.default,
+        )
+        self.assertEqual(len(conv1d_nodes), 1, "Should find exactly one conv1d node")
+
+        return gm, relu_nodes[0], conv1d_nodes[0]
+
+    def _build_conv1d_bn_relu_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node, torch.fx.Node]:
+        """Build a graph with conv1d + batch_norm + relu (3-op fused pattern)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 3, 10))
+        weight = builder.placeholder("weight", torch.randn(6, 3, 3))
+        bn_weight = builder.placeholder("bn_weight", torch.randn(6))
+        bn_bias = builder.placeholder("bn_bias", torch.randn(6))
+        bn_running_mean = builder.placeholder("bn_running_mean", torch.randn(6))
+        bn_running_var = builder.placeholder(
+            "bn_running_var", torch.abs(torch.randn(6))
+        )
+        conv1d = builder.call_operator(
+            op=torch.ops.aten.conv1d.default,
+            args=(x, weight),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv1d", torch.ops.aten.conv1d.default)]}
+            ),
+        )
+        batch_norm = builder.call_operator(
+            op=torch.ops.aten.batch_norm.default,
+            args=(
+                conv1d,
+                bn_weight,
+                bn_bias,
+                bn_running_mean,
+                bn_running_var,
+                False,
+                0.1,
+                1e-5,
+                False,
+            ),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("batch_norm", torch.ops.aten.batch_norm.default)]}
+            ),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(batch_norm,),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("relu", torch.ops.aten.relu.default)]}
+            ),
+        )
+        builder.output([relu])
+        gm = builder.get_graph_module()
+
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.relu.default
+        )
+        self.assertEqual(len(relu_nodes), 1)
+        conv1d_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv1d.default
+        )
+        self.assertEqual(len(conv1d_nodes), 1)
+
+        return gm, relu_nodes[0], conv1d_nodes[0]
+
     @parameterized.expand(QUANTIZER_ANNOTATION_TEST_CASES)
     def test_quantizer_annotation(
         self,
@@ -532,7 +764,13 @@ class QuantizerAnnotationTest(unittest.TestCase):
         # Verify output annotation (always on the output node)
         output_annotation: QuantizationAnnotation = output_node.meta[Q_ANNOTATION_KEY]
         self.assertTrue(output_annotation._annotated)
-        self.assertEqual(output_annotation.output_qspec, expected_output_qspec)
+        if isinstance(expected_output_qspec, type) and issubclass(
+            expected_output_qspec, SharedQuantizationSpec
+        ):
+            # For order-preserving ops like max_pool2d, verify output uses SharedQuantizationSpec
+            self.assertIsInstance(output_annotation.output_qspec, expected_output_qspec)
+        else:
+            self.assertEqual(output_annotation.output_qspec, expected_output_qspec)
 
         # Verify input annotations (on the input source node, which may differ for fused patterns)
         input_annotation: QuantizationAnnotation = input_source_node.meta[
@@ -608,6 +846,8 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.conv2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.matmul.default,
+            torch.ops.aten.max_pool2d_with_indices.default,
+            torch.ops.aten.max_pool2d.default,
             torch.ops.aten.relu.default,
             torch.ops.aten.relu_.default,
         ]
@@ -643,6 +883,92 @@ class QuantizerOpsPreserveTest(unittest.TestCase):
             torch.ops.aten.rms_norm.default,
         ]
         self.assertCountEqual(actual, expected)
+
+
+class ConvBNReluFusionTest(unittest.TestCase):
+    """Tests for ConvBNReluBasePattern.fuse() correctness.
+
+    A BatchNorm sitting between conv and relu must be folded by an upstream
+    float-level pass (torchao prepare_pt2e for PTQ, FuseQATConvBN for QAT)
+    before quantizer fusion runs. If a real batch_norm survives to fuse(),
+    folding it into the already-quantized conv is not supported here, so fuse()
+    must decline rather than silently drop the BatchNorm affine (which would
+    corrupt numerics).
+    """
+
+    def _build_dq_conv_bn_relu_q_graph(
+        self,
+    ) -> tuple[torch.fx.GraphModule, torch.fx.Node]:
+        builder = GraphBuilder()
+        x_q = builder.placeholder(
+            "x_q", torch.randint(-128, 127, (1, 3, 8, 8), dtype=torch.int8)
+        )
+        w_q = builder.placeholder(
+            "w_q", torch.randint(-127, 127, (6, 3, 3, 3), dtype=torch.int8)
+        )
+        bn_weight = builder.placeholder("bn_weight", torch.randn(6))
+        bn_bias = builder.placeholder("bn_bias", torch.randn(6))
+        bn_mean = builder.placeholder("bn_mean", torch.randn(6))
+        bn_var = builder.placeholder("bn_var", torch.rand(6) + 1.0)
+
+        dq_input = builder.call_operator(
+            op=torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x_q, 0.1, 0, -128, 127, torch.int8),
+        )
+        dq_weight = builder.call_operator(
+            op=torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            args=(w_q, 0.05, 0, -127, 127, torch.int8),
+        )
+        conv = builder.call_operator(
+            op=torch.ops.aten.conv2d.default,
+            args=(dq_input, dq_weight),
+            meta=NodeMetadata(
+                {"source_fn_stack": [("conv2d", torch.ops.aten.conv2d.default)]}
+            ),
+        )
+        bn = builder.call_operator(
+            op=torch.ops.aten.batch_norm.default,
+            args=(conv, bn_weight, bn_bias, bn_mean, bn_var, False, 0.1, 1e-5, True),
+        )
+        relu = builder.call_operator(
+            op=torch.ops.aten.relu.default,
+            args=(bn,),
+        )
+        # out_zero_point == -128 keeps check_out_zero_point_is_min_range happy so
+        # fuse() would proceed to fuse_conv if it did not bail on the BatchNorm.
+        q = builder.call_operator(
+            op=torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            args=(relu, 0.2, -128, -128, 127, torch.int8),
+        )
+        builder.output([q])
+        gm = builder.get_graph_module()
+
+        conv_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.conv2d.default
+        )
+        self.assertEqual(len(conv_nodes), 1, "Should find exactly one conv2d node")
+        return gm, conv_nodes[0]
+
+    def test_fuse_declines_when_batchnorm_present(self) -> None:
+        gm, conv_node = self._build_dq_conv_bn_relu_q_graph()
+
+        result = Conv2dBNReluPattern0().fuse(gm, conv_node)
+
+        # A real BatchNorm survived to fusion time: fuse() must decline rather
+        # than fold it away into a quantized conv.
+        self.assertIsNone(result)
+        bn_nodes = gm.graph.find_nodes(
+            op="call_function", target=torch.ops.aten.batch_norm.default
+        )
+        self.assertEqual(len(bn_nodes), 1, "BatchNorm must not be dropped")
+        fused_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function" and "quantized_conv" in str(n.target)
+        ]
+        self.assertEqual(
+            len(fused_nodes), 0, "conv must not be fused while BatchNorm is present"
+        )
 
 
 if __name__ == "__main__":

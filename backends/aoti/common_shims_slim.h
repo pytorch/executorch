@@ -76,6 +76,7 @@ AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int64();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_uint8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
 
 // ============================================================
@@ -91,6 +92,14 @@ AOTI_SHIM_EXPORT int32_t aoti_torch_device_type_cuda();
 
 AOTI_SHIM_EXPORT bool aoti_torch_grad_mode_is_enabled();
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled);
+
+// Error reporting helper emitted by newer AOTInductor wrappers.
+AOTI_SHIM_EXPORT void aoti_torch_check(
+    bool cond,
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg);
 
 } // extern "C"
 } // namespace aoti

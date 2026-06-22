@@ -46,7 +46,9 @@ def get_docstring(obj) -> str:
 
     lines = docstring.split("\n")
     for line in lines:
-        if ":" in line and line.startswith(" "):
+        # Only first-level arg lines should become bullets.
+        is_arg_line = line.startswith("    ") and not line.startswith("        ")
+        if ":" in line and is_arg_line:
             new_line = line.strip()
             pos = new_line.index(":")
             new_line = f"- **{new_line[:pos]}**" + new_line[pos:]
@@ -123,8 +125,8 @@ def generate_document(job: DocumentationJob):
 
     content = content.replace(job.placeholder, job.replacement_text)
 
-    # Remove multiple new lines at end of document if it exists
-    if content.endswith("\n\n"):
+    # Normalize generated docs to a single trailing newline.
+    while content.endswith("\n\n"):
         content = content.removesuffix("\n")
 
     with open(job.output_path, "w") as f:
@@ -135,7 +137,7 @@ def generate_ethos_u_docs():
     """Generates documentation for the Ethos-U components in the backend."""
     compilespec_string = get_class_docstring(
         EthosUCompileSpec,
-        ("DebugMode", "to_list", "from_list", "from_list_hook", "validate"),
+        ("DebugMode", "to_list", "from_list"),
     )
     partitioner_string = get_class_docstring(EthosUPartitioner)
     quantizer_string = get_class_docstring(
@@ -190,7 +192,7 @@ def generate_vgf_docs():
     """Generates documentation for the VGF components in the backend."""
     compilespec_string = get_class_docstring(
         VgfCompileSpec,
-        ("DebugMode", "to_list", "from_list", "from_list_hook", "validate"),
+        ("DebugMode", "to_list", "from_list"),
     )
     partitioner_string = get_class_docstring(VgfPartitioner)
     quantizer_string = get_class_docstring(

@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
 from typing import Any, Dict, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -59,6 +58,7 @@ QNN_QUANT_TYPE_MAP = {
 }
 QNN_TENSOR_TYPE_MAP = {
     torch.bool: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
+    torch.float16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_16,
     torch.float32: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     # Note that there is no float64 tensor data type in Qnn.
     torch.float64: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
@@ -69,6 +69,7 @@ QNN_TENSOR_TYPE_MAP = {
     torch.uint8: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_8,
     torch.uint16: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
     torch.uint32: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+    bool: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
     float: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     int: PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
 }
@@ -97,6 +98,15 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
 
+q_dq_map = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+}
+
 
 class NodeVisitor:
     """
@@ -108,10 +118,19 @@ class NodeVisitor:
         external_ids,
         edge_program: torch.export.ExportedProgram,
         enable_tensor_dump,
+        is_qnn_partitioner=True,
     ) -> None:
+        # is_qnn_partitioner: True for the real qnn_partitioner / qnn_preprocess
+        # flows, where external_ids is built from the program being processed so
+        # graph-input ids resolve correctly.
+        # Set False for lpai_partition_fallback_support pass, where constructor
+        # takes an older exported_program whose node objects differ from the
+        # live graph; the input_{id} naming would mismatch there, so we skip
+        # it during op validation.
         self.external_ids = external_ids or {}
         self.edge_program = edge_program
         self.enable_tensor_dump = enable_tensor_dump
+        self.is_qnn_partitioner = is_qnn_partitioner
 
     def get_node(self, node):
         """
@@ -150,8 +169,12 @@ class NodeVisitor:
     def make_qnn_per_block_config(self, node: torch.fx.Node, quant_attrs: Dict):
         import math
 
-        quant_config = copy.deepcopy(quant_attrs)
-        scales, scale_offset, quantized_scales = quant_attrs[QCOM_SCALE], [], []
+        quant_config = {
+            QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
+            QCOM_QUANT_MIN: quant_attrs[QCOM_QUANT_MIN],
+            QCOM_QUANT_MAX: quant_attrs[QCOM_QUANT_MAX],
+        }
+        scales = quant_attrs[QCOM_SCALE]
         # channel in observers defaults to zero
         num_channels = node.meta["val"].shape[0]
         user_0 = self.get_first_user(node)
@@ -169,17 +192,23 @@ class NodeVisitor:
             PyQnnManager.Qnn_BlockwiseExpansionBlockScaleStorageType_t.QNN_BLOCKWISE_EXPANSION_BITWIDTH_SCALE_STORAGE_8
         )
 
+        scale_offset_arr = np.empty(
+            num_channels, dtype=[("scale", np.float32), ("offset", np.int32)]
+        )
+        # move channel axis to dim 0 for transpose_conv case
+        candidates = scales if ch_axis == 0 else scales.transpose(0, 1)
+        candidates = candidates.reshape(num_channels, -1)
+        # find max scale per channel
+        max_scales = candidates.amax(dim=-1) / num_steps
+        # quantize scales per channel
+        q_scales = torch.clamp(
+            input=torch.round(input=candidates / max_scales.unsqueeze(-1)),
+            min=1,
+            max=2**bitwidth_of_scale,
+        ).to(quant_scales_dtype)
+        # symmetric quantization is required
         for ch in range(num_channels):
-            candidates = scales[ch] if ch_axis == 0 else scales[:, ch, ...]
-            max_scale = candidates.reshape(1, -1).amax(dim=-1) / num_steps
-            q_scales = torch.clamp(
-                input=torch.round(input=candidates / max_scale),
-                min=1,
-                max=2**bitwidth_of_scale,
-            ).to(quant_scales_dtype)
-            quantized_scales.append(q_scales)
-            # symmetric quantization is required
-            scale_offset.append(PyQnnManager.Qnn_ScaleOffset_t(max_scale, 0))
+            scale_offset_arr[ch] = (float(max_scales[ch]), 0)
 
         # skip dequantize op, e.g. frozen_param -> dq -> conv2d
         user_0 = self.get_first_user(node)
@@ -194,9 +223,9 @@ class NodeVisitor:
         else:
             raise AttributeError("undetermined axis for block quantization")
 
-        quant_config[QCOM_NUM_BLOCKS_PER_AXIS] = quantized_scales[0].shape.numel()
-        quant_config[QCOM_BLOCK_SCALE_OFFSET] = scale_offset
-        quant_config[QCOM_BLOCK_SCALES] = torch.cat(quantized_scales).detach().numpy()
+        quant_config[QCOM_NUM_BLOCKS_PER_AXIS] = q_scales.shape[1]
+        quant_config[QCOM_BLOCK_SCALE_OFFSET] = scale_offset_arr
+        quant_config[QCOM_BLOCK_SCALES] = q_scales.flatten().detach().numpy()
         # e.g. if use 16 bit for quantized scales, we need to expand 16 - 4 = 12 bits
         quant_config[QCOM_BLOCK_SCALE_BITWIDTH] = (
             int(math.log2(torch.iinfo(quant_scales_dtype).max + 1)) - bitwidth_of_scale
@@ -208,7 +237,11 @@ class NodeVisitor:
         )
 
     def make_qnn_per_channel_config(self, node: torch.fx.Node, quant_attrs: Dict):
-        quant_config = copy.deepcopy(quant_attrs)
+        quant_config = {
+            QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
+            QCOM_QUANT_MAX: quant_attrs[QCOM_QUANT_MAX],
+            QCOM_QUANT_MIN: quant_attrs[QCOM_QUANT_MIN],
+        }
 
         scales = quant_attrs[QCOM_SCALES]
         zero_points = quant_attrs[QCOM_ZERO_POINTS]
@@ -216,41 +249,55 @@ class NodeVisitor:
             zero_points
         ), f"Per channel encoding of node {node}, has different size for scales {len(scales)} and zero_points {len(zero_points)}"
 
-        scale_offset = []
+        scale_offset_arr = np.empty(
+            len(scales), dtype=[("scale", np.float32), ("offset", np.int32)]
+        )
         for i in range(len(scales)):
-            # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
-            scale_offset.append(
-                PyQnnManager.Qnn_ScaleOffset_t(scales[i], -zero_points[i])
-            )
+            scale_offset_arr[i] = (float(scales[i]), int(-zero_points[i]))
 
         # skip dequantize op, e.g. frozen_param -> dq -> conv2d
         user_0 = self.get_first_user(node)
         # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
-        if user_0.target == exir_ops.edge.aten.convolution.default:
+        if user_0.target in {
+            exir_ops.edge.aten.convolution.default,
+        }:
             quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
         else:
             quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
 
-        quant_config[QCOM_SCALE_OFFSET] = scale_offset
-        # special case for 4 bits
-        if (
-            quant_config[QCOM_DTYPE] == torch.int8
-            and quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15
-        ):
-            quant_config[QCOM_BITWIDTH] = 4
-            return (
-                PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
-                quant_config,
-            )
+        quant_config[QCOM_SCALE_OFFSET] = scale_offset_arr
+        if quant_config[QCOM_DTYPE] == torch.int8:
+            if quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 3:
+                quant_config[QCOM_BITWIDTH] = 2
+                return (
+                    PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+                    quant_config,
+                )
+            elif quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15:
+                quant_config[QCOM_BITWIDTH] = 4
+                return (
+                    PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+                    quant_config,
+                )
         return (
             PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
             quant_config,
         )
 
     def make_qnn_per_tensor_config(self, quant_attrs: Dict):
-        quant_config = copy.deepcopy(quant_attrs)
+        quant_config = {
+            QCOM_DTYPE: quant_attrs[QCOM_DTYPE],
+            QCOM_SCALE: quant_attrs[QCOM_SCALE],
+            QCOM_QUANT_MAX: quant_attrs[QCOM_QUANT_MAX],
+            QCOM_QUANT_MIN: quant_attrs[QCOM_QUANT_MIN],
+        }
         # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
         quant_config[QCOM_OFFSET] = -quant_attrs[QCOM_ZERO_POINT]
+        range_ = quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN]
+        assert range_ > 3, (
+            f"2-bit quantization (range={range_}) does not support per-tensor encoding. "
+            "Use per-channel quantization instead."
+        )
         # special case for 4 bits
         if (
             quant_config[QCOM_DTYPE] == torch.int8
@@ -317,6 +364,9 @@ class NodeVisitor:
         if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
             tensor = torch.bitwise_and(mask, tensor)
+        elif quant_configs.get(QCOM_BITWIDTH) == 2:
+            mask = torch.full(tensor.size(), 0x03, dtype=torch.int8)
+            tensor = torch.bitwise_and(mask, tensor)
         return tensor
 
     def get_tensor_type(
@@ -330,9 +380,11 @@ class NodeVisitor:
         is_output = is_graph_output(node)
         # handle logic for input/output tensors
         if is_input or is_output:
-            assert (
-                node in self.external_ids
-            ), f"Node {node}, is_input: {is_input}, is_output: {is_output}, ext_ids: {self.external_ids.keys()}"
+            # For more info about existence of self.is_qnn_partitioner, check constructor for explanation.
+            assert not self.is_qnn_partitioner or node in self.external_ids, (
+                f"Node {node}, is_input: {is_input}, is_output: {is_output}, "
+                f"ext_ids: {self.external_ids.keys()}"
+            )
             if is_input:
                 return PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_WRITE
             if is_output:
@@ -381,28 +433,31 @@ class NodeVisitor:
         # the input order between QNN and the original graph’s forward function may differ.
         # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.
         # The `output_` is identified as the graph’s output at runtime to prevent confusion with per_tensor_dump.
-        if is_mutable_buffer_input(node, self.edge_program):
-            fqn = self.edge_program.graph_signature.inputs_to_buffers[node.target]
-            position_index = list(
-                self.edge_program.graph_signature.buffers_to_mutate.values()
-            ).index(fqn)
-            tensor_name = f"input_{str(self.external_ids[node])}_mutbuf_{str(position_index)}_{tensor_name}"
-        elif is_graph_input(node, self.edge_program):
-            tensor_name = f"input_{str(self.external_ids[node])}_{tensor_name}"
-        elif is_mutable_buffer_output(node, self.edge_program):
-            position_index = list(
-                self.edge_program.graph_signature.buffers_to_mutate.keys()
-            ).index(node.name)
-            tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
-        elif is_graph_output(node):
-            tensor_name = f"output_{tensor_name}"
 
-        # Save this for intermediate debugger
-        # Needs idx since node like topk has 2 outputs
-        if QCOM_TENSOR_NAME in node.meta:
-            node.meta[QCOM_TENSOR_NAME][wrapper_idx] = tensor_name
-        else:
-            node.meta[QCOM_TENSOR_NAME] = {wrapper_idx: tensor_name}
+        # For more info about self.is_qnn_partitioner, check constructor for explanation.
+        if self.is_qnn_partitioner:
+            if is_mutable_buffer_input(node, self.edge_program):
+                fqn = self.edge_program.graph_signature.inputs_to_buffers[node.target]
+                position_index = list(
+                    self.edge_program.graph_signature.buffers_to_mutate.values()
+                ).index(fqn)
+                tensor_name = f"input_{str(self.external_ids[node])}_mutbuf_{str(position_index)}_{tensor_name}"
+            elif is_graph_input(node, self.edge_program):
+                tensor_name = f"input_{str(self.external_ids[node])}_{tensor_name}"
+            elif is_mutable_buffer_output(node, self.edge_program):
+                position_index = list(
+                    self.edge_program.graph_signature.buffers_to_mutate.keys()
+                ).index(node.name)
+                tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
+            elif is_graph_output(node):
+                tensor_name = f"output_{tensor_name}"
+
+        # Only add qcom_tensor_name when enable tensor dump.
+        # Only runs in qnn_preprocess (not op validation) since that's when
+        # tensor names are finalized and enable_tensor_dump is True.
+        if self.enable_tensor_dump:
+            node.meta.setdefault(QCOM_TENSOR_NAME, {})[wrapper_idx] = tensor_name
+
         return tensor_name
 
     def define_custom_tensor_wrapper(

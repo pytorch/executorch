@@ -9,12 +9,16 @@
 #include <executorch/extension/module/module.h>
 
 #include <array>
+#include <cstring>
 #include <thread>
+#include <variant>
 
 #include <gtest/gtest.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 using namespace ::executorch::extension;
@@ -28,6 +32,7 @@ class ModuleTest : public ::testing::Test {
     add_mul_data_path_ = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
     linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
     linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
+    shared_state_path_ = std::getenv("ET_MODULE_SHARED_STATE");
   }
 
   static inline std::string model_path_;
@@ -35,6 +40,7 @@ class ModuleTest : public ::testing::Test {
   static inline std::string add_mul_data_path_;
   static inline std::string linear_path_;
   static inline std::string linear_data_path_;
+  static inline std::string shared_state_path_;
 };
 
 TEST_F(ModuleTest, TestLoad) {
@@ -44,6 +50,23 @@ TEST_F(ModuleTest, TestLoad) {
   const auto error = module.load();
   EXPECT_EQ(error, Error::Ok);
   EXPECT_TRUE(module.is_loaded());
+}
+
+TEST_F(ModuleTest, TestLoadMmapUseMadvise) {
+  Module module(model_path_, Module::LoadMode::MmapUseMadvise);
+
+  EXPECT_FALSE(module.is_loaded());
+  const auto error = module.load();
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_loaded());
+
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+
+  const auto result = module.execute("forward", {tensor, tensor, 1.0});
+  EXPECT_EQ(result.error(), Error::Ok);
+
+  const auto expected = make_tensor_ptr({2, 2}, {2.f, 4.f, 6.f, 8.f});
+  EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
 }
 
 TEST_F(ModuleTest, TestLoadNonExistent) {
@@ -553,4 +576,324 @@ TEST_F(ModuleTest, TestPTD_Multiple) {
   ASSERT_EQ(module_linear.load_method("forward"), Error::Ok);
   auto tensor2 = make_tensor_ptr({3}, {2.f, 3.f, 4.f});
   ASSERT_EQ(module_linear.forward(tensor2).error(), Error::Ok);
+}
+
+// =============================================================================
+// LoadBackendOptionsMap / RuntimeSpec Tests
+// =============================================================================
+
+TEST_F(ModuleTest, TestLoadWithLoadBackendOptionsMap) {
+  Module module(model_path_);
+
+  // Create a LoadBackendOptionsMap with some options for a hypothetical backend
+  LoadBackendOptionsMap backend_options;
+  BackendOptions<4> options;
+  options.set_option("compute_unit", "cpu_only");
+  options.set_option("debug_mode", true);
+  ASSERT_EQ(
+      backend_options.set_options("TestBackend", options.view()), Error::Ok);
+
+  // Load with backend options - should succeed even though the model
+  // doesn't use this backend (options are simply passed through)
+  EXPECT_FALSE(module.is_loaded());
+  const auto error = module.load(backend_options);
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_loaded());
+}
+
+TEST_F(ModuleTest, TestLoadWithLoadBackendOptionsMapThenExecute) {
+  Module module(model_path_);
+
+  LoadBackendOptionsMap backend_options;
+  BackendOptions<2> options;
+  options.set_option("key1", "value1");
+  ASSERT_EQ(
+      backend_options.set_options("SomeBackend", options.view()), Error::Ok);
+
+  const auto load_error = module.load(backend_options);
+  EXPECT_EQ(load_error, Error::Ok);
+
+  // Execute should work normally
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+  const auto result = module.execute("forward", {tensor, tensor, 1.0});
+  EXPECT_EQ(result.error(), Error::Ok);
+
+  const auto expected = make_tensor_ptr({2, 2}, {2.f, 4.f, 6.f, 8.f});
+  EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
+}
+
+TEST_F(ModuleTest, TestLoadMethodWithLoadBackendOptionsMap) {
+  Module module(model_path_);
+
+  LoadBackendOptionsMap backend_options;
+  BackendOptions<2> options;
+  options.set_option("option1", 42);
+  ASSERT_EQ(
+      backend_options.set_options("AnotherBackend", options.view()), Error::Ok);
+
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  const auto error =
+      module.load_method("forward", nullptr, nullptr, &backend_options);
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  EXPECT_TRUE(module.is_loaded());
+}
+
+TEST_F(ModuleTest, TestLoadForwardWithLoadBackendOptionsMap) {
+  Module module(model_path_);
+
+  LoadBackendOptionsMap backend_options;
+  BackendOptions<2> options;
+  options.set_option("setting", "enabled");
+  ASSERT_EQ(
+      backend_options.set_options("ForwardBackend", options.view()), Error::Ok);
+
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  const auto error = module.load_forward(nullptr, nullptr, &backend_options);
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+}
+
+TEST_F(ModuleTest, TestLoadWithEmptyLoadBackendOptionsMap) {
+  Module module(model_path_);
+
+  // Empty LoadBackendOptionsMap should work fine
+  LoadBackendOptionsMap backend_options;
+
+  const auto error = module.load(backend_options);
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_loaded());
+}
+
+TEST_F(ModuleTest, TestLoadWithBackendOptionsRollbackOnFailure) {
+  // Module pointed at a non-existent file so `load_internal` will fail.
+  Module module("/this/path/should/not/exist.pte");
+
+  {
+    // `bo1` lives only in this scope. The Module deep-copies the input,
+    // so dropping `bo1` is always safe regardless of whether the load
+    // succeeded, but on the failure path we additionally verify the
+    // Module did NOT install the input options (transactional contract).
+    LoadBackendOptionsMap bo1;
+    BackendOptions<2> opts;
+    opts.set_option("rollback_test", true);
+    ASSERT_EQ(bo1.set_options("RollbackBackend", opts.view()), Error::Ok);
+
+    const auto load_error = module.load(bo1);
+    EXPECT_NE(load_error, Error::Ok);
+    EXPECT_FALSE(module.is_loaded());
+  }
+  // `bo1` is destroyed. Module must remain in a usable state and a
+  // subsequent `load_method` should fail with the same load-time error
+  // (file not found) rather than crashing.
+  EXPECT_FALSE(module.is_loaded());
+  const auto method_error = module.load_method("forward");
+  EXPECT_NE(method_error, Error::Ok);
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+}
+
+TEST_F(ModuleTest, TestLoadDeepCopiesBackendOptionsInputCanBeReleased) {
+  // Pin the deep-copy contract: the caller may release the input
+  // LoadBackendOptionsMap (and the BackendOption arrays its Spans
+  // referenced) immediately after `load()` returns. A subsequent
+  // `load_method` must use the Module-owned copy via the fallback path,
+  // not dereference the released input.
+  Module module(model_path_);
+
+  {
+    LoadBackendOptionsMap bo;
+    BackendOptions<2> opts;
+    opts.set_option("persist_test", true);
+    ASSERT_EQ(bo.set_options("PersistBackend", opts.view()), Error::Ok);
+
+    ASSERT_EQ(module.load(bo), Error::Ok);
+    // `bo` and `opts` go out of scope here; their storage is freed.
+  }
+
+  // load_method without explicit backend_options falls back to the
+  // Module's stored copy. With the old borrowed-pointer design this
+  // would have been a use-after-free; with deep-copy it is safe.
+  EXPECT_EQ(module.load_method("forward"), Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+
+  // Forward should still execute correctly using the Module-owned
+  // backend options.
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+  const auto result = module.execute("forward", {tensor, tensor, 1.0});
+  EXPECT_EQ(result.error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestLoadStoresBackendOptionsForReadback) {
+  // Verify that Module deep-copies the input LoadBackendOptionsMap into
+  // its own storage so callers can both (a) release the input
+  // immediately and (b) read back exactly what was stored via the
+  // public `backend_options()` accessor.
+  Module module(model_path_);
+
+  // Default-constructed: no options stored yet.
+  EXPECT_EQ(module.backend_options().size(), 0u);
+
+  {
+    LoadBackendOptionsMap bo;
+    BackendOptions<2> opts;
+    opts.set_option("num_threads", 8);
+    opts.set_option("enable_profiling", true);
+    ASSERT_EQ(bo.set_options("MyBackend", opts.view()), Error::Ok);
+
+    ASSERT_EQ(module.load(bo), Error::Ok);
+    // `bo` and `opts` go out of scope here; their backing storage is
+    // freed. Anything we read back from `module.backend_options()` must
+    // therefore live in Module-owned storage.
+  }
+
+  const auto& stored = module.backend_options();
+  ASSERT_EQ(stored.size(), 1u);
+
+  const auto entry = stored.entry_at(0);
+  EXPECT_STREQ(entry.backend_id, "MyBackend");
+  ASSERT_EQ(entry.options.size(), 2u);
+
+  // Look up each option by key so the value assertions are direct and
+  // independent of insertion order.
+  const BackendOption* num_threads_opt = nullptr;
+  const BackendOption* enable_profiling_opt = nullptr;
+  for (const auto& opt : entry.options) {
+    if (std::strcmp(opt.key, "num_threads") == 0) {
+      num_threads_opt = &opt;
+    } else if (std::strcmp(opt.key, "enable_profiling") == 0) {
+      enable_profiling_opt = &opt;
+    }
+  }
+
+  ASSERT_NE(num_threads_opt, nullptr);
+  ASSERT_TRUE(std::holds_alternative<int>(num_threads_opt->value));
+  EXPECT_EQ(std::get<int>(num_threads_opt->value), 8);
+
+  ASSERT_NE(enable_profiling_opt, nullptr);
+  ASSERT_TRUE(std::holds_alternative<bool>(enable_profiling_opt->value));
+  EXPECT_TRUE(std::get<bool>(enable_profiling_opt->value));
+}
+
+TEST_F(ModuleTest, TestLoadBackendOptionsMapPersistedAcrossLoadMethod) {
+  Module module(model_path_);
+
+  // Set backend options via load()
+  LoadBackendOptionsMap backend_options;
+  BackendOptions<2> options;
+  options.set_option("persist_test", true);
+  ASSERT_EQ(
+      backend_options.set_options("PersistBackend", options.view()), Error::Ok);
+
+  const auto load_error = module.load(backend_options);
+  EXPECT_EQ(load_error, Error::Ok);
+
+  // load_method without explicit backend_options should use the stored ones
+  const auto method_error = module.load_method("forward");
+  EXPECT_EQ(method_error, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+}
+
+TEST_F(ModuleTest, TestLoadMethodOverridesStoredBackendOptions) {
+  Module module(model_path_);
+
+  // Set initial backend options via load()
+  LoadBackendOptionsMap initial_options;
+  BackendOptions<2> opts1;
+  opts1.set_option("source", "load");
+  ASSERT_EQ(
+      initial_options.set_options("TestBackend", opts1.view()), Error::Ok);
+
+  const auto load_error = module.load(initial_options);
+  EXPECT_EQ(load_error, Error::Ok);
+
+  // Unload and reload with different options passed to load_method
+  module.unload_method("forward");
+
+  LoadBackendOptionsMap override_options;
+  BackendOptions<2> opts2;
+  opts2.set_option("source", "load_method");
+  ASSERT_EQ(
+      override_options.set_options("TestBackend", opts2.view()), Error::Ok);
+
+  // The override_options should take precedence
+  const auto method_error =
+      module.load_method("forward", nullptr, nullptr, &override_options);
+  EXPECT_EQ(method_error, Error::Ok);
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+}
+
+TEST_F(ModuleTest, TestMultipleBackendsInOptionsMap) {
+  Module module(model_path_);
+
+  LoadBackendOptionsMap backend_options;
+
+  // Add options for multiple backends
+  BackendOptions<2> backend1_opts;
+  backend1_opts.set_option("compute_unit", "gpu");
+  ASSERT_EQ(
+      backend_options.set_options("Backend1", backend1_opts.view()), Error::Ok);
+
+  BackendOptions<3> backend2_opts;
+  backend2_opts.set_option("optimization_level", 3);
+  backend2_opts.set_option("debug", false);
+  ASSERT_EQ(
+      backend_options.set_options("Backend2", backend2_opts.view()), Error::Ok);
+
+  const auto error = module.load(backend_options);
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_TRUE(module.is_loaded());
+
+  // Should still execute normally
+  auto tensor = make_tensor_ptr({2, 2}, {1.f, 2.f, 3.f, 4.f});
+  const auto result = module.forward({tensor, tensor, 1.0});
+  EXPECT_EQ(result.error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSharedMemoryBuffer) {
+#ifdef USE_ATEN_LIB
+  GTEST_SKIP()
+      << "dim_order_ops::_to_dim_order_copy.out not available in ATen mode";
+#endif
+  Module module(
+      shared_state_path_,
+      Module::LoadMode::File,
+      /*event_tracer=*/nullptr,
+      /*memory_allocator=*/nullptr,
+      /*temp_allocator=*/nullptr,
+      /*share_memory_arenas=*/true);
+
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+  ASSERT_EQ(module.load_method("get_state"), Error::Ok);
+  ASSERT_EQ(module.load_method("set_state"), Error::Ok);
+
+  auto get_state_initial = module.execute("get_state");
+  ASSERT_EQ(get_state_initial.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      get_state_initial.get()[0].toTensor(),
+      *make_tensor_ptr({1}, {0.f}).get());
+  auto tensor = make_tensor_ptr({1}, {2.f});
+  auto forward1 = module.forward(tensor);
+  ASSERT_EQ(forward1.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      forward1.get()[0].toTensor(), *make_tensor_ptr({1}, {3.f}).get());
+  auto forward2 = module.forward(tensor);
+  ASSERT_EQ(forward2.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      forward2.get()[0].toTensor(), *make_tensor_ptr({1}, {4.f}).get());
+  auto get_state_after_forwards = module.execute("get_state");
+  ASSERT_EQ(get_state_after_forwards.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      get_state_after_forwards.get()[0].toTensor(),
+      *make_tensor_ptr({1}, {2.f}).get());
+  auto zero_tensor = make_tensor_ptr({1}, {0.f});
+  ASSERT_EQ(module.execute("set_state", zero_tensor).error(), Error::Ok);
+  auto get_state_after_reset = module.execute("get_state");
+  ASSERT_EQ(get_state_after_reset.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      get_state_after_reset.get()[0].toTensor(),
+      *make_tensor_ptr({1}, {0.f}).get());
+  auto forward3 = module.forward(tensor);
+  ASSERT_EQ(forward3.error(), Error::Ok);
+  EXPECT_TENSOR_CLOSE(
+      forward3.get()[0].toTensor(), *make_tensor_ptr({1}, {3.f}).get());
 }

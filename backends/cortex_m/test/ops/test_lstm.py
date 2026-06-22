@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,7 +30,7 @@ class CortexMLSTM(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_cat_default": 1,
     }
 
-    ops_after_transforms = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def __init__(self, input_size: int = 4, hidden_size: int = 3) -> None:
         super().__init__()
@@ -59,7 +59,7 @@ class CortexMQuantizableLSTM(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 27,
     }
 
-    ops_after_transforms = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def __init__(self, input_size: int = 4, hidden_size: int = 3) -> None:
         super().__init__()
@@ -85,14 +85,18 @@ test_cases = {
 
 
 @pytest.mark.skip("Not implemented yet.")
-def test_dialect_lstm(test_case: McuTestCase) -> None:
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_lstm(test_case: McuTestCase, cortex_m_target) -> None:
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
     )
 
 
 @pytest.mark.skip("Not implemented yet.")
-def test_implementation_lstm(test_case: McuTestCase) -> None:
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_lstm(test_case: McuTestCase, cortex_m_target) -> None:
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation()

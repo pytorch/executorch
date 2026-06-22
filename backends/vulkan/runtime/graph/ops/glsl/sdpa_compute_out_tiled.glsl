@@ -18,6 +18,15 @@ $if IO_STORAGE == "buffer":
 $if V_CACHE_STORAGE == "buffer":
   #define V_CACHE_BUFFER
 
+$if MODE == "llm":
+  #define HAS_INPUT_POS
+  #define HAS_GQA
+  #define V_LAYOUT DHSB
+  #define OUT_LAYOUT DHSB
+$else:
+  #define V_LAYOUT DSHB
+  #define OUT_LAYOUT DSHB
+
 #define TILE_M4 ${TILE_M4}
 // Equvalent to K4 in matrix multiplication
 #define TILE_K4 ${TILE_K4}
@@ -36,11 +45,12 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_attn_weights", DTYPE, IO_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_v_cache", DTYPE, V_CACHE_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_v", DTYPE, V_CACHE_STORAGE, is_scalar_array=False)}
 
-${layout_declare_ubo(B, "ivec4", "q_projected_sizes")}
-${layout_declare_ubo(B, "ivec4", "v_cache_sizes")}
-${layout_declare_ubo(B, "int", "input_pos")}
+${layout_declare_ubo(B, "ivec4", "q_sizes")}
+${layout_declare_ubo(B, "ivec4", "v_sizes")}
+$if MODE == "llm":
+  ${layout_declare_ubo(B, "int", "input_pos")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -50,16 +60,27 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #include "sdpa_fp_out_tile_store.glslh"
 
 /*
- * Compute SDPA output given the attention weights and v_cache tensors.
- * attention weights has shape (batches, num_q_heads, seq_len, context_len)
- * v_cache has shape (batches, max_context_len, num_kv_heads, head_dim)
- * output has shape (batches, seq_len, num_q_heads, head_dim)
+ * Compute SDPA output given the attention weights and V tensors.
+ *
+ * LLM SDPA (HAS_INPUT_POS, HAS_GQA):
+ *   attn_weights: [B, H_q, S, context_len]
+ *   v (v_cache):  [B, C_max, H_kv, D]    (DHSB layout)
+ *   output:       [B, S, H_q, D]         (DHSB layout)
+ *   current context_len = input_pos + S
+ *   GQA: Q heads may be > KV heads; kv_h = q_h / (H_q / H_kv)
+ *
+ * Fused SDPA:
+ *   attn_weights: [B, H, S, context_len]
+ *   v:            [B, H, context_len, D] (DSHB layout)
+ *   output:       [B, H, S, D]           (DSHB layout)
+ *
+ * Dispatch: (D_tiles, S_tiles, H * B) — for LLM (batch=1), H * B == H_q.
  */
 
 void main() {
   const int tile_idx_x = int(gl_GlobalInvocationID.x);
   const int tile_idx_y = int(gl_GlobalInvocationID.y);
-  // idx along output num_q_heads dim
+  // For LLM: q_head index. For fused: combined batch*H + head index.
   const int q_h = int(gl_GlobalInvocationID.z);
 
   // idx along the output head_dim dim
@@ -69,31 +90,47 @@ void main() {
   // idx along the output seq_len dim
   const int s = tile_idx_y * TILE_M;
 
-  // texel size of head_dim
-  const int D4 = div_up_4(q_projected_sizes.x);
-  // number of Q heads
-  const int Q_H = q_projected_sizes.y;
-  // sequence length
-  const int S = q_projected_sizes.z;
+#ifdef HAS_INPUT_POS
+  // LLM: q_sizes is WHCN {D, H_q, S, B}
+  const int D = q_sizes.x;
+  const int Q_H = q_sizes.y;
+  const int S = q_sizes.z;
+  // v_sizes is WHCN {D, H_kv, C_max, B}
+  const int KV_H = v_sizes.y;
+  const int C = v_sizes.z;
+#else
+  // Fused: q_sizes is WHCN {D, S, H, B}
+  const int D = q_sizes.x;
+  const int S = q_sizes.y;
+  const int Q_H = q_sizes.z;
+  // v_sizes is WHCN {D, context_len, H, B}
+  const int KV_H = v_sizes.z;
+  const int C = v_sizes.y;
+#endif
+  const int D4 = div_up_4(D);
   const int S_aligned = align_up_4(S);
 
-  // number of K/V heads
-  const int KV_H = v_cache_sizes.y;
-  // Max context length
-  const int C = v_cache_sizes.z;
-  const int C4 = div_up_4(C);
+#ifdef HAS_INPUT_POS
+  // current context length for LLM decode/prefill
+  const int context_len = input_pos + S;
+#else
+  // fused: full key sequence length from v_sizes (DSHB: {D, L, H, B})
+  const int context_len = v_sizes.y;
+#endif
+  const int context_texel_len = div_up_4(context_len);
 
+#ifdef HAS_GQA
   int kv_h = q_h;
   if (KV_H < Q_H) {
     kv_h = q_h / (Q_H / KV_H);
   }
+#else
+  const int kv_h = q_h;
+#endif
 
-  // current context length
-  const int context_len = input_pos + S;
-  const int context_texel_len = div_up_4(context_len);
-
-  // bounds check
-  if (d4 >= D4 || s >= S || q_h >= Q_H) {
+  // bounds check — q_h bound is Q_H * batch_size; for LLM (batch=1) this
+  // equals Q_H, for fused this equals H * B.
+  if (d4 >= D4 || s >= S || q_h >= Q_H * q_sizes.w) {
     return;
   }
 
@@ -103,62 +140,33 @@ void main() {
   FPInputTile attn_weight_tile;
   FPWeightTile w_tile;
 
+  // For LLM, the attn_weights tensor has seq_len padded up to a multiple of 4
+  // (S_aligned). The loader accesses (head * attn_S * C4 + s * C4 + c4), so
+  // pass S_aligned in LLM mode and S in fused mode.
+#ifdef HAS_INPUT_POS
+  const int attn_S = S_aligned;
+#else
+  const int attn_S = S;
+#endif
+
+  // Split loop into aligned + tail for efficiency
   const int context_len_aligned_down = context_len - mod_4(context_len);
   const int C4_limit = div_4(context_len_aligned_down);
 
   for (int c4 = 0; c4 < C4_limit; c4++) {
     const int c = mul_4(c4);
     load_attn_weight_tile_no_checks(
-      attn_weight_tile,
-      c4,
-      s,
-      q_h,
-      context_texel_len,
-      S_aligned,
-      Q_H);
-
-    load_v_cache_tile_no_checks(
-      w_tile,
-      d4,
-      c,
-      kv_h,
-      D4,
-      context_len,
-      C,
-      KV_H);
-
+        attn_weight_tile, c4, s, q_h, context_texel_len, attn_S, Q_H);
+    load_v_cache_tile_no_checks(w_tile, d4, c, kv_h, D4, context_len, C, KV_H);
     fp_accumulate_with_fp_weight(out_tile, attn_weight_tile, w_tile);
   }
   for (int c4 = C4_limit; c4 < context_texel_len; c4++) {
     const int c = mul_4(c4);
     load_attn_weight_tile_with_checks(
-      attn_weight_tile,
-      c4,
-      s,
-      q_h,
-      context_texel_len,
-      S_aligned,
-      Q_H);
-
-    load_v_cache_tile_with_checks(
-      w_tile,
-      d4,
-      c,
-      kv_h,
-      D4,
-      context_len,
-      C,
-      KV_H);
-
+        attn_weight_tile, c4, s, q_h, context_texel_len, attn_S, Q_H);
+    load_v_cache_tile_with_checks(w_tile, d4, c, kv_h, D4, context_len, C, KV_H);
     fp_accumulate_with_fp_weight(out_tile, attn_weight_tile, w_tile);
   }
 
-  store_sdpa_out_tile_with_checks(
-    out_tile,
-    d4,
-    s,
-    q_h,
-    D4,
-    S,
-    Q_H);
+  store_sdpa_out_tile_with_checks(out_tile, d4, s, q_h, D4, S, Q_H);
 }

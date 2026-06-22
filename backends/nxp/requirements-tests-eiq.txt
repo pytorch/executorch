@@ -1,2 +1,0 @@
---index-url https://eiq.nxp.com/repository
-neutron_converter_SDK_25_12

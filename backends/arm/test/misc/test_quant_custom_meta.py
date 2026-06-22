@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,11 +19,13 @@ class AddSigmoidMul(torch.nn.Module):
 
 @pytest.mark.parametrize("fp_extension", [True, False])
 def test_qdq_squeezed_fp_op_tosa_INT_FP(fp_extension: bool):
-    """Test that a float operation surrounded by quantize-dequantize pairs
-    is correctly handled by the partitioner and the TOSA backend.
+    """Test that a float operation surrounded by quantize-dequantize pairs is
+    correctly handled by the partitioner and the TOSA backend.
+
     Pattern:
     q -> dq -> add -> q -> dq -> sigmoid -> q -> dq -> mul -> dq -> q
                         |_____unquantized_____|
+
     """
     aten_op = "torch.ops.aten.add.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_add_Tensor"
@@ -67,11 +69,13 @@ class MulAddSigmoidConv(torch.nn.Module):
 
 @pytest.mark.parametrize("fp_extension", [True, False])
 def test_quantized_to_float_transition_tosa_INT_FP(fp_extension: bool):
-    """Test that a model executing quantized ops followed by float ops
-    is correctly handled by the partitioner and the TOSA backend.
+    """Test that a model executing quantized ops followed by float ops is
+    correctly handled by the partitioner and the TOSA backend.
+
     Pattern:
     q -> dq -> mul -> q -> dq -> add -> q -> dq -> sigmoid -> conv
                                            |___unquantized___|
+
     """
     aten_op = "torch.ops.aten.add.Tensor"
     exir_op = "executorch_exir_dialects_edge__ops_aten_add_Tensor"

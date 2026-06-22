@@ -1,10 +1,8 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 from typing import Tuple
-
-import pytest
 
 import torch
 from executorch.backends.arm.test import common
@@ -83,6 +81,7 @@ class AbsAdd(torch.nn.Module):
 
 
 MODELS = [NegAdd, AbsAdd, MaxAddZero, MinAddZero]
+MODEL_DATA = {model.__name__: model for model in MODELS}
 
 
 def _build(model_cls):
@@ -90,14 +89,14 @@ def _build(model_cls):
     return m, m.get_inputs(), model_cls.edge_op_list
 
 
-@pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
+@common.parametrize("model_cls", MODEL_DATA)
 def test_add_tensor_tosa_FP_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = TosaPipelineFP[Tensor1](m, inputs, aten_op=[], exir_op=exir)
     p.run()
 
 
-@pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
+@common.parametrize("model_cls", MODEL_DATA)
 def test_add_tensor_tosa_INT_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = TosaPipelineINT[Tensor1](m, inputs, aten_op=[], exir_op=exir, qtol=1)
@@ -105,7 +104,9 @@ def test_add_tensor_tosa_INT_combos(model_cls):
 
 
 @common.XfailIfNoCorstone300
-@pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
+@common.parametrize(
+    "model_cls", MODEL_DATA, xfails={"NegAdd": "Numerical failure. MLBEDSW-11581"}
+)
 def test_add_tensor_u55_INT_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = EthosU55PipelineINT[Tensor1](
@@ -118,7 +119,7 @@ def test_add_tensor_u55_INT_combos(model_cls):
 
 
 @common.XfailIfNoCorstone320
-@pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
+@common.parametrize("model_cls", MODEL_DATA)
 def test_add_tensor_u85_INT_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = EthosU85PipelineINT[Tensor1](
@@ -131,7 +132,7 @@ def test_add_tensor_u85_INT_combos(model_cls):
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.parametrize("model_cls", MODELS, ids=lambda c: c.__name__)
+@common.parametrize("model_cls", MODEL_DATA)
 def test_add_tensor_vgf_quant_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = VgfPipeline[Tensor1](

@@ -256,6 +256,19 @@ ValueRef prepack_quantized_linear_weight(
     storage_type = utils::kBuffer;
   }
 
+  std::string kernel_name = weight_quant_config.nbits == 4
+      ? "pack_q4_linear_weight"
+      : "pack_q8_linear_weight";
+  add_storage_type_suffix(kernel_name, storage_type);
+
+  // Check prepack cache before creating a new prepack node. This avoids
+  // allocating a duplicate output tensor when the same weight data has already
+  // been prepacked with the same kernel (e.g. tied embedding/linear weights).
+  ValueRef cached = graph.get_cached_prepack(qmat2_data, kernel_name);
+  if (is_valid(cached)) {
+    return cached;
+  }
+
   ValueRef qmat2 = graph.add_tensor(
       qmat2_sizes, vkcompute::vkapi::kInt, storage_type, utils::kWidthPacked);
 
@@ -273,11 +286,6 @@ ValueRef prepack_quantized_linear_weight(
         1u};
   }
 
-  std::string kernel_name = weight_quant_config.nbits == 4
-      ? "pack_q4_linear_weight"
-      : "pack_q8_linear_weight";
-  add_storage_type_suffix(kernel_name, storage_type);
-
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
@@ -294,6 +302,7 @@ ValueRef prepack_quantized_linear_weight(
       {graph.sizes_pc_of(qmat2),
        PushConstantDataInfo(&orig_sizes, sizeof(utils::ivec2))}));
 
+  graph.cache_prepack(qmat2_data, kernel_name, qmat2);
   return qmat2;
 }
 
@@ -748,36 +757,6 @@ void linear_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output);
 }
 
-void linear_q4gsw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef fp_input = args.at(idx++);
-  const ValueRef weight_data = args.at(idx++);
-  const ValueRef weight_scales_data = args.at(idx++);
-  const ValueRef group_size = args.at(idx++);
-  const ValueRef bias_data = args.at(idx++);
-  const ValueRef output = args.at(idx++);
-
-  const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size);
-
-  QuantizationConfig input_quant_config(32, kNoQuantization, {});
-  QuantizationConfig weight_quant_config(4, kPerGroup, {group_size_val});
-
-  quantized_linear_impl(
-      graph,
-      input_quant_config,
-      weight_quant_config,
-      fp_input,
-      kDummyValueRef, // input scale
-      kDummyValueRef, // input zp
-      weight_data,
-      kDummyValueRef, // weight sums
-      weight_scales_data,
-      kDummyValueRef, // weight zeros
-      group_size, // group size
-      bias_data,
-      output);
-}
-
 void linear_dq8ca_q4gsw(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
@@ -816,7 +795,6 @@ void linear_dq8ca_q4gsw(
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.linear_q8ta_q8csw.default, linear_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.linear_q8csw.default, linear_q8csw);
-  VK_REGISTER_OP(et_vk.linear_q4gsw.default, linear_q4gsw);
   VK_REGISTER_OP(et_vk.linear_dq8ca_q4gsw.default, linear_dq8ca_q4gsw);
 }
 

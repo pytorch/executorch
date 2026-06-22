@@ -535,6 +535,7 @@ def get_portable_lib_deps():
         "//executorch/kernels/portable/cpu:vec_ops",
         "//executorch/kernels/portable/cpu/pattern:all_deps",
         "//executorch/kernels/portable/cpu/util:all_deps",
+        "//executorch/runtime/core:device_allocator",
     ]
 
 def get_optimized_lib_deps():
@@ -542,12 +543,14 @@ def get_optimized_lib_deps():
         "//executorch/kernels/optimized/cpu:add_sub_impl",
         "//executorch/kernels/optimized/cpu:binary_ops",
         "//executorch/kernels/optimized/cpu:fft_utils",
+        "//executorch/kernels/optimized/cpu:grid_sampler_2d_fp16_hw_impl",
         "//executorch/kernels/optimized/cpu:moments_utils",
         "//executorch/kernels/optimized:libblas",
         "//executorch/kernels/optimized:libutils",
         "//executorch/kernels/optimized:libvec",
         "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         "//executorch/runtime/kernel:kernel_includes",
+        "fbsource//third-party/cpuinfo:cpuinfo",
     ] + get_vec_deps()
 
 def build_portable_header_lib(name, oplist_header_name, feature = None, **kwargs):
@@ -630,7 +633,14 @@ def build_portable_lib(
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes"]
+    # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr ARM
+    # cross-compilation) rejects it with -Werror, so exclude it for Zephyr.
+    # OSS bypasses the select since ovr_config//os:zephyr is not in the OSS
+    # buck2 prelude.
+    compiler_flags = select({
+        "DEFAULT": ["-Wno-missing-prototypes"],
+        "ovr_config//os:zephyr": [],
+    }) if not runtime.is_oss else ["-Wno-missing-prototypes"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
@@ -676,7 +686,14 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
     # Currently fbcode links all dependent libraries through shared
     # library, and it blocks users like unit tests to use kernel
     # implementation directly. So we enable this for xplat only.
-    compiler_flags = ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"]
+    # -Wno-missing-prototypes and -Wno-global-constructors are Clang-only for
+    # C++; GCC (used by Zephyr ARM cross-compilation) rejects them with
+    # -Werror, so exclude them for Zephyr. OSS bypasses the select since
+    # ovr_config//os:zephyr is not in the OSS buck2 prelude.
+    compiler_flags = select({
+        "DEFAULT": ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"],
+        "ovr_config//os:zephyr": ["-Wno-pass-failed", "-Wno-shadow"],
+    }) if not runtime.is_oss else ["-Wno-missing-prototypes", "-Wno-pass-failed", "-Wno-global-constructors", "-Wno-shadow"]
     if not expose_operator_symbols and is_xplat():
         # Removing '-fvisibility=hidden' exposes operator symbols.
         # This allows operators to be called outside of the kernel registry.
@@ -820,6 +837,7 @@ def executorch_generated_lib(
         kernel_deps = [],
         dtype_selective_build = False,
         feature = None,
+        compatible_with = None,
         expose_operator_symbols = False,
         support_exceptions = True,
         include_all_prim_ops = True):
@@ -883,10 +901,19 @@ def executorch_generated_lib(
         support_exceptions: enable try/catch wrapper around operator implementations
             to make sure exceptions thrown will not bring down the process. Disable if your
             use case disables exceptions in the build.
+        compatible_with: An optional list of platform constraints (e.g.
+            ["ovr_config//cpu:arm32-embedded"]). When set, the constraint is
+            applied to the compiled registration library (`<name>`) but NOT to
+            the header-only library (`<name>_headers`), so that host-side
+            consumers such as unit tests can still depend on the headers.
         include_all_prim_ops: If true, include all prim ops in the generated library. This option
             allows for selecting only some prim ops to reduce code size for extremely constrained
             environments. For selecting only some prim ops, see examples in //executorch/examples/selective_build
     """
+    _compat_kwargs = {}
+    if compatible_with != None:
+        _compat_kwargs["compatible_with"] = compatible_with
+
     if functions_yaml_target and aten_mode:
         fail("{} is providing functions_yaml_target in ATen mode, it will be ignored. `native_functions.yaml` will be the source of truth.".format(name))
 
@@ -1046,6 +1073,9 @@ def executorch_generated_lib(
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             feature = feature,
+            # Note: compatible_with is intentionally NOT applied to the
+            # headers-only target so that host-side consumers (e.g. unit tests
+            # on x86_64) can still depend on the generated headers.
         )
 
     if name in libs:
@@ -1098,6 +1128,7 @@ def executorch_generated_lib(
             _is_external_target = True,
             platforms = platforms,
             feature = feature,
+            **_compat_kwargs
         )
 
     if custom_ops_yaml_target and custom_ops_requires_aot_registration:

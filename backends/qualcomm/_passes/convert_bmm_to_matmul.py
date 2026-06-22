@@ -10,6 +10,7 @@ from typing import List
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
@@ -78,6 +79,5 @@ class ConvertBmmToMatmul(ExportPass):
                     for user in output.users.copy():
                         user.replace_input_with(output, matmul_node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

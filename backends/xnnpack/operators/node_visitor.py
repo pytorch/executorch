@@ -625,7 +625,7 @@ class NodeVisitor:
             f"Serializing constant data node {tensor} but tensor value has no bytes",
         )
         sha256_hash = hashlib.sha256(bytes(array))
-        named_key = tensor.name + "_" + sha256_hash.hexdigest()
+        named_key = sha256_hash.hexdigest()
 
         size = const_val.untyped_storage().nbytes()
         xnn_graph.constant_data.append(

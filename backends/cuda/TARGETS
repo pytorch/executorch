@@ -7,12 +7,14 @@ runtime.python_library(
     srcs = [
         "passes/__init__.py",
         "passes/move_cond_predicate_to_cpu.py",
+        "passes/replace_int64_floordiv.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
@@ -54,7 +56,10 @@ runtime.python_library(
     name = "triton_kernels",
     srcs = [
         "triton/kernels/__init__.py",
+        "triton/kernels/fused_moe.py",
+        "triton/kernels/int4_matmul.py",
         "triton/kernels/sdpa.py",
+        "triton/kernels/topk.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",

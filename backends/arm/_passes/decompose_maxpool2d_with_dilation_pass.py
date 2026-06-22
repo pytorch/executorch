@@ -9,7 +9,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -24,7 +24,9 @@ EDGE_MAXPOOL2D = (
 def _pack_dimension(
     dilation: int, padding: int, original_size: int, kernel_size: int, stride: int
 ) -> tuple[int, int, int]:
-    """Compute packed dimension size, new padding, and final output size for a single spatial dimension."""
+    """Compute packed dimension size, new padding, and final output size for a
+    single spatial dimension.
+    """
 
     # Calculate extra padding needed to evenly pack the padded size into two dimensions for space-to-batch
     # The dimension will be reshaped into (packed_dim_size, dilation), so padded size needs to be divisible by dilation
@@ -45,18 +47,19 @@ def _pack_dimension(
     return packed_dim_size, padding + extra_padding, output_size
 
 
-class DecomposeMaxPool2dPass(ArmPass):
-    """
-    Decompose dilated max_pool2d (EXIR edge ops) into space-to-batch -> maxpool -> batch-to-space.
+class DecomposeMaxPool2dPass(ArmOpTargetedPass):
+    """Decompose dilated max_pool2d (EXIR edge ops) into space-to-batch ->
+    maxpool -> batch-to-space.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
         SizeAdjustInputPass,
     }
+    target_ops = EDGE_MAXPOOL2D
 
     def call_operator(self, op, args, kwargs, meta):
         # Only intercept EXIR edge max_pool2d ops
-        if op not in EDGE_MAXPOOL2D:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         # detect whether indices variant

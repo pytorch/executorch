@@ -10,8 +10,11 @@
 
 ${define_required_extensions("buffer", DTYPE)}
 
+#define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
+
 #extension GL_EXT_control_flow_attributes : require
-#extension GL_EXT_integer_dot_product : require
+$if USE_INT8_DOT_PRODUCT_EXT == 1:
+  #extension GL_EXT_integer_dot_product : require
 
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, "buffer")}
@@ -19,16 +22,18 @@ ${define_required_extensions("buffer", DTYPE)}
 
 ${define_active_storage_type("buffer")}
 
+// Each thread computes a TILE_M (width) x TILE_N (output channel) output block,
+// using an int32 accumulator tile.
 // corresponds to input/output width dim
 #define TILE_M4 1
 // corresponds to input channels dim
 #define TILE_K4 1
 // corresponds to output channels dim
-#define TILE_N4 2
+#define TILE_N4 1
 
 #define TILE_M 4
 #define TILE_K 4
-#define TILE_N 8
+#define TILE_N 4
 
 layout(std430) buffer;
 
@@ -52,12 +57,14 @@ layout(push_constant) uniform restrict Block {
   int input_zp;
   float output_inv_scale;
   int output_zp;
+  int K4_per_group;
+  int OC4_per_group;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
-${layout_declare_spec_const(C, "int", "conv2d_params_K4_per_group", "1")}
+${layout_declare_spec_const(C, "int", "activation_type", "0")}
 
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
@@ -81,9 +88,9 @@ int compute_outp_buffer_idx(
 }
 
 void main() {
-  // Thread mapping: each thread handles TILE_M (4) widths × TILE_N (8) output channels
-  // gl_GlobalInvocationID.x → output channel blocks (TILE_N4 = 2 blocks of 4 channels)
-  // gl_GlobalInvocationID.y → width blocks (TILE_M4 = 1 block of 4 widths)
+  // Thread mapping: each thread handles TILE_M widths x TILE_N output channels.
+  // gl_GlobalInvocationID.x -> output channel blocks.
+  // gl_GlobalInvocationID.y -> width blocks.
   // gl_GlobalInvocationID.z → batch (or height * batch combined)
   const int oc_block_idx = int(gl_GlobalInvocationID.x) * TILE_N4;
   const int ow_block_idx = int(gl_GlobalInvocationID.y) * TILE_M4;
@@ -120,17 +127,23 @@ void main() {
     }
   }
 
-  // Compute initial input tile index
-  // Input has same spatial layout, channel dimension iterates from 0
-  int input_idx = oh * inp_h_stride + ow_block_idx * inp_w_stride;
+  // Compute group index from output channel block
+  const int group_idx = oc_block_idx / OC4_per_group;
+
+  // Compute initial input tile index with group offset
+  // For grouped im2col, each group's K range starts at group_idx * K4_per_group
+  // For non-grouped (groups=1), group_idx is always 0 so offset is 0
+  int input_idx = oh * inp_h_stride
+                + ow_block_idx * inp_w_stride
+                + group_idx * K4_per_group;
 
   // Main accumulation loop over K dimension
-  for (int k4 = 0; k4 < conv2d_params_K4_per_group; k4++) {
-    // Load packed int8 input tile (TILE_M4=1, TILE_K4=1)
+  for (int k4 = 0; k4 < K4_per_group; k4++) {
+    // Load the packed int8 input tile for the current width and K sub-block.
     // Each int contains 4 packed int8s (one per width position in the tile)
     ivec4 int8_input_tile = t_packed_int8_input[input_idx];
 
-    // Load int8 weight tile (TILE_K4=1, TILE_N4=2)
+    // Load the int8 weight tile for the current K and output-channel sub-block.
     ivec4 int8_weight_tile[TILE_N4];
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       int8_weight_tile[n4] = texelFetch(
@@ -145,7 +158,7 @@ void main() {
     [[unroll]] for (int m = 0; m < TILE_M; ++m) {
       [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
         [[unroll]] for (int n4i = 0; n4i < 4; ++n4i) {
-          out_accum[m][n4][n4i] = dotPacked4x8AccSatEXT(
+          out_accum[m][n4][n4i] = dotPacked4x8AccSat(
               int8_input_tile[m],
               int8_weight_tile[n4][n4i],
               out_accum[m][n4][n4i]);
@@ -197,6 +210,10 @@ void main() {
               fma(vec4(accum_adjusted),
                   vec4(weight_scales[n4]) * input_scale,
                   vec4(bias[n4]));
+          // Apply ReLU if enabled
+          if (activation_type > 0) {
+            float_out_texel = max(float_out_texel, vec4(0.0));
+          }
           // Requantize to int8
           float_out_texel =
               round(float_out_texel * output_inv_scale) + output_zp;
@@ -216,6 +233,10 @@ void main() {
               input_zp_vec * weight_sums[n4] + out_accum[m][n4];
           vec4 float_out_texel =
               vec4(accum_adjusted) * vec4(weight_scales[n4] * input_scale);
+          // Apply ReLU if enabled
+          if (activation_type > 0) {
+            float_out_texel = max(float_out_texel, vec4(0.0));
+          }
           // Requantize to int8
           float_out_texel =
               round(float_out_texel * output_inv_scale) + output_zp;

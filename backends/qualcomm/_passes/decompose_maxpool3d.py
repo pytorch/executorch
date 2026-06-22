@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from executorch.exir import to_edge
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import merge_decomposed_graph
 
@@ -128,6 +129,5 @@ class DecomposeMaxPool3d(ExportPass):
                     )
                     graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

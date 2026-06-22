@@ -62,9 +62,12 @@ RUN bash ./install_cache.sh && rm install_cache.sh utils.sh
 ENV SCCACHE_BUCKET ossci-compiler-cache-circleci-v2
 ENV SCCACHE_S3_KEY_PREFIX executorch
 ENV SCCACHE_REGION us-east-1
+ENV AWS_REGION us-east-1
+ENV AWS_DEFAULT_REGION us-east-1
 
 ARG TORCH_VERSION
 ARG SKIP_PYTORCH
+ARG PYTORCH_BUILD_MAX_JOBS
 COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
 RUN if [ -z "${SKIP_PYTORCH}" ]; then bash ./install_pytorch.sh; fi && rm install_pytorch.sh utils.sh
@@ -90,9 +93,10 @@ RUN rm install_arm.sh
 
 ARG ZEPHYR_SDK
 COPY ./common/install_zephyr.sh install_zephyr.sh
+COPY ./common/zephyr_sdk_release_proxy.py zephyr_sdk_release_proxy.py
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${ZEPHYR_SDK}" ]; then bash ./install_zephyr.sh; fi
-RUN rm install_zephyr.sh utils.sh
+RUN rm install_zephyr.sh zephyr_sdk_release_proxy.py utils.sh
 
 ARG QNN_SDK
 
@@ -105,7 +109,7 @@ COPY ./common/install_cuda_windows_cross_compile.sh install_cuda_windows_cross_c
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${CUDA_WINDOWS_CROSS_COMPILE}" ]; then \
     CUDA_VERSION=${CUDA_VERSION} bash ./install_cuda.sh && \
-    bash ./install_cuda_windows_cross_compile.sh; \
+    CUDA_VERSION=${CUDA_VERSION} bash ./install_cuda_windows_cross_compile.sh; \
     fi
 RUN rm -f install_cuda.sh install_cuda_windows_cross_compile.sh utils.sh
 # Set up CUDA environment for Linux compilation (nvcc, etc.)

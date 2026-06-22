@@ -9,6 +9,8 @@ import logging
 import os.path
 from typing import Iterator, Tuple
 
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -200,7 +202,7 @@ def train_cifarnet_model(
     return cifar_net
 
 
-def test_cifarnet_model(cifar_net: nn.Module, batch_size: int = 1) -> float:
+def verify_cifarnet_model(cifar_net: nn.Module, batch_size: int = 1) -> float:
     """Test the CifarNet model on the CifarNet10 testing dataset and return the accuracy.
 
     This function may at some point in the future be integrated into the `CifarNet` class.
@@ -219,6 +221,26 @@ def test_cifarnet_model(cifar_net: nn.Module, batch_size: int = 1) -> float:
             correct += torch.sum(predicted == labels).item()
 
     return correct / total
+
+
+def store_test_data(path="./cifar10_test_data", count=10):
+    test_loader = get_test_loader(batch_size=1)
+
+    os.makedirs(path, exist_ok=True)
+
+    index = 0
+    count = 10
+    for data in test_loader:
+        images, labels = data
+        for image, label in zip(images, labels):
+            arr = image.numpy().astype(np.float32)
+            file_name = f"img{str(index)}_class{str(int(label))}.bin"
+            arr.tofile(os.path.join(path, file_name))
+            index = index + 1
+            if index >= count:
+                break
+        if index >= count:
+            break
 
 
 if __name__ == "__main__":
@@ -243,6 +265,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("-b", "--batch-size", required=False, type=int, default=1)
     parser.add_argument("-e", "--num-epochs", required=False, type=int, default=1)
+    parser.add_argument(
+        "--store-test-data",
+        required=False,
+        action="store_true",
+        help="Store the test data for the executor runner",
+    )
     args = parser.parse_args()
 
     cifar_net = get_model(
@@ -254,8 +282,11 @@ if __name__ == "__main__":
 
     if args.test:
         logger.info("Running tests.")
-        accuracy = test_cifarnet_model(cifar_net, args.batch_size)
+        accuracy = verify_cifarnet_model(cifar_net, args.batch_size)
         logger.info(f"Accuracy of the network on the 10000 test images: {accuracy}")
+
+    if args.store_test_data:
+        store_test_data()
 
     if args.pte_file is not None:
         tracing_inputs = (torch.rand(args.batch_size, 3, 32, 32),)

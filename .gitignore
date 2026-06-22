@@ -9,6 +9,7 @@ __pycache__/
 
 # Build and tool-generated files
 arm_test/
+riscv_test/
 buck-out/
 buck2-bin/
 build/
@@ -16,13 +17,16 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+backends/webgpu/third-party/
 build-android/
 build-x86/
+build-direct/
 dist/
 arm-scratch/
 executorch.egg-info
 pip-out/
 build-profiling/
+**/ddr_*_temp
 
 # Any exported models and profiling outputs
 *.bin
@@ -62,6 +66,9 @@ xcuserdata/
 /include/
 /share/
 /version.py
+/src/executorch/include/
+/src/executorch/share/
+/src/executorch/version.py
 *_etdump
 
 # Android
@@ -70,3 +77,11 @@ xcuserdata/
 # Windows
 *.dll
 *.pyd
+
+# Zephyr
+zephyr_dev_root/
+zephyr_dev_root.backup.*/
+
+# Agents
+.claude/*.local.*
+extension/pybindings/mlx.metallib

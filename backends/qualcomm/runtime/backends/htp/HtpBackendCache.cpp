@@ -18,7 +18,9 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
     const QnnSystemContext_BinaryInfo_t* binaryinfo) {
   QnnHtpSystemContext_HwBlobInfo_t* htp_hwblobinfo = nullptr;
 #if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
-  QnnHtpSystemContext_GraphBlobInfo_t* htp_graphblobinfo = nullptr;
+  std::vector<QnnHtpSystemContext_GraphBlobInfo_t*> htp_graphblobinfos;
+  std::uint32_t num_graphs;
+
 #endif
 
   if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1) {
@@ -29,8 +31,13 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
         binaryinfo->contextBinaryInfoV2.hwInfoBlob);
 #if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
-    htp_graphblobinfo = static_cast<QnnHtpSystemContext_GraphBlobInfo_t*>(
-        binaryinfo->contextBinaryInfoV3.graphs->graphInfoV3.graphBlobInfo);
+    num_graphs = binaryinfo->contextBinaryInfoV3.numGraphs;
+    for (size_t i = 0; i < num_graphs; ++i) {
+      htp_graphblobinfos.push_back(
+          static_cast<QnnHtpSystemContext_GraphBlobInfo_t*>(
+              binaryinfo->contextBinaryInfoV3.graphs[i]
+                  .graphInfoV3.graphBlobInfo));
+    }
 #endif
   } else {
     QNN_EXECUTORCH_LOG_WARN(
@@ -51,15 +58,24 @@ Error HtpBackendCache::RetrieveBackendBinaryInfo(
   }
 
 #if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
-  if (htp_graphblobinfo) {
-    if (htp_graphblobinfo->version ==
+  if (htp_graphblobinfos.size() > 0) {
+    // After version 2.21, we need to get spill fill buffer size from graph
+    // blob info instead of hw blob info. If there are multiple graphs, we
+    // should use the max value among all graphs.
+    if (htp_graphblobinfos[0]->version ==
         QNN_SYSTEM_CONTEXT_HTP_GRAPH_INFO_BLOB_VERSION_V1) {
-      spill_fill_buf_ =
-          (*htp_graphblobinfo).contextBinaryGraphBlobInfoV1.spillFillBufferSize;
+      for (size_t i = 0; i < num_graphs; ++i) {
+        uint64_t spill_fill_buf =
+            (*htp_graphblobinfos[i])
+                .contextBinaryGraphBlobInfoV1.spillFillBufferSize;
+        if (spill_fill_buf > spill_fill_buf_) {
+          spill_fill_buf_ = spill_fill_buf;
+        }
+      }
     } else {
       QNN_EXECUTORCH_LOG_WARN(
           "Unknown QNN Htp graph blob info version %d.",
-          htp_graphblobinfo->version);
+          htp_graphblobinfos[0]->version);
       return Error::Internal;
     }
   }

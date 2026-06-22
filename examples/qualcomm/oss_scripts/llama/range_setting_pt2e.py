@@ -17,12 +17,15 @@ We implement the two main range setting methods:
 
 import torch
 import torch.nn as nn
-from executorch.backends.qualcomm.quantizer.annotators import OP_ANNOTATOR
+
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
-    PerChannelParamObserver,
+    PerChannelParamObserverWithLossEvaluation,
 )
 
-from executorch.examples.qualcomm.utils import make_quantizer
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 
 from torchao.prototype.quantization.module_swap import (
     QuantizationRecipe,
@@ -66,7 +69,7 @@ class WrappedLlamaModel(nn.Module):
         return self.model.forward(tokens, self.atten_mask)
 
 
-class PerChannelMSEObserver(PerChannelParamObserver):
+class PerChannelMSEObserver(PerChannelParamObserverWithLossEvaluation):
 
     def forward(self, x_orig):
         # since params are static, one calibration is enough
@@ -194,16 +197,24 @@ def compute_scales(model, data, weight_bits, act_bits, num_points=1600):
     return scales_state_dict
 
 
-def make_custom_quantizer(quant_dtype, custom_annotations=(), linear_only=False):
+def make_custom_quantizer(
+    quant_dtype,
+    custom_annotations=(),
+    linear_only=False,
+    backend=QnnExecuTorchBackendType.kHtpBackend,
+    soc_model="SM8750",
+):
     quantizer = make_quantizer(
         quant_dtype=quant_dtype,
         per_channel_conv=True,
         per_channel_linear=True,
         act_observer=MinMaxObserver,
+        backend=backend,
+        soc_model=soc_model,
     )
 
     if linear_only:
-        all_keys = set(OP_ANNOTATOR.keys())
+        all_keys = quantizer.get_supported_ops()
         conv_keys = {
             op
             for op in all_keys

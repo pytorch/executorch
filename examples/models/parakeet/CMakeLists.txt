@@ -23,6 +23,7 @@ find_package(gflags REQUIRED)
 
 # Find executorch libraries
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 get_target_property(_executorch_imported executorch IMPORTED)
 if(NOT _executorch_imported)
@@ -41,10 +42,15 @@ if(TARGET optimized_native_cpu_ops_lib)
 endif()
 
 # CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA AND MSVC)
-  list(APPEND link_libraries quantized_ops_lib custom_ops)
-  executorch_target_link_options_shared_lib(quantized_ops_lib)
-  executorch_target_link_options_shared_lib(custom_ops)
+if(NOT EXECUTORCH_BUILD_CUDA)
+  if(TARGET quantized_ops_lib)
+    list(APPEND link_libraries quantized_ops_lib)
+    executorch_target_link_options_shared_lib(quantized_ops_lib)
+  endif()
+  if(TARGET custom_ops)
+    list(APPEND link_libraries custom_ops)
+    executorch_target_link_options_shared_lib(custom_ops)
+  endif()
 endif()
 
 # XNNPACK
@@ -69,6 +75,7 @@ endif()
 list(
   APPEND
   link_libraries
+  extension_asr_runner
   extension_llm_runner
   extension_module
   extension_data_loader
@@ -91,27 +98,60 @@ if(EXECUTORCH_BUILD_METAL)
   executorch_target_link_options_shared_lib(metal_backend)
 endif()
 
-add_executable(parakeet_runner main.cpp timestamp_utils.cpp tokenizer_utils.cpp)
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_link_options_gc_sections(parakeet_runner)
-  if(NOT APPLE AND NOT MSVC)
-    target_link_options(parakeet_runner PRIVATE "LINKER:-s")
-  endif()
+# Link MLX delegate
+if(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
 endif()
 
-target_include_directories(
-  parakeet_runner PUBLIC ${_common_include_directories}
+if(EXECUTORCH_BUILD_VULKAN)
+  list(APPEND link_libraries vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
+endif()
+
+set(parakeet_shared_sources parakeet_transcriber.cpp timestamp_utils.cpp
+                            tokenizer_utils.cpp
 )
-target_link_libraries(parakeet_runner PUBLIC ${link_libraries})
-target_compile_options(parakeet_runner PUBLIC ${_common_compile_options})
+
+set(parakeet_common_include_directories
+    ${_common_include_directories} ${EXECUTORCH_ROOT}/third-party/json/include
+)
+
+add_executable(parakeet_runner main.cpp ${parakeet_shared_sources})
+add_executable(
+  parakeet_helper parakeet_helper.cpp parakeet_helper_protocol.cpp
+                  ${parakeet_shared_sources}
+)
+
+foreach(parakeet_target parakeet_runner parakeet_helper)
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options_gc_sections(${parakeet_target})
+    if(NOT APPLE AND NOT MSVC)
+      target_link_options(${parakeet_target} PRIVATE "LINKER:-s")
+    endif()
+  endif()
+
+  if(TARGET mlxdelegate)
+    executorch_target_copy_mlx_metallib(${parakeet_target})
+  endif()
+
+  target_include_directories(
+    ${parakeet_target} PUBLIC ${parakeet_common_include_directories}
+  )
+  target_link_libraries(${parakeet_target} PUBLIC ${link_libraries})
+  target_compile_options(${parakeet_target} PUBLIC ${_common_compile_options})
+endforeach()
 
 # On Windows, copy required DLLs to the executable directory
 if(MSVC AND EXECUTORCH_BUILD_CUDA)
-  add_custom_command(
-    TARGET parakeet_runner
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
-            $<TARGET_FILE_DIR:parakeet_runner>
-    COMMENT "Copying aoti_cuda_shims.dll to parakeet_runner directory"
-  )
+  foreach(parakeet_target parakeet_runner parakeet_helper)
+    add_custom_command(
+      TARGET ${parakeet_target}
+      POST_BUILD
+      COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
+        $<TARGET_FILE_DIR:${parakeet_target}>
+      COMMENT "Copying aoti_cuda_shims.dll to ${parakeet_target} directory"
+    )
+  endforeach()
 endif()

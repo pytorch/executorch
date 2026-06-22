@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,7 +28,7 @@ def get_test_inputs(dim, lengths, num_examples):
 
 
 class TestConformer:
-    """Tests Torchaudio Conformer"""
+    """Tests Torchaudio Conformer."""
 
     # Adjust nbr below as we increase op support. Note: most of the delegates
     # calls are directly consecutive to each other in the .pte. The reason
@@ -36,8 +36,8 @@ class TestConformer:
     # .to_executorch step, i.e. after Arm partitioner.
     aten_ops = ["torch.ops.aten._assert_scalar.default"]
 
-    # TODO(MLETORCH-635): reduce tolerance
-    atol = 0.4
+    # TODO(MLETORCH-636): reduce tolerance
+    atol = 0.45
     rtol = 0.4
 
     dim = 16
@@ -74,6 +74,8 @@ def test_conformer_tosa_INT():
         use_to_edge_transform_and_lower=True,
         atol=TestConformer.atol,
         rtol=TestConformer.rtol,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 

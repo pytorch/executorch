@@ -5,9 +5,9 @@ from typing import Dict
 
 import torch
 
-from safetensors.torch import load_file
+from executorch.examples.models.checkpoint import get_mapped_key
 
-from torchtune.models.convert_weights import get_mapped_key
+from safetensors.torch import load_file
 
 
 _SMOLLM_TO_META = {

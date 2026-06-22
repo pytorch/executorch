@@ -44,10 +44,12 @@ jobs:
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
       script: |
         set -eux
         # This is needed to get the prebuilt PyTorch wheel from S3
@@ -58,10 +60,11 @@ jobs:
     if: ${{ inputs.build-tool == 'cmake' }}
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
-      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive 
         conda init powershell
 
         powershell -Command "& {

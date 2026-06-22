@@ -68,6 +68,31 @@ test_data_fp: dict[str, input_params] = {
         1,  # U=(4-3)//1+1=2 -> [B=2, T=6, N=3, U=2, C=3]
     ),
 }
+test_data_fp8: dict[str, input_params] = {
+    # 2D: [B, T] -> unfold dim=1 => [B, U, C]
+    "test_fp8e4m3_2d_dim1": (
+        torch.tensor(
+            [[0.1, 0.2, 0.3, 0.4, 0.5], [1.1, 1.2, 1.3, 1.4, 1.5]],
+            dtype=torch.float32,
+        ).to(
+            torch.float8_e4m3fn
+        ),  # [B=2, T=5]
+        1,
+        3,
+        2,  # U=(5-3)//2+1=2 -> [B=2, U=2, C=3]
+        "fp8e4m3",
+    ),
+    # 3D: [B, T, F] -> unfold dim=-1 => [B, T, U, C]
+    "test_fp8e5m2_3d_dim_neg1": (
+        torch.randn(2, 6, 4, dtype=torch.float32).to(
+            torch.float8_e5m2
+        ),  # [B=2, T=6, F=4]
+        -1,
+        3,
+        1,  # U=(4-3)//1+1=2 -> [B=2, T=6, U=2, C=3]
+        "fp8e5m2",
+    ),
+}
 
 # ---- INT profile: integer inputs + bool ----
 test_data_int: dict[str, input_params] = {
@@ -120,6 +145,18 @@ test_data_int: dict[str, input_params] = {
     ),
 }
 
+test_data_bf16: dict[str, input_params] = {
+    "test_bf16_2d_dim1": (
+        torch.tensor(
+            [[0.1, 0.2, 0.3, 0.4, 0.5], [1.1, 1.2, 1.3, 1.4, 1.5]],
+            dtype=torch.bfloat16,
+        ),  # [B=2, T=5]
+        1,
+        3,
+        2,  # U=(5-3)//2+1=2 -> [B=2, U=2, C=3]
+    ),
+}
+
 
 @common.parametrize("test_data", test_data_fp)
 def test_unfold_copy_tosa_FP(test_data: input_params):
@@ -128,6 +165,32 @@ def test_unfold_copy_tosa_FP(test_data: input_params):
         test_data,
         aten_op=UnfoldCopy.aten_op,
         exir_op=UnfoldCopy.exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_bf16)
+def test_unfold_copy_tosa_FP_bf16(test_data: input_params):
+    pipeline = TosaPipelineFP[input_params](
+        UnfoldCopy(),
+        test_data,
+        aten_op=UnfoldCopy.aten_op,
+        exir_op=UnfoldCopy.exir_op,
+        tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_fp8)
+def test_unfold_copy_tosa_FP_fp8(test_data):
+    input_, dim_, size_, step_, tosa_extension = test_data
+    pipeline = TosaPipelineFP[input_params](
+        UnfoldCopy(),
+        (input_, dim_, size_, step_),
+        aten_op=UnfoldCopy.aten_op,
+        exir_op=UnfoldCopy.exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
     )
     pipeline.run()
 
@@ -161,12 +224,6 @@ def test_unfold_copy_u55_INT(test_data: input_params):
 @common.parametrize(
     "test_data",
     test_data_int | test_data_fp,
-    xfails={
-        "test_int8_3d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_int32_4d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_fp32_3d_dim_neg1": "MLETORCH-1732: rand test fails",
-        "test_fp32_4d_dim_neg1": "MLETORCH-1732: rand test fails",
-    },
 )
 @common.XfailIfNoCorstone320
 def test_unfold_copy_u85_INT(test_data: input_params):

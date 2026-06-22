@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 
 from typing import Sequence, Set, Tuple, Type
 
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -20,7 +20,7 @@ _PERMUTE_TARGETS: Tuple[OpOverload, ...] = (
 )
 
 
-class ConvertPermuteSingletonToViewPass(ArmPass):
+class ConvertPermuteSingletonToViewPass(ArmOpTargetedPass):
     """Replace permutations that only move singleton axes with a reshape.
 
     Examples:
@@ -30,12 +30,14 @@ class ConvertPermuteSingletonToViewPass(ArmPass):
     becomes:
     x = rand(1,1,1,4)
     y = view_copy(x, (1,4,1,1))
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = _PERMUTE_TARGETS
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in _PERMUTE_TARGETS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         input_tensor = args[0].data
@@ -51,8 +53,7 @@ class ConvertPermuteSingletonToViewPass(ArmPass):
 
 
 def is_singleton_permutation(shape: Sequence[int], permutation: Sequence[int]) -> bool:
-    """
-    Treat as a view only when non-singleton axes keep their order; singleton
+    """Treat as a view only when non-singleton axes keep their order; singleton
     axes may move freely since they carry no data volume.
     """
     rank = len(shape)

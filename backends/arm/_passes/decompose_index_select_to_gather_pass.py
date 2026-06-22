@@ -8,7 +8,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     ConvertExpandCopyToRepeatPass,
 )
@@ -20,11 +20,11 @@ from executorch.exir.pass_base import ExportPass
 
 
 def _get_index_select_decomposition(op):
-    """
-    Return the operator overloads used to lower index_select via TOSA gather.
+    """Return the operator overloads used to lower index_select via TOSA gather.
 
     Raises:
         RuntimeError: If the provided operator is not supported by this pass.
+
     """
     if op is exir_ops.edge.aten.index_select.default:
         return (
@@ -38,9 +38,8 @@ def _get_index_select_decomposition(op):
     raise RuntimeError(f"Can't get index_select decomposition for op {op}")
 
 
-class DecomposeIndexSelectToGatherPass(ArmPass):
-    """
-    Decompose edge index_select into a single backend TOSA gather.
+class DecomposeIndexSelectToGatherPass(ArmOpTargetedPass):
+    """Decompose edge index_select into a single backend TOSA gather.
 
     index_select(x, dim, index) semantics:
       - index is rank-1
@@ -60,6 +59,7 @@ class DecomposeIndexSelectToGatherPass(ArmPass):
     Notes:
       - indices must be int32 (TOSA gather requirement).
       - bool input is cast to int8 for gather and cast back afterwards.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -67,12 +67,12 @@ class DecomposeIndexSelectToGatherPass(ArmPass):
         ConvertSqueezesToViewPass,
     }
 
-    _TARGET_OPS = {
+    target_ops = {
         exir_ops.edge.aten.index_select.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         x, dim, index = args

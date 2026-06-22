@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -21,16 +21,16 @@ from executorch.exir.pass_base import ExportPass
 edge_sinh = exir_ops.edge.aten.sinh.default
 
 
-class DecomposeSinhPass(ArmPass):
-    """
-    A decomposition pass that decomposes Sinh operations into a
-    combination of supported TOSA-equivalent operations (MI).
+class DecomposeSinhPass(ArmOpTargetedPass):
+    """A decomposition pass that decomposes Sinh operations into a combination
+    of supported TOSA-equivalent operations (MI).
 
     Supported input ops:
         - exir_ops.edge.aten.sinh.default
 
     These are decomposed into exponentials, negation, subtraction,
         and scalar multiplication.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -39,16 +39,13 @@ class DecomposeSinhPass(ArmPass):
         ReplaceScalarWithTensorByProfilePass,
         MatchArgDtypePass,
     }
+    target_ops = (edge_sinh,)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op is not edge_sinh:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 

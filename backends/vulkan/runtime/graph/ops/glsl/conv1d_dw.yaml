@@ -1,0 +1,22 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+conv1d_dw:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+    HAS_BIAS: false
+  generate_variant_forall:
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: conv1d_dw
+    - NAME: conv1d_dw_bias
+      HAS_BIAS: true

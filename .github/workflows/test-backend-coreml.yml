@@ -5,13 +5,11 @@ on:
     - cron: 0 2 * * *
   push:
     branches:
+      - main
       - release/*
     tags:
       - ciflow/nightly/*
   pull_request:
-    paths:
-      - .github/workflows/test-backend-coreml.yml
-      - .github/workflows/_test_backend.yml
   workflow_dispatch:
 
 concurrency:
@@ -19,11 +17,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Emits PR diff file list; non-PR events emit '*' so the per-job
+  # `if:` short-circuits via `event_name != 'pull_request'`. This
+  # workflow always shows on HUD; only the heavy test-coreml job is
+  # path-gated.
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+
   test-coreml:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-coreml.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
     uses: ./.github/workflows/_test_backend.yml
     with:
       backend: coreml
-      flows: '["coreml", "coreml_static_int8"]'
+      flows: >-
+        ${{ github.event_name == 'pull_request'
+            && '["coreml"]'
+            || '["coreml", "coreml_static_int8"]' }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 120
+      timeout: 180
       run-macos: true

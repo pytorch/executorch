@@ -17,6 +17,20 @@ namespace executorch {
 namespace vulkan {
 namespace prototyping {
 
+namespace {
+
+// Upper bound on the auto-sized chained_dispatches factor. Caps the factor
+// when an op is fast enough that target_us / probe_us would otherwise
+// exceed this; past this point, stacking more dispatches doesn't materially
+// improve measurement precision.
+constexpr int kMaxChainedDispatches = 200;
+
+// Floor for probe_us to avoid division-by-zero / a runaway chained_dispatches
+// factor when an op finishes faster than the wall clock can resolve.
+constexpr float kMinProbeTimeUs = 1.0f;
+
+} // namespace
+
 int get_seed() {
   static int seed = 42;
   return seed++;
@@ -73,6 +87,49 @@ void generate_random_int4_data(
     int explicit_seed = -1);
 void generate_ones_data(std::vector<float>& data);
 void generate_zeros_data(std::vector<float>& data);
+
+// Convert a float32 value to IEEE 754 half-precision (uint16_t)
+uint16_t float_to_half(float value) {
+  uint32_t float_bits;
+  std::memcpy(&float_bits, &value, sizeof(float));
+  uint32_t sign = (float_bits >> 31) & 0x1;
+  int32_t exponent = static_cast<int32_t>((float_bits >> 23) & 0xFF) - 127;
+  uint32_t mantissa = float_bits & 0x7FFFFF;
+
+  uint16_t half_val;
+  if (exponent > 15) {
+    half_val = static_cast<uint16_t>((sign << 15) | 0x7C00); // Inf
+  } else if (exponent < -14) {
+    half_val = static_cast<uint16_t>(sign << 15); // Zero / subnormal
+  } else {
+    half_val = static_cast<uint16_t>(
+        (sign << 15) | (static_cast<uint32_t>(exponent + 15) << 10) |
+        (mantissa >> 13));
+  }
+  return half_val;
+}
+
+// Convert a IEEE 754 half-precision (uint16_t) value to float32
+float half_to_float(uint16_t half_val) {
+  uint32_t sign = (half_val >> 15) & 0x1;
+  uint32_t exponent = (half_val >> 10) & 0x1F;
+  uint32_t mantissa = half_val & 0x3FF;
+
+  float result;
+  if (exponent == 0) {
+    result = std::ldexp(static_cast<float>(mantissa), -24);
+  } else if (exponent == 31) {
+    result = mantissa ? std::numeric_limits<float>::quiet_NaN()
+                      : std::numeric_limits<float>::infinity();
+  } else {
+    result = std::ldexp(
+        1.0f + static_cast<float>(mantissa) / 1024.0f, exponent - 15);
+  }
+  if (sign) {
+    result = -result;
+  }
+  return result;
+}
 
 // Output and latency printing utilities
 namespace {
@@ -147,12 +204,18 @@ void ValueSpec::generate_tensor_data(int seed) {
     case vkapi::kHalf: {
       half_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        // Generate random float data first, then convert to half
+        // Generate random float data first, then convert to IEEE 754 half.
         std::vector<float> temp_data(num_elements);
         generate_random_float_data(temp_data, -1.0f, 1.0f, seed);
         for (size_t i = 0; i < temp_data.size(); ++i) {
-          // Simple conversion to uint16_t representation of half
-          half_data[i] = static_cast<uint16_t>(temp_data[i] * 32767.0f);
+          half_data[i] = float_to_half(temp_data[i]);
+        }
+      } else if (data_gen_type == DataGenType::RANDOM_SCALES) {
+        // Generate random scales in float, then convert to proper fp16
+        std::vector<float> temp_data(num_elements);
+        generate_random_float_data(temp_data, 0.005f, 0.015f, seed);
+        for (size_t i = 0; i < temp_data.size(); ++i) {
+          half_data[i] = float_to_half(temp_data[i]);
         }
       } else if (data_gen_type == DataGenType::RANDINT) {
         generate_randint_half_data(half_data, -10, 10, seed);
@@ -161,10 +224,7 @@ void ValueSpec::generate_tensor_data(int seed) {
       } else if (data_gen_type == DataGenType::RANDINT4) {
         generate_randint_half_data(half_data, -8, 7, seed);
       } else if (data_gen_type == DataGenType::ONES) {
-        std::fill(
-            half_data.begin(),
-            half_data.end(),
-            static_cast<uint16_t>(32767)); // 1.0 in half
+        std::fill(half_data.begin(), half_data.end(), float_to_half(1.0f));
       } else if (data_gen_type == DataGenType::ZEROS) {
         std::fill(
             half_data.begin(),
@@ -486,7 +546,7 @@ float ValueSpec::get_element(size_t index) const {
     case vkapi::kFloat:
       return index < float_data.size() ? float_data[index] : 0.0f;
     case vkapi::kHalf:
-      return index < half_data.size() ? (half_data[index] / 32767.0f) : 0.0f;
+      return index < half_data.size() ? half_to_float(half_data[index]) : 0.0f;
     case vkapi::kInt:
       return index < int32_data.size() ? static_cast<float>(int32_data[index])
                                        : 0.0f;
@@ -562,7 +622,7 @@ void generate_randint_half_data(
   std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
-    val = static_cast<uint16_t>(std::abs(dis(gen)) % 65536);
+    val = float_to_half(static_cast<float>(dis(gen)));
   }
 }
 
@@ -640,12 +700,26 @@ void generate_zeros_data(std::vector<float>& data) {
 bool ValueSpec::validate_against_reference(
     float abs_tolerance,
     float rel_tolerance) const {
-  // Only validate float tensors as specified in requirements
-  if (dtype != vkapi::kFloat || !is_tensor()) {
-    return true; // Skip validation for non-float or non-tensor types
+  // Only validate float and half tensors. For half tensors, convert the
+  // computed half data to float for comparison against the fp32 reference.
+  if (!is_tensor() || (dtype != vkapi::kFloat && dtype != vkapi::kHalf)) {
+    return true; // Skip validation for non-float/half or non-tensor types
   }
 
-  const auto& computed_data = get_float_data();
+  // For kHalf, materialize the GPU output as float so the same tolerance
+  // machinery can compare against the (always-float) reference data.
+  std::vector<float> half_as_float;
+  if (dtype == vkapi::kHalf) {
+    const auto& half_bits = get_half_data();
+    half_as_float.resize(half_bits.size());
+    for (size_t i = 0; i < half_bits.size(); ++i) {
+      half_as_float[i] = half_to_float(half_bits[i]);
+    }
+  }
+  // Materialize computed data as float32 for comparison. The dtype is
+  // guaranteed to be float or half by the early-out above.
+  const std::vector<float>& computed_data =
+      (dtype == vkapi::kHalf) ? half_as_float : get_float_data();
   const auto& reference_data = get_ref_float_data();
 
   // Skip validation if no reference data is available
@@ -1286,9 +1360,16 @@ int64_t default_flop_calculator(const TestCase& test_case) {
   return total_elements;
 }
 
-ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
+ComputeGraph setup_compute_graph(
+    TestCase& test_case,
+    std::string op_name,
+    int op_invocations_per_execute) {
   GraphConfig config;
   config.enable_querypool = true;
+  // Default-on (opt-out via TestCase::set_force_resize(false)): force every
+  // DynamicDispatchNode to run its resize function on each execute(),
+  // exercising the op's resize formula even when input shapes are unchanged.
+  config.force_resize = test_case.get_force_resize();
   ComputeGraph graph(config);
 
   std::vector<ValueRef> input_values;
@@ -1367,7 +1448,12 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
   std::vector<ValueRef> op_args = input_values;
   op_args.insert(op_args.end(), output_values.begin(), output_values.end());
 
-  opFn(graph, op_args);
+  // Invoke the op op_invocations_per_execute times to stack dispatches per
+  // graph.execute(). The output set_output_value() calls below still happen
+  // exactly once.
+  for (int i = 0; i < op_invocations_per_execute; ++i) {
+    opFn(graph, op_args);
+  }
 
   for (size_t i = 0; i < output_values.size(); ++i) {
     graph.set_output_value(output_values[i]);
@@ -1376,8 +1462,12 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
 }
 
 // Test execution utilities
-BenchmarkResult
-execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
+BenchmarkResult execute_test_case(
+    TestCase& test_case,
+    int warmup_runs,
+    int benchmark_runs,
+    int chained_dispatches,
+    bool write_outputs) {
   BenchmarkResult result(
       test_case.name().empty() ? "unnamed_test_case" : test_case.name());
 
@@ -1386,24 +1476,30 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
     api::context()->initialize_querypool();
   }
 
-  // Create the compute graph for this test case using setup_compute_graph
-  ComputeGraph graph =
-      setup_compute_graph(test_case, test_case.operator_name());
+  // Build the measurement graph with the requested chained_dispatches factor.
+  // The caller (typically execute_test_cases) decides what it should be —
+  // this function is a pure "run at the given chained_dispatches" primitive.
+  ComputeGraph graph = setup_compute_graph(
+      test_case, test_case.operator_name(), chained_dispatches);
 
   // Prepare the graph
   graph.prepare();
   graph.prepack();
 
   // Copy input data into the graph's staging buffers
+  size_t graph_input_idx = 0;
   for (size_t i = 0; i < test_case.num_inputs(); ++i) {
     const ValueSpec& input_spec = test_case.inputs()[i];
-    if (input_spec.is_tensor() && i < graph.inputs().size()) {
-      // Skip copying data for constant tensors
-      if (input_spec.is_constant()) {
-        continue;
-      }
 
-      const auto& input_ref = graph.inputs()[i];
+    // Only non-constant tensor inputs correspond to graph.inputs() entries
+    bool is_graph_input = input_spec.is_tensor() && !input_spec.is_constant() &&
+        !input_spec.is_none();
+    if (!is_graph_input) {
+      continue;
+    }
+
+    if (graph_input_idx < graph.inputs().size()) {
+      const auto& input_ref = graph.inputs()[graph_input_idx];
 
       // Get the appropriate data based on dtype
       const void* data_ptr = nullptr;
@@ -1433,6 +1529,7 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
       graph.maybe_cast_and_copy_into_staging(
           input_ref.staging, data_ptr, data_numel, input_spec.dtype);
     }
+    ++graph_input_idx;
   }
 
   // Warmup runs
@@ -1444,6 +1541,8 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
   float total_cpu_time_us = 0.0f;
   float total_gpu_time_us = 0.0f;
 
+  const float chained_dispatches_f = static_cast<float>(chained_dispatches);
+
   for (int run = 0; run < benchmark_runs; ++run) {
     // Measure CPU time for each execute() call
     auto cpu_start = std::chrono::high_resolution_clock::now();
@@ -1452,7 +1551,10 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
 
     auto cpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(
         cpu_end - cpu_start);
-    float cpu_time_us = static_cast<float>(cpu_duration.count());
+    // Each execute() ran chained_dispatches op invocations; report
+    // per-invocation time.
+    float cpu_time_us =
+        static_cast<float>(cpu_duration.count()) / chained_dispatches_f;
     total_cpu_time_us += cpu_time_us;
 
     // Collect per-shader GPU timing - get raw shader results to preserve
@@ -1479,7 +1581,10 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
             shader_result.end_time_ns - shader_result.start_time_ns;
         float duration_us = static_cast<float>(duration_ns) / 1000.0f;
         gpu_time_us += duration_us;
-        // Store per-shader timing with work group sizes
+        // Per-shader sample is already one querypool entry per dispatch (at
+        // chained_dispatches>1 we get that many entries per shader), so do NOT
+        // divide here — the aggregator (get_avg_time_us) averages across them
+        // naturally.
         result.add_shader_timing(
             shader_result.kernel_name,
             duration_us,
@@ -1487,6 +1592,9 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
             shader_result.metadata.local_workgroup_size);
       }
     }
+    // gpu_time_us aggregates chained_dispatches worth of shader runs; divide
+    // it down to per-invocation time.
+    gpu_time_us /= chained_dispatches_f;
     total_gpu_time_us += gpu_time_us;
 
     // Add the appropriate timing based on the flag
@@ -1511,30 +1619,34 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
               << " timing for result" << std::endl;
   }
 
-  // Copy output data from the graph's staging buffers
-  for (size_t i = 0; i < test_case.num_outputs(); ++i) {
-    ValueSpec& output_spec = test_case.outputs()[i];
+  // Copy output data from the graph's staging buffers. The benchmarking path
+  // skips this work since it doesn't need correctness data — the probe pass
+  // has already populated test_case.outputs() at chained_dispatches=1.
+  if (write_outputs) {
+    for (size_t i = 0; i < test_case.num_outputs(); ++i) {
+      ValueSpec& output_spec = test_case.outputs()[i];
 
-    if (output_spec.is_tensor() && i < graph.outputs().size()) {
-      const auto& output_ref = graph.outputs()[i];
+      if (output_spec.is_tensor() && i < graph.outputs().size()) {
+        const auto& output_ref = graph.outputs()[i];
 
-      // Ensure output data vector is properly sized
-      size_t data_numel = output_spec.numel();
-      output_spec.resize_data(data_numel);
+        // Ensure output data vector is properly sized
+        size_t data_numel = output_spec.numel();
+        output_spec.resize_data(data_numel);
 
-      // Get mutable data pointer for the output
-      void* data_ptr = output_spec.get_mutable_data_ptr();
+        // Get mutable data pointer for the output
+        void* data_ptr = output_spec.get_mutable_data_ptr();
 
-      if (data_ptr != nullptr) {
-        // Copy data from staging buffer to output spec
-        graph.maybe_cast_and_copy_from_staging(
-            output_ref.staging, data_ptr, data_numel, output_spec.dtype);
-      }
+        if (data_ptr != nullptr) {
+          // Copy data from staging buffer to output spec
+          graph.maybe_cast_and_copy_from_staging(
+              output_ref.staging, data_ptr, data_numel, output_spec.dtype);
+        }
 
-      // Print output tensor data if output printing is enabled
-      if (print_output()) {
-        std::string output_name = "Output[" + std::to_string(i) + "]";
-        print_valuespec_data(output_spec, output_name);
+        // Print output tensor data if output printing is enabled
+        if (print_output()) {
+          std::string output_name = "Output[" + std::to_string(i) + "]";
+          print_valuespec_data(output_spec, output_name);
+        }
       }
     }
   }
@@ -1645,7 +1757,57 @@ TestResult execute_test_cases(
       BenchmarkResult result;
       bool shader_not_supported = false;
       try {
-        result = execute_test_case(test_case, warmup_runs, benchmark_runs);
+        // Always run a probe pass at chained_dispatches=1 with
+        // write_outputs=true. This populates test_case.outputs() for the
+        // downstream correctness check with a clean single-dispatch result,
+        // and also gives us probe_us for adaptive sizing of the measurement
+        // run's chained_dispatches.
+        //
+        // probe_then_scale (Google Benchmark style): size chained_dispatches
+        // so each measurement execute() takes ~target_us. Tiny ops get a
+        // large factor (driving GPU governor escalation); heavy ops get a
+        // small factor (bounded wall time). Caveat: on Adreno 740 the probe
+        // runs at the DCVS-pinned clock (~220 MHz), so probe_us is inflated
+        // and the computed factor comes out under-sized for boost clock — but
+        // the default target is generous enough that an under-sized factor
+        // still drives sustained activity.
+        BenchmarkResult probe_result = execute_test_case(
+            test_case,
+            /*warmup_runs=*/1,
+            /*benchmark_runs=*/1,
+            /*chained_dispatches=*/1,
+            /*write_outputs=*/true);
+        float probe_us = probe_result.get_avg_time_us();
+        if (probe_us < kMinProbeTimeUs) {
+          probe_us = kMinProbeTimeUs;
+        }
+
+        int chained_dispatches;
+        const int manual_n = test_case.get_op_invocations_per_execute();
+        if (manual_n > 0) {
+          chained_dispatches = manual_n;
+        } else {
+          const int target_us = test_case.get_target_execute_time_us();
+          chained_dispatches =
+              std::max(1, static_cast<int>(target_us / probe_us));
+          chained_dispatches =
+              std::min(chained_dispatches, kMaxChainedDispatches);
+        }
+        if (debugging()) {
+          std::cout << "[probe] " << test_case.name()
+                    << ": probe_us=" << probe_us
+                    << ", chained_dispatches=" << chained_dispatches
+                    << std::endl;
+        }
+
+        // Measurement pass: chained_dispatches stacking, skip output copy
+        // since the probe already wrote the correctness data.
+        result = execute_test_case(
+            test_case,
+            warmup_runs,
+            benchmark_runs,
+            chained_dispatches,
+            /*write_outputs=*/false);
         result.set_operator_name(test_case.operator_name());
       } catch (const vkcompute::vkapi::ShaderNotSupportedError&) {
         result = BenchmarkResult(
@@ -2064,7 +2226,11 @@ void compute_weight_sums(
   auto& weight_sums_data = weight_sums.get_int32_data();
   auto& quantized_weight_data = quantized_weight.get_int8_data();
 
-  weight_sums_data.resize(out_features);
+  // Don't resize down - the buffer may be pre-allocated with aligned size.
+  // Only resize up if needed.
+  if (weight_sums_data.size() < static_cast<size_t>(out_features)) {
+    weight_sums_data.resize(out_features);
+  }
 
   // For each output feature, compute the sum of quantized weights
   for (int64_t out_f = 0; out_f < out_features; ++out_f) {

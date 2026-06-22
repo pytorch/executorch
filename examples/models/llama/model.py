@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -31,12 +32,8 @@ class Llama2Model(EagerModelBase):
         checkpoint_path = self.llm_config.base.checkpoint
         params_path = self.llm_config.base.params
 
-        # Adapter checkpoint and config.
-        adapter_checkpoint_path = self.llm_config.base.adapter_checkpoint
-        adapter_config_path = self.llm_config.base.adapter_config
-        assert (adapter_checkpoint_path is None and adapter_config_path is None) or (
-            adapter_checkpoint_path is not None and adapter_config_path is not None
-        ), "Both adapter_checkpoint_path and adapter_config_path must be specified or neither must be specified."
+        # LoRA adapter configuration.
+        lora_config = self.llm_config.base.lora_config
 
         self.use_kv_cache = self.llm_config.model.use_kv_cache
         self.use_sdpa_with_kv_cache_op = self.llm_config.model.use_sdpa_with_kv_cache
@@ -69,10 +66,18 @@ class Llama2Model(EagerModelBase):
             with open(params_path, "r") as f:
                 params = json.loads(f.read())
 
-        # Get adapter checkpoint and config.
+        # Get adapter checkpoint.
         adapter_checkpoint = {}
-        adapter_config = {}
-        if adapter_checkpoint_path:
+        if lora_config:
+            # Resolve LoRA params from adapter_config JSON if not already set.
+            if lora_config.adapter_config and lora_config.lora_rank == 0:
+                with open(lora_config.adapter_config, "r") as f:
+                    cfg = json.load(f)
+                lora_config.lora_rank = cfg["r"]
+                lora_config.lora_alpha = cfg["lora_alpha"]
+                lora_config.target_modules = cfg["target_modules"]
+
+            adapter_checkpoint_path = lora_config.adapter_checkpoint
             if adapter_checkpoint_path.endswith(".pt"):
                 adapter_checkpoint = torch.load(
                     adapter_checkpoint_path, map_location=device, mmap=True
@@ -92,22 +97,6 @@ class Llama2Model(EagerModelBase):
                 raise ValueError(
                     f"Unsupported adapter checkpoint format: {adapter_checkpoint_path}"
                 )
-
-            with open(adapter_config_path, "r") as f:
-                adapter_config_full = json.loads(f.read())
-                if (
-                    "r" not in adapter_config_full
-                    or "lora_alpha" not in adapter_config_full
-                    or "target_modules" not in adapter_config_full
-                ):
-                    raise ValueError(
-                        "Adapter config must contain r, lora_alpha, and target_modules."
-                    )
-                adapter_config = {
-                    "r": adapter_config_full["r"],
-                    "lora_alpha": adapter_config_full["lora_alpha"],
-                    "target_modules": adapter_config_full["target_modules"],
-                }
             checkpoint.update(adapter_checkpoint)
 
         output_prune_map = None
@@ -133,8 +122,10 @@ class Llama2Model(EagerModelBase):
             input_prune_map=input_prune_map,
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
+            r=lora_config.lora_rank if lora_config else None,
+            lora_alpha=lora_config.lora_alpha if lora_config else None,
+            target_modules=lora_config.target_modules if lora_config else None,
             **params,
-            **adapter_config,
         )
 
         if model_args.use_scaled_rope:
@@ -213,19 +204,28 @@ class Llama2Model(EagerModelBase):
             from .source_transformation.attention_sink import enable_attention_sink
 
             attention_sink_params = self.llm_config.model.use_attention_sink.split(",")
-            assert len(attention_sink_params) == 3
+            assert len(attention_sink_params) == 2, (
+                f"use_attention_sink expects exactly 2 comma-separated values "
+                f"(sink_size,window_size), got {len(attention_sink_params)}"
+            )
             sink_size = int(attention_sink_params[0])
             window_size = int(attention_sink_params[1])
-            eviction_batch_size = int(attention_sink_params[2])
 
-            assert self.llm_config.export.max_context_length == sink_size + window_size
+            # max_context_length must be >= sink_size + window_size to have enough RoPE frequencies
+            # A larger max_context_length is allowed (and recommended) to support generation beyond
+            # the sliding window size.
+            assert (
+                self.llm_config.export.max_context_length >= sink_size + window_size
+            ), (
+                f"max_context_length ({self.llm_config.export.max_context_length}) must be >= "
+                f"sink_size + window_size ({sink_size + window_size})"
+            )
 
             self.model_ = enable_attention_sink(
                 module=self.model_,
                 params=model_args,
                 sink_size=sink_size,
                 window_size=window_size,
-                eviction_batch_size=eviction_batch_size,
             )
 
         missing, unexpected = None, None
@@ -286,11 +286,25 @@ class Llama2Model(EagerModelBase):
         if self.use_kv_cache:
             return self.get_example_inputs_kvcache_sdpa()
         else:
-            return (
-                torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
-                ),  # tokens, with kv cache our input token length is always just 1 token.
+            max_seq_len = getattr(self.llm_config.export, "max_seq_length", 3)
+            # Preserve the historical three-token example input as the minimum.
+            max_seq_len = max(3, int(max_seq_len))
+            max_len = max_seq_len - 1 if self.enable_dynamic_shape else max_seq_len
+            backend = self.llm_config.backend
+            token_dtype = (
+                torch.int32
+                if (
+                    backend.ethosu.enabled
+                    or backend.tosa.enabled
+                    or backend.vgf.enabled
+                )
+                else torch.long
             )
+            example_tokens = torch.arange(max_len, dtype=token_dtype).unsqueeze(0)
+            vocab_size = int(getattr(self.model_.params, "vocab_size", 0))
+            if vocab_size > 1:
+                example_tokens = example_tokens % (vocab_size - 1) + 1
+            return (example_tokens,)
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
@@ -356,9 +370,10 @@ class Llama2Model(EagerModelBase):
 
         embedding_bit_width, embedding_group_size = None, None
         if self.llm_config.base.preq_embedding_quantize:
-            embedding_bit_width, embedding_group_size = (
-                self.llm_config.base.preq_embedding_quantize.split(",")
-            )
+            (
+                embedding_bit_width,
+                embedding_group_size,
+            ) = self.llm_config.base.preq_embedding_quantize.split(",")
             from .source_transformation.pre_quantization import (
                 transform_embedding_for_pre_quantization,
             )

@@ -7,6 +7,7 @@
 import torch
 from executorch.exir import to_edge
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import merge_decomposed_graph
 
@@ -24,6 +25,12 @@ class LinalgVectorNorm(torch.nn.Module):
             self.dim = 0
 
         x = torch.abs(x)
+
+        # QNN would not be able to compute pow where exponential is inf or -inf.
+        if self.exp == float("inf"):
+            return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
+        if self.exp == float("-inf"):
+            return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
         x = torch.pow(x, self.exp)
         x = torch.sum(x, dim=self.dim, keepdim=self.keepdim)
         return torch.pow(x, 1.0 / self.exp)
@@ -70,6 +77,5 @@ class DecomposeLinalgVectorNorm(ExportPass):
                     )
                     graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

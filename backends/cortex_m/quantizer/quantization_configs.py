@@ -2,19 +2,26 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
+import operator
+from typing import Any, Callable
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer_utils import (
+    _get_int32_bias_qspec,
+    _get_int32_per_channel_bias_qspec,
+)
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from torch.fx import Node
 from torchao.quantization.pt2e import (
     HistogramObserver,
     MinMaxObserver,
     PerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import (
-    DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
+    QuantizationSpecBase,
+    SharedQuantizationSpec,
 )
 
 # ----------------- QUANTIZATION SPEC PRESETS -----------------
@@ -65,73 +72,134 @@ SOFTMAX_OUTPUT_FIXED_QSPEC = FixedQParamsQuantizationSpec(
     qscheme=torch.per_tensor_affine,
 )
 
+SOFTMAX_TARGETS = {
+    torch.ops.aten._softmax.default,
+    torch.ops.aten.softmax.int,
+}
 
-def _derive_bias_qparams_fn(
-    obs_or_fqs,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    if len(obs_or_fqs) != 2:
-        raise ValueError(
-            f"Expecting two obs/fqs, one for activation and one for weight, got: {len(obs_or_fqs)}"
-        )
-    act_obs_or_fq = obs_or_fqs[0]
-    weight_obs_or_fq = obs_or_fqs[1]
-    act_scale, _ = act_obs_or_fq.calculate_qparams()
-    weight_scale, _ = weight_obs_or_fq.calculate_qparams()
-    return act_scale * weight_scale, torch.full_like(
-        weight_scale, fill_value=0, dtype=torch.int32
-    )
+CONV_TRANSPOSE_TARGETS = {
+    torch.ops.aten.conv_transpose2d.input,
+}
 
+POOL_SHARE_OUTPUT_TARGETS = {
+    torch.ops.aten.avg_pool2d.default,
+    torch.ops.aten.max_pool2d.default,
+    torch.ops.aten.max_pool2d_with_indices.default,
+}
 
-def _get_int32_bias_qspec(node):
-    return DerivedQuantizationSpec(
-        derived_from=((node.args[0], node), (node.args[1], node)),  # type: ignore[list-item]
-        derive_qparams_fn=_derive_bias_qparams_fn,
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max - 1,
-    )
+POOL_FUSED_ACTIVATION_TARGETS = {
+    torch.ops.aten.relu.default,
+    torch.ops.aten.relu_.default,
+    torch.ops.aten.hardtanh.default,
+    torch.ops.aten.hardtanh_.default,
+    torch.ops.aten.clamp.default,
+    torch.ops.aten.clamp_.default,
+}
 
 
-def _get_int32_per_channel_bias_qspec(node):
-    return DerivedQuantizationSpec(
-        derived_from=((node.args[0], node), (node.args[1], node)),  # type: ignore[list-item]
-        derive_qparams_fn=_derive_bias_qparams_fn,
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max - 1,
-        qscheme=torch.per_channel_symmetric,
-        ch_axis=0,
-    )
+class CortexMQuantizationConfig(QuantizationConfig):
+    """Configures quantization, while enforcing cortex-m specific constraints."""
+
+    @staticmethod
+    def _get_shared_pool_input(node: Node | None) -> Node | None:
+        if node is None or len(node.args) == 0:
+            return None
+
+        input_node = node.args[0]
+        if not isinstance(input_node, Node):
+            return None
+
+        if input_node.target in POOL_SHARE_OUTPUT_TARGETS:
+            if len(input_node.args) > 0 and isinstance(input_node.args[0], Node):
+                return input_node.args[0]
+            return None
+
+        if input_node.target == operator.getitem and len(input_node.args) > 0:
+            pool_node = input_node.args[0]
+            if (
+                isinstance(pool_node, Node)
+                and pool_node.target in POOL_SHARE_OUTPUT_TARGETS
+                and len(pool_node.args) > 0
+                and isinstance(pool_node.args[0], Node)
+            ):
+                return pool_node.args[0]
+
+        return None
+
+    def get_input_act_qspec(
+        self, node: Node | None = None, input_node: Node | None = None
+    ) -> QuantizationSpecBase | None:
+        """
+        Returns the configured input activation spec, no specific adjustments.
+        """
+        return super().get_input_act_qspec()
+
+    def get_output_act_qspec(
+        self, node: Node | None = None
+    ) -> QuantizationSpecBase | None:
+        """
+        Returns the configured output activation spec with the following cortex-m specific adjustments:
+        - For softmax, returns a fixed quantization spec matching CMSIS-NN requirements.
+        - For pooling ops, returns a SharedQuantizationSpec to indicate that the output should share the same quantization parameters as the input.
+        """
+        if node is not None and node.target in SOFTMAX_TARGETS:
+            if self.output_activation is None:
+                return None
+            return SOFTMAX_OUTPUT_FIXED_QSPEC
+        if node is not None and node.target in POOL_SHARE_OUTPUT_TARGETS:
+            if len(node.args) == 0:
+                return super().get_output_act_qspec()
+            input_node = node.args[0]
+            if isinstance(input_node, Node):
+                return SharedQuantizationSpec((input_node, node))
+            return super().get_output_act_qspec()
+        if node is not None and node.target in POOL_FUSED_ACTIVATION_TARGETS:
+            shared_pool_input = self._get_shared_pool_input(node)
+            if shared_pool_input is not None:
+                return SharedQuantizationSpec(shared_pool_input)
+        return super().get_output_act_qspec()
+
+    def get_weight_qspec(self, node: Node | None = None) -> QuantizationSpecBase | None:
+        """
+        Returns the configured weight quantization spec with the following cortex-m specific adjustments:
+        - For conv transpose, returns the per-channel quantization spec with ch_axis=1 to match the IOHW weight format used by CMSIS-NN, instead of the default ch_axis=0
+        """
+        weight_qspec = super().get_weight_qspec()
+        if (
+            node is not None
+            and node.target in CONV_TRANSPOSE_TARGETS
+            and weight_qspec is not None
+            and isinstance(weight_qspec, QuantizationSpec)
+            and weight_qspec.dtype == torch.int8
+        ):
+            return INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC
+        return weight_qspec
+
+    def get_bias_qspec(
+        self, node: Node | None = None
+    ) -> QuantizationSpecBase | Callable[[Any], Any] | None:
+        """
+        Returns the configured bias quantization spec, no specific adjustments.
+        """
+        if callable(self.bias) and node is not None:
+            return self.bias(node)
+        return super().get_bias_qspec(node)
 
 
 # ----------------- QUANTIZATION CONFIG PRESETS -----------------
-INT8_PER_TENSOR_CONFIG = QuantizationConfig(
+INT8_PER_TENSOR_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_TENSOR_QSPEC,
     _get_int32_bias_qspec,
+    f"{__name__}.INT8_PER_TENSOR_CONFIG",
 )
 
 
-INT8_PER_CHANNEL_CONFIG = QuantizationConfig(
+INT8_PER_CHANNEL_CONFIG = CortexMQuantizationConfig(
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_WEIGHT_PER_CHANNEL_QSPEC,
     _get_int32_per_channel_bias_qspec,
-)
-
-
-INT8_PER_CHANNEL_TRANSPOSE_CONFIG = QuantizationConfig(
-    INT8_ACTIVATION_PER_TENSOR_QSPEC,
-    INT8_ACTIVATION_PER_TENSOR_QSPEC,
-    INT8_WEIGHT_PER_CHANNEL_TRANSPOSE_QSPEC,
-    _get_int32_per_channel_bias_qspec,
-)
-
-
-SOFTMAX_PER_TENSOR_CONFIG = QuantizationConfig(
-    INT8_ACTIVATION_PER_TENSOR_QSPEC,
-    SOFTMAX_OUTPUT_FIXED_QSPEC,
-    None,
-    None,
+    f"{__name__}.INT8_PER_CHANNEL_CONFIG",
 )

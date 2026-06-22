@@ -178,3 +178,66 @@ function(executorch_add_prefix_to_public_headers targetName prefix)
     TARGET "${targetName}" PROPERTY PUBLIC_HEADER ${FIXED_PUBLIC_HEADERS}
   )
 endfunction()
+
+# -----------------------------------------------------------------------------
+# MLX metallib distribution helper
+# -----------------------------------------------------------------------------
+# Copies mlx.metallib next to the target executable so MLX can find it at
+# runtime.
+#
+# MLX uses dladdr() to find the directory containing the binary with MLX code,
+# then looks for mlx.metallib in that directory. When MLX is statically linked
+# into an executable or shared library, this function ensures the metallib is
+# colocated with that binary.
+#
+# Usage: executorch_target_copy_mlx_metallib(my_executable)
+#
+function(executorch_target_copy_mlx_metallib target)
+  if(EXECUTORCH_BUILD_MLX)
+    if(DEFINED MLX_METALLIB_PATH AND EXISTS "${MLX_METALLIB_PATH}")
+      add_custom_command(
+        TARGET ${target}
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MLX_METALLIB_PATH}"
+                "$<TARGET_FILE_DIR:${target}>/mlx.metallib"
+        COMMENT "Copying mlx.metallib for ${target}"
+      )
+    elseif(DEFINED MLX_METALLIB_PATH)
+      message(
+        WARNING
+          "MLX_METALLIB_PATH is set to ${MLX_METALLIB_PATH} but file does not exist. "
+          "metallib will not be copied for ${target}."
+      )
+    endif()
+  endif()
+endfunction()
+
+# Create and install a shared library composed from dependency libraries. The
+# target links the provided dependencies and carries VERSION/SOVERSION.
+function(executorch_add_shared_library target_name)
+  set(empty_source_name "${target_name}_empty.cpp")
+  file(
+    GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${empty_source_name}"
+    CONTENT "// intentionally empty\n"
+  )
+  add_library(
+    ${target_name} SHARED "${CMAKE_CURRENT_BINARY_DIR}/${empty_source_name}"
+  )
+  if(ARGN)
+    target_link_libraries(${target_name} PRIVATE ${ARGN})
+  endif()
+  set_target_properties(
+    ${target_name}
+    PROPERTIES VERSION "${PROJECT_VERSION}"
+               SOVERSION "${PROJECT_VERSION_MAJOR}"
+               LINKER_LANGUAGE CXX
+  )
+  install(
+    TARGETS ${target_name}
+    EXPORT ExecuTorchTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+endfunction()

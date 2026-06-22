@@ -894,6 +894,7 @@ void add_conv2d_q8ta_q8csw_q8to_node(
         padding,
         dilation,
         groups,
+        static_cast<uint32_t>(ActivationType::kNone),
         packed_int8_output);
   }
 }

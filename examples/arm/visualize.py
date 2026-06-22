@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,8 +17,11 @@ import pandas as pd
 from executorch.devtools.visualization.visualization_utils import (
     visualize_model_explorer,
 )
-from model_explorer import config as model_explorer_config, node_data_builder as ndb
-from model_explorer.config import ModelSource
+from model_explorer import (  # type: ignore[import]
+    config as model_explorer_config,
+    node_data_builder as ndb,
+)
+from model_explorer.config import ModelSource  # type: ignore[import]
 
 COMPILER_OP_ID = "scheduled_id"
 
@@ -254,7 +257,7 @@ def validate_perf_mode_args(trace: str, tables: str) -> None:
 
 
 def set_pte_model_explorer_config(model_file, tosa_files, config):
-    from pte_adapter_model_explorer.main import PTEAdapter
+    from pte_adapter_model_explorer.main import PTEAdapter  # type: ignore[import]
 
     pte_adapter = PTEAdapter()
 

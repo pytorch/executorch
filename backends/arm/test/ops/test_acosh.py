@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,7 +27,7 @@ test_data_suite = {
     "just_above_one": lambda: torch.tensor([1.0001, 1.01, 1.1, 2.0]),
     "rand_valid": lambda: torch.rand(10, 10) * 10 + 1,  # [1, 11)
     "ramp_valid": lambda: torch.linspace(1.0, 20.0, steps=160),
-    "large": lambda: torch.tensor([10.0, 100.0, 1000.0, 1e6]),
+    "large": lambda: torch.tensor([500.0, 100.0, 1000.0, 1e6]),
     "mixed_valid": lambda: torch.tensor([1.0, 2.0, 10.0, 100.0]),
 }
 

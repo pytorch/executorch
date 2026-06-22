@@ -62,6 +62,5 @@ class ExpandBroadcastTensorShape(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         self.traverse_broadcast_node(graph_module)
-        graph_module.recompile()
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

@@ -42,15 +42,21 @@ target_sources(
   PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Logging.cpp
 )
 
-# utils
-target_sources(
-  utils
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/Utils.h
-  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Utils.cpp
-)
-
 # shared_buffer
 target_sources(
   shared_buffer PRIVATE ${CMAKE_CURRENT_LIST_DIR}/SharedBuffer.h
                         ${CMAKE_CURRENT_LIST_DIR}/SharedBuffer.cpp
 )
+
+# qnn_pal
+if(WIN32)
+  target_sources(
+    qnn_pal PRIVATE ${CMAKE_CURRENT_LIST_DIR}/pal/src/windows/DynamicLoading.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/pal/src/windows/Path.cpp
+  )
+else()
+  target_sources(
+    qnn_pal PRIVATE ${CMAKE_CURRENT_LIST_DIR}/pal/src/linux/DynamicLoading.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/pal/src/linux/Path.cpp
+  )
+endif()

@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -87,18 +87,22 @@ test_cases = {
 }
 
 
-xfails = {}
+xfails: dict[str, xfail_type] = {}
 
 
 @parametrize("test_case", test_cases, xfails=xfails)
-def test_dialect_minimum(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_minimum(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
     )
 
 
 @parametrize("test_case", test_cases, xfails=xfails)
-def test_implementation_minimum(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_minimum(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation()

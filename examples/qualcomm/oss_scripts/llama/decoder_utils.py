@@ -41,7 +41,7 @@ def _modality_inputs_merger(
     input_ids: torch.LongTensor,
     inputs_embeds: torch.Tensor,
     image_hidden_states: torch.Tensor,
-    modality_placeholder_token_id,
+    image_token_id,
 ):
     """
     This method aims at merging the token embeddings with the image hidden states into one single sequence of vectors that are fed to the transformer LM.
@@ -53,7 +53,7 @@ def _modality_inputs_merger(
     - To fit the format of that sequence, `input_ids`, `input_embeds`, `attention_mask` are all 3 adapted to insert the image hidden states.
     """
 
-    special_image_mask = input_ids == modality_placeholder_token_id
+    special_image_mask = input_ids == image_token_id
     special_image_mask = (
         special_image_mask.unsqueeze(-1)
         .expand_as(inputs_embeds)
@@ -77,6 +77,13 @@ class DecoderInputs:
     embedding: Optional[torch.Tensor] = None
 
 
+@dataclass
+class DecoderOutputs:
+    logits: Optional[torch.Tensor] = None
+    token_list: Optional[List[int]] = None
+    input_samples: Optional[List] = None
+
+
 class GraphModuleCalibrationWrapper(EagerEvalWrapper):
     """
     A wrapper class for calibration
@@ -94,6 +101,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         get_example_inputs: Callable,
         use_i64_token: bool,
         seq_mse_candidates: int,
+        collect_input_samples: bool = False,
     ):
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
         assert max_seq_length is not None, "max_seq_length must be provided"
@@ -107,15 +115,19 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self.max_seq_length = max_seq_length
         self.use_i64_token = use_i64_token
         self.seq_mse_candidates = seq_mse_candidates
+        self._input_samples = None
+        self.collect_input_samples = collect_input_samples
+
+    def get_input_samples(self):
+        return self._input_samples
 
     def _model_call(self, inps):
-        all_logits = None
         kwargs = {}
         if self._use_kv_cache:
             kwargs["ar_len"] = self.ar_len
             kwargs["seq_mse_candidates"] = self.seq_mse_candidates
 
-        all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
+        result = INFERENCE_REGISTRY[self._use_kv_cache](
             self.get_example_inputs,
             inps,
             self._model,
@@ -123,11 +135,13 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
             max_seq_len=self.max_seq_length,
             use_i64_token=self.use_i64_token,
             collect_logits=True,
+            collect_input_samples=self.collect_input_samples,
             **kwargs,
         )
+        self._input_samples = result.input_samples
         # one shot is enough for seq mse
         self.seq_mse_candidates = 0
-        return all_logits
+        return result.logits
 
 
 class LookaheadDecoder:
@@ -313,13 +327,9 @@ def retrieve_info_from_pte(pte_path: str) -> dict:
         pte_max_context_len = pte_max_seq_len
 
     # FP has no scale/zero_point, use following values, which is equivalent to not performing dequantize.
-    if kv_io_bit_width == 32:
+    if kv_io_bit_width == 32 or (logits_scale is None or logits_zero_point is None):
         logits_scale = 1
         logits_zero_point = 0
-    elif logits_scale is None or logits_zero_point is None:
-        raise RuntimeError(
-            "Unable to find scale/offset. The .pte file might be deprecated. Please generate a new .pte file"
-        )
     assert output_vocab_size is not None, "Couldn't find the vocab size"
     assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
     meta_info = {
@@ -373,6 +383,26 @@ def smart_mask_updater(
     return pos, k_caches, v_caches
 
 
+def evict_tokens(
+    ar_len: int,
+    atten_mask: AttentionMask,
+    pos,
+    k_caches,
+    v_caches,
+    rope_module,
+    position_shift,
+):
+    max_cache_len = k_caches[0].size(-1)
+    shifted_pos = pos + position_shift
+    if shifted_pos + ar_len > max_cache_len:
+        num_to_evict = rope_module.eviction_batch_size
+        k_caches, v_caches = rope_module(k_caches, v_caches)
+        position_shift -= num_to_evict
+        shifted_pos -= num_to_evict
+        atten_mask.smart_mask_init(shifted_pos)
+    return k_caches, v_caches, position_shift
+
+
 def _prefill_chunking(
     inputs: DecoderInputs,
     module: torch.fx.GraphModule,
@@ -383,6 +413,7 @@ def _prefill_chunking(
     k_caches,
     v_caches,
     total_token_list,
+    last_input_sample=None,
 ):
     with torch.no_grad():
         num_prompt_tokens = len(total_token_list)
@@ -426,8 +457,22 @@ def _prefill_chunking(
                     *k_caches,
                     *v_caches,
                 )
+                last_input_sample = (
+                    tmp_token_list,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
             else:
                 logits, new_k_caches, new_v_caches = module(
+                    tmp_embedding,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
+                last_input_sample = (
                     tmp_embedding,
                     *inputs.atten_mask,
                     tmp_pos,
@@ -473,7 +518,7 @@ def _prefill_chunking(
             torch.argmax(logits[:, num_tokens_in_chunk - 1], dim=-1).item()
         )
 
-        return pos
+        return pos, last_input_sample
 
 
 def _generate(
@@ -481,13 +526,14 @@ def _generate(
     pos,
     module: torch.fx.GraphModule,
     tokenizer,
-    text_embedding,
+    tok_embedding,
     ar_len: int,
     max_seq_len: int,
     k_caches,
     v_caches,
     total_token_list,
     lookahead_config,
+    last_input_sample=None,
 ):
     max_cache_len = max_seq_len - ar_len
     num_tokens = len(total_token_list)
@@ -507,7 +553,7 @@ def _generate(
 
             if inputs.input_ids is None:
                 # Get text_embedding
-                embedding = text_embedding(tmp_token_list)
+                embedding = tok_embedding(tmp_token_list)
 
             # Prepare tmp_pos (padded with zeros).
             tmp_pos = torch.zeros((1, ar_len), dtype=torch.int32)
@@ -523,8 +569,22 @@ def _generate(
                     *k_caches,
                     *v_caches,
                 )
+                last_input_sample = (
+                    tmp_token_list,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
             else:
                 logits, new_k_caches, new_v_caches = module(
+                    embedding,
+                    *inputs.atten_mask,
+                    tmp_pos,
+                    *k_caches,
+                    *v_caches,
+                )
+                last_input_sample = (
                     embedding,
                     *inputs.atten_mask,
                     tmp_pos,
@@ -584,9 +644,29 @@ def _generate(
                     *k_caches,
                     *v_caches,
                 )
+                last_input_sample = (
+                    torch.tensor(input_tokens, dtype=inputs.input_ids_dtype).unsqueeze(
+                        0
+                    ),
+                    *inputs.atten_mask,
+                    pos_offsets + pos,
+                    *k_caches,
+                    *v_caches,
+                )
             else:
                 logits, new_k_caches, new_v_caches = module(
-                    text_embedding(
+                    tok_embedding(
+                        torch.tensor(
+                            input_tokens, dtype=inputs.input_ids_dtype
+                        ).unsqueeze(0)
+                    ),
+                    *inputs.atten_mask,
+                    pos_offsets + pos,
+                    *k_caches,
+                    *v_caches,
+                )
+                last_input_sample = (
+                    tok_embedding(
                         torch.tensor(
                             input_tokens, dtype=inputs.input_ids_dtype
                         ).unsqueeze(0)
@@ -638,6 +718,7 @@ def _generate(
         logging.info(
             f"lookahead accepted / total generated: {accepted_tokens} / {generated_tokens}"
         )
+    return last_input_sample
 
 
 @register_inference(use_kv_cache=True)
@@ -647,20 +728,22 @@ def kv_inference(  # noqa: C901
     module: torch.fx.GraphModule,
     tokenizer,
     tok_embedding=None,
-    hidden_states=None,
-    modality_placeholder_token_id=None,
+    hidden_states: Tuple = (),
+    audio_token_id=None,
+    image_token_id=None,
     ar_len=1,
     max_seq_len=512,
     use_i64_token=False,
     collect_logits=False,
     seq_mse_candidates=0,
     lookahead_config=None,
-):
+    collect_input_samples=False,
+) -> DecoderOutputs:
+    input_samples = []  # Record input sample for quantization error analysis
     is_multimodal = all(
         [
-            tok_embedding is not None,
-            hidden_states is not None,
-            modality_placeholder_token_id is not None,
+            tok_embedding,
+            audio_token_id or image_token_id,
         ]
     )
 
@@ -686,8 +769,9 @@ def kv_inference(  # noqa: C901
         # pyre-ignore
         prompt_token_list = prompt.flatten().tolist()
 
-    # 2. forward text embedding
+    # 2. process embedding
     if is_multimodal:
+        # 2.1 forward text embedding
         input_ids = torch.tensor([prompt_token_list])
         input_ids = (
             input_ids.to(torch.int64) if use_i64_token else input_ids.to(torch.int32)
@@ -696,11 +780,12 @@ def kv_inference(  # noqa: C901
         padded_seq_len = max(input_ids_len, ar_len)
         padded_seq_len = ((padded_seq_len + ar_len - 1) // ar_len) * ar_len
 
+        embedding_dim = [p for _, p in tok_embedding.named_parameters()][0].shape[-1]
         text_embeddings = torch.zeros(
             (
                 1,
                 padded_seq_len,
-                hidden_states[0].shape[-1],
+                embedding_dim,
             ),
             dtype=torch.float32,
         )
@@ -725,15 +810,22 @@ def kv_inference(  # noqa: C901
                         :, chunk_start_idx : chunk_start_idx + actual_chunk_len, :
                     ] = embedding
 
-            multimodal_embedding = _modality_inputs_merger(
-                input_ids,
-                text_embeddings[:, :input_ids_len, :],  # Only use actual prompt length
-                torch.cat(hidden_states, dim=1),
-                modality_placeholder_token_id,
-            )
+            # 2.2 merge text and multimodality embedding
+            if hidden_states:
+                multimodal_embedding = _modality_inputs_merger(
+                    input_ids,
+                    text_embeddings[
+                        :, :input_ids_len, :
+                    ],  # Only use actual prompt length
+                    torch.cat(hidden_states, dim=1),
+                    audio_token_id or image_token_id,
+                )
+            else:
+                multimodal_embedding = text_embeddings[:, :input_ids_len, :]
 
     # record total input tokens and generated tokens
     total_token_list = prompt_token_list
+    last_token_in_prompt = prompt_token_list[-1] if len(prompt_token_list) > 0 else None
 
     # 3. prepare decoder inputs
     inputs = DecoderInputs(
@@ -747,7 +839,7 @@ def kv_inference(  # noqa: C901
     # 4. decoder forward
     with torch.no_grad():
         # Phase 1: Prefill the prompt in ar_len chunks.
-        cur_pos = _prefill_chunking(
+        cur_pos, prefill_input_sample = _prefill_chunking(
             inputs,
             module,
             ar_len,
@@ -761,24 +853,33 @@ def kv_inference(  # noqa: C901
 
         # Phase 2: Generate tokens until the EOS token is generated or max_seq_len is reached.
         # When run on wikitext for ppl evaluation, this while-loop is not expected to run.
-        _generate(
-            inputs,
-            cur_pos,
-            module,
-            tokenizer,
-            tok_embedding,
-            ar_len,
-            max_seq_len,
-            k_caches,
-            v_caches,
-            total_token_list,
-            lookahead_config,
-        )
+        generate_input_sample = None
+        if last_token_in_prompt != tokenizer.eos_id:
+            generate_input_sample = _generate(
+                inputs,
+                cur_pos,
+                module,
+                tokenizer,
+                tok_embedding,
+                ar_len,
+                max_seq_len,
+                k_caches,
+                v_caches,
+                total_token_list,
+                lookahead_config,
+            )
+
+        if collect_input_samples:
+            input_samples.append(generate_input_sample or prefill_input_sample)
 
     logging.info(f"kv inference result:\n{tokenizer.decode(total_token_list)}")
     if collect_logits:
         result_logits = torch.cat(result_logits, dim=1)
-    return result_logits
+    return DecoderOutputs(
+        logits=result_logits if collect_logits else None,
+        token_list=total_token_list,
+        input_samples=input_samples if collect_input_samples else None,
+    )
 
 
 @register_inference(use_kv_cache=False)
@@ -789,16 +890,18 @@ def prefill_inference(
     tokenizer,
     tok_embedding=None,
     hidden_states=None,
-    modality_placeholder_token_id=None,
+    audio_token_id=None,
+    image_token_id=None,
     max_seq_len=512,
     use_i64_token=False,
     collect_logits=False,
-):
+    collect_input_samples=False,
+) -> DecoderOutputs:
+    input_samples = None  # Record input sample for quantization error analysis
     is_multimodal = all(
         [
-            tok_embedding is not None,
-            hidden_states is not None,
-            modality_placeholder_token_id is not None,
+            tok_embedding,
+            audio_token_id or image_token_id,
         ]
     )
 
@@ -843,11 +946,13 @@ def prefill_inference(
                     tmp_token_list,
                     text_embeddings,
                     torch.cat(hidden_states, dim=1),
-                    modality_placeholder_token_id,
+                    audio_token_id or image_token_id,
                 )
                 results = module(multimodal_embedding, *atten_mask)
+                input_samples = (multimodal_embedding, *atten_mask)
             else:
                 results = module(tmp_token_list, *atten_mask)
+                input_samples = (tmp_token_list, *atten_mask)
             if len(results) == 3:
                 logits, _, _ = results
             elif len(results) == 1:
@@ -859,7 +964,11 @@ def prefill_inference(
             pos += 1
     if isinstance(prompt, str):
         logging.info(f"prefill inference result:\n{tokenizer.decode(token_list)}")
-    return result_logits
+    return DecoderOutputs(
+        logits=result_logits if collect_logits else None,
+        token_list=token_list,
+        input_samples=[input_samples] if collect_input_samples else None,
+    )
 
 
 def graph_module_inference(
@@ -871,8 +980,9 @@ def graph_module_inference(
     max_seq_len=512,
     prompt=None,
     tok_embedding=None,
-    hidden_states=None,
-    modality_placeholder_token_id=None,
+    hidden_states: Tuple = (),
+    audio_token_id=None,
+    image_token_id=None,
     tasks=None,
     tasks_limit=1,
     num_fewshot=None,
@@ -880,7 +990,8 @@ def graph_module_inference(
     event_name: Optional[str] = None,
     seq_mse_candidates: int = 0,
     lookahead_config: Optional[Tuple[int]] = None,
-):
+    collect_input_samples: bool = False,
+) -> DecoderOutputs:
     """
     This function supports model execution from static nn.Module decoder model
     all the way to edge program.
@@ -896,20 +1007,23 @@ def graph_module_inference(
             kwargs["ar_len"] = ar_len
             kwargs["lookahead_config"] = lookahead_config
 
-        INFERENCE_REGISTRY[use_kv_cache](
+        result = INFERENCE_REGISTRY[use_kv_cache](
             get_example_inputs,
             prompt,
             module,
             tokenizer,
             tok_embedding=tok_embedding,
             hidden_states=hidden_states,
-            modality_placeholder_token_id=modality_placeholder_token_id,
+            audio_token_id=audio_token_id,
+            image_token_id=image_token_id,
             max_seq_len=max_seq_len,
             use_i64_token=use_i64_token,
             collect_logits=False,
+            collect_input_samples=collect_input_samples,
             **kwargs,
         )
         logging.info(f"Prompt summary for {event_name}")
+        return result
     else:
         calibration_wrapper = GraphModuleCalibrationWrapper(
             model=module,
@@ -920,8 +1034,8 @@ def graph_module_inference(
             get_example_inputs=get_example_inputs,
             use_i64_token=use_i64_token,
             seq_mse_candidates=seq_mse_candidates,
+            collect_input_samples=collect_input_samples,
         )
-        # Evaluate the model
         with torch.no_grad():
             eval_results = simple_evaluate(
                 model=calibration_wrapper,
@@ -932,3 +1046,5 @@ def graph_module_inference(
         logging.info(f"Evaluation summary for {event_name}")
         for task, res in eval_results["results"].items():
             logging.info(f"{task}: {res}")
+
+        return DecoderOutputs(input_samples=calibration_wrapper.get_input_samples())

@@ -12,7 +12,6 @@ def define_gflags():
         srcs = srcs,
         headers = headers,
         exported_headers = exported_headers,
-        enable_static_variant = True,
         threads = True,
     )
 
@@ -21,6 +20,5 @@ def define_gflags():
         srcs = srcs,
         headers = headers,
         exported_headers = exported_headers,
-        enable_static_variant = True,
         threads = False,
     )

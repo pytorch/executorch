@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,10 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    get_first_fake_tensor,
+)
 from executorch.exir.dialects._ops import (  # type: ignore[import-not-found]
     ops as exir_ops,
 )
@@ -18,8 +21,7 @@ from executorch.exir.pass_base import (  # type: ignore[import-not-found]
 
 
 class DecomposeAnyPass(ArmPass):
-    """
-    Converts any.default, any.dim and any.dims to a sequence of any.dim by
+    """Converts any.default, any.dim and any.dims to a sequence of any.dim by
     unrolling multi-dimensional reductions with keepdim=True. If keepdim=False
     was requested, the final shape adjustment is implemented with a
     view_copy.default to the reduced shape.
@@ -48,6 +50,7 @@ class DecomposeAnyPass(ArmPass):
         any.dim(dim1, keepdim = True)
         any.dim(dim2, keepdim = True)
         view_copy(shape = squeezed_shape)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -91,16 +94,21 @@ class DecomposeAnyPass(ArmPass):
             with graph_module.graph.inserting_before(node):
                 for dim in dims_to_reduce:
                     args = (input_node, dim, True)
-                    input_node = graph_module.graph.create_node(
-                        "call_function", exir_ops.edge.aten.any.dim, args, node.kwargs
+                    input_node = create_node(
+                        graph_module.graph,
+                        exir_ops.edge.aten.any.dim,
+                        args=args,
+                        kwargs=node.kwargs,
+                        from_node=node,
                     )
 
                 if not keepdim:
                     output_shape = list(get_first_fake_tensor(node).shape)
-                    input_node = graph_module.graph.create_node(
-                        "call_function",
+                    input_node = create_node(
+                        graph_module.graph,
                         exir_ops.edge.aten.view_copy.default,
-                        (input_node, output_shape),
+                        args=(input_node, output_shape),
+                        from_node=node,
                     )
 
             node.replace_all_uses_with(input_node)

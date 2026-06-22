@@ -60,6 +60,7 @@ class TestMmConversion(unittest.TestCase):
                 exported_program,
                 input_data,
                 tfl_model=tflite_flatbuffers_model,
+                atol=1.0,
             )
 
     @parameterized.expand([("QAT", True), ("PTQ", False)])

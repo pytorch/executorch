@@ -775,9 +775,22 @@ void vTensorStorage::transition(
   // RAR: no need for synchronization
   if (prev_written || cur_written || layout_changed) {
     VkPipelineStageFlags src_stage = vkapi::vk_stage(prev_stage);
+    VkAccessFlags src_access = vkapi::vk_access(prev_stage, prev_access);
+
     if (0u == src_stage) {
-      src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+      if (cur_written) {
+        // First access through this tensor handle, and it's a write. The
+        // underlying memory may have been previously written through a
+        // different aliased tensor handle (via SharedObject). Wait for all
+        // prior compute work and make those writes available to prevent WAW
+        // hazards on aliased memory.
+        src_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        src_access = VK_ACCESS_SHADER_WRITE_BIT;
+      } else {
+        src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+      }
     }
+
     VkPipelineStageFlags dst_stage = vkapi::vk_stage(cur_stage);
     if (0u == dst_stage) {
       dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
@@ -786,20 +799,15 @@ void vTensorStorage::transition(
     pipeline_barrier.stage.src |= src_stage;
     pipeline_barrier.stage.dst |= dst_stage;
 
+    VkAccessFlags dst_access = vkapi::vk_access(cur_stage, cur_access);
+
     if (image_) {
       pipeline_barrier.images.emplace_back(
-          vkapi::vk_access(prev_stage, prev_access),
-          vkapi::vk_access(cur_stage, cur_access),
-          cur_layout,
-          new_layout,
-          image_);
+          src_access, dst_access, cur_layout, new_layout, image_);
 
       image_.set_layout(new_layout);
     } else if (buffer_) {
-      pipeline_barrier.buffers.emplace_back(
-          vkapi::vk_access(prev_stage, prev_access),
-          vkapi::vk_access(cur_stage, cur_access),
-          buffer_);
+      pipeline_barrier.buffers.emplace_back(src_access, dst_access, buffer_);
     }
   }
 

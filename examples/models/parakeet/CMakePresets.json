@@ -55,6 +55,32 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "parakeet-mlx",
+            "displayName": "Parakeet runner (MLX)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
+        },
+        {
+            "name": "parakeet-vulkan",
+            "displayName": "Parakeet runner (Vulkan)",
+            "inherits": ["parakeet-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_VULKAN": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
         }
     ],
     "buildPresets": [
@@ -62,25 +88,43 @@
             "name": "parakeet-cpu",
             "displayName": "Build Parakeet runner (CPU)",
             "configurePreset": "parakeet-cpu",
-            "targets": ["parakeet_runner"]
+            "configuration": "Release",
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-cuda",
             "displayName": "Build Parakeet runner (CUDA)",
             "configurePreset": "parakeet-cuda",
-            "targets": ["parakeet_runner"]
+            "configuration": "Release",
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-cuda-debug",
             "displayName": "Build Parakeet runner (CUDA, Debug)",
             "configurePreset": "parakeet-cuda-debug",
-            "targets": ["parakeet_runner"]
+            "configuration": "Debug",
+            "targets": ["parakeet_runner", "parakeet_helper"]
         },
         {
             "name": "parakeet-metal",
             "displayName": "Build Parakeet runner (Metal)",
             "configurePreset": "parakeet-metal",
-            "targets": ["parakeet_runner"]
+            "configuration": "Release",
+            "targets": ["parakeet_runner", "parakeet_helper"]
+        },
+        {
+            "name": "parakeet-mlx",
+            "displayName": "Build Parakeet runner (MLX)",
+            "configurePreset": "parakeet-mlx",
+            "configuration": "Release",
+            "targets": ["parakeet_runner", "parakeet_helper"]
+        },
+        {
+            "name": "parakeet-vulkan",
+            "displayName": "Build Parakeet runner (Vulkan)",
+            "configurePreset": "parakeet-vulkan",
+            "configuration": "Release",
+            "targets": ["parakeet_runner", "parakeet_helper"]
         }
     ],
     "workflowPresets": [
@@ -137,6 +181,34 @@
                 {
                     "type": "build",
                     "name": "parakeet-metal"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-mlx",
+            "displayName": "Configure and build Parakeet runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-mlx"
+                }
+            ]
+        },
+        {
+            "name": "parakeet-vulkan",
+            "displayName": "Configure and build Parakeet runner (Vulkan)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "parakeet-vulkan"
+                },
+                {
+                    "type": "build",
+                    "name": "parakeet-vulkan"
                 }
             ]
         }

@@ -11,11 +11,8 @@ from typing import Sequence
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
-from executorch.backends.cadence.aot.graph_builder import (
-    GraphBuilder,
-    single_op_builder,
-)
 from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.test.graph_builder import GraphBuilder, single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata
 from later.unittest import TestCase

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
@@ -18,10 +19,73 @@ import requests
 from requests.adapters import HTTPAdapter, Retry
 
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
+if not logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 PKG_ROOT = pathlib.Path(__file__).parent.parent
-SDK_DIR = PKG_ROOT / "sdk" / "qnn"
+
+# Output stream for progress messages. Defaults to stdout, but redirected to
+# stderr when --print-sdk-path is used (so stdout only contains the path).
+_output_stream = sys.stdout
+
+
+def _progress(msg: str) -> None:
+    """Print a progress line with carriage return (no newline). Not suited for logging."""
+    print(msg, end="", flush=True, file=_output_stream)
+
+
+def _progress_newline() -> None:
+    """End a progress line."""
+    print(flush=True, file=_output_stream)
+
+
+##########################
+# Version from qnn_config
+##########################
+
+
+def _read_qnn_config() -> Dict[str, str]:
+    """Parse qnn_config.sh to extract QNN_VERSION and QNN_ZIP_URL."""
+    config_path = pathlib.Path(__file__).parent / "qnn_config.sh"
+    config: Dict[str, str] = {}
+    if not config_path.exists():
+        return config
+    with open(config_path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            # Strip quotes and resolve bash-style ${VAR} references
+            val = val.strip('"')
+            config[key.strip()] = val
+    # Resolve ${QNN_VERSION} in QNN_ZIP_URL
+    if "QNN_ZIP_URL" in config and "QNN_VERSION" in config:
+        config["QNN_ZIP_URL"] = config["QNN_ZIP_URL"].replace(
+            "${QNN_VERSION}", config["QNN_VERSION"]
+        )
+    return config
+
+
+_QNN_CONFIG = _read_qnn_config()
+QNN_VERSION = _QNN_CONFIG.get("QNN_VERSION", "2.37.0.250724")
+QNN_ZIP_URL = _QNN_CONFIG.get(
+    "QNN_ZIP_URL",
+    f"https://softwarecenter.qualcomm.com/api/download/software/sdks/"
+    f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip",
+)
+
+
+def _get_sdk_dir() -> pathlib.Path:
+    """Get the versioned SDK cache directory (e.g. ~/.cache/executorch/qnn/sdk-2.37.0.250724/)."""
+    try:
+        return _get_staging_dir(f"sdk-{QNN_VERSION}")
+    except ValueError:
+        return PKG_ROOT / "sdk" / "qnn"
 
 
 def is_linux_x86() -> bool:
@@ -89,7 +153,7 @@ def _get_staging_dir(*parts: str) -> pathlib.Path:
     return base.joinpath(*APP_NAMESPACE, *parts)
 
 
-def _atomic_download(url: str, dest: pathlib.Path):
+def _atomic_download(url: str, dest: pathlib.Path, label: str = ""):
     """
     Download URL into dest atomically:
       - Write to a temp file in the same dir
@@ -101,10 +165,23 @@ def _atomic_download(url: str, dest: pathlib.Path):
     with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp:
         tmp_path = pathlib.Path(tmp.name)
 
+    def _reporthook(block_num: int, block_size: int, total_size: int) -> None:
+        downloaded = block_num * block_size
+        if total_size > 0:
+            pct = min(downloaded * 100 / total_size, 100)
+            dl_mb = downloaded // (1024 * 1024)
+            total_mb = total_size // (1024 * 1024)
+            prefix = f"[QNN] Downloading {label}: " if label else "[QNN] Downloading: "
+            _progress(f"\r{prefix}{dl_mb}/{total_mb} MB ({pct:.0f}%)")
+
     try:
-        urllib.request.urlretrieve(url, tmp_path)
+        urllib.request.urlretrieve(url, tmp_path, reporthook=_reporthook)
+        if label:
+            _progress_newline()
         tmp_path.replace(dest)  # atomic rename
     except Exception:
+        if label:
+            _progress_newline()
         # Clean up partial file on failure
         if tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
@@ -116,9 +193,62 @@ def _atomic_download(url: str, dest: pathlib.Path):
 ####################
 
 
-def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
-    """Robust streaming download with retries."""
+def _stream_to_file(
+    session: requests.Session,
+    url: str,
+    archive_path: pathlib.Path,
+    attempt: int,
+    max_retries: int,
+) -> bool:
+    """Single download attempt with resume support. Returns True on success."""
+    downloaded = archive_path.stat().st_size if archive_path.exists() else 0
+    headers = {"Range": f"bytes={downloaded}-"} if downloaded > 0 else {}
 
+    with session.get(url, stream=True, headers=headers, timeout=(30, 60)) as r:
+        if r.status_code == 200 and downloaded > 0:
+            downloaded = 0  # Server doesn't support Range — restart
+        r.raise_for_status()
+
+        total = downloaded + int(r.headers.get("content-length", 0))
+        mode = "ab" if downloaded > 0 else "wb"
+
+        if attempt > 1:
+            dl_mb = downloaded // (1024 * 1024)
+            total_mb = total // (1024 * 1024)
+            logger.info(
+                f"[QNN] Resuming download from {dl_mb}/{total_mb} MB "
+                f"(attempt {attempt}/{max_retries})..."
+            )
+
+        with open(archive_path, mode) as f:
+            for chunk in r.iter_content(1024 * 1024):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total:
+                    pct = downloaded * 100 / total
+                    dl_mb = downloaded // (1024 * 1024)
+                    total_mb = total // (1024 * 1024)
+                    _progress(
+                        f"\r[QNN] Downloading: {dl_mb}/{total_mb} MB ({pct:.0f}%)"
+                    )
+        if total:
+            _progress_newline()
+
+    if total > 0 and downloaded < total:
+        raise requests.exceptions.ConnectionError(
+            f"Incomplete download: {downloaded}/{total} bytes"
+        )
+
+    logger.info("[QNN] Download complete.")
+    return True
+
+
+def _download_archive(
+    url: str, archive_path: pathlib.Path, max_retries: int = 5
+) -> bool:
+    """Streaming download with retry + resume on mid-stream failures."""
     logger.debug("Archive will be saved to: %s", archive_path)
 
     session = requests.Session()
@@ -130,30 +260,47 @@ def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
     )
     session.mount("https://", HTTPAdapter(max_retries=retries))
 
+    for attempt in range(1, max_retries + 1):
+        try:
+            if _stream_to_file(session, url, archive_path, attempt, max_retries):
+                break
+        except (
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as e:
+            _progress_newline()
+            if attempt < max_retries:
+                backoff = min(2 ** (attempt - 1), 30)
+                logger.warning(
+                    f"[QNN] Download interrupted: {type(e).__name__}. "
+                    f"Retrying in {backoff}s ({attempt}/{max_retries})..."
+                )
+                time.sleep(backoff)
+            else:
+                logger.error(f"[QNN] Download failed after {max_retries} attempts: {e}")
+                return False
+        except Exception as e:
+            _progress_newline()
+            logger.error(f"[QNN] Download error: {e}")
+            return False
+
+    if not archive_path.exists() or archive_path.stat().st_size == 0:
+        logger.error("[QNN] Downloaded file is empty or missing!")
+        return False
+
+    # Validate archive integrity — catches truncation and corruption that
+    # size checks alone would miss (e.g. no Content-Length, or bit flips).
     try:
-        with session.get(url, stream=True) as r:
-            r.raise_for_status()
-
-            downloaded = 0
-            chunk_size = 1024 * 1024  # 1MB
-
-            with open(archive_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-
-        logger.info("Download completed!")
-
-    except Exception as e:
-        logger.exception("Error during download: %s", e)
-        return False
-
-    if archive_path.exists() and archive_path.stat().st_size == 0:
-        logger.warning("Downloaded file is empty!")
-        return False
-    elif not archive_path.exists():
-        logger.error("File was not downloaded!")
+        if url.endswith(".zip"):
+            with zipfile.ZipFile(archive_path, "r"):
+                pass  # Reading central directory is enough to detect truncation
+        elif url.endswith((".tar.gz", ".tgz")):
+            with tarfile.open(archive_path, "r:gz"):
+                pass
+    except (zipfile.BadZipFile, tarfile.TarError) as e:
+        logger.error(f"[QNN] Downloaded archive is corrupt: {e}")
+        archive_path.unlink(missing_ok=True)
         return False
 
     return True
@@ -163,11 +310,10 @@ def _extract_archive(
     url: str, archive_path: pathlib.Path, content_dir: str, dst_folder: pathlib.Path
 ):
     """Extract archive based on type (zip or tar)."""
+    logger.info("[QNN] Extracting SDK...")
     if url.endswith(".zip"):
-        logger.info("Extracting ZIP archive...")
         _extract_zip(archive_path, content_dir, dst_folder)
     elif url.endswith((".tar.gz", ".tgz")):
-        logger.info("Extracting TAR archive...")
         _extract_tar(archive_path, content_dir, dst_folder)
     else:
         raise ValueError(f"Unsupported archive format: {url}")
@@ -175,56 +321,59 @@ def _extract_archive(
 
 def _verify_extraction(dst_folder: pathlib.Path):
     """Check if extraction succeeded and log contents."""
-    logger.info("Verifying extraction to %s", dst_folder)
     if dst_folder.exists():
         logger.debug("SDK directory exists. Contents:")
         for item in dst_folder.iterdir():
             logger.debug("  %s", item.name)
     else:
-        logger.error("SDK directory was not created!")
+        logger.error("[QNN] Error: SDK directory was not created!")
 
 
-def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
+def _download_qnn_sdk(
+    dst_folder: Optional[pathlib.Path] = None,
+) -> Optional[pathlib.Path]:
     """
     Download and extract the Qualcomm SDK into dst_folder.
     Only runs on Linux x86 platforms.
     """
-    QNN_VERSION = "2.37.0.250724"
-    logger.info("Downloading Qualcomm SDK...")
-    QAIRT_URL = (
-        f"https://softwarecenter.qualcomm.com/api/download/software/sdks/"
-        f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
-    )
-    QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
+    if dst_folder is None:
+        dst_folder = _get_sdk_dir()
+
+    qairt_content_dir = f"qairt/{QNN_VERSION}"
     if not is_linux_x86():
         logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
-    else:
-        logger.info("[QNN] Downloading Qualcomm SDK for Linux x86")
+
+    if dst_folder.exists() and any(dst_folder.iterdir()):
+        logger.info(f"[QNN] Using cached QNN SDK v{QNN_VERSION} at {dst_folder}")
+        return dst_folder
+
+    logger.info(f"[QNN] Downloading Qualcomm AI Runtime SDK v{QNN_VERSION}...")
 
     dst_folder.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        archive_path = pathlib.Path(tmpdir) / pathlib.Path(QAIRT_URL).name
-        if not _download_archive(QAIRT_URL, archive_path):
+        archive_path = pathlib.Path(tmpdir) / pathlib.Path(QNN_ZIP_URL).name
+        if not _download_archive(QNN_ZIP_URL, archive_path):
             return None
 
-        _extract_archive(QAIRT_URL, archive_path, QAIRT_CONTENT_DIR, dst_folder)
+        _extract_archive(QNN_ZIP_URL, archive_path, qairt_content_dir, dst_folder)
         _verify_extraction(dst_folder)
 
+    logger.info(f"[QNN] QNN SDK v{QNN_VERSION} ready at {dst_folder}")
     return dst_folder
 
 
 def _extract_zip(archive_path, content_dir, target_dir):
     logger.debug("Extracting %s to %s", archive_path, target_dir)
-    logger.debug("Looking for content in subdirectory: %s", content_dir)
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
     with zipfile.ZipFile(archive_path, "r") as zip_ref:
         files_to_extract = [f for f in zip_ref.namelist() if f.startswith(content_dir)]
+        total = len(files_to_extract)
 
-        for file in files_to_extract:
+        for i, file in enumerate(files_to_extract):
             relative_path = pathlib.Path(file).relative_to(content_dir)
             if relative_path == pathlib.Path("."):
                 continue
@@ -237,12 +386,19 @@ def _extract_zip(archive_path, content_dir, target_dir):
                 with zip_ref.open(file) as src, open(out_path, "wb") as dst:
                     shutil.copyfileobj(src, dst)
 
+            if total > 0:
+                pct = (i + 1) * 100 // total
+                _progress(f"\r[QNN] Extracting SDK: {pct}%")
+        if total > 0:
+            _progress_newline()
+
 
 def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Path):
     with tarfile.open(archive_path, "r:gz") as tf:
-        for m in tf.getmembers():
-            if not m.name.startswith(prefix + "/"):
-                continue
+        members = [m for m in tf.getmembers() if m.name.startswith(prefix + "/")]
+        total = len(members)
+
+        for i, m in enumerate(members):
             relpath = pathlib.Path(m.name).relative_to(prefix)
             if not relpath.parts or relpath.parts[0] == "..":
                 continue
@@ -257,6 +413,12 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
                     continue
                 with src, open(out_path, "wb") as dst:
                     dst.write(src.read())
+
+            if total > 0:
+                pct = (i + 1) * 100 // total
+                _progress(f"\r[QNN] Extracting SDK: {pct}%")
+        if total > 0:
+            _progress_newline()
 
 
 ####################
@@ -302,8 +464,8 @@ def _resolve_glibc_loader() -> pathlib.Path | None:
 
 
 def _stage_prebuilt_glibc():
-    """Download + extract Fedora 35 glibc RPM into /tmp."""
-    logger.info(">>> Staging prebuilt glibc-%s from Fedora 35 RPM", GLIBC_VERSION)
+    """Download + extract Fedora 35 glibc RPM."""
+    logger.info(f"[QNN] Staging glibc {GLIBC_VERSION}...")
     _get_glibc_libdir().mkdir(parents=True, exist_ok=True)
     rpm_path = _get_staging_dir("glibc") / "glibc.rpm"
     work_dir = _get_staging_dir("glibc") / "extracted"
@@ -313,11 +475,20 @@ def _stage_prebuilt_glibc():
     )
 
     rpm_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("[glibc] Downloading %s -> %s", rpm_url, rpm_path)
+
+    def _reporthook(block_num: int, block_size: int, total_size: int) -> None:
+        downloaded = block_num * block_size
+        if total_size > 0:
+            pct = min(downloaded * 100 / total_size, 100)
+            dl_mb = downloaded // (1024 * 1024)
+            total_mb = total_size // (1024 * 1024)
+            _progress(f"\r[QNN] Downloading glibc: {dl_mb}/{total_mb} MB ({pct:.0f}%)")
+
     try:
-        urllib.request.urlretrieve(rpm_url, rpm_path)
+        urllib.request.urlretrieve(rpm_url, rpm_path, reporthook=_reporthook)
+        _progress_newline()
     except Exception as e:
-        logger.error("[glibc] Failed to download %s: %s", rpm_url, e)
+        logger.error(f"\n[QNN] Failed to download glibc: {e}")
         raise
 
     # Extract
@@ -340,7 +511,7 @@ def _stage_prebuilt_glibc():
         src = work_dir / "lib64" / lib
         if src.exists():
             shutil.copy2(src, _get_glibc_libdir() / lib)
-            logger.info("[glibc] Staged %s", lib)
+            logger.debug("[glibc] Staged %s", lib)
         else:
             logger.warning("[glibc] Missing %s in RPM", lib)
 
@@ -352,17 +523,16 @@ def ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
     - Else → stage Fedora RPM and re-exec under staged loader.
     """
     current = _current_glibc_version()
-    logger.info("[glibc] Current loaded glibc: %s", current)
+    logger.debug("[glibc] Current loaded glibc: %s", current)
 
     # If system glibc already sufficient → skip everything
     m = re.match(r"(\d+\.\d+)", current)
     if m and _parse_version(m.group(1)) >= _parse_version(min_version):
-        logger.info("[glibc] System glibc >= %s, no staging needed.", min_version)
         return
 
     # Avoid infinite loop
     if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
-        logger.info("[glibc] Already re-exec'd once, continuing.")
+        logger.debug("[glibc] Already re-exec'd once, continuing.")
         return
 
     # Stage prebuilt if not already staged
@@ -371,11 +541,13 @@ def ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
 
     loader = _resolve_glibc_loader()
     if not loader:
-        logger.error("[glibc] Loader not found in %s", _get_glibc_libdir())
+        logger.error(f"[QNN] Warning: glibc loader not found in {_get_glibc_libdir()}")
         return
 
-    logger.info(
-        "[glibc] Re-execing under loader %s with libdir %s", loader, _get_glibc_libdir()
+    logger.error(
+        f"[QNN] System glibc ({current}) is older than required ({min_version}).\n"
+        "[QNN] Re-launching Python under a staged glibc loader.\n"
+        "[QNN] To avoid this, set QNN_SDK_ROOT and LD_LIBRARY_PATH manually."
     )
     os.environ[GLIBC_REEXEC_GUARD] = "1"
     os.execv(
@@ -403,7 +575,7 @@ def _stage_libcxx(target_dir: pathlib.Path):
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if all((target_dir / libname).exists() for libname in REQUIRED_LIBCXX_LIBS):
-        logger.info("[libcxx] Already staged at %s, skipping download", target_dir)
+        logger.debug("[libcxx] Already staged at %s, skipping download", target_dir)
         return
 
     libcxx_stage = _get_staging_dir(f"libcxx-{LLVM_VERSION}")
@@ -411,16 +583,24 @@ def _stage_libcxx(target_dir: pathlib.Path):
     temp_extract = libcxx_stage / LIBCXX_BASE_NAME
 
     if not temp_tar.exists():
-        logger.info("[libcxx] Downloading %s", LLVM_URL)
-        _atomic_download(LLVM_URL, temp_tar)
+        logger.info(f"[QNN] Downloading libc++ (LLVM {LLVM_VERSION})...")
+        _atomic_download(LLVM_URL, temp_tar, label="libc++")
 
     # Sanity check before extracting
     if not temp_tar.exists() or temp_tar.stat().st_size == 0:
         raise FileNotFoundError(f"[libcxx] Tarball missing or empty: {temp_tar}")
 
-    logger.info("[libcxx] Extracting %s", temp_tar)
+    logger.info("[QNN] Extracting libc++...")
     with tarfile.open(temp_tar, "r:xz") as tar:
-        tar.extractall(temp_extract.parent)
+        members = tar.getmembers()
+        total = len(members)
+        for i, member in enumerate(members):
+            tar.extract(member, temp_extract.parent)
+            if total > 0:
+                pct = (i + 1) * 100 // total
+                _progress(f"\r[QNN] Extracting libc++: {pct}%")
+        if total > 0:
+            _progress_newline()
 
     lib_src = temp_extract / "lib" / "x86_64-unknown-linux-gnu"
     for fname in REQUIRED_LIBCXX_LIBS:
@@ -432,7 +612,7 @@ def _stage_libcxx(target_dir: pathlib.Path):
             continue
         shutil.copy(src_path, target_dir / fname)
 
-    logger.info("[libcxx] Staged libc++ to %s", target_dir)
+    logger.debug("[libcxx] Staged libc++ to %s", target_dir)
 
 
 REQUIRED_QNN_LIBS: List[str] = [
@@ -492,33 +672,34 @@ def _ensure_qnn_sdk_lib() -> bool:
     """
     all_present, locs = _check_libs_in_ld(REQUIRED_QNN_LIBS)
     if all_present:
-        logger.info(
-            "[QNN] libQnnHtp.so found in LD_LIBRARY_PATH; skipping SDK install."
-        )
-        for lib, p in locs.items():
-            logger.info("      - %s: %s", lib, p)
+        logger.info("[QNN] Using QNN SDK libs from LD_LIBRARY_PATH")
         return True
 
-    # Not found → use packaged SDK
-    qnn_sdk_dir = SDK_DIR
-    logger.info("[QNN] libQnnHtp.so not found in LD_LIBRARY_PATH.")
+    # Not found → use cached/packaged SDK
+    # Directory name includes version (sdk-X.Y.Z), so a version bump
+    # in qnn_config.sh naturally creates a new directory.
+    qnn_sdk_dir = _get_sdk_dir()
     if not qnn_sdk_dir.exists():
-        logger.info("[QNN] SDK dir missing; downloading...")
-        _download_qnn_sdk()
+        _download_qnn_sdk(qnn_sdk_dir)
     else:
-        logger.info("[QNN] Using existing SDK at %s", qnn_sdk_dir)
+        logger.info(f"[QNN] Using cached QNN SDK v{QNN_VERSION} at {qnn_sdk_dir}")
 
     os.environ["QNN_SDK_ROOT"] = str(qnn_sdk_dir)
 
+    sdk_lib_dir = str(qnn_sdk_dir / "lib" / "x86_64-linux-clang")
+    ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+    if sdk_lib_dir not in ld_path:
+        os.environ["LD_LIBRARY_PATH"] = (
+            f"{sdk_lib_dir}:{ld_path}" if ld_path else sdk_lib_dir
+        )
+
     qnn_lib = qnn_sdk_dir / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
-    logger.info("[QNN] Loading %s", qnn_lib)
     lib_loaded = False
     try:
         ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
-        logger.info("[QNN] Loaded libQnnHtp.so from packaged SDK.")
         lib_loaded = True
     except OSError as e:
-        logger.error("[QNN][ERROR] Failed to load %s: %s", qnn_lib, e)
+        logger.error(f"[QNN] Failed to load {qnn_lib}: {e}")
     return lib_loaded
 
 
@@ -550,24 +731,19 @@ def _ensure_libcxx_stack() -> bool:
     """
     all_present, locs = _check_libs_in_ld(REQUIRED_LIBCXX_LIBS)
     if all_present:
-        logger.info(
+        logger.debug(
             "[libcxx] All libc++ libs present in LD_LIBRARY_PATH; skipping staging."
         )
-        for lib, p in locs.items():
-            logger.info("         - %s: %s", lib, p)
         return True
 
-    logger.info(
-        "[libcxx] Some libc++ libs missing in LD_LIBRARY_PATH; staging packaged libc++..."
-    )
     lib_loaded = False
     try:
-        libcxx_dir = PKG_ROOT / "sdk" / f"libcxx-{LLVM_VERSION}"
+        libcxx_dir = _get_staging_dir(f"libcxx-{LLVM_VERSION}")
         _stage_libcxx(libcxx_dir)
         _load_libcxx_libs(libcxx_dir)
-        logger.info("[libcxx] Staged and loaded libc++ from %s", libcxx_dir)
         lib_loaded = True
     except Exception as e:
+        logger.error(f"[QNN] Failed to stage/load libc++: {e}")
         logger.exception("[libcxx][ERROR] Failed to stage/load libc++: %s", e)
     return lib_loaded
 
@@ -577,26 +753,52 @@ def _ensure_libcxx_stack() -> bool:
 # ---------------
 def install_qnn_sdk() -> bool:
     """
-    Initialize Qualcomm backend with separated logic:
+    Initialize Qualcomm backend:
 
-    QNN SDK:
-      - If libQnnHtp.so exists in LD_LIBRARY_PATH: do nothing.
-      - Else: ensure packaged SDK, load libQnnHtp.so.
-
-    libc++ stack:
-      - If required libc++ libs exist in LD_LIBRARY_PATH: do nothing.
-      - Else: stage and load packaged libc++.
+    1. Ensure glibc >= 2.34 (may re-exec under staged loader)
+    2. Ensure libc++ is available (download + stage if needed)
+    3. Ensure QNN SDK is available (download if needed, detect version upgrades)
+    4. Set QNN_SDK_ROOT and LD_LIBRARY_PATH
 
     Returns:
-        True if both steps succeeded (or were already satisfied), else False.
+        True if all steps succeeded (or were already satisfied), else False.
     """
-    logger.info("[QNN] Starting SDK installation")
-
     # Make sure we’re running under >= 2.34
     ensure_glibc_minimum(GLIBC_VERSION)
 
     # libc++ and QNN SDK setup
     return _ensure_libcxx_stack() and _ensure_qnn_sdk_lib()
+
+
+def _check_sdk_available() -> int:
+    """Return 0 if the SDK is cached or the download server is reachable, 1 otherwise.
+
+    Uses requests.head() so HTTPS_PROXY env vars are respected — devvms behind
+    a proxy will succeed when the proxy is configured, and gracefully fail when
+    it is not.
+    """
+    if not is_linux_x86():
+        return 1
+
+    try:
+        sdk_dir = _get_sdk_dir()
+        if sdk_dir.exists() and any(sdk_dir.iterdir()):
+            return 0
+    except Exception:
+        pass
+
+    try:
+        r = requests.head(
+            "https://softwarecenter.qualcomm.com",
+            timeout=5,
+            allow_redirects=True,
+        )
+        if r.status_code < 500:
+            return 0
+    except requests.exceptions.RequestException:
+        pass
+
+    return 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -606,7 +808,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--dst-folder",
         type=pathlib.Path,
-        default=SDK_DIR,
+        default=None,
         help="Destination directory for the Qualcomm SDK.",
     )
     parser.add_argument(
@@ -619,17 +821,36 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Ensure the SDK and runtime libraries are staged and loaded.",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Exit 0 if the SDK is cached or the download host is reachable, "
+        "1 otherwise. Does not download anything.",
+    )
     args = parser.parse_args(argv)
 
+    if args.check:
+        return _check_sdk_available()
+
+    # When --print-sdk-path is used, stdout must contain ONLY the SDK path.
+    # Redirect all logger and progress output to stderr.
+    if args.print_sdk_path:
+        global _output_stream
+        _output_stream = sys.stderr
+        for handler in logger.handlers:
+            handler.stream = sys.stderr
+
     logging.basicConfig(level=logging.INFO)
+
+    dst = args.dst_folder if args.dst_folder else _get_sdk_dir()
 
     sdk_path: Optional[pathlib.Path]
     if args.install_sdk:
         if not install_qnn_sdk():
             return 1
-        sdk_path = pathlib.Path(os.environ.get("QNN_SDK_ROOT", args.dst_folder))
+        sdk_path = pathlib.Path(os.environ.get("QNN_SDK_ROOT", dst))
     else:
-        sdk_path = _download_qnn_sdk(dst_folder=args.dst_folder)
+        sdk_path = _download_qnn_sdk(dst_folder=dst)
         if sdk_path is None:
             return 1
 

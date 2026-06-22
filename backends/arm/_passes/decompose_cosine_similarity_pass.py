@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -19,17 +19,21 @@ from executorch.exir.pass_base import ExportPass
 torch_cosine_similarity = (torch.ops.aten.cosine_similarity.default,)
 
 
-class DecomposeCosineSimilarityPass(ArmPass):
-    """
-    Decomposition of aten.cosine_similarity:
+class DecomposeCosineSimilarityPass(ArmOpTargetedPass):
+    """Decomposition of aten.cosine_similarity.
 
-      dot    = sum(mul(x1, x2), dims, keepdim=False)
-      norm   = pow( sum(mul(x, x), dims, keepdim=False), 0.5 )
-      eps    = full( (), eps_scalar )
-      n1c    = max(norm1, eps)
-      n2c    = max(norm2, eps)
-      denom  = mul(n1c, n2c)
-      out    = div(dot, denom)
+    Example:
+        dot = sum(mul(x1, x2), dims, keepdim=False)
+        norm = pow(
+            sum(mul(x, x), dims, keepdim=False),
+            0.5,
+        )
+        eps = full((), eps_scalar)
+        n1c = max(norm1, eps)
+        n2c = max(norm2, eps)
+        denom = mul(n1c, n2c)
+        out = div(dot, denom)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -38,9 +42,11 @@ class DecomposeCosineSimilarityPass(ArmPass):
         ConvertFullLikeToFullPass,
         InsertTableOpsPass,
     }
+    target_ops = torch_cosine_similarity
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in torch_cosine_similarity or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x1, x2 = args[0], args[1]

@@ -79,7 +79,7 @@ void quantized_matmul_asym8uxasym8u_asym8u_out(
           static_cast<int32_t>(out_shift), // out_shift
           static_cast<int32_t>(out_zero_point)); // out_zero_bias
 
-      ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+      ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
     } else {
       /* Assuming matmul is 2D always */
       WORD32 num_inp_dims = 2;
@@ -103,7 +103,7 @@ void quantized_matmul_asym8uxasym8u_asym8u_out(
           num_out_dims,
           num_inp_dims);
 
-      ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+      ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
 
       ret_val = xa_nn_matmul_asym8uxasym8u_asym8u(
           z, // p_out
@@ -123,7 +123,7 @@ void quantized_matmul_asym8uxasym8u_asym8u_out(
           static_cast<int32_t>(out_shift), // out_shift
           static_cast<int32_t>(out_zero_point)); // out_zero_bias
 
-      ET_CHECK_MSG(ret_val == 0, "An internal error occured");
+      ET_CHECK_MSG(ret_val == 0, "An internal error occurred");
     }
   }
 }

@@ -70,6 +70,8 @@ def test_reciprocal_tosa_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op=[],
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.run()
 
@@ -119,5 +121,44 @@ def test_reciprocal_vgf_quant(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+a16w8_reciprocal_test_parameters = {
+    "rank1": lambda: torch.rand(10) + 0.5,
+    "rank2": lambda: torch.rand(5, 10) + 0.5,
+    "rank3": lambda: torch.rand(2, 5, 10) + 0.5,
+}
+
+
+@common.parametrize("test_data", a16w8_reciprocal_test_parameters)
+@common.XfailIfNoCorstone300
+def test_reciprocal_a16w8_u55_INT(test_data: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Reciprocal(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", a16w8_reciprocal_test_parameters)
+@common.XfailIfNoCorstone320
+def test_reciprocal_a16w8_u85_INT(test_data: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Reciprocal(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
     )
     pipeline.run()

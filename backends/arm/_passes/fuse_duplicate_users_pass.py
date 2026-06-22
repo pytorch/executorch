@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,6 +25,7 @@ class FuseDuplicateUsersPass(ArmPass):
         z1 = torch.add(y, bias)
 
     becomes a single ``torch.add`` that feeds both consumers.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -33,6 +34,7 @@ class FuseDuplicateUsersPass(ArmPass):
         graph = graph_module.graph
         modified = False
 
+        node_order = {node: index for index, node in enumerate(graph.nodes)}
         producers: Deque[Node] = deque(node for node in graph.nodes)
 
         while producers:
@@ -47,7 +49,7 @@ class FuseDuplicateUsersPass(ArmPass):
             if len(user_nodes) < 2:
                 continue
 
-            candidate_groups = self._get_candidate_groups(user_nodes)
+            candidate_groups = self._get_candidate_groups(node_order, user_nodes)
 
             signature_to_user: Dict[Tuple[Hashable, ...], Node] = {}
             for group in candidate_groups:
@@ -83,7 +85,7 @@ class FuseDuplicateUsersPass(ArmPass):
 
         return PassResult(graph_module, modified)
 
-    def _get_candidate_groups(self, user_nodes):
+    def _get_candidate_groups(self, node_order, user_nodes):
         users_by_target: Dict[Tuple[str, Hashable], List[Node]] = {}
         for user in user_nodes:
             if user.graph is None:
@@ -97,9 +99,12 @@ class FuseDuplicateUsersPass(ArmPass):
             target_signature = (user.op, target_key)
             users_by_target.setdefault(target_signature, []).append(user)
 
-        candidate_groups = [
-            group for group in users_by_target.values() if len(group) > 1
-        ]
+        candidate_groups = []
+        for group in users_by_target.values():
+            if len(group) > 1:
+                candidate_groups.append(
+                    sorted(group, key=lambda node: node_order[node])
+                )
 
         return candidate_groups
 

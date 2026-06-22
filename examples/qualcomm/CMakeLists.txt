@@ -35,7 +35,11 @@ find_package(absl REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 find_package(executorch CONFIG REQUIRED)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(MSVC)
+  set(_common_compile_options /wd4996)
+else()
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+endif()
 
 #
 # The `_<target>_srcs` lists are defined by executorch_load_build_variables.
@@ -85,3 +89,11 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)
 
 # build qaihub_stable_diffusion_runner
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/stable_diffusion)
+
+# direct-mode qnn_executor_direct_runner is build with ndk toolchain, paired
+# with libraries built with hexagon toolchain, communicate through self-defined
+# fastrpc protocol.
+option(BUILD_DIRECT_MODE "Build direct mode executor runner" OFF)
+if(BUILD_DIRECT_MODE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/direct_executor_runner)
+endif()

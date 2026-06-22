@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -46,8 +46,12 @@ def evaluate_model(model, inputs, expected_outputs):
 
 def test_qat_training_loop_tosa_INT():
     """Test the QAT training loop with a simple MLP model.
-    This function creates a simple MLP model, prepares it for QAT, runs a training loop,
-    and evaluates the quantized model to make sure everything works as expected."""
+
+    This function creates a simple MLP model, prepares it for QAT, runs a
+    training loop, and evaluates the quantized model to make sure everything
+    works as expected.
+
+    """
 
     model = MLP()
     logger.info("Starting training loop test")

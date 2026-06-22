@@ -7,6 +7,7 @@
  */
 
 #include <cmath>
+#include <cstring>
 #include <tuple>
 
 #include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
@@ -266,6 +267,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     CTYPE* mean_data = mean_out.mutable_data_ptr<CTYPE>();
     CTYPE* invstd_data = invstd_out.mutable_data_ptr<CTYPE>();
+
+    // Initialize accumulators to zero before accumulating
+    std::memset(mean_data, 0, C * sizeof(CTYPE));
+    std::memset(invstd_data, 0, C * sizeof(CTYPE));
 
     // Compute sum and sum of squares for each channel
     for (size_t b = 0; b < N; ++b) {

@@ -7,7 +7,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -20,7 +20,7 @@ edge_unary = {
     "floor": exir_ops.edge.aten.floor.default,
     "ceil": exir_ops.edge.aten.ceil.default,
     "full": exir_ops.edge.aten.full.default,
-    "lt": exir_ops.edge.aten.lt.Tensor,
+    "gt": exir_ops.edge.aten.gt.Tensor,
     "where": exir_ops.edge.aten.where.self,
 }
 
@@ -29,7 +29,7 @@ aten_unary = {
     "floor": torch.ops.aten.floor.default,
     "ceil": torch.ops.aten.ceil.default,
     "full": torch.ops.aten.full.default,
-    "lt": torch.ops.aten.lt.Tensor,
+    "gt": torch.ops.aten.gt.Tensor,
     "where": torch.ops.aten.where.self,
 }
 
@@ -42,21 +42,26 @@ def _get_opset(op):
     raise RuntimeError(f"div.Tensor_mode not supported for op {op}")
 
 
-class DecomposeDivTensorModePass(ArmPass):
-    """
-    Rewrites aten.div.Tensor_mode into
+class DecomposeDivTensorModePass(ArmOpTargetedPass):
+    """Rewrites aten.div.Tensor_mode into.
 
-    rounding_mode=None  -> div(a, b)
-    rounding_mode='floor' -> floor(div(a, b))
-    rounding_mode='trunc' -> where(div(a,b) < 0, ceil(div(a,b)), floor(div(a,b)))
+    Example:
+        rounding_mode=None -> div(a, b)
+        rounding_mode="floor" -> floor(div(a, b))
+        rounding_mode="trunc" -> where(
+            div(a, b) < 0,
+            ceil(div(a, b)),
+            floor(div(a, b)),
+        )
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}
+    target_ops = edge_div_mode_ops + aten_div_mode_ops
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            edge_div_mode_ops + aten_div_mode_ops
-        ) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         opset = _get_opset(op)
@@ -82,11 +87,13 @@ class DecomposeDivTensorModePass(ArmPass):
                 meta=meta,
                 updated=True,
             )
-            lt0 = super().call_operator(opset["lt"], (q, zero), {}, meta, updated=True)
+            is_neg = super().call_operator(
+                opset["gt"], (zero, q), {}, meta, updated=True
+            )
             ceilq = super().call_operator(opset["ceil"], (q,), {}, meta, updated=True)
             floorq = super().call_operator(opset["floor"], (q,), {}, meta, updated=True)
             return super().call_operator(
-                opset["where"], (lt0, ceilq, floorq), {}, meta, updated=True
+                opset["where"], (is_neg, ceilq, floorq), {}, meta, updated=True
             )
 
         raise RuntimeError(

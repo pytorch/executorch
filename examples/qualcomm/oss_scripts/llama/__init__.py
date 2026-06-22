@@ -9,7 +9,7 @@ from abc import ABC
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Callable, Dict, Optional, Type
+from typing import Callable, Dict, Optional, Sequence, Type, Union
 
 from executorch.examples.models.codegen import (
     convert_weights as convert_codegen_weights,
@@ -21,6 +21,9 @@ from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_
 from executorch.examples.models.glm import convert_weights as convert_glm_weights
 from executorch.examples.models.granite import (
     convert_weights as convert_granite_weights,
+)
+from executorch.examples.models.granite_speech import (
+    convert_weights as convert_granite_speech_weights,
 )
 from executorch.examples.models.internvl3 import (
     convert_weights as convert_internvl3_weights,
@@ -43,14 +46,18 @@ from executorch.examples.models.smolvlm import (
 )
 
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
+    AUDIO_ENCODER,
     DECODER_MODEL_VERSION,
     VISION_ENCODER,
 )
 
 from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config import (
+    AudioModalityConfig,
+    GraniteSpeechEncoder,
     InternVL3Encoder,
     MultiModalityConfig,
     SmolVLMEncoder,
+    VisionModalityConfig,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
@@ -65,6 +72,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     Gemma_2BQuantRecipe,
     GLM_1_5B_InstructQuantRecipe,
     Granite_3_3_2B_InstructQuantRecipe,
+    GraniteSpeech_3_3_2B_InstructQuantRecipe,
     InternVL3_1B_QuantRecipe,
     Llama3_1BQuantRecipe,
     Llama3_3BQuantRecipe,
@@ -88,6 +96,7 @@ BASE_DIR = os.path.dirname(__file__)
 
 LLM_VARIANT_ARCHS: Dict[str, LlamaModel] = {
     "gemma3-1b": MultiScopeAwareLlamaModel,
+    "granite_speech_3_3-2b": LlamaModelWithoutEmbedding,
     "smolvlm_500m_instruct": LlamaModelWithoutEmbedding,
     "internvl3_1b": LlamaModelWithoutEmbedding,
     "gemma2-2b": MultiScopeAwareLlamaModel,
@@ -183,14 +192,28 @@ SUPPORTED_LLM_MODELS: Dict[str, LLMModelConfig] = {}
 
 def register_llm_model(
     name: str,
-    vision_encoder: Optional[MultiModalityConfig] = None,
+    modality_encoders: Optional[
+        Union[MultiModalityConfig, Sequence[MultiModalityConfig]]
+    ] = None,
 ):
     def decorator(cls: Type[LLMModelConfig]):
         cls.decoder_model_version = DECODER_MODEL_VERSION[name]
-        if vision_encoder is not None and issubclass(
-            vision_encoder, MultiModalityConfig
-        ):
-            setattr(cls, VISION_ENCODER, vision_encoder)
+
+        encs = (
+            modality_encoders
+            if isinstance(modality_encoders, (list, tuple))
+            else (modality_encoders,)
+        )
+
+        for enc in encs:
+            if enc is None:
+                continue
+            if issubclass(enc, AudioModalityConfig):
+                setattr(cls, AUDIO_ENCODER, enc)
+            elif issubclass(enc, VisionModalityConfig):
+                setattr(cls, VISION_ENCODER, enc)
+            else:
+                raise ValueError(f"Unsupported encoder type {enc} for model {name}.")
         SUPPORTED_LLM_MODELS[name.lower()] = cls()
         return cls()
 
@@ -242,7 +265,7 @@ class Llama3_2_1B_Instruct(LLMModelConfig):
     instruct_model = False
     num_sharding = 1
     masked_softmax = False
-    seq_mse_candidates = 1000
+    seq_mse_candidates = 50
     r1 = False
     r2 = False
     r3 = False
@@ -384,6 +407,28 @@ class Granite_3_3_2b_Instruct(LLMModelConfig):
     quant_recipe = Granite_3_3_2B_InstructQuantRecipe
 
 
+@register_llm_model(
+    "granite_speech_3_3-2b",
+    modality_encoders=GraniteSpeechEncoder,
+)
+@dataclass(init=False, frozen=True)
+class GraniteSpeech_3_3_2b(LLMModelConfig):
+    repo_id: str = "ibm-granite/granite-speech-3.3-2b"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/granite_speech/config/2b_config.json"
+    )
+    convert_weights = convert_granite_speech_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 4
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = GraniteSpeech_3_3_2B_InstructQuantRecipe
+
+
 @register_llm_model("phi_4_mini")
 @dataclass(init=False, frozen=True)
 class Phi4Mini(LLMModelConfig):
@@ -453,7 +498,7 @@ class Qwen3_0_6B(LLMModelConfig):
     instruct_model = True
     num_sharding = 1
     masked_softmax = True
-    seq_mse_candidates = 1000
+    seq_mse_candidates = 50
     r1 = False
     r2 = False
     r3 = False
@@ -517,7 +562,7 @@ class Smollm3_3B(LLMModelConfig):
 
 @register_llm_model(
     "internvl3_1b",
-    vision_encoder=InternVL3Encoder,
+    modality_encoders=InternVL3Encoder,
 )
 @dataclass(init=False, frozen=True)
 class InternVL3_1B(LLMModelConfig):
@@ -539,7 +584,7 @@ class InternVL3_1B(LLMModelConfig):
 
 @register_llm_model(
     "smolvlm_500m_instruct",
-    vision_encoder=SmolVLMEncoder,
+    modality_encoders=SmolVLMEncoder,
 )
 @dataclass(init=False, frozen=True)
 class SmolVLM_500M(LLMModelConfig):

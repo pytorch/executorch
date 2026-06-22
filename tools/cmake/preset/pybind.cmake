@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,10 +8,11 @@
 set_overridable_option(EXECUTORCH_BUILD_PYBIND ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
-# Enable logging even when in release mode. We are building for desktop, where
-# saving a few kB is less important than showing useful error information to
-# users.
+# Enable logging and program verification even when in release mode. We are
+# building for desktop, where saving a few kB is less important than showing
+# useful error information to users.
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING ON)
+set_overridable_option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION ON)
 set_overridable_option(EXECUTORCH_LOG_LEVEL Info)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
@@ -24,21 +26,83 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
 set_overridable_option(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE ON)
 
+# Optional VGF enable for the default pybind/install flow. This is intentionally
+# scoped to this preset rather than acting as a general environment-to-CMake
+# override mechanism.
+set(_executorch_pybind_enable_vgf OFF)
+if(DEFINED ENV{EXECUTORCH_PYBIND_ENABLE_VGF})
+  if("$ENV{EXECUTORCH_PYBIND_ENABLE_VGF}" STREQUAL "ON")
+    set(_executorch_pybind_enable_vgf ON)
+  else()
+    set(_executorch_pybind_enable_vgf OFF)
+  endif()
+endif()
+
 # TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
 # due to the issue of tokenizer file path length limitation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
+  # MLX requires Apple Silicon (ARM64) and the Metal compiler (xcrun -sdk macosx
+  # metal) which is only available with Xcode, not Command Line Tools
+  if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+    execute_process(
+      COMMAND xcrun -sdk macosx --find metal
+      RESULT_VARIABLE _metal_compiler_result
+      OUTPUT_QUIET ERROR_QUIET
+    )
+    if(_metal_compiler_result EQUAL 0)
+      set_overridable_option(EXECUTORCH_BUILD_MLX ON)
+      set_overridable_option(ET_MLX_ENABLE_OP_LOGGING ON)
+    else()
+      message(
+        STATUS
+          "Metal compiler not found, disabling MLX backend. Install Xcode to enable MLX."
+      )
+    endif()
+  endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|i.86)$")
-    set_overridable_option(EXECUTORCH_BUILD_QNN OFF)
+    # Auto-enable QNN on Linux x86 when the SDK is available. - QNN_SDK_ROOT set
+    # explicitly → always enable - GitHub Actions CI → skip (avoids flaky 1.3GB
+    # downloads) - Otherwise → probe the download server; skip gracefully when
+    # unreachable (e.g. devvms without proxy configured)
+    if(DEFINED QNN_SDK_ROOT OR DEFINED ENV{QNN_SDK_ROOT})
+      set_overridable_option(EXECUTORCH_BUILD_QNN ON)
+    elseif("$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+      message(STATUS "GitHub Actions CI detected: skipping QNN auto-download. "
+                     "Set QNN_SDK_ROOT or -DEXECUTORCH_BUILD_QNN=ON to enable."
+      )
+    else()
+      execute_process(
+        COMMAND
+          ${PYTHON_EXECUTABLE}
+          ${CMAKE_CURRENT_LIST_DIR}/../../../backends/qualcomm/scripts/download_qnn_sdk.py
+          --check
+        RESULT_VARIABLE _qnn_available
+        OUTPUT_QUIET ERROR_QUIET
+        TIMEOUT 10
+      )
+      if(_qnn_available EQUAL 0)
+        set_overridable_option(EXECUTORCH_BUILD_QNN ON)
+      else()
+        message(
+          STATUS "QNN SDK not cached and download server unreachable. "
+                 "Skipping QNN backend. Set QNN_SDK_ROOT or use "
+                 "-DEXECUTORCH_BUILD_QNN=ON with network access to enable."
+        )
+      endif()
+    endif()
   endif()
+  set_overridable_option(EXECUTORCH_BUILD_OPENVINO OFF)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )

@@ -47,7 +47,11 @@ def define_common_targets():
         exported_headers = [
             "activation_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
             "//executorch/runtime/kernel:kernel_includes",
@@ -97,7 +101,11 @@ def define_common_targets():
         exported_headers = [
             "dtype_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -109,18 +117,30 @@ def define_common_targets():
         exported_headers = [
             "elementwise_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         exported_deps = [
             ":broadcast_indexes_range",
             ":broadcast_util",
             ":dtype_util",
             ":vectorized_math",
-            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu:scalar_utils",
-        ],
+        ] + (select({
+            # Zephyr builds use -fno-exceptions → ET_HAS_EXCEPTIONS=0 →
+            # ET_USE_PYTORCH_HEADERS=0, so ATen vectorization is unused.
+            "ovr_config//os:zephyr": [],
+            "DEFAULT": [
+                "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+            ],
+        }) if not runtime.is_oss else [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ]),
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -133,7 +153,11 @@ def define_common_targets():
         exported_headers = [
             "advanced_index_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             ":broadcast_util",
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
@@ -148,14 +172,18 @@ def define_common_targets():
         exported_headers = [
             "copy_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         exported_deps = [
             ":broadcast_util",
         ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -164,11 +192,18 @@ def define_common_targets():
         exported_headers = [
             "distance_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -177,11 +212,15 @@ def define_common_targets():
         exported_headers = [
             "kernel_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -190,12 +229,19 @@ def define_common_targets():
         exported_headers = [
             "matmul_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             ":broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -204,11 +250,15 @@ def define_common_targets():
         exported_headers = [
             "padding_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["PUBLIC"],
     )
 
     runtime.cxx_library(
@@ -217,11 +267,18 @@ def define_common_targets():
         exported_headers = [
             "normalization_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = [
+            "//executorch/kernels/portable/cpu/...",
+            "//executorch/kernels/optimized/cpu/...",
+        ],
     )
 
     runtime.cxx_library(
@@ -270,9 +327,16 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["math_util.h"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
-        exported_deps = [
+        exported_deps = select({
+            # Zephyr builds use -fno-exceptions → ET_HAS_EXCEPTIONS=0 →
+            # ET_USE_PYTORCH_HEADERS=0, so ATen vectorization is unused.
+            "ovr_config//os:zephyr": [],
+            "DEFAULT": [
+                "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+            ],
+        }) if not runtime.is_oss else [
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
-        ],
+            ],
     )
 
     runtime.cxx_library(

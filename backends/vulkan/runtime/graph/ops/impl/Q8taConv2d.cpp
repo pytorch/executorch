@@ -13,9 +13,19 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+ActivationType activation_type_from_string(const std::string& activation) {
+  if (activation == "none") {
+    return ActivationType::kNone;
+  } else if (activation == "relu") {
+    return ActivationType::kRelu;
+  }
+  VK_THROW("Unknown activation type: ", activation);
+}
 
 bool q8ta_conv2d_check_packed_dim_info(const api::PackedDimInfo& info) {
   return info.packed_dim == WHCN::kChannelsDim &&
@@ -210,6 +220,51 @@ ValueRef prepack_quantized_conv2d_weight(
 }
 
 //
+// Resize
+//
+
+// resize_args = { input, kernel_size, stride, padding, dilation }
+//
+// The q8ta_conv2d output is statically allocated at the build-time upper-bound
+// shape. Without this resize function the DynamicDispatchNode would never
+// virtual_resize the output on trigger_resize(), so a dynamic-shape graph would
+// freeze the conv output at its upper bound — feeding e.g. a 238-row input into
+// a 241-row buffer leaves garbage rows that GroupNorm's global statistics then
+// smear across the whole tensor. Recompute H/W from the current input (N and C
+// are shape-independent and stay as currently allocated).
+void resize_q8ta_conv2d_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = resize_args.at(0);
+  const ValueRef kernel_size = resize_args.at(1);
+  const ValueRef stride = resize_args.at(2);
+  const ValueRef padding = resize_args.at(3);
+  const ValueRef dilation = resize_args.at(4);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+
+  // H/W from the current input via the shared conv-output helper. kernel dims
+  // come from the kernel_size IntList (kernel_size_only=true); the args[3] slot
+  // is consulted only as an optional ceil_mode and dilation (non-bool) resolves
+  // it to false. transposed=false.
+  const std::vector<int64_t> out_hw = calc_out_sizes_hw(
+      *graph,
+      in_sizes,
+      kernel_size,
+      /*kernel_size_only=*/true,
+      {stride, padding, dilation, dilation},
+      /*transposed=*/false);
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(out);
+  const size_t ndim = new_sizes.size();
+  new_sizes.at(ndim - 2) = out_hw.at(0);
+  new_sizes.at(ndim - 1) = out_hw.at(1);
+  graph->virtual_resize(out, new_sizes);
+}
+
+//
 // Dispatch nodes
 //
 
@@ -231,6 +286,7 @@ void add_q8ta_conv2d_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
+    const uint32_t activation_type,
     const ValueRef packed_int8_output) {
   (void)packed_int8_input_im2col; // Not used in general shader
 
@@ -278,8 +334,9 @@ void add_q8ta_conv2d_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  // Select shader based on layout
-  std::string kernel_name = "q8ta_conv2d";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name = use_hw_dot ? "q8ta_conv2d" : "q8ta_conv2d_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors
@@ -288,9 +345,10 @@ void add_q8ta_conv2d_node(
       graph.buffer_meta_ubo(packed_int8_input),
       graph.create_params_buffer(conv_params)};
 
-  // Build spec constants: apply_bias + layout constants
+  // Build spec constants: apply_bias, apply_relu + layout constants
   vkapi::SpecVarList spec_constants = {
       apply_bias,
+      activation_type,
       // Layout specialization constants
       graph.hashed_layout_of(packed_int8_input),
       graph.hashed_layout_of(packed_int8_output),
@@ -315,15 +373,19 @@ void add_q8ta_conv2d_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args
-      {}));
+      // Resize args: { input, kernel_size, stride, padding, dilation }
+      {packed_int8_input, kernel_size, stride, padding, dilation},
+      // Resize function: propagate dynamic H/W to the output.
+      resize_q8ta_conv2d_node));
 }
 
 //
 // High level operator impl
 //
 
-void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void q8ta_conv2d_general(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
   int32_t idx = 0;
   const ValueRef packed_int8_input = args.at(idx++);
   const ValueRef input_scale = args.at(idx++);
@@ -339,7 +401,11 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
+  const ValueRef activation = args.at(idx++);
   const ValueRef packed_int8_output = args.at(idx++);
+
+  uint32_t activation_type_val = static_cast<uint32_t>(
+      activation_type_from_string(graph.extract_string(activation)));
 
   QuantizationConfig weight_quant_config(8, kPerChannel, {});
 
@@ -395,11 +461,49 @@ void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       padding,
       dilation,
       groups,
+      activation_type_val,
       packed_int8_output);
 }
 
+void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  const ValueRef input = args.at(0);
+  const ValueRef groups_ref = args.at(13);
+  const ValueRef output = args.at(15);
+
+  const int64_t groups = graph.extract_scalar<int64_t>(groups_ref);
+  const int64_t in_channels = graph.size_at<int64_t>(-3, input);
+  const int64_t in_channels_per_group = in_channels / groups;
+
+  const int64_t H_out = graph.size_at<int64_t>(-2, output);
+  const int64_t W_out = graph.size_at<int64_t>(-1, output);
+  const int64_t spatial_out = H_out * W_out;
+
+  // Im2col requires input channels per group to be a multiple of 4
+  const bool im2col_eligible = in_channels_per_group % 4 == 0;
+
+  bool use_im2col = false;
+  if (graph.device_is_mali()) {
+    // On Mali, im2col is faster than the general shader across the board.
+    use_im2col = im2col_eligible;
+  } else {
+    // Default: on Adreno and unknown GPU architectures, im2col is only
+    // beneficial for ungrouped convolutions with sufficient channel depth or
+    // small spatial output. For grouped convolutions, the general shader is
+    // more efficient (0.7-0.95x regression measured on Adreno).
+    use_im2col = im2col_eligible && groups == 1 &&
+        (in_channels_per_group >= 32 || spatial_out <= 4096);
+  }
+
+  if (use_im2col) {
+    q8ta_conv2d_im2col(graph, args);
+  } else {
+    q8ta_conv2d_general(graph, args);
+  }
+}
+
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(etvk.q8ta_conv2d.default, q8ta_conv2d);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d.default, q8ta_conv2d);
+  VK_REGISTER_OP(et_vk.q8ta_conv2d_general.default, q8ta_conv2d_general);
 }
 
 } // namespace vkcompute

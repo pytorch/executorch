@@ -3,12 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 from typing import final, Optional, Sequence
 
 from executorch.backends.arm.ethosu import EthosUBackend, EthosUCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.exir.backend.partitioner import DelegationSpec
+from torch._ops import OpOverload
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 
@@ -17,7 +17,7 @@ class EthosUPartitioner(TOSAPartitioner):
     """Partitions subgraphs supported by the Arm Ethos-U backend.
 
     Args:
-        compile_spec: List of CompileSpec objects for Ethos-U backend.
+        compile_spec: EthosUCompileSpec object for configuring the lowering.
         additional_checks: Optional sequence of additional operator support checks.
 
     """
@@ -29,7 +29,9 @@ class EthosUPartitioner(TOSAPartitioner):
     ) -> None:
         # Override the delegation spec for Ethos-U
         self.delegation_spec = DelegationSpec(
-            EthosUBackend.__name__, compile_spec.to_list()
+            EthosUBackend.__name__, compile_spec._to_list()
         )
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
+        self._custom_partition_ops: set[OpOverload] = set()
+        self.intermediate_path = compile_spec._get_intermediate_path()

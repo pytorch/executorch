@@ -9,9 +9,53 @@
 #pragma once
 
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <cmath>
+#include <numeric>
 
 namespace torch {
 namespace executor {
+
+/**
+ * Scalar layer_norm computation over M rows of N elements each.
+ * Computes mean/variance in float, normalizes with (x - mean) / std * gamma +
+ * beta. Caller must handle M==0 and N==0 edge cases before calling.
+ */
+template <typename CTYPE>
+inline void layer_norm_scalar(
+    const CTYPE* input_data,
+    const CTYPE* weight_data, // nullable
+    const CTYPE* bias_data, // nullable
+    CTYPE* out_data,
+    CTYPE* mean_data,
+    CTYPE* rstd_data,
+    size_t M,
+    size_t N,
+    float eps) {
+  for (size_t i = 0; i < M; ++i) {
+    const CTYPE* x = input_data + i * N;
+    CTYPE* y = out_data + i * N;
+
+    // compute E[X] and Var[x] = E[x^2] - E[x]^2
+    float sum = std::accumulate(x, x + N, 0.0f);
+    float sq_sum = 0;
+    for (size_t j = 0; j < N; ++j) {
+      sq_sum += static_cast<float>(x[j]) * x[j];
+    }
+    float mean_value = sum / N;
+    float variance = sq_sum / N - mean_value * mean_value;
+    float std = std::sqrt(variance + eps);
+
+    // Calculate the elements of output
+    for (size_t j = 0; j < N; ++j) {
+      CTYPE w = weight_data ? weight_data[j] : static_cast<CTYPE>(1);
+      CTYPE b = bias_data ? bias_data[j] : static_cast<CTYPE>(0);
+      y[j] = (x[j] - mean_value) / std * w + b;
+    }
+
+    mean_data[i] = mean_value;
+    rstd_data[i] = 1.0 / std;
+  }
+}
 
 bool check_batch_norm_args(
     const Tensor& in,

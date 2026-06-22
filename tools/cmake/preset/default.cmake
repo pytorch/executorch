@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -64,6 +65,10 @@ define_overridable_option(
   "Build the Arm Baremetal flow for Cortex-M and Ethos-U" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
+  "Build the Arm Ethos-U backend for the Linux driver stack" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_KERNELS_LLM "Build the custom kernels" BOOL OFF
 )
 define_overridable_option(
@@ -72,6 +77,10 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
   "Build the optimized ops library for AOT export usage" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT
+  "Build the portable custom ops library for AOT export usage" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER "Build the ASR runner extension" BOOL
@@ -84,6 +93,9 @@ define_overridable_option(
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension" BOOL
   ON # Required by executor_runner
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_IMAGE "Build the Image extension" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
@@ -112,6 +124,7 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_APPLE "Build the Apple extension" BOOL OFF
 )
 define_overridable_option(EXECUTORCH_BUILD_MPS "Build the MPS backend" BOOL OFF)
+define_overridable_option(EXECUTORCH_BUILD_MLX "Build the MLX backend" BOOL OFF)
 define_overridable_option(
   EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" BOOL OFF
 )
@@ -123,6 +136,13 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NXP_NEUTRON "Build the NXP eIQ Neutron backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_NXP_NEUTRON_RUNNER "Build the NXP eIQ Neutron runner" BOOL
+  OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" BOOL OFF
@@ -150,6 +170,9 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_WEBGPU "Build the WebGPU backend" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_PORTABLE_OPS "Build portable_ops library" BOOL ON
@@ -201,6 +224,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." BOOL
   ${_default_executorch_build_cpuinfo}
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_SHARED "Build a consolidated ExecuTorch shared library" BOOL
+  OFF
+)
 
 # Threadpool size options. At most one can be specified. Note that the default
 # is managed in threadpool.cpp to allow the user to specify an alternate mode
@@ -230,6 +257,11 @@ check_required_options_on(
 check_conflicting_options_on(
   IF_ON EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES CONFLICTS_WITH
   EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_BUILD_ARM_ETHOSU_LINUX CONFLICTS_WITH
+  EXECUTORCH_BUILD_ARM_BAREMETAL
 )
 
 # TODO(jathu): move this to platform specific presets when created
@@ -318,6 +350,10 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_ENABLE_BUNDLE_IO REQUIRES EXECUTORCH_BUILD_DEVTOOLS
 )
 
@@ -372,6 +408,11 @@ check_required_options_on(
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
   EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_IMAGE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 

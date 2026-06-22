@@ -14,6 +14,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -459,9 +460,9 @@ TEST_F(OpToDimOrderCopyTest, HardcodeFloatConvertInt) {
 }
 
 TEST_F(OpToDimOrderCopyTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched sizes");
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
@@ -484,9 +485,9 @@ TEST_F(OpToDimOrderCopyTest, MismatchedSizesDie) {
 // should not be allowed. The function is expected death if using the illegal
 // memory format.
 TEST_F(OpToDimOrderCopyTest, MismatchedMemoryFormatDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non contiguous memory formats";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non contiguous memory formats");
   TensorFactory<ScalarType::Float> tf_in;
   TensorFactory<ScalarType::Float> tf_out;
   Tensor input =
@@ -514,9 +515,9 @@ TEST_F(OpToDimOrderCopyTest, MismatchedMemoryFormatDies) {
 
 // Only blocking data transfer supported
 TEST_F(OpToDimOrderCopyTest, MismatchedBlockingDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non blocking data transfer";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non blocking data transfer");
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros(/*sizes=*/{3, 1, 1, 2});
@@ -547,9 +548,9 @@ TEST_F(OpToDimOrderCopyTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpToDimOrderCopyTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape unbound not supported");
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
@@ -658,4 +659,94 @@ TEST_F(OpToDimOrderCopyTest, PreserveChanneslLast) {
 
   EXPECT_TENSOR_EQ(out, expected);
   EXPECT_TENSOR_EQ(ret, expected);
+}
+
+//
+// Complex Type Tests
+//
+
+TEST_F(OpToDimOrderCopyTest, ComplexFloatToComplexFloat) {
+  TensorFactory<ScalarType::ComplexFloat> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor self = tf.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 2.0f),
+       executorch::aten::complex<float>(3.0f, 4.0f),
+       executorch::aten::complex<float>(5.0f, 6.0f),
+       executorch::aten::complex<float>(7.0f, 8.0f)});
+
+  Tensor out = tf.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  EXPECT_TENSOR_EQ(out, self);
+}
+
+TEST_F(OpToDimOrderCopyTest, FloatToComplexFloat) {
+  TensorFactory<ScalarType::Float> tf_in;
+  TensorFactory<ScalarType::ComplexFloat> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor self = tf_in.make(sizes, {1.0f, 2.0f, 3.0f, 4.0f});
+  Tensor out = tf_out.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  // Real values should become complex with zero imaginary part
+  Tensor expected = tf_out.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 0.0f),
+       executorch::aten::complex<float>(2.0f, 0.0f),
+       executorch::aten::complex<float>(3.0f, 0.0f),
+       executorch::aten::complex<float>(4.0f, 0.0f)});
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpToDimOrderCopyTest, ComplexFloatToFloat) {
+  TensorFactory<ScalarType::ComplexFloat> tf_in;
+  TensorFactory<ScalarType::Float> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Only the real part should be preserved
+  Tensor self = tf_in.make(
+      sizes,
+      {executorch::aten::complex<float>(1.0f, 10.0f),
+       executorch::aten::complex<float>(2.0f, 20.0f),
+       executorch::aten::complex<float>(3.0f, 30.0f),
+       executorch::aten::complex<float>(4.0f, 40.0f)});
+
+  Tensor out = tf_out.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  Tensor expected = tf_out.make(sizes, {1.0f, 2.0f, 3.0f, 4.0f});
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpToDimOrderCopyTest, ComplexDoubleToComplexDouble) {
+  TensorFactory<ScalarType::ComplexDouble> tf;
+
+  const std::vector<int32_t> sizes = {3};
+
+  Tensor self = tf.make(
+      sizes,
+      {executorch::aten::complex<double>(1.5, 2.5),
+       executorch::aten::complex<double>(-3.5, 4.5),
+       executorch::aten::complex<double>(0.0, -1.0)});
+
+  Tensor out = tf.zeros(sizes);
+
+  op__to_dim_order_copy_out(
+      self, /*non_blocking=*/false, executorch::aten::nullopt, out);
+
+  EXPECT_TENSOR_EQ(out, self);
 }

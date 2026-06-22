@@ -1,9 +1,10 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import math
+import operator
 from copy import copy
 from typing import cast, Dict, Optional, Set, Tuple, Type
 
@@ -17,6 +18,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -34,10 +36,59 @@ class InsertRescalePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    _mxfp_payload_dtypes = {
+        TosaSpecialDtype.FP4E2M1,
+        TosaSpecialDtype.FP6E2M3,
+        TosaSpecialDtype.FP6E3M2,
+    }
+
+    def _ensure_uint8_io_only(self, graph_module: GraphModule) -> None:
+        """Ensure uint8 tensors only appear at IO boundaries.
+
+        TOSA has no true uint8 tensor type; unsigned semantics are carried via
+        RESCALE input/output flags. If uint8 appears for other nodes, it means
+        unsigned data leaked past IO.
+
+        """
+        for node in graph_module.graph.nodes:
+            meta_val = node.meta.get("val")
+            if not isinstance(meta_val, torch.Tensor):
+                continue
+            if meta_val.dtype != torch.uint8:
+                continue
+            if node.op in ("placeholder", "output"):
+                continue
+            if node.op == "call_function":
+                if node.target == operator.getitem and all(
+                    user.op == "output" for user in node.users
+                ):
+                    continue
+                if node.target == exir_ops.backend.tosa.RESCALE.default:
+                    continue
+                if (
+                    node.target
+                    == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+                ):
+                    # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                    continue
+            if node.meta.get(TosaSpecialDtype.meta_key()) in self._mxfp_payload_dtypes:
+                # Sub-byte FP types are stored uint8 arrays, so we need an exception for those.
+                continue
+
+            raise ValueError(
+                f"Found internal uint8 tensor at node {node.name} "
+                f"({node.target}). Uint8 is only allowed at IO boundaries."
+            )
+
     def fold_dq_q_to_rescale(self, node: Node, user: Node, graph_module: GraphModule):
         dq_args = QuantArgs.from_operator(node.target, node.args)
         q_args = QuantArgs.from_operator(user.target, user.args)
         new_scale = dq_args.scale / q_args.scale
+        input_unsigned = dq_args.dtype == torch.uint8
+        output_unsigned = q_args.dtype == torch.uint8
+        # TOSA has no true uint8 tensors; unsigned semantics are handled via
+        # the RESCALE flags, so uint8 does not propagate as a tensor dtype.
+        output_dtype = torch.int8 if output_unsigned else q_args.dtype
 
         with graph_module.graph.inserting_before(node):
             rescale_node = create_node(
@@ -45,11 +96,15 @@ class InsertRescalePass(ArmPass):
                 exir_ops.backend.tosa.RESCALE.default,
                 (
                     node.all_input_nodes[0],
-                    q_args.dtype,
+                    output_dtype,
                     [new_scale],
                     dq_args.zp,
                     q_args.zp,
                 ),
+                kwargs={
+                    "input_unsigned": input_unsigned,
+                    "output_unsigned": output_unsigned,
+                },
             )
             rescale_node.meta = copy(user.meta)
             user.replace_all_uses_with(rescale_node)
@@ -74,14 +129,19 @@ class InsertRescalePass(ArmPass):
         graph_module.recompile()
         return PassResult(graph_module, modified)
 
+    def ensures(self, graph_module: GraphModule) -> None:
+        self._ensure_uint8_io_only(graph_module)
+
 
 class InsertRescaleInt32Pass(ArmPass):
-    """Numerous TOSA ops require inputs and outputs to be 32-bit integers in their
-    quantized implementations. This pass treats such operator nodes by
-    inserting rescale ops before and after them if needed. Note that extra
-    logic that handles the scales and zero points are in place here because the
-    affected TOSA ops have naive implementations that do not account for the
-    quantization parameters.
+    """Numerous TOSA ops require inputs and outputs to be 32-bit integers in
+    their quantized implementations.
+
+    This pass treats such operator nodes by inserting rescale ops before and
+    after them if needed. Note that extra logic that handles the scales and zero
+    points are in place here because the affected TOSA ops have naive
+    implementations that do not account for the quantization parameters.
+
     """
 
     # SUM must be decomposed after this pass to prevent insertion of RESCALE
@@ -106,7 +166,7 @@ class InsertRescaleInt32Pass(ArmPass):
     ]
 
     def _int32_qargs(self, s):
-        """Helper creator function for INT32-based QuantArgs"""
+        """Helper creator function for INT32-based QuantArgs."""
 
         return QuantArgs(
             scale=s,
@@ -124,6 +184,7 @@ class InsertRescaleInt32Pass(ArmPass):
         Inputs to the INT32-based operator must be rescaled from INT8 to INT32.
         This function computes the ``QuantArgs`` for each of the operands and returns
         it as a dict, mapping tensor index to ``QuantArgs``.
+
         """
 
         if target in [
@@ -190,13 +251,13 @@ class InsertRescaleInt32Pass(ArmPass):
     def _get_output_qparams(
         self, target, inputs_qparams: Dict[int, QuantArgs]
     ) -> Optional[QuantArgs]:
-        """Given an op ``target`` and the ``QuantArgs`` for each of its inputs, compute
-        the scale of the output based on how the operator itself affects it."""
+        """Given an op ``target`` and the ``QuantArgs`` for each of its inputs,
+        compute the scale of the output based on how the operator itself affects
+        it.
+        """
 
         if target in [
             exir_ops.edge.aten.abs.default,
-            exir_ops.edge.aten.maximum.default,
-            exir_ops.edge.aten.minimum.default,
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.sub.Tensor,
@@ -204,6 +265,16 @@ class InsertRescaleInt32Pass(ArmPass):
             # The op has not altered the scale; the output scale is equal to
             # the operands' scales.
             return self._int32_qargs(inputs_qparams[0].get_scale_per_tensor())
+        elif target in [
+            exir_ops.edge.aten.maximum.default,
+            exir_ops.edge.aten.minimum.default,
+        ]:
+            # Min/Max use a shared INT32 accumulator scale for inputs, then
+            # rescale to the original output activation scale.
+            min_scale = min(
+                [qp.get_scale_per_tensor() for qp in inputs_qparams.values()]
+            )
+            return self._int32_qargs(min_scale)
         elif target in [
             exir_ops.edge.aten.eq.Tensor,
             exir_ops.edge.aten.ge.Tensor,
@@ -233,8 +304,7 @@ class InsertRescaleInt32Pass(ArmPass):
     def _get_rescale_qparams(
         self, target, input_qparams: Dict[int, QuantArgs]
     ) -> Tuple[Dict[int, QuantArgs], Optional[QuantArgs]]:
-        """
-        Get the quantization parameters of the INT32 inputs/outputs that will
+        """Get the quantization parameters of the INT32 inputs/outputs that will
         surround the node after the new RESCALE ops have been inserted.
         """
 
@@ -372,14 +442,18 @@ class InsertRescaleInt32Pass(ArmPass):
 
 
 class InsertControlFlowRescalesPass(ArmPass):
-    """The quantization parameters for tensors going into and coming out of a submodule are not guaranteed to
-    match the quantization parameters for the corresponding tensors inside the submodule. For example, cond has
-    different annotation on input and output, while the entire graph inside the submodule could be using shared
-    annotation. This pass solves this by inserting rescales in the beginning and end of the submodule
-    that transform the tensor from one set of quantization parameters to another.
+    """The quantization parameters for tensors going into and coming out of a
+    submodule are not guaranteed to match the quantization parameters for the
+    corresponding tensors inside the submodule. For example, cond has different
+    annotation on input and output, while the entire graph inside the submodule
+    could be using shared annotation. This pass solves this by inserting
+    rescales in the beginning and end of the submodule that transform the tensor
+    from one set of quantization parameters to another.
 
-    The pass is run by the graph_module containing the control flow operator, but requires that the affected nodes
-    inside the submodule have been q-dq folded and have input/output_qparams meta.
+    The pass is run by the graph_module containing the control flow operator,
+    but requires that the affected nodes inside the submodule have been q-dq
+    folded and have input/output_qparams meta.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -395,7 +469,10 @@ class InsertControlFlowRescalesPass(ArmPass):
         graph_module: GraphModule,
     ):
         """Insert a rescale into the graph, inheriting meta from `from_node`.
-        The node is not connected to anything, that is up to the user."""
+
+        The node is not connected to anything, that is up to the user.
+
+        """
 
         new_scales = [
             in_qparams.get_scale_per_tensor() / out_qparams.get_scale_per_tensor()
@@ -441,7 +518,13 @@ class InsertControlFlowRescalesPass(ArmPass):
             input_node = input_nodes[qargs_index]
             if len(input_node.users) == 0:
                 continue
-            if len(out_qparams_map := input_node.meta.get("output_qparams", {})) != 1:
+            out_qparams_map = input_node.meta.get("output_qparams", {})
+            if len(out_qparams_map) == 0:
+                # Nested control-flow submodules may also expose frozen captured
+                # values as placeholders. Those are not control-flow boundary
+                # inputs, so there is no qparam pair to bridge with a RESCALE.
+                continue
+            if len(out_qparams_map) != 1:
                 raise ValueError(
                     f"Expected submodule input {input_node} to have exactly one output qparam, got {out_qparams_map}"
                 )

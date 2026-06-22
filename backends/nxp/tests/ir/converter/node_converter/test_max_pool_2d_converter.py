@@ -1,31 +1,46 @@
-# Copyright 2024 NXP
+# Copyright 2024,2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
 
-from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    to_edge_program,
-    to_quantized_edge_program,
+from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    ViewCopy,
 )
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    ToNCHWPreprocess,
-    ToNHWCPreprocess,
-)
-from executorch.backends.nxp.tests.models import MaxPool2dConvModule, MaxPool2dModule
-from executorch.backends.xnnpack._passes import RemoveGetItemPass
-from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
-from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+
+
+class MaxPool1DModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.max_pool = torch.nn.MaxPool1d(
+            kernel_size=3,
+        )
+
+    def forward(self, x):
+        return self.max_pool(x)
+
+
+class MaxPool2dModule(torch.nn.Module):
+    def __init__(self, kernel_size: int | tuple[int, ...] = 3, **kwargs):
+        super().__init__()
+        self.max_pool2d = torch.nn.MaxPool2d(kernel_size, **kwargs)
+
+    def forward(self, x):
+        return self.max_pool2d(x)
 
 
 @pytest.fixture(autouse=True)
@@ -34,99 +49,126 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-@pytest.mark.parametrize(
-    "input_shape, padding",
-    [
-        pytest.param((1, 4, 8, 8), (0, 0), id="No padding."),
-        pytest.param(
-            (1, 4, 8, 8),
-            (1, 1),
-            id="Padding, keep the same output tensor size as input.",
-        ),
-        pytest.param(
-            (1, 4, 8, 8), (1, 0), id="Padding, change the output tensor size."
-        ),
-        pytest.param(
-            (1, 4, 9, 9), (1, 0), id="Padding, change the output tensor size."
-        ),
-        pytest.param(
-            (1, 4, 9, 9), (0, 1), id="Padding, change the output tensor size."
-        ),
-    ],
-)
-def test_max_pool_2d_conversion(input_shape, padding):
-    edge_program = to_edge_program(
-        MaxPool2dModule(padding=padding), input_shape
-    ).exported_program()
-
-    # We need to create custom model verifier with max_pool2d added as exception.
-    # Otherwise, we get violation that this op is not part of ATen Core ops.
-    edge_program._verifiers = [
-        EXIREdgeDialectVerifier(
-            class_only=True,
-            core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
+class TestMaxPool2D:
+    # noinspection PyMethodMayBeStatic
+    def assert_delegated(self, model, input_shape, mocker, request):
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={},
         )
-    ]
 
-    # Remove MaxPool-related "getitem" nodes from graph
-    edge_program = NeutronPassManager(edge_program, [RemoveGetItemPass]).transform()
+        lower_run_compare(model, input_shape, graph_verifier, request)
 
-    input_data = np.random.random(input_shape).astype(np.float32)
+    # noinspection PyMethodMayBeStatic
+    def assert_not_delegated(self, model, input_shape):
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_input_preprocess=ToNHWCPreprocess(),
-        tflite_output_preprocess=ToNCHWPreprocess(),
-        conversion_config=ConversionConfig(
-            {"use_neutron_for_format_conversion": False}
-        ),
+        # Make sure the `max_pool2d` was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [MaxPool2DWithIndices])
+
+    def test__basic_nsys_inference(self, mocker, request):
+        input_shape = (2, 4, 6, 7)  # The old flow limited the batch size to 1.
+        model = MaxPool2dModule()
+        self.assert_delegated(model, input_shape, mocker, request)
+
+    def test__basic_nsys_inference_qat(self, mocker, request):
+        input_shape = (2, 11, 7, 16)  # The old flow limited the batch size to 1.
+        model = MaxPool2dModule()
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={},
+        )
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            use_qat=True,
+        )
+
+    def test__large_kernel_size(self, mocker, request):
+        kernel_size = (1, 5000)
+        input_shape = (1, 4) + kernel_size
+        model = MaxPool2dModule(kernel_size, stride=1)
+        self.assert_delegated(model, input_shape, mocker, request)
+
+    def test__stride_limit__no_padding(self, mocker, request):
+        stride = 4096
+        input_shape = (1, 4, 1, 4096)
+        model = MaxPool2dModule(1, stride=stride)
+        self.assert_delegated(model, input_shape, mocker, request)
+
+    def test__stride_limit_exceeded__no_padding(self):
+        stride = 4097  # Exceeds the stride limit.
+        input_shape = (1, 4, 1, 4096)
+        model = MaxPool2dModule(1, stride=stride)
+        self.assert_not_delegated(model, input_shape)
+
+    def test__stride_limit__padding(self, mocker, request):
+        padding = 1
+        stride = 4096
+        input_shape = (1, 2, 3, stride)
+        model = MaxPool2dModule(3, stride=stride, padding=padding)
+        self.assert_delegated(model, input_shape, mocker, request)
+
+    def test__stride_limit_exceeded__padding(self):
+        padding = 1
+        stride = 4097  # Exceeds the stride limit.
+        input_shape = (1, 2, 3, stride)
+        model = MaxPool2dModule(3, stride=stride, padding=padding)
+        self.assert_not_delegated(model, input_shape)
+
+    @pytest.mark.skip(
+        reason="Large padding requires large kernel size which results in an extremely slow test."
     )
+    def test__padding_limit(self, mocker, request):
+        # As the padding is added wia a `Pad` operator (not the `MaxPool` arguments), there is no limit to the padded
+        #  value. But as padding can be at most half of the kernel size (PyTorch requirement) and kernel size is limited
+        #  to 4096, padding of 2048 is the limit.
+        padding = 2048
+        kernel_size = padding * 2
+        input_shape = (1, 1, 2, 3)
+        model = MaxPool2dModule(kernel_size, padding=padding)
+        self.assert_delegated(model, input_shape, mocker, request)
+
+    def test__padding__max_pool_limit_exceeded(self, mocker, request):
+        # NeutronIR `MaxPool` padding is limited to 32. But as it is added by the `Pad` operator instead, there is no
+        #  limit. This tests ensures the `MaxPool` padding limit is not a problem.
+        padding = 33
+        kernel_size = padding * 2
+        input_shape = (1, 2, 3, 4)
+        model = MaxPool2dModule(kernel_size, padding=padding)
+        self.assert_delegated(model, input_shape, mocker, request)
+
+    def test__padding_to_kernel_ratio_exceeded(self):
+        # Both PyTorch and Neutron require the padding to be at most half of the kernel size.
+        kernel_size = 3
+        padding = 2  # More than half of the kernel size.
+        input_shape = (1, 2, 3, 4)
+        model = MaxPool2dModule(kernel_size, padding=padding)
+        with pytest.raises(
+            RuntimeError, match="pad should be at most half of effective kernel size"
+        ):
+            to_quantized_edge_program(model, input_shape)
 
 
-@pytest.mark.parametrize(
-    "input_shape, padding",
-    [
-        pytest.param((1, 4, 8, 8), (0, 0), id="No padding."),
-        pytest.param(
-            (1, 4, 8, 8),
-            (1, 1),
-            id="Padding, keep the same output tensor size as input.",
-        ),
-        pytest.param(
-            (1, 4, 8, 8), (1, 0), id="Padding, change the output tensor size."
-        ),
-        pytest.param(
-            (1, 4, 11, 11), (1, 0), id="Padding, change the output tensor size."
-        ),
-        pytest.param(
-            (1, 4, 11, 11), (0, 1), id="Padding, change the output tensor size."
-        ),
-    ],
-)
-def test_max_pool_2d_quant_conversion(mocker, input_shape, padding, use_qat):
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+class TestMaxPool1D:
 
-    # Run conversion
-    _ = to_quantized_edge_program(
-        MaxPool2dConvModule(padding=padding),
-        input_shape,
-        use_qat=use_qat,
-        use_neutron_for_format_conversion=False,
-    )
+    # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
+    def test__basic_nsys_inference__view_not_delegated(self, mocker, request):
+        input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
+        model = MaxPool1DModule()
 
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1, ViewCopy: 2},
+            expected_non_delegated_ops={},
+        )
 
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program,
-        tflite_input_preprocess=ToNHWCPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-        tflite_output_preprocess=ToNCHWPreprocess(),
-        input_data=input_data,
-    )
+        lower_run_compare(model, input_shape, graph_verifier, request)

@@ -9,7 +9,6 @@ from typing import Optional
 
 import torch
 import torchaudio
-
 from executorch.examples.models.parakeet.quantize import quantize_model_
 from executorch.exir import (
     EdgeCompileConfig,
@@ -304,15 +303,15 @@ def export_all(
     backend: Optional[str] = None,
     # Encoder quantization args
     qlinear_encoder: Optional[str] = None,
-    qlinear_encoder_group_size: int = 32,
+    qlinear_encoder_group_size: Optional[int] = None,
     qlinear_encoder_packing_format: Optional[str] = None,
     # Decoder quantization args
     qlinear: Optional[str] = None,
-    qlinear_group_size: int = 32,
+    qlinear_group_size: Optional[int] = None,
     qlinear_packing_format: Optional[str] = None,
     # Embedding quantization args (decoder has the embedding layer)
     qembedding: Optional[str] = None,
-    qembedding_group_size: int = 0,
+    qembedding_group_size: Optional[int] = None,
 ):
     """Export all model components.
 
@@ -335,7 +334,7 @@ def export_all(
     programs = {}
 
     # Determine device based on backend (preprocessor always stays on CPU)
-    device = torch.device("cuda" if backend == "cuda" else "cpu")
+    device = torch.device("cuda:0" if backend == "cuda" else "cpu")
 
     # Get audio parameters from model config
     sample_rate = model.preprocessor._cfg.sample_rate
@@ -361,8 +360,8 @@ def export_all(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
-            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
+            # min=10 frames = 0.1 sec @ 16kHz, max aligned with encoder limit.
+            "audio": {0: Dim.AUTO(min=1600, max=max_audio_samples)},
             "length": {},
         },
         strict=False,
@@ -371,7 +370,7 @@ def export_all(
 
     # Move model to CUDA after preprocessor export (preprocessor must stay on CPU)
     if backend == "cuda":
-        model.cuda()
+        model.to(device)
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
     # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.
@@ -389,7 +388,6 @@ def export_all(
             qlinear_group_size=qlinear_encoder_group_size,
             qlinear_packing_format=qlinear_encoder_packing_format,
         )
-
     programs["encoder"] = export(
         encoder_with_proj,
         (),
@@ -500,22 +498,21 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
-def _create_metal_partitioners(programs):
+def _create_metal_partitioners(programs, codesign_identity=None):
     """Create Metal partitioners for all programs except preprocessor."""
     from executorch.backends.apple.metal.metal_backend import MetalBackend
     from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
 
     print("\nLowering to ExecuTorch with Metal...")
 
     # Run decompositions for non-preprocessor programs
     updated_programs = {}
+    decomp_table = torch.export.default_decompositions()
+    decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
     for key, ep in programs.items():
-        # print(f"Running decompositions for {key}")
-        # print(ep.graph_module)
         if key != "preprocessor":
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         else:
             updated_programs[key] = ep
 
@@ -525,6 +522,10 @@ def _create_metal_partitioners(programs):
             partitioner[key] = []
         else:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            if codesign_identity:
+                compile_specs.append(
+                    CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+                )
             partitioner[key] = [MetalPartitioner(compile_specs)]
     return partitioner, updated_programs
 
@@ -560,14 +561,57 @@ def _create_cuda_partitioners(programs, is_windows=False):
     return partitioner, updated_programs
 
 
-def lower_to_executorch(programs, metadata=None, backend="portable"):
+def _create_mlx_partitioners(programs):
+    """Create MLX partitioners for all programs."""
+    from executorch.backends.mlx.partitioner import MLXPartitioner
+
+    print("\nLowering to ExecuTorch with MLX...")
+
+    partitioner = {}
+    for key in programs.keys():
+        partitioner[key] = [MLXPartitioner()]
+
+    return partitioner, programs
+
+
+def _create_vulkan_partitioners(programs, vulkan_force_fp16=False):
+    """Create Vulkan partitioners for all programs except preprocessor."""
+    from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+        VulkanPartitioner,
+    )
+
+    print("\nLowering to ExecuTorch with Vulkan...")
+    partitioner = {}
+    for key in programs.keys():
+        if key == "preprocessor":
+            partitioner[key] = []
+        else:
+            partitioner[key] = [VulkanPartitioner({"force_fp16": vulkan_force_fp16})]
+    return partitioner, programs
+
+
+def lower_to_executorch(
+    programs,
+    metadata=None,
+    backend="portable",
+    vulkan_force_fp16=False,
+    codesign_identity=None,
+):
     if backend == "xnnpack":
         partitioner, programs = _create_xnnpack_partitioners(programs)
     elif backend == "metal":
-        partitioner, programs = _create_metal_partitioners(programs)
+        partitioner, programs = _create_metal_partitioners(
+            programs, codesign_identity=codesign_identity
+        )
+    elif backend == "mlx":
+        partitioner, programs = _create_mlx_partitioners(programs)
     elif backend in ("cuda", "cuda-windows"):
         partitioner, programs = _create_cuda_partitioners(
             programs, is_windows=(backend == "cuda-windows")
+        )
+    elif backend == "vulkan":
+        partitioner, programs = _create_vulkan_partitioners(
+            programs, vulkan_force_fp16=vulkan_force_fp16
         )
     else:
         print("\nLowering to ExecuTorch...")
@@ -607,7 +651,15 @@ def main():
         "--backend",
         type=str,
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal", "cuda", "cuda-windows"],
+        choices=[
+            "portable",
+            "xnnpack",
+            "metal",
+            "mlx",
+            "cuda",
+            "cuda-windows",
+            "vulkan",
+        ],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -622,14 +674,14 @@ def main():
     parser.add_argument(
         "--qlinear",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantization config for decoder linear layers",
     )
     parser.add_argument(
         "--qlinear_group_size",
         type=int,
-        default=32,
-        help="Group size for decoder linear quantization (default: 32)",
+        default=None,
+        help="Group size for decoder linear quantization",
     )
     parser.add_argument(
         "--qlinear_packing_format",
@@ -642,14 +694,14 @@ def main():
     parser.add_argument(
         "--qlinear_encoder",
         type=str,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantization config for encoder linear layers",
     )
     parser.add_argument(
         "--qlinear_encoder_group_size",
         type=int,
-        default=32,
-        help="Group size for encoder linear quantization (default: 32)",
+        default=None,
+        help="Group size for encoder linear quantization",
     )
     parser.add_argument(
         "--qlinear_encoder_packing_format",
@@ -662,14 +714,23 @@ def main():
     parser.add_argument(
         "--qembedding",
         type=str,
-        choices=["4w", "8w"],
+        choices=["4w", "8w", "nvfp4"],
         help="Quantization config for decoder embedding layer",
     )
     parser.add_argument(
         "--qembedding_group_size",
         type=int,
-        default=0,
-        help="Group size for embedding quantization (default: 0 = per-axis)",
+        default=None,
+        help="Group size for embedding quantization",
+    )
+
+    parser.add_argument("--vulkan_force_fp16", action="store_true")
+    parser.add_argument(
+        "--codesign-identity",
+        default=None,
+        help="macOS code signing identity for the Metal backend .so. "
+        "Use '-' for ad-hoc or a Developer ID for notarized apps. "
+        "If omitted, the .so is not signed.",
     )
 
     args = parser.parse_args()
@@ -719,7 +780,13 @@ def main():
         qembedding_group_size=args.qembedding_group_size,
     )
 
-    et = lower_to_executorch(programs, metadata=metadata, backend=args.backend)
+    et = lower_to_executorch(
+        programs,
+        metadata=metadata,
+        backend=args.backend,
+        vulkan_force_fp16=args.vulkan_force_fp16,
+        codesign_identity=args.codesign_identity,
+    )
 
     pte_path = os.path.join(args.output_dir, "model.pte")
     print(f"\nSaving ExecuTorch program to: {pte_path}")

@@ -7,13 +7,10 @@
 
 #include "cortex_m_ops_common.h"
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_max_pool2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,

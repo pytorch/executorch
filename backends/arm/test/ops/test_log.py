@@ -30,7 +30,7 @@ test_data_suite = {
     "ones_rank3": lambda: (torch.ones(10, 10, 10)),
     "rand": lambda: (torch.rand(10, 10) + 0.001),
     "randn_pos": lambda: (torch.randn(10) + 10),
-    "randn_spread": lambda: (torch.max(torch.Tensor([0.0]), torch.randn(10) * 100)),
+    "randn_spread": lambda: (torch.max(torch.Tensor([0.1]), torch.randn(10) * 100)),
     "ramp": lambda: (torch.arange(0.01, 20, 0.2)),
 }
 

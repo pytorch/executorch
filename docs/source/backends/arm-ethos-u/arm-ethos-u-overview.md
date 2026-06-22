@@ -4,7 +4,7 @@ The Arm&reg; Ethos&trade;-U backend targets Edge/IoT-type AI use-cases by enabli
 [Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55), [Arm&reg; Ethos&trade;-U65 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65), and
 [Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://www.mlplatform.org/tosa/) and the
 [ethos-u-vela](https://pypi.org/project/ethos-u-vela/) graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
-please refer to the [Arm Ethos-U Backend Tutorial](https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html).
+please refer to the [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md). <!-- @lint-ignore -->
 
 ## Features
 
@@ -20,7 +20,6 @@ The target system must include an Ethos-U NPU.
 
 ```{tip}
 All requirements can be downloaded using `examples/arm/setup.sh --i-agree-to-the-contained-eula` and added to the path using
-set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
 `source examples/arm/arm-scratch/setup_path.sh`. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software.
 ```
 
@@ -28,7 +27,7 @@ For the AOT flow, compilation of a model to `.pte` format using the Ethos-U back
 - [TOSA Serialization Library](https://www.mlplatform.org/tosa/software.html) for serializing the Exir IR graph into TOSA IR.
 - [Ethos-U Vela graph compiler](https://pypi.org/project/ethos-u-vela/) for compiling TOSA flatbuffers into an Ethos-U command stream.
 
-And for building and running the example application available in `examples/arm/executor_runner/`:
+And for building and running the example application available in `examples/arm/executor_runner/` through the standalone CMake entry point:
 - [Arm GNU Toolchain](https://developer.arm.com/Tools%20and%20Software/GNU%20Toolchain) for cross compilation.
 - [Arm&reg; Corstone&trade; SSE-300 FVP](https://developer.arm.com/documentation/100966/1128/Arm--Corstone-SSE-300-FVP) for testing on a Arm&reg; Cortex&reg;-M55+Ethos-U55 reference design.
 - [Arm&reg; Corstone&trade; SSE-320 FVP](https://developer.arm.com/documentation/109760/0000/SSE-320-FVP) for testing on a Arm&reg; Cortex&reg;-M85+Ethos-U85 reference design.
@@ -68,34 +67,16 @@ Args:
 ```python
 def EthosUCompileSpec.dump_intermediate_artifacts_to(self, output_path: str | None):
 ```
-Sets a path for dumping intermediate results during such as tosa and pte.
+Sets a path for dumping intermediate results during such as tosa and
+pte.
 
 Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def EthosUCompileSpec.get_intermediate_path(self) -> str | None:
-```
-Gets the path used for dumping intermediate results such as tosa and pte.
-
-Returns:
-    Path where intermediate results are saved.
-
-```python
-def EthosUCompileSpec.get_output_format() -> str:
-```
-Return the artifact format emitted by this compile spec.
-
-```python
 def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
 ```
 Gets whether the output order workaround is being applied.
-
-```python
-def EthosUCompileSpec.get_pass_pipeline_config(self) -> executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig:
-```
-Returns configuration that controls how the Arm pass pipeline should behave.
-Subclasses may override to tweak defaults for specific targets.
 
 ```python
 def EthosUCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
@@ -108,8 +89,8 @@ Args:
 ```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
-Sets the configuration that controls how the Arm pass pipeline should behave.
-Subclasses may override to tweak defaults for specific targets.
+Sets the configuration that controls how the Arm pass pipeline should
+behave. Subclasses may override to tweak defaults for specific targets.
 
 Args:
 - **config**: The custom ArmPassPipelineConfig to set.
@@ -130,9 +111,17 @@ For more information on quantization, see [Quantization](arm-ethos-u-quantizatio
 
 ## Runtime Integration
 
-An example runtime application is available in [examples/arm/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/), and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned [Arm Ethos-U Backend Tutorial](https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html).
+An example runtime application is available in [examples/arm/executor_runner](https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/), with a standalone CMake entry point in `examples/arm/executor_runner/standalone`. The steps required for building and deploying it on an FVP are explained in the previously mentioned [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md). <!-- @lint-ignore -->
 The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
 For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to [Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md).
+
+### Example: Image classification flow
+
+[`examples/arm/image_classification_example_ethos_u`](https://github.com/pytorch/executorch/tree/main/examples/arm/image_classification_example_ethos_u)
+contains a complete DeiT-based export and runtime walkthrough. The README shows
+how to run `model_export/export_deit.py`, build the sample firmware, and convert
+test images into C arrays so the workflow described in this guide can be tried
+end to end.
 
 ### Ethos-U memory modes
 
@@ -220,7 +209,11 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 
 **→{doc}`/backends/arm-ethos-u/arm-ethos-u-troubleshooting` — Troubleshooting and common issues.**
 
-**→{doc}`/backends/arm-ethos-u/tutorials/arm-ethos-u-tutorials` — Tutorials.**
+**→{doc}`/backends/arm-ethos-u/tutorials/ethos-u-getting-started` — Getting started tutorial.**
+
+**→{doc}`/backends/arm-ethos-u/U55_op_support` — Ethos-U55 supported operators.**
+
+**→{doc}`/backends/arm-ethos-u/U85_op_support` — Ethos-U85 supported operators.**
 
 
 ```{toctree}
@@ -231,5 +224,7 @@ ExecuTorch for the Ethos-U backend, you automatically install the compiler conta
 arm-ethos-u-partitioner
 arm-ethos-u-quantization
 arm-ethos-u-troubleshooting
-tutorials/arm-ethos-u-tutorials
+tutorials/ethos-u-getting-started
+U55_op_support
+U85_op_support
 ```

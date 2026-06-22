@@ -323,7 +323,7 @@ def get_vulkan_quantizer(pt2e_quantize: str):
     return quantizer
 
 
-def get_tosa_quantizer(version: str, pt2e_quantize: str):
+def get_tosa_quantizer(version: str, pt2e_quantize: str, quantize_scope: str):
     from executorch.backends.arm.quantizer.arm_quantizer import (
         get_symmetric_quantization_config,
         TOSAQuantizer,
@@ -335,8 +335,109 @@ def get_tosa_quantizer(version: str, pt2e_quantize: str):
     quantizer = TOSAQuantizer(compile_spec)
 
     if pt2e_quantize == "tosa_8a8w":
-        quantizer.set_global(get_symmetric_quantization_config())
+        quantization_config = get_symmetric_quantization_config()
     else:
         raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
 
+    _apply_arm_quantize_scope(
+        quantizer,
+        quantization_config=quantization_config,
+        quantize_scope=quantize_scope,
+        backend_name="TOSA",
+    )
+    return quantizer
+
+
+def get_ethosu_quantizer(
+    target: str,
+    system_config: str,
+    memory_mode: str,
+    extra_flags: Optional[List[str]],
+    pt2e_quantize: str,
+    quantize_scope: str,
+):
+    from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        EthosUQuantizer,
+        get_symmetric_a16w8_quantization_config,
+        get_symmetric_quantization_config,
+    )
+
+    compile_spec = EthosUCompileSpec(
+        target=target,
+        system_config=None if system_config == "default" else system_config,
+        memory_mode=None if memory_mode == "default" else memory_mode,
+        extra_flags=extra_flags,
+    )
+
+    quantizer = EthosUQuantizer(compile_spec)
+
+    if pt2e_quantize == "ethosu_8a8w":
+        quantization_config = get_symmetric_quantization_config()
+    elif pt2e_quantize == "ethosu_16a8w":
+        quantization_config = get_symmetric_a16w8_quantization_config()
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
+    _apply_arm_quantize_scope(
+        quantizer,
+        quantization_config=quantization_config,
+        quantize_scope=quantize_scope,
+        backend_name="Ethos-U",
+    )
+    return quantizer
+
+
+def _apply_arm_quantize_scope(
+    quantizer,
+    *,
+    quantization_config,
+    quantize_scope: str,
+    backend_name: str,
+):
+    if quantize_scope == "full":
+        quantizer.set_global(quantization_config)
+    elif quantize_scope == "linear":
+        quantizer.set_module_type(torch.nn.Linear, quantization_config)
+    else:
+        raise ValueError(
+            f"Unsupported {backend_name} quantization scope {quantize_scope}"
+        )
+
+
+def get_vgf_quantizer(
+    compile_spec: Optional[str],
+    compiler_flags: Optional[List[str]],
+    pt2e_quantize: str,
+    quantize_scope: str,
+):
+    from executorch.backends.arm.quantizer.arm_quantizer import (
+        get_symmetric_a16w8_quantization_config,
+        get_symmetric_quantization_config,
+        VgfQuantizer,
+    )
+    from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+
+    compile_spec_obj = VgfCompileSpec(compile_spec, compiler_flags)
+
+    quantizer = VgfQuantizer(compile_spec_obj)
+
+    if pt2e_quantize == "vgf_8a8w":
+        quantization_config = get_symmetric_quantization_config()
+    elif pt2e_quantize == "vgf_16a8w":
+        if not compile_spec_obj.tosa_spec.support_extension("int16"):
+            raise ValueError(
+                "vgf_16a8w requires a VGF compile spec with INT16 support, "
+                "for example TOSA-1.0+INT+int16."
+            )
+        quantization_config = get_symmetric_a16w8_quantization_config()
+    else:
+        raise ValueError(f"Unsupported quantizer specification {pt2e_quantize}")
+
+    _apply_arm_quantize_scope(
+        quantizer,
+        quantization_config=quantization_config,
+        quantize_scope=quantize_scope,
+        backend_name="VGF",
+    )
     return quantizer

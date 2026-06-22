@@ -1,14 +1,15 @@
-load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+load("@fbcode_macros//build_defs:gpu_cpp_unittest.bzl", "gpu_cpp_unittest")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 
 def cuda_slim_cpp_unittest(name):
-    cpp_unittest(
+    gpu_cpp_unittest(
         name = "test_" + name,
         srcs = [
             "test_" + name + ".cpp",
         ],
         deps = [
             "//executorch/backends/aoti/slim/cuda:guard",
+            "//executorch/extension/cuda:caller_stream",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/platform:platform",
@@ -16,6 +17,7 @@ def cuda_slim_cpp_unittest(name):
         external_deps = [
             ("cuda", None, "cuda-lazy"),
         ],
+        hip_compatible = False,
         keep_gpu_sections = True,
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",

@@ -44,6 +44,14 @@ class ModelArgs:
     vocab_size: int = 512  # Arbitrary value, should be defined later by tokenizer.
     hidden_dim: Optional[int] = None
     head_dim: Optional[int] = None  # Optional customized head_dim
+    # Qwen3.5 linear-attention dimensions.
+    linear_conv_kernel_dim: int = 4
+    linear_key_head_dim: Optional[int] = None
+    linear_value_head_dim: Optional[int] = None
+    linear_num_key_heads: Optional[int] = None
+    linear_num_value_heads: Optional[int] = None
+    # Qwen3.5 RMSNorm uses (1 + weight) scaling.
+    rms_norm_add_unit_offset: bool = False
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     model_architecture: str = (
@@ -64,6 +72,9 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     attention_type: str = "mha"  # Attention type, registered in attention.py
+    use_q_gate: bool = (
+        False  # Use q-gated projection in attention (Qwen3.5 full attention)
+    )
     norm_type: str = "rmsnorm"  # Normalization type, registered in norm.py
     act_fn: ActFn = dataclasses.field(default=ActFn.SILU)  # Activation function type
     attention_qkv_bias: bool = False
@@ -91,6 +102,9 @@ class ModelArgs:
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
+    qk_norm_affine: bool = (
+        True  # whether QK norm has learnable weight (False = scaleless)
+    )
     residual_multiplier: Optional[float] = (
         None  # Scaling factor applied to the residual hidden states
     )
@@ -109,6 +123,14 @@ class ModelArgs:
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     rope_scale_factor: int = 8
     high_freq_factor: int = 4
+    # LongRoPE (https://arxiv.org/abs/2402.13753) used by Phi-3 / Phi-4 family.
+    # Mirrors HF's rope_scaling.{short_factor,long_factor,attention_factor}
+    # plus original_max_position_embeddings / max_position_embeddings.
+    rope_scaling_short_factor: Optional[list] = None
+    rope_scaling_long_factor: Optional[list] = None
+    original_max_position_embeddings: Optional[int] = None
+    max_position_embeddings: Optional[int] = None
+    rope_scaling_attention_factor: Optional[float] = None
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -134,17 +156,34 @@ class ModelArgs:
     attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
     # Hybrid models can have layer types different from attention
     layer_types: Optional[list] = None
+    # Per-layer MLP type: "default" for standard FFN, "skip" for no FFN block.
+    # Indexed by layer id (e.g. mlp_type[0] applies to layer 0).
+    mlp_type: Optional[list] = None
     model_architecture: Optional[str] = (
         None  # Architecture of model. For HF models, please refer to the HF model.config.architectures. This is used in QNN backend only for now.
     )
     sliding_window: Optional[int] = (
         None  # sliding window size for sliding window attention
     )
+    # YOCO KV sharing: number of layers that share KV cache
+    # with earlier donor layers instead of computing their own K/V projections.
+    # When > 0, the last num_kv_shared_layers share KV from earlier layers.
+    num_kv_shared_layers: int = 0
     # gemma2 attn and output soft capping
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None
 
-    def __post_init__(self):
+    # rlformers forward-pass features for on-device model parity
+    normalize_tok_embeddings: bool = False
+    scale_query_by: float = 1.0
+    use_attn_o_gate: bool = False
+    use_attn_o_norm: bool = False
+    use_residual_gate: bool = False
+    use_ffn_learnable_scales: bool = False
+    output_soft_cap_temp: Optional[float] = None
+    output_linear_intermediate_dim: int = 0
+
+    def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
 
@@ -173,6 +212,15 @@ class ModelArgs:
 
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
+
+        if self.linear_key_head_dim is None:
+            self.linear_key_head_dim = self.head_dim
+        if self.linear_value_head_dim is None:
+            self.linear_value_head_dim = self.head_dim
+        if self.linear_num_key_heads is None:
+            self.linear_num_key_heads = self.n_heads
+        if self.linear_num_value_heads is None:
+            self.linear_num_value_heads = self.n_heads
 
         # Convert string act_fn to enum if needed
         if isinstance(self.act_fn, str):

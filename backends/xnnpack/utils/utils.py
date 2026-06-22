@@ -1,19 +1,14 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, cast, Optional, Tuple
+from typing import Any, cast, List, Optional, Sequence, Tuple
 
-import executorch.exir as exir
 import torch
 
-from executorch.backends.xnnpack.utils.configs import (
-    get_transform_passes,
-    get_xnnpack_capture_config,
-    get_xnnpack_edge_compile_config,
-)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -26,24 +21,6 @@ from torch._export.utils import (
     is_param,
 )
 from torchao.quantization.pt2e.utils import _is_conv_node, _is_conv_transpose_node
-
-
-### XNNPACK Capture ###
-def capture_graph_for_xnnpack(
-    module: torch.nn.Module,
-    inputs: Tuple[torch.Tensor],
-    enable_aot: Optional[bool] = None,
-    unlift: Optional[bool] = None,
-) -> exir.ExirExportedProgram:
-    return (
-        exir.capture(
-            module,
-            inputs,
-            get_xnnpack_capture_config(enable_aot=enable_aot, unlift=unlift),
-        )
-        .to_edge(get_xnnpack_edge_compile_config())
-        .transform(*get_transform_passes())
-    )
 
 
 ### XNNPACK Utils ###
@@ -79,6 +56,22 @@ def is_getitem(node: torch.fx.Node) -> bool:
 
 def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:
     return cast(torch.fx.Node, node.args[input_index])
+
+
+def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> List[int]:
+    """Return mean dims as non-negative indices for the given rank."""
+    if rank <= 0:
+        raise ValueError(f"Expected rank > 0, got {rank}")
+    if mean_dims is None:
+        return list(range(rank))
+    if isinstance(mean_dims, int):
+        mean_dims = [mean_dims]
+    normalized_dims = []
+    for dim in mean_dims:
+        if dim < -rank or dim >= rank:
+            raise ValueError(f"Dimension out of range: {dim} for rank {rank}")
+        normalized_dims.append(dim % rank)
+    return normalized_dims
 
 
 def get_relu_fused_node(node: torch.fx.Node) -> Optional[torch.fx.Node]:

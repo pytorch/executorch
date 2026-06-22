@@ -25,8 +25,8 @@ from torch.fx.node import Node
 
 
 class TableOps:
-    """
-    Helper class for finding the corresponding table operator for a given Node.
+    """Helper class for finding the corresponding table operator for a given
+    Node.
     """
 
     # Targets that follow a straigtforward one-to-one mapping to their table op
@@ -35,9 +35,11 @@ class TableOps:
         exir_ops.edge.aten.erf.default: torch.erf,
         exir_ops.edge.aten.exp.default: torch.exp,
         exir_ops.edge.aten.expm1.default: torch.expm1,
+        exir_ops.edge.aten.erfinv.default: torch.erfinv,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.log1p.default: torch.log1p,
+        exir_ops.edge.aten.log10.default: torch.log10,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
         exir_ops.edge.aten.rsqrt.default: torch.rsqrt,
         exir_ops.edge.aten.sigmoid.default: torch.sigmoid,
@@ -63,6 +65,7 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.remainder.Scalar,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -97,10 +100,15 @@ class TableOps:
                         x, approximate=approximate
                     ).flatten()
                 case exir_ops.edge.aten.elu.default:
-                    input_alpha = cast(int, node.kwargs["alpha"])
-                    return lambda x: torch.nn.functional.elu(
-                        x, alpha=input_alpha
+                    input_alpha = cast(float, node.meta["float_alpha"])
+                    input_scale = cast(float, node.meta.get("float_input_scale", 1.0))
+                    scale = cast(float, node.meta.get("float_scale", 1.0))
+                    return lambda x: torch.ops.aten.elu.default(
+                        x, input_alpha, scale, input_scale
                     ).flatten()
+                case exir_ops.edge.aten.remainder.Scalar:
+                    divisor = cast(float | int, node.args[1])
+                    return lambda x: torch.remainder(x, divisor).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")
@@ -113,11 +121,13 @@ class TableOps:
 
 
 class InsertTableOpsPass(ArmPass):
-    """
-    For ops in self.table_ops they need to be serialized as a TOSA TABLE. This pass replaces these
-    edge ops with a tosa._table(input: Tensor, target_str: str) where target_str == str(node.target).
-    When lowering the _table node target_str will be used to find the corresponding torch operator
+    """For ops in self.table_ops they need to be serialized as a TOSA TABLE.
+
+    This pass replaces these edge ops with a tosa._table(input: Tensor,
+    target_str: str) where target_str == str(node.target). When lowering the
+    _table node target_str will be used to find the corresponding torch operator
     which will be used to produce the table values in operators/op_table.py.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -128,10 +138,19 @@ class InsertTableOpsPass(ArmPass):
         self.table_ops = TableOps(exported_program)
 
     def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
-        """
-        Add buffer to self.exported_program.state_dict
-        """
+        """Add buffer to self.exported_program.state_dict."""
         self.exported_program.state_dict[buffer_name] = buffer
+
+    @staticmethod
+    def _get_8bit_table_domain() -> torch.Tensor:
+        """Return the canonical 8-bit TOSA TABLE input domain."""
+        int8_info = torch.iinfo(torch.int8)
+        # torch.arange excludes the end value, so use max + 1 to include 127.
+        return torch.arange(
+            int8_info.min,
+            int8_info.max + 1,
+            dtype=torch.int8,
+        )
 
     def generate_8bit_table_values(
         self,
@@ -139,8 +158,11 @@ class InsertTableOpsPass(ArmPass):
         in_quantargs: QuantArgs,
         out_quantargs: QuantArgs,
     ) -> tuple[torch.Tensor, int]:
-        """Compute LUT values for a INT8 TOSA.TABLE. Also returns 0 since no shifting is required after 8bit table.
-        The INT8 table is a simple 256 value 1-1 LUT.
+        """Compute LUT values for a INT8 TOSA.TABLE.
+
+        Also returns 0 since no shifting is required after 8bit table. The INT8
+        table is a simple 256 value 1-1 LUT.
+
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:
@@ -148,17 +170,10 @@ class InsertTableOpsPass(ArmPass):
             x = torch_op(x)
             return out_quantargs.quantize_value(x)
 
-        return (
-            f(
-                torch.linspace(
-                    start=in_quantargs.qmin,
-                    end=in_quantargs.qmax,
-                    steps=256,
-                    dtype=torch.int8,
-                )
-            ).to(dtype=torch.int8),
-            0,
+        effective_codes = self._get_8bit_table_domain().clamp(
+            in_quantargs.qmin, in_quantargs.qmax
         )
+        return (f(effective_codes).to(dtype=torch.int8), 0)
 
     def generate_16_bit_table_values(
         self,
@@ -265,11 +280,12 @@ class InsertTableOpsPass(ArmPass):
                     out_quantargs=output_qparams[0],
                 )
                 # Register buffer in self.exported_program.state_dict
+                # b_ prefix is important to be recognized as a constant in RemovePermutesAroundElementwiseOps
                 const_table_node = create_constant_placeholder(
                     exp_program=self.exported_program,
                     graph=node.graph,
                     kind=InputKind.BUFFER,
-                    name=node.name + "_table_constant",
+                    name="b_" + node.name + "_table_constant",
                     data=buffer,
                     persistent_buffer=True,
                 )

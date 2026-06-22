@@ -7,6 +7,7 @@
  */
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/span.h>
@@ -19,15 +20,25 @@ namespace {
 Result<size_t> calculate_nbytes(
     const Span<const int32_t>& sizes,
     const executorch::aten::ScalarType& scalar_type) {
-  ssize_t n = 1;
+  size_t n = 1;
   for (const auto i : c10::irange(sizes.size())) {
     if (sizes[i] < 0) {
       return Error::InvalidArgument;
     }
-    n *= sizes[i];
+    size_t next = 0;
+    if (c10::mul_overflows(n, static_cast<size_t>(sizes[i]), &next)) {
+      return Error::InvalidArgument;
+    }
+    n = next;
   }
   // Use the full namespace to disambiguate from c10::elementSize.
-  return n * executorch::runtime::elementSize(scalar_type);
+  const size_t elem_size =
+      static_cast<size_t>(executorch::runtime::elementSize(scalar_type));
+  size_t total = 0;
+  if (c10::mul_overflows(n, elem_size, &total)) {
+    return Error::InvalidArgument;
+  }
+  return total;
 }
 } // namespace
 

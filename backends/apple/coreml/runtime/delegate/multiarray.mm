@@ -37,7 +37,7 @@ std::optional<BNNSDataLayout> get_bnns_data_layout(const std::vector<ssize_t>& m
     if (rank > BNNS_MAX_TENSOR_DIMENSION) {
         return std::nullopt;
     }
-    
+
     if (std::is_sorted(multi_array_strides.begin(), multi_array_strides.end(), std::less())) {
         first_major = false;
         std::copy(multi_array_strides.begin(), multi_array_strides.end(), bnns_strides);
@@ -47,7 +47,7 @@ std::optional<BNNSDataLayout> get_bnns_data_layout(const std::vector<ssize_t>& m
     } else {
         return std::nullopt;
     }
-    
+
     // See BNNSDataLayout's raw value how this bitwise-or makes sense.
     return (BNNSDataLayout) (0x08000 +                    // flags as canonical first/last major type
                              0x10000 * rank +             // set dimensionality
@@ -100,18 +100,18 @@ bool init_bnns_descriptor(BNNSNDArrayDescriptor& bnns_descriptor, const MultiArr
     if (layout.num_elements() == 1) {
         return false;
     }
-    
+
     auto bnns_datatype = get_bnns_data_type(layout.dataType());
     if (!bnns_datatype) {
         return false;
     }
-    
+
     std::memset(&bnns_descriptor, 0, sizeof(bnns_descriptor));
     auto bnns_layout = get_bnns_data_layout(layout.strides(), bnns_descriptor.stride);
     if (!bnns_layout) {
         return false;
     }
-    
+
     const auto& shape = layout.shape();
     std::copy(shape.begin(), shape.end(), bnns_descriptor.size);
     bnns_descriptor.layout = bnns_layout.value();
@@ -119,7 +119,7 @@ bool init_bnns_descriptor(BNNSNDArrayDescriptor& bnns_descriptor, const MultiArr
     bnns_descriptor.data_bias = 0.0f;
     bnns_descriptor.data_type = bnns_datatype.value();
     bnns_descriptor.data = multi_array.data();
-    
+
     return true;
 }
 
@@ -137,34 +137,34 @@ bool copy_using_bnns(const MultiArray& src, MultiArray& dst) {
     if (!init_bnns_descriptor(src_descriptor, src)) {
         return false;
     }
-    
+
     BNNSNDArrayDescriptor dst_descriptor;
     if (!init_bnns_descriptor(dst_descriptor, dst)) {
         return false;
     }
-    
+
     return BNNSCopy(&dst_descriptor, &src_descriptor, NULL) == 0;
 }
 
 std::vector<MultiArray::MemoryLayout> get_layouts(const std::vector<MultiArray>& arrays) {
     std::vector<MultiArray::MemoryLayout> result;
     result.reserve(arrays.size());
-    
+
     std::transform(arrays.begin(), arrays.end(), std::back_inserter(result), [](const auto& array) {
         return array.layout();
     });
-    
+
     return result;
 }
 
 std::vector<void *> get_datas(const std::vector<MultiArray>& arrays) {
     std::vector<void *> result;
     result.reserve(arrays.size());
-    
+
     std::transform(arrays.begin(), arrays.end(), std::back_inserter(result), [](const auto& array) {
         return array.data();
     });
-    
+
     return result;
 }
 
@@ -178,7 +178,7 @@ bool can_coalesce_dimensions(const std::vector<size_t>& shape,
     if (shape1 == 1 || shape2 == 1) {
         return true;
     }
-    
+
     auto stride1 = strides[dim1];
     auto stride2 = strides[dim2];
     return shape1 * stride1 == stride2;
@@ -193,7 +193,7 @@ bool can_coalesce_dimensions(const std::vector<size_t>& shape,
             return false;
         }
     }
-    
+
     return true;
 }
 
@@ -209,7 +209,7 @@ std::vector<MultiArray::MemoryLayout> coalesce_dimensions(std::vector<MultiArray
     if (layouts.size() == 0) {
         return {};
     }
-    
+
     std::vector<size_t> shape = layouts.back().shape();
     // reverse shape.
     std::reverse(shape.begin(), shape.end());
@@ -237,16 +237,16 @@ std::vector<MultiArray::MemoryLayout> coalesce_dimensions(std::vector<MultiArray
             }
         }
     }
-    
+
     if (rank == prev_dim + 1) {
         return layouts;
     }
-    
+
     shape.resize(prev_dim + 1);
     for (auto& strides : all_strides) {
         strides.resize(prev_dim + 1);
     }
-    
+
     std::vector<MultiArray::MemoryLayout> result;
     result.reserve(layouts.size());
     std::reverse(shape.begin(), shape.end());
@@ -254,7 +254,7 @@ std::vector<MultiArray::MemoryLayout> coalesce_dimensions(std::vector<MultiArray
         std::reverse(all_strides[i].begin(), all_strides[i].end());
         result.emplace_back(layouts[i].dataType(), shape, std::move(all_strides[i]));
     }
-    
+
     return result;
 }
 
@@ -304,10 +304,10 @@ void decrement_data_pointers(std::vector<void *>& data_pointers,
 class MultiArrayIterator final {
 public:
     explicit MultiArrayIterator(const std::vector<MultiArray>& arrays)
-    :datas_(get_datas(arrays)), 
+    :datas_(get_datas(arrays)),
     layouts_(coalesce_dimensions(get_layouts(arrays)))
     {}
-    
+
 private:
     template<typename FN>
     void exec(FN&& fn, const std::vector<MultiArray::MemoryLayout>& layouts, std::vector<void *> datas, size_t n) {
@@ -335,10 +335,10 @@ private:
                     }
                     ::decrement_data_pointers(datas, i, 1, layouts);
                 }
-                
+
                 break;
             }
-                
+
             default: {
                 const size_t bound = layouts.back().shape()[n - 1];
                 for (size_t index = 0; index < bound; ++index) {
@@ -349,14 +349,14 @@ private:
             }
         }
     }
-    
+
 public:
     template<typename FN>
     void exec(FN&& fn) {
         std::vector<void *> datas = datas_;
         exec(fn, layouts_, datas, layouts_[0].rank());
     }
-    
+
 private:
     std::vector<void *> datas_;
     std::vector<MultiArray::MemoryLayout> layouts_;
@@ -379,42 +379,42 @@ void copy(void *dst,
             ::copy_value<bool, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Byte: {
             ::copy_value<uint8_t, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Char: {
             ::copy_value<int8_t, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Short: {
             ::copy_value<int16_t, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Int32: {
             ::copy_value<int32_t, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Int64: {
             ::copy_value<int64_t, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Float16: {
             ::copy_value<_Float16, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Float32: {
             ::copy_value<float, T>(dst, src);
             break;
         }
-            
+
         case MultiArray::DataType::Float64: {
             ::copy_value<double, T>(dst, src);
             break;
@@ -431,42 +431,42 @@ void copy(void *dst,
             ::copy<uint8_t>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Byte: {
             ::copy<uint8_t>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Char: {
             ::copy<int8_t>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Short: {
             ::copy<int16_t>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Int32: {
             ::copy<int32_t>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Int64: {
             ::copy<int64_t>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Float16: {
             ::copy<_Float16>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Float32: {
             ::copy<float>(dst, dst_data_type, src);
             break;
         }
-            
+
         case MultiArray::DataType::Float64: {
             ::copy<double>(dst, dst_data_type, src);
             break;
@@ -478,7 +478,7 @@ void copy(const MultiArray& src, MultiArray& dst, MultiArray::CopyOptions option
     if (options.use_bnns && copy_using_bnns(src, dst)) {
         return;
     }
-    
+
     if (options.use_memcpy &&
         src.layout().dataType() == dst.layout().dataType() &&
         src.layout().is_packed() &&
@@ -486,7 +486,7 @@ void copy(const MultiArray& src, MultiArray& dst, MultiArray::CopyOptions option
         std::memcpy(dst.data(), src.data(), src.layout().num_elements() * src.layout().num_bytes());
         return;
     }
-    
+
     auto iterator = MultiArrayIterator({src, dst});
     iterator.exec([&](const std::vector<void *>& datas){
         void *src_data = datas[0];
@@ -500,7 +500,7 @@ ssize_t get_data_offset(const std::vector<size_t>& indices, const std::vector<ss
     for (size_t i = 0; i < indices.size(); ++i) {
         offset += static_cast<ssize_t>(indices[i]) * strides[i];
     }
-    
+
     return offset;
 }
 
@@ -513,7 +513,7 @@ ssize_t get_data_offset(size_t index, const std::vector<size_t>& shape, const st
         offset += dim_index * strides[i];
         index %= div;
     }
-    
+
     return offset;
 }
 }
@@ -522,12 +522,9 @@ namespace executorchcoreml {
 
 void MultiArray::MemoryLayout::resize(const std::vector<size_t>& shape) {
     assert(shape.size() == shape_.size());
-    for (int i = 0; i < shape.size(); ++i) {
-        assert (shape[i] >= 1);
-        assert(shape[i] <= shape_[i]);
-    }
     int stride = 1;
     for (int i = shape.size() - 1; i >= 0; --i) {
+        assert(shape[i] >= 1);
         shape_[i] = shape[i];
         strides_[i] = stride;
         if (shape[i] > 1) {
@@ -542,7 +539,7 @@ size_t MultiArray::MemoryLayout::num_elements() const noexcept {
     if (shape_.size() == 0) {
         return 0;
     }
-    
+
     return std::accumulate(shape_.begin(), shape_.end(), size_t(1), std::multiplies<size_t>());
 }
 
@@ -550,7 +547,7 @@ bool MultiArray::MemoryLayout::is_packed() const noexcept {
     if (strides_.size() < 2) {
         return true;
     }
-    
+
     ssize_t expectedStride = 1;
     auto stridesIt = strides_.crbegin();
     for (auto shapeIt = shape_.crbegin(); shapeIt!= shape_.crend(); shapeIt++) {
@@ -560,7 +557,7 @@ bool MultiArray::MemoryLayout::is_packed() const noexcept {
         expectedStride = expectedStride * (*shapeIt);
         stridesIt++;
     }
-    
+
     return true;
 }
 

@@ -8,21 +8,20 @@ import math
 from typing import Callable, Collection, Union
 
 import torch
-
 from torch import nn
 
 
 class Conv1dModule(torch.nn.Module):
     def __init__(
         self,
-        bias: bool = True,
-        dilation: Union[int, tuple[int, int]] = 1,
         in_channels: int = 4,
-        kernel_size: Union[int, tuple[int, int]] = 3,
         out_channels: int = 8,
-        padding: Union[str, int, Collection[int]] = 0,
-        stride: Union[int, tuple[int, int]] = 2,
-        group: int = 1,
+        kernel_size: Union[int, tuple[int]] = 3,
+        stride: Union[int, tuple[int]] = 2,
+        padding: Union[str, int, tuple[int]] = 0,
+        dilation: Union[int, tuple[int]] = 1,
+        groups: int = 1,
+        bias: bool = True,
     ):
         super().__init__()
 
@@ -34,11 +33,42 @@ class Conv1dModule(torch.nn.Module):
             padding=padding,
             dilation=dilation,
             bias=bias,
-            groups=group,
+            groups=groups,
         )
 
     def forward(self, x):
         return self.conv(x)
+
+
+class ConvTranspose1dModule(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels: int = 4,
+        out_channels: int = 8,
+        kernel_size: Union[int, tuple[int]] = 3,
+        stride: Union[int, tuple[int]] = 1,
+        padding: Union[int, tuple[int]] = 0,
+        output_padding: Union[int, tuple[int]] = 0,
+        groups: int = 1,
+        bias: bool = True,
+        dilation: Union[int, tuple[int]] = 1,
+    ):
+        super().__init__()
+
+        self.conv_transp = torch.nn.ConvTranspose1d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            groups=groups,
+            bias=bias,
+            dilation=dilation,
+        )
+
+    def forward(self, x):
+        return self.conv_transp(x)
 
 
 class Conv2dModule(torch.nn.Module):
@@ -164,9 +194,9 @@ class ConvWithSigmoid(torch.nn.Module):
 
 
 class LinearModule(torch.nn.Module):
-    def __init__(self, bias: bool):
+    def __init__(self, bias: bool, in_features: int = 32, out_features: int = 16):
         super().__init__()
-        self.linear = torch.nn.Linear(32, 16, bias=bias)
+        self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
 
     def forward(self, x):
         return self.linear(x)
@@ -191,10 +221,27 @@ class SliceTensorModule(torch.nn.Module):
         return x
 
 
-class SliceTensorConvModule(torch.nn.Module):
-    def __init__(self, dims, starts, ends):
+class HardTanhModule(torch.nn.Module):
+    def __init__(self, min_val, max_val, inplace=True):
         super().__init__()
-        self.conv = Conv2dModule(in_channels=4, out_channels=8, kernel_size=3, stride=1)
+        self.hardtanh = torch.nn.Hardtanh(
+            min_val=min_val, max_val=max_val, inplace=inplace
+        )
+
+    def forward(self, x):
+        return self.hardtanh(x)
+
+
+class SliceTensorConvModule(torch.nn.Module):
+    def __init__(self, dims, starts, ends, in_channels, out_channels):
+        super().__init__()
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
         self.slice = SliceTensorModule(dims, starts, ends)
 
     def forward(self, x):
@@ -332,12 +379,12 @@ class MaxPool2dConvModule(torch.nn.Module):
 
 
 class AvgPool2dModule(torch.nn.Module):
-    def __init__(self, count_include_pad, padding=0):
+    def __init__(self, count_include_pad, padding=0, kernel_size=3, stride=2):
         super().__init__()
 
         self.avg_pool = torch.nn.AvgPool2d(
-            kernel_size=3,
-            stride=2,
+            kernel_size=kernel_size,
+            stride=stride,
             padding=padding,
             count_include_pad=count_include_pad,
         )
@@ -409,11 +456,16 @@ class ReLUModule(torch.nn.Module):
 
 
 class Conv2dWithActivation(torch.nn.Module):
-    def __init__(self, activation: torch.nn.Module | Callable, in_channels: int = 3):
+    def __init__(
+        self,
+        activation: torch.nn.Module | Callable,
+        in_channels: int = 3,
+        out_channels: int = 64,
+    ):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
-            in_channels=in_channels, out_channels=64, kernel_size=(3, 3)
+            in_channels=in_channels, out_channels=out_channels, kernel_size=(3, 3)
         )
         self.activation = activation
 
@@ -457,28 +509,114 @@ class Conv2dReLUMaxPoolModule(torch.nn.Module):
         return self.pool(x)
 
 
-class ConvBNModule(torch.nn.Module):
-    def __init__(self, conv_module, conv_bias, bn_affine):
+class BatchNormModule(torch.nn.Module):
+    def __init__(
+        self, input_rank: int, num_features: int, affine: bool = True, eps: float = 1e-5
+    ):
+        super().__init__()
+        match input_rank - 2:
+            case 0 | 1:
+                self.batch_norm = nn.BatchNorm1d(num_features, eps, affine=affine)
+            case 2:
+                self.batch_norm = nn.BatchNorm2d(num_features, eps, affine=affine)
+            case 3:
+                self.batch_norm = nn.BatchNorm3d(num_features, eps, affine=affine)
+            case _:
+                raise ValueError(f"Unsupported rank {input_rank}")
+        self.eval()
+
+    def forward(self, x):
+        return self.batch_norm(x)
+
+
+class ConvBatchNormModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool,
+        input_rank: int,
+        num_features: int,
+        transposed_conv: bool = False,
+        bn_affine: bool = True,
+        eps: float = 1e-5,
+    ):
         super().__init__()
 
-        if conv_module == "conv1d":
-            self.conv = torch.nn.Conv1d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
-        elif conv_module == "conv2d":
-            self.conv = torch.nn.Conv2d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
-        elif conv_module == "conv1d_t":
-            self.conv = torch.nn.ConvTranspose1d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm1d(64, affine=bn_affine)
-        elif conv_module == "conv2d_t":
-            self.conv = torch.nn.ConvTranspose2d(3, 64, 3, padding=1, bias=conv_bias)
-            self.bn = torch.nn.BatchNorm2d(64, affine=bn_affine)
+        if (input_rank == 2 or input_rank == 3) and not transposed_conv:
+            self.conv = torch.nn.Conv1d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 4 and not transposed_conv:
+            self.conv = torch.nn.Conv2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 5 and not transposed_conv:
+            self.conv = torch.nn.Conv3d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif (input_rank == 2 or input_rank == 3) and transposed_conv:
+            self.conv = torch.nn.ConvTranspose1d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 4 and transposed_conv:
+            self.conv = torch.nn.ConvTranspose2d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
+        elif input_rank == 5 and transposed_conv:
+            self.conv = torch.nn.ConvTranspose3d(
+                in_channels=num_features,
+                out_channels=num_features,
+                kernel_size=3,
+                bias=bias,
+            )
         else:
-            raise ValueError(f"Unknown conv_module: {conv_module}")
+            raise ValueError(f"Unsupported rank {input_rank}")
+
+        self.batch_norm = BatchNormModule(input_rank, num_features, bn_affine, eps)
+        self.eval()
 
     def forward(self, x):
         x = self.conv(x)
-        return self.bn(x)
+        return self.batch_norm(x)
+
+
+class LinearBatchNormModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool,
+        input_rank: int,
+        fc_in_features: int,
+        fc_out_features: int,
+        bn_in_features: int,
+        bn_affine: bool = True,
+        eps: float = 1e-5,
+    ):
+        super().__init__()
+        self.linear = torch.nn.Linear(fc_in_features, fc_out_features, bias=bias)
+
+        if input_rank == 2:
+            bn_in_features = fc_out_features
+
+        self.batch_norm = BatchNormModule(input_rank, bn_in_features, bn_affine, eps)
+        self.eval()
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.batch_norm(x)
 
 
 class MulTensorModule(torch.nn.Module):
@@ -523,9 +661,9 @@ class AddTensorConvModule(torch.nn.Module):
         super().__init__()
         self.conv = Conv2dModule(padding=1, stride=1)
 
-    def forward(self, x):
+    def forward(self, x, y):
         x = self.conv(x)
-        return x + x
+        return x + y
 
 
 class AddTensorOneInputModule(torch.nn.Module):
@@ -735,3 +873,90 @@ class UnsqueezeAddModel(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.unsqueeze(x + y, self.dim)
+
+
+class LinearPReLUModule(torch.nn.Module):
+    def __init__(self, in_features, out_features, num_parameters=1):
+        super().__init__()
+
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
+        self.prelu = torch.nn.PReLU(num_parameters)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.prelu(x)
+
+
+class TwoPartitionPReLUModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.prelu = torch.nn.PReLU()
+
+    def forward(self, x, divisor):
+        # partition 1
+        x = self.prelu(x)
+
+        # `div` with non-static divisor is not supported in Neutron
+        x = torch.div(x, divisor)
+
+        # partition 2
+        x = self.prelu(x)
+        return x
+
+
+class SqueezeAddModel(torch.nn.Module):
+    def __init__(self, dim=None):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, y):
+        if self.dim is None:
+            return torch.squeeze(x + y)
+        else:
+            return torch.squeeze(x + y, self.dim)
+
+
+class StaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8, divisor=1):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+        self.divisor = divisor
+
+    def forward(self, x):
+        x = self.linear(x)
+        return x / self.divisor
+
+
+class NonstaticDivLinearModel(torch.nn.Module):
+    def __init__(self, in_channels=8, out_channels=8):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_channels, out_channels)
+
+    def forward(self, x, divisor):
+        x = self.linear(x)
+        return x / divisor
+
+
+class BatchMatMulModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.bmm(x, y)
+
+
+class BatchMatMulConvModel(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = Conv1dModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            stride=1,
+            padding=1,
+            kernel_size=3,
+        )
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return torch.bmm(x, y)

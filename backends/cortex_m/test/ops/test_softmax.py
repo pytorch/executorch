@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -54,13 +54,13 @@ test_cases = {
 }
 
 
-xfail_cases_dialect = {
+xfail_cases_dialect: dict[str, xfail_type] = {
     "dim_not_last": (
         "Softmax stays in ATen when dim isn’t the channel dimension, so dialect expectations fail",
         Exception,
     ),
 }
-xfail_cases_impl = {
+xfail_cases_impl: dict[str, xfail_type] = {
     "dim_not_last": (
         "Softmax on Cortex-M currently supports only the last dimension",
         Exception,
@@ -69,8 +69,10 @@ xfail_cases_impl = {
 
 
 @parametrize("test_case", test_cases, xfails=xfail_cases_dialect)
-def test_dialect_softmax(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_softmax(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -79,6 +81,8 @@ def test_dialect_softmax(test_case):
 
 
 @parametrize("test_case", test_cases, xfails=xfail_cases_impl)
-def test_implementation_softmax(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_softmax(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=2)

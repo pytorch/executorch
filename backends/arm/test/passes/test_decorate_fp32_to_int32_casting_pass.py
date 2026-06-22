@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -66,10 +66,12 @@ def test_decorate_fp32_to_int32_casting_tosa_FP(
 def test_decorate_fp32_to_int32_casting_tosa_INT(
     test_data: Callable[[], Tuple[torch.Tensor, torch.dtype]]
 ) -> None:
-    """
-    Casting operation involving floating-point dtypes will be rejected in INT/INT profile.
-    Therefore, the DecorateFp32toInt32CastingPass is not required in this profile.
-    Add a INT test to ensure that such casting is rejected as expected.
+    """Casting operation involving floating-point dtypes will be rejected in
+    INT/INT profile.
+
+    Therefore, the DecorateFp32toInt32CastingPass is not required in this
+    profile. Add a INT test to ensure that such casting is rejected as expected.
+
     """
     test_tensor, target_dtype = test_data()
     module = FP32ToINT32Casting(target_dtype)

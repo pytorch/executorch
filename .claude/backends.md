@@ -10,6 +10,7 @@
 | QNN | Android | NPU | `backends/qualcomm/` |
 | MediaTek | Android | NPU | `backends/mediatek/` |
 | Arm Ethos-U | Embedded | NPU | `backends/arm/` |
+| Cortex-M (CMSIS-NN) | Embedded | CPU | `backends/cortex_m/` |
 | OpenVINO | Embedded | CPU/GPU/NPU | `backends/openvino/` |
 | Cadence | Embedded | DSP | See `backends-cadence.md` |
 | Samsung | Android | NPU | `backends/samsung/` |

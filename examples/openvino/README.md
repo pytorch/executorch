@@ -13,6 +13,9 @@ examples/openvino
 └── llama
     ├── README.md                       # Documentation for Llama example
     └── llama3_2_ov_4wo.yaml            # Configuration file for exporting Llama3.2 with OpenVINO backend
+└── qwen2_5
+    ├── README.md                       # Documentation for Qwen2.5 example
+    └── qwen2_5_1_5b_ov_4wo.yaml        # Configuration file for exporting Qwen2.5-1.5B with OpenVINO backend
 └── stable_diffusion
     ├── README.md                       # Documentation for Stable Diffusion example
     ├── export_lcm.py                   # Script for exporting models

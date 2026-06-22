@@ -142,6 +142,7 @@ def _remove_unsupported_kwargs(kwargs):
     kwargs.pop("types", None)  # will have to find a different way to handle .pyi files in oss
     kwargs.pop("resources", None)  # doesn't support resources in python_library/python_binary yet
     kwargs.pop("feature", None)  # internal-only, used for Product-Feature Hierarchy (PFH)
+    kwargs.pop("supports_static_listing", None)  # fbcode-only python_test kwarg
     return kwargs
 
 def _patch_headers(kwargs):

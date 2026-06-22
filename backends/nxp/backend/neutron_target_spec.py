@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,12 +8,10 @@
 from enum import Enum
 
 import torch
-
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx import Node
 
 
@@ -98,9 +96,9 @@ class NeutronTargetSpec:
     The functionality for probing the properties of Neutron Target.
     """
 
-    def __init__(self, target: str, neutron_converter_flavor: str):
+    def __init__(self, target: str):
 
-        converter_manager = NeutronConverterManager(neutron_converter_flavor)
+        converter_manager = NeutronConverterManager()
         converter_manager.verify_target(target)
         neutron_converter = converter_manager.get_converter()
         self.neutron_target = neutron_converter.getNeutronTarget(target)

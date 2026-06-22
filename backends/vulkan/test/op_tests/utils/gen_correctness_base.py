@@ -25,6 +25,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    OPT_TENSOR_LIST,
     STRING,
 )
 from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
@@ -164,6 +165,12 @@ class CorrectnessTestGen:
             for elem in data:
                 ret_str += f"tensor_vec.emplace_back({self.call_data_gen_fn(arg, elem, False)});\n"
             ret_str += f"{cpp_type} {arg.name} = tensor_vec;\n"
+            return ret_str + "\n"
+
+        if cpp_type == OPT_TENSOR_LIST:
+            ret_str = f"{OPT_TENSOR_LIST} {arg.name};\n"
+            for elem in data:
+                ret_str += f"{arg.name}.push_back({self.call_data_gen_fn(arg, elem, False)});\n"
             return ret_str + "\n"
 
         if cpp_type == AT_INT_ARRAY_REF:

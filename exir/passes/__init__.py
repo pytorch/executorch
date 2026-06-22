@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,9 +31,8 @@ from executorch.exir.operator.convert import (
     to_out_variant,
     to_scratch_op,
 )
-
 from executorch.exir.pass_base import ExportPass
-from executorch.exir.pass_manager import PassManager, PassType
+from executorch.exir.pass_manager import ExportedProgramPassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
 
@@ -59,7 +59,10 @@ from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
+
+from executorch.exir.passes.to_device_pass import ToDevicePass
 from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
+from executorch.exir.sym_util import eval_shape_upper_bound
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -71,6 +74,7 @@ __all__ = [
     "ConstPropPass",
     "QuantFusionPass",
     "OpReplacePass",
+    "ToDevicePass",
     "EdgeToBackendOpsPass",
     "MemoryFormatOpsPass",
     "MemoryPlanningPass",
@@ -278,31 +282,38 @@ def make_alloc_node(
     Note: tensor_metadata is only used in the case of a Tensor subclass, since
     fakifying a tensor subclass is not supported right now
     """
+
+    def materialize_alloc_spec(
+        shape: Union[torch.Size, Tuple[int, ...], List[int]],
+        dtype: torch.dtype,
+    ) -> memory.AllocSpec:
+        concrete_shape = eval_shape_upper_bound(shape)
+        if any(not isinstance(dim, int) for dim in concrete_shape):
+            raise RuntimeError(
+                "Memory allocator node requires concrete upper-bounded dimensions. "
+                f"Got shape {shape} and evaluated upper bounds {concrete_shape}."
+            )
+        return (tuple(concrete_shape), dtype)
+
     if val is None:
         if tensor_meta is not None:
             assert isinstance(tensor_meta, TensorMetadata)
-            alloc_spec = (tensor_meta.shape, tensor_meta.dtype)
+            alloc_spec = materialize_alloc_spec(tensor_meta.shape, tensor_meta.dtype)
         else:
             raise InternalError(
                 "Memory allocator node needs FakeTensor val or TensorMetadata to proceed"
             )
     elif isinstance(val, FakeTensor):
-        alloc_spec = (val.shape, val.dtype)
+        alloc_spec = materialize_alloc_spec(val.shape, val.dtype)
     else:
         assert isinstance(val, list) or isinstance(val, tuple)
         assert isinstance(tensor_meta, list) or isinstance(tensor_meta, tuple)
         alloc_spec: List[memory.AllocSpec] = []
         for v, t in zip(val, tensor_meta):
             if v is not None:
-                # pyre-fixme[6]: For 1st argument expected
-                #  `Union[List[Tuple[List[int], dtype]], Tuple[List[int], dtype]]` but
-                #  got `Tuple[Size, dtype]`.
-                alloc_spec.append((v.shape, v.dtype))
+                alloc_spec.append(materialize_alloc_spec(v.shape, v.dtype))
             elif t is not None:
-                # pyre-fixme[6]: For 1st argument expected
-                #  `Union[List[Tuple[List[int], dtype]], Tuple[List[int], dtype]]` but
-                #  got `Tuple[Size, dtype]`.
-                alloc_spec.append((t.shape, t.dtype))
+                alloc_spec.append(materialize_alloc_spec(t.shape, t.dtype))
             else:
                 raise InternalError(
                     "Memory allocator node needs FakeTensor val or TensorMetadata to proceed"
@@ -487,25 +498,27 @@ def dead_code_elimination_pass(graph_module: torch.fx.GraphModule) -> PassResult
 
 # Passes to convert a graph module from ATen to Edge IR
 
-base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = PassManager(
-    passes=[
-        # ReplaceSymSizeOpPass need to be run before other passes which inherits
-        # from ExportPass. ExportPass can not handle OpOverloadPacket in its
-        # call_function method. The ReplaceSymSizeOpPass pass converts sym size
-        # ops from OpOverloadPacket to OpOverload.
-        ReplaceSymSizeOpPass(),
-        NormalizeTransposePass(),
-        ReplaceBrokenOpsWithFunctionalOpsPass(),
-        ScalarToTensorPass(),
-        SymToTensorPass(),
-        RemoveNoopPass(),
-        PruneEmptyTensorsPass(),
-        RemoveToCopyPass(),
-    ]
-).passes
+base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = (
+    ExportedProgramPassManager(
+        passes=[
+            # ReplaceSymSizeOpPass need to be run before other passes which inherits
+            # from ExportPass. ExportPass can not handle OpOverloadPacket in its
+            # call_function method. The ReplaceSymSizeOpPass pass converts sym size
+            # ops from OpOverloadPacket to OpOverload.
+            ReplaceSymSizeOpPass(),
+            NormalizeTransposePass(),
+            ReplaceBrokenOpsWithFunctionalOpsPass(),
+            ScalarToTensorPass(),
+            SymToTensorPass(),
+            RemoveNoopPass(),
+            PruneEmptyTensorsPass(),
+            RemoveToCopyPass(),
+        ]
+    ).passes
+)
 
 base_post_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = (
-    PassManager(
+    ExportedProgramPassManager(
         passes=[
             dead_code_elimination_pass,
             DebugHandleGeneratorPass(),

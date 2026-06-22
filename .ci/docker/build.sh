@@ -1,6 +1,7 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -40,6 +41,15 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     GCC_VERSION=11
     ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-android)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk)
+    ARM_SDK=yes
+    GCC_VERSION=11
+    ;;
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
     CLANG_VERSION=12
@@ -71,8 +81,18 @@ case "${IMAGE_NAME}" in
     LINTRUNNER=""
     GCC_VERSION=11
     CUDA_WINDOWS_CROSS_COMPILE=yes
-    CUDA_VERSION=12.8
+    CUDA_VERSION=13.0
     SKIP_PYTORCH=yes
+    ;;
+  executorch-ubuntu-24.04-gcc14)
+    LINTRUNNER=""
+    OS_VERSION=24.04
+    GCC_VERSION=14
+    ;;
+  executorch-ubuntu-26.04-gcc14)
+    LINTRUNNER=""
+    OS_VERSION=26.04
+    GCC_VERSION=14
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
@@ -82,13 +102,12 @@ esac
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 BUILD_DOCS=1
 
+if [[ -n "${GCC_VERSION:-}" && -z "${SKIP_PYTORCH:-}" ]]; then
+  PYTORCH_BUILD_MAX_JOBS=6
+fi
+
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
-
-# Copy arm setup script from root to here
-# TODO(huydhn): Figure out a way to rebuild the Docker image automatically
-# with a new image hash when the content here is updated
-cp -r ../../examples/arm/ ./arm
 
 docker build \
   --no-cache \
@@ -99,6 +118,7 @@ docker build \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "PYTORCH_BUILD_MAX_JOBS=${PYTORCH_BUILD_MAX_JOBS:-}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \

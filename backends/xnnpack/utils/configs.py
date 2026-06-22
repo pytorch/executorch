@@ -1,13 +1,17 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Optional
+from typing import List
 
 import executorch.exir as exir
-from executorch.exir import CaptureConfig
+
+from executorch.backends.xnnpack._passes.remove_noop_expand_copy_pass import (
+    RemoveNoopExpandCopyPass,
+)
 from executorch.exir.pass_manager import PassType
 
 
@@ -21,7 +25,9 @@ def get_xnnpack_edge_compile_config(
 
 
 def get_transform_passes(additional_passes=None) -> List[PassType]:
-    passes = additional_passes if additional_passes else []
+    passes = [RemoveNoopExpandCopyPass()]
+    if additional_passes:
+        passes.extend(additional_passes)
     return passes
 
 
@@ -33,17 +39,3 @@ def get_xnnpack_executorch_backend_config(
         passes=additional_passes,
         extract_delegate_segments=True,
     )
-
-
-def get_xnnpack_capture_config(
-    dynamic_shape=False,
-    enable_aot: Optional[bool] = None,
-    unlift: Optional[bool] = None,
-):
-    if enable_aot is None:
-        return CaptureConfig(enable_dynamic_shape=dynamic_shape)
-    else:
-        unlift = unlift if unlift is not None else enable_aot
-        return CaptureConfig(
-            enable_dynamic_shape=dynamic_shape, enable_aot=enable_aot, _unlift=unlift
-        )

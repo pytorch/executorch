@@ -187,9 +187,9 @@ See [examples/models/llama](examples/models/llama/README.md) for complete workfl
 | **Platform**     | **Supported Backends**                                   |
 |------------------|----------------------------------------------------------|
 | Android          | XNNPACK, Vulkan, Qualcomm, MediaTek, Samsung Exynos      |
-| iOS              | XNNPACK, MPS, CoreML (Neural Engine)                     |
+| iOS              | XNNPACK, CoreML (Neural Engine), MPS *(deprecated)*      |
 | Linux / Windows  | XNNPACK, OpenVINO, CUDA *(experimental)*                 |
-| macOS            | XNNPACK, MPS, Metal *(experimental)*                     |
+| macOS            | XNNPACK, Metal *(experimental)*, MPS *(deprecated)*      |
 | Embedded / MCU   | XNNPACK, ARM Ethos-U, NXP, Cadence DSP                   |
 
 See [Backend Documentation](https://docs.pytorch.org/executorch/main/backends-overview.html) for detailed hardware requirements and optimization guides. For desktop/laptop GPU inference with CUDA and Metal, see the [Desktop Guide](desktop/README.md). For Zephyr RTOS integration, see the [Zephyr Guide](zephyr/README.md).
@@ -204,7 +204,7 @@ ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devi
 
 **Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language), [Gemma](examples/models/gemma3) (vision-language)
 
-**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [Whisper](examples/models/whisper/README.md) <!-- @lint-ignore -->
+**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [YOLO26](examples/models/yolo26/README.md), [Whisper](examples/models/whisper/README.md) <!-- @lint-ignore -->
 
 **Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models • [Unsloth](https://docs.unsloth.ai/new/deploy-llms-phone) for fine-tuned LLM deployment <!-- @lint-ignore -->
 
@@ -236,6 +236,21 @@ We welcome contributions from the community!
 - 🎮 [**Discord**](https://discord.gg/Dh43CKSAdc) — Chat with the team and community
 - 🐛 [**Issues**](https://github.com/pytorch/executorch/issues) — Report bugs or request features
 - 🤝 [**Contributing Guide**](CONTRIBUTING.md) — Guidelines and codebase structure
+
+## Citing ExecuTorch
+
+If you found ExecuTorch helpful in your research and would like to acknowledge it, please cite us using the following BibTeX:
+
+```bibtex
+@article{executorch2026,
+    title={{ExecuTorch} - A Unified {PyTorch} Solution to Run {AI} Models On-Device},
+    author={Nachin, Mergen and Desai, Digant and Jia, Sicheng Stephen and Lai, Chen and Liu, Mengwei and Szwejbka, Jacob and Alvarez, Raziel and Ascani, RJ and Bort, Dave and Candales, Manuel and
+  others},
+    journal={arXiv preprint arXiv:2605.08195},
+    url={https://github.com/pytorch/executorch},
+    year={2026}
+  }
+```
 
 ## License
 

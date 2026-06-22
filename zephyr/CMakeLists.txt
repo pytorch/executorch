@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Petri Oksanen
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -13,6 +13,18 @@ if(CONFIG_EXECUTORCH)
   message(STATUS "EXECUTORCH_DIR set to: ${EXECUTORCH_DIR}")
   include(${EXECUTORCH_DIR}/tools/cmake/common/preset.cmake)
   include(${EXECUTORCH_DIR}/tools/cmake/preset/zephyr.cmake)
+
+  # Prefer a local CMSIS-NN checkout from the Zephyr workspace if available.
+  if(NOT DEFINED CMSIS_NN_LOCAL_PATH OR CMSIS_NN_LOCAL_PATH STREQUAL "")
+    set(_cmsis_nn_default "${ZEPHYR_BASE}/../modules/lib/cmsis-nn")
+    if(EXISTS "${_cmsis_nn_default}")
+      set(CMSIS_NN_LOCAL_PATH
+          "${_cmsis_nn_default}"
+          CACHE PATH "Path to existing local CMSIS-NN installation"
+      )
+      message(STATUS "CMSIS_NN_LOCAL_PATH set to: ${CMSIS_NN_LOCAL_PATH}")
+    endif()
+  endif()
 
   # HACK: Force the parent directory of executorch into the global include path.
   # This is needed because the executorch CMake scripts generate a relative
@@ -51,7 +63,9 @@ if(CONFIG_EXECUTORCH)
 
   set(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
   set(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
-  set(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
+  # Zephyr builds use -fno-rtti; AOT quantized kernels pull in Torch headers
+  # that require RTTI, so disable to avoid build failures.
+  set(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT OFF)
 
   set(EXECUTORCH_ENABLE_LOGGING ${CONFIG_EXECUTORCH_ENABLE_LOGGING})
   set(EXECUTORCH_ENABLE_EVENT_TRACER ${CONFIG_EXECUTORCH_ENABLE_EVENT_TRACER})

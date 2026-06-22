@@ -11,6 +11,7 @@
 
 #include "block_int8x4_utils.glslh"
 #include "common.glslh"
+#include "indexing.glslh"
 
 //
 // Block Layout Int Utils
@@ -77,17 +78,17 @@ TensorIndex4D contiguous_block_idx_to_tensor4d_idx_with_block_config(
   const int packed_dim_1 = get_block_inner_dim(block_config);
   block_strides[packed_dim_1] = 1;
   const uint block_size_1 = uint(get_block_inner_dim_block_size(block_config));
-  stride = div_up(meta.sizes[0][packed_dim_1], block_size_1);
+  stride = div_up(safe_idx(meta.sizes[0], packed_dim_1), block_size_1);
   // Outer block dim
   const int packed_dim_2 = get_block_outer_dim(block_config);
   block_strides[packed_dim_2] = stride;
   const uint block_size_2 =
       uint(get_block_outer_dim_block_size(block_config));
-  stride *= div_up(meta.sizes[0][packed_dim_2], block_size_2);
+  stride *= div_up(safe_idx(meta.sizes[0], packed_dim_2), block_size_2);
   // First non-block dim
   const int outer_dim_1 = get_block_dim_order_2(block_config);
   block_strides[outer_dim_1] = stride;
-  stride *= meta.sizes[0][outer_dim_1];
+  stride *= safe_idx(meta.sizes[0], outer_dim_1);
   // Second non-block dim
   const int outer_dim_2 = get_block_dim_order_3(block_config);
   block_strides[outer_dim_2] = stride;
@@ -109,6 +110,80 @@ TensorIndex4D contiguous_block_idx_to_tensor4d_idx_with_block_config(
   return tidx;
 }
 
+/*
+ * 8D version: decomposes a contiguous block index into a TensorIndex with up to
+ * 8 dimensions. The block config encodes dim_order for the first 4 dims. Dims
+ * 4-7 are implicit outer (non-block) batch dimensions in ascending order.
+ */
+TensorIndex contiguous_block_idx_to_tensor_idx_with_block_config(
+    const BufferMetadata meta,
+    const uint block_idx,
+    const int block_config) {
+  TensorIndex tidx;
+  initialize(tidx);
+
+  const int inner_dim = get_block_inner_dim(block_config);
+  const int outer_dim = get_block_outer_dim(block_config);
+  const int nonblock_dim_1 = get_block_dim_order_2(block_config);
+  const int nonblock_dim_2 = get_block_dim_order_3(block_config);
+  const uint inner_bs = uint(get_block_inner_dim_block_size(block_config));
+  const uint outer_bs = uint(get_block_outer_dim_block_size(block_config));
+
+  // Compute block strides for each dim, inner→outer ordering:
+  // inner_dim, outer_dim, nonblock1, nonblock2, 4, 5, 6, 7
+  uint stride = 1;
+
+  // Inner block dim
+  // Use safe_idx for UBO-backed meta.sizes to avoid Adreno dynamic indexing
+  // crash. All block dims are < 4, so they index into meta.sizes[0].
+  stride = div_up(safe_idx(meta.sizes[0], inner_dim), inner_bs);
+
+  // Outer block dim
+  uint stride_outer = stride;
+  stride *= div_up(safe_idx(meta.sizes[0], outer_dim), outer_bs);
+
+  // First non-block dim
+  uint stride_nb1 = stride;
+  stride *= safe_idx(meta.sizes[0], nonblock_dim_1);
+
+  // Second non-block dim
+  uint stride_nb2 = stride;
+  stride *= safe_idx(meta.sizes[0], nonblock_dim_2);
+
+  // Extra batch dims (4-7): always non-block, ascending order
+  uint batch_strides[4];
+  [[unroll]] for (int i = 0; i < 4; ++i) {
+    batch_strides[i] = stride;
+    stride *= size_at(meta, 4 + i);
+  }
+
+  // Decompose from outermost to innermost
+  uint remaining = block_idx;
+
+  // Dims 7, 6, 5, 4 (outermost batch dims first)
+  [[unroll]] for (int i = 3; i >= 0; --i) {
+    tidx.data[1][i] = remaining / batch_strides[i];
+    remaining %= batch_strides[i];
+  }
+
+  // Second non-block dim
+  tidx.data[0][nonblock_dim_2] = remaining / stride_nb2;
+  remaining %= stride_nb2;
+
+  // First non-block dim
+  tidx.data[0][nonblock_dim_1] = remaining / stride_nb1;
+  remaining %= stride_nb1;
+
+  // Outer block dim (multiply by block size to get element index)
+  tidx.data[0][outer_dim] = mul_4(remaining / stride_outer);
+  remaining %= stride_outer;
+
+  // Inner block dim (multiply by block size to get element index)
+  tidx.data[0][inner_dim] = mul_4(remaining);
+
+  return tidx;
+}
+
 //
 // TextureMetadata variants of block indexing
 //
@@ -126,17 +201,17 @@ TensorIndex4D contiguous_block_idx_to_tensor4d_idx_with_block_config(
   const int packed_dim_1 = get_block_inner_dim(block_config);
   block_strides[packed_dim_1] = 1;
   const uint block_size_1 = uint(get_block_inner_dim_block_size(block_config));
-  stride = div_up(meta.sizes[packed_dim_1], block_size_1);
+  stride = div_up(safe_idx(meta.sizes, packed_dim_1), block_size_1);
   // Outer block dim
   const int packed_dim_2 = get_block_outer_dim(block_config);
   block_strides[packed_dim_2] = stride;
   const uint block_size_2 =
       uint(get_block_outer_dim_block_size(block_config));
-  stride *= div_up(meta.sizes[packed_dim_2], block_size_2);
+  stride *= div_up(safe_idx(meta.sizes, packed_dim_2), block_size_2);
   // First non-block dim
   const int outer_dim_1 = get_block_dim_order_2(block_config);
   block_strides[outer_dim_1] = stride;
-  stride *= meta.sizes[outer_dim_1];
+  stride *= safe_idx(meta.sizes, outer_dim_1);
   // Second non-block dim
   const int outer_dim_2 = get_block_dim_order_3(block_config);
   block_strides[outer_dim_2] = stride;

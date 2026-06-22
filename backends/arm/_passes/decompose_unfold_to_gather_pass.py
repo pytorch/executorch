@@ -9,7 +9,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
     ReplaceScalarWithTensorByProfilePass,
 )
@@ -18,18 +18,18 @@ from executorch.exir.pass_base import ExportPass
 
 
 def _get_unfold_copy_decomposition(op) -> tuple:
-    """
-    Returns the decomposition of the given aten.unfold_copy operation into
-    its equivalent TOSA-supported operations
+    """Returns the decomposition of the given aten.unfold_copy operation into
+    its equivalent TOSA-supported operations.
 
     Returns:
         A tuple of operator overloads used by the decomposition.
 
     Raises:
         RuntimeError: If the provided operator is not supported by this pass.
+
     """
 
-    if op in DecomposeUnfoldToGatherPass._TARGET_OPS:
+    if op in DecomposeUnfoldToGatherPass.target_ops:
         return (
             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
             exir_ops.edge.aten.view_copy.default,
@@ -45,9 +45,8 @@ def _get_unfold_copy_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get unfold_copy decomposition for op {op}")
 
 
-class DecomposeUnfoldToGatherPass(ArmPass):
-    """
-    Decompose unfold_copy with backend tosa.GATHER as the core op, plus other
+class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
+    """Decompose unfold_copy with backend tosa.GATHER as the core op, plus other
     TOSA-supported ops to build indices and materialize the output layout.
 
     Supported op:
@@ -87,13 +86,14 @@ class DecomposeUnfoldToGatherPass(ArmPass):
             tosa.GATHER(values=[P,K,Q], indices=[P,U*C]) -> [P,U*C,Q]
       - Reshape and permute to match PyTorch unfold layout:
             [P,U*C,Q] -> [*pre, U, *post, C]
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
         ReplaceScalarWithTensorByProfilePass,
     }
 
-    _TARGET_OPS = {
+    target_ops = {
         exir_ops.edge.aten.unfold_copy.default,
     }
 
@@ -147,7 +147,7 @@ class DecomposeUnfoldToGatherPass(ArmPass):
         return (x_val, C, S, K, U, UC, pre, post, P, Q, needs_bool_cast)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._TARGET_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         x, dim, size, step = args

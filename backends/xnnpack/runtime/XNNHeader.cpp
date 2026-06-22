@@ -8,6 +8,7 @@
 
 #include <executorch/backends/xnnpack/runtime/XNNHeader.h>
 
+#include <cinttypes>
 #include <cstring>
 
 #include <executorch/runtime/core/error.h>
@@ -63,6 +64,48 @@ Result<XNNHeader> XNNHeader::Parse(const void* data, size_t size) {
 
   uint64_t constant_data_size =
       GetUInt64LE(header_data + XNNHeader::kConstantDataSizeOffset);
+
+  // Validate min flatbuffer size.
+  constexpr size_t kMinFlatbufferSize =
+      sizeof(uint32_t) + 4; // root offset + identifier
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_size >= kMinFlatbufferSize,
+      InvalidArgument,
+      "flatbuffer_size %" PRIu32 " is too small (minimum %zu)",
+      flatbuffer_size,
+      kMinFlatbufferSize);
+
+  // Validate that flatbuffer region does not overflow or exceed the buffer.
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_offset <= size && flatbuffer_size <= size - flatbuffer_offset,
+      InvalidArgument,
+      "flatbuffer_offset: %" PRIu32 " and flatbuffer_size: %" PRIu32
+      " are invalid for buffer of size: %zu",
+      flatbuffer_offset,
+      flatbuffer_size,
+      size);
+  // Validate that constant data region does not overflow or exceed the buffer.
+  ET_CHECK_OR_RETURN_ERROR(
+      constant_data_offset <= size &&
+          constant_data_size <= size - constant_data_offset,
+      InvalidArgument,
+      "constant_data_offset: %" PRIu32 " and constant_data_size: %" PRIu64
+      " are invalid for buffer of size: %zu",
+      constant_data_offset,
+      constant_data_size,
+      size);
+
+  // Validate that constant data region does not overlap with flatbuffer region.
+  // flatbuffer should come before constant data.
+  ET_CHECK_OR_RETURN_ERROR(
+      constant_data_offset >= flatbuffer_offset &&
+          constant_data_offset - flatbuffer_offset >= flatbuffer_size,
+      InvalidArgument,
+      "constant_data_offset: %" PRIu32 " and flatbuffer_offset: %" PRIu32
+      " with flatbuffer_size: %" PRIu32 " are overlapping.",
+      constant_data_offset,
+      flatbuffer_offset,
+      flatbuffer_size);
 
   return XNNHeader{
       flatbuffer_offset,

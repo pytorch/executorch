@@ -38,6 +38,9 @@ class QnnManager {
   // graph name will be obtained from the binary.
   executorch::runtime::Error InitContext(
       std::optional<std::vector<std::string>> graph_names = std::nullopt);
+  // This function only initialize the context cache to get spill fill buffer
+  // size
+  executorch::runtime::Error InitContextCache();
   executorch::runtime::Error AllocateTensor(const std::string& graph_name);
   executorch::runtime::Error AllocateTensor(
       const std::string& graph_name,

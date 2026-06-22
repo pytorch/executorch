@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -54,12 +54,12 @@ test_data_suite = {
     ),
     "op_div_rank4_large_rand": lambda: (
         200 * torch.rand(5, 10, 25, 20),
-        torch.rand(5, 10, 25, 20),
+        torch.rand(5, 10, 25, 20) + 0.1,
         None,
     ),
     "op_div_rank4_negative_large_rand": lambda: (
         (-200) * torch.rand(5, 10, 25, 20),
-        torch.rand(5, 10, 25, 20),
+        torch.rand(5, 10, 25, 20) + 0.1,
         None,
     ),
     "op_div_rank4_large_randn": lambda: (

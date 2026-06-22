@@ -12,9 +12,10 @@ import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
 from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -31,7 +32,6 @@ from executorch.devtools.backend_debug import print_delegation_info
 from executorch.examples.qualcomm.oss_scripts.llm_utils.decoder_model_wrapper import (
     QnnCausalLMExportableModule,
 )
-from executorch.examples.qualcomm.utils import make_quantizer
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from pytorch_tokenizers import get_tokenizer
@@ -98,7 +98,7 @@ class QnnLLMEdgeManager:
         self.config = config
         self.verbose = verbose
         self.use_fp16 = True
-        self.passes_job = get_capture_program_passes()
+        self.passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
         self.edge_prog_mgr = None
         self.logits_quant_attrs = None
 
@@ -171,16 +171,6 @@ class QnnLLMEdgeManager:
         calibration_data,
         tokenizer_path,
     ):
-        try:
-            from executorch.examples.qualcomm.oss_scripts.llm_utils.eval_decoder_model_qnn import (
-                GraphModuleCalibrationWrapper,
-            )
-            from lm_eval.evaluator import simple_evaluate
-        except ImportError:
-            raise ImportError(
-                "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
-            )
-
         tokenizer = get_tokenizer(tokenizer_path)
         logging.info(
             f"Calibrating with tasks: {calibration_tasks}, limit: {calibration_limit}, calibration_data: {calibration_data}, tokenizer_path: {tokenizer_path}, seq_length: {self.config.max_seq_len}"
@@ -211,6 +201,17 @@ class QnnLLMEdgeManager:
             max_len=calibration_seq_length,
         )
         if calibration_tasks is not None and calibration_limit is not None:
+            # Import lazily so only import lm_eval when user use it.
+            try:
+                from executorch.examples.qualcomm.oss_scripts.llm_utils.eval_decoder_model_qnn import (
+                    GraphModuleCalibrationWrapper,
+                )
+                from lm_eval.evaluator import simple_evaluate
+            except ImportError:
+                raise ImportError(
+                    "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
+                )
+
             eval_wrapper = GraphModuleCalibrationWrapper(
                 model=self.graph_module,
                 tokenizer=tokenizer,
@@ -240,6 +241,8 @@ class QnnLLMEdgeManager:
         calibration_limit,
         calibration_data,
         tokenizer_path,
+        backend,
+        soc_model,
     ):
         self.export()
 
@@ -248,6 +251,8 @@ class QnnLLMEdgeManager:
             per_channel_linear=True,
             per_channel_conv=True,
             act_observer=MinMaxObserver,
+            backend=backend,
+            soc_model=soc_model,
         )
         if quant_dtype == QuantDtype.use_16a4w_block:
 

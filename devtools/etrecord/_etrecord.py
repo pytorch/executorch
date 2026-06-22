@@ -6,9 +6,9 @@
 
 # pyre-unsafe
 
+import io
 import json
 import os
-import pickle
 from typing import BinaryIO, Dict, IO, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
@@ -228,15 +228,19 @@ class ETRecord:
             )
 
         if self._reference_outputs is not None:
+            buf = io.BytesIO()
+            torch.save(self._reference_outputs, buf)
             etrecord_zip.writestr(
                 ETRecordReservedFileNames.REFERENCE_OUTPUTS,
-                pickle.dumps(self._reference_outputs),
+                buf.getvalue(),
             )
 
         if self._representative_inputs is not None:
+            buf = io.BytesIO()
+            torch.save(self._representative_inputs, buf)
             etrecord_zip.writestr(
                 ETRecordReservedFileNames.REPRESENTATIVE_INPUTS,
-                pickle.dumps(self._representative_inputs),
+                buf.getvalue(),
             )
 
         if self.export_graph_id is not None:
@@ -828,15 +832,37 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
             )
             exported_program = deserialize(serialized_artifact)
         elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
-            # @lint-ignore PYTHONPICKLEISBAD
-            reference_outputs = pickle.loads(
-                etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS)
-            )
+            try:
+                reference_outputs = torch.load(
+                    io.BytesIO(
+                        etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS)
+                    ),
+                    weights_only=True,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to load reference_outputs from ETRecord. "
+                    "This ETRecord file may have been created with an older "
+                    "version that used pickle serialization. Please regenerate "
+                    "the ETRecord file with the current version of ExecuTorch."
+                ) from e
         elif entry == ETRecordReservedFileNames.REPRESENTATIVE_INPUTS:
-            # @lint-ignore PYTHONPICKLEISBAD
-            representative_inputs = pickle.loads(
-                etrecord_zip.read(ETRecordReservedFileNames.REPRESENTATIVE_INPUTS)
-            )
+            try:
+                representative_inputs = torch.load(
+                    io.BytesIO(
+                        etrecord_zip.read(
+                            ETRecordReservedFileNames.REPRESENTATIVE_INPUTS
+                        )
+                    ),
+                    weights_only=True,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to load representative_inputs from ETRecord. "
+                    "This ETRecord file may have been created with an older "
+                    "version that used pickle serialization. Please regenerate "
+                    "the ETRecord file with the current version of ExecuTorch."
+                ) from e
         elif entry == ETRecordReservedFileNames.EXPORT_GRAPH_ID:
             export_graph_id = json.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.EXPORT_GRAPH_ID)

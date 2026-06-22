@@ -24,7 +24,11 @@ triton = torch.ops.triton
 # Global mapping from edge dialect operators to Triton kernel functions
 EDGE_TO_TRITON_KERNELS = {
     exir_ops.edge.aten.scaled_dot_product_attention.default: triton.sdpa,
+    exir_ops.edge.aten.topk.default: triton.topk,
 }
+
+
+_SPLITK_LKV_THRESHOLD = 256
 
 
 class ReplaceEdgeOpWithTritonOpPass(PassBase):
@@ -72,10 +76,46 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             # Recompile the graph module after modifications
             graph_module.recompile()
 
-        # logger.info(f"Replaced {self._replacement_count} nodes with Triton kernels")
-        print(f"Replaced {self._replacement_count} nodes with Triton kernels")
+        logger.info(f"Replaced {self._replacement_count} nodes with Triton kernels")
 
         return PassResult(graph_module, modified)
+
+    # The topk kernel loads an entire row into a single thread block via
+    # tl.arange(0, BLOCK). For large N (e.g., vocab-sized topk with N=248K),
+    # this exceeds Triton's register/shared memory limits. Skip replacement
+    # for rows larger than this threshold.
+    _TOPK_MAX_N = 4096
+
+    @staticmethod
+    def _pick_sdpa_kernel(node: Node):
+        """Choose between standard SDPA and split-K flash-decoding.
+
+        Split-K partitions the KV sequence across many CTAs for better GPU
+        utilization at decode time (L_q=1). It wins when L_kv is large
+        (full-attention KV caches) but loses to the standard kernel for
+        small L_kv (sliding-window ring buffers) due to the overhead of
+        allocating partial buffers and running the reduction kernel.
+
+        TODO(gasoonjia): Benchmarking to determine the optimal
+        implmentation for each shape.
+        """
+        q_shape = node.args[0].meta["val"].shape
+        k_shape = node.args[1].meta["val"].shape
+        L_q, D = q_shape[2], q_shape[3]
+        L_kv = k_shape[2]
+
+        if (
+            isinstance(L_q, int)
+            and L_q == 1
+            and isinstance(L_kv, int)
+            and L_kv >= _SPLITK_LKV_THRESHOLD
+            and D > 0
+            and (D & (D - 1)) == 0  # power of 2
+        ):
+            logger.info(f"Using split-K decode SDPA (L_kv={L_kv}, D={D})")
+            return triton.sdpa_decode_splitk
+
+        return triton.sdpa
 
     def _should_replace_node(self, node: Node) -> bool:
         """
@@ -87,11 +127,23 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         Returns:
             True if the node should be replaced
         """
-        # Only consider call_function nodes
         if node.op != "call_function":
             return False
 
-        return node.target in EDGE_TO_TRITON_KERNELS
+        if node.target not in EDGE_TO_TRITON_KERNELS:
+            return False
+
+        # The topk kernel loads an entire row into one thread block.
+        # Skip replacement for large N that would exceed Triton limits.
+        if node.target == exir_ops.edge.aten.topk.default:
+            input_shape = node.args[0].meta["val"].shape
+            dim = node.args[2] if len(node.args) > 2 else -1
+            N = input_shape[dim]
+            if N > self._TOPK_MAX_N:
+                logger.info(f"Skipping topk replacement: N={N} > {self._TOPK_MAX_N}")
+                return False
+
+        return True
 
     def _replace_node_with_triton(self, graph_module: GraphModule, node: Node) -> None:
         """
@@ -109,6 +161,9 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
             raise ValueError(f"No replacement kernel found for {target}")
 
         triton_kernel_fn = EDGE_TO_TRITON_KERNELS[target]
+
+        if target == exir_ops.edge.aten.scaled_dot_product_attention.default:
+            triton_kernel_fn = self._pick_sdpa_kernel(node)
 
         # Create a new node with the Triton kernel
         with graph_module.graph.inserting_before(node):

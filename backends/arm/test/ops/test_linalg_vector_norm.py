@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,9 +29,10 @@ class VectorNormModel(torch.nn.Module):
         dim=1,
         keepdim=False,
     ):
-        """
-        A simple module that applies torch.linalg.vector_norm to its input.
+        """A simple module that applies torch.linalg.vector_norm to its input.
+
         Ord is 2 by default.
+
         """
         super().__init__()
         self.ord = ord
@@ -52,17 +53,17 @@ class VectorNormModel(torch.nn.Module):
 
 
 test_modules = {
-    "default": (VectorNormModel(dim=1), (torch.rand(10, 4),)),
-    "ord1": (VectorNormModel(ord=1, dim=1), (torch.rand(10, 4),)),
-    "ord2": (VectorNormModel(ord=2, dim=1), (torch.rand(10, 20),)),
+    "default": lambda: (VectorNormModel(dim=1), (torch.rand(10, 4),)),
+    "ord1": lambda: (VectorNormModel(ord=1, dim=1), (torch.rand(10, 4),)),
+    "ord2": lambda: (VectorNormModel(ord=2, dim=1), (torch.rand(10, 20),)),
     # Norm computed along a specific dimension of a 3D tensor
-    "dim_3d": (VectorNormModel(dim=2), (torch.rand(4, 5, 6),)),
+    "dim_3d": lambda: (VectorNormModel(dim=2), (torch.rand(4, 5, 6),)),
 }
 
 
 @common.parametrize("test_module", test_modules)
 def test_vector_norm_tosa_FP(test_module):
-    model, input_tensor = test_module
+    model, input_tensor = test_module()
 
     # We decompose LinalgVectorNorm before quantize stage to have annotations
     # with q/dq nodes. In case of FP, this operator will be decomposed
@@ -78,7 +79,7 @@ def test_vector_norm_tosa_FP(test_module):
 
 @common.parametrize("test_module", test_modules)
 def test_vector_norm_tosa_INT(test_module):
-    model, input_tensor = test_module
+    model, input_tensor = test_module()
 
     # Should not found this op
     exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
@@ -96,7 +97,7 @@ def test_vector_norm_tosa_INT(test_module):
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
 def test_vector_norm_u55_INT_fvp(test_module):
-    model, input_tensor = test_module
+    model, input_tensor = test_module()
 
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -112,7 +113,7 @@ def test_vector_norm_u55_INT_fvp(test_module):
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
 def test_vector_norm_u85_INT_fvp(test_module):
-    model, input_tensor = test_module
+    model, input_tensor = test_module()
 
     # The should be decomposed and annotated in DecomposeLinalgVectorNorm pass.
     pipeline = EthosU85PipelineINT[input_t](
@@ -129,7 +130,7 @@ def test_vector_norm_u85_INT_fvp(test_module):
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
 def test_vector_norm_vgf_no_quant(test_module):
-    model, input_tensor = test_module
+    model, input_tensor = test_module()
     # FP VGF
     aten_op = "torch.ops.aten.linalg_vector_norm.default"
     exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
@@ -146,7 +147,7 @@ def test_vector_norm_vgf_no_quant(test_module):
 @common.parametrize("test_module", test_modules)
 @common.SkipIfNoModelConverter
 def test_vector_norm_vgf_quant(test_module):
-    model, input_tensor = test_module
+    model, input_tensor = test_module()
     # Should not found this op
     exir_op = "executorch_exir_dialects_edge__ops_aten_linalg_vector_norm_default"
 

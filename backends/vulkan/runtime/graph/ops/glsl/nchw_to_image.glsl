@@ -20,77 +20,95 @@ ${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
+#include "indexing.glslh"
+
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_buffer(B, "r", "buf_in", BUF_DTYPE)}
 
-$if USE_PUSH_CONST:
-  layout(push_constant) uniform restrict Block {
-    ivec4 sizes;
-  $if not FROM_STAGING:
-    ivec4 buf_strides;
-  };
-$else:
-  ${layout_declare_ubo(B, "ivec4", "sizes")}
-  $if not FROM_STAGING:
-    ${layout_declare_ubo(B, "ivec4", "buf_strides")}
+${layout_declare_ubo(B, "TextureMetadata", "outp")}
 
-#include "indexing_utils.h"
+$if not FROM_STAGING:
+  ${layout_declare_ubo(B, "BufferMetadata", "buf_meta")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "transpose_hw", "0")}
 
-const lowp ivec4 axis_map = unhash_axis_map(t_layout);
-const lowp int packed_dim = unhash_packed_dim(t_layout);
-
-VEC4_T read_texel(ivec4 tidx) {
-  ivec4 tidx_to_use = tidx;
-  ivec4 sizes_to_use = sizes;
-  int packed_dim_to_use = packed_dim;
-  if (transpose_hw == 1) {
-    sizes_to_use.xy = sizes_to_use.yx;
-    tidx_to_use.xy = tidx.yx;
-
-    if (packed_dim == 1) {
-      packed_dim_to_use = 0;
-    }
-    if (packed_dim == 0) {
-      packed_dim_to_use = 1;
-    }
-  }
-
-  $if FROM_STAGING:
-    const ivec4 buf_indices = tidx_to_nchwi(tidx_to_use, sizes_to_use, packed_dim_to_use);
-  $else:
-    const ivec4 buf_indices = tidx_to_4bufi(tidx_to_use, buf_strides, packed_dim_to_use);
-
-  VEC4_T texel = VEC4_T(0);
-  if (tidx[packed_dim] < sizes[packed_dim]) {
-    texel.x = SCALAR_T(buf_in[buf_indices.x]);
-  }
-  if (tidx[packed_dim] + 1 < sizes[packed_dim]) {
-    texel.y = SCALAR_T(buf_in[buf_indices.y]);
-  }
-  if (tidx[packed_dim] + 2 < sizes[packed_dim]) {
-    texel.z = SCALAR_T(buf_in[buf_indices.z]);
-  }
-  if (tidx[packed_dim] + 3 < sizes[packed_dim]) {
-    texel.w = SCALAR_T(buf_in[buf_indices.w]);
-  }
-  return texel;
-}
+$if not FROM_STAGING:
+  ${layout_declare_spec_const(C, "int", "buf_layout", "CONTIG_LAYOUT_INT")}
 
 void main() {
-  const ivec3 lpos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tidx = lpos_to_tidx(lpos, sizes, axis_map.w, packed_dim);
-  if (any(greaterThanEqual(tidx, sizes))) {
+  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+  if (out_of_bounds(pos, outp)) {
     return;
   }
 
-  $if DTYPE == "double" and DTYPE == "int64":
-    VEC4_T texel = read_texel(tidx);
-    write_texel(t_out, lpos_to_pos(lpos, axis_map), texel);
-  $else:
-    write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
+  TensorIndex4D tidx = texture_pos_to_tensor4d_idx_simple(outp, pos, out_layout);
+
+  const int packed_dim = get_packed_dim(out_layout);
+  int packed_dim_val;
+  if (packed_dim == 0) {
+    packed_dim_val = tidx.data.x;
+  } else if (packed_dim == 1) {
+    packed_dim_val = tidx.data.y;
+  } else if (packed_dim == 2) {
+    packed_dim_val = tidx.data.z;
+  } else {
+    packed_dim_val = tidx.data.w;
+  }
+
+  int packed_dim_size;
+  if (packed_dim == 0) {
+    packed_dim_size = outp.sizes.x;
+  } else if (packed_dim == 1) {
+    packed_dim_size = outp.sizes.y;
+  } else if (packed_dim == 2) {
+    packed_dim_size = outp.sizes.z;
+  } else {
+    packed_dim_size = outp.sizes.w;
+  }
+
+  VEC4_T texel = VEC4_T(0);
+  int limit = min(4, packed_dim_size - packed_dim_val);
+
+  for (int comp = 0; comp < limit; comp++) {
+    TensorIndex4D buf_tidx = tidx;
+    if (transpose_hw == 1) {
+      int tmp = buf_tidx.data.x;
+      buf_tidx.data.x = buf_tidx.data.y;
+      buf_tidx.data.y = tmp;
+    }
+
+    $if FROM_STAGING:
+      // Compute contiguous NCHW index
+      ivec4 s = outp.sizes;
+      if (transpose_hw == 1) {
+        s.xy = s.yx;
+      }
+      int nchwi = buf_tidx.data.x
+                + buf_tidx.data.y * s.x
+                + buf_tidx.data.z * s.x * s.y
+                + buf_tidx.data.w * s.x * s.y * s.z;
+      texel[comp] = SCALAR_T(buf_in[nchwi]);
+    $else:
+      int bufi = tensor4d_idx_to_buf_idx(buf_meta, buf_tidx, buf_layout);
+      texel[comp] = SCALAR_T(buf_in[bufi]);
+
+    if (packed_dim == 0) {
+      tidx.data.x++;
+    } else if (packed_dim == 1) {
+      tidx.data.y++;
+    } else if (packed_dim == 2) {
+      tidx.data.z++;
+    } else {
+      tidx.data.w++;
+    }
+  }
+
+#ifdef USING_TEXTURE2D
+  imageStore(t_out, pos.xy, texel);
+#else
+  imageStore(t_out, pos, texel);
+#endif
 }

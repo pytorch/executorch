@@ -69,7 +69,11 @@ class DecomposeConcatenate(ExportPass):
                     # if quantized we need to enforce the q/dq pattern for the newly inserted
                     # concat node
                     q_params = nodes_to_concat[0].args[1:]
-                    q_kwargs = nodes_to_concat[0].kwargs
+                    dq_kwargs = nodes_to_concat[0].kwargs
+                    # quantize_per_tensor does not accept out_dtype, so exclude
+                    # it from kwargs passed to the quantize node. out_dtype is
+                    # only valid for dequantize_per_tensor (e.g. fp16 models).
+                    q_kwargs = {k: v for k, v in dq_kwargs.items() if k != "out_dtype"}
                     # Quantizer enforces all the inputs and output to a concat node must share
                     # the same qparams, this means the newly inserted q/dq pair must share the
                     # same qparams as the first quantized input in the concat node.
@@ -89,7 +93,7 @@ class DecomposeConcatenate(ExportPass):
                             "call_function",
                             target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
                             args=(q_node,) + q_params,
-                            kwargs=q_kwargs,
+                            kwargs=dq_kwargs,
                         )
                         tag_as_implicit_q_dq(dq_node)
                     remainder_concat_node.args = (

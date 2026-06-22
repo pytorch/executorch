@@ -1,71 +1,19 @@
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-
-def define_operator(name: str, deps: list[str] | None = None) -> None:
-    op_name = "op_{}".format(name)
-
-    # Deps used by all operators.
-    common_deps = [
-        "//executorch/kernels/portable/cpu/util:all_deps",
-        "//executorch/kernels/portable/cpu/pattern:all_deps",
-        "//executorch/runtime/kernel:kernel_includes",
-        "//executorch/kernels/portable/cpu:scalar_utils",
-        "//executorch/backends/cadence/vision/kernels:cadence_kernels",
-        "//executorch/kernels/portable/cpu/util:dtype_util",
-        "//executorch/kernels/portable/cpu/util:elementwise_util",
-        "//executorch/kernels/portable/cpu/pattern:bitwise_op",
-        "//executorch/backends/cadence/vision/third-party:vision-nnlib",
-        "//executorch/kernels/portable/cpu/pattern:comparison_op"
-    ]
-    if deps == None:
-        deps = []
-
-    # Determine which headers to export based on operator name
-    exported_headers = ["operators.h"]
-    
-    # Add quantized_ops.h header for quantized operators
-    quantized_ops = [
-        "quantized_fully_connected_out",
-        "quantized_matmul_out", 
-        "quantized_layer_norm",
-        "quantized_relu_out",
-        "quantized_conv_out",
-        "quantized_linear_out",
-        "quantize_per_tensor",
-        "dequantize_per_tensor",
-        "requantize_out"
-    ]
-    
-    if name in quantized_ops:
-        exported_headers.append("quantized_ops.h")
-
-    runtime.cxx_library(
-        name = op_name,
-        srcs = [op_name + ".cpp"],
-        platforms = CXX,
-        visibility = ["PUBLIC"],
-        compatible_with = ["ovr_config//cpu:xtensa"],
-        deps = deps + common_deps,
-        exported_headers = exported_headers,
-    )
-
-OPERATORS = [
-    "add",
-    "full",
-    "quantized_fully_connected_out",
-    "quantized_matmul_out",
-    "requantize_out",
-    "dequantize_per_tensor",
-    "im2row_out",
-    "quantized_layer_norm",
-    "quantized_relu_out",
-    "softmax",
-    "embedding",
-    "quantized_conv_out",
-    "quantized_linear_out",
-    "quantize_per_tensor",
-    "view_copy"
+# Deps used by all operators.
+# buildifier: keep sorted
+COMMON_DEPS = [
+    "//executorch/backends/cadence/vision/kernels:cadence_kernels",
+    "//executorch/backends/cadence/vision/third-party:vision-nnlib",
+    "//executorch/kernels/portable/cpu:scalar_utils",
+    "//executorch/kernels/portable/cpu/pattern:all_deps",
+    "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+    "//executorch/kernels/portable/cpu/pattern:comparison_op",
+    "//executorch/kernels/portable/cpu/util:all_deps",
+    "//executorch/kernels/portable/cpu/util:dtype_util",
+    "//executorch/kernels/portable/cpu/util:elementwise_util",
+    "//executorch/runtime/kernel:kernel_includes",
 ]
 
 def define_common_targets():
@@ -75,6 +23,152 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    # Define build targets for all operators registered in the tables above.
-    for op in OPERATORS:
-        define_operator(op)
+    runtime.cxx_library(
+        name = "op_add",
+        srcs = ["op_add.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_dequantize_per_tensor",
+        srcs = ["op_dequantize_per_tensor.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_embedding",
+        srcs = ["op_embedding.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_full",
+        srcs = ["op_full.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_im2row_out",
+        srcs = ["op_im2row_out.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantize_per_tensor",
+        srcs = ["op_quantize_per_tensor.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_conv_out",
+        srcs = ["op_quantized_conv_out.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_fully_connected_out",
+        srcs = ["op_quantized_fully_connected_out.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_layer_norm",
+        srcs = ["op_quantized_layer_norm.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_linear_out",
+        srcs = ["op_quantized_linear_out.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_matmul_out",
+        srcs = ["op_quantized_matmul_out.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_relu_out",
+        srcs = ["op_quantized_relu_out.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_requantize_out",
+        srcs = ["op_requantize_out.cpp"],
+        exported_headers = ["operators.h", "quantized_ops.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_softmax",
+        srcs = ["op_softmax.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )
+
+    runtime.cxx_library(
+        name = "op_view_copy",
+        srcs = ["op_view_copy.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = COMMON_DEPS,
+        visibility = ["PUBLIC"],
+        compatible_with = ["ovr_config//cpu:xtensa"],
+    )

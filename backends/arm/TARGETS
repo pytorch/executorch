@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,6 +13,31 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/exir/dialects:lib",
+    ],
+)
+runtime.python_library(
+    name = "ao_ext",
+    srcs = glob([
+        "ao_ext/*.py",
+        "ao_ext/ops/*.py",
+    ]),
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:_warnings",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+runtime.python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+        ":ao_ext",
+        ":ethosu",
+        ":vgf",
+        "//executorch/backends/arm/quantizer:lib",
     ],
 )
 runtime.python_library(
@@ -62,15 +87,36 @@ runtime.python_library(
     name = "vgf",
     srcs = [
         "vgf/__init__.py",
+        "vgf/_passes/__init__.py",
+        "vgf/_passes/rewrite_grid_sampler_to_tosa_custom.py",
         "vgf/backend.py",
+        "vgf/check_env.py",
         "vgf/compile_spec.py",
         "vgf/model_converter.py",
         "vgf/partitioner.py",
+        "vgf/shaders/__init__.py",
+        "vgf/shaders/grid_sampler.py",
+    ],
+    resources = [
+        "vgf/shaders/grid_sampler.glsl",
+        "vgf/shaders/grid_sampler.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler.glsl",
+        "vgf/shaders/grid_sampler_sampler.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_align_corners.glsl",
+        "vgf/shaders/grid_sampler_sampler_align_corners.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_int8.glsl",
+        "vgf/shaders/grid_sampler_sampler_int8.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_int8_align_corners.glsl",
+        "vgf/shaders/grid_sampler_sampler_int8_align_corners.spirv.b64",
     ],
     deps = [
         ":arm_compile_spec",
+        "//caffe2:torch",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm/tosa:partitioner",
+        "//executorch/exir:lib",
     ],
 )
 
@@ -82,6 +128,7 @@ runtime.python_library(
         "//executorch/backends/arm/operators:node_visitor",
         "//executorch/backends/arm/tosa:mapping",
         "//executorch/backends/arm/tosa:utils",
+        "//executorch/backends/arm/tosa/dialect:core",
         "//executorch/exir:lib",
     ],
 )

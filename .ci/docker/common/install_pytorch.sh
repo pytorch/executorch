@@ -27,14 +27,20 @@ install_pytorch_and_domains() {
   chown -R ci-user .
 
   export _GLIBCXX_USE_CXX11_ABI=1
+  if [[ "$(uname -m)" == "aarch64" ]]; then
+    export BUILD_IGNORE_SVE_UNAVAILABLE=1
+  fi
+  if [[ -n "${PYTORCH_BUILD_MAX_JOBS:-}" ]]; then
+    export MAX_JOBS="${PYTORCH_BUILD_MAX_JOBS}"
+  fi
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
 
   # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  TORCHVISION_VERSION=release/0.27
   export TORCHVISION_VERSION
 
   install_domains

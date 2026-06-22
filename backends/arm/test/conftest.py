@@ -64,10 +64,10 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture(autouse=True)
 def set_random_seed():
-    """
-    Control random numbers in Arm test suite. Default behavior is to use a fixed
-    seed (0), which ensures reproducible tests. Use the env variable ARM_TEST_SEED
-    to set a custom seed, or set it to RANDOM for random seed behavior.
+    """Control random numbers in Arm test suite. Default behavior is to use a
+    fixed seed (0), which ensures reproducible tests. Use the env variable
+    ARM_TEST_SEED to set a custom seed, or set it to RANDOM for random seed
+    behavior.
 
     Examples:
     As default use fixed seed (0) for reproducible tests
@@ -76,6 +76,7 @@ def set_random_seed():
         ARM_TEST_SEED=RANDOM pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
     Rerun with a specific seed
         ARM_TEST_SEED=3478246 pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
+
     """
     import torch
 
@@ -100,12 +101,12 @@ def set_random_seed():
 
 
 def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
-    """
-    Returns whether an option is successfully enabled, i.e. if the flag was
+    """Returns whether an option is successfully enabled, i.e. if the flag was
     given to pytest and the necessary requirements are available.
 
-    The optional parameter 'fail_if_not_enabled' makes the function raise
-      a RuntimeError instead of returning False.
+    The optional parameter 'fail_if_not_enabled' makes the function raise a
+    RuntimeError instead of returning False.
+
     """
 
     if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
@@ -118,11 +119,11 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
 
 
 def get_option(option: str) -> Any | None:
-    """
-    Returns the value of an pytest option if it is set, otherwise None.
+    """Returns the value of an pytest option if it is set, otherwise None.
 
     Args:
         option (str): The option to check for.
+
     """
     if option in pytest._test_options:  # type: ignore[attr-defined]
         return pytest._test_options[option]  # type: ignore[attr-defined]

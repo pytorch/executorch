@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -52,6 +52,18 @@ class MergeOneOfTwoBN(torch.nn.Module):
         x = self.relu6(x)
         x = self.batch_norm2d(x)
         return x
+
+
+class MergeOneOfTwoBNBf16(MergeOneOfTwoBN):
+    ops_before_pass: ClassVar[Dict[str, int]] = MergeOneOfTwoBN.ops_before_pass
+    ops_after_pass: ClassVar[Dict[str, int]] = MergeOneOfTwoBN.ops_before_pass
+
+    def __init__(self, affine: bool):
+        super().__init__(affine)
+        self.to(torch.bfloat16)
+
+    def get_inputs(self) -> input_t:
+        return (torch.randn(1, 3, 256, 256, dtype=torch.bfloat16),)
 
 
 class MergeTwosOfTwoBN(torch.nn.Module):
@@ -150,8 +162,9 @@ modules: Dict[str, ModuleWithBatchNormAttrs] = {
 
 @common.parametrize("module", modules)
 def test_fuse_batch_norm2d_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
-    """Test various cases where the batchnorm should either be fused with a previous
-    conv, or converted to a new conv."""
+    """Test various cases where the batchnorm should either be fused with a
+    previous conv, or converted to a new conv.
+    """
     nn_module = cast(torch.nn.Module, module)
     pipeline = PassPipeline[input_t](
         nn_module,
@@ -160,5 +173,20 @@ def test_fuse_batch_norm2d_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseBatchNorm2dPass],
+    )
+    pipeline.run()
+
+
+def test_fuse_batch_norm2d_tosa_FP_bf16_skips_fusion() -> None:
+    module = cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBNBf16(True))
+    nn_module = cast(torch.nn.Module, module)
+    pipeline = PassPipeline[input_t](
+        nn_module,
+        module.get_inputs(),
+        quantize=False,
+        ops_before_pass=module.ops_before_pass,
+        ops_after_pass=module.ops_after_pass,
+        passes_with_exported_program=[FuseBatchNorm2dPass],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()

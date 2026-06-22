@@ -3,8 +3,12 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 runtime.python_library(
     name = "node_visitor",
-    srcs = ["node_visitor.py"],
+    srcs = [
+        "node_visitor.py",
+        "simple_node_visitor.py",
+    ],
     deps = [
+        ":operator_validation_utils",
         "//executorch/backends/arm/debug:schema",
         "//executorch/backends/arm/tosa:mapping",
         "//executorch/backends/arm/tosa:tosa",

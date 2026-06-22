@@ -173,9 +173,26 @@ The LLM Runner framework provides Python bindings for easy integration with Pyth
 Build the Python bindings as part of the ExecuTorch build:
 
 ```bash
-# Build from source with Python bindings enabled:
-# In executorch root directory
+# Option 1: Use the install script (includes pybindings by default)
 bash install_executorch.sh
+
+# Option 2: Build with CMake directly
+cmake -B cmake-out \
+  -DEXECUTORCH_BUILD_PYBIND=ON \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  cmake/
+cmake --build cmake-out -j$(nproc) --target install
+
+# Option 3: pip install from source (includes pybindings)
+pip install -e . --no-build-isolation
+```
+
+The key CMake flag is `EXECUTORCH_BUILD_PYBIND=ON`, which builds the `_llm_runner` extension module providing `TextLLMRunner`, `MultimodalRunner`, `GenerationConfig`, and related classes.
+
+Verify the installation:
+
+```python
+from executorch.extension.llm.runner import TextLLMRunner, GenerationConfig
 ```
 
 ### Quick Start Examples
@@ -714,7 +731,7 @@ std::unordered_map<std::string, int64_t> get_llm_metadata(
 |-----------|------|---------|-------------|
 | `max_new_tokens` | `int32_t` | `-1` | Maximum new tokens to generate (-1 = use available context) |
 | `seq_len` | `int32_t` | `1024` | Total sequence length including prompt |
-| `temperature` | `float` | `0.8f` | Sampling temperature (0.0 = deterministic, 1.0+ = creative) |
+| `temperature` | `float` | `0.8f` | Sampling temperature in [0.0, 1.0] (0.0 = deterministic) |
 | `echo` | `bool` | `true` | Whether to echo the input prompt |
 | `num_bos` | `int8_t` | `1` | Number of beginning-of-sequence tokens |
 | `num_eos` | `int8_t` | `1` | Number of end-of-sequence tokens |
@@ -807,7 +824,7 @@ GenerationConfig config;
 config.temperature = 0.1f;  // Very deterministic
 runner->generate(factual_prompt, config, callback);
 
-config.temperature = 1.2f;  // Very creative
+config.temperature = 1.0f;  // Highest supported temperature
 runner->generate(creative_prompt, config, callback);
 ```
 

@@ -47,6 +47,41 @@ class TextDecoderRunnerTest : public Test {
   std::unique_ptr<IOManager> io_manager_;
 };
 
+// Test that method_name defaults to "forward"
+TEST_F(TextDecoderRunnerTest, MethodNameDefaultsToForward) {
+  EXPECT_EQ(runner_->method_name(), "forward");
+}
+
+// Test that method_name can be set to a custom value
+TEST_F(TextDecoderRunnerTest, MethodNameCustomValue) {
+  auto custom_runner = std::make_unique<TextDecoderRunner>(
+      mock_module_.get(), io_manager_.get(), "encode");
+  EXPECT_EQ(custom_runner->method_name(), "encode");
+}
+
+// Test that load() uses method_name (not hardcoded "forward")
+TEST_F(TextDecoderRunnerTest, LoadUsesMethodName) {
+  // Get an available model
+  const char* model_path = std::getenv("KVCACHE_CACHE_POS");
+  if (!model_path) {
+    GTEST_SKIP() << "No PTE model environment variable set";
+  }
+  auto module = std::make_unique<Module>(model_path);
+  auto load_result = module->load();
+  if (load_result != Error::Ok) {
+    GTEST_SKIP() << "Failed to load model";
+  }
+
+  auto io_mgr = std::make_unique<IOManager>(*module);
+
+  // Create runner with a method name that doesn't exist
+  TextDecoderRunner runner(module.get(), io_mgr.get(), "nonexistent_method");
+
+  // load() should fail because "nonexistent_method" doesn't exist
+  auto result = runner.load();
+  EXPECT_NE(result, Error::Ok);
+}
+
 // Test logits_to_token() method with Float tensor
 TEST_F(TextDecoderRunnerTest, LogitsToTokenFloat) {
   TensorFactory<executorch::aten::ScalarType::Float> tf_float;
@@ -118,6 +153,83 @@ TEST_F(TextDecoderRunnerTest, LogitsToTokenWithTemperature) {
   // With temperature > 0, result should be within valid range
   EXPECT_GE(token, 0);
   EXPECT_LT(token, 4);
+}
+
+// Test logits_to_token() with an injected Sampler (greedy, temp=0)
+TEST_F(TextDecoderRunnerTest, LogitsToTokenWithInjectedSampler) {
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+  auto logits = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+
+  auto sampler = std::make_unique<executorch::extension::llm::Sampler>(4, 0.0f);
+  auto runner = std::make_unique<TextDecoderRunner>(
+      nullptr, nullptr, "forward", std::move(sampler));
+
+  int32_t token = runner->logits_to_token(logits, 0.0f);
+  EXPECT_EQ(token, 2);
+
+  auto logits2 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  token = runner->logits_to_token(logits2, 0.0f);
+  EXPECT_EQ(token, 2);
+}
+
+// Test that set_temperature works on an injected Sampler
+TEST_F(TextDecoderRunnerTest, LogitsToTokenInjectedSamplerTemperatureSwitch) {
+  auto sampler = std::make_unique<executorch::extension::llm::Sampler>(4, 0.0f);
+  auto runner = std::make_unique<TextDecoderRunner>(
+      nullptr, nullptr, "forward", std::move(sampler));
+
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+
+  // temp=0 → argmax
+  auto logits1 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  EXPECT_EQ(runner->logits_to_token(logits1, 0.0f), 2);
+
+  // temp=1.0 → stochastic, result must be in valid range
+  auto logits2 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  int32_t token = runner->logits_to_token(logits2, 1.0f);
+  EXPECT_GE(token, 0);
+  EXPECT_LT(token, 4);
+
+  // temp=0 again → back to argmax
+  auto logits3 = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+  EXPECT_EQ(runner->logits_to_token(logits3, 0.0f), 2);
+}
+
+// Test logits_to_token() with an injected Sampler on a 3D tensor
+TEST_F(TextDecoderRunnerTest, LogitsToTokenWithInjectedSampler3D) {
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+  auto logits = tf_float.make(
+      {1, 2, 4},
+      {
+          0.1f,
+          0.2f,
+          0.3f,
+          0.4f, // first position
+          0.5f,
+          0.6f,
+          0.9f,
+          0.8f // last position (used for sampling)
+      });
+
+  auto sampler = std::make_unique<executorch::extension::llm::Sampler>(4, 0.0f);
+  auto runner = std::make_unique<TextDecoderRunner>(
+      nullptr, nullptr, "forward", std::move(sampler));
+
+  int32_t token = runner->logits_to_token(logits, 0.0f);
+  EXPECT_EQ(token, 2);
+}
+
+// Test logits_to_token() without an injected Sampler (fallback path)
+TEST_F(TextDecoderRunnerTest, LogitsToTokenWithoutInjectedSampler) {
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+  auto logits = tf_float.make({1, 4}, {0.1f, 0.2f, 0.8f, 0.4f});
+
+  // No sampler injected — uses the legacy per-call Sampler path
+  auto runner =
+      std::make_unique<TextDecoderRunner>(nullptr, nullptr, "forward");
+
+  int32_t token = runner->logits_to_token(logits, 0.0f);
+  EXPECT_EQ(token, 2); // greedy argmax → index 2 (value 0.8)
 }
 
 // Test step() method with all available PTE models

@@ -19,15 +19,25 @@ import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
 from typing import final, List
 
+from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes.arm_pass_manager import (
+    _registered_pass_insertions,
+    PassInsertions,
+    register_pass_insertions_before,
+)
 from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
     arm_get_first_delegation_tag,
     TOSABackend,
+)
+from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom import (  # type: ignore[import-not-found]
+    RewriteGridSamplerToTosaCustomPass,
 )
 
 from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
     VgfCompileSpec,
 )
 from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+    model_converter_env,
     require_model_converter_binary,
 )
 from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
@@ -41,6 +51,37 @@ from torch.export.exported_program import ExportedProgram
 
 # debug functionality
 logger = logging.getLogger(__name__)
+
+
+def _register_grid_sampler_rewrite_pass() -> None:
+    """Register VGF-only custom shader lowering passes."""
+    existing_insertions = _registered_pass_insertions.get(RewriteConvPass)
+    if existing_insertions is not None and any(
+        isinstance(pass_, RewriteGridSamplerToTosaCustomPass)
+        for pass_ in existing_insertions.before_passes
+    ):
+        return
+    register_pass_insertions_before(
+        RewriteConvPass,
+        [RewriteGridSamplerToTosaCustomPass()],
+    )
+
+
+def _snapshot_registered_pass_insertions() -> dict[type, PassInsertions]:
+    return {
+        pass_type: PassInsertions(
+            before_passes=list(insertions.before_passes),
+            after_passes=list(insertions.after_passes),
+        )
+        for pass_type, insertions in _registered_pass_insertions.items()
+    }
+
+
+def _restore_registered_pass_insertions(
+    snapshot: dict[type, PassInsertions],
+) -> None:
+    _registered_pass_insertions.clear()
+    _registered_pass_insertions.update(snapshot)
 
 
 @final
@@ -72,7 +113,7 @@ class VgfBackend(BackendDetails):
 
         """
         compile_flags = compile_spec.compiler_flags
-        artifact_path = compile_spec.get_intermediate_path()
+        artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
         return binary
@@ -95,23 +136,28 @@ class VgfBackend(BackendDetails):
         """
         logger.info(f"{VgfBackend.__name__} preprocess")
 
-        compile_spec = VgfCompileSpec.from_list(compile_specs)
-        # deduce TOSA compile_spec from VGF compile spec. We get a new
-        # compile spec list, containing only elements relevant for the
-        # TOSABackend.
-        tosa_compile_spec = TOSABackend.filter_tosa_compile_specs(compile_spec)
+        insertions_snapshot = _snapshot_registered_pass_insertions()
+        try:
+            _register_grid_sampler_rewrite_pass()
+            compile_spec = VgfCompileSpec._from_list(compile_specs)
+            # deduce TOSA compile_spec from VGF compile spec. We get a new
+            # compile spec list, containing only elements relevant for the
+            # TOSABackend.
+            tosa_compile_spec = TOSABackend.filter_tosa_compile_specs(compile_spec)
 
-        # Backends doesn't allow inheritance, as stated in comments in exir/backend/backend_api.py
-        # ('All backend implementation are final...'), so use composition instead.
-        # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
-        # which can be passed on to next compilation step.
-        tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
+            # Backends doesn't allow inheritance, as stated in comments in exir/backend/backend_api.py
+            # ('All backend implementation are final...'), so use composition instead.
+            # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
+            # which can be passed on to next compilation step.
+            tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
 
-        tag_name = arm_get_first_delegation_tag(edge_program.graph_module)
+            tag_name = arm_get_first_delegation_tag(edge_program.graph_module)
 
-        binary = VgfBackend._compile_tosa_flatbuffer(
-            tosa_preprocess.processed_bytes, compile_spec, tag_name
-        )
+            binary = VgfBackend._compile_tosa_flatbuffer(
+                tosa_preprocess.processed_bytes, compile_spec, tag_name
+            )
+        finally:
+            _restore_registered_pass_insertions(insertions_snapshot)
 
         return PreprocessResult(processed_bytes=binary)
 
@@ -157,7 +203,11 @@ def vgf_compile(
         ]
         try:
             subprocess.run(  # nosec B602, B603 - shell invocation constrained to trusted converter binary with trusted inputs
-                conversion_command, shell=False, check=True, capture_output=True
+                conversion_command,
+                shell=False,
+                check=True,
+                capture_output=True,
+                env=model_converter_env(),
             )
         except subprocess.CalledProcessError as process_error:
             conversion_command_str = " ".join(conversion_command)

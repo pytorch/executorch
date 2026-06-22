@@ -10,7 +10,9 @@ import os
 import re
 import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
+import sys
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from types import NoneType
@@ -34,7 +36,10 @@ from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.backends.arm.vgf.model_converter import find_model_converter_binary
+from executorch.backends.arm.vgf.model_converter import (
+    find_model_converter_binary,
+    model_converter_env,
+)
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
@@ -57,6 +62,8 @@ _torch_to_numpy_dtype_dict = {
     torch.int16: np.int16,
     torch.int32: np.int32,
     torch.int64: np.int64,
+    torch.float8_e4m3fn: np.uint8,
+    torch.float8_e5m2: np.uint8,
     torch.float16: np.float16,
     torch.float32: np.float32,
     torch.float64: np.float64,
@@ -66,7 +73,12 @@ _torch_to_numpy_dtype_dict = {
     torch.complex128: np.complex128,
 }
 
-VALID_TARGET = {"corstone-300", "corstone-320", "vkml_emulation_layer"}
+VALID_TARGET = {
+    "corstone-300",
+    "corstone-300-u65",
+    "corstone-320",
+    "vkml_emulation_layer",
+}
 
 
 class QuantizationParams:
@@ -91,13 +103,13 @@ class QuantizationParams:
 
 
 def get_input_names(program: ExportedProgram) -> list[str]:
-    """
-    Get a list[str] with the names of the inputs to this model.
+    """Get a list[str] with the names of the inputs to this model.
 
     Args:
         program (ExportedProgram): The program to get input names from.
     Returns:
         A list of strings with the names of the model input.
+
     """
     return [spec.arg.name for spec in program.graph_signature.input_specs]
 
@@ -105,12 +117,14 @@ def get_input_names(program: ExportedProgram) -> list[str]:
 def get_input_quantization_params(
     program: ExportedProgram,
 ) -> list[QuantizationParams]:
-    """
-    Get input QuantizationParams in a program, maximum one per input to the program.
+    """Get input QuantizationParams in a program, maximum one per input to the
+    program.
+
     Args:
         program (ExportedProgram): The program to get input quantization parameters from.
     Returns:
         list[QuantizationParams]: The found quantization parameters.
+
     """
 
     quant_params = []
@@ -142,8 +156,8 @@ def get_input_quantization_params(
 def get_output_quantization_params(
     output_node: Node,
 ) -> dict[Node, QuantizationParams | None]:
-    """
-    Get output QuantizationParams from a program.
+    """Get output QuantizationParams from a program.
+
     Args:
         output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
     Returns:
@@ -151,6 +165,7 @@ def get_output_quantization_params(
         If no quantization parameters were found, the entry is None.
     Raises:
         RuntimeError if no output quantization parameters are found.
+
     """
     quant_params: dict[Node, QuantizationParams | None] = {}
     for node in output_node.args[0]:  # type: ignore[union-attr]
@@ -182,6 +197,10 @@ def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     if tensor.dtype == torch.bfloat16:
         # Numpy doesn't support bfloat16, use, uint16 instead. Dtype is inferred from model anyways.
         tensor = tensor.view(torch.uint16)
+    elif tensor.dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.float8_e5m2:
+        tensor = tensor.view(torch.uint8)
     return tensor.numpy()
 
 
@@ -198,7 +217,7 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
         return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
     else:
-        if type(array.dtype) is np.dtypes.VoidDType:
+        if array.dtype.type is np.void:
             # If dtype is void, "cheat" and use the output_tensor dtype.
             tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
         else:
@@ -207,7 +226,9 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
 
 
 class TosaReferenceModelDispatch(TorchFunctionMode):
-    """A context manager for executing call_delegate nodes using the reference model"""
+    """A context manager for executing call_delegate nodes using the reference
+    model.
+    """
 
     def __init__(self):
         self.ran_tosa_dispatch = False
@@ -215,7 +236,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
-        compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
+        compile_spec = TosaCompileSpec._from_list(lowered_backend_module.compile_specs)
 
         output_node = lowered_backend_module.original_module.graph.output_node()
         return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs, output_node)
@@ -359,9 +380,8 @@ def run_vkml_emulation_layer(
         cmd_line += input_string
     cmd_line = cmd_line.split()
 
-    result = _run_cmd(cmd_line)
+    result = _run_cmd(cmd_line, env=_get_vkml_runtime_env())
 
-    # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
     result_stdout = result.stdout.decode()  # noqa: F841
 
@@ -377,6 +397,7 @@ def run_corstone(
     timeout: int = 120,  # s
 ) -> list[torch.Tensor]:
     """Executes an inference of the exported_program on FVP.
+
     Returns a list of tensors with the output.
     Args:
         `executorch_program_manager`: The executorch program to run.
@@ -393,6 +414,7 @@ def run_corstone(
         Relies on the output tensors from the exported program
         to figure out the shape and dtype of the buffer that was
         output from the FVP.
+
     """
     exported_program = executorch_program_manager.exported_program()
     intermediate_path = Path(intermediate_path)
@@ -407,14 +429,24 @@ def run_corstone(
         f.write(executorch_program_manager.buffer)
 
     input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    # Keep semihosting command line short: the FVP truncates long cmd strings.
+    # Alias generated input files to compact names in the same directory.
+    aliased_input_paths = []
+    for idx, input_path in enumerate(input_paths):
+        short_name = f"i{idx}.bin"
+        short_path = os.path.join(intermediate_path, short_name)
+        if os.path.abspath(input_path) != os.path.abspath(short_path):
+            shutil.copyfile(input_path, short_path)
+        aliased_input_paths.append(short_path)
 
     output_base_name = "out"
 
     cmd_line = "executor_runner -m program.pte -o out"
-    for input_path in input_paths:
-        relative_path = os.path.relpath(
-            Path(input_path).resolve(), start=intermediate_path
-        )
+    for input_path in aliased_input_paths:
+        # Use local basenames to avoid '/var' -> '/private/var' resolve expansion
+        # on macOS, which can produce long '../../..' paths and exceed FVP's
+        # semihosting cmd_line limit.
+        relative_path = Path(input_path).name
         cmd_line += f" -i {relative_path}"
 
     if len(cmd_line) > 256:
@@ -423,11 +455,17 @@ def run_corstone(
         )
 
     match target_board:
-        case "corstone-300":
+        case "corstone-300" | "corstone-300-u65":
+            if target_board == "corstone-300":
+                fvp = "FVP_Corstone_SSE-300_Ethos-U55"
+                num_macs = 128
+            else:
+                fvp = "FVP_Corstone_SSE-300_Ethos-U65"
+                num_macs = 256
             command_args = [
-                "FVP_Corstone_SSE-300_Ethos-U55",
+                fvp,
                 "-C",
-                "ethosu.num_macs=128",
+                f"ethosu.num_macs={num_macs}",
                 "-C",
                 "mps3_board.visualisation.disable-visualisation=1",
                 "-C",
@@ -553,7 +591,8 @@ def save_bytes(
     input_name: str,
     quant_param: Optional[QuantizationParams] = None,
 ) -> str:
-    """Serializes and saves 'data' in byte format, possibly quantizing it before.
+    """Serializes and saves 'data' in byte format, possibly quantizing it
+    before.
 
     Parameters:
         path: the directory where to save the data.
@@ -562,6 +601,7 @@ def save_bytes(
         quant_param: the parameters to use for quantization.
     Returns:
         the full file path of the output.
+
     """
     data_np = prep_data_for_save(data, input_name, quant_param)
     file_path = os.path.join(path, input_name + ".bin")
@@ -572,16 +612,89 @@ def save_bytes(
     return file_path
 
 
-def _run_cmd(cmd: List[str], check=True) -> subprocess.CompletedProcess[bytes]:
+def _prepend_env_path(existing: str | None, value: str) -> str:
+    if not existing:
+        return value
+
+    parts = [part for part in existing.split(os.path.pathsep) if part]
+    if value in parts:
+        return existing
+    return os.path.pathsep.join([value, *parts])
+
+
+def _find_local_vulkan_sdk_root() -> Path | None:
+    repo_root = Path(__file__).resolve().parents[3]
+    sdk_base_dir = repo_root / "examples/arm/arm-scratch/vulkan_sdk"
+    if not sdk_base_dir.is_dir():
+        return None
+
+    if sys.platform == "darwin":
+        candidates = sorted(
+            path for path in sdk_base_dir.glob("*/macOS") if path.is_dir()
+        )
+    else:
+        arch = os.uname().machine
+        arch_aliases = [arch]
+        if arch == "arm64":
+            arch_aliases.append("aarch64")
+        candidates = sorted(
+            path
+            for alias in arch_aliases
+            for path in sdk_base_dir.glob(f"*/{alias}")
+            if path.is_dir()
+        )
+
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def _get_vkml_runtime_env() -> dict[str, str]:
+    """Return an environment with the Vulkan runtime variables needed for
+    VKML.
     """
-    Run a command and check for errors.
+    env = os.environ.copy()
+    sdk_root = _find_local_vulkan_sdk_root()
+    if sdk_root is None:
+        return env
+
+    env["VULKAN_SDK"] = str(sdk_root)
+    env["PATH"] = _prepend_env_path(env.get("PATH"), str(sdk_root / "bin"))
+
+    if sys.platform == "darwin":
+        env["DYLD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("DYLD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+        moltenvk_icd = sdk_root / "share/vulkan/icd.d/MoltenVK_icd.json"
+        if moltenvk_icd.is_file():
+            env["VK_DRIVER_FILES"] = _prepend_env_path(
+                env.get("VK_DRIVER_FILES"), str(moltenvk_icd)
+            )
+        else:
+            logger.debug(
+                "MoltenVK ICD file not found at %s; leaving VK_DRIVER_FILES unset.",
+                moltenvk_icd,
+            )
+    else:
+        env["LD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("LD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+
+    return env
+
+
+def _run_cmd(
+    cmd: List[str], check=True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a command and check for errors.
 
     Args:
     cmd (List[str]): The command to run as a list.
+
     """
     try:
         result = subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
-            cmd, check=check, capture_output=True
+            cmd, check=check, capture_output=True, env=env
         )
         return result
     except subprocess.CalledProcessError as e:
@@ -600,6 +713,7 @@ def _run_flatc(args: List[str]) -> None:
 
     If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
     Otherwise, expects the `flatc` tool to be available on the system path.
+
     """
     flatc_resource = _resources.files(arm_test_package).joinpath(_FLATC_RESOURCE_NAME)
     if flatc_resource.is_file():
@@ -624,9 +738,11 @@ def _run_flatc(args: List[str]) -> None:
 
 
 def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
-    """
-    This function is used to dump the TOSA flatbuffer to a human readable
-    format, using flatc. It is used for debugging purposes.
+    """This function is used to dump the TOSA flatbuffer to a human readable
+    format, using flatc.
+
+    It is used for debugging purposes.
+
     """
 
     tmp = tempfile.mkdtemp()
@@ -700,10 +816,19 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
 
 
 def corstone300_installed() -> bool:
-    cmd = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    cmd_u55 = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
     try:
-        _run_cmd(cmd, check=True)
-    except:
+        _run_cmd(cmd_u55, check=True)
+    except Exception:
+        return False
+    return True
+
+
+def corstone300_u65_installed() -> bool:
+    cmd_u65 = ["FVP_Corstone_SSE-300_Ethos-U65", "--version"]
+    try:
+        _run_cmd(cmd_u65, check=True)
+    except Exception:
         return False
     return True
 
@@ -712,7 +837,7 @@ def corstone320_installed() -> bool:
     cmd = ["FVP_Corstone_SSE-320", "--version"]
     try:
         _run_cmd(cmd, check=True)
-    except:
+    except Exception:
         return False
     return True
 
@@ -723,7 +848,7 @@ def model_converter_installed() -> bool:
         return False
 
     try:
-        _run_cmd([model_converter, "--version"], check=True)
+        _run_cmd([model_converter, "--version"], check=True, env=model_converter_env())
     except Exception:
         return False
 
@@ -740,55 +865,131 @@ def vkml_emulation_layer_installed() -> bool:
     existing_layers = set(vk_instance_layers.split(":"))
     layers_exists = required_layers.issubset(existing_layers)
 
-    # Check LD_LIBRARY_PATH for "emulation-layer/deploy"
+    # Check dynamic library search paths for the emulation layer deploy dir.
+    library_paths = []
     ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    dyld_library_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+    if ld_library_path:
+        library_paths.extend(ld_library_path.split(os.path.pathsep))
+    if dyld_library_path:
+        library_paths.extend(dyld_library_path.split(os.path.pathsep))
+
     deploy_exists = False
-    for path in ld_library_path.split(os.path.pathsep):
-        if "emulation-layer/deploy" in path and os.path.isdir(path):
+    deploy_markers = ("emulation-layer/deploy", "emulation_layer/deploy")
+    for path in library_paths:
+        if any(marker in path for marker in deploy_markers) and os.path.isdir(path):
             deploy_exists = True
 
     return layers_exists and deploy_exists
 
 
-def assert_elf_path_exists(elf_path):
-    if not os.path.exists(elf_path):
-        raise FileNotFoundError(
-            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, \
-            run setup_testing.sh or setup_testing_vkml.sh?"
-        )
+def _elf_search_roots() -> list[Path]:
+    roots: list[Path] = []
+
+    for env_var in (
+        "EXECUTORCH_ROOT",
+        "GITHUB_WORKSPACE",
+        "BUILD_WORKSPACE_DIRECTORY",
+    ):
+        env_root = os.environ.get(env_var)
+        if env_root:
+            roots.append(Path(env_root).expanduser())
+
+    cwd = Path.cwd().resolve()
+    search_parents = [cwd, *cwd.parents, *Path(__file__).resolve().parents]
+    for parent in search_parents:
+        if (parent / "examples" / "arm").is_dir() or (parent / "arm_test").exists():
+            roots.append(parent)
+
+    unique_roots: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        resolved = root.resolve()
+        if resolved not in seen:
+            unique_roots.append(resolved)
+            seen.add(resolved)
+    return unique_roots
 
 
-def get_elf_path(target_board: str, use_portable_ops: bool = False) -> str:
-    elf_path = ""
-
+def _elf_path_candidates(
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
+) -> list[Path]:
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
 
-    if use_portable_ops:
-        portable_ops_str = "portable-ops_"
-    else:
-        portable_ops_str = ""
-
-    if target_board in ("corstone-300", "corstone-320"):
-        elf_path = os.path.join(
+    portable_ops_str = "portable-ops_" if use_portable_ops else ""
+    if target_board in ("corstone-300", "corstone-300-u65", "corstone-320"):
+        build_dir = Path(
             "arm_test",
-            f"arm_semihosting_executor_runner_{portable_ops_str}{target_board}",
-            "arm_executor_runner",
+            f"arm_semihosting_executor_runner_"
+            f"{portable_ops_str}{target_board}{build_dir_suffix}",
         )
-    elif target_board == "vkml_emulation_layer":
-        elf_path = os.path.join(
-            f"arm_test/arm_executor_runner_{portable_ops_str}vkml",
-            "executor_runner",
+        binary_name = "arm_executor_runner"
+    else:
+        build_dir = Path(
+            "arm_test", f"arm_executor_runner_{portable_ops_str}vkml{build_dir_suffix}"
+        )
+        binary_name = "executor_runner"
+
+    candidates: list[Path] = []
+    for root in _elf_search_roots():
+        root_build_dir = root / build_dir
+        candidates.extend(
+            [
+                root_build_dir / binary_name,
+                root_build_dir / "Release" / binary_name,
+                root_build_dir / "examples" / "arm" / "executor_runner" / binary_name,
+                root_build_dir
+                / "examples"
+                / "arm"
+                / "executor_runner"
+                / "Release"
+                / binary_name,
+            ]
         )
 
-    assert_elf_path_exists(elf_path)
-    return elf_path
+    unique_candidates: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve(strict=False)
+        if resolved not in seen:
+            unique_candidates.append(resolved)
+            seen.add(resolved)
+    return unique_candidates
+
+
+def _resolve_existing_elf_path(elf_candidates: Iterable[Path]) -> Path:
+    checked: list[Path] = []
+    for elf_path in elf_candidates:
+        checked.append(elf_path)
+        if elf_path.exists():
+            return elf_path
+
+    checked_paths = ", ".join(str(path) for path in checked)
+    raise FileNotFoundError(
+        "Did not find build arm_executor_runner or executor_runner. "
+        f"Tried: {checked_paths}. "
+        "Run setup_testing.sh or setup_testing_vkml.sh?"
+    )
+
+
+def get_elf_path(
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
+) -> str:
+    elf_path = _resolve_existing_elf_path(
+        _elf_path_candidates(
+            target_board,
+            use_portable_ops=use_portable_ops,
+            build_dir_suffix=build_dir_suffix,
+        )
+    )
+    return str(elf_path)
 
 
 def arm_executor_runner_exists(target_board: str, use_portable_ops: bool = False):
     try:
         get_elf_path(target_board, use_portable_ops=use_portable_ops)
-    except:
+    except Exception:
         return False
     else:
         return True
@@ -840,6 +1041,8 @@ def get_target_board(compile_spec: ArmCompileSpec) -> str | None:
     if isinstance(compile_spec, EthosUCompileSpec):
         if "u55" in compile_spec.target:
             return "corstone-300"
+        if "u65" in compile_spec.target:
+            return "corstone-300-u65"
         if "u85" in compile_spec.target:
             return "corstone-320"
     return None

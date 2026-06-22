@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
     dequantize_per_tensor_cmsis,
     is_channel_broadcast,
+    is_channels_last,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
@@ -32,6 +33,7 @@ lib = Library("cortex_m", "DEF")
 
 SOFTMAX_INPUT_INTEGER_BITS = 5
 
+
 ###
 # dequantize_per_tensor
 ###
@@ -45,7 +47,7 @@ lib.define(
 )
 
 
-@register_fake("cortex_m::quantize_per_tensor")
+@register_fake("cortex_m::quantize_per_tensor")  # type: ignore[misc]
 def quantize_per_tensor_meta(
     input: torch.Tensor,
     scale: float,
@@ -57,7 +59,7 @@ def quantize_per_tensor_meta(
     return torch.empty_like(input, dtype=dtype)
 
 
-@impl(lib, "quantize_per_tensor", "CompositeExplicitAutograd")
+@impl(lib, "quantize_per_tensor", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantize_per_tensor_impl(
     input: torch.Tensor,
     scale: float,
@@ -87,7 +89,7 @@ lib.define(
 )
 
 
-@register_fake("cortex_m::dequantize_per_tensor")
+@register_fake("cortex_m::dequantize_per_tensor")  # type: ignore[misc]
 def dequantize_per_tensor_meta(
     input: torch.Tensor,
     scale: float,
@@ -99,7 +101,7 @@ def dequantize_per_tensor_meta(
     return torch.empty_like(input, dtype=torch.float)
 
 
-@impl(lib, "dequantize_per_tensor", "CompositeExplicitAutograd")
+@impl(lib, "dequantize_per_tensor", "CompositeExplicitAutograd")  # type: ignore[misc]
 def dequantize_per_tensor_impl(
     input: torch.Tensor,
     scale: float,
@@ -122,20 +124,21 @@ lib.define(
     "quantized_add("
     "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
     "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
-    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max) -> Tensor"
 )
 
-# Define the operator schema with multipliers and shifts (11 args + out tensor)
 lib.define(
     "quantized_add.out("
     "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
     "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
     "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
 
-@register_fake("cortex_m::quantized_add")
+@register_fake("cortex_m::quantized_add")  # type: ignore[misc]
 def quantized_add_meta(
     self: torch.Tensor,
     self_zero_point: int,
@@ -148,6 +151,8 @@ def quantized_add_meta(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    activation_min: int,
+    activation_max: int,
 ) -> torch.Tensor:
     assert self.shape == other.shape or is_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
@@ -160,7 +165,7 @@ def quantized_add_meta(
     return torch.empty_like(output_tensor)
 
 
-@impl(lib, "quantized_add", "CompositeExplicitAutograd")
+@impl(lib, "quantized_add", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_add_impl(
     self: torch.Tensor,
     self_zero_point: int,
@@ -173,6 +178,8 @@ def quantized_add_impl(
     output_zero_point: int,
     output_multiplier: int,
     output_shift: int,
+    activation_min: int,
+    activation_max: int,
 ) -> torch.Tensor:
     assert self.shape == other.shape or is_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
@@ -186,7 +193,9 @@ def quantized_add_impl(
 
     result_fp = self_fp + other_fp
     result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
-    result = torch.clamp(result_quantized + output_zero_point, -128, 127).to(torch.int8)
+    result = torch.clamp(
+        result_quantized + output_zero_point, activation_min, activation_max
+    ).to(torch.int8)
     return result
 
 
@@ -195,20 +204,20 @@ def quantized_add_impl(
 # ===================================================================
 lib.define(
     "quantized_mul("
-    "Tensor self, Scalar self_zero_point, "
-    "Tensor other, Scalar other_zero_point, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift) -> Tensor"
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
 )
 lib.define(
     "quantized_mul.out("
-    "Tensor self, Scalar self_zero_point, "
-    "Tensor other, Scalar other_zero_point, "
-    "Scalar output_zero_point, Scalar output_multiplier, Scalar output_shift, "
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
 
-@register_fake("cortex_m::quantized_mul")
+@register_fake("cortex_m::quantized_mul")  # type: ignore[misc]
 def quantized_mul_meta(
     self: torch.Tensor,
     self_zero_point: int,
@@ -230,7 +239,7 @@ def quantized_mul_meta(
     return torch.empty_like(output_tensor)
 
 
-@impl(lib, "quantized_mul", "CompositeExplicitAutograd")
+@impl(lib, "quantized_mul", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_mul_impl(
     self: torch.Tensor,
     self_zero_point: int,
@@ -256,13 +265,99 @@ def quantized_mul_impl(
 
 
 # ===================================================================
+# QUANTIZED ACTIVATION (LUT) OPERATION DEFINITION
+# ===================================================================
+# Generic table-lookup activation. The 256-entry int8 LUT is precomputed AoT
+# from the input/output qparams and the activation function (sigmoid, tanh,
+# silu, ...), so the kernel is identical regardless of which activation it
+# evaluates: out[i] = lut[input[i] + 128].
+lib.define("quantized_activation(Tensor input, Tensor lut) -> Tensor")
+lib.define(
+    "quantized_activation.out(Tensor input, Tensor lut, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_activation")  # type: ignore[misc]
+def quantized_activation_meta(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    assert input.dtype == torch.int8, "quantized_activation input must be int8"
+    assert lut.dtype == torch.int8 and lut.numel() == 256, (
+        "quantized_activation lut must be int8 with 256 entries; "
+        f"got dtype={lut.dtype}, numel={lut.numel()}"
+    )
+    return torch.empty_like(input)
+
+
+@impl(lib, "quantized_activation", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_activation_impl(input: torch.Tensor, lut: torch.Tensor) -> torch.Tensor:
+    indices = input.to(torch.int32) + 128
+    return lut[indices].to(torch.int8)
+
+
+# ===================================================================
+# QUANTIZED BATCH MATMUL OPERATION DEFINITION
+# ===================================================================
+lib.define(
+    "quantized_batch_matmul("
+    "Tensor lhs, int lhs_zero_point, "
+    "Tensor rhs_transposed, int rhs_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_batch_matmul.out("
+    "Tensor lhs, int lhs_zero_point, "
+    "Tensor rhs_transposed, int rhs_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "Tensor scratch, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_batch_matmul")  # type: ignore[misc]
+def quantized_batch_matmul_meta(
+    lhs: torch.Tensor,
+    lhs_zero_point: int,
+    rhs_transposed: torch.Tensor,
+    rhs_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    batch, lhs_rows, inner = lhs.shape
+    batch_rhs, rhs_cols, inner_rhs = rhs_transposed.shape
+    assert batch == batch_rhs and inner == inner_rhs
+    return torch.empty((batch, lhs_rows, rhs_cols), dtype=torch.int8, device=lhs.device)
+
+
+@impl(lib, "quantized_batch_matmul", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_batch_matmul_impl(
+    lhs: torch.Tensor,
+    lhs_zero_point: int,
+    rhs_transposed: torch.Tensor,
+    rhs_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    # Offsets are negated zero points (CMSIS-NN convention)
+    lhs_fp = lhs.to(torch.float32) + float(lhs_zero_point)
+    rhs_t_fp = rhs_transposed.to(torch.float32) + float(rhs_zero_point)
+    rhs_fp = rhs_t_fp.permute(0, 2, 1)
+    acc = torch.bmm(lhs_fp, rhs_fp).to(torch.int32)
+    result = requantize_cmsis(acc, output_multiplier, output_shift)
+    return torch.clamp(result + output_zero_point, -128, 127).to(torch.int8)
+
+
+# ===================================================================
 # MINIMUM/MAXIMUM OPERATION DEFINITIONS
 # ===================================================================
 lib.define("minimum(Tensor self, Tensor other) -> Tensor")
 lib.define("minimum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)")
 
 
-@register_fake("cortex_m::minimum")
+@register_fake("cortex_m::minimum")  # type: ignore[misc]
 def minimum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
     # other is a scalar, so use initial shape.
     if other.numel() == 1:
@@ -276,7 +371,7 @@ def minimum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
         )
 
 
-@impl(lib, "minimum", "CompositeExplicitAutograd")
+@impl(lib, "minimum", "CompositeExplicitAutograd")  # type: ignore[misc]
 def minimum_impl(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
     return torch.minimum(self, other)
 
@@ -285,7 +380,7 @@ lib.define("maximum(Tensor self, Tensor other) -> Tensor")
 lib.define("maximum.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)")
 
 
-@register_fake("cortex_m::maximum")
+@register_fake("cortex_m::maximum")  # type: ignore[misc]
 def maximum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
     assert self.dtype == other.dtype, (
         "Cortex-M maximum: dtype mismatch — "
@@ -303,7 +398,7 @@ def maximum_meta(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
         )
 
 
-@impl(lib, "maximum", "CompositeExplicitAutograd")
+@impl(lib, "maximum", "CompositeExplicitAutograd")  # type: ignore[misc]
 def maximum_impl(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
     return torch.maximum(self, other)
 
@@ -348,19 +443,19 @@ lib.define(
 
 
 # Fake meta function for shape inference (functional variant)
-@register_fake("cortex_m::quantized_linear")
+@register_fake("cortex_m::quantized_linear")  # type: ignore[misc]
 def quantized_linear_meta(
-    input,
-    weights,
-    bias,
-    kernel_sum,
-    input_offset,
-    filter_offset,
-    output_offset,
-    requantize_multipliers,
-    requantize_shifts,
-    activation_max,
-    activation_min,
+    input: torch.Tensor,
+    weights: torch.Tensor,
+    bias: torch.Tensor | None,
+    kernel_sum: torch.Tensor | None,
+    input_offset: int,
+    filter_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_max: int,
+    activation_min: int,
 ) -> torch.Tensor:
 
     shape = (*input.shape[:-1], weights.shape[0])
@@ -368,12 +463,12 @@ def quantized_linear_meta(
 
 
 # Functional variant implementation
-@impl(lib, "quantized_linear", "CompositeExplicitAutograd")
+@impl(lib, "quantized_linear", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_linear_impl(
     input: torch.Tensor,
     weights: torch.Tensor,
-    bias: torch.Tensor,
-    kernel_sum: torch.Tensor,
+    bias: torch.Tensor | None,
+    kernel_sum: torch.Tensor | None,
     input_offset: int,
     filter_offset: int,
     output_offset: int,
@@ -386,10 +481,11 @@ def quantized_linear_impl(
     Functional variant - creates output tensor and calls out variant
     """
 
-    # Leaving both implementations for debugging purposes.
-    compute_using_kernel_sum = True
-
-    if compute_using_kernel_sum:
+    # Mirror CMSIS-NN's arm_fully_connected_s8 contract: the MVE path reads
+    # kernel_sum (ctx.buf) and ignores bias; the DSP and scalar paths read
+    # bias and ignore kernel_sum. The AOT pass populates exactly one of them
+    # based on the target ISA, so dispatch off which one is present.
+    if kernel_sum is not None:
         weights_int32 = weights.to(torch.int32)
 
         input_int32 = input.to(torch.int32)
@@ -414,7 +510,9 @@ def quantized_linear_impl(
         output_reshaped = output.reshape(output_shape)
 
     output = requantize_cmsis(
-        output_reshaped, requantize_multipliers[0], requantize_shifts[0]
+        output_reshaped,
+        int(requantize_multipliers[0]),
+        int(requantize_shifts[0]),
     )
     output += output_offset
     output = torch.clamp(output, activation_min, activation_max).to(torch.int8)
@@ -433,7 +531,7 @@ lib.define(
 )
 
 
-@register_fake("cortex_m::softmax")
+@register_fake("cortex_m::softmax")  # type: ignore[misc]
 def softmax_meta(
     input: torch.Tensor,
     dim: int,
@@ -446,7 +544,7 @@ def softmax_meta(
     return torch.empty_like(input, dtype=torch.int8)
 
 
-@impl(lib, "softmax", "CompositeExplicitAutograd")
+@impl(lib, "softmax", "CompositeExplicitAutograd")  # type: ignore[misc]
 def softmax_impl(
     input: torch.Tensor,
     dim: int,
@@ -487,15 +585,74 @@ lib.define("transpose(Tensor input, int[] perm) -> Tensor")
 lib.define("transpose.out(Tensor input, int[] perm, *, Tensor(a!) out) -> Tensor(a!)")
 
 
-@register_fake("cortex_m::transpose")
-def transpose_meta(input: torch.Tensor, perm) -> torch.Tensor:
+@register_fake("cortex_m::transpose")  # type: ignore[misc]
+def transpose_meta(input: torch.Tensor, perm: Sequence[int]) -> torch.Tensor:
     output_shape = [input.shape[idx] for idx in perm]
     return torch.empty(output_shape, dtype=input.dtype, device=input.device)
 
 
-@impl(lib, "transpose", "CompositeExplicitAutograd")
-def transpose_impl(input: torch.Tensor, perm) -> torch.Tensor:
+@impl(lib, "transpose", "CompositeExplicitAutograd")  # type: ignore[misc]
+def transpose_impl(input: torch.Tensor, perm: Sequence[int]) -> torch.Tensor:
     return input.permute(tuple(perm)).contiguous()
+
+
+# ===================================================================
+# PAD OPERATION DEFINITION
+# ===================================================================
+lib.define("pad(Tensor input, int[] pre_pad, int[] post_pad, int pad_value) -> Tensor")
+lib.define(
+    "pad.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+_NHWC_INV_ORDER = [0, 3, 1, 2]
+
+
+def _pad_to_logical_order(physical_pad: list[int], input: torch.Tensor) -> list[int]:
+    """Inverse of _to_physical_order: map physical-order padding back to logical."""
+    if not is_channels_last(input):
+        return list(physical_pad)
+    return [physical_pad[_NHWC_INV_ORDER[i]] for i in range(4)]
+
+
+@register_fake("cortex_m::pad")  # type: ignore[misc]
+def pad_meta(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    rank = input.dim()
+    offset = 4 - rank
+    logical_pre = _pad_to_logical_order(pre_pad, input)
+    logical_post = _pad_to_logical_order(post_pad, input)
+
+    output_shape = list(input.shape)
+    for i in range(rank):
+        output_shape[i] += logical_pre[offset + i] + logical_post[offset + i]
+    result = torch.empty(output_shape, dtype=input.dtype, device=input.device)
+    if is_channels_last(input):
+        result = result.to(memory_format=torch.channels_last)
+    return result
+
+
+@impl(lib, "pad", "CompositeExplicitAutograd")  # type: ignore[misc]
+def pad_impl(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    rank = input.dim()
+    offset = 4 - rank
+    logical_pre = _pad_to_logical_order(pre_pad, input)
+    logical_post = _pad_to_logical_order(post_pad, input)
+
+    padding = []
+    for i in reversed(range(rank)):
+        padding.extend([logical_pre[offset + i], logical_post[offset + i]])
+    return F.pad(input, padding, mode="constant", value=pad_value)
 
 
 # ===================================================================
@@ -515,7 +672,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -534,6 +692,7 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
@@ -596,7 +755,7 @@ def _compute_depthwise_conv2d_output_shape(
     return torch.Size([batch, out_channels, out_height, out_width])
 
 
-@register_fake("cortex_m::quantized_conv2d")
+@register_fake("cortex_m::quantized_conv2d")  # type: ignore[misc]
 def quantized_conv2d_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -610,6 +769,7 @@ def quantized_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -625,7 +785,7 @@ def quantized_conv2d_meta(
     )
 
 
-@impl(lib, "quantized_conv2d", "CompositeExplicitAutograd")
+@impl(lib, "quantized_conv2d", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_conv2d_impl(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -639,6 +799,7 @@ def quantized_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError("quantized_conv2d expects 4D input and weight tensors")
@@ -707,7 +868,8 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 
@@ -727,12 +889,13 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
     "*, Tensor(a!) out"
     ") -> Tensor(a!)"
 )
 
 
-@register_fake("cortex_m::quantized_depthwise_conv2d")
+@register_fake("cortex_m::quantized_depthwise_conv2d")  # type: ignore[misc]
 def quantized_depthwise_conv2d_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -747,6 +910,7 @@ def quantized_depthwise_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -762,7 +926,7 @@ def quantized_depthwise_conv2d_meta(
     )
 
 
-@impl(lib, "quantized_depthwise_conv2d", "CompositeExplicitAutograd")
+@impl(lib, "quantized_depthwise_conv2d", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_depthwise_conv2d_impl(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -777,6 +941,7 @@ def quantized_depthwise_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     if input.dim() != 4 or weight.dim() != 4:
         raise RuntimeError(
@@ -850,7 +1015,9 @@ lib.define(
     "Tensor requantize_multipliers, "
     "Tensor requantize_shifts, "
     "int activation_min, "
-    "int activation_max"
+    "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch"
     ") -> Tensor"
 )
 
@@ -869,6 +1036,8 @@ lib.define(
     "Tensor requantize_shifts, "
     "int activation_min, "
     "int activation_max, "
+    "Tensor scratch, "
+    "Tensor output_scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -919,7 +1088,7 @@ def _compute_conv_transpose2d_output_shape(
     return torch.Size([batch, out_channels, out_height, out_width])
 
 
-@register_fake("cortex_m::quantized_transpose_conv2d")
+@register_fake("cortex_m::quantized_transpose_conv2d")  # type: ignore[misc]
 def quantized_transpose_conv2d_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -934,6 +1103,8 @@ def quantized_transpose_conv2d_meta(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     stride_vals = list(stride)
     padding_vals = list(padding)
@@ -957,7 +1128,7 @@ def quantized_transpose_conv2d_meta(
     )
 
 
-@impl(lib, "quantized_transpose_conv2d", "CompositeExplicitAutograd")
+@impl(lib, "quantized_transpose_conv2d", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_transpose_conv2d_impl(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -972,6 +1143,8 @@ def quantized_transpose_conv2d_impl(
     requantize_shifts: torch.Tensor,
     activation_min: int,
     activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
 ) -> torch.Tensor:
     """
     Reference implementation of quantized transposed convolution.
@@ -1044,7 +1217,8 @@ lib.define(
     "int[] padding, "
     "int zero_point, "
     "int multiplier, "
-    "int shift"
+    "int shift, "
+    "Tensor scratch"
     ") -> Tensor"
 )
 lib.define(
@@ -1056,11 +1230,12 @@ lib.define(
     "int zero_point, "
     "int multiplier, "
     "int shift, "
+    "Tensor scratch, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
 
-@register_fake("cortex_m::quantized_avg_pool2d")
+@register_fake("cortex_m::quantized_avg_pool2d")  # type: ignore[misc]
 def quantized_avg_pool2d_meta(
     input: torch.Tensor,
     kernel_size: Sequence[int],
@@ -1069,24 +1244,28 @@ def quantized_avg_pool2d_meta(
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
     padding_vals = _ensure_tuple2(padding)
-    dilation_vals = (1, 1)
-
-    output_shape = _compute_max_pool2d_output_shape(
-        input.shape, kernel, stride_vals, padding_vals, dilation_vals
+    output = F.avg_pool2d(
+        input.to(torch.float),
+        kernel,
+        stride=stride_vals,
+        padding=padding_vals,
+        ceil_mode=False,
+        count_include_pad=False,
     )
     return torch.empty(
-        output_shape,
+        output.shape,
         dtype=torch.int8,
         device=input.device,
         memory_format=torch.channels_last,
     )
 
 
-@impl(lib, "quantized_avg_pool2d", "CompositeExplicitAutograd")
+@impl(lib, "quantized_avg_pool2d", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_avg_pool2d_impl(
     input: torch.Tensor,
     kernel_size: Sequence[int],
@@ -1095,22 +1274,22 @@ def quantized_avg_pool2d_impl(
     zero_point: int,
     multiplier: int,
     shift: int,
+    scratch: torch.Tensor,
 ) -> torch.Tensor:
-
     dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
 
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
     padding_vals = _ensure_tuple2(padding)
 
-    # TODO: implement count_include_pad=True, ceil_mode=True, dilation != 1.
+    # TODO: implement dilation != 1.
     result = F.avg_pool2d(
         dequant_input,
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        count_include_pad=False,
         ceil_mode=False,
+        count_include_pad=False,
     )
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
     output = torch.clamp(result, -128, 127)
@@ -1187,7 +1366,7 @@ def _compute_max_pool2d_output_shape(
     return torch.Size([batch, channels, out_height, out_width])
 
 
-@register_fake("cortex_m::quantized_max_pool2d")
+@register_fake("cortex_m::quantized_max_pool2d")  # type: ignore[misc]
 def quantized_max_pool2d_meta(
     input: torch.Tensor,
     kernel_size: Sequence[int],
@@ -1216,7 +1395,7 @@ def quantized_max_pool2d_meta(
     )
 
 
-@impl(lib, "quantized_max_pool2d", "CompositeExplicitAutograd")
+@impl(lib, "quantized_max_pool2d", "CompositeExplicitAutograd")  # type: ignore[misc]
 def quantized_max_pool2d_impl(
     input: torch.Tensor,
     kernel_size: Sequence[int],

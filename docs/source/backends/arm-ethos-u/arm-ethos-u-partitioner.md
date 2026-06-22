@@ -8,7 +8,7 @@ class EthosUPartitioner(compile_spec: executorch.backends.arm.ethosu.compile_spe
 Partitions subgraphs supported by the Arm Ethos-U backend.
 
 Args:
-- **compile_spec**: List of CompileSpec objects for Ethos-U backend.
+- **compile_spec**: EthosUCompileSpec object for configuring the lowering.
 - **additional_checks**: Optional sequence of additional operator support checks.
 
 ```python
@@ -45,3 +45,9 @@ Args:
 Returns:
 - **PartitionResult**: The input program with nodes tagged for delegation
     and a mapping of partition tags to delegation specs.
+
+```python
+def EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
+```
+Register a custom op to be considered supported by this
+partitioner.

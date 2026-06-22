@@ -21,43 +21,25 @@ void resize_where_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
   const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef in = args.at(1).refs.at(0);
 
-  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
-  graph->virtual_resize(out, in_sizes);
+  std::vector<int64_t> out_sizes;
+  for (const ValueRef ref : args.at(1).refs) {
+    if (!graph->val_is_tensor(ref)) {
+      continue;
+    }
+    const std::vector<int64_t> s = graph->sizes_of(ref);
+    if (s.size() > out_sizes.size()) {
+      out_sizes.resize(s.size(), 1);
+    }
+    const size_t offset = out_sizes.size() - s.size();
+    for (size_t i = 0; i < s.size(); i++) {
+      out_sizes[offset + i] = std::max(out_sizes[offset + i], s[i]);
+    }
+  }
+  graph->virtual_resize(out, out_sizes);
 }
 
-void add_where_texture_node(
-    ComputeGraph& graph,
-    const ValueRef cond,
-    const ValueRef self,
-    const ValueRef other,
-    const ValueRef out) {
-  std::string kernel_name = "where";
-
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
-      // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{cond, self, other}, vkapi::kRead}},
-      // Parameter buffers
-      {graph.logical_limits_ubo(self)},
-      // Push Constants
-      {},
-      // Specialization Constants
-      {graph.hashed_layout_of(out)},
-      // Resize Arguments
-      {},
-      // Resizing Logic
-      resize_where_node));
-}
-
-void add_where_buffer_node(
+void add_where_node(
     ComputeGraph& graph,
     const ValueRef cond,
     const ValueRef self,
@@ -69,11 +51,10 @@ void add_where_buffer_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   vkapi::ParamsBindList ubos = {
-      graph.numel_ubo(out),
-      graph.strides_ubo(out),
-      graph.strides_ubo(cond),
-      graph.strides_ubo(self),
-      graph.strides_ubo(other)};
+      graph.meta_ubo(out),
+      graph.meta_ubo(cond),
+      graph.meta_ubo(self),
+      graph.meta_ubo(other)};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -87,7 +68,10 @@ void add_where_buffer_node(
       // Push Constants
       {},
       // Specialization Constants
-      {graph.hashed_layout_of(out)},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(cond),
+       graph.hashed_layout_of(self),
+       graph.hashed_layout_of(other)},
       // Resize Arguments
       {},
       // Resizing Logic
@@ -100,11 +84,7 @@ void where(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef self = args[args_i++];
   const ValueRef other = args[args_i++];
   const ValueRef out = args[args_i++];
-  if (graph.is_buffer_storage(out)) {
-    add_where_buffer_node(graph, cond, self, other, out);
-  } else {
-    add_where_texture_node(graph, cond, self, other, out);
-  }
+  add_where_node(graph, cond, self, other, out);
 }
 
 REGISTER_OPERATORS {

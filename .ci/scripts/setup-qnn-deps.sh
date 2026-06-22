@@ -12,3 +12,4 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_q
 setup_libcpp 12
 setup_android_ndk
 install_qnn
+pip install -r backends/qualcomm/requirements.txt

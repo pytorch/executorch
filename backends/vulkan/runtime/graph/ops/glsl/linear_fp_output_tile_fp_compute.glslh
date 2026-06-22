@@ -21,6 +21,12 @@
 #include "linear_fp_per_out_channel_params.glslh"
 #include "linear_fp_weight_tile.glslh"
 
+#if defined(LINEAR_FP_WEIGHT_TILE_VEC4_T_IS_DEFAULT) == defined(LINEAR_FP_OUTPUT_TILE_VEC4_T_IS_DEFAULT)
+#define MAYBE_CAST_WVEC4(x) (x)
+#else
+#define MAYBE_CAST_WVEC4(x) LINEAR_FP_OUTPUT_TILE_VEC4_T(x)
+#endif
+
 void fp_accumulate_with_fp_weight(
     inout FPOutTile accum,
     FPInputTile in_tile,
@@ -29,23 +35,23 @@ void fp_accumulate_with_fp_weight(
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
         accum.data[m][n4] =
-            fma(VEC4_T(in_tile.data[m][k4][0]),
-                w_tile.data[mul_4(k4)][n4],
+            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][0]),
+                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4)][n4]),
                 accum.data[m][n4]);
 
         accum.data[m][n4] =
-            fma(VEC4_T(in_tile.data[m][k4][1]),
-                w_tile.data[mul_4(k4) + 1][n4],
+            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][1]),
+                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 1][n4]),
                 accum.data[m][n4]);
 
         accum.data[m][n4] =
-            fma(VEC4_T(in_tile.data[m][k4][2]),
-                w_tile.data[mul_4(k4) + 2][n4],
+            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][2]),
+                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 2][n4]),
                 accum.data[m][n4]);
 
         accum.data[m][n4] =
-            fma(VEC4_T(in_tile.data[m][k4][3]),
-                w_tile.data[mul_4(k4) + 3][n4],
+            fma(LINEAR_FP_OUTPUT_TILE_VEC4_T(in_tile.data[m][k4][3]),
+                MAYBE_CAST_WVEC4(w_tile.data[mul_4(k4) + 3][n4]),
                 accum.data[m][n4]);
       }
     }
@@ -69,6 +75,16 @@ void apply_weight_scales_and_biases(
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       tile.data[m][n4] = tile.data[m][n4] * scales.data[n4] + bias.data[n4];
+    }
+  }
+}
+
+void add_bias_to_out_tile(
+    inout FPOutTile tile,
+    const FPPerOutChannelParams bias) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      tile.data[m][n4] = tile.data[m][n4] + bias.data[n4];
     }
   }
 }

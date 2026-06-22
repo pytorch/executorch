@@ -17,6 +17,7 @@
 #include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/runner/text_token_generator.h>
+#include <executorch/extension/memory_allocator/cpu_caching_malloc_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
@@ -122,7 +123,10 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
 
     if (method_names.count(method_name)) {
       auto get_result = module->get(method_name);
-      value = get_result.get().toScalar().to<decltype(metadata)::mapped_type>();
+      if (!get_result.ok()) {
+        return get_result.error();
+      }
+      value = get_result->toScalar().to<decltype(metadata)::mapped_type>();
     } else {
       ET_LOG(
           Info,
@@ -182,18 +186,29 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path,
-    float temperature) {
+    float temperature,
+    const std::string& method_name,
+    Module::LoadMode load_mode) {
   if (data_path.has_value()) {
     std::vector<std::string> data_files;
     data_files.push_back(data_path.value());
     return create_text_llm_runner(
-        model_path, std::move(tokenizer), std::move(data_files), temperature);
+        model_path,
+        std::move(tokenizer),
+        std::move(data_files),
+        temperature,
+        nullptr,
+        method_name,
+        load_mode);
   }
   return create_text_llm_runner(
       model_path,
       std::move(tokenizer),
       std::vector<std::string>(),
-      temperature);
+      temperature,
+      nullptr,
+      method_name,
+      load_mode);
 }
 
 std::unique_ptr<TextLLMRunner> create_text_llm_runner(
@@ -201,7 +216,9 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::vector<std::string> data_files,
     float temperature,
-    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer) {
+    std::unique_ptr<::executorch::runtime::EventTracer> event_tracer,
+    const std::string& method_name,
+    Module::LoadMode load_mode) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -210,15 +227,28 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 
   // Create the Module
   std::unique_ptr<Module> module;
+  uint32_t max_cached_memory_size_bytes_ = 1024 * 1024 * 10; // 10MB
   if (data_files.size() > 0) {
     module = std::make_unique<Module>(
         model_path,
         data_files,
-        Module::LoadMode::File,
-        std::move(event_tracer));
+        load_mode,
+        std::move(event_tracer),
+        nullptr, // memory allocator
+        std::make_unique<
+            executorch::extension::CPUCachingAllocator>( // temp memory
+                                                         // allocator
+            max_cached_memory_size_bytes_));
   } else {
     module = std::make_unique<Module>(
-        model_path, Module::LoadMode::File, std::move(event_tracer));
+        model_path,
+        load_mode,
+        std::move(event_tracer), // event tracer
+        nullptr, // memory allocator
+        std::make_unique<
+            executorch::extension::CPUCachingAllocator>( // temp memory
+                                                         // allocator
+            max_cached_memory_size_bytes_));
   }
 
   // Get metadata from Module
@@ -236,10 +266,15 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   // Create IOManager
   std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
 
-  // Create text_decoder_runner. Use a shared_ptr so that it can be shared with
-  // TextPrefiller and TextTokenGenerator
-  auto text_decoder_runner =
-      std::make_unique<TextDecoderRunner>(module.get(), io_manager.get());
+  // Read vocab_size for Sampler
+  int32_t vocab_size = static_cast<int32_t>(metadata.at(kVocabSize));
+  float init_temp = temperature == -1.0f ? 0.0f : temperature;
+  auto sampler = std::make_unique<Sampler>(vocab_size, init_temp);
+
+  // Create text_decoder_runner
+  ET_LOG(Info, "Using method: %s", method_name.c_str());
+  auto text_decoder_runner = std::make_unique<TextDecoderRunner>(
+      module.get(), io_manager.get(), method_name, std::move(sampler));
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
@@ -304,9 +339,13 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
   // Create IOManager
   std::unique_ptr<IOManager> io_manager = std::make_unique<IOManager>(*module);
 
+  // Read vocab_size for Sampler
+  int32_t vocab_size = static_cast<int32_t>(metadata.at(kVocabSize));
+  auto sampler = std::make_unique<Sampler>(vocab_size, 0.0f); // Default temp
+
   // Create text_decoder_runner
-  auto text_decoder_runner =
-      std::make_unique<MultimodalDecoderRunner>(module.get(), io_manager.get());
+  auto text_decoder_runner = std::make_unique<MultimodalDecoderRunner>(
+      module.get(), io_manager.get(), "forward", std::move(sampler));
 
   // Create multimodal_prefiller
   auto multimodal_prefiller = std::make_unique<MultimodalPrefiller>(

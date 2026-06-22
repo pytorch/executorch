@@ -15,6 +15,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace executorch {
@@ -162,6 +163,27 @@ inline bool is_contiguous_tensor(
   }
   return true;
 }
+
+// Scope guard: invokes a callable on destruction. Equivalent to
+// std::scope_exit (C++23 <scope>), which is not available in C++17/20.
+template <typename F>
+class ScopeGuard {
+ public:
+  static_assert(
+      noexcept(std::declval<F&>()()),
+      "ScopeGuard callable must be noexcept to avoid std::terminate "
+      "if it throws during stack unwinding");
+
+  explicit ScopeGuard(F&& fn) : fn_(std::move(fn)) {}
+  ~ScopeGuard() noexcept {
+    fn_();
+  }
+  ScopeGuard(const ScopeGuard&) = delete;
+  ScopeGuard& operator=(const ScopeGuard&) = delete;
+
+ private:
+  F fn_;
+};
 
 } // namespace aoti
 } // namespace backends

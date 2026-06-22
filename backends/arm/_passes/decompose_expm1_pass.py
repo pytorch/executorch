@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_int_pow_pass import DecomposeIntPowPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
@@ -22,9 +22,8 @@ edge_expm1_ops = (exir_ops.edge.aten.expm1.default,)  # MI case
 
 
 def _get_expm1_decomposition(op) -> tuple:
-    """
-    Returns the decomposition of the given aten.expm1 operation into
-    its equivalent TOSA-supported operations
+    """Returns the decomposition of the given aten.expm1 operation into its
+    equivalent TOSA-supported operations.
 
     This handles both edge dialect ops and core PyTorch ops. The decomposition strategy
     is:
@@ -38,6 +37,7 @@ def _get_expm1_decomposition(op) -> tuple:
 
     Raises:
         RuntimeError: If the provided operator is not a supported elu variant.
+
     """
     if op in edge_expm1_ops:
         return (
@@ -55,9 +55,8 @@ def _get_expm1_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get expm1 decomposition for op {op}")
 
 
-class DecomposeExpm1Pass(ArmPass):
-    """
-    A transformation pass that decomposes unsupported 'aten.expm1' operations
+class DecomposeExpm1Pass(ArmOpTargetedPass):
+    """A transformation pass that decomposes unsupported 'aten.expm1' operations
     into a combination of supported TOSA-equivalent operations.
 
     Since TOSA does not provide a native expm1 operator, this pass rewrites:
@@ -77,6 +76,7 @@ class DecomposeExpm1Pass(ArmPass):
         - exir_ops.edge.aten.where.self,
         - exir_ops.edge.aten.le.Scalar,
         - exir_ops.edge.aten.logical_and.default
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -87,16 +87,13 @@ class DecomposeExpm1Pass(ArmPass):
         MatchArgDtypePass,
         MatchArgRanksPass,
     }
+    target_ops = edge_expm1_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in edge_expm1_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 

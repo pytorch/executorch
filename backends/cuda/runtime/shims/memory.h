@@ -60,6 +60,20 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     int64_t opaque_metadata_size);
 
 /**
+ * Legacy create-from-blob API without layout/metadata.
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_create_tensor_from_blob(
+    void* data,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor);
+
+/**
  * Creates an uninitialized tensor with specified dimensions, strides, and
  * dtype on either CPU or CUDA device.
  *
@@ -108,6 +122,16 @@ aoti_torch_delete_tensor_object(SlimTensor* tensor);
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_new_tensor_handle(SlimTensor* orig_handle, SlimTensor** new_handle);
+
+/**
+ * Clone APIs.
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_clone_preserve_strides(
+    SlimTensor* self,
+    SlimTensor** ret_new_tensor);
+
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_clone(SlimTensor* self, SlimTensor** ret_new_tensor);
 
 /**
  * Creates a reinterpreted view of a tensor with new sizes, strides, and offset.
@@ -172,6 +196,15 @@ aoti_torch_item_bool(SlimTensor* tensor, bool* ret_value);
  */
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_assign_tensors_out(SlimTensor* src, SlimTensor** ret_dst);
+
+/**
+ * Logging helper used by some AOTI-generated code.
+ */
+AOTI_SHIM_EXPORT void aoti_torch_warn(
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg);
 
 } // extern "C"
 

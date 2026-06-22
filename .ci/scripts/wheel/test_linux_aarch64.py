@@ -12,6 +12,20 @@ if __name__ == "__main__":
     # coremltools does not support linux aarch64 yet and install from the source fails on runtime
     # https://github.com/apple/coremltools/issues/1254
     # https://github.com/apple/coremltools/issues/2195
+
+    from executorch.extension.pybindings.portable_lib import (
+        _get_registered_backend_names,
+    )
+
+    registered = _get_registered_backend_names()
+
+    # OpenVINO backend uses dlopen (no build-time SDK dependency), so it
+    # is compiled into the wheel on all Linux architectures.
+    assert (
+        "OpenvinoBackend" in registered
+    ), f"OpenvinoBackend not found in registered backends: {registered}"
+    print("✓ OpenvinoBackend is registered")
+
     test_base.run_tests(
         model_tests=[
             test_base.ModelTest(

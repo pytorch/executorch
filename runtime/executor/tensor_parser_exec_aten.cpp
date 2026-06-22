@@ -41,6 +41,10 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
     const executorch_flatbuffer::AllocationDetails* allocation_info,
     size_t nbytes,
     HierarchicalAllocator* allocator) {
+  ET_CHECK_OR_RETURN_ERROR(
+      allocator != nullptr,
+      InvalidState,
+      "HierarchicalAllocator must not be null for memory-planned tensor");
   // Normal non-constant Tensor. Allocate data using mem_id and offset.
 
   // TODO(T142455629): make the allocator actually id based and not indexed
@@ -98,10 +102,15 @@ ET_NODISCARD Result<BoxedEvalueList<executorch::aten::Tensor>> parseTensorList(
         "Invalid value index %" PRId32 " for TensorList",
         tensor_index);
 
+    auto tensor_result =
+        values[static_cast<size_t>(tensor_index)].tryToTensor();
+    if (!tensor_result.ok()) {
+      return tensor_result.error();
+    }
     // Placement new as the list elements are not initialized, so calling
     // copy assignment is not defined if it's non trivial.
-    new (&tensor_list[output_idx]) executorch::aten::Tensor(
-        values[static_cast<size_t>(tensor_index)].toTensor());
+    new (&tensor_list[output_idx])
+        executorch::aten::Tensor(std::move(tensor_result.get()));
     evalp_list[output_idx] = &values[static_cast<size_t>(tensor_index)];
     output_idx++;
   }
@@ -120,6 +129,12 @@ ET_NODISCARD Error validateTensorLayout(
       "Scalar type mismatch. Expected %hhd, got %hhd.",
       static_cast<int8_t>(s_tensor->scalar_type()),
       static_cast<int8_t>(expected_layout.scalar_type()));
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->sizes() != nullptr, InvalidExternalData, "Missing sizes field");
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order() != nullptr,
+      InvalidExternalData,
+      "Missing dim_order field");
   int dim = s_tensor->sizes()->size();
   ET_CHECK_OR_RETURN_ERROR(
       dim >= 0, InvalidExternalData, "Dim is negative: %d", dim)
@@ -129,6 +144,12 @@ ET_NODISCARD Error validateTensorLayout(
       "Dim mismatch. Expected %d, got %zu.",
       dim,
       expected_layout.sizes().size());
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order()->size() == static_cast<size_t>(dim),
+      InvalidExternalData,
+      "Dim order size mismatch. Expected %d, got %u.",
+      dim,
+      s_tensor->dim_order()->size());
   for (int i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
         s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
@@ -159,6 +180,14 @@ NamedData* get_data_by_key(const char* key, Span<NamedData> entries) {
   return nullptr;
 }
 
+// Suppress a GCC 11 false positive -Wstringop-overread triggered by
+// flatbuffers' GetPointer inlining into string_view construction.
+// Guarded to GCC >= 11 since the warning doesn't exist on older GCC or Clang.
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 11
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
+
 ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
@@ -169,6 +198,13 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
   auto data_buffer_idx = s_tensor->data_buffer_idx();
   const executorch_flatbuffer::AllocationDetails* allocation_info =
       s_tensor->allocation_info();
+
+  if (allocation_info != nullptr) {
+    ET_CHECK_OR_RETURN_ERROR(
+        allocator != nullptr,
+        InvalidState,
+        "HierarchicalAllocator is null but tensor has allocation_info requiring memory-planned buffers");
+  }
 
   // External tensors.
   if (s_tensor->extra_tensor_info() != nullptr &&
@@ -258,6 +294,10 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     return nullptr;
   }
 }
+
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 11
+#pragma GCC diagnostic pop
+#endif
 
 } // namespace deserialization
 } // namespace ET_RUNTIME_NAMESPACE

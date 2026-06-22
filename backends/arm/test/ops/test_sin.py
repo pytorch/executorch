@@ -22,16 +22,20 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 
 test_data_suite = {
     # (test_name, test_data)
-    "zeros": torch.zeros(10, 10, 10, 10),
-    "ones": torch.ones(10, 10, 10),
-    "rand": torch.rand(10, 10) - 0.5,
-    "randn_pos": torch.randn(10) + 10,
-    "randn_neg": torch.randn(10) - 10,
-    "ramp": torch.arange(-16, 16, 0.2),
+    "zeros": lambda: torch.zeros(10, 10, 10, 10),
+    "ones": lambda: torch.ones(10, 10, 10),
+    "rand": lambda: torch.rand(10, 10) - 0.5,
+    "randn_pos": lambda: torch.randn(10) + 10,
+    "randn_neg": lambda: torch.randn(10) - 10,
+    "ramp": lambda: torch.arange(-16, 16, 0.2),
+}
+
+test_data_suite_fp16 = {
+    "rand_fp16": lambda: torch.rand(10, 10, dtype=torch.float16),
 }
 
 test_data_suite_bf16 = {
-    "rand_bf16": torch.rand(3, 3, dtype=torch.bfloat16),
+    "rand_bf16": lambda: torch.rand(3, 3, dtype=torch.bfloat16),
 }
 
 
@@ -41,11 +45,13 @@ class Sin(torch.nn.Module):
         return torch.sin(x)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_sin_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Sin(),
-        (test_data,),
+        (test_data(),),
         aten_op,
         exir_op=[],
         tosa_extensions=["bf16"],
@@ -57,7 +63,7 @@ def test_sin_tosa_FP(test_data: Tuple):
 def test_sin_tosa_INT(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t1](
         Sin(),
-        (test_data,),
+        (test_data(),),
         aten_op,
         exir_op=[],
     )
@@ -69,7 +75,7 @@ def test_sin_tosa_INT(test_data: Tuple):
 def test_sin_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sin(),
-        (test_data,),
+        (test_data(),),
         aten_op,
         exir_ops=[],
     )
@@ -81,19 +87,19 @@ def test_sin_u55_INT(test_data: Tuple):
 def test_sin_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sin(),
-        (test_data,),
+        (test_data(),),
         aten_op,
         exir_ops=[],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_sin_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sin(),
-        (test_data,),
+        (test_data(),),
         aten_op,
         quantize=False,
     )
@@ -105,7 +111,7 @@ def test_sin_vgf_no_quant(test_data: Tuple):
 def test_sin_vgf_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         Sin(),
-        (test_data,),
+        (test_data(),),
         aten_op,
         quantize=True,
     )

@@ -119,10 +119,19 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         visibility = ["PUBLIC"],
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = select({
+        # -Wno-missing-prototypes is Clang-only for C++; GCC (used by Zephyr
+        # ARM cross-compilation) rejects it with -Werror, so exclude it for
+        # Zephyr and Windows builds. OSS bypasses the zephyr branch via
+        # runtime.is_oss since ovr_config//os:zephyr is not in the OSS
+        # buck2 prelude.
+        compiler_flags = (select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
                 "ovr_config//os:windows": [],
-            }) + (
+                "ovr_config//os:zephyr": [],
+            }) if not runtime.is_oss else select({
+                "DEFAULT": ["-Wno-missing-prototypes"],
+                "ovr_config//os:windows": [],
+            })) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)
             # to library users. They should use kernels through registry only.
@@ -1333,6 +1342,15 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_var_mean",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+    ),
+    op_target(
         name = "op_view_as_real_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
@@ -1356,6 +1374,25 @@ ATEN_OPS = (
         name = "op_zeros",
     ),
     op_target(
+        name = "op__clone_dim_order",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op__adaptive_avg_pool2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op__conj_physical",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:functional_util",
+        ],
+    ),
+    op_target(
         name = "op__empty_dim_order",
         deps = [
             ":scalar_utils",
@@ -1369,10 +1406,9 @@ ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op__clone_dim_order",
+        name = "op__device_copy",
         deps = [
-            ":scalar_utils",
-            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/runtime/core:device_allocator",
         ],
     ),
 )

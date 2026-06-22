@@ -33,21 +33,29 @@ class TensorOpInfo:
 
 SCALAR_OPS = {
     aten.eq.Scalar: TensorOpInfo(aten.eq.Tensor, False, False),
+    aten.eq.Tensor: TensorOpInfo(aten.eq.Tensor, False, False),
     aten.ge.Scalar: TensorOpInfo(aten.ge.Tensor, False, False),
+    aten.ge.Tensor: TensorOpInfo(aten.ge.Tensor, False, False),
     aten.gt.Scalar: TensorOpInfo(aten.gt.Tensor, False, False),
+    aten.gt.Tensor: TensorOpInfo(aten.gt.Tensor, False, False),
     aten.le.Scalar: TensorOpInfo(aten.le.Tensor, False, False),
+    aten.le.Tensor: TensorOpInfo(aten.le.Tensor, False, False),
     aten.lt.Scalar: TensorOpInfo(aten.lt.Tensor, False, False),
+    aten.lt.Tensor: TensorOpInfo(aten.lt.Tensor, False, False),
     aten.ne.Scalar: TensorOpInfo(aten.ne.Tensor, False, False),
+    aten.ne.Tensor: TensorOpInfo(aten.ne.Tensor, False, False),
     aten.add.Scalar: TensorOpInfo(aten.add.Tensor, False, False),
     aten.add_.Scalar: TensorOpInfo(aten.add_.Tensor, False, False),
     # For below cases, refer to LiftAddTensor Model in UT for sample
     aten.add.Tensor: TensorOpInfo(aten.add.Tensor, False, False),
     aten.div.Scalar: TensorOpInfo(aten.div.Tensor, False, False),
+    aten.div.Scalar_mode: TensorOpInfo(aten.div.Tensor_mode, False, False),
     aten.mul.Scalar: TensorOpInfo(aten.mul.Tensor, False, False),
     aten.rsub.Scalar: TensorOpInfo(aten.rsub.Tensor, False, False),
     aten.sub.Scalar: TensorOpInfo(aten.sub.Tensor, False, False),
     aten.sub.Tensor: TensorOpInfo(aten.sub.Tensor, False, False),
     aten.pow.Tensor_Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
+    aten.pow.Scalar: TensorOpInfo(aten.pow.Tensor_Tensor, False, False),
     # The scalar number arg[1] is missing when using default. Result in a corner case to deal
     aten.leaky_relu.default: TensorOpInfo(aten.prelu.default, True, False),
     aten.leaky_relu_.default: TensorOpInfo(aten.prelu.default, True, False),
@@ -86,11 +94,14 @@ class LiftConstantScalarOperands(ExportPass):
     ) -> TensorConstant:
         # For dtype, in some cases, we cannot use node.args[0] as scalar dtype.
         # Ex: Where op args[0] can be bool, however, we probably want args[1] and args[2] to be dtype same as node.meta["val"] instead of bool type
+
+        first_arg = node.args[0]
         tensor = torch.tensor(
             const_val,
             dtype=(
-                node.args[0].meta["val"].dtype
-                if not is_float_tensor(node)
+                first_arg.meta["val"].dtype
+                if isinstance(first_arg, fx.Node)
+                and not is_float_tensor(node)
                 and (info := SCALAR_OPS.get(node.target))
                 and not info.use_self_dtype
                 else node.meta["val"].dtype
@@ -181,6 +192,5 @@ class LiftConstantScalarOperands(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._lift(graph_module)
-        graph_module.recompile()
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

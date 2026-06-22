@@ -2,9 +2,8 @@
 
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Tests 10 popular nn modules not tested in other ways or training-related.
 
-"""
-Tests 10 popular nn modules not tested in other ways or training related.
 - Embedding
 - LeakyReLU
 - BatchNorm1d
@@ -15,6 +14,7 @@ Tests 10 popular nn modules not tested in other ways or training related.
 - InstanceNorm2d
 - PReLU
 - Transformer
+
 """
 
 from typing import Callable
@@ -150,7 +150,14 @@ def test_nn_modules_tosa_FP(test_data):
 )
 def test_nn_modules_tosa_INT(test_data):
     module, inputs, kwargs = test_data
-    pipeline = TosaPipelineINT[input_t](module, inputs, "", **kwargs)
+    pipeline = TosaPipelineINT[input_t](
+        module,
+        inputs,
+        "",
+        frobenius_threshold=None,
+        cosine_threshold=None,
+        **kwargs,
+    )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
     if pipeline.has_stage("check.quant_nodes"):

@@ -69,7 +69,7 @@ TensorIndex4D out_tidx_to_in_tidx(const TensorIndex4D out_tidx) {
 
   int adjusted_index = index;
   if (index < 0) {
-    adjusted_index = index + inp.sizes[selected_dim];
+    adjusted_index = index + safe_idx(inp.sizes, selected_dim);
   }
 
   // Handle different dimensions for selection

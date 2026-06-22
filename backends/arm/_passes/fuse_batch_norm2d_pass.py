@@ -27,8 +27,8 @@ from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
 class FuseBatchNorm2dPass(ArmPass):
-    """Fuses the pattern convolution -> batchnorm by updating
-    the weights and bias of the convolution and removing the batchnorm.
+    """Fuses the pattern convolution -> batchnorm by updating the weights and
+    bias of the convolution and removing the batchnorm.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -55,6 +55,10 @@ class FuseBatchNorm2dPass(ArmPass):
                 node.target
                 != exir_ops.edge.aten._native_batch_norm_legit_no_training.default
             ):
+                continue
+            if get_first_fake_tensor(node).dtype == torch.bfloat16:
+                # Don't fuse if the data type is bfloat16, as the fused weights may
+                # not be accurate enough and cause significant accuracy drop.
                 continue
 
             # Get data from batchnorm
@@ -153,8 +157,8 @@ class FuseBatchNorm2dPass(ArmPass):
                 if not (
                     (input_bias_node is None)
                     or (
-                        isinstance(input_weight_node, Node)
-                        and input_weight_node.op == "placeholder"
+                        isinstance(input_bias_node, Node)
+                        and input_bias_node.op == "placeholder"
                     )
                 ):
                     raise RuntimeError(

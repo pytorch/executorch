@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -193,7 +193,6 @@ def test_pixel_unshuffle_u55_INT(test_data: input_t1):
 @common.parametrize(
     "test_data",
     PixelUnShuffle.test_data_generators,
-    xfails={"rand_4d": "MLETORCH-1424: rand test fails"},
 )
 @common.XfailIfNoCorstone320
 def test_pixel_unshuffle_u85_INT(test_data: input_t1):
@@ -223,7 +222,6 @@ def test_pixel_shuffle_u55_INT(test_data: input_t1):
 @common.parametrize(
     "test_data",
     PixelShuffle.test_data_generators,
-    xfails={"rand_4d": "MLETORCH-1424: rand test fails"},
 )
 @common.XfailIfNoCorstone320
 def test_pixel_shuffle_u85_INT(test_data: input_t1):

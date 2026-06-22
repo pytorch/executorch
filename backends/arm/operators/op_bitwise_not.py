@@ -3,58 +3,28 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List
-
 import tosa_serializer as ts
 
-from executorch.backends.arm.operators.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
+from executorch.backends.arm.operators.node_visitor import register_node_visitor
+from executorch.backends.arm.operators.simple_node_visitor import (
+    SimpleNodeVisitor,
+    SimpleNodeVisitorConfig,
 )
-from executorch.backends.arm.operators.operator_validation_utils import (
-    validate_num_inputs,
-    validate_same_dtype,
-    validate_valid_dtype,
-)
-from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.specification import TosaSpecification
-from torch.fx import Node
+from executorch.backends.arm.tosa import TosaSpecification
+
+INT_SPECS = TosaSpecification.all_versions_for_profile("INT")
 
 
 @register_node_visitor
-class BitwiseNotVisitor(NodeVisitor):
+class BitwiseNotVisitor(SimpleNodeVisitor):
     target = "aten.bitwise_not.default"
+    tosa_specs = INT_SPECS
 
-    # bitwise_not is not supported on the FP profile
-    tosa_specs = TosaSpecification.all_versions_for_profile("INT")
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output], ts)
-        validate_valid_dtype(
-            self.target,
-            [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
-            self.tosa_spec,
-        )
-
-        attr = ts.TosaSerializerAttribute()
-        attr.BitwiseNotAttribute()
-
-        self._serialize_operator(
-            node,
-            tosa_graph,
-            ts.Op.BITWISE_NOT,
-            [inputs[0].name],
-            [output.name],
-            attr,
+    @classmethod
+    def get_config(cls) -> SimpleNodeVisitorConfig:
+        return SimpleNodeVisitorConfig(
+            tosa_op=ts.Op.BITWISE_NOT,
+            attr_method="BitwiseNotAttribute",
+            num_inputs=1,
+            input_dtypes=[ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
         )

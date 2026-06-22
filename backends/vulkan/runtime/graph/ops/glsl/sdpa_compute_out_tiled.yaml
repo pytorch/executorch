@@ -9,6 +9,7 @@ sdpa_compute_out_tiled:
     DTYPE: float
     IO_STORAGE: texture3d
     V_CACHE_STORAGE: texture3d
+    MODE: llm
     TILE_M4: 1
     TILE_K4: 1
     TILE_N4: 1
@@ -24,3 +25,15 @@ sdpa_compute_out_tiled:
       - VALUE: half
   shader_variants:
     - NAME: sdpa_compute_out_tiled
+    - NAME: fused_sdpa_av_tiled
+      MODE: fused
+      generate_variant_forall:
+        combination:
+          parameter_names: [IO_STORAGE, V_CACHE_STORAGE]
+          combos:
+            - parameter_values: [texture3d, texture3d]
+            - parameter_values: [buffer, texture3d]
+            - parameter_values: [buffer, buffer]
+        DTYPE:
+          - VALUE: float
+          - VALUE: half

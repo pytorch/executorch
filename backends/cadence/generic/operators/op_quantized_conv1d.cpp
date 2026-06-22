@@ -6,8 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/generic/operators/op_quantized_conv1d.h>
-
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/cadence_type_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -288,9 +286,9 @@ void quantized_conv1d_ncl(
         wc,                                                      \
         ww,                                                      \
         ow,                                                      \
-        stride[0],                                               \
-        padding[0],                                              \
-        dilation[0],                                             \
+        stride[stride.size() - 1],                               \
+        padding[padding.size() - 1],                             \
+        dilation[dilation.size() - 1],                           \
         groups,                                                  \
         in_zero_point,                                           \
         weight_zero_point,                                       \
@@ -349,9 +347,9 @@ void quantized_conv1d_nlc(
         ww,                                                      \
         wc,                                                      \
         ow,                                                      \
-        stride[0],                                               \
-        padding[0],                                              \
-        dilation[0],                                             \
+        stride[stride.size() - 1],                               \
+        padding[padding.size() - 1],                             \
+        dilation[dilation.size() - 1],                           \
         groups,                                                  \
         in_zero_point,                                           \
         weight_zero_point,                                       \
@@ -372,142 +370,6 @@ void quantized_conv1d_nlc(
 }
 
 } // namespace
-
-Tensor& quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    ET_UNUSED int64_t out_multiplier,
-    ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv1d_ncl(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      static_cast<int16_t>(groups),
-      static_cast<int32_t>(in_zero_point),
-      static_cast<int32_t>(weight_zero_point),
-      static_cast<float>(bias_scale),
-      static_cast<float>(output_scale),
-      static_cast<int32_t>(output_zero_point),
-      out);
-  return out;
-}
-
-Tensor& quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    ET_UNUSED int64_t out_multiplier,
-    ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv1d_ncl(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      static_cast<int16_t>(groups),
-      static_cast<int32_t>(in_zero_point),
-      static_cast<int32_t>(weight_zero_point),
-      static_cast<float>(bias_scale),
-      static_cast<float>(output_scale),
-      static_cast<int32_t>(output_zero_point),
-      out);
-  return out;
-}
-
-Tensor& quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    ET_UNUSED int64_t out_multiplier,
-    ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv1d_nlc(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      static_cast<int16_t>(groups),
-      static_cast<int32_t>(in_zero_point),
-      static_cast<int32_t>(weight_zero_point),
-      static_cast<float>(bias_scale),
-      static_cast<float>(output_scale),
-      static_cast<int32_t>(output_zero_point),
-      out);
-  return out;
-}
-
-Tensor& quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    ET_UNUSED int64_t out_multiplier,
-    ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv1d_nlc(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      static_cast<int16_t>(groups),
-      static_cast<int32_t>(in_zero_point),
-      static_cast<int32_t>(weight_zero_point),
-      static_cast<float>(bias_scale),
-      static_cast<float>(output_scale),
-      static_cast<int32_t>(output_zero_point),
-      out);
-  return out;
-}
 
 } // namespace native
 } // namespace generic

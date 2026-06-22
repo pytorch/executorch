@@ -174,6 +174,10 @@ class MemoryPlanningPass(PassBase):
         self.share_mutable_buffers = share_mutable_buffers
         self.alignment = alignment
         self.state = _MemoryPlanningState()
+        # Set by EdgeProgramManager.to_executorch() from the top-level
+        # ExecutorchBackendConfig. When True, apply_algo partitions specs by
+        # device so non-CPU buffers get their own memory arenas.
+        self.enable_non_cpu_memory_planning: bool = False
 
     def _set_alloc_node_spec(self, graph_module: torch.fx.GraphModule) -> None:
         """
@@ -192,6 +196,13 @@ class MemoryPlanningPass(PassBase):
                     if len(out_arg_names) == 1:
                         out_alloc_node = node.kwargs[out_arg_names[0]]
                         out_alloc_node.meta["spec"] = node.meta["spec"]
+                        share_idx = node.meta.get("_share_alloc_with_arg_idx")
+                        if share_idx is not None and share_idx < len(node.args):
+                            input_node = node.args[share_idx]
+                            if isinstance(input_node, Node):
+                                base_spec = input_node.meta.get("spec")
+                                if isinstance(base_spec, TensorSpec):
+                                    node.meta["spec"].inplace_base = base_spec
                         continue
                     specs = get_node_tensor_specs(node)
                     i = 0
@@ -247,10 +258,10 @@ class MemoryPlanningPass(PassBase):
             graph_signature,
             self.alloc_graph_input,
             self.alloc_graph_output,
-            # If we are sharing the mutable buffers then do not allocate them in
-            # memory planning algo, instead collect all of the specs over all the entry
-            # points and then allocate them directly in the run_multimethod name call
+            # If mutable buffers are shared, then do not allocate them in the
+            # main memory planning algo; they are allocated in run_multimethod.
             self.alloc_mutable_buffers and not self.share_mutable_buffers,
+            self.enable_non_cpu_memory_planning,
         )
 
         if self.share_mutable_buffers and graph_signature is not None:
@@ -264,7 +275,10 @@ class MemoryPlanningPass(PassBase):
             graph_module,
             self.alloc_graph_input,
             self.alloc_graph_output,
-            self.alloc_mutable_buffers,
+            # If mutable buffers are shared, they are allocated after the
+            # main memory planning algo in run_multimethod, and should be
+            # skipped in the Verifier.
+            self.alloc_mutable_buffers and not self.share_mutable_buffers,
             graph_signature,
         )
 

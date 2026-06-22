@@ -5,6 +5,17 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 oncall("executorch")
 
 fbcode_target(_kind = runtime.python_library,
+    name = "ops_aliases",
+    srcs = [
+        "ops_aliases.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "models",
     srcs = [
         "models.py",
@@ -23,7 +34,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "//executorch/exir:lib",
         "//executorch/extension/export_util:export_util",
-        "//pytorch/ao:torchao",  
+        "//pytorch/ao:torchao",
         "//executorch/backends/nxp:quantizer",
         "//executorch/backends/nxp:neutron_backend",
         "//executorch/backends/nxp:edge_passes",
@@ -33,23 +44,115 @@ fbcode_target(_kind = runtime.python_library,
 fbcode_target(_kind = python_pytest,
     name = "test_quantizer",
     srcs = [
-        "test_quantizer.py",
+        "generic_tests/test_quantizer.py",
     ],
     deps = [
         "//executorch/backends/nxp:quantizer",
         "//caffe2:torch",
         "//executorch/backends/nxp/tests:models",
+        ":executorch_pipeline",
+        "fbsource//third-party/pypi/pytest-mock:pytest-mock",  # @manual
     ],
 )
 
 fbcode_target(_kind = python_pytest,
     name = "test_neutron_backend",
     srcs = [
-        "test_neutron_backend.py",
+        "generic_tests/test_neutron_backend.py",
     ],
     deps = [
         "//executorch/backends/nxp:neutron_backend",
         ":executorch_pipeline",
         ":models",
     ]
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "use_qat",
+    srcs = [
+        "use_qat.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/pytest:pytest",
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_batch_norm_fusion",
+    srcs = [
+        "generic_tests/test_batch_norm_fusion.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+        "fbsource//third-party/pypi/pytest:pytest",
+        "fbsource//third-party/pypi/numpy:numpy",
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_qdq_clustering_conv",
+    srcs = [
+        "generic_tests/test_qdq_clustering_conv.py",
+    ],
+    deps = [
+        ":executorch_pipeline",
+        ":models",
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_convert_1d_conv_to_2d",
+    srcs = [
+        "test_convert_1d_conv_to_2d.py",
+    ],
+    env = {
+        "PYTEST_ADDOPTS": "--ignore-glob=*full_pipeline*  -k 'not full_pipeline'",
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nxp:aten_passes",
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/pypi/pytest:pytest",
+        "fbsource//third-party/pypi/pytest-mock:pytest-mock",  # @manual
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_neutron_converter_manager",
+    srcs = [
+        "generic_tests/test_neutron_converter_manager.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:neutron_sdk",
+        "//executorch/exir:lib",
+        ":executorch_pipeline",
+        ":models",
+        "fbsource//third-party/pypi/pytest-mock:pytest-mock",  # @manual
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_integration",
+    srcs = [
+        "generic_tests/test_integration.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    deps = [
+        ":executorch_pipeline",
+        ":models",
+        ":use_qat",
+        "//executorch/devtools/backend_debug:delegation_info",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/examples/nxp/experimental/cifar_net:cifar_net",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:quantized_ops_lib",
+    ],
 )

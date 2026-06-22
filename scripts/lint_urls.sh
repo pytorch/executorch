@@ -79,8 +79,8 @@ done < <(
     ':(exclude,glob)**/third_party/**'
   )
   if [ $# -eq 2 ]; then
-    for filename in $(git diff --name-only --unified=0 "$1...$2"); do
-      git diff --unified=0 "$1...$2" -- "$filename" "${excludes[@]}" \
+    for filename in $(git diff --name-only --unified=0 "$1..$2"); do
+      git diff --unified=0 "$1..$2" -- "$filename" "${excludes[@]}" \
         | grep -E '^\+' \
         | grep -Ev '^\+\+\+' \
         | perl -nle 'print for m#'"$pattern"'#g' \

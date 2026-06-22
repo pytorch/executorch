@@ -1,8 +1,10 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+import os
 import random
 from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -129,6 +131,9 @@ class Tester:
                 assert isinstance(self.example_inputs[arg_idx], torch.Tensor)
                 ex_shape = list(self.example_inputs[arg_idx].shape)
                 dynamic_dim_spec = self.dynamic_shapes[arg_idx]
+                if dynamic_dim_spec is None or dynamic_dim_spec == {}:
+                    input_shapes.append(torch.Size(ex_shape))
+                    continue
                 for dim_idx, dim_spec in dynamic_dim_spec.items():
                     assert dim_idx < len(ex_shape)
                     if isinstance(dim_spec, torch.export.dynamic_shapes._DerivedDim):
@@ -317,11 +322,14 @@ class Tester:
         rtol=1e-03,
         qtol=0,
         statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        artifact_dir: Optional[str] = None,
+        artifact_name: Optional[str] = None,
     ):
         number_of_runs = 1 if inputs is not None else num_runs
         reference_stage = self.stages[StageType.EXPORT]
 
         stage = stage or self.cur
+        artifacts_saved = False
 
         for _ in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
@@ -346,7 +354,53 @@ class Tester:
                 statistics_callback,
             )
 
+            if artifact_dir and artifact_name and not artifacts_saved:
+                try:
+                    self._dump_golden_artifacts(
+                        artifact_dir,
+                        artifact_name,
+                        inputs_to_run,
+                        reference_output,
+                    )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        f"Failed to dump golden artifacts for {artifact_name}",
+                        exc_info=True,
+                    )
+                artifacts_saved = True
+
         return self
+
+    @staticmethod
+    def _dump_golden_artifacts(
+        artifact_dir: str,
+        artifact_name: str,
+        inputs: Tuple[torch.Tensor],
+        reference_output,
+    ):
+        logger = logging.getLogger(__name__)
+        os.makedirs(artifact_dir, exist_ok=True)
+
+        for i, inp in enumerate(inputs):
+            if isinstance(inp, torch.Tensor):
+                suffix = "" if len(inputs) == 1 else f"_{i}"
+                path = os.path.join(artifact_dir, f"{artifact_name}_input{suffix}.bin")
+                inp.detach().contiguous().numpy().tofile(path)
+                logger.info(f"Saved golden input to {path}")
+
+        if isinstance(reference_output, torch.Tensor):
+            reference_output = (reference_output,)
+        elif isinstance(reference_output, OrderedDict):
+            reference_output = tuple(reference_output.values())
+
+        for i, out in enumerate(reference_output):
+            if isinstance(out, torch.Tensor):
+                suffix = "" if len(reference_output) == 1 else f"_{i}"
+                path = os.path.join(
+                    artifact_dir, f"{artifact_name}_expected_output{suffix}.bin"
+                )
+                out.detach().contiguous().numpy().tofile(path)
+                logger.info(f"Saved golden output to {path}")
 
     @staticmethod
     def _assert_outputs_equal(
@@ -385,9 +439,16 @@ class Tester:
                     f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
                 )
             else:
+                # torch.allclose() does not have a CPU implementation for FP8 tensors
+                # in some PyTorch builds, so compare FP8 outputs in float32 instead.
+                compare_model = model
+                compare_ref = ref
+                if model.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+                    compare_model = model.to(torch.float32)
+                    compare_ref = ref.to(torch.float32)
                 assert torch.allclose(
-                    model,
-                    ref,
+                    compare_model,
+                    compare_ref,
                     atol=atol,
                     rtol=rtol,
                     equal_nan=True,
@@ -395,7 +456,7 @@ class Tester:
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
+                    f"\tDifference: max: {torch.max(compare_model-compare_ref)}, abs: {torch.max(torch.abs(compare_model-compare_ref))}, mean abs error: {torch.mean(torch.abs(compare_model-compare_ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
                     f"\t Numel: {model.numel()}, {ref.numel()}\n"
                     f"\tMedian: {model.median()}, {ref.median()}\n"

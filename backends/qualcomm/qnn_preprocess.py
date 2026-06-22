@@ -9,17 +9,23 @@ from collections import defaultdict
 from typing import Dict, final, List
 
 import torch  # noqa: F401
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageInfo,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_TENSOR_NAME,
+)
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
     get_current_qnn_manager,
 )
@@ -28,6 +34,8 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
+from executorch.exir.backend.utils import DelegateMappingBuilder
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -45,15 +53,16 @@ class QnnBackend(BackendDetails):
         enable_tensor_dump: bool,
         op_package_infos: List[QnnExecuTorchOpPackageInfo],
         use_mha2sha: bool,
+        backend_type: QnnExecuTorchBackendType,
     ):
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation
                 node.meta.pop(QCOM_AXIS_ORDER, "")
         # QNN Delegate Specific Passes
-        graph_module = QnnPassManager().transform_for_preprocess_pipeline(
-            edge_program, use_mha2sha=use_mha2sha
-        )
+        graph_module = get_qnn_pass_manager_cls(
+            backend_type
+        )().transform_for_preprocess_pipeline(edge_program, use_mha2sha=use_mha2sha)
         assert graph_module is not None
 
         nodes_to_wrappers = defaultdict(dict)
@@ -118,6 +127,7 @@ class QnnBackend(BackendDetails):
             qnn_manager.IsTensorDump(),
             obj_options.op_package_options.op_package_infos,
             obj_options.use_mha2sha,
+            obj_options.backend_options.backend_type,
         )
 
         qnn_context_binary = qnn_manager.Compile(
@@ -138,7 +148,7 @@ class QnnBackend(BackendDetails):
         )
 
     @staticmethod
-    def preprocess_multimethod(
+    def preprocess_multimethod(  # noqa: C901
         edge_programs: Dict[str, List[ExportedProgram]],
         compile_specs: Dict[str, List[List[CompileSpec]]],
     ) -> PreprocessResult:
@@ -161,8 +171,9 @@ class QnnBackend(BackendDetails):
         qnn_manager = get_current_qnn_manager(
             option.backend_options.backend_type, compile_spec
         )
+        debug_handle_builder = DelegateMappingBuilder(generated_identifiers=False)
         for i in range(num_sub_graphs):
-            # e.g. 2 methods (x, y) with 3 partitions
+            # e.g. 2 methods (x, y) with 3 subgraphs(partitions)
             #      > context_binary_0: [x.subgraph_0, y.subgraph_0]
             #      > context_binary_1: [x.subgraph_1, y.subgraph_1]
             #      > context_binary_2: [x.subgraph_2, y.subgraph_2]
@@ -175,7 +186,21 @@ class QnnBackend(BackendDetails):
                     qnn_manager.IsTensorDump(),
                     option.op_package_options.op_package_infos,
                     option.use_mha2sha,
+                    option.backend_options.backend_type,
                 )
+                if qnn_manager.IsTensorDump():
+                    for node in programs[i].graph.nodes:
+                        # Skip multi-output nodes: devtools only supports
+                        # single-output intermediate capture (len == 1).
+                        if (
+                            (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
+                            and QCOM_TENSOR_NAME in node.meta
+                            and len(node.meta[QCOM_TENSOR_NAME]) == 1
+                        ):
+                            debug_handle_builder.insert_delegate_mapping_entry(
+                                handles=handle_id,
+                                identifier=node.meta[QCOM_TENSOR_NAME][0],
+                            )
                 if isinstance(py_op_wrappers, bytes):
                     ctx_binary_list.append(py_op_wrappers)
                 else:
@@ -185,7 +210,6 @@ class QnnBackend(BackendDetails):
                             for py_op_wrapper in py_op_wrappers
                         ]
                     )
-
             if len(py_op_wrapper_list) == len(edge_programs.values()):
                 qnn_context_binary = qnn_manager.Compile(
                     graph_names, py_op_wrapper_list
@@ -204,13 +228,16 @@ class QnnBackend(BackendDetails):
                     all_processed_results[key].append(
                         PreprocessResult(
                             processed_bytes=bytes(qnn_context_binary),
-                            debug_handle_map={},
+                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
                         )
                     )
             elif len(ctx_binary_list) == len(edge_programs.values()):
                 for i, key in enumerate(edge_programs.keys()):
                     all_processed_results[key].append(
-                        PreprocessResult(processed_bytes=ctx_binary_list[i])
+                        PreprocessResult(
+                            processed_bytes=ctx_binary_list[i],
+                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
+                        )
                     )
             else:
                 raise RuntimeError("Hybrid compilation is not supported")

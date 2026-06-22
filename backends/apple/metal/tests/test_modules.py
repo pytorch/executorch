@@ -27,6 +27,7 @@ import torch
 from executorch.backends.apple.metal.metal_backend import MetalBackend
 from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch import nn
 from torch.export import export
 from torch.nn.attention import SDPBackend
@@ -205,6 +206,23 @@ MODULE_REGISTRY["linear_nobias"] = {
     "model_class": LinearNoBias,
     "input_shapes": [(127, 7)],
     "description": "Simple linear layer model with no bias",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearWithBias(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(7, 101, bias=True)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+
+MODULE_REGISTRY["linear_bias"] = {
+    "model_class": LinearWithBias,
+    "input_shapes": [(127, 7)],
+    "description": "Simple linear layer model with bias",
 }
 
 
@@ -468,7 +486,16 @@ class BaseStridedSDPA(nn.Module):
     """SDPA model with strided Q, K, V parameters."""
 
     def __init__(
-        self, q_size, k_size, v_size, q_stride, k_stride, v_stride, attn_mask_size=None
+        self,
+        q_size,
+        k_size,
+        v_size,
+        q_stride,
+        k_stride,
+        v_stride,
+        *,
+        attn_mask_size=None,
+        is_causal=False,
     ):
         super().__init__()
         self.q_size = q_size
@@ -478,6 +505,7 @@ class BaseStridedSDPA(nn.Module):
         self.k_stride = k_stride
         self.v_stride = v_stride
         self.attn_mask_size = attn_mask_size
+        self.is_causal = is_causal
 
         self.query = nn.Parameter(torch.randn(q_size))
         self.key = nn.Parameter(torch.randn(k_size))
@@ -492,7 +520,13 @@ class BaseStridedSDPA(nn.Module):
             attn_mask = torch.zeros(self.attn_mask_size)
 
         sdpa_output = torch.nn.functional.scaled_dot_product_attention(
-            query, key, value, attn_mask, dropout_p=0.0, is_causal=False, scale=1.0
+            query,
+            key,
+            value,
+            attn_mask,
+            dropout_p=0.0,
+            is_causal=self.is_causal,
+            scale=1.0,
         )
         return sdpa_output + x
 
@@ -557,6 +591,224 @@ MODULE_REGISTRY["sdpa_strided_broadcast_attn_mask"] = {
     "model_class": SDPAStridedBroadcastAttnMask,
     "input_shapes": [(1, 20, 1, 64)],
     "description": "Whisper-like strided SDPA variant 2",
+}
+
+
+# -------------------------------------------------------------------------
+class SDPAContiguousCausal(BaseStridedSDPA):
+    def __init__(self):
+        super().__init__(
+            q_size=(1, 32, 1500, 64),
+            k_size=(1, 32, 1500, 64),
+            v_size=(1, 32, 1500, 64),
+            q_stride=(3072000, 96000, 64, 1),
+            k_stride=(3072000, 96000, 64, 1),
+            v_stride=(3072000, 96000, 64, 1),
+            is_causal=True,
+        )
+
+
+MODULE_REGISTRY["sdpa_contiguous_causal"] = {
+    "model_class": SDPAContiguousCausal,
+    "input_shapes": [(1, 32, 1500, 64)],
+    "description": "SDPA model with contiguous Q, K, V parameters and causal attention",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
+# -------------------------------------------------------------------------
+class SDPAStridedCausal(BaseStridedSDPA):
+    def __init__(self):
+        super().__init__(
+            q_size=(1, 32, 1500, 64),
+            k_size=(1, 32, 1500, 64),
+            v_size=(1, 32, 1500, 64),
+            q_stride=(3072000, 64, 2048, 1),
+            k_stride=(3072000, 64, 2048, 1),
+            v_stride=(3072000, 64, 2048, 1),
+            is_causal=True,
+        )
+
+
+MODULE_REGISTRY["sdpa_strided_causal"] = {
+    "model_class": SDPAStridedCausal,
+    "input_shapes": [(1, 32, 1500, 64)],
+    "description": "SDPA model with strided Q, K, V parameters and causal attention",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
+# -------------------------------------------------------------------------
+# SDPA with head_dim=256 (Qwen 3.5 MoE)
+# -------------------------------------------------------------------------
+
+
+class SDPAHeadDim256(nn.Module):
+    """SDPA with head_dim=256, required by Qwen 3.5 MoE full attention layers."""
+
+    def forward(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, dropout_p=0.0, is_causal=False
+        )
+
+
+MODULE_REGISTRY["sdpa_head_dim_256"] = {
+    "model_class": SDPAHeadDim256,
+    "input_shapes": [(1, 4, 8, 256), (1, 4, 8, 256), (1, 4, 8, 256)],
+    "description": "SDPA with head_dim=256 (Qwen 3.5 MoE)",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
+# -------------------------------------------------------------------------
+# Narrow (non-packed reinterpret_tensor materialization)
+# -------------------------------------------------------------------------
+
+
+class NarrowLastDim(nn.Module):
+    """Splits the last dimension into two halves via narrow, producing
+    non-packed strided views that the Metal backend must materialize
+    into contiguous buffers."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        half = x.shape[-1] // 2
+        a = x.narrow(-1, 0, half)
+        b = x.narrow(-1, half, half)
+        return a * 2.0 + b
+
+
+MODULE_REGISTRY["narrow_last_dim"] = {
+    "model_class": NarrowLastDim,
+    "input_shapes": [(2, 4, 16)],
+    "description": "Non-packed reinterpret_tensor views from last-dim split",
+}
+
+
+# -------------------------------------------------------------------------
+# Top-k (MoE expert routing)
+# -------------------------------------------------------------------------
+
+
+class TopK(nn.Module):
+    """Top-k routing used by MoE expert selection."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(64, 8, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        scores = self.linear(x)
+        values, indices = torch.topk(scores, 2, dim=-1)
+        return values
+
+
+MODULE_REGISTRY["topk"] = {
+    "model_class": TopK,
+    "input_shapes": [(4, 64)],
+    "description": "Top-k routing for MoE expert selection",
+}
+
+
+# -------------------------------------------------------------------------
+# Gather QMV (MoE expert-indexed quantized matmul)
+# -------------------------------------------------------------------------
+
+
+class GatherQMV(nn.Module):
+    """Wrapper around metal::gather_qmv for testing the expert-indexed
+    quantized matmul kernel. Expert weights are embedded as buffers;
+    expert indices are generated deterministically inside the model so
+    the test harness only needs to provide a float activation tensor."""
+
+    def __init__(self):
+        super().__init__()
+        from executorch.backends.apple.metal.ops.gather_qmv import _quantize_int4_affine
+
+        E, N, K, gs = 4, 64, 128, 32
+        torch.manual_seed(0)
+        w_float = torch.randn(E, N, K)
+        packed, scales, biases = _quantize_int4_affine(w_float, gs)
+        self.register_buffer("w", packed)
+        self.register_buffer("scales", scales)
+        self.register_buffer("biases", biases)
+        self.group_size = gs
+        self.num_experts = E
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
+
+        P = x.shape[0]
+        indices = torch.arange(P, dtype=torch.int32, device=x.device) % self.num_experts
+        return torch.ops.metal.gather_qmv(
+            x,
+            self.w,
+            self.scales.to(x.dtype),
+            self.biases.to(x.dtype),
+            indices,
+            self.group_size,
+        )
+
+
+MODULE_REGISTRY["gather_qmv"] = {
+    "model_class": GatherQMV,
+    "input_shapes": [(4, 128)],
+    "description": "Expert-indexed quantized matmul for MoE (metal::gather_qmv)",
+    "atol_float32": 5e-2,
+    "rtol_float32": 5e-2,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
+}
+
+
+# -------------------------------------------------------------------------
+# Gated Delta Rule (linear attention recurrence)
+# -------------------------------------------------------------------------
+
+
+class GatedDeltaRule(nn.Module):
+    """Wrapper around metal::gated_delta_rule for testing the linear
+    attention recurrence kernel.
+
+    Resets state to zero on each forward call so that the output is
+    deterministic regardless of prior calls (e.g., during export tracing).
+    """
+
+    def __init__(self):
+        super().__init__()
+        B, Hv, Dv, Dk = 1, 4, 64, 64
+        self.register_buffer("state", torch.zeros(B, Hv, Dv, Dk))
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+    ) -> torch.Tensor:
+        import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
+
+        self.state.zero_()
+        return torch.ops.metal.gated_delta_rule(q, k, v, g, beta, self.state)
+
+
+MODULE_REGISTRY["gated_delta_rule"] = {
+    "model_class": GatedDeltaRule,
+    "input_shapes": [
+        (1, 2, 4, 64),  # q: [B, T, Hk, Dk]
+        (1, 2, 4, 64),  # k
+        (1, 2, 4, 64),  # v: [B, T, Hv, Dv]
+        (1, 2, 4),  # g: [B, T, Hv]
+        (1, 2, 4),  # beta: [B, T, Hv]
+    ],
+    "description": "Gated delta rule recurrence for linear attention (metal::gated_delta_rule)",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
 }
 
 
@@ -708,21 +960,25 @@ def quantize_model(model: nn.Module, qlinear: str, qlinear_group_size: int = 32)
 
 
 def export_model_to_metal(
-    model: nn.Module, example_inputs: Tuple[torch.Tensor, ...]
+    model: nn.Module,
+    example_inputs: Tuple[torch.Tensor, ...],
+    codesign_identity: Optional[str] = None,
 ) -> Any:
     """Export model through the Metal backend pipeline."""
     method_name = "forward"
+
+    compile_specs = [MetalBackend.generate_method_name_compile_spec(method_name)]
+    if codesign_identity:
+        compile_specs.append(
+            CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+        )
 
     with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
         aten_dialect = export(model, example_inputs, strict=False)
 
         edge_program = to_edge_transform_and_lower(
             aten_dialect,
-            partitioner=[
-                MetalPartitioner(
-                    [MetalBackend.generate_method_name_compile_spec(method_name)]
-                )
-            ],
+            partitioner=[MetalPartitioner(compile_specs)],
         )
 
     executorch_program = edge_program.to_executorch()
@@ -1074,6 +1330,23 @@ class TestMetalBackendModules(unittest.TestCase):
             # Locally, use a temporary directory that gets cleaned up
             with tempfile.TemporaryDirectory() as tmpdir:
                 run_test_in_directory(Path(tmpdir))
+
+    @unittest.skipIf(SKIP_EXPORT_TESTS, SKIP_REASON)
+    @unittest.skipIf(not IS_MACOS, "codesign requires macOS")
+    def test_codesign_export(self):
+        """Test that export with codesign_identity='-' signs the .so and succeeds."""
+        model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
+        # codesign -f -s - runs during export; check=True means CalledProcessError
+        # is raised (and the test fails) if signing fails.
+        program = export_model_to_metal(model, example_inputs, codesign_identity="-")
+        self.assertGreater(len(program.buffer), 0)
+
+    @unittest.skipIf(SKIP_EXPORT_TESTS, SKIP_REASON)
+    def test_export_without_codesign(self):
+        """Test that export without codesign_identity skips signing."""
+        model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
+        program = export_model_to_metal(model, example_inputs)
+        self.assertGreater(len(program.buffer), 0)
 
 
 # =============================================================================

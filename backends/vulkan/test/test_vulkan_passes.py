@@ -191,3 +191,312 @@ class TestVulkanPasses(unittest.TestCase):
 
         # We expect at least one custom op to be created
         self.assertGreater(custom_op_count, 0)
+
+    def test_fuse_q8ta_linear(self):
+        """Test that sequential quantized linears fuse into q8ta_linear when output quantization is present."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(128, 64, bias=False)
+                self.linear2 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        sample_inputs = (torch.randn(4, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        # The first linear should fuse to q8ta_linear (has output quantization
+        # from the second linear's input quantize node)
+        q8ta_linear_count = op_node_count(gm, "q8ta_linear.default")
+        self.assertGreaterEqual(
+            q8ta_linear_count,
+            1,
+            "Expected at least one q8ta_linear op from output-quantized linear fusion",
+        )
+
+    def test_fuse_q8ta_linear_gemv(self):
+        """Test that batch-1 quantized linear fuses into q8ta_linear_gemv."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(128, 64, bias=False)
+                self.linear2 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        # Batch size 1 to trigger gemv variant
+        sample_inputs = (torch.randn(1, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        # With batch size 1, the first linear should fuse to q8ta_linear_gemv
+        q8ta_linear_gemv_count = op_node_count(gm, "q8ta_linear_gemv.default")
+        self.assertGreaterEqual(
+            q8ta_linear_gemv_count,
+            1,
+            "Expected at least one q8ta_linear_gemv op for batch-1 linear fusion",
+        )
+
+    def test_fuse_three_chained_q8ta_linears(self):
+        """Test that 3 consecutive quantized linears fuse into q8ta_linear ops with
+        correct quant params at each layer boundary.
+
+        Each linear's input scale/zp (args[1], args[2]) must equal its predecessor's
+        output scale/zp (args[6], args[7]). This is a regression test for a bug where
+        topological pattern replacement caused later linears to read scale/zp from the
+        wrong arg position of the already-replaced q8ta_linear node, producing wildly
+        incorrect quantization parameters (outputs saturating to -128/127).
+        """
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class ThreeLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(256, 128, bias=False)
+                self.linear2 = torch.nn.Linear(128, 64, bias=False)
+                self.linear3 = torch.nn.Linear(64, 32, bias=False)
+
+            def forward(self, x):
+                return self.linear3(self.linear2(self.linear1(x)))
+
+        model = ThreeLinearModule()
+        # Batch size 4 to select q8ta_linear (not the gemv variant)
+        sample_inputs = (torch.randn(4, 256),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        q8ta_nodes = [
+            node
+            for node in gm.graph.nodes
+            if get_target_canonical_name(node) == "q8ta_linear.default"
+        ]
+        self.assertGreaterEqual(
+            len(q8ta_nodes),
+            2,
+            "Expected at least 2 q8ta_linear ops from 3 chained quantized linears",
+        )
+
+        # For each consecutive q8ta_linear pair, the boundary scale/zp must be
+        # consistent: linear_i.output_scale == linear_{i+1}.input_scale.
+        # Before the fix, linear_{i+1}.input_scale was incorrectly read from the
+        # replaced q8ta_linear node's input args instead of the dq node's args.
+        for i in range(len(q8ta_nodes) - 1):
+            self.assertEqual(
+                q8ta_nodes[i].args[6],
+                q8ta_nodes[i + 1].args[1],
+                f"q8ta_linear[{i}].output_scale should equal q8ta_linear[{i + 1}].input_scale",
+            )
+            self.assertEqual(
+                q8ta_nodes[i].args[7],
+                q8ta_nodes[i + 1].args[2],
+                f"q8ta_linear[{i}].output_zero_point should equal q8ta_linear[{i + 1}].input_zero_point",
+            )
+
+    def test_fuse_q8ta_linear_gemv_non_aligned_oc(self):
+        """Test that quantized linear with non-aligned output channels (not multiple of 4) fuses correctly."""
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+
+        class TwoLinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                # Use non-aligned output channels (9 is not a multiple of 4)
+                self.linear1 = torch.nn.Linear(128, 9, bias=False)
+                self.linear2 = torch.nn.Linear(9, 4, bias=False)
+
+            def forward(self, x):
+                return self.linear2(self.linear1(x))
+
+        model = TwoLinearModule()
+        sample_inputs = (torch.randn(1, 128),)
+
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        edge_program = quantize_and_lower_module(model, sample_inputs, quantizer)
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+
+        # The first linear (OC=9, not multiple of 4) should still fuse
+        q8ta_linear_gemv_count = op_node_count(gm, "q8ta_linear_gemv.default")
+        self.assertGreaterEqual(
+            q8ta_linear_gemv_count,
+            1,
+            "Expected non-aligned OC linear to fuse into q8ta_linear_gemv",
+        )
+
+    def test_fuse_quantized_pixel_shuffle(self):
+        """An un-decomposed pixel_shuffle wrapped in dequantize/quantize_per_tensor
+        ops should fuse into a single et_vk.q8ta_pixel_shuffle.default node, and
+        none of the original quant/dequant nodes should remain.
+
+        The matcher relies on the partitioner's `ops_to_not_decompose()` hook
+        keeping `aten.pixel_shuffle.default` intact through edge lowering. We
+        replicate that behaviour here via `EdgeCompileConfig.preserve_ops` so
+        the test exercises the same graph shape that the partitioner produces
+        end-to-end.
+        """
+
+        class PixelShuffleModule(torch.nn.Module):
+            def forward(self, x):
+                x_dq = torch.ops.quantized_decomposed.dequantize_per_tensor(
+                    x, 0.1, 0, -128, 127, torch.int8
+                )
+                y = torch.nn.functional.pixel_shuffle(x_dq, 2)
+                return torch.ops.quantized_decomposed.quantize_per_tensor(
+                    y, 0.05, 1, -128, 127, torch.int8
+                )
+
+        # Use a non-square H/W and a W that is not a multiple of 4 so the
+        # geometry checks exercise the same shapes the model uses.
+        x = torch.randint(-128, 127, (1, 96, 16, 9), dtype=torch.int8)
+        program = torch.export.export(PixelShuffleModule(), (x,), strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.pixel_shuffle.default],
+            ),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 1)
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 0)
+        self.assertEqual(op_node_count(gm, "permute_copy.default"), 0)
+        self.assertEqual(op_node_count(gm, "pixel_shuffle.default"), 0)
+        self.assertEqual(op_node_count(gm, "dequantize_per_tensor.default"), 0)
+        self.assertEqual(op_node_count(gm, "quantize_per_tensor.default"), 0)
+
+        # Verify the fused op carries the correct args.
+        fused_node = next(
+            n
+            for n in gm.graph.nodes
+            if get_target_canonical_name(n) == "q8ta_pixel_shuffle.default"
+        )
+        # args = (input, input_scale, input_zp, inv_output_scale, output_zp, r)
+        self.assertEqual(fused_node.args[1], 0.1)
+        self.assertEqual(fused_node.args[2], 0)
+        # 1.0 / 0.05 == 20.0
+        self.assertEqual(fused_node.args[3], 20.0)
+        self.assertEqual(fused_node.args[4], 1)
+        self.assertEqual(fused_node.args[5], 2)
+
+    def test_quantized_pixel_shuffle_pattern_rejects_non_match(self):
+        """A `dq -> relu -> q` chain (no pixel_shuffle in between) must NOT be
+        fused. The new matcher only triggers when a single
+        `aten.pixel_shuffle.default` node sits between the dequant/quant pair.
+        """
+
+        class NonPixelShuffleModule(torch.nn.Module):
+            def forward(self, x):
+                x_dq = torch.ops.quantized_decomposed.dequantize_per_tensor(
+                    x, 0.1, 0, -128, 127, torch.int8
+                )
+                y = torch.nn.functional.relu(x_dq)
+                return torch.ops.quantized_decomposed.quantize_per_tensor(
+                    y, 0.1, 0, -128, 127, torch.int8
+                )
+
+        x = torch.randint(-128, 127, (1, 96, 16, 9), dtype=torch.int8)
+        program = torch.export.export(NonPixelShuffleModule(), (x,), strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                preserve_ops=[torch.ops.aten.pixel_shuffle.default],
+            ),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        fuse_pass.call(ep.graph_module)
+
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)

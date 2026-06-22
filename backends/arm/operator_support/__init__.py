@@ -6,12 +6,14 @@
 
 from . import (  # noqa
     as_strided_copy_support,
+    bool_bitwise_support,
     clone_dim_order_support,
     control_flow_support,
     convolution_support,
     embedding_support,
     ethos_u55_support,
     gather_support,
+    index_put_support,
     index_select_support,
     index_tensor_support,
     minmax_support,
@@ -22,5 +24,6 @@ from . import (  # noqa
     to_dim_order_copy_support,
     tosa_supported_operators,
     unfold_copy_support,
+    upsample_support,
     where_support,
 )

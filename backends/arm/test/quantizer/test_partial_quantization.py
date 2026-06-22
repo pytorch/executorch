@@ -158,8 +158,8 @@ def test_disallow_tfa_for_two_skipped_modules():
 
 def test_disallow_tfa_with_global_none_and_one_quantized_module():
     """Ensure that with a global None quantization config, only the linear
-    module (with its own quantization config) is quantized, and that the
-    other nodes have `disallow_tfa` set.
+    module (with its own quantization config) is quantized, and that the other
+    nodes have `disallow_tfa` set.
     """
 
     graph_after_quant_stage = _run_quantization_pipeline(

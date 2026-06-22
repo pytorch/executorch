@@ -37,16 +37,16 @@ class SumVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT32, ts.DType.FP32, ts.DType.BF16],
+            [ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
             self.tosa_spec,
         )
 
         tensor = inputs[0]
         input_shape = list(tensor.shape)
-        dim = int(inputs[1].number % len(input_shape))
+        dim = int(inputs[1].special[0] % len(input_shape))
 
         attr = ts.TosaSerializerAttribute()
-        attr.ReduceSumAttribute(tensor.dim_order.index(dim))
+        attr.ReduceSumAttribute(dim)
 
         self._serialize_operator(
             node,

@@ -9,6 +9,7 @@ import pytest
 
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
 )
 from executorch.backends.arm.test import common
@@ -27,7 +28,6 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 from executorch.backends.arm.test.ops.test_conv1d import Conv1d
 from executorch.backends.arm.test.ops.test_conv2d import Conv2d
-
 
 """
 The configuration when
@@ -195,7 +195,38 @@ test_data_conv2d_FP_fp16 = {
         dtype=torch.float16,
     ),
 }
-
+test_data_conv2d_FP_fp8 = {
+    "fp8e4m3_3x3_gp3": lambda: (
+        Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            groups=3,
+            padding=2,
+            width=16,
+            height=16,
+            batches=1,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "fp8e5m2_3x3_gp3": lambda: (
+        Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            groups=3,
+            padding=2,
+            width=16,
+            height=16,
+            batches=1,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_conv2d_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -257,6 +288,21 @@ def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_conv2d_FP_fp8)
+def test_convolution_2d_tosa_FP_fp8_depthwise(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"DEPTHWISE_CONV2D": 1, "CAST": 1})
+    pipeline.run()
+
+
 @pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLTORCH-307)
 @common.parametrize("test_data", test_data_conv1d_INT | test_data_conv2d_INT)
 def test_convolution_2d_tosa_INT_depthwise(test_data):
@@ -280,6 +326,7 @@ def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
         aten_op=[],
         exir_op=exir_op,
         tosa_extensions=["int4"],
+        frobenius_threshold=0.4,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -334,6 +381,25 @@ def test_convolution_2d_vgf_quant_a8w4_depthwise(test_data):
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv2d_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_quant_a16w8_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        per_channel_quantization=per_channel_quantization,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 
@@ -475,8 +541,10 @@ def test_convolution_2d_tosa_INT_a16w8_depthwise(test_data: input_t):
 
 @common.parametrize("test_data", test_data_conv2d_INT)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u85_INT_a16w8_depthwise(test_data: input_t):
-    """Test depthwise_conv with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+def test_convolution_2d_u55_INT_a16w8_depthwise(test_data: input_t):
+    """Test depthwise_conv with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -492,8 +560,10 @@ def test_convolution_2d_u85_INT_a16w8_depthwise(test_data: input_t):
 
 @common.parametrize("test_data", test_data_conv2d_INT)
 @common.XfailIfNoCorstone320
-def test_convolution_2d_u55_INT_a16w8_depthwise(test_data: input_t):
-    """Test depthwise_conv with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+def test_convolution_2d_u85_INT_a16w8_depthwise(test_data: input_t):
+    """Test depthwise_conv with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         model,

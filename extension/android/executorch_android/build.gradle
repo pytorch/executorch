@@ -33,11 +33,12 @@ android {
         minSdk = 23
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles 'consumer-proguard-rules.pro'
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     sourceSets {
@@ -49,7 +50,8 @@ android {
         }
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
+        freeCompilerArgs += ["-Xjvm-default=all"]
     }
 }
 
@@ -61,12 +63,12 @@ dependencies {
     implementation 'com.facebook.fbjni:fbjni:0.7.0'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
     implementation libs.core.ktx
-    testImplementation 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.assertj:assertj-core:3.27.2'
     testImplementation 'org.jetbrains.kotlin:kotlin-test:1.9.23'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test:rules:1.2.0'
-    androidTestImplementation 'commons-io:commons-io:2.4'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'commons-io:commons-io:2.18.0'
     androidTestImplementation 'org.json:json:20250107'
     androidTestImplementation 'org.jetbrains.kotlin:kotlin-test:1.9.23'
     if (qnnVersion) {
@@ -111,5 +113,19 @@ mavenPublishing {
 repositories {
     maven {
         url "https://central.sonatype.com/repository/maven-snapshots/"
+    }
+}
+
+android.libraryVariants.all { variant ->
+    task("generate${variant.name.substring(0, 1).toUpperCase()}${variant.name.substring(1)}Javadoc", type: Javadoc) {
+        source = variant.javaCompileProvider.get().source
+        classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+        classpath += variant.javaCompileProvider.get().classpath
+        options {
+            overview = "src/main/javadoc/overview.html"
+            windowTitle = "ExecuTorch Android Java API"
+            docTitle = "ExecuTorch Android Java API"
+            links("https://docs.oracle.com/en/java/javase/11/docs/api/")
+        }
     }
 }

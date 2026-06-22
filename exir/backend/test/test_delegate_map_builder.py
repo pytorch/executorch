@@ -9,12 +9,14 @@ from typing import Iterator, Union
 
 import torch
 from executorch import exir
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.test.backend_with_delegate_mapping_demo import (
     BackendWithDelegateMappingDemo,
 )
 
 from executorch.exir.backend.utils import DelegateMappingBuilder
+from torch.export import export
 
 
 class TestDelegateMapBuilder(unittest.TestCase):
@@ -30,46 +32,61 @@ class TestDelegateMapBuilder(unittest.TestCase):
         model = Model()
         model_inputs = (torch.ones(1, 1),)
 
-        program = (
-            exir.capture(model, model_inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .to_executorch()
-        )
+        program = to_edge(export(model, model_inputs, strict=True)).to_executorch()
 
         # Create nodes for testing mapping
-        # nodes: [arg0_1, alloc, aten_sin_default, alloc_1, aten_cos_default, output]
-        # debug handles: [None, None, 1, None, 2, None]
-        self.nodes = list(program.graph_module.graph.nodes)
+        self.nodes = list(program.exported_program().graph_module.graph.nodes)
 
         self.handles = [node.meta.get("debug_handle") for node in self.nodes]
+        # Extract the actual debug handle values for sin and cos nodes
+        non_none_handles = [h for h in self.handles if h is not None]
+        self.sin_handle = non_none_handles[0]
+        self.cos_handle = non_none_handles[1]
+        # Find the index of the sin node in self.nodes
+        self.sin_node_idx = next(
+            i
+            for i, n in enumerate(self.nodes)
+            if n.meta.get("debug_handle") == self.sin_handle
+        )
+        self.cos_node_idx = next(
+            i
+            for i, n in enumerate(self.nodes)
+            if n.meta.get("debug_handle") == self.cos_handle
+        )
 
     def test_basic_generated_identifier(self):
         delegate_builder = DelegateMappingBuilder(generated_identifiers=True)
+        sh, ch = self.sin_handle, self.cos_handle
 
-        expected_mapping = {0: (1, 2)}
+        expected_mapping = {0: (sh, ch)}
         self.assertEqual(
             delegate_builder.insert_delegate_mapping_entry(nodes=self.nodes), 0
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
-        expected_mapping = {0: (1, 2), 1: (1,)}
+        expected_mapping = {0: (sh, ch), 1: (sh,)}
         self.assertEqual(
-            delegate_builder.insert_delegate_mapping_entry(nodes=self.nodes[2]), 1
+            delegate_builder.insert_delegate_mapping_entry(
+                nodes=self.nodes[self.sin_node_idx]
+            ),
+            1,
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
-        expected_mapping = {0: (1, 2), 1: (1,), 2: (2,)}
+        expected_mapping = {0: (sh, ch), 1: (sh,), 2: (ch,)}
         self.assertEqual(
-            delegate_builder.insert_delegate_mapping_entry(handles=self.handles[4]),
+            delegate_builder.insert_delegate_mapping_entry(
+                handles=self.handles[self.cos_node_idx]
+            ),
             2,
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
         expected_mapping = {
-            0: (1, 2),
-            1: (1,),
-            2: (2,),
-            3: (1, 2),
+            0: (sh, ch),
+            1: (sh,),
+            2: (ch,),
+            3: (sh, ch),
         }
         self.assertEqual(
             delegate_builder.insert_delegate_mapping_entry(handles=self.handles), 3
@@ -115,7 +132,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
     def test_reinsert_delegate_debug_identifier(self):
         delegate_builder = DelegateMappingBuilder()
         delegate_builder.insert_delegate_mapping_entry(
-            nodes=self.nodes[2], identifier="1"
+            nodes=self.nodes[self.sin_node_idx], identifier="1"
         )
 
         self.assertRaises(
@@ -134,23 +151,24 @@ class TestDelegateMapBuilder(unittest.TestCase):
         self.assertRaises(
             Exception,
             lambda: delegate_builder.insert_delegate_mapping_entry(
-                nodes=self.nodes[2], identifier="1"
+                nodes=self.nodes[self.sin_node_idx], identifier="1"
             ),
         )
         self.assertRaises(
             Exception,
             lambda: delegate_builder.insert_delegate_mapping_entry(
-                handles=self.handles[2], identifier="1"
+                handles=self.handles[self.sin_node_idx], identifier="1"
             ),
         )
 
     def test_backend_with_delegate_mapping(self) -> None:
         model, inputs = BackendWithDelegateMappingDemo.get_test_model_and_inputs()
-        edgeir_m = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
-            exir.EdgeCompileConfig(_check_ir_validity=False)
+        edgeir_m = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         lowered_module = to_backend(
-            "BackendWithDelegateMappingDemo", edgeir_m.exported_program, []
+            "BackendWithDelegateMappingDemo", edgeir_m.exported_program(), []
         )
         debug_handle_map = lowered_module.meta.get("debug_handle_map")
         self.assertIsNotNone(debug_handle_map)
@@ -172,9 +190,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
         composite_model = CompositeModule()
         # TODO: Switch this to lowered_module.program() once lowered_module has support
         # for storing debug delegate identifier maps.
-        exir.capture(
-            composite_model, inputs, exir.CaptureConfig()
-        ).to_edge().to_executorch()
+        to_edge(export(composite_model, inputs, strict=True)).to_executorch()
 
     def test_passing_both_nodes_and_handles(self):
         delegate_builder = DelegateMappingBuilder()
@@ -211,10 +227,11 @@ class TestDelegateMapBuilder(unittest.TestCase):
 
         delegate_builder_nodes = DelegateMappingBuilder()
         delegate_builder_handles = DelegateMappingBuilder()
+        sh, ch = self.sin_handle, self.cos_handle
 
         # Entry with a list of nodes
         iden_1 = next(identifiers)
-        expected_mapping = {iden_1: (1, 2)}
+        expected_mapping = {iden_1: (sh, ch)}
         self.assertEqual(
             delegate_builder_nodes.insert_delegate_mapping_entry(
                 nodes=self.nodes, identifier=iden_1
@@ -236,16 +253,16 @@ class TestDelegateMapBuilder(unittest.TestCase):
 
         # Entry with a single node
         iden_2 = next(identifiers)
-        expected_mapping = {iden_1: (1, 2), iden_2: (1,)}
+        expected_mapping = {iden_1: (sh, ch), iden_2: (sh,)}
         self.assertEqual(
             delegate_builder_nodes.insert_delegate_mapping_entry(
-                nodes=self.nodes[2], identifier=iden_2
+                nodes=self.nodes[self.sin_node_idx], identifier=iden_2
             ),
             iden_2,
         )
         self.assertEqual(
             delegate_builder_handles.insert_delegate_mapping_entry(
-                handles=self.handles[2], identifier=iden_2
+                handles=self.handles[self.sin_node_idx], identifier=iden_2
             ),
             iden_2,
         )

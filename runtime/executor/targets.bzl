@@ -16,8 +16,14 @@ def _program_preprocessor_flags():
     if enable_verification == "false":
         return ["-DET_ENABLE_PROGRAM_VERIFICATION=0"]
     elif enable_verification == "true":
-        # Enabled by default.
-        return []
+        # Enabled by default; allow opt-out via constraint
+        if not runtime.is_oss:
+            return select({
+                "DEFAULT": [],
+                "fbsource//xplat/executorch/tools/buck/constraints:executorch-program-verification-disabled": ["-DET_ENABLE_PROGRAM_VERIFICATION=0"],
+            })
+        else:
+            return []
     else:
         fail("executorch.enable_program_verification must be one of 'true' or 'false'; saw '" +
              enable_verification + "'")
@@ -90,6 +96,7 @@ def define_common_targets():
             ],
             headers = [
                 "platform_memory_allocator.h",
+                "program_validation.h",
             ],
             exported_headers = [
                 "method.h",
@@ -121,7 +128,8 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/schema:program",
-                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit"
+                "//executorch/runtime/core/exec_aten/util:tensor_dimension_limit",
+                "//executorch/runtime/core/portable_type/c10/c10:c10",
             ],
             visibility = ["PUBLIC"],
         )

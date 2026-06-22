@@ -1,24 +1,19 @@
 #!/usr/bin/env fbpython
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import os
-import re
-import shutil
 import tempfile
 import unittest
 from typing import Dict, Optional, Sequence
 from unittest.mock import patch
 
 from executorch.exir._serialize import _flatbuffer
-from executorch.exir._serialize._flatbuffer import (
-    _program_json_to_flatbuffer,
-    _ResourceFiles,
-    _SchemaInfo,
-)
+from executorch.exir._serialize._flatbuffer import _ResourceFiles, _SchemaInfo
 
 
 def read_file(dir: str, filename: str) -> bytes:
@@ -76,6 +71,7 @@ class TestResourceFiles(unittest.TestCase):
 SCHEMA_FILES: Dict[str, bytes] = {
     "program.fbs": b"\n".join(
         [
+            b'file_identifier "ET12";',
             b"table Program {",
             # Space after the colon.
             b"  tensor_data: [ubyte] (force_align: 8); // @executorch-tensor-alignment",
@@ -146,6 +142,7 @@ class TestPrepareSchema(unittest.TestCase):
                 read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
+                        b'file_identifier "ET12";',
                         b"table Program {",
                         # Now 128:
                         b"  tensor_data: [ubyte] (force_align: 128); // @executorch-tensor-alignment",
@@ -182,6 +179,7 @@ class TestPrepareSchema(unittest.TestCase):
                 read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
+                        b'file_identifier "ET12";',
                         b"table Program {",
                         b"  tensor_data: [ubyte] (force_align: 8); // @executorch-tensor-alignment",
                         # Now 256:
@@ -221,6 +219,7 @@ class TestPrepareSchema(unittest.TestCase):
                 read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
+                        b'file_identifier "ET12";',
                         b"table Program {",
                         # Now 1:
                         b"  tensor_data: [ubyte] (force_align: 1); // @executorch-tensor-alignment",
@@ -272,60 +271,3 @@ class TestPrepareSchema(unittest.TestCase):
                             out_dir,
                             delegate_alignment=bad_alignment,
                         )
-
-
-class TestProgramJsonToFlatbuffer(unittest.TestCase):
-    @patch.dict(os.environ, {_flatbuffer._SAVE_FLATC_ENV: "1"})
-    def test_save_json_on_failure(self) -> None:
-        err_msg: Optional[str] = None
-        try:
-            _program_json_to_flatbuffer("} some bad json {")
-            self.fail("Should have raised an exception")
-        except RuntimeError as err:
-            err_msg = err.args[0]
-
-        self.assertIsNotNone(err_msg)
-        match = re.search(r"Moved input files to '(.*?)'", err_msg)
-        self.assertTrue(match, msg=f"Unexpected error message: {err_msg}")
-        path = match.group(1)
-
-        files = frozenset(os.listdir(path))
-        # Delete the files otherwise they'll accumulate every time the
-        # test is run.
-        shutil.rmtree(path)
-        # Check for a couple of the files that should be there.
-        self.assertIn("data.json", files)
-        self.assertIn("program.fbs", files)
-
-    @patch.dict(os.environ, {_flatbuffer._SAVE_FLATC_ENV: "1"})
-    def test_unable_to_save_json_on_failure(self) -> None:
-        err_msg: Optional[str] = None
-        try:
-            with patch.object(
-                _flatbuffer.shutil,
-                "move",
-                side_effect=Exception("shutil.move mock failure"),
-            ):
-                _program_json_to_flatbuffer("} some bad json {")
-            self.fail("Should have raised an exception")
-        except RuntimeError as err:
-            err_msg = err.args[0]
-
-        self.assertIsNotNone(err_msg)
-        self.assertIn("Failed to save input files", err_msg)
-
-    @patch.dict(os.environ, {_flatbuffer._SAVE_FLATC_ENV: ""})
-    def test_no_save_json_on_failure(self) -> None:
-        err_msg: Optional[str] = None
-        try:
-            _program_json_to_flatbuffer("} some bad json {")
-            self.fail("Should have raised an exception")
-        except RuntimeError as err:
-            err_msg = err.args[0]
-
-        self.assertIsNotNone(err_msg)
-        self.assertIn(
-            f"Set {_flatbuffer._SAVE_FLATC_ENV}=1 to save input files", err_msg
-        )
-        self.assertNotIn("Moved input files", err_msg)
-        self.assertNotIn("Failed to save input files", err_msg)

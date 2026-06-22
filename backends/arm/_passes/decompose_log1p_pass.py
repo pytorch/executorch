@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,7 +6,7 @@
 import logging
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -17,8 +17,10 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeLog1pPass(ArmPass):
-    """Decompose log1p into a small polynomial with a log fallback for larger inputs."""
+class DecomposeLog1pPass(ArmOpTargetedPass):
+    """Decompose log1p into a small polynomial with a log fallback for larger
+    inputs.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = {
         InsertTableOpsPass,
@@ -30,6 +32,7 @@ class DecomposeLog1pPass(ArmPass):
     _supported_ops = {
         exir_ops.edge.aten.log1p.default,
     }
+    target_ops = _supported_ops
 
     def _poly(self, x, meta):
         # 6-term Taylor: x - x^2/2 + x^3/3 - x^4/4 + x^5/5 - x^6/6
@@ -61,14 +64,10 @@ class DecomposeLog1pPass(ArmPass):
         return acc
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._supported_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # Quantized log1p should be handled by LUT/table instead of decomposition.
             return super().call_operator(op, args, kwargs, meta)
 

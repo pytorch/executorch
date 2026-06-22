@@ -28,7 +28,7 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 aten_op = "torch.ops.aten.permute.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
 
-test_data_suite_u55 = {
+test_data_suite = {
     # (test_name,test_data,dims)
     "rank_2": lambda: (torch.rand(10, 10), [1, 0]),
     "rank_3": lambda: (torch.rand(10, 10, 10), [2, 0, 1]),
@@ -45,10 +45,25 @@ test_data_suite_u55 = {
 test_data_suite_u55_reject = {
     "rank2_bool": lambda: (torch.randint(0, 2, (5, 5), dtype=torch.bool), [1, 0]),
 }
-test_data_suite = test_data_suite_u55.copy() | test_data_suite_u55_reject.copy()
+
+
 test_data_suite_bf16 = {
     "rank_2_bf16": lambda: (torch.rand(6, 4, dtype=torch.bfloat16), [1, 0]),
     "rank_3_bf16": lambda: (torch.rand(2, 3, 5, dtype=torch.bfloat16), [2, 0, 1]),
+}
+test_data_suite_fp16 = {
+    "rank_2_fp16": lambda: (torch.rand(6, 4, dtype=torch.float16), [1, 0]),
+    "rank_3_fp16": lambda: (torch.rand(2, 3, 5, dtype=torch.float16), [2, 0, 1]),
+}
+
+test_data_suite_u55 = {  # Only intresting for U55 which does not support large permutes
+    "to_hwc": lambda: (torch.rand(2**16 + 1, 2, 2), [1, 2, 0]),
+    "rank_3_hw_flip": lambda: (torch.rand(2**16 + 1, 2, 2), [0, 2, 1]),
+    "to_nhwc_big_hw": lambda: (torch.rand(2, 2, 257, 257), [0, 2, 3, 1]),
+    "to_nchw_big_hw": lambda: (torch.rand(2, 257, 257, 2), [0, 3, 1, 2]),
+    "to_nhwc_big_c": lambda: (torch.rand(1, 2**16 + 1, 2, 2), [0, 2, 3, 1]),
+    "to_nchw_big_c": lambda: (torch.rand(1, 2, 2, 2**16 + 1), [0, 3, 1, 2]),
+    "to_ndhwc": lambda: (torch.rand(2, 2, 41, 41, 41), [0, 2, 3, 4, 1]),
 }
 
 
@@ -63,7 +78,9 @@ class SimplePermute(torch.nn.Module):
         return torch.permute(x, self.dims)
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
+)
 def test_permute_tosa_FP(test_data: torch.Tensor):
     test_data, dims = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -88,7 +105,7 @@ def test_permute_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite_u55)
+@common.parametrize("test_data", test_data_suite | test_data_suite_u55)
 @common.XfailIfNoCorstone300
 def test_permute_u55_INT(test_data):
     test_data, dims = test_data()
@@ -98,9 +115,6 @@ def test_permute_u55_INT(test_data):
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
     )
-    if test_data[0].dtype == torch.bool:
-        pipeline.pop_stage("check_count.exir")
-        pipeline.tester.use_portable_ops = True
     pipeline.run()
 
 
@@ -130,7 +144,7 @@ def test_permute_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_permute_vgf_no_quant(test_data):
     test_data, dims = test_data()
@@ -160,7 +174,7 @@ def test_permute_vgf_quant(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 def test_permute_16a8w_tosa_INT(test_data: torch.Tensor):
-    """Test permute operation with int16 quantization"""
+    """Test permute operation with int16 quantization."""
     test_data, dims = test_data()
     pipeline = TosaPipelineINT[input_t1](
         SimplePermute(dims=dims),
@@ -190,7 +204,7 @@ test_data_suite_exact = {
 )
 @common.XfailIfNoCorstone300
 def test_permute_16a8w_u55_INT(test_data: torch.Tensor):
-    """Test permute operation with int16 quantization on U55"""
+    """Test permute operation with int16 quantization on U55."""
     test_data, dims = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
         SimplePermute(dims=dims),
@@ -212,7 +226,7 @@ def test_permute_16a8w_u55_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_permute_16a8w_u85_INT(test_data: torch.Tensor):
-    """Test permute operation with int16 quantization on U85"""
+    """Test permute operation with int16 quantization on U85."""
     test_data, dims = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
         SimplePermute(dims=dims),

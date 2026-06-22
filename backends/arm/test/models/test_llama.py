@@ -31,7 +31,11 @@ from executorch.examples.models.llama.export_llama_lib import (
 
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 
-input_t = Tuple[torch.Tensor]
+from transformers import GenerationConfig, LlamaConfig, LlamaForCausalLM
+from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
+
+input_t = Tuple[torch.Tensor, ...]
+input_th = Tuple[torch.Tensor, torch.Tensor]
 
 # Add project dir to sys path to workaround importlib.import_module() conditions in model_factory.py
 this_files_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,13 +45,78 @@ sys.path.append(project_dir)
 logger = logging.getLogger(__name__)
 
 
+class HFPositionalAdapter(torch.nn.Module):
+    def __init__(self, exportable):
+        super().__init__()
+        self.inner = exportable
+
+    def forward(self, input_ids, cache_position):
+        # HF StaticCache eager path requires int64 index tensors, but keeping
+        # cache_position as int32 during export capture avoids adding an extra
+        # int64->int32 cast node in the lowered graph.
+        if torch._dynamo.is_compiling():
+            cp = cache_position
+        else:
+            cp = cache_position.to(torch.long)
+        return self.inner(input_ids=input_ids, cache_position=cp)
+
+
+class LlamaPositionalAdapter(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, tokens, input_pos):
+        return self.model(tokens, {"input_pos": input_pos})
+
+
 class TestLlama:
-    """
-    Test class of Llama models. Type of Llama model depends on command line parameters:
+    """Test class of Llama models.
+
+    Type of Llama model depends on command line parameters:
     --llama_inputs <path to .pt file> <path to json file> <name of model variant>
     Example: --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
     For more examples and info see examples/models/llama/README.md.
+
     """
+
+    def prepare_model_hf_static(self):
+        """
+        Build a tiny HF LLaMA wrapped with TorchExportableModuleForDecoderOnlyLM (StaticCache)
+        See https://github.com/huggingface/transformers/blob/main/src/transformers/integrations/executorch.py#L214C17-L214C53
+        """
+        # Tiny config
+        cfg = LlamaConfig(
+            vocab_size=32000,
+            hidden_size=256,
+            intermediate_size=512,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            use_cache=True,
+        )
+        base = LlamaForCausalLM(cfg).eval()
+
+        # REQUIRED: generation_config must request a 'static' cache with batch_size & max_cache_len
+        base.generation_config = GenerationConfig(
+            use_cache=True,
+            cache_implementation="static",
+            cache_config={"batch_size": 1, "max_cache_len": 128},
+        )
+
+        exportable = TorchExportableModuleForDecoderOnlyLM(
+            model=base, batch_size=1, max_cache_len=128
+        )
+
+        # Positional adapter so the pipeline can call module(*inputs)
+        model_for_pipeline = HFPositionalAdapter(exportable).eval()
+
+        # The tester will call model(*inputs). Provide (input_ids, cache_position)
+        input_ids = torch.tensor([[0]], dtype=torch.long)  # shape [1, 1]
+        cache_position = torch.tensor([0], dtype=torch.int32)  # shape [1]
+        inputs = (input_ids, cache_position)
+
+        return model_for_pipeline, inputs, None
 
     def prepare_model(self):
         checkpoint = None
@@ -84,27 +153,38 @@ class TestLlama:
         # TODO: Enable key value cache
         args = [
             "--disable_dynamic_shape",
+            "--max_seq_length",
+            "4096",
+            "--max_context_length",
+            "4096",
             "-c",
             checkpoint,
             "-p",
             params_file,
             "--model",
             model_name,
+            "--use_kv_cache",
         ]
+
         parser = build_args_parser()
         args = parser.parse_args(args)
         llm_config = LlmConfig.from_args(args)
 
         llama_model, llama_inputs, llama_meta = get_llama_model(llm_config)
 
+        if llm_config.model.use_kv_cache:
+            tokens, attn_options = llama_inputs
+            llama_model = LlamaPositionalAdapter(llama_model).eval()
+            llama_inputs = (tokens, attn_options["input_pos"])
+
         return llama_model, llama_inputs, llama_meta
 
 
-def _use_partial_quantizer(pipeline):
-    """Set the pipeline's quantizer to only include Linear layers"""
+def _use_partial_quantizer(pipeline, eps=2**-16):
+    """Set the pipeline's quantizer to only include Linear layers."""
     pipeline.quantizer.set_global(None)
     pipeline.quantizer.set_module_type(
-        torch.nn.Linear, get_symmetric_quantization_config()
+        torch.nn.Linear, get_symmetric_quantization_config(eps=eps)
     )
 
 
@@ -121,11 +201,10 @@ def test_llama_tosa_FP():
             aten_op=[],
             exir_op=[],
             custom_path="llama_tosa_fb",
-            run_on_tosa_ref_model=False,  # Just want to write TOSA FB to disk
+            run_on_tosa_ref_model=True,
             use_to_edge_transform_and_lower=True,
             transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
         )
-        pipeline.add_stage_after("to_executorch", pipeline.tester.serialize)
         pipeline.run()
 
 
@@ -142,10 +221,36 @@ def test_llama_tosa_INT():
             aten_op=[],
             exir_op=[],
             custom_path="llama_tosa_fb_int",
-            run_on_tosa_ref_model=False,  # Just want to write TOSA FB to disk
+            run_on_tosa_ref_model=True,
             use_to_edge_transform_and_lower=True,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
-        pipeline.add_stage_after("to_executorch", pipeline.tester.serialize)
+        pipeline.run()
+
+
+def test_llama_tosa_INT_static():
+    llama_model, llama_inputs, _ = TestLlama().prepare_model_hf_static()
+    if llama_model is None or llama_inputs is None:
+        pytest.skip("Missing model and/or input files")
+
+    with torch.no_grad():
+        pipeline = TosaPipelineINT[input_th](
+            llama_model,
+            llama_inputs,
+            aten_op=[],
+            exir_op=[],
+            custom_path="llama_tosa_hf_static_int",
+            run_on_tosa_ref_model=True,
+            use_to_edge_transform_and_lower=True,
+            fold_quantize=True,
+        )
+        # NOTE: HF StaticCache INT currently keeps two delegated subgraphs
+        # after partitioning on this path, so expect two delegate calls in EXIR.
+        pipeline.change_args(
+            "check_count.exir",
+            {"torch.ops.higher_order.executorch_call_delegate": 2},
+        )
         pipeline.run()
 
 
@@ -205,8 +310,11 @@ def test_llama_tosa_INT_FP_partial_quant():
             tosa_extensions=["FP"],
             # Due to a few outliers, atol must be set high
             atol=1.1,
+            qtol=1,
+            frobenius_threshold=None,
+            cosine_threshold=None,
         )
-        _use_partial_quantizer(pipeline)
+        _use_partial_quantizer(pipeline, eps=2**-12)
         pipeline.run()
 
 
@@ -226,6 +334,7 @@ def test_llama_vgf_quant_partial_quant():
             quantize=True,
             # Due to a few outliers, atol must be set high
             atol=1.1,
+            qtol=1,
         )
-        _use_partial_quantizer(pipeline)
+        _use_partial_quantizer(pipeline, eps=2**-12)
         pipeline.run()

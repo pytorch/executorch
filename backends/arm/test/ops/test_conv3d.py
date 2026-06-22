@@ -9,6 +9,7 @@ from typing import List, Tuple, Union
 import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
 )
 from executorch.backends.arm.test import common
@@ -26,9 +27,10 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 
 class Conv3d(torch.nn.Module):
-    """
-    Creates one or many chained 3D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 3D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(
@@ -128,11 +130,12 @@ class Conv3d(torch.nn.Module):
 
 
 class Conv3dMultiOp(torch.nn.Module):
-    """
-    Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation across ops.
+    """Mixed Conv3d/Conv2d pipeline used to verify spatial-rank propagation
+    across ops.
 
     Topology:
         conv3d -> reshape -> conv2d -> reshape/permutation -> conv2d -> reshape -> add(5D)
+
     """
 
     def __init__(self, dtype=torch.float):
@@ -209,6 +212,32 @@ class DepthwiseConv3d(torch.nn.Module):
         return self.conv(x)
 
 
+class GroupedConv3d(torch.nn.Module):
+    """Non-depthwise grouped Conv3d (in_channels != groups).
+
+    Split into ``groups`` plain convolutions by DecomposeGroupedConvPass, so it
+    is delegated unlike the depthwise case.
+
+    """
+
+    def __init__(self, dtype=torch.float):
+        super().__init__()
+        self.dtype = dtype
+        self.conv = torch.nn.Conv3d(
+            in_channels=4,
+            out_channels=4,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            groups=2,
+        ).to(dtype)
+
+    def get_inputs(self):
+        return (torch.randn(1, 4, 8, 8, 8).to(self.dtype),)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
 conv3d_2x2_3x2x14x14_nobias = Conv3d(
     in_channels=2,
     out_channels=3,
@@ -241,6 +270,45 @@ conv3d_3x3_1x3x12x12_st2_pd1 = Conv3d(
     width=12,
     height=12,
     batches=1,
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_reflect = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="reflect",
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_replicate = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="replicate",
+)
+
+conv3d_3x3_1x3x12x12_st1_pd1_circular = Conv3d(
+    in_channels=3,
+    out_channels=4,
+    kernel_size=(3, 3, 3),
+    stride=1,
+    padding=1,
+    width=12,
+    height=12,
+    depth=12,
+    batches=1,
+    padding_mode="circular",
 )
 
 conv3d_1x1_1x2x16x16_st1 = Conv3d(
@@ -398,6 +466,9 @@ test_data_FP = {
     "2x2_3x2x14x14_nobias": lambda: conv3d_2x2_3x2x14x14_nobias,
     "3x3_1x3x24x24_st1": lambda: conv3d_3x3_1x3x24x24_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv3d_3x3_1x3x12x12_st2_pd1,
+    "3x3_1x3x12x12_st1_pd1_reflect": lambda: conv3d_3x3_1x3x12x12_st1_pd1_reflect,
+    "3x3_1x3x12x12_st1_pd1_replicate": lambda: conv3d_3x3_1x3x12x12_st1_pd1_replicate,
+    "3x3_1x3x12x12_st1_pd1_circular": lambda: conv3d_3x3_1x3x12x12_st1_pd1_circular,
     "1x1_1x2x16x16_st1": lambda: conv3d_1x1_1x2x16x16_st1,
     "2x2_1x1x14x13_st2_needs_adjust_pass": lambda: conv3d_2x2_1x1x14x13_st2,
     "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": lambda: conv3d_5x5_1x3x14x15_st3_pd1,
@@ -412,7 +483,38 @@ test_data_FP = {
     "5x5_3x2x24x24_st1": lambda: conv3d_5x5_3x2x24x24_st1,
     "3x3_1x3x28x28_st2_pd1": lambda: conv3d_3x3_1x3x28x28_st2_pd1,
 }
-
+test_data_FP_fp8 = {
+    "basic_fp8e4m3": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "basic_fp8e5m2": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 test_data_FP_bf16 = {
     "bf16_3x3": lambda: Conv3d(
         height=10,
@@ -505,6 +607,21 @@ def test_convolution_3d_tosa_FP(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_FP_fp8)
+def test_convolution_3d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"CONV3D": 1, "CAST": 1})
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_INT)
 def test_convolution_3d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
@@ -529,6 +646,7 @@ def test_convolution_3d_tosa_INT_a8w4(test_data):
         exir_op,
         tosa_extensions=["int4"],
         qtol=1,
+        frobenius_threshold=0.4,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -577,17 +695,21 @@ def test_convolution_3d_tosa_INT_multi_op():
 
 
 def test_convolution_3d_tosa_FP_depthwise():
-    """Depthwise or Grouped Conv3d should be rejected until grouped support exists."""
+    """Depthwise Conv3d should be delegated, decomposed into groups==1
+    convolutions by DecomposeGroupedConvPass.
+    """
     model = DepthwiseConv3d()
-    pipeline = TosaPipelineFP[input_t](
-        model,
-        model.get_inputs(),
-        aten_op,
-        exir_op,
-        run_on_tosa_ref_model=False,
-    )
-    with pytest.raises(RuntimeError, match="CONV3D with groups != 1"):
-        pipeline.run()
+    pipeline = TosaPipelineFP[input_t](model, model.get_inputs(), aten_op, exir_op)
+    pipeline.run()
+
+
+def test_convolution_3d_tosa_FP_grouped():
+    """Non-depthwise grouped Conv3d should be delegated, decomposed into
+    groups==1 convolutions by DecomposeGroupedConvPass.
+    """
+    model = GroupedConv3d()
+    pipeline = TosaPipelineFP[input_t](model, model.get_inputs(), aten_op, exir_op)
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_INT)
@@ -690,6 +812,26 @@ def test_convolution_3d_vgf_quant_a8w4(test_data):
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT16)
+@common.SkipIfNoModelConverter
+def test_convolution_3d_vgf_quant_a16w8(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        quantize=True,
+        tosa_extensions=["int16"],
+        qtol=1,
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 

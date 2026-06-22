@@ -1,9 +1,9 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm.quantizer import TOSAQuantizer
@@ -14,9 +14,29 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
 )
 
 from torch.export import export
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 class ArmQuantize(Quantize):
+    def __init__(
+        self,
+        quantizer: Optional[Quantizer] = None,
+        quantization_config: Optional[Any] = None,
+        calibrate: bool = True,
+        calibration_samples: Optional[Sequence[Any]] = None,
+        is_qat: Optional[bool] = False,
+        set_global: bool = True,
+        fold_quantize: bool = True,
+    ):
+        super().__init__(
+            quantizer,
+            quantization_config,
+            calibrate,
+            calibration_samples,
+            is_qat,
+            set_global,
+        )
+        self.fold_quantize = fold_quantize
 
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
@@ -30,12 +50,12 @@ class ArmQuantize(Quantize):
             raise ValueError("ArmQuantizer can only run with TOSAQuantizer.")
 
         if self.calibration_samples is not None:
-            converted = self.quantizer.quantize_with_submodules(
-                captured_graph, self.calibration_samples, bool(self.is_qat)  # type: ignore
+            converted = self.quantizer._quantize_with_submodules(
+                captured_graph, self.calibration_samples, bool(self.is_qat), self.fold_quantize  # type: ignore
             )
         else:
-            converted = self.quantizer.quantize_with_submodules(
-                captured_graph, [inputs], bool(self.is_qat)
+            converted = self.quantizer._quantize_with_submodules(
+                captured_graph, [inputs], bool(self.is_qat), self.fold_quantize
             )
 
         DuplicateDynamicQuantChainPass()(converted)

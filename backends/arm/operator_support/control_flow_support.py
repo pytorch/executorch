@@ -19,32 +19,52 @@ from executorch.exir.backend.utils import WhyNoPartitionReporter
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 
+def _owning_graph_module(node: fx.Node) -> fx.GraphModule:
+    graph_module = getattr(node.graph, "owning_module", None)
+    if not isinstance(graph_module, fx.GraphModule):
+        raise RuntimeError(f"Could not resolve owning GraphModule for node {node}")
+    return graph_module
+
+
 def _fully_partitioned(submodule: fx.GraphModule) -> bool:
+    """Check that all nested control-flow ops within this submodule are also
+    fully partitioned.
+    """
     partition_tag = None
+
     for submodule_node in submodule.graph.nodes:
-        if submodule_node.op == "call_function":
-            # Input Q ops and output DQ ops will be de-tagged even if the submodule is fully supported.
-            if (
-                submodule_node.target in Q_OPS
-                and list(submodule_node.all_input_nodes)[0].op == "placeholder"
-            ):
-                continue
-            if (
-                submodule_node.target in DQ_OPS
-                and list(submodule_node.users)[0].op == "output"
-            ):
-                continue
-            if "delegation_tag" not in submodule_node.meta:
+        if submodule_node.target in ControlFlowOpSupported._targeted_ops:
+            if not _submodules_fully_partitioned(submodule_node, submodule):
                 return False
-            if partition_tag is None:
-                partition_tag = submodule_node.meta["delegation_tag"]
-            elif submodule_node.meta["delegation_tag"] != partition_tag:
-                return False
+
+        if submodule_node.op != "call_function":
+            continue
+        # skip no-op quantize/dequantize boundary
+        if (
+            submodule_node.target in Q_OPS
+            and list(submodule_node.all_input_nodes)[0].op == "placeholder"
+        ):
+            continue
+        if (
+            submodule_node.target in DQ_OPS
+            and list(submodule_node.users)[0].op == "output"
+        ):
+            continue
+
+        if "delegation_tag" not in submodule_node.meta:
+            return False
+
+        if partition_tag is None:
+            partition_tag = submodule_node.meta["delegation_tag"]
+
+        elif submodule_node.meta["delegation_tag"] != partition_tag:
+            return False
+
     return True
 
 
 def _submodules_fully_partitioned(
-    node: fx.Node, exported_program: ExportedProgram
+    node: fx.Node, graph_module: fx.GraphModule | None = None
 ) -> bool:
     """Returns whether the submodule arguments to a cond node were fully
     partitioned.
@@ -52,6 +72,9 @@ def _submodules_fully_partitioned(
     Updates "val" meta of the submodules if they are.
 
     """
+    if graph_module is None:
+        graph_module = _owning_graph_module(node)
+
     match node.target:
         case torch.ops.higher_order.cond:
             submodule_args = node.args[1:3]
@@ -61,9 +84,7 @@ def _submodules_fully_partitioned(
             raise ValueError(f"Unexpected target: {node.target}")
     cond_submodules = (
         (
-            exported_program.graph_module.get_submodule(
-                str(cast(torch.fx.Node, submodule_node).target)
-            ),
+            graph_module.get_submodule(str(cast(torch.fx.Node, submodule_node).target)),
             cast(torch.fx.Node, submodule_node),
         )
         for submodule_node in submodule_args
@@ -71,10 +92,11 @@ def _submodules_fully_partitioned(
     for submodule, submodule_node in cond_submodules:
         submodule = cast(torch.fx.GraphModule, submodule)
 
-        if _fully_partitioned(submodule):
-            submodule_node.meta["val"] = submodule.graph.output_node().meta["val"]
-        else:
+        if not _fully_partitioned(submodule):
             return False
+        else:
+            submodule_node.meta["val"] = submodule.graph.output_node().meta["val"]
+
     return True
 
 
@@ -105,6 +127,7 @@ class ControlFlowSubmoduleSupported(OperatorSupportBase):
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
+
         if is_submodule_node(node):
             if not _tosa_spec_supports_cf(self.tosa_spec):
                 self.reporter.report_reject(
@@ -118,7 +141,7 @@ class ControlFlowSubmoduleSupported(OperatorSupportBase):
                         node, f"Submodule had unsupported user {user}"
                     )
                     return False
-                if not _submodules_fully_partitioned(user, self.exported_program):
+                if not _submodules_fully_partitioned(user):
                     self.reporter.report_reject(
                         node, "One submodule was not fully partitioned"
                     )
@@ -161,7 +184,7 @@ class ControlFlowOpSupported(OperatorSupportBase):
                 )
                 return False
 
-            if not _submodules_fully_partitioned(node, self.exported_program):
+            if not _submodules_fully_partitioned(node):
                 self.reporter.report_reject(
                     node, "Submodule was not fully partitioned."
                 )

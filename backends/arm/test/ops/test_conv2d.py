@@ -8,6 +8,7 @@ from typing import List, Tuple, Union
 
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
 )
 from executorch.backends.arm.test import common
@@ -26,9 +27,10 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
 
 class Conv2d(torch.nn.Module):
-    """
-    Creates one or many chained 2D-convolutions. For multiple convolutions, the
-    respective parameteres are provided as lists.
+    """Creates one or many chained 2D-convolutions.
+
+    For multiple convolutions, the respective parameters are provided as lists.
+
     """
 
     def __init__(
@@ -122,319 +124,435 @@ class Conv2d(torch.nn.Module):
         return x
 
 
-conv2d_2x2_3x2x14x14_nobias = Conv2d(
-    in_channels=2,
-    out_channels=3,
-    kernel_size=(2, 2),
-    stride=1,
-    bias=False,
-    padding=0,
-    width=14,
-    height=14,
-    batches=2,
-)
+def conv2d_2x2_3x2x14x14_nobias():
+    return Conv2d(
+        in_channels=2,
+        out_channels=3,
+        kernel_size=(2, 2),
+        stride=1,
+        bias=False,
+        padding=3,
+        width=14,
+        height=14,
+        batches=2,
+        padding_mode="circular",
+    )
 
-conv2d_3x3_1x3x24x24_st1 = Conv2d(
-    in_channels=3,
-    out_channels=10,
-    kernel_size=(3, 3),
-    stride=1,
-    padding=0,
-    width=24,
-    height=24,
-    batches=1,
-)
 
-conv2d_3x3_1x3x12x12_st2_pd1 = Conv2d(
-    in_channels=3,
-    out_channels=4,
-    kernel_size=(3, 3),
-    stride=2,
-    padding=1,
-    width=12,
-    height=12,
-    batches=1,
-)
+def conv2d_3x3_1x3x12x12_st1_pd3_reflect():
+    return Conv2d(
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=1,
+        padding=3,
+        width=12,
+        height=12,
+        batches=1,
+        padding_mode="reflect",
+    )
 
-conv2d_1x1_1x2x16x16_st1 = Conv2d(
-    in_channels=2,
-    out_channels=1,
-    kernel_size=(1, 1),
-    stride=1,
-    padding=0,
-    width=16,
-    height=16,
-    batches=1,
-)
 
-conv2d_2x2_2x1x14x13_st2 = Conv2d(
-    in_channels=2,
-    out_channels=1,
-    kernel_size=(2, 2),
-    stride=2,
-    padding=0,
-    width=14,
-    height=13,
-    batches=1,
-)
+def conv2d_3x3_1x3x12x12_st1_pd3_replicate():
+    return Conv2d(
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=1,
+        padding=3,
+        width=12,
+        height=12,
+        batches=1,
+        padding_mode="replicate",
+    )
 
-conv2d_5x5_3x2x24x24_st1 = Conv2d(
-    in_channels=2,
-    out_channels=3,
-    kernel_size=(5, 5),
-    stride=1,
-    padding=0,
-    width=24,
-    height=24,
-    batches=2,
-)
 
-conv2d_3x3_1x3x28x28_st2_pd1 = Conv2d(
-    in_channels=3,
-    out_channels=16,
-    kernel_size=(3, 3),
-    stride=2,
-    padding=1,
-    width=28,
-    height=28,
-    batches=1,
-)
+def conv2d_3x3_1x3x24x24_st1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=10,
+        kernel_size=(3, 3),
+        stride=1,
+        padding=0,
+        width=24,
+        height=24,
+        batches=1,
+    )
 
-conv2d_5x5_1x3x14x15_st3_pd1 = Conv2d(
-    in_channels=3,
-    out_channels=16,
-    kernel_size=(5, 5),
-    stride=3,
-    padding=1,
-    width=14,
-    height=15,
-    batches=1,
-)
 
-conv2d_7x7_1x3x16x16_st2_pd1_dl2 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(7, 7),
-    stride=2,
-    padding=1,
-    dilation=2,
-    width=16,
-    height=16,
-    batches=1,
-)
+def conv2d_3x3_1x3x12x12_st2_pd1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=2,
+        padding=1,
+        width=12,
+        height=12,
+        batches=1,
+    )
 
-conv2d_7x7_1x3x15x15_st1_pd0_dl1 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(7, 7),
-    stride=1,
-    padding=0,
-    dilation=1,
-    width=15,
-    height=15,
-    batches=1,
-)
 
-conv2d_5x5_1x3x14x14_st5_pd0_dl1 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(5, 5),
-    stride=5,
-    padding=0,
-    dilation=1,
-    width=14,
-    height=14,
-    batches=1,
-)
+def conv2d_1x1_1x2x16x16_st1():
+    return Conv2d(
+        in_channels=2,
+        out_channels=1,
+        kernel_size=(1, 1),
+        stride=1,
+        padding=0,
+        width=16,
+        height=16,
+        batches=1,
+    )
 
-conv2d_5x5_1x3x9x9_st5_pd0_dl1 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(5, 5),
-    stride=5,
-    padding=0,
-    dilation=1,
-    width=9,
-    height=9,
-    batches=1,
-)
 
-conv2d_3x3_1x3x8x9_st3_pd0_dl1 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(3, 3),
-    stride=3,
-    padding=0,
-    dilation=1,
-    width=8,
-    height=9,
-    batches=1,
-)
+def conv2d_2x2_2x1x14x13_st2():
+    return Conv2d(
+        in_channels=2,
+        out_channels=1,
+        kernel_size=(2, 2),
+        stride=2,
+        padding=0,
+        width=14,
+        height=13,
+        batches=1,
+    )
 
-conv2d_3x3_1x3x9x8_st3_pd0_dl1 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(3, 3),
-    stride=3,
-    padding=0,
-    dilation=1,
-    width=8,
-    height=9,
-    batches=1,
-)
 
-conv2d_3x4_1x3x7x7_st3_pd0_dl1 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(3, 4),
-    stride=3,
-    padding=0,
-    dilation=1,
-    width=7,
-    height=7,
-    batches=1,
-)
+def conv2d_5x5_3x2x24x24_st1():
+    return Conv2d(
+        in_channels=2,
+        out_channels=3,
+        kernel_size=(5, 5),
+        stride=1,
+        padding=0,
+        width=24,
+        height=24,
+        batches=2,
+    )
 
-conv2d_4x3_1x3x7x7_st3_pd0_dl1 = Conv2d(
-    in_channels=3,
-    out_channels=3,
-    kernel_size=(4, 3),
-    stride=3,
-    padding=0,
-    dilation=1,
-    width=7,
-    height=7,
-    batches=1,
-)
 
-two_conv2d_nobias = Conv2d(
-    nbr_conv=2,
-    width=32,
-    height=32,
-    in_channels=[3, 10],
-    out_channels=[10, 15],
-    kernel_size=[(5, 5), (5, 5)],
-    stride=[1, 1],
-    padding=[0, 0],
-    bias=[False, False],
-    batches=1,
-)
+def conv2d_3x3_1x3x28x28_st2_pd1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=16,
+        kernel_size=(3, 3),
+        stride=2,
+        padding=1,
+        width=28,
+        height=28,
+        batches=1,
+    )
 
-two_conv2d = Conv2d(
-    nbr_conv=2,
-    width=32,
-    height=32,
-    in_channels=[3, 10],
-    out_channels=[10, 15],
-    kernel_size=[(5, 5), (5, 5)],
-    stride=[1, 1],
-    padding=[0, 0],
-    bias=[True, True],
-    batches=1,
-)
 
-conv2d_groups = Conv2d(
-    in_channels=12,
-    out_channels=9,
-    kernel_size=(3, 3),
-    stride=1,
-    padding=0,
-    dilation=1,
-    width=7,
-    height=7,
-    batches=1,
-    groups=3,
-    bias=False,
-)
+def conv2d_5x5_1x3x14x15_st3_pd1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=16,
+        kernel_size=(5, 5),
+        stride=3,
+        padding=1,
+        width=14,
+        height=15,
+        batches=1,
+    )
 
-conv2d_groups_bias = Conv2d(
-    in_channels=15,
-    out_channels=5,
-    kernel_size=(3, 3),
-    stride=1,
-    padding=0,
-    dilation=1,
-    width=7,
-    height=7,
-    batches=1,
-    groups=5,
-    bias=True,
-)
+
+def conv2d_7x7_1x3x16x16_st2_pd1_dl2():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(7, 7),
+        stride=2,
+        padding=1,
+        dilation=2,
+        width=16,
+        height=16,
+        batches=1,
+    )
+
+
+def conv2d_7x7_1x3x15x15_st1_pd0_dl1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(7, 7),
+        stride=1,
+        padding=0,
+        dilation=1,
+        width=15,
+        height=15,
+        batches=1,
+    )
+
+
+def conv2d_5x5_1x3x14x14_st5_pd0_dl1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(5, 5),
+        stride=5,
+        padding=0,
+        dilation=1,
+        width=14,
+        height=14,
+        batches=1,
+    )
+
+
+def conv2d_5x5_1x3x9x9_st5_pd0_dl1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(5, 5),
+        stride=5,
+        padding=0,
+        dilation=1,
+        width=9,
+        height=9,
+        batches=1,
+    )
+
+
+def conv2d_3x3_1x3x8x9_st3_pd0_dl1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(3, 3),
+        stride=3,
+        padding=0,
+        dilation=1,
+        width=8,
+        height=9,
+        batches=1,
+    )
+
+
+def conv2d_3x3_1x3x9x8_st3_pd0_dl1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(3, 3),
+        stride=3,
+        padding=0,
+        dilation=1,
+        width=9,
+        height=8,
+        batches=1,
+    )
+
+
+def conv2d_3x4_1x3x7x7_st3_pd0_dl1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(3, 4),
+        stride=3,
+        padding=0,
+        dilation=1,
+        width=7,
+        height=7,
+        batches=1,
+    )
+
+
+def conv2d_4x3_1x3x7x7_st3_pd0_dl1():
+    return Conv2d(
+        in_channels=3,
+        out_channels=3,
+        kernel_size=(4, 3),
+        stride=3,
+        padding=0,
+        dilation=1,
+        width=7,
+        height=7,
+        batches=1,
+    )
+
+
+def two_conv2d_nobias():
+    return Conv2d(
+        nbr_conv=2,
+        width=32,
+        height=32,
+        in_channels=[3, 10],
+        out_channels=[10, 15],
+        kernel_size=[(5, 5), (5, 5)],
+        stride=[1, 1],
+        padding=[0, 0],
+        bias=[False, False],
+        batches=1,
+    )
+
+
+def two_conv2d():
+    return Conv2d(
+        nbr_conv=2,
+        width=32,
+        height=32,
+        in_channels=[3, 10],
+        out_channels=[10, 15],
+        kernel_size=[(5, 5), (5, 5)],
+        stride=[1, 1],
+        padding=[0, 0],
+        bias=[True, True],
+        batches=1,
+    )
+
+
+def conv2d_groups():
+    return Conv2d(
+        in_channels=12,
+        out_channels=9,
+        kernel_size=(3, 3),
+        stride=1,
+        padding=0,
+        dilation=1,
+        width=7,
+        height=7,
+        batches=1,
+        groups=3,
+        bias=False,
+    )
+
+
+def conv2d_groups_bias():
+    return Conv2d(
+        in_channels=15,
+        out_channels=5,
+        kernel_size=(3, 3),
+        stride=1,
+        padding=0,
+        dilation=1,
+        width=7,
+        height=7,
+        batches=1,
+        groups=5,
+        bias=True,
+    )
+
+
+def conv2d_bf16_3x3():
+    return Conv2d(
+        height=12,
+        width=12,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=(1, 1),
+        padding=(1, 1),
+        bias=True,
+        dtype=torch.bfloat16,
+    )
+
+
+def conv2d_bf16_1x1():
+    return Conv2d(
+        height=8,
+        width=8,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1),
+        stride=(2, 1),
+        padding=(0, 3),
+        bias=False,
+        dtype=torch.bfloat16,
+    )
+
+
+def conv2d_fp16_3x3():
+    return Conv2d(
+        height=12,
+        width=12,
+        in_channels=3,
+        out_channels=4,
+        kernel_size=(3, 3),
+        stride=(1, 1),
+        padding=(1, 1),
+        bias=True,
+        dtype=torch.float16,
+    )
+
+
+def conv2d_fp16_1x1():
+    return Conv2d(
+        height=8,
+        width=8,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=(1, 1),
+        stride=(2, 1),
+        padding=(0, 3),
+        bias=False,
+        dtype=torch.float16,
+    )
+
 
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_convolution_2d_tosa_INT_2_3x3_1x3x12x12_st2_pd1
 test_data_FP = {
-    "2x2_3x2x14x14_nobias": lambda: conv2d_2x2_3x2x14x14_nobias,
-    "3x3_1x3x24x24_st1": lambda: conv2d_3x3_1x3x24x24_st1,
-    "3x3_1x3x12x12_st2_pd1": lambda: conv2d_3x3_1x3x12x12_st2_pd1,
-    "1x1_1x2x16x16_st1": lambda: conv2d_1x1_1x2x16x16_st1,
-    "2x2_2x1x14x13_st2_needs_adjust_pass": lambda: conv2d_2x2_2x1x14x13_st2,
-    "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": lambda: conv2d_5x5_1x3x14x15_st3_pd1,
-    "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": lambda: conv2d_7x7_1x3x16x16_st2_pd1_dl2,
-    "7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass": lambda: conv2d_7x7_1x3x15x15_st1_pd0_dl1,
-    "5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass": lambda: conv2d_5x5_1x3x14x14_st5_pd0_dl1,
-    "5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass": lambda: conv2d_5x5_1x3x9x9_st5_pd0_dl1,
-    "3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x3_1x3x9x8_st3_pd0_dl1,
-    "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x3_1x3x8x9_st3_pd0_dl1,
-    "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_3x4_1x3x7x7_st3_pd0_dl1,
-    "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": lambda: conv2d_4x3_1x3x7x7_st3_pd0_dl1,
-    "5x5_3x2x24x24_st1": lambda: conv2d_5x5_3x2x24x24_st1,
-    "3x3_1x3x28x28_st2_pd1": lambda: conv2d_3x3_1x3x28x28_st2_pd1,
-    "two_conv2d_nobias": lambda: two_conv2d_nobias,
-    "two_conv2d": lambda: two_conv2d,
-    "groups": lambda: conv2d_groups,
-    "groups_bias": lambda: conv2d_groups_bias,
+    "2x2_3x2x14x14_nobias_circular": conv2d_2x2_3x2x14x14_nobias,
+    "3x3_1x3x12x12_st1_pd3_reflect": conv2d_3x3_1x3x12x12_st1_pd3_reflect,
+    "3x3_1x3x12x12_st1_pd3_replicate": conv2d_3x3_1x3x12x12_st1_pd3_replicate,
+    "3x3_1x3x24x24_st1": conv2d_3x3_1x3x24x24_st1,
+    "3x3_1x3x12x12_st2_pd1": conv2d_3x3_1x3x12x12_st2_pd1,
+    "1x1_1x2x16x16_st1": conv2d_1x1_1x2x16x16_st1,
+    "2x2_2x1x14x13_st2_needs_adjust_pass": conv2d_2x2_2x1x14x13_st2,
+    "5x5_1x3x14x15_st3_pd1_needs_adjust_pass": conv2d_5x5_1x3x14x15_st3_pd1,
+    "7x7_1x3x16x16_st2_pd1_dl2_needs_adjust_pass": conv2d_7x7_1x3x16x16_st2_pd1_dl2,
+    "7x7_1x3x15x15_st1_pd0_dl1_needs_adjust_pass": conv2d_7x7_1x3x15x15_st1_pd0_dl1,
+    "5x5_1x3x14x14_st5_pd0_dl1_needs_adjust_pass": conv2d_5x5_1x3x14x14_st5_pd0_dl1,
+    "5x5_1x3x9x9_st5_pd0_dl1_needs_adjust_pass": conv2d_5x5_1x3x9x9_st5_pd0_dl1,
+    "3x3_1x3x9x8_st3_pd0_dl1_needs_adjust_pass": conv2d_3x3_1x3x9x8_st3_pd0_dl1,
+    "3x3_1x3x8x9_st3_pd0_dl1_needs_adjust_pass": conv2d_3x3_1x3x8x9_st3_pd0_dl1,
+    "3x4_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv2d_3x4_1x3x7x7_st3_pd0_dl1,
+    "4x3_1x3x7x7_st3_pd0_dl1_needs_adjust_pass": conv2d_4x3_1x3x7x7_st3_pd0_dl1,
+    "5x5_3x2x24x24_st1": conv2d_5x5_3x2x24x24_st1,
+    "3x3_1x3x28x28_st2_pd1": conv2d_3x3_1x3x28x28_st2_pd1,
+    "two_conv2d_nobias": two_conv2d_nobias,
+    "two_conv2d": two_conv2d,
+    "groups": conv2d_groups,
+    "groups_bias": conv2d_groups_bias,
 }
 
 test_data_FP_bf16 = {
-    "bf16_3x3": lambda: Conv2d(
-        height=12,
-        width=12,
-        in_channels=3,
-        out_channels=4,
-        kernel_size=(3, 3),
-        stride=(1, 1),
-        padding=(1, 1),
-        bias=True,
-        dtype=torch.bfloat16,
-    ),
-    "bf16_1x1": lambda: Conv2d(
-        height=8,
-        width=8,
-        in_channels=2,
-        out_channels=2,
-        kernel_size=(1, 1),
-        stride=(2, 1),
-        padding=(0, 3),
-        bias=False,
-        dtype=torch.bfloat16,
-    ),
+    "bf16_3x3": conv2d_bf16_3x3,
+    "bf16_1x1": conv2d_bf16_1x1,
 }
 test_data_FP_fp16 = {
-    "fp16_3x3": lambda: Conv2d(
-        height=12,
-        width=12,
-        in_channels=3,
-        out_channels=4,
-        kernel_size=(3, 3),
-        stride=(1, 1),
-        padding=(1, 1),
-        bias=True,
-        dtype=torch.float16,
+    "fp16_3x3": conv2d_fp16_3x3,
+    "fp16_1x1": conv2d_fp16_1x1,
+}
+test_data_FP_fp8 = {
+    "fp8e4m3": lambda: (
+        Conv2d(
+            height=8,
+            width=8,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
     ),
-    "fp16_1x1": lambda: Conv2d(
-        height=8,
-        width=8,
-        in_channels=2,
-        out_channels=2,
-        kernel_size=(1, 1),
-        stride=(2, 1),
-        padding=(0, 3),
-        bias=False,
-        dtype=torch.float16,
+    "fp8e5m2": lambda: (
+        Conv2d(
+            height=8,
+            width=8,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
     ),
 }
-
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -459,6 +577,7 @@ def _get_dtype_count(model: torch.nn.Module):
     "test_data",
     test_data_INT,
 )
+@common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_quant_a8w4(test_data):
     model, per_channel_quantization = test_data()
     pipeline = VgfPipeline[input_t](
@@ -482,7 +601,24 @@ def test_convolution_2d_tosa_FP(test_data):
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
+        atol=3e-3,
+        rtol=3e-3,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP_fp8)
+def test_convolution_2d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"CONV2D": 1, "CAST": 1})
     pipeline.run()
 
 
@@ -509,6 +645,7 @@ def test_convolution_2d_tosa_INT_a8w4(test_data):
         aten_op,
         exir_op,
         tosa_extensions=["int4"],
+        frobenius_threshold=0.45,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -591,6 +728,8 @@ def test_convolution_2d_vgf_no_quant(test_data):
         aten_op,
         exir_op,
         quantize=False,
+        atol=3e-3,
+        rtol=3e-3,
     )
     pipeline.run()
 
@@ -606,6 +745,25 @@ def test_convolution_2d_vgf_quant(test_data):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_quant_a16w8(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 
@@ -673,7 +831,9 @@ def test_convolution_2d_tosa_INT_a16w8(test_data: input_t):
 @common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone300
 def test_convolution_2d_u55_INT_a16w8(test_data: input_t):
-    """Test conv2d with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test conv2d with 16A8W quantization on U55 (16-bit activations, 8-bit
+    weights)
+    """
     model, per_channel_quantization = test_data()
     pipeline = EthosU55PipelineINT[input_t](
         model,
@@ -690,7 +850,9 @@ def test_convolution_2d_u55_INT_a16w8(test_data: input_t):
 @common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone320
 def test_convolution_2d_u85_INT_a16w8(test_data: input_t):
-    """Test conv2d with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test conv2d with 16A8W quantization on U85 (16-bit activations, 8-bit
+    weights)
+    """
     model, per_channel_quantization = test_data()
     pipeline = EthosU85PipelineINT[input_t](
         model,

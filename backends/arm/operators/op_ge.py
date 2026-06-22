@@ -3,56 +3,29 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-from typing import Any, List
-
 import tosa_serializer as ts
 
-from executorch.backends.arm.operators.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
+from executorch.backends.arm.operators.node_visitor import register_node_visitor
+from executorch.backends.arm.operators.simple_node_visitor import (
+    SimpleNodeVisitor,
+    SimpleNodeVisitorConfig,
 )
-from executorch.backends.arm.operators.operator_validation_utils import (
-    validate_num_inputs,
-    validate_same_dtype,
-    validate_valid_dtype,
-)
-from executorch.backends.arm.tosa.mapping import TosaArg
 
-from torch.fx import Node
+COMPARE_INPUT_DTYPES = [ts.DType.INT32, ts.DType.FP32, ts.DType.BF16, ts.DType.FP16]
 
 
 @register_node_visitor
-class GreaterEqualVisitor(NodeVisitor):
+class GreaterEqualVisitor(SimpleNodeVisitor):
     target = "aten.ge.Tensor"
 
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, inputs, ts)
-        validate_valid_dtype(
-            self.target,
-            inputs,
-            [ts.DType.INT32, ts.DType.FP32, ts.DType.BF16, ts.DType.FP16],
-            self.tosa_spec,
-        )
-        validate_valid_dtype(self.target, output, ts.DType.BOOL, self.tosa_spec)
-
-        attr = ts.TosaSerializerAttribute()
-        attr.GreaterEqualAttribute()
-        self._serialize_operator(
-            node,
-            tosa_graph,
-            ts.Op.GREATER_EQUAL,
-            [inputs[0].name, inputs[1].name],
-            [output.name],
-            attr,
+    @classmethod
+    def get_config(cls) -> SimpleNodeVisitorConfig:
+        return SimpleNodeVisitorConfig(
+            tosa_op=ts.Op.GREATER_EQUAL,
+            attr_method="GreaterEqualAttribute",
+            num_inputs=2,
+            input_dtypes=COMPARE_INPUT_DTYPES,
+            output_dtypes=[ts.DType.BOOL],
+            same_dtype_with_output=False,
+            dtype_check_inputs_only=True,
         )

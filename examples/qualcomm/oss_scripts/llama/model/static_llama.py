@@ -840,20 +840,13 @@ class LlamaModelWithoutEmbedding(LlamaModel):
             output_new_cache_only=output_new_cache_only,
             output_cache=output_cache,
             use_i64_token=use_i64_token,
+            **kwargs,
         )
 
-        # Initialize modality placeholder token ID
-        # Default value of -1 indicates embeddings come from text encoder
-        # Note: Text encoder modality is not currently supported
-        self.modality_placeholder_token_id = kwargs.get(
-            "modality_placeholder_token_id", -1
-        )
-
-        if self.modality_placeholder_token_id == -1:
-            raise NotImplementedError(
-                "Text encoder modality (modality_placeholder_token_id=-1) is not currently supported. "
-                "Please provide a valid modality_placeholder_token_id in kwargs."
-            )
+        # Set the audio/image token ID from keyword arguments. It defaults to None if not provided.
+        # If an ID is provided, it will be stored in the model's metadata.
+        self.audio_token_id = kwargs.get("audio_token_id", None)
+        self.image_token_id = kwargs.get("image_token_id", None)
 
     def forward(
         self,
@@ -871,6 +864,8 @@ class LlamaModelWithoutEmbedding(LlamaModel):
         freqs_sin = (
             self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin
         )
+
+        hidden_states = self.embedding_scale_factor * hidden_states
 
         for ind, decoder_layer in enumerate(self.layers):
             k_caches = None
@@ -894,6 +889,9 @@ class LlamaModelWithoutEmbedding(LlamaModel):
 
         hidden_states = self.norm(hidden_states)
         logits = self.output(hidden_states)
+
+        if self.logits_scaling:
+            logits = logits / self.logits_scaling
 
         if self.output_cache:
             return logits, output_k_cache, output_v_cache
@@ -943,7 +941,10 @@ class LlamaModelWithoutEmbedding(LlamaModel):
 
     def get_metadata(self):
         meta_data = super().get_metadata()
-        meta_data["modality_placeholder_token_id"] = self.modality_placeholder_token_id
+        if self.audio_token_id:
+            meta_data["audio_token_id"] = self.audio_token_id
+        if self.image_token_id:
+            meta_data["image_token_id"] = self.image_token_id
         return meta_data
 
 

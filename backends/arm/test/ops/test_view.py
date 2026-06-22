@@ -18,7 +18,6 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
-    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -31,7 +30,7 @@ input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x,  Input y
 
 class View(torch.nn.Module):
 
-    needs_transpose_tests = {
+    test_suite = {
         "rand_1d_neg": lambda: (torch.rand(100), (1, -1, 5, 2)),
         "rand_4d_neg": lambda: (torch.rand(10, 2, 1, 5), (1, -1, 5, 2)),
         "rand_4d_4d_small": lambda: (torch.rand(1, 2, 1, 9), (3, 1, 3, 2)),
@@ -53,7 +52,7 @@ class View(torch.nn.Module):
         "rand_3d_5d": lambda: (torch.rand(4, 5, 6), (1, 1, 2, -1, 3)),
     }
 
-    needs_transpose_tests_fp16 = {
+    test_suite_fp16 = {
         "rand_4d_4d_fp16": lambda: (
             torch.rand(2, 1, 1, 9, dtype=torch.float16),
             (3, 2, 3, 1),
@@ -64,22 +63,18 @@ class View(torch.nn.Module):
         ),
     }
 
-    rank_product_too_large = {
-        "rand_4d_large": lambda: (torch.rand(1, 49, 16, 128), (1, 16, 49, 128)),
-        "rand_5d_large": lambda: (torch.rand(2, 25, 16, 8, 64), (2, 16, 25, 8, 64)),
-    }
-
     def __init__(self, new_shape):
         super().__init__()
         self.new_shape = new_shape
 
     def forward(self, x: torch.Tensor):
-        return x.view(self.new_shape)
+        view_op = x.view(self.new_shape)
+        # Because we treat a single view as a no compute operation and therefore do not partition it,
+        # we want to provide a mul op to verify that it does indeed get partitioned when bundled with another op.
+        return view_op * view_op
 
 
-@common.parametrize(
-    "test_data", View.needs_transpose_tests | View.needs_transpose_tests_fp16
-)
+@common.parametrize("test_data", View.test_suite | View.test_suite_fp16)
 def test_view_tosa_FP(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = TosaPipelineFP[input_t1](
@@ -91,7 +86,49 @@ def test_view_tosa_FP(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+class ViewPermuteFP8(torch.nn.Module):
+    def __init__(self, new_shape: tuple[int, ...], dims: tuple[int, ...]):
+        super().__init__()
+        self.new_shape = new_shape
+        self.dims = dims
+
+    def forward(self, x: torch.Tensor):
+        # Use permute to keep the graph lowerable for FP8 tests,
+        # since the mul used in View is not supported with FP8.
+        return x.view(self.new_shape).permute(self.dims)
+
+
+@common.parametrize(
+    "test_data",
+    {
+        "view_permute_fp8e4m3": lambda: (
+            torch.rand((2, 3, 4), dtype=torch.float32).to(torch.float8_e4m3fn),
+            (2, 4, 3),
+            (0, 2, 1),
+            "fp8e4m3",
+        ),
+        "view_permute_fp8e5m2": lambda: (
+            torch.rand((2, 3, 4), dtype=torch.float32).to(torch.float8_e5m2),
+            (2, 4, 3),
+            (0, 2, 1),
+            "fp8e5m2",
+        ),
+    },
+)
+def test_view_tosa_FP_fp8_permute(test_data: Tuple):
+    test_tensor, new_shape, dims, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        ViewPermuteFP8(new_shape, dims),
+        (test_tensor,),
+        ["torch.ops.aten.view.default", "torch.ops.aten.permute.default"],
+        exir_op=[],
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"RESHAPE": 1, "TRANSPOSE": 1})
+    pipeline.run()
+
+
+@common.parametrize("test_data", View.test_suite)
 def test_view_tosa_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
     pipeline = TosaPipelineINT[input_t1](
@@ -103,7 +140,7 @@ def test_view_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize("test_data", View.test_suite)
 @common.XfailIfNoCorstone300
 def test_view_u55_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
@@ -116,9 +153,7 @@ def test_view_u55_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", View.needs_transpose_tests | View.needs_transpose_tests_fp16
-)
+@common.parametrize("test_data", View.test_suite | View.test_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_view_vgf_no_quant(test_data: Tuple):
     test_tensor, new_shape = test_data()
@@ -131,7 +166,7 @@ def test_view_vgf_no_quant(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize("test_data", View.test_suite)
 @common.SkipIfNoModelConverter
 def test_view_vgf_quant(test_data: Tuple):
     test_tensor, new_shape = test_data()
@@ -144,22 +179,7 @@ def test_view_vgf_quant(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.rank_product_too_large)
-@common.XfailIfNoCorstone300
-def test_view_u55_INT_not_delegated(test_data: Tuple):
-    test_tensor, new_shape = test_data()
-    pipeline = OpNotSupportedPipeline[input_t1](
-        View(new_shape),
-        (test_tensor,),
-        {"executorch_exir_dialects_edge__ops_aten_view_copy": 1},
-        n_expected_delegates=0,
-        quantize=True,
-        u55_subset=True,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize("test_data", View.test_suite)
 @common.XfailIfNoCorstone320
 def test_view_u85_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
@@ -172,9 +192,11 @@ def test_view_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize("test_data", View.test_suite)
 def test_view_16a8w_tosa_INT(test_data: Tuple):
-    """Test view operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test view operation with 16A8W quantization (16-bit activations, 8-bit
+    weights)
+    """
     per_channel_quantization = False
     test_tensor, new_shape = test_data()
 
@@ -193,10 +215,12 @@ def test_view_16a8w_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize("test_data", View.test_suite)
 @common.XfailIfNoCorstone300
 def test_view_16a8w_u55_INT(test_data: Tuple):
-    """Test view operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    """Test view operation with 16A8W quantization on U55 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
     test_tensor, new_shape = test_data()
 
@@ -214,10 +238,12 @@ def test_view_16a8w_u55_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests)
+@common.parametrize("test_data", View.test_suite)
 @common.XfailIfNoCorstone320
 def test_view_16a8w_u85_INT(test_data: Tuple):
-    """Test view operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    """Test view operation with 16A8W quantization on U85 (16-bit activations,
+    8-bit weights)
+    """
     per_channel_quantization = False
     test_tensor, new_shape = test_data()
 

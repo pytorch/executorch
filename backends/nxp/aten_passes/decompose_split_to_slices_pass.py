@@ -187,7 +187,7 @@ class DecomposeSplitToSlicesPass(PassBase):
             self._replace_split_with_slices(input_node, split_node, starts, ends, dim)
             made_changes = True
 
-        self.graph_module.recompile()
         self.graph_module.graph.eliminate_dead_code()
+        self.graph_module.recompile()
 
         return PassResult(self.graph_module, made_changes)

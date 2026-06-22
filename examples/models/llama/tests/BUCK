@@ -16,6 +16,17 @@ fbcode_target(_kind = python_unittest,
 )
 
 fbcode_target(_kind = python_unittest,
+    name = "test_qwen3_5_attention",
+    srcs = [
+        "test_qwen3_5_attention.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:llama_transformer",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
     name = "test_pre_quantization_transforms",
     srcs = [
         "test_pre_quantization_transforms.py",
@@ -102,5 +113,17 @@ fbcode_target(_kind = python_unittest,
         "//executorch/examples/models/llama:export_library",
         "//executorch/examples/models/llama:llama_transformer",
         "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_yoco_attention",
+    srcs = [
+        "test_yoco_attention.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/examples/models/llama:llama_transformer",
     ],
 )

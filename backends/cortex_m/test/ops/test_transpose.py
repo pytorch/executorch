@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -69,7 +69,7 @@ test_cases = {
     ),
     "permute_rank_1": McuTestCase(
         CortexMPermute((0,)),
-        (ramp_tensor(10, 100, (3)),),
+        (ramp_tensor(10, 100, (3,)),),
     ),
     "transpose_1_2": McuTestCase(
         CortexMTranspose(1, 2),
@@ -87,8 +87,10 @@ test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_dialect_transpose(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_transpose(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -97,6 +99,8 @@ def test_dialect_transpose(test_case):
 
 
 @parametrize("test_case", test_cases)
-def test_implementation_transpose(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_transpose(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)

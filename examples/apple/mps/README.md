@@ -2,6 +2,11 @@ This README gives some examples on backend-specific model workflow.
 
 # MPS Backend
 
+> **⚠️ Deprecated:** The MPS backend is deprecated as of ExecuTorch 1.2 and will
+> be removed in ExecuTorch 1.4. Please migrate to the
+> [CoreML backend](../../../backends/apple/coreml/) for iOS/macOS GPU acceleration,
+> or the [Metal backend](../../../desktop/) for macOS desktop GPU workloads.
+
 [MPS](https://developer.apple.com/documentation/metalperformanceshaders) is a framework of highly optimized compute and graphics shaders, specially tuned to take advantage of the unique hardware characteristics of each GPU family to ensure optimal performance.
 **MPS** backend takes advantage of [MPSGraph](https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc) to build, compile, and execute customized multidimensional graphs from the edge dialect ops.
 

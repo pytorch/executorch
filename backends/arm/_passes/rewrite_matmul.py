@@ -21,9 +21,20 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class RewriteMatmulPass(ArmPass):
-    """Rewrites aten.bmm to tosa.MATMUL and inserts a tosa.RESCALE op if needed."""
+    """Rewrites aten.bmm to tosa.MATMUL and inserts a tosa.RESCALE or cast op if
+    needed.
+    """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    # TOSA MATMUL widens these floating-point input types, so outputs may need
+    # casting back to preserve the original PyTorch node semantics.
+    _WIDENING_INPUT_DTYPES = (
+        torch.float16,
+        torch.bfloat16,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+    )
 
     def _insert_output_rescale(self, graph_module, node, tosa_matmul_node, dtype):
         input_qparams = get_input_qparams(node)
@@ -92,17 +103,17 @@ class RewriteMatmulPass(ArmPass):
                         TosaSpecialDtype.INT48
                     )
             elif (
-                x1_fake_tensor.dtype in [torch.float16, torch.bfloat16]
-                and x2_fake_tensor.dtype in [torch.float16, torch.bfloat16]
-                and output_fake_tensor.dtype not in [torch.float16, torch.bfloat16]
+                x1_fake_tensor.dtype in self._WIDENING_INPUT_DTYPES
+                and x2_fake_tensor.dtype in self._WIDENING_INPUT_DTYPES
+                and output_fake_tensor.dtype != node_output_fake_tensor.dtype
             ):
-                # A TOSA BF16/FP16 MATMUL outputs FP32 whereas pytorch outputs BF16/FP16.
-                # Cast back to BF16/FP16 to get matching semantics.
+                # TOSA BF16/FP16/FP8 MATMUL widens the output. Cast back to
+                # preserve the exported graph dtype.
                 with graph_module.graph.inserting_after(tosa_matmul_node):
                     cast_node = create_node(
                         graph_module.graph,
                         op_target=exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-                        kwargs={"dtype": x1_fake_tensor.dtype},
+                        kwargs={"dtype": node_output_fake_tensor.dtype},
                         from_node=tosa_matmul_node,
                     )
                     tosa_matmul_node.replace_all_uses_with(cast_node)

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -23,8 +23,7 @@ from torch.fx import GraphModule, Node
 
 
 class MatchArgRanksPass(ArmPass):
-    """
-    For ops in 'targeted_ops', make sure that the inputs share the same rank.
+    """For ops in 'targeted_ops', make sure that the inputs share the same rank.
     New dimensions are inserted from the beginning of the inputs that have a
     lower rank to match the input with the highest rank.
 
@@ -36,6 +35,7 @@ class MatchArgRanksPass(ArmPass):
         input0 = shape(4, 3, 2)
         input1 = shape(1, 1, 2)
         input2 = shape(1, 3, 1)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -57,6 +57,7 @@ class MatchArgRanksPass(ArmPass):
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.pow.Tensor_Tensor,
         exir_ops.edge.aten.remainder.Tensor,
         exir_ops.edge.aten.where.self,
@@ -68,9 +69,8 @@ class MatchArgRanksPass(ArmPass):
     ]
 
     def _match_op_rank(self, graph_module, node, arg, max_rank):
-        """
-        In graph_module, insert a view between arg and node to make the
-        rank of arg match the other args to node.
+        """In graph_module, insert a view between arg and node to make the rank
+        of arg match the other args to node.
         """
         shape = get_first_fake_tensor(arg).shape
         rank = len(shape)
@@ -85,6 +85,7 @@ class MatchArgRanksPass(ArmPass):
             node.replace_input_with(arg, view)
 
     def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
 
@@ -108,7 +109,8 @@ class MatchArgRanksPass(ArmPass):
                     continue
 
                 self._match_op_rank(graph_module, node, arg, max_rank)
+                modified = True
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

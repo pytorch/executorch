@@ -72,6 +72,24 @@ void layer_norm(
   const bool gamma_null = gamma_data == nullptr;
   const bool beta_null = beta_data == nullptr;
 
+  // For small normalized dimensions, fall back to the portable scalar
+  // implementation since SIMD vectorization setup/tail-handling overhead
+  // exceeds the benefit for small N.
+  constexpr size_t kSmallNThreshold = 256;
+  if (N < kSmallNThreshold) {
+    layer_norm_scalar<CTYPE>(
+        input_data,
+        gamma_data,
+        beta_data,
+        out_data,
+        mean_data,
+        rstd_data,
+        M,
+        N,
+        eps);
+    return;
+  }
+
   for (size_t i = 0; i < M; ++i) {
     const CTYPE* src_ptr = input_data + i * N;
     CTYPE* dst_ptr = out_data + i * N;

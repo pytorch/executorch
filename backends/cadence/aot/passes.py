@@ -19,18 +19,21 @@ from executorch.backends.cadence.aot.fuse_ops import (
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     create_cadence_pass_filter,
+    EdgePassesConfig,
     register_cadence_pass,
 )
 
 from executorch.backends.cadence.aot.remove_ops import (
     CadenceRemoveNops,
     RemoveNopSliceOrViewOpPass,
+    RemovePermutesAroundElementwiseOps,
     RemoveRedundantOps,
 )
 from executorch.backends.cadence.aot.reorder_ops import CadenceReorderOpsInGraph
 from executorch.backends.cadence.aot.replace_ops import (
     CadenceReplaceOpsInGraph,
     ReplaceMulTensorWithMulAndFullOpsPass,
+    ReplaceSafeSoftmaxWithSoftmax,
 )
 from executorch.backends.cadence.aot.simplify_ops import CadenceSimplifyOpsInGraph
 from executorch.backends.cadence.aot.type_dispatch import CompileTimeTypeDispatchPass
@@ -89,6 +92,7 @@ def get_passes_in_default_order() -> list[Type[ExportPass]]:
         CadenceSimplifyOpsInGraph.passes,
         FinalizePipeline,
         FuseFullThenReshapePass,
+        RemovePermutesAroundElementwiseOps,
         FuseTransposeOrPermuteOpPairsPass,
         RemoveNopSliceOrViewOpPass,
         CompileTimeTypeDispatchPass,
@@ -99,9 +103,12 @@ def get_passes_in_default_order() -> list[Type[ExportPass]]:
 def apply_exir_ops_passes(
     opt_level: int,
     edge_prog_manager: EdgeProgramManager,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
     passes = get_passes_in_default_order()
-    pass_filter = create_cadence_pass_filter(opt_level)
+    pass_filter = create_cadence_pass_filter(
+        opt_level, edge_passes_config=edge_passes_config
+    )
     cadence_passes = [
         (
             lambda graph_module, filtered_pass=filtered_pass: filtered_pass()(
@@ -125,7 +132,8 @@ def apply_torch_ops_passes(expo_program: ExportedProgram) -> ExportedProgram:
     """
 
     aten_passes: List[Callable[[torch.fx.GraphModule], Optional[PassResult]]] = [
-        ReplaceMulTensorWithMulAndFullOpsPass()
+        ReplaceSafeSoftmaxWithSoftmax(),
+        ReplaceMulTensorWithMulAndFullOpsPass(),
     ]
     # TODO(T230417247): Use PassResult which is currently ignored.
     PassManager(aten_passes)(expo_program.graph_module)

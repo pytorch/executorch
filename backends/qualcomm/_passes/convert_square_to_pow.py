@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import copy_meta
 
@@ -33,6 +34,5 @@ class ConvertSquareToPow(ExportPass):
                 for user in node.users.copy():
                     user.replace_input_with(node, pow_node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

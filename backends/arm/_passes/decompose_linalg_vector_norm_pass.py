@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -6,17 +6,17 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeLinalgVectorNormPass(ArmPass):
-    """
-    This pass decomposes aten.linalg_vector_norm.default into more primitive ops.
-    We need to add this pass before quantization for graph annotation.
-    By default, aten.linalg_vector_norm op is decomposed during legalization to Edge IR.
+class DecomposeLinalgVectorNormPass(ArmOpTargetedPass):
+    """This pass decomposes aten.linalg_vector_norm.default into more primitive
+    ops. We need to add this pass before quantization for graph annotation. By
+    default, aten.linalg_vector_norm op is decomposed during legalization to
+    Edge IR.
 
     The decomposition is as follows:
 
@@ -31,6 +31,7 @@ class DecomposeLinalgVectorNormPass(ArmPass):
           out = POW(REDUCE_SUM(POW(ABS(x), p), dims, keepdim), 1/p)
           In this case we need to wrap p into Tensor and we need to know
           dtype prior, but we dont know this from FX graph.
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -39,11 +40,11 @@ class DecomposeLinalgVectorNormPass(ArmPass):
     }
 
     torch_linalg_vector_norm = (torch.ops.aten.linalg_vector_norm.default,)
+    target_ops = torch_linalg_vector_norm
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self.torch_linalg_vector_norm or not self.allowed_to_transform(
-            meta
-        ):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         # Extract inputs and optional arguments.

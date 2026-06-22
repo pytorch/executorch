@@ -64,7 +64,9 @@ void add_gather_node(
       // Push Constants
       {},
       // Specialization Constants
-      {static_cast<int32_t>(dim_whcn)},
+      {static_cast<int32_t>(dim_whcn),
+       graph.hashed_layout_of(out),
+       graph.hashed_layout_of(input)},
       // Resize Args
       {},
       // Resizing Logic

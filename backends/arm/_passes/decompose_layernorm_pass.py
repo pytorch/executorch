@@ -9,7 +9,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import create_node, insert_scalar
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
@@ -75,6 +75,7 @@ class DecomposeLayerNormPass(ArmPass):
     }
 
     def call(self, graph_module: torch.fx.GraphModule):
+        modified = False
         for node in graph_module.graph.nodes:
             if (
                 node.op != "call_function"
@@ -82,6 +83,7 @@ class DecomposeLayerNormPass(ArmPass):
                 or not self.allowed_to_transform(node.meta)
             ):
                 continue
+            modified = True
 
             # epsilon default value
             epsilon = torch.finfo().eps
@@ -107,17 +109,12 @@ class DecomposeLayerNormPass(ArmPass):
             n_dims = len(normalized_shape)
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
-                dtype = meta["val"][0].dtype
-                device = meta["val"][0].device
             else:
                 shape = meta["val"].size()
-                dtype = meta["val"].dtype
-                device = meta["val"].device
             rank = len(shape)
             dims = list(range(-1, -1 * (n_dims + 1), -1))
             dims = [dim % rank for dim in dims]
             weights_reshaped_shape = [shape[i] if i in dims else 1 for i in range(rank)]
-            epsilon_reshaped_shape = [1] * rank
 
             (
                 mean_op,
@@ -140,15 +137,16 @@ class DecomposeLayerNormPass(ArmPass):
                     kwargs={"correction": 0, "keepdim": keepdim},
                     from_node=node,
                 )
-                full = create_node(
-                    graph_module.graph,
-                    full_op,
-                    args=(epsilon_reshaped_shape, epsilon),
-                    kwargs={"dtype": dtype, "device": device},
-                    from_node=node,
-                )
                 add0 = create_node(
-                    graph_module.graph, add_op, args=(var, full), from_node=node
+                    graph_module.graph,
+                    add_op,
+                    args=(
+                        var,
+                        insert_scalar(
+                            graph_module.graph, epsilon, meta, node, self.is_tfa_pass
+                        ),
+                    ),
+                    from_node=node,
                 )
                 rsqrt = create_node(
                     graph_module.graph, rsqrt_op, args=(add0,), from_node=node
@@ -197,7 +195,7 @@ class DecomposeLayerNormPass(ArmPass):
                         user.replace_all_uses_with(output)
                 graph_module.graph.erase_node(node)
                 graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
+        if modified:
+            graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

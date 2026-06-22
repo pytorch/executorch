@@ -31,6 +31,8 @@ class TestMobilebert(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
     }
 
+    dynamic_shapes = ({1: torch.export.Dim("seq_length", min=2, max=32)},)
+
     def test_fp32_mobilebert(self):
         (
             Tester(self.mobilebert, self.example_inputs)
@@ -49,6 +51,21 @@ class TestMobilebert(unittest.TestCase):
             .export()
             .to_edge_transform_and_lower()
             .check_not(list(self.supported_ops))
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(inputs=self.example_inputs)
+        )
+
+    def test_fp32_mobilebert_dynamic(self):
+        (
+            Tester(
+                self.mobilebert,
+                self.example_inputs,
+                dynamic_shapes=self.dynamic_shapes,
+            )
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
             .run_method_and_compare_outputs(inputs=self.example_inputs)

@@ -18,6 +18,8 @@
 #include <tuple>
 #include <vector>
 
+#define QNN_CTX_BIN_ALIGNMENT 256
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -50,6 +52,8 @@ class QnnCustomProtocol {
 // | signature (8 bytes)           |
 // ---------------------------------
 // | context_binary_size (8 bytes) |
+// ---------------------------------
+// | extra padding (236 bytes)     |
 // ---------------------------------
 // | context_binary.data           |
 // ---------------------------------

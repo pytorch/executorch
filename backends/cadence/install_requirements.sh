@@ -30,7 +30,7 @@ if [ $STATUS -ne 0 ]; then
     exit 1
 fi
 
-git checkout 102944a6f76a0de4d81adc431f3f132f517aa87f
+git checkout 64d73d729797388b0e346794d7a2e408374a74de
 
 
 ## Fusion G3

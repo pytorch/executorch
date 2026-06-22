@@ -80,22 +80,45 @@ def _is_tosa_marker_in_file(tmp_file):
 def test_compare_initial_to_quantized_tosa_INT(test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
     pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.pop_stage("run_method_and_compare_outputs.original_model")
 
     pipeline.run_and_compare_to_initial_model(
         frobenius_threshold=0.05, cosine_threshold=0.95
     )
 
     stage_ids = [stage.id for stage in pipeline._stages]
-    assert "run_method_and_compare_outputs" in stage_ids
+    assert "run_method_and_compare_outputs.original_model" in stage_ids
 
     export_index = pipeline.find_pos("export")
-    compare_index = pipeline.find_pos("run_method_and_compare_outputs")
+    compare_index = pipeline.find_pos("run_method_and_compare_outputs.original_model")
     assert compare_index == export_index + 1
 
     compare_stage = pipeline._stages[compare_index]
     assert compare_stage.kwargs["reference_stage_type"] == StageType.INITIAL_MODEL
     assert compare_stage.kwargs["run_eager_mode"] is True
     pipeline.run()
+
+
+@common.parametrize("test_data", Linear.inputs)
+def test_tosa_FP_can_skip_ref_model_output_comparison(test_data: input_t1):
+    default_pipeline = TosaPipelineFP[input_t1](Linear(), test_data, [], [])
+    default_compare_stage = default_pipeline._stages[
+        default_pipeline.find_pos("run_method_and_compare_outputs")
+    ]
+    assert default_compare_stage.kwargs["compare_outputs"] is True
+
+    validation_pipeline = TosaPipelineFP[input_t1](
+        Linear(),
+        test_data,
+        [],
+        [],
+        compare_tosa_ref_model_outputs=False,
+    )
+    validation_compare_stage = validation_pipeline._stages[
+        validation_pipeline.find_pos("run_method_and_compare_outputs")
+    ]
+    assert validation_compare_stage.kwargs["compare_outputs"] is False
+    assert validation_compare_stage.kwargs["inputs"] == test_data
 
 
 @common.parametrize("test_data", Linear.inputs)
@@ -218,9 +241,13 @@ def test_collate_tests_tosa_INT(test_data: input_t1):
     )
     # test that the output directory is created and contains the expected files
     assert os.path.exists(test_collate_dir)
+    found_file = False
     for file in os.listdir(test_collate_dir):
         file_name_prefix = "TOSA-1.0+INT"
-        assert file.endswith((f"{file_name_prefix}.json", f"{file_name_prefix}.tosa"))
+        found_file |= file.endswith(
+            (f"{file_name_prefix}.json", f"{file_name_prefix}.tosa")
+        )
+    assert found_file
 
     os.environ.pop("TOSA_TESTCASES_BASE_PATH")
     shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)

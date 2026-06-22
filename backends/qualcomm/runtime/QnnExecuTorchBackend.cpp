@@ -112,8 +112,12 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     }
   }
   add_cached_delegate(signature, qnn_manager);
+
+#ifndef __hexagon__
   // This backend does not need its processed data after Init.
   processed->Free();
+#endif
+
   return qnn_manager;
 }
 
@@ -144,8 +148,7 @@ Error QnnExecuTorchBackend::execute(
           Error::Ok) {
         // update data ptr only should be fine
         input_tensor->FillDataBuffer(
-            args[args_index]->toTensor().const_data_ptr(),
-            false /* copy_data */);
+            args[args_index]->toTensor().const_data_ptr());
         // use the real input shape instead of nominal one to make sure
         // dynamic shape is functional
         auto dims = args[args_index]->toTensor().sizes();
@@ -163,7 +166,7 @@ Error QnnExecuTorchBackend::execute(
       void* mutable_data_ptr = args[args_index]->toTensor().mutable_data_ptr();
       if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=
           Error::Ok) {
-        output_tensor->FillDataBuffer(mutable_data_ptr, false /* copy_data */);
+        output_tensor->FillDataBuffer(mutable_data_ptr);
       }
       args_index++;
     }
@@ -217,6 +220,38 @@ executorch::runtime::Error QnnExecuTorchBackend::set_option(
         qnn_runtime_profile_level_.value = *val;
         qnn_runtime_profile_level_.is_set = true;
       }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_FPS) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_fps_.value = *val;
+        qnn_runtime_lpai_fps_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_FTRT_RATIO) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_ftrt_ratio_.value = *val;
+        qnn_runtime_lpai_ftrt_ratio_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_client_perf_type_.value = *val;
+        qnn_runtime_lpai_client_perf_type_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_AFFINITY) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_affinity_.value = *val;
+        qnn_runtime_lpai_affinity_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_LPAI_CORE_SELECTION) == 0) {
+      if (auto* val = std::get_if<int>(&option.value)) {
+        qnn_runtime_lpai_core_selection_.value = *val;
+        qnn_runtime_lpai_core_selection_.is_set = true;
+      }
+    } else if (strcmp(option.key, QNN_RUNTIME_HEAP_PROFILING_PATH) == 0) {
+      if (auto* val =
+              std::get_if<std::array<char, runtime::kMaxOptionValueLength>>(
+                  &option.value)) {
+        qnn_runtime_heap_profiling_path_.value = *val;
+        qnn_runtime_heap_profiling_path_.is_set = true;
+      }
     } else {
       ET_LOG(
           Error,
@@ -240,6 +275,7 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
     executorch::runtime::BackendOptionContext& context,
     executorch::runtime::Span<executorch::runtime::BackendOption>&
         backend_options) {
+  std::lock_guard<std::mutex> guard(runtime_option_mutex_);
   size_t matches = backend_options.size();
   for (size_t i = 0; i < backend_options.size(); ++i) {
     // Set the value to what was stored by set_option
@@ -254,6 +290,31 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
         strcmp(backend_options[i].key, QNN_RUNTIME_PROFILE_LEVEL) == 0 &&
         qnn_runtime_profile_level_.is_set) {
       backend_options[i].value = qnn_runtime_profile_level_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_FPS) == 0 &&
+        qnn_runtime_lpai_fps_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_fps_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_FTRT_RATIO) == 0 &&
+        qnn_runtime_lpai_ftrt_ratio_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_ftrt_ratio_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_CLIENT_PERF_TYPE) ==
+            0 &&
+        qnn_runtime_lpai_client_perf_type_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_client_perf_type_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_AFFINITY) == 0 &&
+        qnn_runtime_lpai_affinity_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_affinity_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_CORE_SELECTION) == 0 &&
+        qnn_runtime_lpai_core_selection_.is_set) {
+      backend_options[i].value = qnn_runtime_lpai_core_selection_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_HEAP_PROFILING_PATH) == 0 &&
+        qnn_runtime_heap_profiling_path_.is_set) {
+      backend_options[i].value = qnn_runtime_heap_profiling_path_.value;
     } else {
       // either runtime never called set_option or key does not exist
       matches--;
@@ -290,10 +351,49 @@ void QnnExecuTorchBackend::erase_cached_delegate(
 }
 
 namespace {
+#if !defined(_MSC_VER)
 auto cls = QnnExecuTorchBackend();
 executorch::runtime::Backend backend{QNN_BACKEND, &cls};
+// On non-Windows platforms a single copy of executorch_core is shared between
+// the DLL and the exe, so the static initializer writes into the correct
+// registered_backends[] array.
 static auto success_with_compiler = register_backend(backend);
+#endif
 } // namespace
+
+#if defined(_MSC_VER)
+static QnnExecuTorchBackend cls_msvc;
+static executorch::runtime::Backend backend_msvc{QNN_BACKEND, &cls_msvc};
+#endif
+
 } // namespace qnn
 } // namespace backends
 } // namespace executorch
+
+#if defined(_MSC_VER)
+// On Windows the DLL and the exe each carry a private copy of executorch_core
+// globals. The runner calls this function at startup, passing its own
+// register_backend() so registration happens in the exe's address space.
+// See QnnExecuTorch.h for the required register_fn signature.
+void QnnExecuTorchBackendRegister(void* register_fn) {
+  using RegisterFn =
+      executorch::runtime::Error (*)(const executorch::runtime::Backend&);
+  if (register_fn == nullptr) {
+    ET_LOG(Error, "QnnExecuTorchBackendRegister called with null register_fn");
+    return;
+  }
+  executorch::runtime::Error err = reinterpret_cast<RegisterFn>(register_fn)(
+      executorch::backends::qnn::backend_msvc);
+  if (err != executorch::runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to register QNN backend: 0x%x",
+        static_cast<uint32_t>(err));
+  }
+}
+#else
+void QnnExecuTorchBackendRegister(void*) {
+  // No-op: ELF symbol interposition already shares a single backend registry
+  // between the .so and the exe, so the static initializer above suffices.
+}
+#endif

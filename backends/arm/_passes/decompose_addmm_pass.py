@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.backends.arm._passes.mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
@@ -22,7 +22,9 @@ aten_addmm = torch.ops.aten.addmm.default
 
 
 def get_ops(op):
-    """Returns the appropriate operator functions based on the input operator."""
+    """Returns the appropriate operator functions based on the input
+    operator.
+    """
     if op == edge_addmm:
         return (
             exir_ops.edge.aten.mm.default,
@@ -39,7 +41,7 @@ def get_ops(op):
         raise ValueError(f"Unsupported operator: {op}")
 
 
-class DecomposeAddmmPass(ArmPass):
+class DecomposeAddmmPass(ArmOpTargetedPass):
     """Decomposes the addmm operator into tensor multiplication and addition."""
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -47,9 +49,10 @@ class DecomposeAddmmPass(ArmPass):
         MatchArgRanksPass,
         MatchArgDtypePass,
     }
+    target_ops = (edge_addmm, aten_addmm)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [edge_addmm, aten_addmm] or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         input, mat1, mat2 = args

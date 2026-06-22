@@ -1,11 +1,10 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Tests 10 popular torch ops, not tested in other ways, training related or
+requiring randomness.
 
-
-"""
-Tests 10 popular torch ops, not tested in other ways, training related or requring randomness.
 - t
 - zeros
 - ones
@@ -16,6 +15,7 @@ Tests 10 popular torch ops, not tested in other ways, training related or requri
 - eye
 - topk
 - sort
+
 """
 
 from typing import Callable
@@ -97,8 +97,6 @@ test_parameters = {test[0]: test[1:] for test in module_tests}
     "test_data",
     test_parameters,
     xfails={
-        "nonzero": "torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u4, 0). "
-        "Requires dynamic output shape.",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
     },
@@ -124,8 +122,6 @@ def test_torch_functions_tosa_FP(test_data):
     "test_data",
     test_parameters,
     xfails={
-        "nonzero": "torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u4, 0). "
-        "Requires dynamic output shape.",
         "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
         "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
     },
@@ -134,7 +130,12 @@ def test_torch_functions_tosa_FP(test_data):
 def test_torch_functions_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
-        module, inputs, "", use_to_edge_transform_and_lower=True
+        module,
+        inputs,
+        "",
+        use_to_edge_transform_and_lower=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")

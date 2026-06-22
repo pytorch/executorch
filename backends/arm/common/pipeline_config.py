@@ -1,43 +1,78 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import json
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from enum import auto, Enum
-from typing import Any
+from typing import Any, cast
 
 
 class SoftmaxDecompositionConfig(Enum):
-    MASKED = auto()
-    UNSTABLE = auto()
+    MASKED = auto()  # Stable softmax + masked fill decomposition
+    STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
-class FuseDuplicateUsersConfig(Enum):
-    ENABLED = auto()
-    DISABLED = auto()
+@dataclass
+class QuantizeInfConfig:
+    """Replacement values for infinities before quantization.
+
+    Infinities cannot be quantized directly, so the Arm pipeline replaces them
+    with finite values before running the quantization passes.
+
+    Args:
+        neg_inf (float): Value used for ``-inf``.
+        pos_inf (float): Value used for ``inf``.
+
+    """
+
+    neg_inf: float = -256.0
+    pos_inf: float = 255.0
 
 
 @dataclass
 class ArmPassPipelineConfig:
+    """Options for tuning the Arm pass pipeline.
+
+    Args:
+        softmax (SoftmaxDecompositionConfig): Softmax decomposition mode.
+        quantize_inf (QuantizeInfConfig): Values used when replacing
+            infinities before quantization.
+
+    Example:
+        compile_spec.set_pass_pipeline_config(
+            ArmPassPipelineConfig(
+                softmax=SoftmaxDecompositionConfig.STABLE,
+                quantize_inf=QuantizeInfConfig(
+                    neg_inf=-100.0,
+                    pos_inf=100.0,
+                ),
+            )
+        )
+
+    """
+
     softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
-    fuse_duplicate_users: FuseDuplicateUsersConfig = FuseDuplicateUsersConfig.ENABLED
-
-    def disable_masked_softmax(self) -> None:
-        self.softmax = SoftmaxDecompositionConfig.UNSTABLE
-
-    def disable_fuse_duplicate_users(self) -> None:
-        self.fuse_duplicate_users = FuseDuplicateUsersConfig.DISABLED
+    quantize_inf: QuantizeInfConfig = field(default_factory=QuantizeInfConfig)
 
     def is_default(self) -> bool:
         return (
             self.softmax is SoftmaxDecompositionConfig.MASKED
-            and self.fuse_duplicate_users is FuseDuplicateUsersConfig.ENABLED
+            and self.quantize_inf == QuantizeInfConfig()
         )
 
-    def to_dict(self) -> dict[str, str]:
-        return {f.name: getattr(self, f.name).name for f in fields(self)}
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if is_dataclass(value):
+                data[f.name] = asdict(cast(Any, value))
+            elif isinstance(value, Enum):
+                data[f.name] = value.name
+            else:
+                raise AssertionError(f"Cannot serialize {f.name}")
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ArmPassPipelineConfig":
@@ -46,8 +81,13 @@ class ArmPassPipelineConfig:
             raw_value = data.get(f.name)
             if raw_value is None:
                 continue
-            enum_type = f.type
-            setattr(config, f.name, enum_type[raw_value])
+
+            if f.name == "quantize_inf":
+                config.quantize_inf = QuantizeInfConfig(**raw_value)
+            else:
+                # The field is an enum
+                enum_type = f.type
+                setattr(config, f.name, enum_type[raw_value])
         return config
 
     def serialize(self) -> bytes:

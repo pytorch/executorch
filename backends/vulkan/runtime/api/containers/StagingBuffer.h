@@ -88,6 +88,11 @@ class StagingBuffer final {
     for (size_t i = 0; i < numel; ++i) {
       dst[i] = static_cast<DST_T>(src[i]);
     }
+    vmaFlushAllocation(
+        vulkan_buffer_.vma_allocator(),
+        vulkan_buffer_.allocation(),
+        0u,
+        VK_WHOLE_SIZE);
   }
 
   void cast_half_to_float_and_copy_from(
@@ -109,6 +114,11 @@ class StagingBuffer final {
   template <typename SRC_T, typename DST_T>
   void cast_and_copy_to(DST_T* dst, const size_t numel) {
     VK_CHECK_COND(numel <= this->numel());
+    vmaInvalidateAllocation(
+        vulkan_buffer_.vma_allocator(),
+        vulkan_buffer_.allocation(),
+        0u,
+        VK_WHOLE_SIZE);
     const SRC_T* src = reinterpret_cast<const SRC_T*>(data());
     for (size_t i = 0; i < numel; ++i) {
       dst[i] = static_cast<DST_T>(src[i]);

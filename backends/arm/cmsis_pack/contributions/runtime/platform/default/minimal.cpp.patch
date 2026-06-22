@@ -1,0 +1,78 @@
+# Pack-local patch for runtime/platform/default/minimal.cpp.
+#
+# Marks each et_pal_* fallback ET_WEAK directly on its definition.
+# Without this, GCC 13/14/15 and armclang 6.24 emit a STB_GLOBAL (strong)
+# symbol for the fallback, and a downstream consumer that supplies its
+# own et_pal_* hits a multi-def link error against the upstream copy.
+#
+# Applied by backends/arm/cmsis_pack/scripts/copy_sources.sh during pack
+# staging. The upstream file in runtime/platform/default/minimal.cpp is
+# not modified.
+
+--- a/runtime/platform/default/minimal.cpp
++++ b/runtime/platform/default/minimal.cpp
+@@ -10,23 +10,32 @@
+  * @file
+  * Fallback PAL implementations that do not depend on any assumptions about
+  * capabililties of the system.
++ *
++ * Each et_pal_* fallback is marked ET_WEAK directly on its definition,
++ * not just on the declaration in platform.h. The weak attribute is a
++ * property of a specific symbol *definition* in the ELF symbol table —
++ * it is not transitively inherited from a forward declaration. GCC
++ * 13/14/15 and armclang 6.24 follow that rule: a definition without an
++ * explicit weak attribute emits a STB_GLOBAL (strong) symbol, even if
++ * the matching declaration was weak. (Older GCCs were laxer about this;
++ * the current behaviour is the standards-aligned one.) Without the
++ * direct ET_WEAK on each definition, a downstream consumer that
++ * supplies its own et_pal_* override hits a multi-def link error
++ * against this fallback.
+  */
+ 
+-// This cpp file will provide weak implementations of the symbols declared in
+-// Platform.h. Client users can strongly define any or all of the functions to
+-// override them.
+ #define ET_INTERNAL_PLATFORM_WEAKNESS ET_WEAK
+ #include <executorch/runtime/platform/platform.h>
+ 
+ #include <executorch/runtime/platform/compiler.h>
+ 
+-void et_pal_init(void) {}
++ET_WEAK void et_pal_init(void) {}
+ 
+-ET_NORETURN void et_pal_abort(void) {
++ET_WEAK ET_NORETURN void et_pal_abort(void) {
+   __builtin_trap();
+ }
+ 
+-et_timestamp_t et_pal_current_ticks(void) {
++ET_WEAK et_timestamp_t et_pal_current_ticks(void) {
+   // This file cannot make any assumptions about the presence of functions that
+   // return the current time, so all users should provide a strong override for
+   // it. To help make it more obvious when this weak version is being used,
+@@ -34,12 +43,12 @@
+   return 11223344;
+ }
+ 
+-et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
++ET_WEAK et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
+   // Since we don't define a tick rate, return a conversion ratio of 1.
+   return {1, 1};
+ }
+ 
+-void et_pal_emit_log_message(
++ET_WEAK void et_pal_emit_log_message(
+     ET_UNUSED et_timestamp_t timestamp,
+     ET_UNUSED et_pal_log_level_t level,
+     ET_UNUSED const char* filename,
+@@ -48,8 +57,8 @@
+     ET_UNUSED const char* message,
+     ET_UNUSED size_t length) {}
+ 
+-void* et_pal_allocate(ET_UNUSED size_t size) {
++ET_WEAK void* et_pal_allocate(ET_UNUSED size_t size) {
+   return nullptr;
+ }
+ 
+-void et_pal_free(ET_UNUSED void* ptr) {}
++ET_WEAK void et_pal_free(ET_UNUSED void* ptr) {}

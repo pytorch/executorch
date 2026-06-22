@@ -11,9 +11,11 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program_validation.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/program_generated.h>
@@ -25,6 +27,14 @@
  */
 #ifndef ET_ENABLE_PROGRAM_VERIFICATION
 #define ET_ENABLE_PROGRAM_VERIFICATION 1
+#endif
+
+/*
+ * The constant_buffer path is deprecated from ExecuTorch 0.7. Disable it by
+ * passing -DET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0.
+ */
+#ifndef ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+#define ET_ENABLE_DEPRECATED_CONSTANT_BUFFER 1
 #endif
 
 namespace executorch {
@@ -91,6 +101,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       // is positive (0-value may indicate no segments)
       if ((segment_data_size == 0 && segment_base_offset == 0) ||
           segment_data_size > 0) {
+        ET_CHECK_OR_RETURN_ERROR(
+            segment_base_offset <= SIZE_MAX - segment_data_size,
+            InvalidProgram,
+            "segment_base_offset %zu + segment_data_size %zu overflows",
+            segment_base_offset,
+            segment_data_size);
         size_t expected = segment_base_offset == 0
             ? program_size
             : segment_base_offset + segment_data_size;
@@ -127,6 +143,25 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   }
   EXECUTORCH_END_PROF(prof_tok);
 
+  // The flatbuffer data must start at an aligned address to ensure internal
+  // alignment of flatbuffer fields.
+  ET_CHECK_OR_RETURN_ERROR(
+      IsAligned(program_data->data()),
+      InvalidArgument,
+      "Program data 0x%p must be aligned to %zu",
+      program_data->data(),
+      kMinimumAlignment);
+
+  // Minimum size: root offset + file identifier (i.e., the flatbuffer header
+  // before the extended header begins).
+  constexpr size_t kMinBufferSize = ExtendedHeader::kHeaderOffset;
+  ET_CHECK_OR_RETURN_ERROR(
+      program_data->size() >= kMinBufferSize,
+      InvalidProgram,
+      "Program data size %zu is too small (minimum %zu)",
+      program_data->size(),
+      kMinBufferSize);
+
   // Make sure the magic header matches the expected version.
   if (!executorch_flatbuffer::ProgramBufferHasIdentifier(
           program_data->data())) {
@@ -138,7 +173,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     return Error::InvalidProgram;
   }
 
-  // Do extra verification if requested.
+  // Do verification based on the requested level.
   if (verification == Verification::InternalConsistency) {
 #if ET_ENABLE_PROGRAM_VERIFICATION
     EXECUTORCH_SCOPE_PROF("Program::verify_internal_consistency");
@@ -150,21 +185,43 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         ok,
         InvalidProgram,
         "Verification failed; data may be truncated or corrupt");
+    const executorch_flatbuffer::Program* flatbuffer_program =
+        executorch_flatbuffer::GetProgram(program_data->data());
+    Error err = validate_program(flatbuffer_program);
+    ET_CHECK_OR_RETURN_ERROR(
+        err == Error::Ok,
+        InvalidProgram,
+        "Program validation failed: likely a corrupt file");
 #else
     ET_LOG(
-        Info, "InternalConsistency verification requested but not available");
+        Info,
+        "InternalConsistency verification requested but not available; "
+        "falling back to Minimal verification. "
+        "Build with ET_ENABLE_PROGRAM_VERIFICATION=1 for full verification.");
 #endif
   }
 
-  // The flatbuffer data must start at an aligned address to ensure internal
-  // alignment of flatbuffer fields.
-  ET_CHECK_OR_RETURN_ERROR(
-      IsAligned(program_data->data()),
-      InvalidArgument,
-      "Program data 0x%p must be aligned to %zu",
-      program_data->data(),
-      kMinimumAlignment);
-
+  if (verification == Verification::Minimal
+#if !ET_ENABLE_PROGRAM_VERIFICATION
+      || verification == Verification::InternalConsistency
+#endif
+  ) {
+    // Verify that the root table offset is within bounds.
+    // In InternalConsistency mode this is done by VerifyProgramBuffer above.
+    uint32_t root_offset =
+        flatbuffers::ReadScalar<flatbuffers::uoffset_t>(program_data->data());
+    // The root table is at buf + root_offset. It must not point into the
+    // header (offset + file identifier = 8 bytes) and must leave room for
+    // at least a vtable offset (soffset_t) at its position.
+    ET_CHECK_OR_RETURN_ERROR(
+        root_offset >= kMinBufferSize &&
+            root_offset <=
+                program_data->size() - sizeof(flatbuffers::soffset_t),
+        InvalidProgram,
+        "Root table offset %u is invalid for program size %zu",
+        root_offset,
+        program_data->size());
+  }
   // Get the pointer to the root flatbuffer table.
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
@@ -257,6 +314,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
     // https://docs.pytorch.org/executorch/stable/api-life-cycle.html#deprecation-policy.
     // For support, contact the PyTorch Edge team or make an issue in:
     // https://github.com/pytorch/executorch/issues.
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     ET_LOG(
         Error,
         "!!DEPRECATED!! This branch is deprecated from ExecuTorch 0.7; re-export this PTE file to ensure support on newer runtimes.");
@@ -267,6 +325,13 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
         flatbuffer_program,
         /*constant_segment_data=*/FreeableBuffer{},
         std::move(pte_data_map));
+#else
+    ET_LOG(
+        Error,
+        "PTE file relies on the constant_buffer path, which is disabled in this"
+        " build (ET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0). Please re-export the PTE file.");
+    return Error::InvalidProgram;
+#endif
   }
 }
 
@@ -283,6 +348,11 @@ size_t Program::num_methods() const {
 
 Result<const char*> Program::get_method_name(size_t plan_index) const {
   if (plan_index >= this->num_methods()) {
+    ET_LOG(
+        Error,
+        "Plan index %zu >= num methods %zu",
+        plan_index,
+        this->num_methods());
     return Error::InvalidArgument;
   }
   auto internal_program =
@@ -290,6 +360,7 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
   // We know that the execution plan exists because num_methods() returned > 0.
   auto name = internal_program->execution_plan()->Get(plan_index)->name();
   if (name == nullptr) {
+    ET_LOG(Error, "Execution plan %zu has null name", plan_index);
     return Error::InvalidProgram;
   }
   return name->c_str();
@@ -299,7 +370,9 @@ Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
-    const NamedDataMap* named_data_map) const {
+    const NamedDataMap* named_data_map,
+    const LoadBackendOptionsMap* backend_options,
+    Span<const Kernel> kernel_registry) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileMethodScope event_tracer_scope =
@@ -317,7 +390,13 @@ Result<Method> Program::load_method(
     return plan.error();
   }
   return Method::load(
-      plan.get(), this, memory_manager, event_tracer, named_data_map);
+      plan.get(),
+      this,
+      memory_manager,
+      event_tracer,
+      named_data_map,
+      backend_options,
+      kernel_registry);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {
@@ -375,7 +454,7 @@ Result<const void*> Program::get_constant_buffer_data(
 
     size_t size = constant_segment_data_.size();
     ET_CHECK_OR_RETURN_ERROR(
-        offset + nbytes <= size,
+        offset <= size && nbytes <= size - offset,
         InvalidArgument,
         "Constant segment offset %" PRIu64
         " + size_bytes %zu invalid for program constant segment size %zu",
@@ -388,6 +467,7 @@ Result<const void*> Program::get_constant_buffer_data(
         static_cast<const unsigned char*>(constant_segment_data_.data()) +
         offset);
   } else {
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     // Otherwise, the constant data is stored inside Program.constant_buffer.
     const auto* constant_buffer_ptr = internal_program->constant_buffer();
     size_t num_elems =
@@ -414,6 +494,14 @@ Result<const void*> Program::get_constant_buffer_data(
         static_cast<size_t>(storage_size));
 
     return storage->data();
+#else
+    (void)buffer_index;
+    (void)nbytes;
+    ET_LOG(
+        Error,
+        "constant_buffer path is disabled (ET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0). Please re-export the PTE file.");
+    return Error::InvalidProgram;
+#endif
   }
 }
 
@@ -489,6 +577,11 @@ Result<FreeableBuffer> Program::LoadSegment(
     ET_LOG(Error, "No segments in program: requested index %zu", index);
     return Error::NotFound;
   }
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program: requested index %zu",
+      index);
   size_t num_segments = internal_program_->segments()->size();
   if (index >= num_segments) {
     ET_LOG(
@@ -500,8 +593,18 @@ Result<FreeableBuffer> Program::LoadSegment(
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
+  uint64_t seg_offset = segment->offset();
+  uint64_t absolute_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows<uint64_t>(
+          segment_base_offset_, seg_offset, &absolute_offset) &&
+          absolute_offset <= SIZE_MAX,
+      InvalidProgram,
+      "segment_base_offset %zu + segment offset %" PRIu64 " overflows",
+      segment_base_offset_,
+      seg_offset);
   return loader_->load(
-      segment_base_offset_ + segment->offset(), segment->size(), segment_info);
+      static_cast<size_t>(absolute_offset), segment->size(), segment_info);
 }
 
 Error Program::load_mutable_subsegment_into(
@@ -554,6 +657,10 @@ Error Program::load_mutable_subsegment_into(
   size_t offset = segment_offsets->offsets()->Get(offset_index);
 
   // Grab the segment index
+  ET_CHECK_OR_RETURN_ERROR(
+      internal_program_->segments() != nullptr,
+      InvalidProgram,
+      "No segments in program");
   size_t num_segments = internal_program_->segments()->size();
   if (segment_offsets->segment_index() >= num_segments) {
     ET_LOG(
@@ -568,8 +675,15 @@ Error Program::load_mutable_subsegment_into(
   auto segment =
       internal_program_->segments()->Get(segment_offsets->segment_index());
 
-  // Check size
-  if (offset + size > segment->size()) {
+  // Check size (with overflow protection)
+  size_t end_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(offset, size, &end_offset),
+      InvalidProgram,
+      "offset %zu + size %zu overflows",
+      offset,
+      size);
+  if (end_offset > segment->size()) {
     ET_LOG(
         Error,
         "offset %zu + size %zu out of range > %" PRIu64,
@@ -584,9 +698,26 @@ Error Program::load_mutable_subsegment_into(
       segment_offsets->segment_index(),
       nullptr);
 
-  // Load the data
-  return loader_->load_into(
-      segment_base_offset_ + segment->offset() + offset, size, info, buffer);
+  // Load the data (with overflow protection on the addition chain)
+  uint64_t seg_offset = segment->offset();
+  uint64_t base_plus_seg_64 = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows<uint64_t>(
+          segment_base_offset_, seg_offset, &base_plus_seg_64) &&
+          base_plus_seg_64 <= SIZE_MAX,
+      InvalidProgram,
+      "segment_base_offset %zu + segment offset %" PRIu64 " overflows",
+      segment_base_offset_,
+      seg_offset);
+  size_t base_plus_seg = static_cast<size_t>(base_plus_seg_64);
+  size_t total_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(base_plus_seg, offset, &total_offset),
+      InvalidProgram,
+      "segment base+offset %zu + subsegment offset %zu overflows",
+      base_plus_seg,
+      offset);
+  return loader_->load_into(total_offset, size, info, buffer);
 }
 
 } // namespace ET_RUNTIME_NAMESPACE

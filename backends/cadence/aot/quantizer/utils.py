@@ -118,7 +118,9 @@ def create_zero_bias_int32(
     bias_scale: float,
 ) -> fx.Node:
     """
-    Creates a zero bias tensor with the shape of weight[0]
+    Creates a zero bias tensor with the shape of weight[0].
+    Caller is responsible for setting the graph insertion point
+    (e.g. ``with gm.graph.inserting_before(node):``).
     """
     try:
         attr_node = getattr(graph_module, weight_node.target)
@@ -168,10 +170,6 @@ def get_bias_qparams(
     bias_scale = act_scale * weight_scale
     bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int32)
     return bias_scale, bias_zero_point
-
-
-def get_conv_args(arg, first_val: int) -> List[fx.Node]:
-    return arg if len(arg) == 2 else [first_val, arg[0]]
 
 
 def get_aten_node_target_partitions(

@@ -22,3 +22,7 @@ docformatter==1.7.5
 
 # MyPy
 mypy==1.14.1
+
+# Cppcheck and dependencies
+cppcheck==1.5.1
+defusedxml==0.7.1

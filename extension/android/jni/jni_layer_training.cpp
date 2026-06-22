@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/android/jni/jni_helper.h>
 #include <executorch/extension/android/jni/jni_layer_constants.h>
 #include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
@@ -75,10 +76,10 @@ class ExecuTorchTrainingJni
     auto modelPathString = modelPath->toStdString();
     auto modelLoaderRes = FileDataLoader::from(modelPathString.c_str());
     if (modelLoaderRes.error() != Error::Ok) {
-      facebook::jni::throwNewJavaException(
-          "java/lang/Exception",
-          "Failed to open model file: %s",
-          modelPathString.c_str());
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(modelLoaderRes.error()),
+          "Failed to open model file: " + modelPathString);
+      return;
     }
     auto modelLoader =
         std::make_unique<FileDataLoader>(std::move(modelLoaderRes.get()));
@@ -88,10 +89,10 @@ class ExecuTorchTrainingJni
     if (!dataPathString.empty()) {
       auto dataLoaderRes = FileDataLoader::from(dataPathString.c_str());
       if (dataLoaderRes.error() != Error::Ok) {
-        facebook::jni::throwNewJavaException(
-            "java/lang/Exception",
-            "Failed to open ptd file: %s",
-            dataPathString.c_str());
+        executorch::jni_helper::throwExecutorchException(
+            static_cast<uint32_t>(dataLoaderRes.error()),
+            "Failed to open ptd file: " + dataPathString);
+        return;
       }
       dataLoader =
           std::make_unique<FileDataLoader>(std::move(dataLoaderRes.get()));
@@ -131,25 +132,28 @@ class ExecuTorchTrainingJni
         tensors.emplace_back(JEValue::JEValueToTensorImpl(jevalue));
         evalues.emplace_back(tensors.back());
       } else if (typeCode == JEValue::kTypeCodeInt) {
-        int64_t value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toIntMethod =
+            JEValue::javaClassStatic()->getMethod<jlong()>("toInt");
+        evalues.emplace_back(static_cast<int64_t>(toIntMethod(jevalue)));
       } else if (typeCode == JEValue::kTypeCodeDouble) {
-        double value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toDoubleMethod =
+            JEValue::javaClassStatic()->getMethod<jdouble()>("toDouble");
+        evalues.emplace_back(static_cast<double>(toDoubleMethod(jevalue)));
       } else if (typeCode == JEValue::kTypeCodeBool) {
-        bool value = jevalue->getFieldValue(typeCodeField);
-        evalues.emplace_back(value);
+        static const auto toBoolMethod =
+            JEValue::javaClassStatic()->getMethod<jboolean()>("toBool");
+        evalues.emplace_back(static_cast<bool>(toBoolMethod(jevalue)));
       }
     }
 
     auto result =
         module_->execute_forward_backward(methodName->toStdString(), evalues);
     if (!result.ok()) {
-      facebook::jni::throwNewJavaException(
-          "java/lang/Exception",
-          "Execution of forward_backward for method %s failed with status 0x%" PRIx32,
-          methodName->toStdString().c_str(),
-          static_cast<error_code_t>(result.error()));
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(result.error()),
+          "Execution of forward_backward for method " +
+              methodName->toStdString() + " failed");
+      return {};
     }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
@@ -168,11 +172,10 @@ class ExecuTorchTrainingJni
     auto method = methodName->toStdString();
     auto result = module_->named_parameters(method);
     if (!result.ok()) {
-      facebook::jni::throwNewJavaException(
-          "java/lang/Exception",
-          "Getting named parameters for method %s failed with status 0x%" PRIx32,
-          method.c_str(),
-          static_cast<error_code_t>(result.error()));
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(result.error()),
+          "Getting named parameters for method " + method + " failed");
+      return {};
     }
     facebook::jni::local_ref<
         facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>>
@@ -192,11 +195,10 @@ class ExecuTorchTrainingJni
     auto method = methodName->toStdString();
     auto result = module_->named_gradients(method);
     if (!result.ok()) {
-      facebook::jni::throwNewJavaException(
-          "java/lang/Exception",
-          "Getting named gradients for method %s failed with status 0x%" PRIx32,
-          method.c_str(),
-          static_cast<error_code_t>(result.error()));
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(result.error()),
+          "Getting named gradients for method " + method + " failed");
+      return {};
     }
     facebook::jni::local_ref<
         facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>>
@@ -319,10 +321,9 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
 
     auto result = sgdOptimizer_->step(cppNamedGradients);
     if (result != ::executorch::runtime::Error::Ok) {
-      facebook::jni::throwNewJavaException(
-          "java/lang/Exception",
-          "SGD optimization step failed with status 0x%" PRIx32,
-          static_cast<error_code_t>(result));
+      executorch::jni_helper::throwExecutorchException(
+          static_cast<uint32_t>(result), "SGD optimization step failed");
+      return;
     }
   }
 

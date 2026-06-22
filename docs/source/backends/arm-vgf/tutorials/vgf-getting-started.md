@@ -26,7 +26,7 @@ You may encounter some rough edges and features which may be documented or plann
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)
-* [A commandline compiler for example models](https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py)
+* [A commandline compiler for quick tests and example models](https://github.com/pytorch/executorch/blob/main/backends/arm/scripts/aot_arm_compiler.py)
 ```
 
 This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on `vgf_minimal_example.ipyb`, provided in Arm's example folder.
@@ -73,7 +73,7 @@ Make sure the executable is located where you expect, in the `examples/arm` tree
 
 The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a `torch.nn.Module`) and produces a `.pte` binary file, which is then typically consumed by the ExecuTorch Runtime. This [document](https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
 
-The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the VGF backend. For more details, se `examples/arm/vgf_minimal_example.ipynb`.
+The example below shows how to quantize a model consisting of a single addition, and export it through the AOT flow using the VGF backend. For more details, see `examples/arm/vgf_minimal_example.ipynb`.
 
 ```python
 import torch
@@ -163,14 +163,15 @@ assert os.path.exists(pte_path), "Build failed; no .pte-file found"
 
 
 ```{tip}
-For a quick start, you can use the script `examples/arm/aot_arm_compiler.py` to produce the pte.
+For a quick test, you can use the script `backends/arm/scripts/aot_arm_compiler.py` to produce the pte.
 To produce a pte file equivalent to the one above, run
-`python -m examples.arm.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf` 
+`python -m backends.arm.scripts.aot_arm_compiler --model_name=add --delegate --quantize --output=simple_example.pte --target=vgf`.
+For production use, you should instead use the stable Python API shown above.
 ```
 
-### Runtime:
+## Runtime
 
-## Build executor runtime
+### Build executor runtime
 
 After the AOT compilation flow is done, we can build the executor runner target. For this tutorial, the default runner can be used. Build it with the following configuration:
 
@@ -191,7 +192,7 @@ cmake \
   -DPYTHON_EXECUTABLE=python \
   -Bcmake-out .
 
-cmake --build cmake-out --target executor_runner`
+cmake --build cmake-out --target executor_runner
 ```
 
 
@@ -200,7 +201,7 @@ The block diagram below demonstrates, at the high level, how the various build a
 ![](arm-delegate-runtime-build.svg)
 
 
-## Deploying and running on device
+### Deploying and running on device
 
 Since we are using the Vulkan emulation layer, we can run the executor runner with the VGF delegate on the host machine:
 
@@ -219,7 +220,7 @@ In this tutorial you have learned how to use ExecuTorch to export a PyTorch mode
 
 Issue: glslc is not found when configuring the executor runner.
 Solution: The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
-`export PATH=$(pwd)/examples/arm/arm-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH`.
+`export PATH=$(pwd)/examples/arm/arm-scratch/vulkan_sdk/1.4.341.1/x86_64/bin:$PATH`.
 If not, add it and source the file.
 
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).

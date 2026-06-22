@@ -46,7 +46,9 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 # pyre-ignore
 ops_not_to_decompose = [
+    torch.ops.aten.hardswish.default,
     torch.ops.aten.upsample_nearest2d.vec,
+    torch.ops.aten.pixel_shuffle.default,
 ]
 
 logger: logging.Logger = logging.getLogger("")
@@ -256,8 +258,18 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         assert features is not None
 
+        # Check per-operator dtype constraints (fail fast before other checks)
+        dtype_valid, dtype_reason = features.check_dtypes(node)
+        if not dtype_valid:
+            self.log_skip(node, dtype_reason)
+            return False
+
         if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
+            return False
+
+        if not features.supports_highdim and utils.op_contains_high_dim_tensor(node):
+            self.log_skip(node, "op does not support high dim tensors")
             return False
 
         if self.require_dynamic_shapes and not features.supports_resize:

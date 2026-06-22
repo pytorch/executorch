@@ -141,10 +141,10 @@ Tensor& minimum_out(
       for (int i = 0; i < b.dim(); i++)
         inp2_shape[i + off_b] = b.size(i);
 
-      xa_nn_elm_minimum_broadcast_4D_f32xf32_f32(
+      xa_nn_elm_min_4D_Bcast_f32xf32_f32(
           out_data, out_shape, a_data, inp1_shape, b_data, inp2_shape);
     } else {
-      xa_nn_elm_minimum_f32xf32_f32(out_data, a_data, b_data, out.numel());
+      xa_nn_elm_min_f32xf32_f32(out_data, a_data, b_data, out.numel());
     }
     return out;
   }

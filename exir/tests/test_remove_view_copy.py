@@ -15,6 +15,8 @@ from executorch.exir.passes import MemoryPlanningPass
 
 
 class TestModel1(nn.Module):
+    __test__ = False
+
     def __init__(self):
         super().__init__()
         self.parameter = nn.Parameter(torch.rand(5, 6))

@@ -11,11 +11,11 @@ ExecuTorch supports desktop and laptop deployment across Linux, macOS, and Windo
 ### Linux
 - [XNNPACK (CPU)](backends/xnnpack/xnnpack-overview.md)
 - [OpenVINO (Intel)](build-run-openvino)
-- [ARM Ethos-U (ARM64)](backends-arm-ethos-u)
+- [ARM Ethos-U (ARM64)](backends/arm-ethos-u/arm-ethos-u-overview.md)
 
 ### macOS
-- [CoreML (recommended)](backends-coreml)
-- [MPS (Apple Silicon)](backends-mps)
+- [Core ML (recommended)](backends/coreml/coreml-overview.md)
+- [MPS (Apple Silicon)](backends/mps/mps-overview.md)
 - [XNNPACK (CPU)](backends/xnnpack/xnnpack-overview.md)
 
 ### Windows

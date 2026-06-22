@@ -208,24 +208,40 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 #
 # The returned DataFrame contains columns for each operator including:
 #
+# - ``aot_debug_handle``: The debug handle tuple identifying the AOT operator(s).
+#   For ops grouped into a single delegated subgraph chunk, this is the tuple of
+#   every internal handle the chunk implements.
 # - ``aot_ops``: The operators in the eager model graph
 # - ``aot_intermediate_output``: Intermediate outputs from eager model
-# - ``runtime_ops``: The operators executed at runtime (may show DELEGATE_CALL for delegated ops)
+# - ``runtime_ops``: The kernel-level operators executed at runtime. ``DELEGATE_CALL``
+#   appears as a single entry for each delegated subgraph chunk.
+# - ``runtime_debug_handle``: The debug handle tuple from the runtime
 # - ``runtime_intermediate_output``: Intermediate outputs from runtime
 # - ``gap``: The numerical gap (MSE) between eager and runtime outputs
+# - ``stacktraces``: A dictionary mapping each operator name to its source code stack trace
 #
 # Example output:
 #
 # .. code-block:: text
 #
-#    |    | aot_ops                                                         | aot_intermediate_output                            | runtime_ops                                        | runtime_intermediate_output                        | gap                        |
-#    |----|----------------------------------------------------------------|----------------------------------------------------|----------------------------------------------------|----------------------------------------------------| ---------------------------|
-#    | 0  | [conv2d]                                                        | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [DELEGATE_CALL]                                    | [[[tensor([-0.0130,  0.0075, -0.0334, -0.0122,...  | [3.2530690555343034e-15]   |
-#    | 1  | [permute, cat, add, dropout]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [DELEGATE_CALL]                                    | [[[tensor(-0.0024), tensor(0.0054), tensor(0.0...  | [3.2488685838924244e-15]   |
-#    ...
-#    | 4  | [transpose, linear, unflatten, unsqueeze, tran...]              | [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  | [0.00010033142876115867]   |
-#    ...
-#    | 59 | [transpose_66, linear_44, unflatten_11, unsque...]              | [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  | [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...] | [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...  | [0.02629170972698486]      |
+#    |    | aot_debug_handle               | aot_ops                                       | aot_intermediate_output                  | runtime_ops                                       | runtime_debug_handle           | runtime_intermediate_output              | gap                      | stacktraces                                  |
+#    |----|--------------------------------|-----------------------------------------------|------------------------------------------|---------------------------------------------------|--------------------------------|------------------------------------------|--------------------------|----------------------------------------------|
+#    | 0  | (1, 2, 3, 5, 6, 7)             | [conv2d, reshape, permute, cat, add, dropout] | [[[tensor(-0.0024), tensor(0.0054),...   | [DELEGATE_CALL]                                   | (1, 2, 3, 5, 6, 7)             | [[[tensor(-0.0024), tensor(0.0054),...   | [0.0]                    | {'conv2d': 'File "vit.py", line 10...'}      |
+#    | 1  | (4,)                           | [expand]                                      | [[[tensor(-0.0012), tensor(0.0027),...   | [native_call_expand_copy.out]                     | (4,)                           | [[[tensor(-0.0012), tensor(0.0027),...   | [0.0]                    | {'expand': 'File "vit.py", line 50...'}      |
+#    | 2  | (8,)                           | [layer_norm]                                  | [[[tensor(-0.0001), tensor(0.0009),...   | [native_call_native_layer_norm.out]               | (8,)                           | [[[tensor(-0.0001), tensor(0.0009),...   | [1.5257813119012582e-16] | {'layer_norm': 'File "vit.py", line 80...'}  |
+#    | 3  | (9, 10, 11, 12, 13)            | [transpose, linear, unflatten, unsqueeze,...] | [[[tensor(0.0132), tensor(-0.0005),...   | [DELEGATE_CALL, native_call_expand_copy.out, ...] | (9, 10, 11, 12, 13)            | [[[tensor(0.0132), tensor(-0.0005),...   | [6.72759426534678e-16]   | {'transpose': 'File "vit.py", line 90...'}   |
+#    | ...|                                |                                               |                                          |                                                   |                                |                                          |                          |                                              |
+#    | 52 | (166,)                         | [linear_48]                                   | [[tensor(-0.8981), tensor(0.6046),...    | [DELEGATE_CALL]                                   | (166,)                         | [[tensor(-0.8981), tensor(0.6046),...    | [8.760367306096254e-12]  | {'linear_48': 'File "vit.py", line 120...'}  |
+#
+# Each row is one runtime intermediate-output cluster: either a single
+# non-delegated op or one delegated subgraph chunk grouped under a
+# ``DELEGATE_CALL``. Multi-handle chunks list every internal AOT op together
+# so you can map the delegate boundary back to the eager graph.
+#
+# The ``stacktraces`` column is particularly useful for tracing operators back to the
+# original PyTorch source code. Each entry is a dictionary where keys are operator names
+# and values are the corresponding stack traces showing where in the model code each
+# operator was defined.
 #
 
 ######################################################################
@@ -233,7 +249,8 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 # --------------------------------------------------
 #
 # Once you have the numerical gaps, identify operators with significant
-# discrepancies for further investigation.
+# discrepancies for further investigation. The ``stacktraces`` column helps
+# you trace problematic operators back to the original source code.
 #
 # .. code-block:: python
 #
@@ -249,28 +266,42 @@ Using the ExecuTorch Developer Tools for Numerical Debugging
 #    print(f"\nOperators with MSE > {threshold}:")
 #    print(problematic_ops)
 #
+#    # Use stacktraces to find the source location of problematic operators
+#    for idx, row in problematic_ops.iterrows():
+#        print(f"\n--- Operator {idx} ---")
+#        print(f"Operators: {row['aot_ops']}")
+#        print(f"Gap: {row['gap']}")
+#        print("Stack traces:")
+#        for op_name, trace in row['stacktraces'].items():
+#            if trace:
+#                print(f"  {op_name}:")
+#                # Print first few lines of stack trace
+#                for line in trace.split('\n')[:3]:
+#                    print(f"    {line}")
+#
 # Example output showing problematic operators in a ViT model:
 #
 # .. code-block:: text
 #
 #    Top 5 operators with largest numerical discrepancies:
-#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                     gap
-#    59  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.3346), tensor(0.1540), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.3346), tensor(0.1540), tensor(-0.0...   [0.02629170972698486]
-#    24  [transpose_24, linear_16, unflatten_4, unsquee...  [[[tensor(0.0344), tensor(-0.0583), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0344), tensor(-0.0583), tensor(-0.0...  [0.010045093258604096]
-#    29  [transpose_30, linear_20, unflatten_5, unsquee...  [[[tensor(0.0457), tensor(0.0266), tensor(-0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0457), tensor(0.0266), tensor(-0.05...  [0.008497326594593926]
-#    34  [transpose_36, linear_24, unflatten_6, unsquee...  [[[tensor(-0.1336), tensor(-0.0154), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.1336), tensor(-0.0154), tensor(-0....  [0.007672668965640913]
-#    19  [transpose_18, linear_12, unflatten_3, unsquee...  [[[tensor(-0.0801), tensor(0.0458), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0801), tensor(0.0458), tensor(-0.0...  [0.007446783635888463]
+#                       aot_debug_handle                                            aot_ops                            aot_intermediate_output                                        runtime_ops            runtime_debug_handle                        runtime_intermediate_output                       gap                                        stacktraces
+#    49  (158, 159, 160, 161, 162, 163)  [linear_46, gelu_11, dropout_35, linear_47, dr...  [[[tensor(-0.6154), tensor(-0.0025), tensor(-0...                                    [DELEGATE_CALL]  (158, 159, 160, 161, 162, 163)  [[[tensor(-0.6154), tensor(-0.0025), tensor(-0...  [3.7287804660557997e-11]  {'linear_46': 'File "vit.py", line 100...'}
+#    45  (145, 146, 147, 148, 149, 150)  [linear_42, gelu_10, dropout_32, linear_43, dr...  [[[tensor(-0.2785), tensor(-0.2209), tensor(-0...                                    [DELEGATE_CALL]  (145, 146, 147, 148, 149, 150)  [[[tensor(-0.2785), tensor(-0.2208), tensor(-0...  [3.267051816109279e-11]  {'linear_42': 'File "vit.py", line 100...'}
+#    47       (152, 153, 154, 155, 156)  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.5681), tensor(-0.0251), tensor(-0...  [DELEGATE_CALL, native_call_expand_copy.out, D...       (152, 153, 154, 155, 156)  [[[tensor(-0.5681), tensor(-0.0251), tensor(-0...  [3.043042878567803e-11]  {'transpose_66': 'File "vit.py", line 90...'}
+#    50                          (164,)                                    [layer_norm_24]  [[[tensor(-0.8486), tensor(-0.0315), tensor(-0...                [native_call_native_layer_norm.out]                          (164,)  [[[tensor(-0.8486), tensor(-0.0315), tensor(-0...  [2.3309619445739474e-11]  {'layer_norm_24': 'File "vit.py", line 78...'}
+#    41  (132, 133, 134, 135, 136, 137)  [linear_38, gelu_9, dropout_29, linear_39, dro...  [[[tensor(-0.3233), tensor(-0.1968), tensor(-0...                                    [DELEGATE_CALL]  (132, 133, 134, 135, 136, 137)  [[[tensor(-0.3233), tensor(-0.1968), tensor(-0...  [1.8573805941767968e-11]  {'linear_38': 'File "vit.py", line 100...'}
 #
 #    Operators with MSE > 0.0001:
-#                                                  aot_ops                            aot_intermediate_output                                        runtime_ops                        runtime_intermediate_output                       gap
-#    4   [transpose, linear, unflatten, unsqueeze, tran...  [[[tensor(0.0045), tensor(-0.0084), tensor(0.0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0045), tensor(-0.0084), tensor(0.00...  [0.00010033142876115867]
-#    9   [transpose_6, linear_4, unflatten_1, unsqueeze...  [[[tensor(0.0113), tensor(-0.0737), tensor(-0....  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(0.0113), tensor(-0.0737), tensor(-0.0...   [0.0005611182577030275]
-#    14  [transpose_12, linear_8, unflatten_2, unsqueez...  [[[tensor(-0.0476), tensor(-0.0941), tensor(-0...  [DELEGATE_CALL, DELEGATE_CALL, DELEGATE_CALL, ...  [[tensor(-0.0476), tensor(-0.0941), tensor(-0....    [0.004658652508649068]
-#    ...
+#    Empty DataFrame
+#    Columns: [aot_debug_handle, aot_ops, aot_intermediate_output, runtime_ops, runtime_debug_handle, runtime_intermediate_output, gap, stacktraces]
+#    Index: []
 #
-# In this example, we can see that the attention layers (transpose + linear + unflatten patterns)
-# show the largest numerical discrepancies, which is expected behavior for delegated operators
-# using different precision.
+# The largest numerical gaps come from MLP blocks (``linear, gelu, dropout`` groups
+# inside a ``DELEGATE_CALL``) and attention QKV blocks, both at the order of
+# ``~3e-11`` — floating-point rounding accumulated across the chunk at float32
+# precision. ``layer_norm`` rows are non-delegated CPU kernels and show similar
+# magnitudes. No operators exceed the ``1e-4`` threshold, confirming that
+# XNNPACK float32 delegation is numerically accurate.
 
 ######################################################################
 # Pipeline 2: CMake Runtime

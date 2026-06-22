@@ -11,8 +11,8 @@ from typing import Union
 
 import torch
 from executorch.backends.cadence.aot.decompose_ops import DecomposeAtenApproxGeluPass
-from executorch.backends.cadence.aot.graph_builder import single_op_builder
 from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.test.graph_builder import single_op_builder
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass

@@ -516,9 +516,9 @@ Kernel(
         internal::EventTracerProfileOpScope event_tracer_op_scope(context.internal_event_tracer(), "native_call_op_1");
         EXECUTORCH_SCOPE_PROF("native_call_op_1");
         bool result_ = at::native::default_kernel(context, );
+        *stack[0] = EValue(result_);
         internal::event_tracer_log_evalue(context.internal_event_tracer(), *stack[0]);
 
-        *stack[0] = EValue(result_);
 
     }
 ),
@@ -615,9 +615,9 @@ Kernel(
         internal::EventTracerProfileOpScope event_tracer_op_scope(context.internal_event_tracer(), "native_call_op_1");
         EXECUTORCH_SCOPE_PROF("native_call_op_1");
         bool result_ = at::native::default_kernel(context, );
+        *stack[0] = EValue(result_);
         internal::event_tracer_log_evalue(context.internal_event_tracer(), *stack[0]);
 
-        *stack[0] = EValue(result_);
 
     }
 ),
@@ -642,9 +642,9 @@ Kernel(
         internal::EventTracerProfileOpScope event_tracer_op_scope(context.internal_event_tracer(), "native_call_op_1");
         EXECUTORCH_SCOPE_PROF("native_call_op_1");
         bool result_ = at::native::default_kernel(context, );
+        *stack[0] = EValue(result_);
         internal::event_tracer_log_evalue(context.internal_event_tracer(), *stack[0]);
 
-        *stack[0] = EValue(result_);
         } catch (const std::exception& ex) {
           ET_LOG(Error, "Kernel threw an exception: %s", ex.what());
           context.fail(torch::executor::Error::Internal);
@@ -686,9 +686,9 @@ Kernel(
         internal::EventTracerProfileOpScope event_tracer_op_scope(context.internal_event_tracer(), "native_call_op_1");
         EXECUTORCH_SCOPE_PROF("native_call_op_1");
         bool result_ = at::native::default_kernel(context, );
+        *stack[0] = EValue(result_);
         internal::event_tracer_log_evalue(context.internal_event_tracer(), *stack[0]);
 
-        *stack[0] = EValue(result_);
 
     }
 ),

@@ -25,4 +25,12 @@ interface AsrCallback {
    * @param token The decoded text token
    */
   fun onToken(token: String)
+
+  /**
+   * Called when an error occurs during transcription.
+   *
+   * @param errorCode Error code from the ExecuTorch runtime
+   * @param message Human-readable error description
+   */
+  fun onError(errorCode: Int, message: String) {}
 }

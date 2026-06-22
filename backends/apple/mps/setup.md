@@ -1,5 +1,10 @@
 # Building and Running ExecuTorch with MPS Backend
 
+> **⚠️ Deprecated:** The MPS backend is deprecated as of ExecuTorch 1.2 and will
+> be removed in ExecuTorch 1.4. Please migrate to the
+> [CoreML backend](../coreml/) for iOS/macOS GPU acceleration, or the
+> [Metal backend](../../../desktop/) for macOS desktop GPU workloads.
+
 In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it.
 
 The MPS backend device maps machine learning computational graphs and primitives on the [MPS Graph](https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc) framework and tuned kernels provided by [MPS](https://developer.apple.com/documentation/metalperformanceshaders?language=objc).

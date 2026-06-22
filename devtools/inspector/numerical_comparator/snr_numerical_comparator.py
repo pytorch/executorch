@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any
+from typing import Any, Optional, TYPE_CHECKING
 
 import torch
 from executorch.devtools.inspector._inspector_utils import convert_to_float_tensor
@@ -13,9 +13,17 @@ from executorch.devtools.inspector.numerical_comparator.numerical_comparator_bas
     NumericalComparatorBase,
 )
 
+if TYPE_CHECKING:
+    from executorch.devtools.inspector._inspector import Inspector
+
 
 class SNRComparator(NumericalComparatorBase):
-    def compare(self, a: Any, b: Any) -> float:
+    """Signal-to-Noise Ratio comparator for numerical discrepancy detection."""
+
+    def __init__(self, inspector: Optional["Inspector"] = None) -> None:
+        super().__init__(inspector)
+
+    def element_compare(self, a: Any, b: Any) -> float:
         """
         Compare the Signal-to-Noise Ratio (SNR) between two inputs
         Formula: SNR = 10 * log10(original_power / error_power)

@@ -36,7 +36,7 @@
 
 namespace executorch::extension::threadpool {
 
-#if !(defined(WIN32))
+#if !defined(WIN32) && !defined(__EMSCRIPTEN__)
 namespace {
 // After fork, the child process inherits the data-structures of the parent
 // process' thread-pool, but since those threads don't exist, the thread-pool
@@ -145,7 +145,7 @@ ThreadPool* get_threadpool() {
      * tricky to detect if we are running under tsan, for now capping the
      * default threadcount to the tsan limit unconditionally.
      */
-    constexpr unsigned int tsan_thread_limit = 63;
+    constexpr decltype(result) tsan_thread_limit = 63;
     return std::min(result, tsan_thread_limit);
   })();
 
@@ -153,7 +153,7 @@ ThreadPool* get_threadpool() {
 
 // Inheriting from old threadpool to get around segfault issue
 // commented above at child_atfork
-#if !(defined(WIN32))
+#if !defined(WIN32) && !defined(__EMSCRIPTEN__)
   // @lint-ignore CLANGTIDY facebook-hte-std::once_flag
   static std::once_flag flag;
   // @lint-ignore CLANGTIDY facebook-hte-std::call_once

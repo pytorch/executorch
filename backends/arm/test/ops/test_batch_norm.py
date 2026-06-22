@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -201,6 +201,20 @@ def test_native_batch_norm_legit_no_training_tosa_FP_conv(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
+def test_native_batch_norm_legit_no_training_tosa_FP_conv_fuses_before_decompose(
+    test_data: Tuple,
+):
+    test_data, model_params = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        BatchNorm2dConv(*model_params),
+        (test_data,),
+        aten_op=BatchNorm2dConv.aten_ops,
+    )
+    pipeline.count_tosa_ops({"CONV2D": 1, "RSQRT": 0, "SUB": 0})
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
 def test_native_batch_norm_legit_no_training_tosa_INT_conv(test_data: Tuple):
     test_data, model_params = test_data()
     pipeline = TosaPipelineINT[input_t1](
@@ -266,9 +280,7 @@ def test_native_batch_norm_legit_no_training_vgf_quant_conv(test_data: Tuple):
 
 
 class BatchNorm2dNoStats(torch.nn.Module):
-    """
-    Decomposes into _native_batch_norm_legit.no_stats
-    """
+    """Decomposes into _native_batch_norm_legit.no_stats."""
 
     aten_ops = ["torch.ops.aten.batch_norm.default"]
 

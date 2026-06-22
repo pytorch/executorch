@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
@@ -23,13 +23,10 @@ edge_gelu = (exir_ops.edge.aten.gelu.default,)
 
 
 def _get_gelu_ops(op) -> tuple:
-    """
-    Returns the operators needed to decompose GELU
-    """
+    """Returns the operators needed to decompose GELU."""
 
     if op in edge_gelu:
         return (
-            exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.tanh.default,
@@ -37,7 +34,6 @@ def _get_gelu_ops(op) -> tuple:
         )
     if op in torch_gelu:
         return (
-            torch.ops.aten.full.default,
             torch.ops.aten.add.Tensor,
             torch.ops.aten.mul.Tensor,
             torch.ops.aten.tanh.default,
@@ -46,11 +42,10 @@ def _get_gelu_ops(op) -> tuple:
     raise RuntimeError(f"Can't get GeLU decomposition ops for op {op}")
 
 
-class DecomposeGeluPass(ArmPass):
-    """
-    This pass decomposes the GELU operator into primitive ops.
-    Aiming to adhere closely to the reference implementations built into
-    ExecuTorch. Including using the same pre-calculated constants.
+class DecomposeGeluPass(ArmOpTargetedPass):
+    """This pass decomposes the GELU operator into primitive ops. Aiming to
+    adhere closely to the reference implementations built into ExecuTorch.
+    Including using the same pre-calculated constants.
 
     This operator has two formulae depending on the value of the
     approximate argument. Examples below include the added full
@@ -84,6 +79,7 @@ class DecomposeGeluPass(ArmPass):
         %op5 = add(%op4, %FULL_1)
         %op6 = mul(%x, %op5)
         %op7 = mul(%op6, %FULL_0_5)
+
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -92,42 +88,27 @@ class DecomposeGeluPass(ArmPass):
         MatchArgDtypePass,
         MatchArgRanksPass,
     }
+    target_ops = torch_gelu + edge_gelu
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in torch_gelu + edge_gelu:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
-        is_quantized = (
-            len(meta.data.get("input_qparams", {})) > 0
-            and len(meta.data.get("output_qparams", {})) > 0
-        )
-        if is_quantized:
+        if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
-        full_op, add_op, mul_op, tanh_op, erf_op = _get_gelu_ops(op)
+        add_op, mul_op, tanh_op, erf_op = _get_gelu_ops(op)
 
         input = get_node_arg(args, 0)
         # If approximate is default (none) it does not appear in kwargs
         approximate = get_node_arg(kwargs, "approximate", "none")
 
-        shape = meta["val"].size()
-        dtype = meta["val"].dtype
-
-        FULL_0_5 = super().call_operator(
-            full_op, ([1] * len(shape), 0.5), {"dtype": dtype}, meta
-        )
-        FULL_1 = super().call_operator(
-            full_op, ([1] * len(shape), 1), {"dtype": dtype}, meta
-        )
+        FULL_0_5 = super().call_scalar(0.5, meta)
+        FULL_1 = super().call_scalar(1, meta)
 
         if approximate == "none":
             # Constant mirrors ExecuTorch implementation for parity.
-            FULL_SQRT1_2 = super().call_operator(
-                full_op,
-                ([1] * len(shape), 0.70710678118654752440),
-                {"dtype": dtype},
-                meta,
-            )
+            FULL_SQRT1_2 = super().call_scalar(0.70710678118654752440, meta)
 
             op1 = super().call_operator(mul_op, (input, FULL_SQRT1_2), {}, meta)
             op2 = super().call_operator(erf_op, (op1,), {}, meta)
@@ -137,21 +118,9 @@ class DecomposeGeluPass(ArmPass):
 
         elif approximate == "tanh":
             # Constants mirror ExecuTorch implementation for parity.
-            FULL_SQRT2 = super().call_operator(
-                full_op,
-                ([1] * len(shape), 1.41421356237309504880),
-                {"dtype": dtype},
-                meta,
-            )
-            FULL_2_SQRTPI = super().call_operator(
-                full_op,
-                ([1] * len(shape), 1.12837916709551257390),
-                {"dtype": dtype},
-                meta,
-            )
-            FULL_CUBE_COEFF = super().call_operator(
-                full_op, ([1] * len(shape), 0.044715), {"dtype": dtype}, meta
-            )
+            FULL_SQRT2 = super().call_scalar(1.41421356237309504880, meta)
+            FULL_2_SQRTPI = super().call_scalar(1.12837916709551257390, meta)
+            FULL_CUBE_COEFF = super().call_scalar(0.044715, meta)
 
             # Mirrors ExecuTorch implementations for calculating this value
             SQRT_MUL = super().call_operator(

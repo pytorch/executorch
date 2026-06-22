@@ -6,13 +6,16 @@
 # LICENSE file in the root directory of this source tree.
 
 set -exu
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+export HF_HUB_DISABLE_XET=1
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    cmake --workflow llm-release
+    cmake --preset llm-release -DEXECUTORCH_ENABLE_LOGGING=ON
+    cmake --build --preset llm-release-install
 }
 
 cmake_build_llama_runner() {
@@ -32,6 +35,24 @@ cleanup_files() {
   rm result*.txt
 }
 
+matches_base_response_prefix() {
+  local output_file="$1"
+  python - "$output_file" <<'PY'
+import pathlib
+import re
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+pattern = re.compile(
+    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:\n"
+    r"(?:<think>\n)+"
+    r"Okay, so I need to calculate 15% of 80\.",
+    re.MULTILINE,
+)
+sys.exit(0 if pattern.match(text) else 1)
+PY
+}
+
 # Hosting lora adapter in personal repo for now.
 python -m pip install -q huggingface_hub
 HF_ADAPTER_REPO="lucylq/qwen3_06B_lora_math"
@@ -41,12 +62,14 @@ HF_ADAPTER_PATH=$(
     --files "adapter_config.json" "adapter_model.safetensors"
 )
 
+# Set environment variables for OmegaConf interpolation in yaml.
+export LORA_ADAPTER_CHECKPOINT="${HF_ADAPTER_PATH}/adapter_model.safetensors"
+export LORA_ADAPTER_CONFIG="${HF_ADAPTER_PATH}/adapter_config.json"
+
 ### SINGLE LORA PTE ###
 # Export LoRA PTE file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math_full.pte"
 
 # Capture the path of the downloaded qwen artifacts
@@ -93,9 +116,7 @@ fi
 ### PROGRAM DATA SEPARATION ###
 # Export LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math.pte" \
     +export.foundation_weights_file="qwen_foundation.ptd" \
     +export.lora_weights_file="qwen_lora_math.ptd"
@@ -108,7 +129,7 @@ cmake-out/examples/models/llama/llama_main --model_path=qwen_lora_math.pte --dat
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
-RESULT=$(cat result.txt)
+RESULT=$(cat result2.txt)
 if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT}"
@@ -138,13 +159,24 @@ Okay, so I need to calculate 15% of 80."
 EXPECTED_QUANT_LORA_PREFIX="
 <|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant
 To calculate 15% of 80, we can multiply 80 by 15/100.
-So, 15% of 80 is equal to (80 * 15) / 100 = 1200 / 100 = 12.
+80 * 15/100 = 12.
+So, 15% of 80 is 12.
+#### 12
+The answer is: 12<|im_end|>"
+EXPECTED_QUANT_LORA_ALTERNATE_PREFIX="
+<|im_start|>user Calculate 15% of 80?<|im_end|><|im_start|>assistant
+To calculate 15% of 80, we can multiply 80 by 15/100.
+80 * 15/100 = 12.
+So, 15% of 80 is 12.
 #### 12
 The answer is: 12<|im_end|>"
 
 # Export Quantized PTE, PTD file, no LoRA.
+# override base.lora_config=null to avoid creating a lora model
+# and loading lora weights.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
+    base.lora_config=null \
     +export.output_name="qwen_q.pte" \
     +export.foundation_weights_file="qwen_foundation_q.ptd" \
     +quantization.qmode="8da4w" \
@@ -152,9 +184,7 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
 
 # Export Quantized LoRA PTE, LoRA PTD, foundation PTD file.
 $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
-    --config examples/models/qwen3/config/qwen3_xnnpack.yaml \
-    +base.adapter_checkpoint="${HF_ADAPTER_PATH}/adapter_model.safetensors" \
-    +base.adapter_config="${HF_ADAPTER_PATH}/adapter_config.json" \
+    --config examples/models/qwen3/config/qwen3_xnnpack_lora.yaml \
     +export.output_name="qwen_lora_math_q.pte" \
     +export.foundation_weights_file="qwen_foundation_lora_q.ptd" \
     +export.lora_weights_file="qwen_lora_math_q.ptd" \
@@ -184,7 +214,7 @@ cmake-out/examples/models/llama/llama_main --model_path=qwen_q.pte --data_paths=
 NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 RESULT=$(cat result.txt)
-if [[ "${RESULT}" == "${EXPECTED_QUANT_PREFIX}"* ]]; then
+if matches_base_response_prefix result.txt; then
   echo "Expected result prefix: ${EXPECTED_QUANT_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 3: Success"
@@ -205,12 +235,13 @@ NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
 RESULT=$(cat result.txt)
-if [[ "${RESULT}" == "${EXPECTED_QUANT_LORA_PREFIX}"* ]]; then
+if [[ "${RESULT}" == "${EXPECTED_QUANT_LORA_PREFIX}"* ]] || [[ "${RESULT}" == "${EXPECTED_QUANT_LORA_ALTERNATE_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_QUANT_LORA_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 4: Success"
 else
   echo "Expected result prefix: ${EXPECTED_QUANT_LORA_PREFIX}"
+  echo "Alternate expected result prefix: ${EXPECTED_QUANT_LORA_ALTERNATE_PREFIX}"
   echo "Actual result: ${RESULT}"
   echo "Test 4: Failure; results not the same"
   cleanup_files

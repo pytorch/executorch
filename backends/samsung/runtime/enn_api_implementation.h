@@ -73,6 +73,7 @@ class EnnApi {
   std::atomic_bool initialize_ = false;
   // Pointer to the dlopen libs
   void* libenn_public_api_ = nullptr;
+  static std::atomic<int> ref_count_;
 
   EnnApi() = default;
   bool getInitialize() const;

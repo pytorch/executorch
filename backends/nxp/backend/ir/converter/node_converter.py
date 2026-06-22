@@ -3,16 +3,27 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 from abc import ABC, abstractmethod
+from typing import Callable
 
 import torch
 
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.edge_helper import (
+    input_quantization_type,
+    output_quantization_type,
+)
+from executorch.backends.nxp.backend.ir import logger as logger
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
+)
+
+from executorch.backends.nxp.backend.ir.converter.tensor_utils import (
+    get_name_of_node_output,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
@@ -181,6 +192,35 @@ class NodeConverter(ABC):
         # Node not quantized
         return True
 
+    @staticmethod
+    def is_node_alone_in_partition(
+        node: Node, partition_list: list[Partition], filter_fn: Callable[[Node], bool]
+    ) -> bool:
+        """Return True if `node` is the only node in its partition for which `filter_fn`
+        returns True.
+
+        The function finds the unique partition containing `node` and applies
+        `filter_fn` to all nodes in that partition. If only one node passes the
+        predicate — and that node is `node` — the function returns True.
+
+        :param node: The torch.fx.Node to check.
+        :param partition_list: List of proposed partitions.
+        :param filter_fn: Predicate applied to nodes in the partition.
+                        `node` is considered alone if it is the only node
+                        for which this predicate returns True.
+        """
+        partitions = [p for p in partition_list if node in p.nodes]
+        if len(partitions) != 1:
+            raise ValueError(
+                "Cannot find a partition of a node in graph. This should not occur."
+            )
+
+        partition = partitions[0]
+        filtered_partition_nodes = list(filter(filter_fn, partition.nodes))
+        return (
+            len(filtered_partition_nodes) == 1 and filtered_partition_nodes[0] == node
+        )
+
     def assert_convertible(self, node):
         """Assert that the call `is_supported()` returns `True`. Otherwise, raise an exception and print an
         error message.
@@ -231,25 +271,177 @@ class NodeConverter(ABC):
         # Initialize node's inputs
         t_operator.inputs = tflite_model.OperatorInputs()
 
-        input_nodes = []
-        for arg in node.args:
-            match arg:
-                case Node():
-                    input_nodes.append(arg)
-                case list() if all(isinstance(node_, Node) for node_ in arg):
-                    input_nodes.extend(arg)
+        if node.target == operator.getitem:
+            # Special case of a builtin function, which can extract a specific output tensor from the previous node.
+            previous_node = node.args[0]
+            output_index = node.args[1]
+            input_name = get_name_of_node_output(previous_node, output_index)
+            assert self.builder.tensor_exists(input_name)
+            t_operator.tmp_inputs.append(self.builder.tensor_for_name(input_name))
 
-        for ancestor_node in input_nodes:
-            assert self.context.tflite_builder.tensor_exists(ancestor_node.name)
-            t_operator.tmp_inputs.append(
-                self.context.tflite_builder.tensor_for_name(ancestor_node.name)
-            )
+        else:
+            # Regular operator.
+            input_nodes = []
+            for arg in node.args:
+                match arg:
+                    case Node():
+                        input_nodes.append(arg)
+                    case list() if all(isinstance(node_, Node) for node_ in arg):
+                        input_nodes.extend(arg)
 
-        # Add node's output as a new tensor
-        assert self.context.tflite_builder.tensor_exists(node.name)
-        t_operator.outputs = tflite_model.OperatorOutputs()
-        t_operator.tmp_outputs.append(
-            self.context.tflite_builder.tensor_for_name(node.name)
+            for ancestor_node in input_nodes:
+                assert self.builder.tensor_exists(ancestor_node.name)
+                t_operator.tmp_inputs.append(
+                    self.builder.tensor_for_name(ancestor_node.name)
+                )
+
+        # Add node's outputs as a new tensors
+        num_outputs = (
+            len(node.meta["val"]) if isinstance(node.meta["val"], tuple) else 1
         )
+        if num_outputs == 1:
+            # Single output node.
+            assert self.builder.tensor_exists(node.name)
+            t_operator.outputs = tflite_model.OperatorOutputs()
+            t_operator.tmp_outputs.append(self.builder.tensor_for_name(node.name))
+        else:
+            # The node has multiple outputs.
+            t_operator.outputs = tflite_model.OperatorOutputs()
+            for output_index in range(num_outputs):
+                tensor_name = get_name_of_node_output(node, output_index)
+                assert self.builder.tensor_exists(tensor_name)
+                t_operator.tmp_outputs.append(self.builder.tensor_for_name(tensor_name))
 
         return t_operator
+
+    @staticmethod
+    def uses_quantization_type_for_inputs(
+        node: Node,
+        supported_types: list[torch.dtype],
+        input_indices: list[int | tuple[int, int]],
+    ) -> bool:
+        """Check if `node` uses the QDQ quantization schema and inputs on the provided indices use a quantization type
+            that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no type checking is performed and `True` is returned.
+        :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
+        """
+        return all(
+            input_quantization_type(node, input_index) in supported_types
+            for input_index in input_indices
+        )
+
+    @staticmethod
+    def uses_quantization_type_for_outputs(
+        node: Node,
+        supported_types: list[torch.dtype],
+        output_indices: list[int],
+    ):
+        """Check if `node` uses the QDQ quantization schema and outputs on the provided indices use a quantization type
+            that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no type checking is performed and `True` is returned.
+        :return: True, if the `node` is QDQ quantized and has quantization output types in `supported_types`.
+        """
+        return all(
+            output_quantization_type(node, output_index) in supported_types
+            for output_index in output_indices
+        )
+
+    @staticmethod
+    def uses_quantization_type_for_io(
+        node: Node,
+        supported_types: list[torch.dtype],
+        input_indices: list[int | tuple[int, int]],
+        output_indices: list[int],
+    ):
+        """Check if `node` uses the QDQ quantization schema and inputs and outputs on the provided indices use a
+            quantization type that is in `supported_types`.
+
+        :param node: The compute node.
+        :param supported_types: List of supported quantization types.
+        :param input_indices: List of indices into the `node.args`, or tuples of 2 indices into `node.args[idx1][idx2]`.
+                               If empty, no input type checking is performed.
+        :param output_indices: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
+                                indices select the outputs to be checked. If no `getitem` nodes follow it, the operator
+                                produces only 1 output (most common case), and the value `[0]` must be used.
+                                If empty, no output type checking is performed.
+        :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
+        """
+        return NodeConverter.uses_quantization_type_for_inputs(
+            node, supported_types, input_indices
+        ) and NodeConverter.uses_quantization_type_for_outputs(
+            node, supported_types, output_indices
+        )
+
+    @staticmethod
+    def uses_shape_broadcasting(node: Node) -> bool:
+        """Determine if given PyTorch fx Node uses shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if the node uses shape broadcasting for it's input nodes.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.uses_shape_broadcasting(): Operator has no inputs!",
+            )
+
+        first_input_shape = node.all_input_nodes[0].meta["val"].shape
+
+        return any(
+            input_tensor.meta["val"].shape != first_input_shape
+            for input_tensor in node.all_input_nodes[1:]
+        )
+
+    @staticmethod
+    def at_least_one_input_shape_matches_the_output_shape(node: Node) -> bool:
+        """Determine if given PyTorch fx Node uses at least one input shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if at least one input has the same shape as the output node.
+                 False otherwise.
+        """
+
+        if node.all_input_nodes is None:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.at_least_one_input_shape_matches_the_output_shape(): 'all_input_nodes' are None!",
+            )
+
+        if len(node.all_input_nodes) == 0:
+            logger.e(
+                logger.Code.INTERNAL_ERROR,
+                "node_converter.at_least_one_input_shape_matches_the_output_shape(): Operator has no inputs!",
+            )
+
+        output_shape = node.meta["val"].shape
+
+        return any(
+            input_tensor.meta["val"].shape == output_shape
+            for input_tensor in node.all_input_nodes
+        )
+
+    @staticmethod
+    def _node_inputs_ranks_not_equal(node) -> bool:
+        first_input_shape = node.all_input_nodes[0].meta["val"].shape
+        return not all(
+            len(input_node.meta["val"].shape) == len(first_input_shape)
+            for input_node in node.all_input_nodes[1:]
+        )

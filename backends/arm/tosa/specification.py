@@ -14,6 +14,7 @@ import re
 from typing import Dict, Generic, List, Set, TypeVar
 
 from packaging.version import Version
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 T = TypeVar("T")
 
@@ -416,8 +417,9 @@ class TosaLoweringContext:
 
     # Define a context variable for the spec
     tosa_spec_var: contextvars.ContextVar = contextvars.ContextVar("tosa_spec")
+    shape_env_var: contextvars.ContextVar = contextvars.ContextVar("shape_env")
 
-    def __init__(self, spec: TosaSpecification):
+    def __init__(self, spec: TosaSpecification, shape_env: ShapeEnv | None = None):
         """Initialize the lowering context with a specification.
 
         Args:
@@ -425,6 +427,7 @@ class TosaLoweringContext:
 
         """
         self.spec = spec
+        self.shape_env = shape_env
 
     def __enter__(self):
         """Set the context variable and return self.
@@ -434,7 +437,9 @@ class TosaLoweringContext:
 
         """
         # Set the spec in the context variable and store the token for later reset
-        self.token = TosaLoweringContext.tosa_spec_var.set(self.spec)
+        self.tosa_spec_token = TosaLoweringContext.tosa_spec_var.set(self.spec)
+        self.shape_env_token = TosaLoweringContext.shape_env_var.set(self.shape_env)
+
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -447,7 +452,8 @@ class TosaLoweringContext:
 
         """
         # Reset the context variable to its previous state
-        TosaLoweringContext.tosa_spec_var.reset(self.token)
+        TosaLoweringContext.tosa_spec_var.reset(self.tosa_spec_token)
+        TosaLoweringContext.shape_env_var.reset(self.shape_env_token)
 
 
 def get_context_spec() -> TosaSpecification:
@@ -462,6 +468,26 @@ def get_context_spec() -> TosaSpecification:
     """
     try:
         return TosaLoweringContext.tosa_spec_var.get()
+    except LookupError:
+        raise RuntimeError("Function must be executed within a TosaLoweringContext")
+
+
+def get_context_shape_env() -> ShapeEnv:
+    """Get the current ShapeEnv from the lowering context, if any.
+
+    Returns:
+        ShapeEnv: Active ShapeEnv retrieved from the context var.
+
+    Raises:
+        RuntimeError: If called outside a ``TosaLoweringContext`` or if no ShapeEnv is set.
+
+    """
+    try:
+        # Attempt to get the current context spec and return its shape_env
+        shape_env = TosaLoweringContext.shape_env_var.get()
+        if shape_env is None:
+            raise RuntimeError("No ShapeEnv set in the current TosaLoweringContext")
+        return TosaLoweringContext.shape_env_var.get()
     except LookupError:
         raise RuntimeError("Function must be executed within a TosaLoweringContext")
 

@@ -40,8 +40,8 @@ is_exception() {
 if [ $# -eq 2 ]; then
   base=$1
   head=$2
-  echo "Checking changed files between $base...$head"
-  files=$(git diff --name-only "$base...$head")
+  echo "Checking changed files between $base..$head"
+  files=$(git diff --name-only "$base..$head")
 else
   echo "Checking all files in repository"
   files=$(git ls-files)

@@ -9,22 +9,32 @@ annotations to FX graphs using TorchAO qspecs.
 
 """
 
+import functools
 import logging
 import operator
 from dataclasses import dataclass, replace
-from typing import Callable, cast, List, Optional, Sequence
+from typing import Any, Callable, cast, Iterable, List, NamedTuple, Optional, Sequence
 
 import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.quantizer import QuantizationConfig
-from torch._subclasses import FakeTensor
 
+from torch._ops import OpOverload
+from torch._subclasses import FakeTensor
 from torch.fx import Node
+from torchao.quantization.pt2e import (
+    FakeQuantize,
+    FusedMovingAvgObsFakeQuantize,
+    MovingAveragePerChannelMinMaxObserver,
+    PartialWrapper,
+)
+
 from torchao.quantization.pt2e.quantizer import (
     annotate_input_qspec_map,
     annotate_output_qspec,
+    FixedQParamsQuantizationSpec,
     QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
@@ -37,6 +47,12 @@ from .arm_quantizer_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_fused_moving_avg_obs_fake_quant_ctor(func: object) -> bool:
+    """Return True when ``func`` is the fused fake-quant class or a subclass."""
+
+    return isinstance(func, type) and issubclass(func, FusedMovingAvgObsFakeQuantize)
 
 
 @dataclass(frozen=True)
@@ -65,6 +81,13 @@ class _OpQuantProperties:
         self.quant_output: Optional[_QuantProperty] = None
 
 
+class _QParams(NamedTuple):
+    scale: float
+    zero_point: int
+    quant_min: int | None = None
+    quant_max: int | None = None
+
+
 def _as_list(x):
     """Return ``x`` wrapped as a list if needed.
 
@@ -83,23 +106,87 @@ def _as_list(x):
         ]
 
 
-def _adjust_weight_qspec_for_conv_transpose(node: Node, weight_qspec):
+def _adjust_weight_qspec_for_conv_transpose(
+    node: Node, weight_qspec: QuantizationSpec | None
+) -> QuantizationSpec | None:
+    """Adjust weight qspec axis/ctor for conv_transpose2d per-channel
+    quantization.
+
+    Use axis 1 for ungrouped ConvTranspose2d weights because the weight layout is
+    (in_channels, out_channels / groups, kH, kW). Grouped transpose conv keeps axis 0.
+
+    If the weight qspec contains a TorchAO QAT fake-quant/observer constructor
+    (e.g. PartialWrapper(partial(...)) or a with_args-based constructor), the
+    constructor is rebuilt with the corrected axis. For fused per-channel
+    FakeQuantize, which only supports axis 0, the constructor is replaced with
+    a non-fused FakeQuantize + MovingAveragePerChannelMinMaxObserver when the
+    required axis is not 0.
+
+    Return the qspec unchanged when weights are unset.
+
+    """
+
     if (
-        node.target == torch.ops.aten.conv_transpose2d.input
-        and isinstance(weight_qspec, QuantizationSpec)
-        and weight_qspec.qscheme == torch.per_channel_symmetric
-        and weight_qspec.ch_axis != 1
+        node.target != torch.ops.aten.conv_transpose2d.input
+        or weight_qspec is None
+        or weight_qspec.qscheme != torch.per_channel_symmetric
     ):
-        return QuantizationSpec(
-            dtype=weight_qspec.dtype,
-            observer_or_fake_quant_ctr=weight_qspec.observer_or_fake_quant_ctr,
-            quant_min=weight_qspec.quant_min,
-            quant_max=weight_qspec.quant_max,
-            qscheme=weight_qspec.qscheme,
-            ch_axis=1,
-            is_dynamic=weight_qspec.is_dynamic,
+        return weight_qspec
+
+    # For now skip axis adjustment for a8w4 per-channel configs (int4 weights).
+    if weight_qspec.quant_min == -7 and weight_qspec.quant_max == 7:
+        return weight_qspec
+
+    groups = 1
+    if len(node.args) > 6 and isinstance(node.args[6], int):
+        groups = node.args[6]
+    expected_axis = 0 if groups != 1 else 1
+
+    observer_or_fake_quant_ctr = weight_qspec.observer_or_fake_quant_ctr
+    observer_or_fake_quant_ctr_changed = False
+    # QAT FakeQuantize uses PartialWrapper; rebuild its partial to update ch_axis
+    # without breaking TorchAO introspection.
+    if isinstance(observer_or_fake_quant_ctr, PartialWrapper):
+        original_callable_args = dict(observer_or_fake_quant_ctr.callable_args)
+        base_partial = observer_or_fake_quant_ctr.p
+        if isinstance(base_partial, functools.partial):
+            base_keywords = dict(base_partial.keywords or {})
+            base_keywords["ch_axis"] = expected_axis
+            if (
+                _is_fused_moving_avg_obs_fake_quant_ctor(base_partial.func)
+                and expected_axis != 0
+            ):
+                # Fused per-channel FakeQuant only supports axis 0; for other axes,
+                # fall back to FakeQuantize with a per-channel observer.
+                base_keywords["observer"] = MovingAveragePerChannelMinMaxObserver
+                observer_or_fake_quant_ctr = PartialWrapper(
+                    functools.partial(FakeQuantize, **base_keywords)
+                )
+            else:
+                observer_or_fake_quant_ctr = PartialWrapper(
+                    functools.partial(base_partial.func, **base_keywords)
+                )
+            observer_or_fake_quant_ctr.callable_args = original_callable_args
+            observer_or_fake_quant_ctr_changed = True
+    # Non-QAT observer/fake-quant ctrs can be updated via with_args.
+    elif hasattr(observer_or_fake_quant_ctr, "with_args"):
+        observer_or_fake_quant_ctr = observer_or_fake_quant_ctr.with_args(
+            ch_axis=expected_axis
         )
-    return weight_qspec
+        observer_or_fake_quant_ctr_changed = True
+
+    if weight_qspec.ch_axis == expected_axis and not observer_or_fake_quant_ctr_changed:
+        return weight_qspec
+
+    return QuantizationSpec(
+        dtype=weight_qspec.dtype,
+        observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
+        quant_min=weight_qspec.quant_min,
+        quant_max=weight_qspec.quant_max,
+        qscheme=weight_qspec.qscheme,
+        ch_axis=expected_axis,
+        is_dynamic=weight_qspec.is_dynamic,
+    )
 
 
 def _is_ok_for_quantization(
@@ -314,14 +401,16 @@ def _annotate_output(node: Node, quant_property: _QuantProperty):
 
 
 def _match_pattern(
-    node: Node, pattern: List[List], filter_fn: Optional[Callable[[Node], bool]] = None
+    node: Node,
+    pattern: Sequence[Iterable[object]],
+    filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> bool:
     """Check whether a node chain matches a pattern.
 
     Verify a chain of ancestors -> node -> descendants matches the provided
     ``pattern``. If ``filter_fn`` is provided, require all nodes in the chain
-    to pass the filter. Each pattern element is a list of disjunctive node
-    targets.
+    to pass the filter. Each pattern element is an iterable of disjunctive
+    node targets.
 
     """
     if len(pattern) < 1:
@@ -355,22 +444,93 @@ def _match_pattern(
     return left_condition and right_condition
 
 
-_conv_ops = [
+_conv_ops: set[OpOverload] = {
     torch.ops.aten.conv1d.default,
     torch.ops.aten.conv2d.default,
     torch.ops.aten.conv2d.padding,
     torch.ops.aten.conv_transpose2d.input,
     torch.ops.aten.conv3d.default,
     torch.ops.aten.conv3d.padding,
-]
+}
 
-_one_to_one = [
+# For these ops, we use fixed qspecs, meaning that quantization params for
+# these are statically defined. This is to prevent issues with out-of-range
+# values when using dynamic quantization.
+#
+# Dict of operator to a dict of num_bits to qparams for that operator.
+_fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
+    # acos has a valid range of [-1, 1]
+    torch.ops.aten.acos.default: {
+        8: _QParams((1.0 - (-1.0)) / (1 << 8), 0),
+        16: _QParams((1.0 - (-1.0)) / (1 << 16), 0),
+    },
+    # asin has a valid range of [-1, 1]
+    torch.ops.aten.asin.default: {
+        8: _QParams((1.0 - (-1.0)) / (1 << 8), 0),
+        16: _QParams((1.0 - (-1.0)) / (1 << 16), 0),
+    },
+    # atanh has a valid range of (-1, 1) (excluding -1 and 1).
+    torch.ops.aten.atanh.default: {
+        8: _QParams((0.999 - (-0.999)) / (1 << 8), 0),
+        16: _QParams((0.99999 - (-0.99999)) / (1 << 16), 0),
+    },
+    # grid_sampler image input/output use SNORM-compatible qparams. The grid
+    # coordinate tensor is intentionally left unquantized.
+    torch.ops.aten.grid_sampler.default: {
+        8: _QParams(1.0 / 127.0, 0, -127, 127),
+    },
+}
+
+
+_fixed_output_qspec_ops: dict[Any, dict[int, _QParams]] = {
+    torch.ops.aten.grid_sampler.default: {
+        8: _QParams(1.0 / 127.0, 0, -127, 127),
+    },
+}
+
+
+def _get_fixed_qparams_qspec(
+    node_target: Any,
+    qparams_table: dict[Any, dict[int, _QParams]],
+    input_act_qspec: QuantizationSpecBase,
+) -> FixedQParamsQuantizationSpec | None:
+    if not isinstance(input_act_qspec, QuantizationSpec):
+        raise ValueError("Fixed qparams require a QuantizationSpec input.")
+
+    num_bits = torch.iinfo(input_act_qspec.dtype).bits
+    qparams = qparams_table[node_target].get(num_bits)
+    if qparams is None:
+        return None
+
+    return FixedQParamsQuantizationSpec(
+        dtype=input_act_qspec.dtype,
+        scale=qparams.scale,
+        zero_point=qparams.zero_point,
+        quant_min=(
+            input_act_qspec.quant_min
+            if qparams.quant_min is None
+            else qparams.quant_min
+        ),
+        quant_max=(
+            input_act_qspec.quant_max
+            if qparams.quant_max is None
+            else qparams.quant_max
+        ),
+        qscheme=input_act_qspec.qscheme,
+        is_dynamic=input_act_qspec.is_dynamic,
+    )
+
+
+_one_to_one: set[OpOverload] = {
     torch.ops.aten.abs.default,
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
+    torch.ops.aten.erfinv.default,
     torch.ops.aten.exp.default,
     torch.ops.aten.expm1.default,
     torch.ops.aten.elu.default,
+    torch.ops.aten.selu.default,
+    torch.ops.aten.celu.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
@@ -392,18 +552,17 @@ _one_to_one = [
     torch.ops.aten.sinh.default,
     torch.ops.aten.atan.default,
     torch.ops.aten.log1p.default,
+    torch.ops.aten.log10.default,
     torch.ops.aten.acosh.default,
     torch.ops.aten.sign.default,
-    torch.ops.aten.asin.default,
-    torch.ops.aten.atanh.default,
     torch.ops.aten.asinh.default,
     torch.ops.aten.cosh.default,
-    torch.ops.aten.acos.default,
     torch.ops.aten.cumsum.default,
+    torch.ops.aten.remainder.Scalar,
     torch.ops.aten.tan.default,
-]
+}
 
-_one_to_one_shared_input_qspec = [
+_one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.squeeze.default,
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
@@ -435,7 +594,6 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.split.Tensor,
     torch.ops.aten.split_with_sizes.default,
     torch.ops.aten.split_copy.Tensor,
-    torch.ops.aten.transpose.Dimname,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
     torch.ops.aten.t_copy.default,
@@ -461,9 +619,18 @@ _one_to_one_shared_input_qspec = [
     # dequant -> neg -> requant chain.
     torch.ops.aten.neg.default,
     torch.ops.aten.detach_copy.default,
-]
+}
 
-_one_to_one_shared_input_or_input_act_qspec = [
+# Dimname has been removed from upstream PyTorch, but there may be a window
+# where developers in this backend are using a mainline build of this backend
+# with an older version of PyTorch.
+# TODO: remove this once the build has time to be propagated and majority of
+# dev expected to be unimpacted
+_transpose_dimname = getattr(torch.ops.aten.transpose, "Dimname", None)
+if _transpose_dimname is not None:
+    _one_to_one_shared_input_qspec.add(_transpose_dimname)
+
+_one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.alias.default,
     torch.ops.aten.clone.default,
     torch.ops.aten.hardtanh.default,
@@ -484,7 +651,7 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.alias_copy.default,
     torch.ops.aten.pixel_shuffle.default,
     torch.ops.aten.pixel_unshuffle.default,
-]
+}
 
 
 def get_quant_properties(  # noqa: C901
@@ -537,20 +704,21 @@ def get_quant_properties(  # noqa: C901
         node,
         [
             _conv_ops,
-            [torch.ops.aten.batch_norm.default],
-            [
+            {torch.ops.aten.batch_norm.default},
+            {
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
                 torch.ops.aten.hardtanh.default,
                 torch.ops.aten.hardtanh_.default,
-            ],
+            },
         ],
         filter_fn=any_or_hardtanh_min_zero,
     ):
         if node.target in _conv_ops:
+            conv_weight_qspec = ensure_type(QuantizationSpec, weight_qspec)  # For MyPy
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(1, conv_weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
         elif node.target in (
@@ -565,32 +733,31 @@ def get_quant_properties(  # noqa: C901
         node,
         [
             _conv_ops,
-            [torch.ops.aten.batch_norm.default],
+            {torch.ops.aten.batch_norm.default},
         ],
     ):
         if node.target in _conv_ops:
+            conv_weight_qspec = ensure_type(QuantizationSpec, weight_qspec)  # For MyPy
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(1, conv_weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
-        elif node.target in [
-            torch.ops.aten.batch_norm.default,
-        ]:
+        elif node.target in {torch.ops.aten.batch_norm.default}:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif not is_symmetric and _match_pattern(
         node,
         [
-            [
+            {
                 *_conv_ops,
                 torch.ops.aten.linear.default,
-            ],
-            [
+            },
+            {
                 torch.ops.aten.relu.default,
                 torch.ops.aten.relu_.default,
                 torch.ops.aten.hardtanh.default,
                 torch.ops.aten.hardtanh_.default,
-            ],
+            },
         ],
         any_or_hardtanh_min_zero,
     ):
@@ -598,9 +765,12 @@ def get_quant_properties(  # noqa: C901
             *_conv_ops,
             torch.ops.aten.linear.default,
         ):
+            conv_or_linear_weight_qspec = ensure_type(
+                QuantizationSpec, weight_qspec
+            )  # For MyPy
             quant_properties.quant_inputs = [
                 _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, weight_qspec, mark_annotated=True),
+                _QuantProperty(1, conv_or_linear_weight_qspec, mark_annotated=True),
                 _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
             ]
         else:
@@ -609,21 +779,21 @@ def get_quant_properties(  # noqa: C901
         *_conv_ops,
         torch.ops.aten.linear.default,
     ):
+        conv_or_linear_weight_qspec = ensure_type(
+            QuantizationSpec, weight_qspec
+        )  # For MyPy
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
-            _QuantProperty(1, weight_qspec, mark_annotated=True),
+            _QuantProperty(1, conv_or_linear_weight_qspec, mark_annotated=True),
             _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
         torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.mm.default,
         torch.ops.aten.bmm.default,
         torch.ops.aten.mul.Tensor,
-        torch.ops.aten.mul_.Tensor,
     ):
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
@@ -634,16 +804,21 @@ def get_quant_properties(  # noqa: C901
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
-        lhs_node = ensure_type(Node, node.args[0])
-        shared_qspec = SharedQuantizationSpec((lhs_node, node))
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
-            _QuantProperty(
-                1,
-                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,
-            ),
+            _QuantProperty(1, input_act_qspec),
         ]
-        quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif node.target == torch.ops.aten.grid_sampler.default:
+        image_node = ensure_type(Node, node.args[0])
+        grid_sampler_image_qspec = quantization_config.get_input_act_qspec(
+            node, image_node
+        )
+        grid_sampler_output_qspec = quantization_config.get_output_act_qspec(node)
+        if grid_sampler_image_qspec is None or grid_sampler_output_qspec is None:
+            return None
+        quant_properties.quant_inputs = [_QuantProperty(0, grid_sampler_image_qspec)]
+        quant_properties.quant_output = _QuantProperty(0, grid_sampler_output_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         true_node = ensure_type(Node, node.args[1])
         input_qspec = (
@@ -706,6 +881,19 @@ def get_quant_properties(  # noqa: C901
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
+    elif node.target in _fixed_input_qspec_ops:
+        fixed_input_qspec = _get_fixed_qparams_qspec(
+            node.target, _fixed_input_qspec_ops, input_act_qspec
+        )
+        if fixed_input_qspec is None:
+            return None
+        quant_properties.quant_inputs = [
+            _QuantProperty(
+                0,
+                fixed_input_qspec,
+            )
+        ]
+        quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in _one_to_one_shared_input_qspec:
         input_node = ensure_type(Node, node.args[0])
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
@@ -764,29 +952,33 @@ def get_quant_properties(  # noqa: C901
         submodule_args_pos = -1 if node.target == torch.ops.higher_order.cond else -2
         submodule_args = node.args[submodule_args_pos]
         output_qspec = output_act_qspec
-        if len(submodule_args) > 0:  # type: ignore[arg-type]
-            # The way the TOSA backend handles quantized inputs, arrays of input tensors (such as the input to a
-            # conditional graph) need shared quantization.
-            shared_qspec = SharedQuantizationSpec(
-                (cast(list[Node], submodule_args)[0], node)
-            )
-            quant_properties.quant_inputs = [
-                _QuantProperty(
-                    submodule_args_pos,
-                    [
-                        input_act_qspec,
-                        *([shared_qspec] * (len(submodule_args) - 1)),  # type: ignore[arg-type]
-                    ],
+        # Annotate each control-flow tensor independently using the default input qspec
+        if submodule_args:
+            if node.meta.get("additional_inputs", None):
+                qspecs = [input_act_qspec] * len(cast(Sequence[Node], submodule_args))  # type: ignore[arg-type]
+                quant_properties.quant_inputs = [
+                    _QuantProperty(submodule_args_pos, qspecs)
+                ]
+            else:
+                shared_qspec = SharedQuantizationSpec(
+                    (cast(list[Node], submodule_args)[0], node)
                 )
-            ]
-            if node.target == torch.ops.higher_order.while_loop:
-                # The output of the while loop body can either re-enter the body, or exit the while loop.
-                # Therefore, A and B in the diagram below need to share the same quantization parameters.
-                # A -> while ( RESCALE -> ... RESCALE -> ) -> B
-                output_qspec = shared_qspec
+                quant_properties.quant_inputs = [
+                    _QuantProperty(
+                        submodule_args_pos,
+                        [
+                            input_act_qspec,
+                            *([shared_qspec] * (len(submodule_args) - 1)),  # type: ignore[arg-type]
+                        ],
+                    )
+                ]
+                if node.target == torch.ops.higher_order.while_loop:
+                    # The output of the while loop body can either re-enter the body, or exit the while loop.
+                    # Therefore, A and B in the diagram below need to share the same quantization parameters.
+                    # A -> while ( RESCALE -> ... RESCALE -> ) -> B
+                    output_qspec = shared_qspec
 
         quant_properties.quant_output = _QuantProperty(0, output_qspec)
-
     else:
         return None
 
