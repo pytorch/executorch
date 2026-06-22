@@ -57,6 +57,12 @@ ROPE_XK_GOLDEN="/tmp/webgpu_rope_xk_golden.bin"
 ROPE_DECODE_MODEL="/tmp/webgpu_rope_decode.pte"
 ROPE_DECODE_XQ_GOLDEN="/tmp/webgpu_rope_decode_xq_golden.bin"
 ROPE_DECODE_XK_GOLDEN="/tmp/webgpu_rope_decode_xk_golden.bin"
+PREPACK_MODEL="/tmp/webgpu_prepack.pte"
+PREPACK_GOLDEN="/tmp/webgpu_prepack_golden.bin"
+PREPACK2_MODEL="/tmp/webgpu_prepack_two_const.pte"
+PREPACK2_GOLDEN="/tmp/webgpu_prepack_two_const_golden.bin"
+PREPACK_TIED_MODEL="/tmp/webgpu_prepack_tied_const.pte"
+PREPACK_TIED_GOLDEN="/tmp/webgpu_prepack_tied_const_golden.bin"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import export_all_quantized_linear_models
@@ -74,6 +80,13 @@ from executorch.backends.webgpu.test.ops.rope.test_rope import export_rope_model
 export_rope_model('${ROPE_MODEL}', '${ROPE_XQ_GOLDEN}', '${ROPE_XK_GOLDEN}')
 export_rope_model('${ROPE_DECODE_MODEL}', '${ROPE_DECODE_XQ_GOLDEN}', '${ROPE_DECODE_XK_GOLDEN}', 'decode')
 " || echo "WARN: rope export failed; apply_rotary_emb configs will FAIL in webgpu_native_test"
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.prepack.test_prepack import export_prepack_model, export_prepack_two_const_model, export_prepack_tied_const_model
+export_prepack_model('${PREPACK_MODEL}', '${PREPACK_GOLDEN}')
+export_prepack_two_const_model('${PREPACK2_MODEL}', '${PREPACK2_GOLDEN}')
+export_prepack_tied_const_model('${PREPACK_TIED_MODEL}', '${PREPACK_TIED_GOLDEN}')
+" || echo "WARN: prepack export failed; prepack configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
@@ -172,6 +185,12 @@ if [[ -x "${BIN_DIR}/webgpu_native_test" ]] &&
       WEBGPU_TEST_ROPE_DECODE_MODEL="${ROPE_DECODE_MODEL}" \
       WEBGPU_TEST_ROPE_DECODE_XQ_GOLDEN="${ROPE_DECODE_XQ_GOLDEN}" \
       WEBGPU_TEST_ROPE_DECODE_XK_GOLDEN="${ROPE_DECODE_XK_GOLDEN}" \
+      WEBGPU_TEST_PREPACK_MODEL="${PREPACK_MODEL}" \
+      WEBGPU_TEST_PREPACK_GOLDEN="${PREPACK_GOLDEN}" \
+      WEBGPU_TEST_PREPACK2_MODEL="${PREPACK2_MODEL}" \
+      WEBGPU_TEST_PREPACK2_GOLDEN="${PREPACK2_GOLDEN}" \
+      WEBGPU_TEST_PREPACK_TIED_MODEL="${PREPACK_TIED_MODEL}" \
+      WEBGPU_TEST_PREPACK_TIED_GOLDEN="${PREPACK_TIED_GOLDEN}" \
       "${BIN_DIR}/webgpu_native_test"
 else
   echo "(skipping webgpu_native_test: executorch wheel absent — exports did not run)"
