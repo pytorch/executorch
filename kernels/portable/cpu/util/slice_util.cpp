@@ -214,32 +214,60 @@ void compute_slice(
   const bool use_multithreading = leading_dims >= MIN_LEADING_DIMS_FOR_MT &&
       total_elements >= MIN_ELEMENTS_FOR_MT;
 
+  // Contiguous fast path for step == 1 (the common case:
+  // tensor.narrow, x[a:b], KV cache reads, etc.). When step == 1, the per-row
+  // slice is one contiguous block of `length * length_per_step` bytes — replace
+  // `length` calls of memcpy(length_per_step) with a single bulk memcpy.
+  const bool step_is_one = (step == 1);
+  const size_t row_bytes = static_cast<size_t>(length) * length_per_step;
   if (use_multithreading) {
     // Use parallel_for to distribute work across leading dimensions
     // Calculate grain size based on number of elements per leading dimension
     const int64_t grain_size = MIN_LEADING_DIMS_FOR_MT;
 
-    executorch::extension::parallel_for(
-        0, leading_dims, grain_size, [&](const auto begin, const auto end) {
-          for (const auto i : c10::irange(begin, end)) {
-            const char* src =
-                input_data + (i * dim_length + start) * length_per_step;
-            char* local_dest = dest + i * length * length_per_step;
-            for ([[maybe_unused]] const auto j : c10::irange(length)) {
-              memcpy(local_dest, src, length_per_step);
-              src += step * length_per_step;
-              local_dest += length_per_step;
+    if (step_is_one) {
+      executorch::extension::parallel_for(
+          0, leading_dims, grain_size, [&](const auto begin, const auto end) {
+            for (const auto i : c10::irange(begin, end)) {
+              const char* src =
+                  input_data + (i * dim_length + start) * length_per_step;
+              char* local_dest = dest + i * row_bytes;
+              memcpy(local_dest, src, row_bytes);
             }
-          }
-        });
+          });
+    } else {
+      executorch::extension::parallel_for(
+          0, leading_dims, grain_size, [&](const auto begin, const auto end) {
+            for (const auto i : c10::irange(begin, end)) {
+              const char* src =
+                  input_data + (i * dim_length + start) * length_per_step;
+              char* local_dest = dest + i * row_bytes;
+              for ([[maybe_unused]] const auto j : c10::irange(length)) {
+                memcpy(local_dest, src, length_per_step);
+                src += step * length_per_step;
+                local_dest += length_per_step;
+              }
+            }
+          });
+    }
   } else {
     // Single-threaded path for small workloads
-    for (const auto i : c10::irange(leading_dims)) {
-      const char* src = input_data + (i * dim_length + start) * length_per_step;
-      for ([[maybe_unused]] const auto j : c10::irange(length)) {
-        memcpy(dest, src, length_per_step);
-        src += step * length_per_step;
-        dest += length_per_step;
+    if (step_is_one) {
+      for (const auto i : c10::irange(leading_dims)) {
+        const char* src =
+            input_data + (i * dim_length + start) * length_per_step;
+        memcpy(dest, src, row_bytes);
+        dest += row_bytes;
+      }
+    } else {
+      for (const auto i : c10::irange(leading_dims)) {
+        const char* src =
+            input_data + (i * dim_length + start) * length_per_step;
+        for ([[maybe_unused]] const auto j : c10::irange(length)) {
+          memcpy(dest, src, length_per_step);
+          src += step * length_per_step;
+          dest += length_per_step;
+        }
       }
     }
   }
