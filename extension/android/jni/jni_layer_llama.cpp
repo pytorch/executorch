@@ -21,6 +21,7 @@
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <executorch/extension/llm/runner/text_llm_runner.h>
+#include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -100,6 +101,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
   constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
   constexpr static int MODEL_TYPE_QNN_LLAMA = 4;
+  constexpr static int MODEL_TYPE_CATEGORY_TEXT_AUDIO = 5;
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -168,7 +170,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       model_type_category_ = model_type_category;
       auto cpp_load_mode = load_mode_from_int(load_mode);
       std::vector<std::string> data_files_vector;
-      if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL ||
+          model_type_category == MODEL_TYPE_CATEGORY_TEXT_AUDIO) {
         runner_ = llm::create_multimodal_runner(
             model_path->toStdString().c_str(),
             llm::load_tokenizer(tokenizer_path->toStdString()),
@@ -567,6 +570,203 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
+  jint prefill_audio_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> data,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (data == nullptr || batch_size <= 0 || n_bins <= 0 || n_frames <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* raw = data->getDirectBytes();
+    auto size = data->getDirectSize();
+    size_t expected =
+        static_cast<size_t>(batch_size) * static_cast<size_t>(n_bins) * static_cast<size_t>(n_frames);
+    if (raw == nullptr || size < expected) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<uint8_t> audio_data(raw, raw + expected);
+    llm::Audio audio{std::move(audio_data), batch_size, n_bins, n_frames};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(std::move(audio));
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    needs_bos_ = false;
+    return 0;
+  }
+
+  jint prefill_normalized_audio_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> data,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (data == nullptr || batch_size <= 0 || n_bins <= 0 || n_frames <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* raw = data->getDirectBytes();
+    auto size = data->getDirectSize();
+    size_t expected_bytes =
+        static_cast<size_t>(batch_size) * static_cast<size_t>(n_bins) * static_cast<size_t>(n_frames) * sizeof(float);
+    if (raw == nullptr || size < expected_bytes ||
+        size % sizeof(float) != 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    size_t num_floats =
+        static_cast<size_t>(batch_size) * static_cast<size_t>(n_bins) * static_cast<size_t>(n_frames);
+    std::vector<float> audio_data(num_floats);
+    std::memcpy(audio_data.data(), raw, expected_bytes);
+    llm::Audio audio{std::move(audio_data), batch_size, n_bins, n_frames};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(std::move(audio));
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    needs_bos_ = false;
+    return 0;
+  }
+
+  jint prefill_raw_audio_input_short(
+      facebook::jni::alias_ref<jshortArray> data,
+      jint batch_size,
+      jint n_channels,
+      jint n_samples) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (data == nullptr || batch_size <= 0 || n_channels <= 0 ||
+        n_samples <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto data_size = data->size();
+    if (data_size == 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<jshort> data_jshort(data_size);
+    data->getRegion(0, data_size, data_jshort.data());
+    size_t byte_size = data_size * sizeof(jshort);
+    std::vector<uint8_t> data_u8(byte_size);
+    std::memcpy(data_u8.data(), data_jshort.data(), byte_size);
+    llm::RawAudio audio{std::move(data_u8), batch_size, n_channels, n_samples};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(std::move(audio));
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    needs_bos_ = false;
+    return 0;
+  }
+
+  jint prefill_raw_audio_input_float(
+      facebook::jni::alias_ref<jfloatArray> data,
+      jint batch_size,
+      jint n_channels,
+      jint n_samples) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (data == nullptr || batch_size <= 0 || n_channels <= 0 ||
+        n_samples <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto data_size = data->size();
+    if (data_size == 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<jfloat> data_jfloat(data_size);
+    data->getRegion(0, data_size, data_jfloat.data());
+    size_t byte_size = data_size * sizeof(jfloat);
+    std::vector<uint8_t> data_u8(byte_size);
+    std::memcpy(data_u8.data(), data_jfloat.data(), byte_size);
+    llm::RawAudio audio{std::move(data_u8), batch_size, n_channels, n_samples};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(std::move(audio));
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    needs_bos_ = false;
+    return 0;
+  }
+
+  jint prefill_raw_audio_input_buffer(
+      facebook::jni::alias_ref<facebook::jni::JByteBuffer> data,
+      jint batch_size,
+      jint n_channels,
+      jint n_samples) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (data == nullptr || batch_size <= 0 || n_channels <= 0 ||
+        n_samples <= 0) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    auto* raw = data->getDirectBytes();
+    auto size = data->getDirectSize();
+    size_t expected =
+        static_cast<size_t>(batch_size) * static_cast<size_t>(n_channels) * static_cast<size_t>(n_samples);
+    if (raw == nullptr || size < expected) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::vector<uint8_t> audio_data(raw, raw + expected);
+    llm::RawAudio audio{std::move(audio_data), batch_size, n_channels, n_samples};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(std::move(audio));
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    needs_bos_ = false;
+    return 0;
+  }
+
+  jint prefill_audio_from_file(facebook::jni::alias_ref<jstring> path) {
+    if (!runner_) {
+      return static_cast<jint>(Error::InvalidState);
+    }
+    if (path == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    std::string file_path = path->toStdString();
+    std::vector<float> audio_data =
+        llm::load_wav_audio_data(file_path);
+    if (audio_data.empty()) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    size_t byte_size = audio_data.size() * sizeof(float);
+    std::vector<uint8_t> data_u8(byte_size);
+    std::memcpy(data_u8.data(), audio_data.data(), byte_size);
+    int32_t n_samples = static_cast<int32_t>(audio_data.size());
+    llm::RawAudio audio{
+        std::move(data_u8),
+        /*batch_size=*/1,
+        /*n_channels=*/1,
+        /*n_samples=*/n_samples};
+    std::vector<llm::MultimodalInput> inputs;
+    inputs.emplace_back(std::move(audio));
+    int32_t bos = needs_bos_ ? num_bos_ : 0;
+    auto result = runner_->prefill(inputs, bos, /*num_eos=*/0);
+    if (!result.ok()) {
+      return static_cast<jint>(result.error());
+    }
+    needs_bos_ = false;
+    return 0;
+  }
+
   void stop() {
     if (runner_) {
       runner_->stop();
@@ -586,7 +786,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       ss << "Model runner was not created. model_type_category="
          << model_type_category_
          << ". Valid values: " << MODEL_TYPE_CATEGORY_LLM << " (LLM), "
-         << MODEL_TYPE_CATEGORY_MULTIMODAL << " (Multimodal)";
+         << MODEL_TYPE_CATEGORY_MULTIMODAL << " (Multimodal), "
+         << MODEL_TYPE_CATEGORY_TEXT_AUDIO << " (TextAudio)";
       executorch::jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidState), ss.str().c_str());
       return static_cast<jint>(Error::InvalidState);
@@ -623,6 +824,24 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             ExecuTorchLlmJni::prefill_audio_input_float),
         makeNativeMethod(
             "prefillRawAudioInput", ExecuTorchLlmJni::prefill_raw_audio_input),
+        makeNativeMethod(
+            "prefillAudioInputBuffer",
+            ExecuTorchLlmJni::prefill_audio_input_buffer),
+        makeNativeMethod(
+            "prefillNormalizedAudioInputBuffer",
+            ExecuTorchLlmJni::prefill_normalized_audio_input_buffer),
+        makeNativeMethod(
+            "prefillRawAudioInputShort",
+            ExecuTorchLlmJni::prefill_raw_audio_input_short),
+        makeNativeMethod(
+            "prefillRawAudioInputFloat",
+            ExecuTorchLlmJni::prefill_raw_audio_input_float),
+        makeNativeMethod(
+            "prefillRawAudioInputBuffer",
+            ExecuTorchLlmJni::prefill_raw_audio_input_buffer),
+        makeNativeMethod(
+            "prefillAudioFromFileNative",
+            ExecuTorchLlmJni::prefill_audio_from_file),
         makeNativeMethod(
             "prefillTextInput", ExecuTorchLlmJni::prefill_text_input),
         makeNativeMethod("resetContextNative", ExecuTorchLlmJni::reset_context),
