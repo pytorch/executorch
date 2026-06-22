@@ -150,6 +150,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_acosh(self):
+        module = Acosh()  # noqa: F405
+        sample_input = (torch.tensor([1.0, 1.5, 2.0, 3.0, 5.0, 10.0]).reshape(2, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_adaptive_avg_pool1d(self):
         module = AdaptiveAvgPool1D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7),)
@@ -324,6 +329,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                     case[QCOM_MODULE], case[QCOM_SAMPLE_INPUTS]
                 )
 
+    def test_qnn_backend_asinh(self):
+        module = Asinh()  # noqa: F405
+        sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     @unittest.expectedFailure
     def test_qnn_backend_asin(self):
         sample_input = (torch.rand(3, 4) * 2 - 1,)
@@ -374,6 +384,11 @@ class TestQNNFloatingPointOperator(TestQNN):
                     with self.subTest(i=index):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_atanh(self):
+        module = Atanh()  # noqa: F405
+        sample_input = (torch.tensor([-0.9, -0.5, -0.1, 0.1, 0.5, 0.9]).reshape(2, 3),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool1d(self):
         module = AvgPool1D()  # noqa: F405
@@ -635,6 +650,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_cos(self):
         module = Cos()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cosh(self):
+        module = Cosh()  # noqa: F405
+        sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cumsum(self):
@@ -2171,6 +2191,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sinh(self):
+        module = Sinh()  # noqa: F405
+        sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_select_copy(self):
         module = SelectCopy()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3, 3]),)
@@ -2949,6 +2974,12 @@ class TestQNNQuantizedOperator(TestQNN):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_acosh(self):
+        module = Acosh()  # noqa: F405
+        sample_input = (torch.tensor([1.0, 1.5, 2.0, 3.0, 5.0, 10.0]).reshape(2, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_adaptive_avg_pool1d(self):
         module = AdaptiveAvgPool1D()  # noqa: F405
         sample_input = (torch.randn(1, 512, 7),)
@@ -3142,6 +3173,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_asinh(self):
+        module = Asinh()  # noqa: F405
+        sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_atan(self):
         sample_input = (torch.randn(3, 4),)
         module = Atan()  # noqa: F405
@@ -3180,6 +3217,12 @@ class TestQNNQuantizedOperator(TestQNN):
                         index += 1
                         qdq_module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_atanh(self):
+        module = Atanh()  # noqa: F405
+        sample_input = (torch.tensor([-0.9, -0.5, -0.1, 0.1, 0.5, 0.9]).reshape(2, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool1d(self):
         module = AvgPool1D()  # noqa: F405
@@ -3524,6 +3567,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_cos(self):
         module = Cos()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cosh(self):
+        module = Cosh()  # noqa: F405
+        sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -5308,6 +5357,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_sin(self):
         module = Sin()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sinh(self):
+        module = Sinh()  # noqa: F405
+        sample_input = (torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]).reshape(2, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
