@@ -3,7 +3,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -29,14 +28,6 @@ class IsInf(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
         input_node = self.get_node(node.args[0])
-        input_tensor = self.get_tensor(input_node, node)
-
-        if input_tensor.dtype != torch.float16:
-            warnings.warn(
-                "[QNN Delegate Op Builder]: QNN IsInf only supports FP16 inputs.",
-                stacklevel=1,
-            )
-            return None
 
         input_tensor_wrapper = self.define_tensor(
             input_node,
