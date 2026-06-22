@@ -45,11 +45,23 @@ DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 DISPATCH_ORDER_OK=1
 UPDATE_CACHE_DIR="/tmp/update_cache"
 UPDATE_CACHE_OK=1
+EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
+EMBEDDING_INDICES="/tmp/webgpu_embedding_q4gsw_indices.bin"
+EMBEDDING_GOLDEN="/tmp/webgpu_embedding_q4gsw_golden.bin"
+EMBEDDING_LLAMA1B_MODEL="/tmp/webgpu_embedding_q4gsw_llama1b.pte"
+EMBEDDING_LLAMA1B_INDICES="/tmp/webgpu_embedding_q4gsw_llama1b_indices.bin"
+EMBEDDING_LLAMA1B_GOLDEN="/tmp/webgpu_embedding_q4gsw_llama1b_golden.bin"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import export_all_quantized_linear_models
 export_all_quantized_linear_models('/tmp')
 " || echo "WARN: q4gsw export failed; required configs will FAIL in webgpu_native_test"
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import export_embedding_q4gsw_model
+export_embedding_q4gsw_model('${EMBEDDING_MODEL}', '${EMBEDDING_GOLDEN}', '${EMBEDDING_INDICES}')
+export_embedding_q4gsw_model('${EMBEDDING_LLAMA1B_MODEL}', '${EMBEDDING_LLAMA1B_GOLDEN}', '${EMBEDDING_LLAMA1B_INDICES}', 'llama1b')
+" || echo "WARN: embedding_q4gsw export failed; embedding configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
@@ -136,6 +148,12 @@ if [[ -x "${BIN_DIR}/webgpu_native_test" ]] &&
   "${PYTHON_EXECUTABLE}" -c "import executorch" 2>/dev/null; then
   env WEBGPU_TEST_SDPA_DIR=/tmp/ \
       WEBGPU_TEST_QUANTIZED_LINEAR_DIR=/tmp/ \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL="${EMBEDDING_MODEL}" \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES="${EMBEDDING_INDICES}" \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN="${EMBEDDING_GOLDEN}" \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_MODEL="${EMBEDDING_LLAMA1B_MODEL}" \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_INDICES="${EMBEDDING_LLAMA1B_INDICES}" \
+      WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_GOLDEN="${EMBEDDING_LLAMA1B_GOLDEN}" \
       "${BIN_DIR}/webgpu_native_test"
 else
   echo "(skipping webgpu_native_test: executorch wheel absent — exports did not run)"

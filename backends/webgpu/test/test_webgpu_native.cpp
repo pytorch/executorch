@@ -295,7 +295,112 @@ static float q4gsw_ramp(int i) {
   return static_cast<float>((i % 17) - 8) / 16.0f;
 }
 
-// Per-element dual tolerance (abs OR rel), parameterized like sdpa_within_tol.
+// Fwd decl of the per-element abs-OR-rel tolerance helper (defined below).
+static bool quant_within_tol(
+    const float* out,
+    const float* golden,
+    int n,
+    float atol,
+    float rtol,
+    float* ma,
+    float* mr);
+
+static std::vector<int32_t> load_indices(
+    const std::string& path,
+    size_t numel) {
+  // Load raw little-endian int32 indices written by the export .py.
+  std::vector<int32_t> g(numel);
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    return {};
+  }
+  size_t n = std::fread(g.data(), sizeof(int32_t), numel, f);
+  std::fclose(f);
+  if (n != numel) {
+    return {};
+  }
+  return g;
+}
+
+static bool test_embedding_q4gsw(
+    const std::string& model_path,
+    const std::string& indices_path,
+    const std::string& golden_path,
+    int num_indices,
+    int embed,
+    const char* label) {
+  // q4gsw embedding-gather vs torch golden; shapes per test_embedding_q4gsw.py.
+  const int out_numel = num_indices * embed;
+  printf(
+      "\n--- Test: embedding_q4gsw (%s: indices=%d, embed=%d) ---\n",
+      label,
+      num_indices,
+      embed);
+
+  Module module(model_path);
+  auto err = module.load_forward();
+  if (err != Error::Ok) {
+    printf("FAIL: could not load forward method (error %d)\n", (int)err);
+    return false;
+  }
+  printf("Model loaded: %s\n", model_path.c_str());
+
+  std::vector<int32_t> idx32 = load_indices(indices_path, num_indices);
+  std::vector<float> golden = load_golden(golden_path, out_numel);
+  if (idx32.empty() || golden.empty()) {
+    printf(
+        "FAIL: could not load indices %s / golden %s\n",
+        indices_path.c_str(),
+        golden_path.c_str());
+    return false;
+  }
+
+  // int64 at the program boundary; copy_inputs narrows to the int32 buffer.
+  std::vector<int64_t> idx64(idx32.begin(), idx32.end());
+  auto idx = make_tensor_ptr({num_indices}, std::move(idx64));
+
+  auto result = module.forward({EValue(idx)});
+  if (!result.ok()) {
+    printf("FAIL: forward failed (error %d)\n", (int)result.error());
+    return false;
+  }
+  const auto& outputs = result.get();
+  if (outputs.empty() || !outputs[0].isTensor()) {
+    printf("FAIL: no tensor output\n");
+    return false;
+  }
+  const auto& out_tensor = outputs[0].toTensor();
+  if (out_tensor.numel() != out_numel) {
+    printf(
+        "FAIL: output numel %zu != expected %d\n",
+        (size_t)out_tensor.numel(),
+        out_numel);
+    return false;
+  }
+  const float* out_data = out_tensor.const_data_ptr<float>();
+
+  float max_abs_err = 0.0f, max_rel_err = 0.0f;
+  const bool pass = quant_within_tol(
+      out_data,
+      golden.data(),
+      out_numel,
+      1e-3f,
+      1e-3f,
+      &max_abs_err,
+      &max_rel_err);
+  printf(
+      "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
+      max_abs_err,
+      max_rel_err,
+      out_numel);
+  if (!pass) {
+    printf("FAIL: embedding_q4gsw exceeds tolerance 1e-3 (abs AND rel)\n");
+    return false;
+  }
+  printf("PASS: embedding_q4gsw test\n");
+  return true;
+}
+
 static bool quant_within_tol(
     const float* out,
     const float* golden,
@@ -1342,6 +1447,31 @@ int main(int argc, char** argv) {
     }
   }
 
+  // embedding_q4gsw on-GPU configs: small + llama1b (env-gated,
+  // run-if-present).
+  struct EmbConfig {
+    const char* name;
+    const char* model_env;
+    const char* indices_env;
+    const char* golden_env;
+    int num_indices;
+    int embed;
+  };
+  const EmbConfig emb_configs[] = {
+      {"small",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN",
+       4,
+       64},
+      {"llama1b",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_MODEL",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_INDICES",
+       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_GOLDEN",
+       4,
+       2048},
+  };
+
   // SDPA sweep: configs self-discover their sdpa_<name>.pte/.golden.bin under
   // this directory (default "" = the embedded-file root / cwd). Set
   // WEBGPU_TEST_SDPA_DIR to point at the exported .pte directory (e.g. /tmp/).
@@ -1387,6 +1517,15 @@ int main(int argc, char** argv) {
     printf(
         "FAIL: WEBGPU_TEST_QUANTIZED_LINEAR_DIR set but no q4gsw config ran\n");
     ok = false;
+  }
+
+  for (const auto& c : emb_configs) {
+    const char* m = std::getenv(c.model_env);
+    const char* ip = std::getenv(c.indices_env);
+    const char* g = std::getenv(c.golden_env);
+    if (m && ip && g && *m && *ip && *g) {
+      ok = test_embedding_q4gsw(m, ip, g, c.num_indices, c.embed, c.name) && ok;
+    }
   }
 
   bool sdpa_ran = false;
