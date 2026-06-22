@@ -49,6 +49,14 @@ class Acos(torch.nn.Module):
         return torch.acos(x)
 
 
+class Acosh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.acosh(x)
+
+
 class AcosMultiNode(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -142,6 +150,16 @@ class AddConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return 10 + x
+
+
+class AddMM(torch.nn.Module):
+    def __init__(self, alpha=1, beta=1):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, bias, input, mat2):
+        return torch.addmm(bias, input, mat2, alpha=self.alpha, beta=self.beta)
 
 
 class Any(torch.nn.Module):
@@ -247,6 +265,14 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class Asinh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.asinh(x)
+
+
 class Asin(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -277,6 +303,14 @@ class Atan2MultiNode(torch.nn.Module):
 
     def forward(self, x1, y1, x2, y2):
         return torch.atan2(x1, y1), torch.atan2(x2, y2)
+
+
+class Atanh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.atanh(x)
 
 
 class AvgPool1D(torch.nn.Module):
@@ -989,6 +1023,14 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
+class Cosh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cosh(x)
+
+
 class CumSum(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1495,9 +1537,14 @@ class LargeTensorLinear(torch.nn.Module):
 
 
 class LayerNorm(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, elementwise_affine=True, bias=True):
         super().__init__()
-        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6, bias=bias)
+        self.layer_norm = torch.nn.LayerNorm(
+            [768],
+            eps=1e-6,
+            elementwise_affine=elementwise_affine,
+            bias=bias,
+        )
         self.linear = torch.nn.Linear(768, 196)
 
     def forward(self, x):
@@ -2283,6 +2330,14 @@ class Sin(torch.nn.Module):
 
     def forward(self, x):
         return torch.sin(x)
+
+
+class Sinh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sinh(x)
 
 
 class SimpleModel(torch.nn.Module):

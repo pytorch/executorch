@@ -498,11 +498,16 @@ The following PyTorch operators are supported through decomposition or annotatio
 | PyTorch Op | Decomposition Pass |
 |---|---|
 | `aten.acos` | `DecomposeAcos` |
+| `aten.acosh` | `DecomposeHyperbolicVariants` |
+| `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
+| `aten.asinh` | `DecomposeHyperbolicVariants` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
+| `aten.atanh` | `DecomposeHyperbolicVariants` |
 | `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
 | `aten.cdist`, `aten._cdist_forward` | `DecomposeCDist` |
+| `aten.cosh` | `DecomposeHyperbolicVariants` |
 | `aten.div.Tensor_mode` | `DecomposeDivMode` |
 | `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
@@ -522,6 +527,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.roll` | `DecomposeRoll` |
 | `aten.select_scatter` | `DecomposeSelectScatter` |
 | `aten.silu` | `DecomposeSilu` |
+| `aten.sinh` | `DecomposeHyperbolicVariants` |
 | `aten.tan` | `DecomposeTan` |
 | `aten.threshold` | `DecomposeThreshold` |
 | `aten.triu` | `DecomposeTriu` |

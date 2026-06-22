@@ -314,6 +314,8 @@ class LpaiPartitionFallbackSupport(ExportPass):
         graph_module.graph.eliminate_dead_code()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        if self.compiler_specs is None:
+            return PassResult(graph_module, False)
         self.preserve_io_qdq(graph_module)
         unsupported_nodes = self.get_unsupported_nodes(graph_module)
         for node in unsupported_nodes:
