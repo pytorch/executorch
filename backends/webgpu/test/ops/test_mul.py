@@ -58,8 +58,9 @@ def _delegated(et) -> bool:
 class MulTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (sa, sb) in CONFIGS.items():
-            a, b = _det_inputs(sa, sb)
-            et = _export(a, b)
-            self.assertTrue(
-                _delegated(et), f"Expected a VulkanBackend delegate (mul {name})"
-            )
+            with self.subTest(name=name):
+                a, b = _det_inputs(sa, sb)
+                et = _export(a, b)
+                self.assertTrue(
+                    _delegated(et), f"Expected a VulkanBackend delegate (mul {name})"
+                )
