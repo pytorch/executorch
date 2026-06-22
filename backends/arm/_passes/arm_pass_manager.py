@@ -152,6 +152,7 @@ from executorch.backends.arm._passes import (
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
+    SymbolicToTosaShapesPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
@@ -630,6 +631,7 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                SymbolicToTosaShapesPass(),
                 FuseConsecutiveConcatShapesPass(),
                 EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
