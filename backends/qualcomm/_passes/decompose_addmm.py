@@ -9,7 +9,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import copy_meta, get_const_node
+from .utils import copy_meta, create_const_node
 
 
 class DecomposeAddmm(ExportPass):
@@ -70,7 +70,7 @@ class DecomposeAddmm(ExportPass):
                     mm_node.meta = copy_meta(meta)
 
                     if alpha != 1:
-                        alpha_node = get_const_node(
+                        alpha_node = create_const_node(
                             graph,
                             graph_module,
                             f"{node.name}_alpha",
@@ -86,7 +86,7 @@ class DecomposeAddmm(ExportPass):
                         mm_result = mm_node
 
                     if beta != 1:
-                        beta_const = get_const_node(
+                        beta_const = create_const_node(
                             graph,
                             graph_module,
                             f"{node.name}_beta",
