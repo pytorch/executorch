@@ -23,8 +23,10 @@ class DecomposeRemainder(ExportPass):
         super(DecomposeRemainder, self).__init__()
         self.remainder_targets = {
             torch.ops.aten.remainder.Scalar,
+            torch.ops.aten.remainder.Scalar_Tensor,
             torch.ops.aten.remainder.Tensor,
             exir_ops.edge.aten.remainder.Scalar,
+            exir_ops.edge.aten.remainder.Scalar_Tensor,
             exir_ops.edge.aten.remainder.Tensor,
         }
 
@@ -35,7 +37,7 @@ class DecomposeRemainder(ExportPass):
 
         for node in list(graph.nodes):
             if node.op == "call_function" and node.target in self.remainder_targets:
-                x_node = node.args[0]
+                x_arg = node.args[0]
                 y_arg = node.args[1]
                 is_edge = isinstance(node.target, EdgeOpOverload)
                 meta = node.meta
@@ -61,8 +63,21 @@ class DecomposeRemainder(ExportPass):
                     else torch.ops.aten.sub.Tensor
                 )
 
-                is_scalar = not isinstance(y_arg, torch.fx.Node)
-                if is_scalar and is_edge:
+                is_x_scalar = not isinstance(x_arg, torch.fx.Node)
+                if is_x_scalar and is_edge:
+                    if x_arg not in const_cache:
+                        attr_name = get_new_attr_name_with_prefix("_remainder_const_")(
+                            graph_module
+                        )
+                        const_cache[x_arg] = get_const_node(
+                            graph, graph_module, attr_name, x_arg, node
+                        )
+                    x_node = const_cache[x_arg]
+                else:
+                    x_node = x_arg
+
+                is_y_scalar = not isinstance(y_arg, torch.fx.Node)
+                if is_y_scalar and is_edge:
                     if y_arg not in const_cache:
                         attr_name = get_new_attr_name_with_prefix("_remainder_const_")(
                             graph_module

@@ -37,7 +37,7 @@ class MaxPool2dWithStride(torch.nn.Module):
 
 class MaxPool2dWithoutStride(torch.nn.Module):
     def get_inputs(self) -> input_t:
-        return (torch.rand(1, 3, 8, 8),)
+        return (torch.rand(1, 3, 9, 9),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.max_pool2d(x, kernel_size=3)
@@ -45,7 +45,7 @@ class MaxPool2dWithoutStride(torch.nn.Module):
 
 class MaxPool2dListKernel(torch.nn.Module):
     def get_inputs(self) -> input_t:
-        return (torch.rand(1, 3, 8, 8),)
+        return (torch.rand(1, 3, 8, 9),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.max_pool2d(x, kernel_size=[2, 3])
@@ -56,7 +56,7 @@ class MaxPool2dWithEmptyStride(torch.nn.Module):
         return (torch.rand(1, 3, 8, 8),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.max_pool2d(x, kernel_size=[2, 3], stride=[])
+        return torch.nn.functional.max_pool2d(x, kernel_size=[2, 2], stride=[])
 
 
 class MaxPool2dDynamic(torch.nn.Module):
@@ -94,9 +94,6 @@ def test_rewrite_max_pool2d_tosa(module: ModuleWithInputs) -> None:
         },
         pass_list=[RemoveGetItemPass, RewriteMaxPool2dPass],
     )
-    pipeline.pop_stage(
-        "run_method_and_compare_outputs"
-    )  # Cannnot run aten graph with tosa dialect ops
     pipeline.run()
 
 
@@ -131,11 +128,10 @@ def test_rewrite_max_pool2d_tosa_empty_stride_uses_kernel_size() -> None:
         },
         pass_list=[RemoveGetItemPass, RewriteMaxPool2dPass],
     )
-    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
     tosa_node = _get_tosa_max_pool2d_node(pipeline)
-    assert tosa_node.args[2] == [2, 3]
+    assert tosa_node.args[2] == [2, 2]
 
 
 def test_rewrite_max_pool2d_tosa_dynamic_shape() -> None:

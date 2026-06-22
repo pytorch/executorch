@@ -245,12 +245,14 @@ class TestGgufCudaPipeline(unittest.TestCase):
         return load_gguf_model(path, backend="cuda", config=GGUF_CONFIG)
 
     def test_load_converts_weights(self):
-        """GGUF -> CUDA: Q4_K -> CudaCoalescedInt4Tensor, Q6_K -> IntxUnpacked,
+        """GGUF -> CUDA: Q4_K -> CudaCoalescedInt4Tensor, Q6_K -> CudaDp4aPlanarInt6Tensor,
         embedding bf16."""
         from executorch.backends.cuda.coalesced_int4_tensor import (
             CudaCoalescedInt4Tensor,
         )
-        from torchao.quantization import IntxUnpackedToInt8Tensor
+        from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+            CudaDp4aPlanarInt6Tensor,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             model, _ = self._load(tmp)
@@ -259,9 +261,12 @@ class TestGgufCudaPipeline(unittest.TestCase):
             model.layers[0].self_attn.q_proj.weight.data, CudaCoalescedInt4Tensor
         )
         self.assertIsInstance(
-            model.layers[0].mlp.down_proj.weight.data, IntxUnpackedToInt8Tensor
+            model.layers[0].mlp.down_proj.weight.data, CudaDp4aPlanarInt6Tensor
         )
-        # Token embedding is dequantized to bf16 (Int4/Intx can't gather).
+        # Tied lm_head is repacked to int6 by pack_cuda (it keeps quantization,
+        # unlike the token embedding which is dequantized for the gather).
+        self.assertIsInstance(model.lm_head.weight.data, CudaDp4aPlanarInt6Tensor)
+        # Token embedding is dequantized to bf16 (Int4/packed-int6 can't gather).
         self.assertEqual(model.embed_tokens.weight.dtype, torch.bfloat16)
 
     def test_generate(self):

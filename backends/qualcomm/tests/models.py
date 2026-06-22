@@ -144,6 +144,16 @@ class AddConstantLong(torch.nn.Module):
         return 10 + x
 
 
+class AddMM(torch.nn.Module):
+    def __init__(self, alpha=1, beta=1):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, bias, input, mat2):
+        return torch.addmm(bias, input, mat2, alpha=self.alpha, beta=self.beta)
+
+
 class Any(torch.nn.Module):
     def __init__(self, dim=None, keepdim=False):
         super().__init__()
@@ -1021,6 +1031,25 @@ class DivConstantLong(torch.nn.Module):
         return x / 10
 
 
+class DivMode(torch.nn.Module):
+    def __init__(self, rounding_mode=None):
+        super().__init__()
+        self.rounding_mode = rounding_mode
+
+    def forward(self, x, y):
+        return torch.div(x, y, rounding_mode=self.rounding_mode)
+
+
+class DivScalarMode(torch.nn.Module):
+    def __init__(self, scalar=2.0, rounding_mode=None):
+        super().__init__()
+        self.scalar = scalar
+        self.rounding_mode = rounding_mode
+
+    def forward(self, x):
+        return torch.div(x, self.scalar, rounding_mode=self.rounding_mode)
+
+
 class DrawGraphModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1476,9 +1505,14 @@ class LargeTensorLinear(torch.nn.Module):
 
 
 class LayerNorm(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, elementwise_affine=True, bias=True):
         super().__init__()
-        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6, bias=bias)
+        self.layer_norm = torch.nn.LayerNorm(
+            [768],
+            eps=1e-6,
+            elementwise_affine=elementwise_affine,
+            bias=bias,
+        )
         self.linear = torch.nn.Linear(768, 196)
 
     def forward(self, x):
@@ -2310,6 +2344,77 @@ class SimpleModel(torch.nn.Module):
         z4 = self.linear(z3)
         z5 = self.hardtanh(z4)
         return z5
+
+
+class SkipBackToBack(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        a = torch.relu(x)
+        b = torch.add(a, a)
+        c = torch.mul(b, b)
+        d = torch.add(c, c)
+        return torch.relu(d)
+
+
+class SkipNodeFirstOrLast(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.relu(x) + torch.sqrt(x)
+
+
+class SkipIntNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        a = torch.add(x, y)
+        b = torch.mul(a, a)
+        c = torch.add(b, y)
+        return c
+
+
+class SkipMultiInput(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        x = torch.relu(x)
+        y = torch.relu(y)
+        z = torch.cat([x, y], dim=-1)
+        return torch.relu(z)
+
+
+class SkipMultiOutput(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.relu(x)
+        c1, c2 = torch.split(x, [2, 2], dim=-1)
+        return torch.relu(c1) + torch.relu(c2)
+
+
+class SkipSplitToConcat(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y, z, w):
+        x = torch.relu(x)
+        s1, s2, s3 = torch.split(x, [2, 2, 2], dim=-1)
+        y = torch.relu(y)
+        z = torch.relu(z)
+        w = torch.relu(w)
+        c = torch.cat([s3, y, z, w], dim=-1)
+        out_main = torch.relu(c)
+        out_other = torch.relu(s1) + torch.relu(s2)
+        return out_main, out_other
 
 
 class SliceCopy(torch.nn.Module):

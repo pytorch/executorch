@@ -34,7 +34,7 @@ class LeakyReluModule(torch.nn.Module):
 
 class TestLeakyRelu:
     # noinspection PyMethodMayBeStatic
-    def assert_delegated(self, model, input_shape, mocker, use_qat=False):
+    def assert_delegated(self, model, input_shape, mocker, request, use_qat=False):
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={LeakyRelu: 1},
@@ -48,6 +48,7 @@ class TestLeakyRelu:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
             use_qat=use_qat,
         )
@@ -63,28 +64,29 @@ class TestLeakyRelu:
         ],
         ids=lambda shape: f"{len(shape)}D",
     )
-    def test__default_alpha__input_shapes(self, mocker, input_shape):
+    def test__default_alpha__input_shapes(self, mocker, request, input_shape):
         model = LeakyReluModule()
-        self.assert_delegated(model, input_shape, mocker)
+        self.assert_delegated(model, input_shape, mocker, request)
 
-    def test__default_alpha__qat(self, mocker, use_qat):
+    def test__default_alpha__qat(self, mocker, request, use_qat):
         model = LeakyReluModule()
         input_shape = (23,)
-        self.assert_delegated(model, input_shape, mocker, use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
         "alpha",
         [0.01, 3.14159, 0, 1, float("inf")],
         ids=lambda alpha: f"alpha = {alpha}",
     )
-    def test__specific_alpha(self, mocker, alpha):
+    def test__specific_alpha(self, mocker, request, alpha):
         model = LeakyReluModule(negative_slope=alpha)
-        self.assert_delegated(model, (23,), mocker)
+        self.assert_delegated(model, (23,), mocker, request)
 
-    def test__inplace(self, mocker):
+    def test__inplace(self, mocker, request):
         model = LeakyReluModule(inplace=True)
         self.assert_delegated(
             model,
             (23,),
             mocker,
+            request,
         )
