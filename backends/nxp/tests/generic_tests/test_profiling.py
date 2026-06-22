@@ -56,13 +56,14 @@ class ParallelPoolModel(torch.nn.Module):
 
 class TestProfiling:
     @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.", strict=True)
-    def test__softmax(self, caplog):
+    def test__softmax(self, caplog, request):
         caplog.set_level(logging.INFO)
         model = SoftmaxModule(-1)
         lower_run_compare(
             model,
             (10,),
             dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
             use_profiling=True,
             output_comparator=NumericalStatsOutputComparator(),
         )
@@ -77,7 +78,7 @@ class TestProfiling:
             3: (),  # Neutron Dump
         }
 
-    def test__parallel_pool(self, caplog):
+    def test__parallel_pool(self, caplog, request):
         caplog.set_level(logging.INFO)
         input_shape = (1, 3, 32, 32)
         model = ParallelPoolModel(input_shape[1])
@@ -85,6 +86,7 @@ class TestProfiling:
             model,
             input_shape,
             dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
             output_comparator=NumericalStatsOutputComparator(),
             use_neutron_for_format_conversion=False,
             use_profiling=True,
@@ -105,7 +107,7 @@ class TestProfiling:
         }
 
     @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.", strict=True)
-    def test__cifar(self, caplog):
+    def test__cifar(self, caplog, request):
         caplog.set_level(logging.INFO)
         input_shape = (1, 3, 32, 32)
         model = CifarNetModel()
@@ -113,6 +115,7 @@ class TestProfiling:
             model,
             input_shape,
             dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
             output_comparator=NumericalStatsOutputComparator(),
             use_neutron_for_format_conversion=False,
             use_profiling=True,
@@ -133,7 +136,7 @@ class TestProfiling:
             11: (),  # Neutron Dump
         }
 
-    def test__avg_pool(self, caplog):
+    def test__avg_pool(self, caplog, request):
         caplog.set_level(logging.INFO)
         input_shape = (2, 9, 6, 15)
         model = AvgPool2dModule(False, 0)
@@ -141,6 +144,7 @@ class TestProfiling:
             model,
             input_shape,
             dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
             output_comparator=NumericalStatsOutputComparator(),
             use_neutron_for_format_conversion=False,
             use_profiling=True,
