@@ -389,8 +389,8 @@ cases = {
         (
             torch.zeros((2, 4), dtype=torch.float32),
             (
-                torch.tensor([0, 1], dtype=torch.int32),
-                torch.tensor([2, 3], dtype=torch.int32),
+                torch.tensor([0, 1]),
+                torch.tensor([2, 3]),
             ),
             torch.ones((2,), dtype=torch.float32),
             False,
@@ -407,7 +407,7 @@ cases = {
     ),
     "index_select": PermuteCountTestCase(
         IndexSelectModule(),
-        (torch.randn(2, 4, 3), 1, torch.tensor([0, 2], dtype=torch.int32)),
+        (torch.randn(2, 4, 3), 1, torch.tensor([0, 2])),
         0,
     ),
     "grouped_conv": PermuteCountTestCase(
@@ -630,7 +630,7 @@ class ToContiguousChannelsLastPassTestPass(ExportPass):
         exir_ops.edge.aten.view_copy.default,
     }
 
-    def _init__(self):
+    def __init__(self):
         super().__init__()
         self.initial_permutes = 0
         self.initial_views = 0
@@ -689,11 +689,7 @@ def test_permute_view_counts(case: PermuteCountTestCase) -> None:
     run_test(case)
 
 
-xfails = {
-    "views_channels_last": pytest.mark.xfail(
-        reason="Views are not supported for channels last tensors"
-    ),
-}
+xfails = {"views_channels_last": "Views are not supported for channels last tensors"}
 
 
 @pytest.mark.skip(
