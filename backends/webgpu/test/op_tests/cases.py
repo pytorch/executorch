@@ -30,7 +30,7 @@ from executorch.backends.webgpu.test.ops.add.test_add import (
     AddModule,
     AddSelfModule,
 )
-from executorch.backends.webgpu.test.ops.mul.test_mul import (
+from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
 )
