@@ -8,6 +8,11 @@ load(
 load("@fbsource//xplat/executorch/kernels/optimized:op_registration_util.bzl", "optimized_source_list")
 load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "portable_source_list")
 load("@fbsource//xplat/executorch/kernels/prim_ops:selective_build.bzl", "prim_ops_registry_selective")
+load(
+    "@fbsource//xplat/executorch/runtime/kernel:selective_build.bzl",
+    "gen_max_kernel_num_genrule",
+    "operator_registry_selective",
+)
 
 # Headers that declare the function signatures of the C++ functions that
 # map to entries in functions.yaml and custom_ops.yaml.
@@ -82,6 +87,47 @@ ScalarType = enum(
     "Uint64",
 )
 
+def _combined_prim_ops_header_target_name(name):
+    """Single source of truth for the deterministic name of the per-binary
+    aggregated selected_prim_ops.h target. Both _get_prim_ops_registry_target
+    (which creates it) and _get_operator_registry_target (which references it
+    when include_all_prim_ops=False) must use the same name."""
+    return name + "_combined_prim_ops_header"
+
+def _get_operator_registry_target(
+        name,
+        oplist_dir_name,
+        aten_suffix,
+        platforms,
+        include_all_prim_ops):
+    """Create a per-binary operator_registry variant whose registry capacity is
+    sized to the kernels actually selected by this binary's et_operator_library
+    deps. When include_all_prim_ops is False, also threads the binary's
+    combined selected_prim_ops.h into the counter so prim ops compiled out
+    under ET_PRIM_OPS_SELECTIVE_BUILD aren't counted.
+    """
+    max_kernel_num_genrule_name = name + "_selected_max_kernel_num"
+
+    selected_prim_ops_header = None
+    if not include_all_prim_ops:
+        selected_prim_ops_header = ":" + _combined_prim_ops_header_target_name(name)
+
+    gen_max_kernel_num_genrule(
+        name = max_kernel_num_genrule_name,
+        oplist_yaml_target = ":" + oplist_dir_name,
+        selected_prim_ops_header_target = selected_prim_ops_header,
+        platforms = platforms,
+    )
+
+    operator_registry_target_name = name + "_operator_registry" + aten_suffix
+    operator_registry_selective(
+        name = operator_registry_target_name,
+        selected_max_kernel_num_header_target = ":" + max_kernel_num_genrule_name,
+        aten_suffix = aten_suffix,
+        platforms = platforms,
+    )
+    return ":" + operator_registry_target_name
+
 def _get_prim_ops_registry_target(name, deps, aten_suffix, platforms):
     """
     Helper function to determine which prim ops registry target to use.
@@ -100,7 +146,7 @@ def _get_prim_ops_registry_target(name, deps, aten_suffix, platforms):
     # If selective build targets are specified, create a selective prim ops registry
     # Create a selective prim ops registry using the existing function
     selective_prim_ops_registry_name = name + "_selected_prim_ops_registry"
-    combined_prim_ops_header_target_name = name + "_combined_prim_ops_header"
+    combined_prim_ops_header_target_name = _combined_prim_ops_header_target_name(name)
     selected_prim_operators_genrule(combined_prim_ops_header_target_name, deps, platforms)
 
     # Use the existing prim_ops_registry_selective function
@@ -840,7 +886,8 @@ def executorch_generated_lib(
         compatible_with = None,
         expose_operator_symbols = False,
         support_exceptions = True,
-        include_all_prim_ops = True):
+        include_all_prim_ops = True,
+        auto_size_kernel_registry = False):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -909,6 +956,23 @@ def executorch_generated_lib(
         include_all_prim_ops: If true, include all prim ops in the generated library. This option
             allows for selecting only some prim ops to reduce code size for extremely constrained
             environments. For selecting only some prim ops, see examples in //executorch/examples/selective_build
+        auto_size_kernel_registry: Opt-in (default False). When True, emit a
+            per-binary operator_registry variant whose registry capacity is
+            sized to the kernels selected via the binary's
+            et_operator_library deps. Saves ~24 KiB / ~48 KiB of BSS on
+            32-/64-bit targets compared to the kMaxOperators*kMaxKernelsPerOp
+            default. A user-supplied `-c executorch.max_kernel_num=N` still
+            overrides via the existing preprocessor-flag path.
+
+            CAVEAT: the operator registry is intentionally a global, so
+            this variant defines the same external-linkage symbols as the
+            shared //executorch/runtime/kernel:operator_registry. Any
+            transitive dep on the shared target (e.g. the standard
+            runtime/executor program library, the shared prim_ops_registry
+            via include_all_prim_ops=True, extension/kernel_util,
+            extension/pybindings) will collide at link time. Consumers
+            turning this on are responsible for ensuring their binary's
+            link graph contains exactly one operator_registry target.
     """
     _compat_kwargs = {}
     if compatible_with != None:
@@ -1086,6 +1150,17 @@ def executorch_generated_lib(
         else:
             prim_ops_registry_target = _get_prim_ops_registry_target(name, deps, aten_suffix, platforms)
 
+        if auto_size_kernel_registry:
+            operator_registry_target = _get_operator_registry_target(
+                name = name,
+                oplist_dir_name = oplist_dir_name,
+                aten_suffix = aten_suffix,
+                platforms = platforms,
+                include_all_prim_ops = include_all_prim_ops,
+            )
+        else:
+            operator_registry_target = "//executorch/runtime/kernel:operator_registry" + aten_suffix
+
         runtime.cxx_library(
             name = lib_name,
             srcs = [
@@ -1109,7 +1184,7 @@ def executorch_generated_lib(
                 "ovr_config//os:windows": [],
             }) + compiler_flags,
             deps = [
-                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
+                operator_registry_target,
                 prim_ops_registry_target,  # Use the appropriate prim ops registry
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",
