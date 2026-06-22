@@ -8,7 +8,7 @@ from typing import List, Union
 import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
     get_context_spec,
@@ -105,7 +105,7 @@ def validate_avg_pool2d_args(
         )
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "AVG_POOL2D(Tensor input, Tensor input_zp, Tensor output_zp, int[2] kernel, int[2] stride, SymInt[4] pad, ScalarType acc_type) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )

@@ -77,6 +77,7 @@ def _tq4_sdpa_fwd_kernel_body(
     LUT_lo_ptr,
     Mask_ptr,
     O_ptr,
+    KV_LEN_ptr,
     B,
     H_grid,
     Lq,
@@ -109,6 +110,8 @@ def _tq4_sdpa_fwd_kernel_body(
     sm_scale: tl.float32,
     HAS_MASK: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
+    HAS_KV_LEN: tl.constexpr,
+    MASK_IS_CAUSAL: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     HEAD_DIM: tl.constexpr,
@@ -167,9 +170,37 @@ def _tq4_sdpa_fwd_kernel_body(
 
     offs_n_init = tl.arange(0, BLOCK_N)
 
-    for start_n in tl.range(0, Lk, BLOCK_N):
+    # Bound the KV loop to the number of valid (filled) positions instead of the
+    # full pre-allocated buffer Lk. For decode this is input_pos+1; for a prefill
+    # chunk it is chunk_end. This makes the global-layer attention O(context)
+    # rather than O(max_seq_len) — the empty tail of the cache is never touched.
+    # kv_len is read from a GPU scalar so the bound updates across CUDA-graph
+    # replays (decode is graph-captured). When not provided (HAS_KV_LEN False,
+    # e.g. qwen) it falls back to Lk, preserving the original behavior exactly.
+    if HAS_KV_LEN:
+        kv_len = tl.load(KV_LEN_ptr)
+    else:
+        kv_len = Lk
+
+    # Per-tile causal upper bound (prefill). With a causal attn_mask, the rows in
+    # this tile attend only up to their own absolute position; the largest such
+    # position is (kv_len - Lq) + max(seq_pos) — seq_pos is the query-row index,
+    # and the (kv_len - Lq) offset converts it to an absolute KV position (so it
+    # is correct for chunked prefill, not just the first chunk). KV blocks that
+    # start beyond it are fully masked, so we stop the loop there. This is the
+    # prefill analogue of the kv_len decode clamp and ~halves the causal-triangle
+    # work. For decode (Lq=1, max(seq_pos)=0) this evaluates to kv_len, so decode
+    # is byte-identical. Applied only when MASK_IS_CAUSAL (the caller guarantees a
+    # causal mask, e.g. Gemma's full-attention layers); otherwise the full kv_len
+    # bound is kept, which is safe for an arbitrary mask.
+    loop_end = kv_len
+    if MASK_IS_CAUSAL:
+        max_q_pos = (kv_len - Lq) + tl.max(seq_pos)
+        loop_end = tl.minimum(kv_len, max_q_pos + 1)
+
+    for start_n in tl.range(0, loop_end, BLOCK_N):
         offs_n = start_n + offs_n_init
-        kv_valid = offs_n < Lk
+        kv_valid = offs_n < kv_len
 
         # -- K decompression (LUT, no norm multiply on [N,D] tile) --
         kp_ptrs = (
@@ -277,6 +308,7 @@ def _tq4_sdpa_fwd_kernel_m64(
     LUT_lo_ptr,
     Mask_ptr,
     O_ptr,
+    KV_LEN_ptr,
     B,
     H_grid,
     Lq,
@@ -309,6 +341,8 @@ def _tq4_sdpa_fwd_kernel_m64(
     sm_scale: tl.float32,
     HAS_MASK: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
+    HAS_KV_LEN: tl.constexpr,
+    MASK_IS_CAUSAL: tl.constexpr,
     HEAD_DIM: tl.constexpr,
     HALF_D: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
@@ -326,6 +360,7 @@ def _tq4_sdpa_fwd_kernel_m64(
         LUT_lo_ptr,
         Mask_ptr,
         O_ptr,
+        KV_LEN_ptr,
         B,
         H_grid,
         Lq,
@@ -358,6 +393,8 @@ def _tq4_sdpa_fwd_kernel_m64(
         sm_scale,
         HAS_MASK=HAS_MASK,
         IS_CAUSAL=IS_CAUSAL,
+        HAS_KV_LEN=HAS_KV_LEN,
+        MASK_IS_CAUSAL=MASK_IS_CAUSAL,
         BLOCK_M=BLOCK_M,
         BLOCK_N=BLOCK_N,
         HEAD_DIM=HEAD_DIM,
@@ -387,6 +424,7 @@ def _tq4_sdpa_fwd_kernel_m32(
     LUT_lo_ptr,
     Mask_ptr,
     O_ptr,
+    KV_LEN_ptr,
     B,
     H_grid,
     Lq,
@@ -419,6 +457,8 @@ def _tq4_sdpa_fwd_kernel_m32(
     sm_scale: tl.float32,
     HAS_MASK: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
+    HAS_KV_LEN: tl.constexpr,
+    MASK_IS_CAUSAL: tl.constexpr,
     HEAD_DIM: tl.constexpr,
     HALF_D: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
@@ -436,6 +476,7 @@ def _tq4_sdpa_fwd_kernel_m32(
         LUT_lo_ptr,
         Mask_ptr,
         O_ptr,
+        KV_LEN_ptr,
         B,
         H_grid,
         Lq,
@@ -468,6 +509,8 @@ def _tq4_sdpa_fwd_kernel_m32(
         sm_scale,
         HAS_MASK=HAS_MASK,
         IS_CAUSAL=IS_CAUSAL,
+        HAS_KV_LEN=HAS_KV_LEN,
+        MASK_IS_CAUSAL=MASK_IS_CAUSAL,
         BLOCK_M=BLOCK_M,
         BLOCK_N=BLOCK_N,
         HEAD_DIM=HEAD_DIM,
@@ -492,6 +535,7 @@ def _launch_tq4_kernel(
     lut_lo,
     mask_ptr,
     out_rot,
+    kv_len_ptr,
     B,
     H_Q,
     H_KV,
@@ -500,6 +544,8 @@ def _launch_tq4_kernel(
     D,
     sm_scale,
     HAS_MASK,
+    HAS_KV_LEN,
+    MASK_IS_CAUSAL,
     stride_mb,
     stride_mq,
     stride_mk,
@@ -537,6 +583,7 @@ def _launch_tq4_kernel(
         lut_lo,
         mask_ptr if HAS_MASK else 0,
         out_rot,
+        kv_len_ptr if HAS_KV_LEN else 0,
         B,
         H_grid,
         L_Q,
@@ -553,6 +600,8 @@ def _launch_tq4_kernel(
         sm_scale,
         HAS_MASK=HAS_MASK,
         IS_CAUSAL=is_causal,
+        HAS_KV_LEN=HAS_KV_LEN,
+        MASK_IS_CAUSAL=MASK_IS_CAUSAL,
         HEAD_DIM=D,
         HALF_D=HALF_D,
         NUM_GROUPS=num_groups,
@@ -641,6 +690,8 @@ def tq4_sdpa(
     attn_mask: Optional[torch.Tensor] = None,
     is_causal: bool = False,
     scale: Optional[float] = None,
+    kv_len: Optional[torch.Tensor] = None,
+    mask_is_causal: bool = False,
 ) -> torch.Tensor:
     """Fused TQ4 SDPA over nibble-packed compressed K/V cache.
 
@@ -665,6 +716,22 @@ def tq4_sdpa(
             ``1/sqrt(HEAD_DIM)`` when ``None``. Models that handle their
             own normalization (e.g. Gemma 4 with QK-norm uses ``1.0``)
             should pass an explicit value.
+        kv_len: Optional GPU int scalar = number of valid (filled) KV
+            positions. When provided, the inner KV loop is bounded to
+            ``kv_len`` instead of the full pre-allocated ``L_KV``, making
+            attention O(context) instead of O(max_seq_len). It is read on
+            the device (no host sync) so the bound updates correctly under
+            CUDA-graph replay (decode). For decode pass ``input_pos + 1``;
+            for a prefill chunk pass ``chunk_end``. When ``None`` the loop
+            runs over the full ``L_KV`` (original behavior).
+        mask_is_causal: Set True only when ``attn_mask`` is a standard
+            causal mask (row at absolute position p attends to [0, p]).
+            Enables a per-tile causal upper bound that skips KV blocks past
+            the tile's last query position — the prefill analogue of the
+            ``kv_len`` clamp, ~halving prefill (causal-triangle) work. It is
+            a no-op for decode (L_Q=1) and byte-identical there. Leave False
+            (default) for any non-causal mask; the kernel keeps the full
+            ``kv_len`` bound, which is correct for an arbitrary mask.
 
     Returns:
         [B, H_Q, L_Q, D] bf16 attention output
@@ -678,6 +745,21 @@ def tq4_sdpa(
 
     sm_scale = float(1.0 / math.sqrt(D)) if scale is None else float(scale)
     num_groups = H_Q // H_KV
+
+    HAS_KV_LEN = kv_len is not None
+    if HAS_KV_LEN:
+        # Device int32 scalar, clamped to the buffer size for OOB safety.
+        # Reshaped to [1] so the kernel can ``tl.load`` element 0. No
+        # ``.item()`` — keeps it CUDA-graph-safe (value updates on replay).
+        kv_len_t = torch.clamp(
+            kv_len.reshape(1).to(torch.int32), max=int(N_KV)
+        ).contiguous()
+    else:
+        kv_len_t = None
+
+    # The per-tile causal upper bound needs kv_len to convert query-row indices
+    # to absolute KV positions, so it is only meaningful when kv_len is supplied.
+    MASK_IS_CAUSAL = bool(mask_is_causal) and HAS_KV_LEN
 
     # Build [256] bf16 lookup tables from [16] centroids.
     # In the export path, inductor fuses this into the compiled graph.
@@ -726,6 +808,7 @@ def tq4_sdpa(
         lut_lo,
         mask_ptr,
         out_rot,
+        kv_len_t,
         B,
         H_Q,
         H_KV,
@@ -734,6 +817,8 @@ def tq4_sdpa(
         D,
         sm_scale,
         HAS_MASK,
+        HAS_KV_LEN,
+        MASK_IS_CAUSAL,
         stride_mb,
         stride_mq,
         stride_mk,
@@ -758,5 +843,7 @@ def _tq4_sdpa_fake(
     attn_mask: Optional[torch.Tensor] = None,
     is_causal: bool = False,
     scale: Optional[float] = None,
+    kv_len: Optional[torch.Tensor] = None,
+    mask_is_causal: bool = False,
 ) -> torch.Tensor:
     return torch.empty_like(query)
