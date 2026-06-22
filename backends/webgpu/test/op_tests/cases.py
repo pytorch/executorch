@@ -30,7 +30,7 @@ from executorch.backends.webgpu.test.ops.add.test_add import (
     AddModule,
     AddSelfModule,
 )
-from executorch.backends.webgpu.test.ops.mul.test_mul import (
+from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
 )
@@ -40,7 +40,7 @@ from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _ramp,
     RmsNormModule,
 )
-from executorch.backends.webgpu.test.ops.view_copy.test_view_copy import (
+from executorch.backends.webgpu.test.ops.test_view_copy import (
     CONFIGS as _VIEW_CONFIGS,
     ViewModule,
 )
