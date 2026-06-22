@@ -18,6 +18,9 @@ from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
     rewrite_rfft2,
     rewrite_unary_operator,
 )
+from executorch.backends.arm._passes.aten_to_tosa_ternary import (
+    rewrite_ternary_operator,
+)
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
     DialectNodeSpec,
@@ -121,6 +124,15 @@ def _get_activation_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return get_activation_replacement(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.where.self,
+)
+def _get_ternary_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_ternary_operator(node, pass_)
 
 
 @register_dialect_substitutions(
