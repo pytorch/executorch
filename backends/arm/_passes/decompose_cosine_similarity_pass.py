@@ -10,7 +10,6 @@ from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
-
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
@@ -44,6 +43,8 @@ class DecomposeCosineSimilarityPass(ArmOpTargetedPass):
     }
     target_ops = torch_cosine_similarity
     check_allowed_to_transform = True
+
+    targeted_ops = {*torch_cosine_similarity}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):

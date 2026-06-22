@@ -101,6 +101,8 @@ class DecomposeAvgPool2dPass(ArmOpTargetedPass):
     target_ops = edge_avg_pool2d + aten_avg_pool2d
     check_allowed_to_transform = True
 
+    targeted_ops = {*edge_avg_pool2d, *aten_avg_pool2d}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)

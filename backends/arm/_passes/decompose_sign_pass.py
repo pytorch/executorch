@@ -6,7 +6,6 @@
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -51,6 +50,8 @@ class DecomposeSignPass(ArmOpTargetedPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
     target_ops = (edge_sign, aten_sign)
+
+    targeted_ops = {edge_sign, aten_sign}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):

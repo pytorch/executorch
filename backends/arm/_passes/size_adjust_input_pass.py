@@ -216,6 +216,8 @@ class SizeAdjustInputPass(ArmPass):
         RewriteMaxPool2dPass,
     }
 
+    targeted_ops = set(valid_operators)
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         modified = False
