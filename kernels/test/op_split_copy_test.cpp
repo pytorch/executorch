@@ -289,7 +289,7 @@ TEST_F(OpSplitCopyTensorOutTest, LargerSplitSizeDoesNothing) {
   std::vector<Tensor> expected_out = {input};
 
   for (int64_t split_size = 3; split_size < 6; ++split_size) {
-    for (size_t dim = 0; dim < input.dim(); ++dim) {
+    for (ssize_t dim = 0; dim < input.dim(); ++dim) {
       TensorList out = tlf.zeros_like({input});
       op_split_copy_tensor_out(input, split_size, dim, out);
       EXPECT_TENSOR_LISTS_EQ(out, expected_out);
