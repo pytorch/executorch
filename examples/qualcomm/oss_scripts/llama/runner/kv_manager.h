@@ -171,21 +171,23 @@ class KVManager {
  private:
   // Helper functions to rearrange and update key and value caches
 
-  void rearrange_key(KVCache& k_cache, int32_t ar_len_dst);
+  void rearrange_key(KVCache& k_cache, int32_t ar_len_dst, int64_t head_dim);
 
-  void rearrange_value(KVCache& v_cache, int32_t ar_len_dst);
+  void rearrange_value(KVCache& v_cache, int32_t ar_len_dst, int64_t head_dim);
 
   void update_key(
       KVCache& k_cache,
       int32_t n_past,
       int32_t n_update,
-      const std::vector<bool>& selected);
+      const std::vector<bool>& selected,
+      int64_t head_dim);
 
   void update_value(
       KVCache& v_cache,
       int32_t n_past,
       int32_t n_update,
-      const std::vector<bool>& selected);
+      const std::vector<bool>& selected,
+      int64_t head_dim);
 
   // metadata
   Metadata metadata_;
@@ -200,5 +202,13 @@ class KVManager {
   // output: layer -> head * head_dim * max_ar_len
   std::vector<KVCache> k_cache_;
   std::vector<KVCache> v_cache_;
+  // Per-layer buffer sizes and head_dim (may differ when head_dim varies across
+  // layers)
+  std::vector<size_t> k_cache_in_nbytes_;
+  std::vector<size_t> k_cache_out_nbytes_;
+  std::vector<size_t> v_cache_in_nbytes_;
+  std::vector<size_t> v_cache_out_nbytes_;
+  std::vector<int64_t> k_head_dim_;
+  std::vector<int64_t> v_head_dim_;
 };
 } // namespace example
