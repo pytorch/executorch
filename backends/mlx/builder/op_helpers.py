@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Callable, Dict, Optional, Tuple, TYPE_CHECKING, Union
 
 import torch
 from executorch.backends.mlx.builder.slot_manager import Slot
@@ -283,6 +283,110 @@ def emit_product(
         )
     )
     return P.to_int_or_vid(final_val)
+
+
+def emit_add_int(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a + b``, folding to a literal when both operands are static."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        AddIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal + b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(AddIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_sub_int(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a - b``, folding to a literal when both operands are static."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        SubtractIntNode,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal - b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(SubtractIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_ceil_div(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: int,
+) -> "IntOrVid":
+    """Emit ``ceil(a / b)``, folding to a literal when ``a`` is static.
+
+    Computes ``(a + b - 1) // b``.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        FloorDivideIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid:
+        return IntOrVid.from_literal((a.literal + b - 1) // b)
+
+    sum_iov = emit_add_int(P, a, IntOrVid.from_literal(b - 1))
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(
+        FloorDivideIntNode(
+            a=sum_iov,
+            b=IntOrVid.from_literal(b),
+            out=P.slot_to_vid(out_slot),
+        )
+    )
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_if_else(
+    P: "MLXProgramBuilder",
+    cond: "IntOrVid",
+    emit_then: Callable[[], None],
+    emit_else: Callable[[], None],
+) -> None:
+    """Emit a branch on ``cond``: nonzero -> then, zero -> else.
+
+    If ``cond`` is a literal, no IfNode or chains are emitted; the
+    selected callback is invoked directly in the current chain.
+    Otherwise both callbacks are emitted into fresh chains and an
+    ``IfNode`` selects between them at runtime. Nodes emitted inside a
+    callback land in that branch's chain only.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import IfNode
+
+    if not cond.is_vid:
+        if cond.literal:
+            emit_then()
+        else:
+            emit_else()
+        return
+
+    with P.new_chain() as then_idx:
+        emit_then()
+    with P.new_chain() as else_idx:
+        emit_else()
+
+    P.emit(
+        IfNode(
+            cond=cond,
+            then_chain_idx=then_idx,
+            else_chain_idx=else_idx,
+        )
+    )
 
 
 def emit_quantized_biases(

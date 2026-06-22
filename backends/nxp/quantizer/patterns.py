@@ -836,6 +836,13 @@ class LinearPattern(QuantizationPattern):
         )
 
 
+class LogPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.log.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.log.default]
+
+
 class MaxPool1DPattern(SharedSpecPattern):
     """Quantizer for the MaxPool1D operator."""
 

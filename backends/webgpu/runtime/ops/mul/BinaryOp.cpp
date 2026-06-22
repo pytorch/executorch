@@ -1,0 +1,184 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
+#include <executorch/backends/webgpu/runtime/ops/mul/binary_mul_wgsl.h>
+
+#include <webgpu/webgpu.h>
+
+#include <stdexcept>
+#include <vector>
+
+namespace executorch::backends::webgpu {
+
+namespace {
+
+void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // aten.mul.Tensor args: [in1, in2, out] (self, other; no alpha)
+  const int in1_id = args.at(0);
+  const int in2_id = args.at(1);
+  const int out_id = args.at(2);
+
+  WGPUDevice device = graph.device();
+
+  const auto& in1_tensor = graph.get_tensor(in1_id);
+  const auto& in2_tensor = graph.get_tensor(in2_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+
+  // Rank guard (NCHW backend is <= 4 dims; 1D dispatch only).
+  if (out_tensor.dims.size() > kTensorMetaMaxNdim ||
+      in1_tensor.dims.size() > kTensorMetaMaxNdim ||
+      in2_tensor.dims.size() > kTensorMetaMaxNdim) {
+    throw std::runtime_error("mul: tensor rank exceeds 4 (MAX_NDIM)");
+  }
+
+  const uint32_t out_ndim = static_cast<uint32_t>(out_tensor.dims.size());
+
+  // 3 per-tensor meta uniforms (mirror Vulkan); inputs broadcast-aligned.
+  TensorMeta out_meta;
+  TensorMeta in1_meta;
+  TensorMeta in2_meta;
+  fill_tensor_meta_broadcast(out_tensor, out_ndim, &out_meta);
+  fill_tensor_meta_broadcast(in1_tensor, out_ndim, &in1_meta);
+  fill_tensor_meta_broadcast(in2_tensor, out_ndim, &in2_meta);
+
+  // fp32-only: nbytes must equal numel * 4 for every operand.
+  if (out_tensor.nbytes !=
+          static_cast<size_t>(out_meta.numel) * sizeof(float) ||
+      in1_tensor.nbytes !=
+          static_cast<size_t>(in1_meta.numel) * sizeof(float) ||
+      in2_tensor.nbytes !=
+          static_cast<size_t>(in2_meta.numel) * sizeof(float)) {
+    throw std::runtime_error("mul: non-fp32 operand (nbytes != numel * 4)");
+  }
+
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kBinaryMulWorkgroupSizeX);
+  uint32_t workgroup_count =
+      utils::compute_1d_workgroup_count(device, out_meta.numel, wg_size, "mul");
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
+
+  WGPUBuffer out_meta_buf =
+      utils::make_uniform(device, &out_meta, sizeof(TensorMeta));
+  WGPUBuffer in1_meta_buf =
+      utils::make_uniform(device, &in1_meta, sizeof(TensorMeta));
+  WGPUBuffer in2_meta_buf =
+      utils::make_uniform(device, &in2_meta, sizeof(TensorMeta));
+  graph.add_uniform_buffer_bytes(3 * sizeof(TensorMeta));
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kBinaryMulWGSL, WGPU_STRLEN};
+
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  // Bind group: in1, in2, out (rw), out_meta, in1_meta, in2_meta (3 uniforms).
+  WGPUBindGroupLayoutEntry entries[6] = {};
+
+  entries[0].binding = 0;
+  entries[0].visibility = WGPUShaderStage_Compute;
+  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+
+  entries[1].binding = 1;
+  entries[1].visibility = WGPUShaderStage_Compute;
+  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+
+  entries[2].binding = 2;
+  entries[2].visibility = WGPUShaderStage_Compute;
+  entries[2].buffer.type = WGPUBufferBindingType_Storage;
+
+  entries[3].binding = 3;
+  entries[3].visibility = WGPUShaderStage_Compute;
+  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
+
+  entries[4].binding = 4;
+  entries[4].visibility = WGPUShaderStage_Compute;
+  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
+
+  entries[5].binding = 5;
+  entries[5].visibility = WGPUShaderStage_Compute;
+  entries[5].buffer.type = WGPUBufferBindingType_Uniform;
+
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 6;
+  bgl_desc.entries = entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pipeline_layout =
+      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = pipeline_layout;
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+
+  WGPUBindGroupEntry bg_entries[6] = {};
+
+  bg_entries[0].binding = 0;
+  bg_entries[0].buffer = in1_tensor.buffer;
+  bg_entries[0].size = in1_tensor.nbytes;
+
+  bg_entries[1].binding = 1;
+  bg_entries[1].buffer = in2_tensor.buffer;
+  bg_entries[1].size = in2_tensor.nbytes;
+
+  bg_entries[2].binding = 2;
+  bg_entries[2].buffer = out_tensor.buffer;
+  bg_entries[2].size = out_tensor.nbytes;
+
+  bg_entries[3].binding = 3;
+  bg_entries[3].buffer = out_meta_buf;
+  bg_entries[3].size = sizeof(TensorMeta);
+
+  bg_entries[4].binding = 4;
+  bg_entries[4].buffer = in1_meta_buf;
+  bg_entries[4].size = sizeof(TensorMeta);
+
+  bg_entries[5].binding = 5;
+  bg_entries[5].buffer = in2_meta_buf;
+  bg_entries[5].size = sizeof(TensorMeta);
+
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 6;
+  bg_desc.entries = bg_entries;
+  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+
+  graph.add_dispatch({pipeline, bind_group, workgroup_count});
+
+  wgpuShaderModuleRelease(shader);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuPipelineLayoutRelease(pipeline_layout);
+  // Drop our refs; the bind group keeps the uniforms alive until release.
+  wgpuBufferRelease(out_meta_buf);
+  wgpuBufferRelease(in1_meta_buf);
+  wgpuBufferRelease(in2_meta_buf);
+}
+
+} // namespace
+
+WEBGPU_REGISTER_OPERATORS {
+  WEBGPU_REGISTER_OP(aten.mul.Tensor, mul_impl);
+}
+
+} // namespace executorch::backends::webgpu
