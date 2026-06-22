@@ -90,7 +90,7 @@ class TestClamp:
             pytest.param(0.0, None, id="min = 0, max = None (Relu)"),
         ],
     )
-    def test_convert_clamp__full_pipeline(self, mocker, min, max, use_qat):
+    def test_convert_clamp__full_pipeline(self, mocker, request, min, max, use_qat):
         input_shape = (2, 7, 2)  # Indivisible by num_macs
         model = AddClampModule(min, max)
 
@@ -109,6 +109,7 @@ class TestClamp:
             model=model,
             input_spec=[x_input_spec],
             dlg_model_verifier=graph_verifier,
+            request=request,
             output_comparator=comparator,
             use_qat=use_qat,
         )
