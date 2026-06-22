@@ -36,8 +36,10 @@ fbcode_target(_kind = runtime.python_library,
     ],
     typing = True,
     deps = [
+        ":pattern_utils",
         ":utils",
         "//caffe2:torch",
+        "//executorch/backends/cadence/aot:pass_utils",
     ],
 )
 

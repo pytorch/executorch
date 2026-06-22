@@ -77,8 +77,6 @@ FUSED_ACTIVATION_OPS = [
     torch.ops.aten.relu_.default,
     torch.ops.aten.hardtanh.default,
     torch.ops.aten.hardtanh_.default,
-    torch.ops.aten.hardsigmoid.default,
-    torch.ops.aten.hardsigmoid_.default,
     torch.ops.aten.clamp.default,
     torch.ops.aten.clamp_.default,
 ]
@@ -168,6 +166,15 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.ge.Scalar,),
         (torch.ops.aten.eq.Scalar,),
         (torch.ops.aten.ne.Scalar,),
+        (torch.ops.aten.lstm.input,),
+        (torch.ops.aten.rnn_tanh.input,),
+        (torch.ops.aten.rnn_relu.input,),
+        (torch.ops.aten.gru.input,),
+        (torch.ops.aten.asin.default,),
+        (torch.ops.aten.acos.default,),
+        (torch.ops.aten.atanh.default,),
+        (torch.ops.aten.einsum.default,),
+        (torch.ops.aten.grid_sampler.default,),
     ]
 )
 TOSA_QUANTIZER_SUPPORT_DICT: dict[tuple[OpOverload, ...], type[PatternCheck] | None] = {

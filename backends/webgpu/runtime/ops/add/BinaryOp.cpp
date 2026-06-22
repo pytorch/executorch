@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 
@@ -49,6 +50,15 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& out_tensor = graph.get_tensor(out_id);
   uint32_t num_elements =
       static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
+
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kBinaryAddWorkgroupSizeX);
+  uint32_t workgroup_count =
+      utils::compute_1d_workgroup_count(device, num_elements, wg_size, "add");
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
 
   // Create uniform buffer for params
   AddParams params = {};
@@ -115,6 +125,8 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
@@ -146,16 +158,14 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  uint32_t workgroup_count =
-      (num_elements + kBinaryAddWorkgroupSize - 1) / kBinaryAddWorkgroupSize;
-
   graph.add_dispatch({pipeline, bind_group, workgroup_count});
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // uniform_buffer is kept alive by the bind group
+  // Drop our ref; the bind group keeps the uniform buffer alive until release.
+  wgpuBufferRelease(uniform_buffer);
 }
 
 } // namespace

@@ -114,23 +114,42 @@ function patch_repo() {
     # Arg 2: Rev to start patching at
     # Arg 3: Directory 'setup-dir' containing patches in 'setup-dir/$name'
     # Exits with return code 1 if the number of arguments is incorrect.
-    # Does not do any error handling if the base_rev or patch_dir is not found etc.
+    # Returns non-zero if the repo cannot be reset or patched.
 
     [[ $# -ne 3 ]]  \
         && { echo "[${FUNCNAME[0]}] Invalid number of args, expecting 3, but got $#"; exit 1; }
 
     local repo_dir="${1}"
     local base_rev="${2}"
-    local name="$(basename $repo_dir)"
+    local name="$(basename "${repo_dir}")"
     local patch_dir="${3}/$name"
+    local rc=0
 
     echo -e "[${FUNCNAME[0]}] Patching ${name}. repo_dir:${repo_dir}\t base_rev:${base_rev}\t patch_dir:${patch_dir}"
-    pushd $repo_dir > /dev/null
-    git fetch --quiet
-    git reset --hard ${base_rev} --quiet
+    pushd "${repo_dir}" > /dev/null || return 1
+    git fetch --quiet || rc=$?
+    if [[ ${rc} -eq 0 ]]; then
+        git reset --hard "${base_rev}" --quiet || rc=$?
+    fi
 
-    [[ -e ${patch_dir} && $(ls -A ${patch_dir}) ]] && \
-        git am -3 ${patch_dir}/*.patch
+    if [[ ${rc} -eq 0 && -d "${patch_dir}" ]]; then
+        local patches=("${patch_dir}"/*.patch)
+        if [[ -e "${patches[0]}" ]]; then
+            # git am needs an identity even though these commits stay local.
+            git -c user.name="ExecuTorch Arm Setup" \
+                -c user.email="executorch-arm-setup@example.invalid" \
+                am -3 "${patches[@]}" || {
+                    rc=$?
+                    git am --abort > /dev/null 2>&1 || true
+                }
+        fi
+    fi
+
+    if [[ ${rc} -ne 0 ]]; then
+        echo -e "[${FUNCNAME[0]}] Failed to patch ${name} in ${repo_dir}."
+        popd > /dev/null
+        return "${rc}"
+    fi
 
     echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir."
     popd > /dev/null

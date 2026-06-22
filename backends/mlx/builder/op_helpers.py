@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Callable, Dict, Optional, Tuple, TYPE_CHECKING, Union
 
 import torch
 from executorch.backends.mlx.builder.slot_manager import Slot
@@ -17,6 +17,7 @@ from torch.fx.node import Node
 
 if TYPE_CHECKING:
     from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+    from executorch.backends.mlx.serialization.mlx_graph_schema import IntOrVid
 
 # When True, always serialize the biases tensor for quantized ops.
 # When False, use init-time computation when zero_point is all zeros,
@@ -173,6 +174,221 @@ def emit_lifted_constant(P: "MLXProgramBuilder", value, dtype: torch.dtype) -> S
     return slot
 
 
+def emit_shape(
+    P: "MLXProgramBuilder",
+    node: Node,
+    slot: Slot,
+    *,
+    end_dim: "Optional[int]" = None,
+) -> "list[IntOrVid]":
+    """Return the shape of ``node`` as a list of ``IntOrVid``.
+
+    Each static dim becomes a literal ``IntOrVid``; each dynamic dim
+    emits a ``SymSizeNode`` against ``slot`` and is wrapped via
+    ``P.to_int_or_vid``.
+
+    Args:
+        P: program builder.
+        node: FX node whose shape to walk (must have ``meta['val']``).
+        slot: slot corresponding to ``node`` (used as the
+            ``SymSize`` source for any dynamic dim).
+        end_dim: stop index (exclusive). ``None`` means the full ndim.
+            Negative values index from the end (e.g. ``-1`` is "all
+            leading dims, drop the last").
+
+    Returns:
+        ``list[IntOrVid]`` of length ``end_dim`` (after normalization).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        SymSizeNode,
+    )
+
+    shape = node.meta["val"].shape
+    ndim = len(shape)
+    if end_dim is None:
+        end_dim = ndim
+    elif end_dim < 0:
+        end_dim += ndim
+
+    out: "list[IntOrVid]" = []
+    for dim_idx in range(end_dim):
+        s = shape[dim_idx]
+        if isinstance(s, int):
+            out.append(IntOrVid.from_literal(int(s)))
+        else:
+            _, d_val = P.make_tmp_value_slot()
+            P.emit(
+                SymSizeNode(
+                    a=P.slot_to_tid(slot),
+                    dim=dim_idx,
+                    out=P.slot_to_vid(d_val),
+                )
+            )
+            out.append(P.to_int_or_vid(d_val))
+    return out
+
+
+def emit_product(
+    P: "MLXProgramBuilder",
+    dims: "list[IntOrVid]",
+) -> "IntOrVid":
+    """Multiplicative reduction over a list of ``IntOrVid`` values.
+
+    Folds all literal entries AOT into a single static product, then
+    emits ``MultiplyIntNode`` only for the dynamic entries (and one
+    final node combining the static product with the dynamic accumulator
+    when both contribute).
+
+    Args:
+        P: program builder.
+        dims: list of ``IntOrVid``. May be empty (returns
+            ``IntOrVid.from_literal(1)``), all literals, or a mix.
+
+    Returns:
+        An ``IntOrVid`` representing the product. Always literal when
+        every entry is literal (or ``dims`` is empty).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        MultiplyIntNode,
+    )
+
+    static_product = 1
+    dynamic_dims: "list[IntOrVid]" = []
+    for d in dims:
+        if d.is_vid:
+            dynamic_dims.append(d)
+        else:
+            static_product *= d.literal
+
+    if not dynamic_dims:
+        return IntOrVid.from_literal(static_product)
+
+    acc = dynamic_dims[0]
+    for d in dynamic_dims[1:]:
+        _, acc_val = P.make_tmp_value_slot()
+        P.emit(MultiplyIntNode(a=acc, b=d, out=P.slot_to_vid(acc_val)))
+        acc = P.to_int_or_vid(acc_val)
+
+    if static_product == 1:
+        return acc
+
+    _, final_val = P.make_tmp_value_slot()
+    P.emit(
+        MultiplyIntNode(
+            a=IntOrVid.from_literal(static_product),
+            b=acc,
+            out=P.slot_to_vid(final_val),
+        )
+    )
+    return P.to_int_or_vid(final_val)
+
+
+def emit_add_int(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a + b``, folding to a literal when both operands are static."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        AddIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal + b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(AddIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_sub_int(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a - b``, folding to a literal when both operands are static."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        SubtractIntNode,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal - b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(SubtractIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_ceil_div(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: int,
+) -> "IntOrVid":
+    """Emit ``ceil(a / b)``, folding to a literal when ``a`` is static.
+
+    Computes ``(a + b - 1) // b``.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        FloorDivideIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid:
+        return IntOrVid.from_literal((a.literal + b - 1) // b)
+
+    sum_iov = emit_add_int(P, a, IntOrVid.from_literal(b - 1))
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(
+        FloorDivideIntNode(
+            a=sum_iov,
+            b=IntOrVid.from_literal(b),
+            out=P.slot_to_vid(out_slot),
+        )
+    )
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_if_else(
+    P: "MLXProgramBuilder",
+    cond: "IntOrVid",
+    emit_then: Callable[[], None],
+    emit_else: Callable[[], None],
+) -> None:
+    """Emit a branch on ``cond``: nonzero -> then, zero -> else.
+
+    If ``cond`` is a literal, no IfNode or chains are emitted; the
+    selected callback is invoked directly in the current chain.
+    Otherwise both callbacks are emitted into fresh chains and an
+    ``IfNode`` selects between them at runtime. Nodes emitted inside a
+    callback land in that branch's chain only.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import IfNode
+
+    if not cond.is_vid:
+        if cond.literal:
+            emit_then()
+        else:
+            emit_else()
+        return
+
+    with P.new_chain() as then_idx:
+        emit_then()
+    with P.new_chain() as else_idx:
+        emit_else()
+
+    P.emit(
+        IfNode(
+            cond=cond,
+            then_chain_idx=then_idx,
+            else_chain_idx=else_idx,
+        )
+    )
+
+
 def emit_quantized_biases(
     P: "MLXProgramBuilder",
     zero_point_key: str,
@@ -215,6 +431,79 @@ def emit_quantized_biases(
         )
     )
     return biases
+
+
+def emit_quantized_gather(
+    P: MLXProgramBuilder,
+    out: Slot,
+    indices_slot: Slot,
+    qdata_slot: Slot,
+    scales_slot: Slot,
+    biases_slot: Optional[Slot],
+    *,
+    group_size: int,
+    bits: int,
+    mode: str,
+    out_dtype: torch.dtype,
+) -> None:
+    """Gather quantized rows by index and dequantize them into ``out``.
+
+    Emits ``TakeNode`` for qdata and scales (and biases when present), then a
+    ``DequantizeNode``.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        DequantizeNode,
+        IntOrVidOrTid,
+        TakeNode,
+    )
+
+    ids_index = IntOrVidOrTid.from_tid(P.slot_to_tid(indices_slot))
+
+    _, wq_sel = P.make_tmp_slot()
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(qdata_slot),
+            index=ids_index,
+            out=P.slot_to_tid(wq_sel),
+            axis=0,
+        )
+    )
+
+    _, sc_sel = P.make_tmp_slot()
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(scales_slot),
+            index=ids_index,
+            out=P.slot_to_tid(sc_sel),
+            axis=0,
+        )
+    )
+
+    biases_tid = None
+    if biases_slot is not None:
+        _, b_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(biases_slot),
+                index=ids_index,
+                out=P.slot_to_tid(b_sel),
+                axis=0,
+            )
+        )
+        biases_tid = P.slot_to_tid(b_sel)
+
+    P.emit(
+        DequantizeNode(
+            w=P.slot_to_tid(wq_sel),
+            scales=P.slot_to_tid(sc_sel),
+            out=P.slot_to_tid(out),
+            biases=biases_tid,
+            group_size=group_size,
+            bits=bits,
+            mode=mode,
+            dtype=torch_dtype_to_scalar_type(out_dtype),
+        )
+    )
 
 
 def to_mlx_qparams(
@@ -307,6 +596,34 @@ def parse_dequant_nvfp4_node(
         output_dtype = node.kwargs["output_dtype"]
 
     return qdata, scale, per_tensor_scale, output_dtype
+
+
+def parse_dequant_int4_node(
+    node: Node,
+) -> Optional[Tuple[Node, Node, Node, int, Optional[torch.dtype]]]:
+    """Parse a torchao.dequantize_int4_tensor node.
+
+    Returns (qdata, scale, zero_point, group_size, output_dtype) or None if not a
+    dequantize_int4_tensor node or the custom op is not registered.
+    """
+    target = get_aten_target(node.target)
+    try:
+        import executorch.extension.llm.export.int4  # noqa: F401
+    except ImportError:
+        return None
+
+    if target is not torch.ops.torchao.dequantize_int4_tensor.default:
+        return None
+
+    qdata, scale, zero_point, group_size = node.args[0:4]
+
+    output_dtype = None
+    if len(node.args) > 4:
+        output_dtype = node.args[4]
+    elif "output_dtype" in node.kwargs:
+        output_dtype = node.kwargs["output_dtype"]
+
+    return qdata, scale, zero_point, group_size, output_dtype
 
 
 def parse_dequant_node(

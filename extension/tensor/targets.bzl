@@ -28,6 +28,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             exported_deps = [
+                "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],

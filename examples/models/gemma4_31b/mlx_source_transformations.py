@@ -24,6 +24,9 @@ from executorch.backends.mlx.llm.cache import (
     KVCache as MLXKVCache,
     RingBufferKVCache as MLXRingKVCache,
 )
+from executorch.backends.mlx.llm.turboquant_cache import (
+    TurboQuantKVCache as MLXTurboQuantKVCache,
+)
 
 
 def _replace_attention_forward(attn: nn.Module) -> None:
@@ -68,30 +71,34 @@ def _replace_attention_forward(attn: nn.Module) -> None:
             q = torch.ops.mlx.rope(q, rotary_dim, start_pos, False, 0.0, 1.0, mlx_freqs)
             k = torch.ops.mlx.rope(k, rotary_dim, start_pos, False, 0.0, 1.0, mlx_freqs)
 
-        k_cache, v_cache = self.kv_cache.update(start_pos, k, v)
-
-        if self.is_sliding:
-            sdpa_mask = self.kv_cache.create_sliding_window_mask(start_pos, T)
-            y = torch.ops.mlx.custom_sdpa(
-                q,
-                k_cache,
-                v_cache,
-                start_pos=self.kv_cache.buffer_size - T,
-                attn_mask=sdpa_mask,
-                dropout_p=0.0,
-                is_causal=False,
-                scale=self.scaling,
-            )
+        if getattr(self, "is_turboquant", False):
+            self.kv_cache.update(start_pos, k, v)
+            y = self.kv_cache.sdpa(q, start_pos, scale=self.scaling)
         else:
-            y = torch.ops.mlx.custom_sdpa(
-                q,
-                k_cache,
-                v_cache,
-                start_pos=start_pos,
-                dropout_p=0.0,
-                is_causal=True,
-                scale=self.scaling,
-            )
+            k_cache, v_cache = self.kv_cache.update(start_pos, k, v)
+
+            if self.is_sliding:
+                sdpa_mask = self.kv_cache.create_sliding_window_mask(start_pos, T)
+                y = torch.ops.mlx.custom_sdpa(
+                    q,
+                    k_cache,
+                    v_cache,
+                    start_pos=self.kv_cache.buffer_size - T,
+                    attn_mask=sdpa_mask,
+                    dropout_p=0.0,
+                    is_causal=False,
+                    scale=self.scaling,
+                )
+            else:
+                y = torch.ops.mlx.custom_sdpa(
+                    q,
+                    k_cache,
+                    v_cache,
+                    start_pos=start_pos,
+                    dropout_p=0.0,
+                    is_causal=True,
+                    scale=self.scaling,
+                )
 
         y = y.transpose(1, 2).contiguous().view(B, T, self.n_heads * self.head_dim)
         return self.o_proj(y)
@@ -150,6 +157,8 @@ def _replace_model_forward(model: nn.Module) -> None:
 def mlx_source_transformations(
     model: nn.Module,
     dtype: torch.dtype = torch.bfloat16,
+    use_turboquant: bool = False,
+    max_write_len: int | None = None,
 ) -> None:
     """Apply MLX source transformations to a Gemma 4 31B model in-place.
 
@@ -162,6 +171,18 @@ def mlx_source_transformations(
     - Rewrites layer forward to drop mask parameters (each attention builds
       its own mask via ``custom_sdpa``)
     - Rewrites model forward to drop the sampler and ``_build_masks``
+
+    Args:
+        model: Gemma4_31B model to transform in place.
+        dtype: dtype for KV cache buffers (bf16 by default).
+        use_turboquant: If True, swap full-attention layers' KV caches
+            for ``MLXTurboQuantKVCache`` (~3.8× cache memory savings).
+            Sliding-window layers are unaffected.
+        max_write_len: Largest single prefill chunk written to the sliding
+            ring caches (the export-time max prefill / dynamic seq_len bound),
+            clamped to ``sliding_window``. Sizes the ring buffer to
+            ``sliding_window + max_write_len - 1``. If None, defaults to the
+            full window, i.e. ``2 * sliding_window - 1``.
     """
     config = model.config
 
@@ -169,13 +190,33 @@ def mlx_source_transformations(
         attn = layer.self_attn
 
         if attn.is_sliding:
+            # A single write into a sliding ring buffer can never exceed the
+            # window, so clamp the chunk size to the window. Tiny test configs
+            # can have sliding_window < the export max prefill.
+            sliding_write_len = (
+                min(max_write_len, config.sliding_window)
+                if max_write_len is not None
+                else None
+            )
             attn.kv_cache = MLXRingKVCache(
                 max_batch_size=1,
                 max_context_length=config.sliding_window,
                 n_heads=attn.n_kv_heads,
                 head_dim=attn.head_dim,
                 dtype=dtype,
+                max_write_len=sliding_write_len,
             )
+            attn.is_turboquant = False
+        elif use_turboquant:
+            attn.kv_cache = MLXTurboQuantKVCache(
+                max_batch_size=1,
+                max_context_length=config.max_seq_len,
+                n_heads=attn.n_kv_heads,
+                head_dim=attn.head_dim,
+                enable_dynamic_shape=True,
+                dtype=dtype,
+            )
+            attn.is_turboquant = True
         else:
             attn.kv_cache = MLXKVCache(
                 max_batch_size=1,
@@ -185,6 +226,7 @@ def mlx_source_transformations(
                 enable_dynamic_shape=True,
                 dtype=dtype,
             )
+            attn.is_turboquant = False
 
         _replace_attention_forward(attn)
         _replace_layer_forward(layer)

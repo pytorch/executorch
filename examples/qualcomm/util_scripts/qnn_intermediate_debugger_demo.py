@@ -15,6 +15,7 @@ import torch
 from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_sample import (
     QcomCosineSimilarityComparator,
     QcomMSEComparator,
+    QcomSQNRComparator,
 )
 from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
     OutputFormat,
@@ -134,6 +135,16 @@ def main(args):
             path=args.artifact,
             output_format=OutputFormat.SVG_GRAPH,
             comparator=mse_comparator,
+        )
+
+        sqnr_comparator = qnn_intermediate_debugger.create_comparator(
+            QcomSQNRComparator, threshold=10.0
+        )
+        qnn_intermediate_debugger.generate_results(
+            title="ic3_sqnr_debugging_graph",
+            path=args.artifact,
+            output_format=OutputFormat.SVG_GRAPH,
+            comparator=sqnr_comparator,
         )
 
     adb.pull_debug_output(

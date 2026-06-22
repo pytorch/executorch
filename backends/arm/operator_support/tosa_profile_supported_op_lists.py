@@ -128,7 +128,24 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.tan.default,
     exir_ops.edge.aten.silu.default,
     exir_ops.edge.aten.detach_copy.default,
+    exir_ops.edge.aten.round.default,
 }
+
+
+# Extra integer ops for the mixed INT+FP support list. These ops can be
+# supported by passes in the backend pipeline, but are intentionally kept out
+# of TOSA_PRO_INT_SupportList because INT-only partitioning expects them to be
+# decomposed before partitioning. Extend this list if the same mixed-profile
+# support gap is observed for other backend-decomposable ops.
+TOSA_PRO_MIXED_DECOMPOSABLE_INT_SupportList: Final[Set] = {
+    exir_ops.edge.aten.slice_scatter.default,
+}
+
+
+# INT-side support list used when partitioning under the mixed INT+FP profile.
+TOSA_PRO_MIXED_INT_SupportList: Final[Set] = (
+    TOSA_PRO_INT_SupportList | TOSA_PRO_MIXED_DECOMPOSABLE_INT_SupportList
+)
 
 
 # FP profile: ops supported via native TOSA ops, decompositions/transformations, precompute, etc.
@@ -257,5 +274,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
 
 __all__ = [
     "TOSA_PRO_INT_SupportList",
+    "TOSA_PRO_MIXED_INT_SupportList",
     "TOSA_PRO_FP_SupportList",
 ]

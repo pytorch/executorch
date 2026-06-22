@@ -13,6 +13,7 @@ on:
       - backends/mlx/**
       - extension/llm/export/**
       - extension/audio/**
+      - examples/models/gemma4_31b/**
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
@@ -22,10 +23,23 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
+  # Emits is-full-run='true' for workflow_dispatch / ciflow tag /
+  # sampled-push commits (every 4th main/release commit by depth).
+  # Returns 'false' for pull_request events — PR jobs use the workflow-
+  # level `paths:` filter (above) for path-based gating instead.
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-mlx:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -64,6 +78,9 @@ jobs:
           backends/mlx/test/test_passes.py \
           backends/mlx/test/test_pattern_utils.py \
           backends/mlx/test/test_partitioner.py \
+          backends/mlx/test/test_serialization_dedup.py \
+          backends/mlx/test/test_slot_recycling.py \
+          examples/models/gemma4_31b/quant/tests/test_pack_mlx.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
@@ -76,11 +93,23 @@ jobs:
           ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
-        echo "::group::Run gated_delta_rule op tests"
-        ${CONDA_RUN} python -m executorch.backends.mlx.model_ops.test_gated_delta_rule run -v
+        echo "::group::Run custom_kernel_ops op tests"
+        # Run every custom_kernel_ops/**/test/test_*.py via its OpTestCase `run`
+        # CLI. Recurses into per-format subpackages (e.g. gguf/test), so adding a
+        # new op test file requires no change here.
+        set -e
+        for t in $(find backends/mlx/custom_kernel_ops -path '*/test/test_*.py' | sort); do
+          mod="executorch.$(echo "${t%.py}" | tr '/' '.')"
+          echo "--- ${mod} ---"
+          ${CONDA_RUN} python -m "${mod}" run -v
+        done
         echo "::endgroup::"
 
   test-mlx-qwen35-moe:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -132,7 +161,34 @@ jobs:
         fi
         echo "::endgroup::"
 
+        echo "::group::Verify chunked == unchunked prefill"
+        QWEN_TINY_PTE=/tmp/qwen35_moe_mlx_tiny/model.pte \
+          ${CONDA_RUN} python -m pytest \
+          examples/models/qwen3_5_moe/test_chunked_prefill.py -v
+        echo "::endgroup::"
+
+        echo "::group::Build Qwen 3.5 MoE MLX C++ runner"
+        # Validates the MLX C++ runner build wiring (compile + link + metallib).
+        # The tiny model has no compatible tokenizer (vocab 256, random weights),
+        # so we don't run C++ inference here — only confirm it builds.
+        ${CONDA_RUN} make qwen3_5_moe-mlx
+        RUNNER=cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner
+        if [ ! -x "$RUNNER" ]; then
+          echo "Failed: runner not found at $RUNNER"
+          exit 1
+        fi
+        if [ ! -f "$(dirname "$RUNNER")/mlx.metallib" ]; then
+          echo "Failed: mlx.metallib not copied next to runner"
+          exit 1
+        fi
+        echo "Success: built $RUNNER"
+        echo "::endgroup::"
+
   backend-tester:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -179,6 +235,10 @@ jobs:
         fi
 
   test-mlx-parakeet:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -236,7 +296,10 @@ jobs:
     # Requires HuggingFace secrets — skip on fork PRs.
     # Maintainers can opt-in by applying the ciflow/mlx label, which
     # pushes a ciflow/mlx/<PR> tag that re-runs this workflow with secrets.
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -297,7 +360,10 @@ jobs:
   test-mlx-voxtral-realtime:
     # Requires HuggingFace secrets — skip on fork PRs.
     # Maintainers can opt-in by applying the ciflow/mlx label.
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -375,7 +441,10 @@ jobs:
   test-mlx-whisper:
     # Requires HuggingFace secrets — skip on fork PRs.
     # Maintainers can opt-in by applying the ciflow/mlx label.
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
@@ -427,6 +496,10 @@ jobs:
 
 
   test-mlx-stories110m:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -493,7 +566,10 @@ jobs:
   test-mlx-llm:
     # Requires HuggingFace secrets — skip on fork PRs.
     # Maintainers can opt-in by applying the ciflow/mlx label.
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    needs: run-decision
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
     strategy:
       fail-fast: false
       matrix:

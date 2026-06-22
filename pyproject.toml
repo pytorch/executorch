@@ -16,6 +16,9 @@ name = "executorch"
 dynamic = [
   # setup.py will set the version.
   'version',
+  # setup.py sets dependencies, which vary by build mode (the
+  # EXECUTORCH_BUILD_MINIMAL wheel declares a slimmer runtime set).
+  'dependencies',
 ]
 description = "On-device AI across mobile, embedded and edge for PyTorch"
 readme = "README-wheel.md"
@@ -52,30 +55,11 @@ classifiers = [
 ]
 
 requires-python = ">=3.10,<3.15"
-dependencies=[
-  "expecttest",
-  "flatbuffers",
-  "hypothesis",
-  "kgb",
-  "mpmath==1.3.0",
-  "numpy>=2.0.0; python_version >= '3.10'",
-  "packaging",
-  "pandas>=2.2.2; python_version >= '3.10'",
-  "parameterized",
-  "pytorch-tokenizers",
-  "pyyaml",
-  "ruamel.yaml",
-  "sympy",
-  "tabulate",
-  # See also third-party/TARGETS for buck's typing-extensions version.
-  "typing-extensions>=4.10.0",
-  # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-  "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
-  # scikit-learn is used to support palettization in the coreml backend
-  "scikit-learn==1.7.1",
-  "hydra-core>=1.3.0",
-  "omegaconf>=2.3.0",
-]
+
+# Runtime dependencies are declared dynamically (see `dynamic` above) and
+# computed in setup.py, so the EXECUTORCH_BUILD_MINIMAL wheel can ship a slimmer
+# set than the full wheel. See `_base_dependencies()` / `_minimal_dependencies()`
+# in setup.py.
 
 [project.optional-dependencies]
 cortex_m = [
@@ -89,7 +73,7 @@ vgf = [
   "ai_ml_emulation_layer_for_vulkan==0.9.0",
   "ai_ml_sdk_model_converter==0.9.0",
   "ml_dtypes==0.5.1",
-  "tosa-tools==2026.2.1",
+  "tosa-tools==2026.5.0",
 ]
 ethos_u = [
   # AoT ethos_u dependencies
@@ -97,7 +81,7 @@ ethos_u = [
   # backends/arm/requirements-arm-tosa.txt.
   "ethos-u-vela==5.0.0",
   "ml_dtypes==0.5.1",
-  "tosa-tools==2026.2.1",
+  "tosa-tools==2026.5.0",
 ]
 openvino = [
   "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
@@ -144,6 +128,10 @@ license-files = ["LICENSE"]
   # Some kernel libraries need their .yaml files.
   "*.yaml",
 ]
+"executorch.backends.arm.vgf.shaders" = [
+  "*.glsl",
+  "*.spirv.b64",
+]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
@@ -156,7 +144,7 @@ first_party_detection = false
 # Emit syntax compatible with older versions of python instead of only the range
 # specified by `requires-python`. TODO: Remove this once we support these older
 # versions of python and can expand the `requires-python` range.
-target-version = ["py38", "py39", "py310", "py311", "py312", "py313", "py314"]
+target-version = ["py38", "py39", "py310", "py311", "py312", "py313"]
 
 [tool.docformatter]
 black = true
