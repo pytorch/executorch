@@ -6,7 +6,7 @@
 import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
     get_context_spec,
@@ -97,7 +97,7 @@ def _same_fft_shape(
     )
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "FFT2D(Tensor input_real, Tensor input_imag, *, bool inverse=False, bool local_bound=False) -> (Tensor output_real, Tensor output_imag)",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -124,7 +124,7 @@ def FFT2D(
     )
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "RFFT2D(Tensor input_real, *, bool local_bound=False) -> (Tensor output_real, Tensor output_imag)",
     TosaSpecification.all_versions_and_profiles(),
 )
