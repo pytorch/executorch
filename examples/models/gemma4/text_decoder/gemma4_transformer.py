@@ -18,6 +18,7 @@ Complete text decoder combining:
 from typing import Optional
 
 import torch
+from executorch.examples.models.llama.attention import ForwardOptions
 from torch import nn
 
 from .gemma4_config import Gemma4Config
@@ -103,19 +104,25 @@ class Gemma4TextModel(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
-        input_pos: Optional[torch.Tensor] = None,
+        attn_options: Optional[ForwardOptions] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass through the complete text model.
 
         Args:
             input_ids: Token IDs of shape [batch, seq_len]
-            input_pos: Current position(s) for KV cache
+            attn_options: Optional grouped attention args (e.g. `input_pos`,
+                `mask`); `None` is treated as an empty mapping.
             inputs_embeds: Optional pre-computed embeddings for audio injection
 
         Returns:
             logits: Output logits of shape [batch, seq_len, vocab_size]
         """
+        attn_options_dict: dict = (
+            {**attn_options} if attn_options is not None else {}
+        )
+        input_pos = attn_options_dict.get("input_pos")
+
         # Self-decoder
         hidden_states, per_layer_inputs, shared_kv = self.self_decoder(
             input_ids=input_ids,
@@ -162,10 +169,12 @@ class Gemma4ForCausalLM(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
-        input_pos: Optional[torch.Tensor] = None,
+        attn_options: Optional[ForwardOptions] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass for causal LM."""
         return self.model(
-            input_ids=input_ids, input_pos=input_pos, inputs_embeds=inputs_embeds
+            input_ids=input_ids,
+            attn_options=attn_options,
+            inputs_embeds=inputs_embeds,
         )

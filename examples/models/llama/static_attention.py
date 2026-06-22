@@ -1014,6 +1014,96 @@ class StaticAttention(Attention):
 
         return instance
 
+    @classmethod
+    def from_gemma4_attention(
+        cls,
+        other: nn.Module,
+        split_mha: bool = True,
+        rms_norm_class=torch.nn.RMSNorm,
+        **kwargs: Any,
+    ) -> "StaticAttention":
+        """Build a `StaticAttention` from a `Gemma4Attention` module.
+
+        Mirrors `from_attention_mha`, but adapts Gemma 4's naming and conventions:
+          - q_proj / k_proj / v_proj / o_proj  →  wqs / wks / wvs / wo
+          - q_norm / k_norm  →  q_norm / k_norm
+          - per-layer RoPE theta and HF rotate-half pairing
+          - effective Q*K scaling of 1.0 (Gemma 4 uses scaling=1.0 because
+            QK-norm normalizes; we cancel StaticAttention's `1/sqrt(head_dim)`
+            with `scale_query_by = sqrt(head_dim)`)
+
+        Unsupported (raises ValueError):
+          - sliding-window layers (`other.is_sliding`) — different mask logic
+          - YOCO / KV-shared layers (`other.is_kv_shared_layer` or
+            `other.is_kv_donor_layer`) — different forward path
+          - partial RoPE (`other.rotary_dim != other.head_dim`) — StaticAttention's
+            `_Rope` rotates the full head_dim
+          - Gemma 4's `v_norm` (`RMSNormNoWeight`) — StaticAttention has no V norm,
+            and dropping it would change numerics
+        """
+        from executorch.examples.models.llama.model_args import ModelArgs
+        from executorch.examples.models.llama.rope import Rope
+
+        if getattr(other, "is_sliding", False):
+            raise ValueError(
+                "from_gemma4_attention: sliding-window layers are not supported "
+                "(different mask construction)."
+            )
+        if getattr(other, "is_kv_shared_layer", False) or getattr(
+            other, "is_kv_donor_layer", False
+        ):
+            raise ValueError(
+                "from_gemma4_attention: YOCO / KV-shared layers are not supported "
+                "(different forward path)."
+            )
+        if getattr(other, "rotary_dim", other.head_dim) != other.head_dim:
+            raise ValueError(
+                f"from_gemma4_attention: partial RoPE is not supported "
+                f"(rotary_dim={other.rotary_dim}, head_dim={other.head_dim}). "
+                f"StaticAttention's _Rope rotates the full head_dim."
+            )
+        v_norm = getattr(other, "v_norm", None)
+        if v_norm is not None and not isinstance(v_norm, nn.Identity):
+            raise ValueError(
+                "from_gemma4_attention: Gemma4Attention.v_norm is not nn.Identity; "
+                "StaticAttention has no V norm and dropping it would change numerics. "
+                "Set v_norm to nn.Identity() on the source module before calling."
+            )
+
+        config = ModelArgs(
+            dim=other.hidden_size,
+            n_layers=1,  # Not used in attention layer
+            n_heads=other.num_heads,
+            n_kv_heads=other.num_kv_heads,
+            head_dim=other.head_dim,
+            max_batch_size=other.config.max_batch_size,
+            max_context_len=other.config.max_seq_len,
+            attention_qkv_bias=False,  # Gemma 4 q/k/v/o projections are bias-free
+            use_qk_norm=True,
+            qk_norm_before_rope=True,  # Gemma 4 applies q_norm/k_norm before RoPE
+            qk_norm_affine=True,  # Gemma 4 q_norm/k_norm carry a learnable weight
+            norm_eps=other.config.rms_norm_eps,
+            num_kv_shared_layers=0,
+            scale_query_by=float(other.head_dim) ** 0.5,  # cancels inv_scale → eff scale 1.0
+            rope_freq_base=other.rope_theta,
+            use_hf_rope=True,  # Gemma 4 uses HF rotate-half pairing
+        )
+
+        rope = Rope(config)
+
+        instance = cls(
+            config=config,
+            layer_id=other.layer_idx,
+            rope=rope,
+            split_mha=split_mha,
+            is_kv_shared_layer=False,
+            **kwargs,
+        )
+
+        instance.load_weights_from_gemma4_attention(other, rms_norm_class=rms_norm_class)
+
+        return instance
+
     def forward(
         self,
         x: torch.Tensor,
@@ -1478,6 +1568,50 @@ class StaticAttention(Attention):
                 ).to(other.k_norm_fn.weight.dtype)
                 self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
 
+    def load_weights_from_gemma4_attention(
+        self, other: nn.Module, rms_norm_class=torch.nn.RMSNorm
+    ):
+        """Copy weights from a Gemma4Attention into this StaticAttention.
+
+        Gemma 4 uses HF-style projections — Q is laid out as
+        [num_heads * head_dim, hidden] in head-contiguous order, K/V as
+        [num_kv_heads * head_dim, hidden]. The split_mha=True path slices
+        per-head; split_mha=False loads the full matrix into a single Linear.
+        """
+        if self.split_mha:
+            for i in range(self.n_heads):
+                self.wqs[i].weight.data.copy_(
+                    other.q_proj.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
+                )
+            for i in range(self.n_kv_heads):
+                self.wks[i].weight.data.copy_(
+                    other.k_proj.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
+                )
+                self.wvs[i].weight.data.copy_(
+                    other.v_proj.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
+                )
+        else:
+            self.wqs[0].load_state_dict(other.q_proj.state_dict())
+            self.wks[0].load_state_dict(other.k_proj.state_dict())
+            self.wvs[0].load_state_dict(other.v_proj.state_dict())
+
+        self.wo.load_state_dict(other.o_proj.state_dict())
+
+        # Q/K norms (Gemma 4 always has affine RMSNorm on Q and K, applied
+        # before RoPE — both already configured by the ModelArgs we built in
+        # from_gemma4_attention, but rebuild to match other.q_norm.weight.dtype).
+        self.use_qk_norm = True
+        self.qk_norm_before_rope = True
+        self.scale_query_by = float(self.head_dim) ** 0.5
+        self.q_norm = rms_norm_class(other.head_dim, other.q_norm.eps).to(
+            other.q_norm.weight.dtype
+        )
+        self.q_norm.load_state_dict(other.q_norm.state_dict())
+        self.k_norm = rms_norm_class(other.head_dim, other.k_norm.eps).to(
+            other.k_norm.weight.dtype
+        )
+        self.k_norm.load_state_dict(other.k_norm.state_dict())
+
     def adopt_hf_rope(self):
         if self.rope.use_hf_rope:
             return
@@ -1589,6 +1723,55 @@ def transform_attention_mha_to_static_attention(
                 # Note: HF RoPE needs to be applied before linear to conv2d
                 if use_hf_rope:
                     static_attn.adopt_hf_rope()
+                if use_conv2d:
+                    static_attn.linear_to_conv2d()
+
+                setattr(m, name, static_attn)
+            else:
+                helper(child)
+
+        return m
+
+    return helper(model)
+
+
+def transform_gemma4_attention_to_static_attention(
+    model: nn.Module,
+    split_mha: bool = True,
+    inplace: bool = True,
+    use_conv2d: bool = False,
+    **kwargs: Any,
+) -> nn.Module:
+    """Replace every Gemma4Attention in `model` with a `StaticAttention`.
+
+    Mirrors `transform_attention_mha_to_static_attention`, but targets
+    Gemma 4's custom attention module instead of llama's `AttentionMHA`.
+    Gemma 4 already uses HF rotate-half RoPE, so the resulting StaticAttention
+    is built directly with `use_hf_rope=True` (no `adopt_hf_rope()` permutation
+    is needed).
+
+    Layers that Gemma4 implements with a different forward path — sliding
+    window, YOCO/KV-shared, partial RoPE — are detected by
+    `from_gemma4_attention` and raise `ValueError`. If `model` contains any
+    such layer this transform aborts; pre-flight by walking the model and
+    swapping only the eligible layers if you need partial coverage.
+    """
+    # Lazy import to avoid creating a hard llama → gemma4 dependency.
+    from executorch.examples.models.gemma4.text_decoder.gemma4_attention import (
+        Gemma4Attention,
+    )
+
+    if not inplace:
+        import copy
+
+        model = copy.deepcopy(model)
+
+    def helper(m):
+        for name, child in list(m.named_children()):
+            if isinstance(child, Gemma4Attention):
+                static_attn = StaticAttention.from_gemma4_attention(
+                    child, split_mha=split_mha, **kwargs
+                )
                 if use_conv2d:
                     static_attn.linear_to_conv2d()
 
