@@ -8,6 +8,7 @@
 add_library(
   cadence_kernels
   kernels.cpp
+  ${EXECUTORCH_ROOT}/backends/cadence/generic/kernels/kernels.cpp
   ${EXECUTORCH_ROOT}/backends/cadence/vision/third-party/library/api/tensor_transposef.c
   ${EXECUTORCH_ROOT}/backends/cadence/vision/third-party/library/api/vsoftmaxf.c
   ${EXECUTORCH_ROOT}/backends/cadence/vision/third-party/library/tables/expf_tbl.c
@@ -22,7 +23,8 @@ set(_common_include_directories
 
 target_include_directories(
   cadence_kernels
-  PUBLIC . ${EXECUTORCH_ROOT}/backends/cadence/vision/third-party/include
+  PUBLIC . ${EXECUTORCH_ROOT}/backends/cadence/generic/kernels
+         ${EXECUTORCH_ROOT}/backends/cadence/vision/third-party/include
          ${EXECUTORCH_ROOT}/backends/cadence/vision/third-party/include_private
          ${_common_include_directories}
 )
