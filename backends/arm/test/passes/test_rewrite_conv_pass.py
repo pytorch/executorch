@@ -213,6 +213,8 @@ def test_rewrite_conv_tosa_FP():
     pipeline = PassPipeline(
         module, module.get_inputs(), passes_with_exported_program=[RewriteConvPass]
     )
+    # We cannot run TOSA backend dialect operators in eager mode.
+    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
 
