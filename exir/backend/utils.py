@@ -390,9 +390,10 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
                         "If the data is too large and it's not preferred to copy, please tag the "
                         "constant node like node.['no_copy'] = True and they won't be copied."
                     )
-                # tag the data node with the same tag as the last user
+                # Pick a deterministic consumer tag so a constant shared across
+                # partitions is assigned reproducibly across runs.
                 if len(user_tags) > 0:
-                    node.meta["delegation_tag"] = user_tags.pop()
+                    node.meta["delegation_tag"] = min(user_tags)
 
 
 def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
@@ -429,9 +430,10 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
                     "If the data is too large and it's not preferred to copy, please tag the "
                     "constant node like node.['no_copy'] = True and they won't be copied."
                 )
-            # tag the data node with the same tag as the last user
+            # Pick a deterministic consumer tag so a buffer shared across
+            # partitions is assigned reproducibly across runs.
             if len(user_tags) > 0:
-                node.meta["delegation_tag"] = user_tags.pop()
+                node.meta["delegation_tag"] = min(user_tags)
 
 
 def is_shape_dynamic(node: torch.fx.Node) -> bool:

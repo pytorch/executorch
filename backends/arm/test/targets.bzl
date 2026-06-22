@@ -23,7 +23,7 @@ def define_arm_tests():
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
         "ops/test_mul.py",
-        "ops/test_mxfp_linear.py",
+        "ops/mxfp/test_mxfp_linear.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
         "ops/test_slice.py",
@@ -43,7 +43,6 @@ def define_arm_tests():
         "ops/test_gelu.py",
         "ops/test_bmm.py",
         "ops/test_split.py",
-        "ops/test_custom_shader_lowering.py",
     ]
 
     # Quantization
@@ -57,11 +56,12 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
+        "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
+        "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
         "misc/tosa_dialect/test_tosa_resize.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
-        "misc/test_custom_shader_payloads.py",
         "misc/test_debug_hook.py",
         "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
@@ -69,14 +69,6 @@ def define_arm_tests():
         "misc/test_vgf_backend.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
-    ]
-
-    test_files += [
-        "runtime/test_vgf_aliasing_runtime.py",
-        "runtime/test_vgf_combinations_runtime.py",
-        "runtime/test_vgf_multi_segment_runtime.py",
-        "runtime/test_vgf_sampler_image_runtime.py",
-        "runtime/test_vgf_tensor_buffer_runtime.py",
     ]
 
     # Deprecation tests
@@ -116,9 +108,8 @@ def define_arm_tests():
             deps = [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
+                "//executorch/backends/arm/test:mxfp_test_common",
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
-                "//executorch/backends/arm/test:custom_vgf_test_utils",
-                "//executorch/backends/arm/test:vgf_runtime_test_utils",
                 "//executorch/backends/arm:ao_ext",
                 "//executorch/backends/arm:ethosu",
                 "//executorch/backends/arm/tosa:compile_spec",
