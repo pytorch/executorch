@@ -35,7 +35,7 @@ class InsertDataLayoutCastsPass(ArmOpTargetedPass):
 
     _concat_ops = {
         exir_ops.edge.aten.cat.default,
-        exir_ops.edge.aten.concatenate.default,
+        exir_ops.backend.tosa.CONCAT.default,
     }
     _single_input_ops = {
         exir_ops.edge.aten.constant_pad_nd.default,
