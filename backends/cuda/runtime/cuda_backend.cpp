@@ -44,6 +44,7 @@
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
@@ -436,6 +437,8 @@ class ET_EXPERIMENTAL CudaBackend final
           kCudaGraphWarmupSteps);
     }
 
+    mutable_state_note_handle(handle);
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -538,6 +541,8 @@ class ET_EXPERIMENTAL CudaBackend final
             static_cast<int>(attributes.type));
       }
     }
+
+    ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
 
     // ---------------------------------------------------------------
     // CUDA graph REPLAY path — skip all tensor setup and just replay
@@ -826,6 +831,8 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     cuda::CudaDelegateHandle* handle = (cuda::CudaDelegateHandle*)handle_;
 
+    mutable_state_forget_handle(handle);
+
     // The CUDA stream is managed by shared_ptr in the handle.
     // It will be automatically destroyed when the last handle using it
     // is destroyed. Just reset our reference.
@@ -899,11 +906,12 @@ class ET_EXPERIMENTAL CudaBackend final
   //   * Constants are assumed to be IMMUTABLE (parameters or read-only
   //     buffers). The AOTI shim today does not expose a mutability bit
   //     through GetConstantOriginalFQN, so we cannot detect or refuse
-  //     to share mutable buffers (e.g. a per-method KV cache). If a
-  //     future model exports the same FQN as a mutable buffer in
-  //     multiple methods, mutations from one method WILL be visible to
-  //     the other through the shared GPU memory. Callers that need
-  //     per-method mutable state must currently use distinct FQNs.
+  //     to share mutable buffers (for example, runtime caches). If a
+  //     model exports the same FQN as a mutable buffer in multiple
+  //     methods, mutations from one method WILL be visible to the other
+  //     through the shared GPU memory. Callers that need isolated mutable
+  //     state for shared FQNs must opt into cuda_mutable_state or use
+  //     distinct FQNs.
   //     TODO: when AOTInductor exposes a constant-type / mutability
   //     query, refuse to share entries that are not PARAMETER or
   //     non-mutable BUFFER.
