@@ -81,6 +81,26 @@ test_data_fp_bf16: dict[str, input_params] = {
         torch.tensor([1, 0], dtype=torch.int32),  # [W=2]
     ),
 }
+test_data_fp8: dict[str, input_params] = {
+    # Rank-3: [N, K, C] -> index_select dim=1 => [N, W, C]
+    "test_fp8e4m3_rank3_dim1": (
+        torch.randn(2, 4, 3, dtype=torch.float32).to(
+            torch.float8_e4m3fn
+        ),  # [N=2, K=4, C=3]
+        1,
+        torch.tensor([1, 3], dtype=torch.int32),  # [W=2]
+        "fp8e4m3",
+    ),
+    # Rank-4: [A, B, K, C] -> index_select dim=2 => [A, B, W, C]
+    "test_fp8e5m2_rank4_dim2": (
+        torch.randn(2, 3, 4, 5, dtype=torch.float32).to(
+            torch.float8_e5m2
+        ),  # [A=2, B=3, K=4, C=5]
+        2,
+        torch.tensor([3, 1], dtype=torch.int32),  # [W=2]
+        "fp8e5m2",
+    ),
+}
 
 # ---- INT profile: integer inputs + bool ----
 test_data_int: dict[str, input_params] = {
@@ -132,6 +152,20 @@ def test_index_select_tosa_FP_bf16(test_data: input_params):
         aten_op=IndexSelect.aten_op,
         exir_op=IndexSelect.exir_op,
         tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_fp8)
+def test_index_select_tosa_FP_fp8(test_data):
+    input_, dim, index_, tosa_extension = test_data
+    pipeline = TosaPipelineFP[input_params](
+        IndexSelect(),
+        (input_, dim, index_),
+        aten_op=IndexSelect.aten_op,
+        exir_op=IndexSelect.exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
     )
     pipeline.run()
 
