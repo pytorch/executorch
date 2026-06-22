@@ -35,6 +35,7 @@ def test_ensure_unique_output_nodes_no_target_inserts_identity_per_repeated_outp
             "executorch_exir_dialects_backend__ops_tosa_IDENTITY_default": 2,
         },
     )
+    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
     graph_module = (
@@ -61,4 +62,5 @@ def test_ensure_unique_output_nodes_no_target_keeps_unique_outputs_unchanged() -
             "executorch_exir_dialects_backend__ops_tosa_IDENTITY_default",
         ],
     )
+    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
