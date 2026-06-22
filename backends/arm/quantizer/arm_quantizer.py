@@ -1220,6 +1220,7 @@ The following nodes are not marked for quantization and will not be decomposed i
             quantization_config, node_finder, self.pattern_matcher
         )
         self.global_config = quantization_config
+        self.shared_qspec_quantizer.global_config = quantization_config
         return self
 
     def set_node_target(

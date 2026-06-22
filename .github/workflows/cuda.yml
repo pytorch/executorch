@@ -258,8 +258,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
-            name: "gemma-4-31B-it-HQQ-INT4"
+          - repo: "unsloth"
+            name: "gemma-4-31B-it-GGUF"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -281,12 +281,12 @@ jobs:
             quant: "quantized-int4-weight-only"
           # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "non-quantized"
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -342,7 +342,7 @@ jobs:
     with:
       timeout: 150
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
@@ -424,8 +424,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
-            name: "gemma-4-31B-it-HQQ-INT4"
+          - repo: "unsloth"
+            name: "gemma-4-31B-it-GGUF"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -447,12 +447,12 @@ jobs:
             quant: "quantized-int4-weight-only"
           # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "non-quantized"
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -502,7 +502,7 @@ jobs:
             quant: "non-quantized"
     with:
       timeout: 90
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
