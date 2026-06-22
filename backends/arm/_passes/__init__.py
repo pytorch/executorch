@@ -90,6 +90,7 @@ from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
 from .decompose_prelu_pass import DecomposePReLUPass  # noqa
+from .decompose_prod_pass import DecomposeProdPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa

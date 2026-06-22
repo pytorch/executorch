@@ -59,7 +59,6 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
 
     _REDUCTION_TARGETS = {
         exir_ops.edge.aten.mean.dim,
-        exir_ops.edge.aten.sum.dim_IntList,
     }
     _ARG_UPDATE_TARGETS = {
         *_REDUCTION_TARGETS,
