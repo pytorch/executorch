@@ -677,7 +677,6 @@ class ArmPassManager(ExportedProgramPassManager):
                     InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
                     DecomposeEmbeddingPass(tfa_pass=True),
                     DecomposeScaledDotProductAttentionPass(tfa_pass=True),
-                    DecomposeRoundPass(tfa_pass=True),
                     DecomposeLogitPass(tfa_pass=True),
                     PromoteBoolOperandsPass(tfa_pass=True),
                     DecomposeSignPass(tfa_pass=True),
