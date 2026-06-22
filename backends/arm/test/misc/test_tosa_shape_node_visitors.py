@@ -80,7 +80,7 @@ def _serializer() -> ts.TosaSerializer:
 
 
 def _serialized_op_codes(tosa_graph: ts.TosaSerializer) -> list[ts.Op]:
-    graph = TosaGraph.TosaGraph.GetRootAsTosaGraph(tosa_graph.serialize(), 0)
+    graph = TosaGraph.GetRootAsTosaGraph(tosa_graph.serialize(), 0)
     block = graph.Regions(0).Blocks(0)
     return [block.Operators(index).Op() for index in range(block.OperatorsLength())]
 
