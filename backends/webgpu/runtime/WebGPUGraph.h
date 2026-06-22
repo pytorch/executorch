@@ -50,6 +50,15 @@ struct OutputCopy {
   size_t nbytes = 0;
 };
 
+// CPU-side record for a prepack-routed constant; mirrors Vulkan's TensorRef
+// (sizes + a data reference, not a live GPU tensor). The prepack node is the
+// sole materialization, so the constant needs no eager GPU buffer.
+struct ConstantSource {
+  uint64_t inline_offset = UINT64_MAX; // offset into constant_data_; else key
+  std::string named_key; // non-empty => fetch from named_data_map_
+  size_t nbytes = 0;
+};
+
 struct ExecuteConfig {
   size_t chunk_size = 0;
   size_t initial_chunk_size = 0;
@@ -180,6 +189,11 @@ class WebGPUGraph {
     dispatches_.push_back(dispatch);
   }
 
+  // Materialize a recorded prepack-routed constant into dst via one CPU->GPU
+  // transfer. Build-time only (the .pte bytes are freed after build()).
+  // Mirrors Vulkan prepack_standard.
+  void materialize_constant(int const_value_id, WGPUBuffer dst);
+
   void add_uniform_buffer_bytes(size_t bytes) {
     uniform_buffer_bytes_ += bytes;
   }
@@ -285,6 +299,13 @@ class WebGPUGraph {
   std::vector<OutputCopy> output_copies_;
 
   std::vector<WebGPUDispatch> dispatches_;
+
+  // Prepack-routed constant sources (offset/named-key + size); the prepack node
+  // materializes these once. constant_data_/named_data_map_ point at the .pte
+  // bytes and are valid only during build().
+  const uint8_t* constant_data_ = nullptr;
+  const executorch::runtime::NamedDataMap* named_data_map_ = nullptr;
+  std::unordered_map<int, ConstantSource> constant_sources_;
 
   ExecuteConfig execute_config_;
 
