@@ -6,6 +6,8 @@
 # See the LICENSE_MIT for more details.
 #
 
+import logging
+from collections import defaultdict, deque
 from copy import deepcopy
 from typing import List, Optional, Union
 
@@ -110,6 +112,65 @@ class ModelBuilder:
         self._skipped_output_map = {}
         self._zeros_tensor_map = {}
         self.edge_to_tflite_map = {}
+
+    def sort_operators_topologically(self):
+        """Sort the operators in the model graph in topological order using Kahn's algorithm.
+
+        Ensures that each operator appears after all operators that produce its input tensors.
+        This is required for correct behavior of optimization passes and by the Neutron IR format.
+
+        The algorithm works in three steps:
+            1. Build a mapping from each tensor to the operator that produces it.
+            2. Compute the number of unresolved input dependencies for each operator.
+            3. Iteratively add operators with no remaining dependencies to the sorted list,
+               decrementing the number of dependencies of their consumers until all operators are processed.
+
+        If the sort succeeds, the operator list in the model's subgraph is replaced with the topologically sorted list.
+        If it fails (e.g. due to an invalid graph), a warning is logged and the original operator order is preserved.
+        """
+
+        # Map tensors to operators that produce them.
+        tensor_to_producer_op = {}
+        for producer_op in self.get_operators():
+            for output in producer_op.tmp_outputs:
+                tensor_to_producer_op[output] = producer_op
+
+        # Map operators to operators that consume their outputs.
+        op_to_child_op = defaultdict(list)
+        num_unresolved_input_dependencies = {op: 0 for op in self.get_operators()}
+        for child_op in self.get_operators():
+            for input_ in child_op.tmp_inputs:
+                parent_op = tensor_to_producer_op.get(input_)
+                if parent_op is not None:
+                    op_to_child_op[parent_op].append(child_op)
+                    num_unresolved_input_dependencies[child_op] += 1
+
+        # Gradually build the graph.
+        # Use `deque` for fast appends and pops.
+        queue = deque(
+            op
+            for op, degree in num_unresolved_input_dependencies.items()
+            if degree == 0
+        )
+        sorted_ops = []
+        while len(queue) != 0:
+            op = queue.popleft()
+            sorted_ops.append(op)
+            for child_op in op_to_child_op[op]:
+                num_unresolved_input_dependencies[child_op] -= 1
+                if num_unresolved_input_dependencies[child_op] == 0:
+                    # All input of the `child_op` are produced by operators that are already in `sorted_ops`. So we can
+                    #  insert it into the graph.
+                    queue.append(child_op)
+
+        if len(sorted_ops) != self.get_operators().len():
+            logging.warning(
+                "NXP backend: ModelBuilder.sort_operators_topologically() failed. Please report this."
+            )
+
+        else:
+            # The topological sort was successful.
+            self.get_operators().vector = sorted_ops
 
     def create_zeros_tensor(
         self, dims: List[int], name: str, dtype: np.dtype, can_reuse: bool = False
