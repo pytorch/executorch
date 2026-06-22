@@ -85,7 +85,7 @@ void bucketize_tensor_impl(
       context, boundaries, SupportedTensorDtypes::REALHBF16);
   const ssize_t bd_elem_size = boundaries.element_size();
   auto bd_data = reinterpret_cast<const char*>(boundaries.const_data_ptr());
-  int64_t bd_end = boundaries.sizes().back();
+  int64_t bd_end = boundaries.numel();
 
   auto out_data = out.mutable_data_ptr<CTYPE_OUT>();
 
@@ -121,7 +121,7 @@ void bucketize_scalar_impl(
       context, boundaries, SupportedTensorDtypes::REALHBF16);
   const ssize_t bd_elem_size = boundaries.element_size();
   auto bd_data = reinterpret_cast<const char*>(boundaries.const_data_ptr());
-  int64_t bd_end = boundaries.sizes().back();
+  int64_t bd_end = boundaries.numel();
 
   auto out_data = out.mutable_data_ptr<CTYPE_OUT>();
 
