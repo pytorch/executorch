@@ -35,7 +35,7 @@ class ExpModule(torch.nn.Module):
 
 
 class TestExpNewNeutronFlow:
-    def test__basic_nsys_inference(self, mocker):
+    def test__basic_nsys_inference(self, mocker, request):
         input_shape = (256,)
         model = ExpModule()
         graph_verifier = DetailedGraphVerifier(
@@ -45,6 +45,7 @@ class TestExpNewNeutronFlow:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator=LinearRampDatasetCreator(),
         )
 
@@ -56,7 +57,7 @@ class TestExpNewNeutronFlow:
             pytest.param((1, 3, 16, 16), id="4D"),
         ],
     )
-    def test__basic_nsys_inference__qat(self, mocker, input_shape, use_qat):
+    def test__basic_nsys_inference__qat(self, mocker, request, input_shape, use_qat):
         model = ExpModule()
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={Exp: 1}, expected_non_delegated_ops={}
@@ -65,6 +66,7 @@ class TestExpNewNeutronFlow:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator=RandomDatasetCreator(low=-1.0, high=1.0),
             use_qat=use_qat,
         )
