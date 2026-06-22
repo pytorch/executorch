@@ -70,3 +70,27 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
     )
+
+    runtime.cxx_library(
+        name = "op_linear",
+        srcs = ["op_linear.cpp"],
+        exported_headers = ["op_linear.h"],
+        platforms = CXX,
+        deps = [
+            ":quant_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_convolution",
+        srcs = ["op_convolution.cpp"],
+        exported_headers = ["op_convolution.h"],
+        platforms = CXX,
+        deps = [
+            ":quant_utils",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["PUBLIC"],
+    )
