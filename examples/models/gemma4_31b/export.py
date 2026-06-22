@@ -337,13 +337,17 @@ def _export_mlx(
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
+    max_prefill = 256
+
     mlx_source_transformations(
-        model, dtype=torch.bfloat16, use_turboquant=use_turboquant
+        model,
+        dtype=torch.bfloat16,
+        use_turboquant=use_turboquant,
+        max_write_len=max_prefill,
     )
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-    max_prefill = 256
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
     print(f"Exporting (T in [1, {max_prefill}])...")

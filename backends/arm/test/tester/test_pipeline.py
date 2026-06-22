@@ -1223,6 +1223,8 @@ class VgfPipeline(BasePipeline, Generic[T]):
 
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+       n_expected_delegates: Number of delegate calls expected after
+       partitioning.
 
     """
 
@@ -1252,6 +1254,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
         tosa_spec: TosaSpecification | str | None = None,
         fold_quantize: bool = True,
         preserve_io_quantization: bool = False,
+        n_expected_delegates: int = 1,
     ):
         if tosa_spec is None:
             if tosa_version is None:
@@ -1281,6 +1284,10 @@ class VgfPipeline(BasePipeline, Generic[T]):
             use_to_edge_transform_and_lower,
             dynamic_shapes,
             transform_passes=transform_passes,
+        )
+        self.change_args(
+            "check_count.exir",
+            {"torch.ops.higher_order.executorch_call_delegate": n_expected_delegates},
         )
 
         remove_torch_quant_nodes_stage = (
