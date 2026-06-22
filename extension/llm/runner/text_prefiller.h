@@ -32,6 +32,7 @@ class ET_EXPERIMENTAL TextPrefiller {
    * tokenizer.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * Module.
+   * Equivalent to `prefill(prompt_tokens, start_pos, 0.0f)`.
    * @return The next token of the LLM Module after prefill.
    */
   virtual ::executorch::runtime::Result<uint64_t> prefill(
@@ -39,15 +40,34 @@ class ET_EXPERIMENTAL TextPrefiller {
       int64_t& start_pos);
 
   /**
+   * Like `prefill(prompt_tokens, start_pos)`, but samples the first generated
+   * token with `temperature` in [0.0, 1.0].
+   */
+  virtual ::executorch::runtime::Result<uint64_t> prefill(
+      std::vector<uint64_t>& prompt_tokens,
+      int64_t& start_pos,
+      float temperature);
+
+  /**
    * Helper method to prefill a chunk of tokens.
    * @param prompt_tokens The chunk of text prompt tokens to process.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * Module.
+   * Equivalent to `prefill_chunk(prompt_tokens, start_pos, 0.0f)`.
    * @return The next token of the LLM Module after prefilling this chunk.
    */
   virtual ::executorch::runtime::Result<uint64_t> prefill_chunk(
       std::vector<uint64_t>& prompt_tokens,
       int64_t& start_pos);
+
+  /**
+   * Like `prefill_chunk(prompt_tokens, start_pos)`, but samples the produced
+   * token with `temperature` in [0.0, 1.0].
+   */
+  virtual ::executorch::runtime::Result<uint64_t> prefill_chunk(
+      std::vector<uint64_t>& prompt_tokens,
+      int64_t& start_pos,
+      float temperature);
 
   /**
    * Load the necessary resources for the TextPrefiller.

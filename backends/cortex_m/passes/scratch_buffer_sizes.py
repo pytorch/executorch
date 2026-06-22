@@ -6,11 +6,11 @@
 from collections.abc import Callable
 from typing import Any, cast
 
-import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 import executorch.backends.cortex_m.ops.operators  # noqa
 
 import torch
 import torch.fx
+from executorch.backends.cortex_m.library import cmsis_nn
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
