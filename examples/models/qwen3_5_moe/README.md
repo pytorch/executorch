@@ -261,7 +261,38 @@ python export.py \
 | `--qembedding` | (none) | Embedding quantization: `8w` |
 | `--tiny-test` | off | Build tiny model with random weights for CI testing |
 
-### Run (MLX)
+### Build (MLX)
+
+Like the CUDA/Metal builds, the `make` target builds ExecuTorch core with the
+MLX backend and the runner binary. Requires Apple Silicon (Darwin).
+
+```bash
+make qwen3_5_moe-mlx
+```
+
+This builds ExecuTorch with MLX support, then the runner binary at
+`cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner` (with `mlx.metallib`
+copied next to it). Unlike CUDA, the MLX `.pte` is self-contained — no `.ptd`
+data file is produced or needed.
+
+### Run (MLX, C++ runner)
+
+The C++ runner requires a local HuggingFace `tokenizer.json` (the MLX `.pte` and
+a `tokenizer.json`; no `--data_path`):
+
+```bash
+cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
+    --model_path ./qwen35_moe_mlx/model.pte \
+    --tokenizer_path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
+    --prompt "What is the capital of France?" \
+    --max_new_tokens 50
+```
+
+The MLX export emits a single dynamic-seq `forward` method; the runner loads and
+calls it for both prefill and decode (sampling on host), matching the Python
+runner. See the [Run](#run) section above for the full flag list.
+
+### Run (MLX, Python)
 
 ```bash
 python -m executorch.examples.models.qwen3_5_moe.run \
