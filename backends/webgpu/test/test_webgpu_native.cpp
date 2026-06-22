@@ -425,6 +425,117 @@ static bool quant_within_tol(
   return ok;
 }
 
+static bool test_rope(
+    const std::string& model_path,
+    const std::string& xq_golden_path,
+    const std::string& xk_golden_path,
+    int S,
+    int NH,
+    int NKV,
+    int HD,
+    const char* label) {
+  // Llama interleaved RoPE vs torch goldens; shapes/ramps per test_rope.py.
+  const int xq_numel = S * NH * HD;
+  const int xk_numel = S * NKV * HD;
+  const int freqs_numel = S * (HD / 2);
+  printf(
+      "\n--- Test: apply_rotary_emb (%s: S=%d,NH=%d,NKV=%d,HD=%d) ---\n",
+      label,
+      S,
+      NH,
+      NKV,
+      HD);
+
+  Module module(model_path);
+  auto err = module.load_forward();
+  if (err != Error::Ok) {
+    printf("FAIL: could not load forward method (error %d)\n", (int)err);
+    return false;
+  }
+  printf("Model loaded: %s\n", model_path.c_str());
+
+  // ((i % mod) - off) / 16: exact in fp32, matches test_rope.py::_ramp.
+  auto ramp = [](int i, int mod, int off) {
+    return static_cast<float>((i % mod) - off) / 16.0f;
+  };
+  std::vector<float> xq(xq_numel), xk(xk_numel), fc(freqs_numel),
+      fs(freqs_numel);
+  for (int i = 0; i < xq_numel; i++) {
+    xq[i] = ramp(i, 17, 8);
+  }
+  for (int i = 0; i < xk_numel; i++) {
+    xk[i] = ramp(i, 13, 6);
+  }
+  for (int i = 0; i < freqs_numel; i++) {
+    fc[i] = ramp(i, 11, 5);
+    fs[i] = ramp(i, 7, 3);
+  }
+
+  auto xqt = make_tensor_ptr({1, S, NH, HD}, std::vector<float>(xq));
+  auto xkt = make_tensor_ptr({1, S, NKV, HD}, std::vector<float>(xk));
+  auto fct = make_tensor_ptr({S, HD / 2}, std::vector<float>(fc));
+  auto fst = make_tensor_ptr({S, HD / 2}, std::vector<float>(fs));
+
+  auto result =
+      module.forward({EValue(xqt), EValue(xkt), EValue(fct), EValue(fst)});
+  if (!result.ok()) {
+    printf("FAIL: forward failed (error %d)\n", (int)result.error());
+    return false;
+  }
+  const auto& outputs = result.get();
+
+  // Outputs in graph order [0]=xq_out, [1]=xk_out (positional; the numel check
+  // below guards a swap, since NH != NKV under GQA).
+  if (outputs.size() < 2 || !outputs[0].isTensor() || !outputs[1].isTensor()) {
+    printf("FAIL: expected 2 tensor outputs, got %zu\n", outputs.size());
+    return false;
+  }
+  const auto& xq_t = outputs[0].toTensor();
+  const auto& xk_t = outputs[1].toTensor();
+  if (xq_t.numel() != xq_numel || xk_t.numel() != xk_numel) {
+    printf(
+        "FAIL: output shapes [%zu,%zu] != expected [%d,%d]\n",
+        (size_t)xq_t.numel(),
+        (size_t)xk_t.numel(),
+        xq_numel,
+        xk_numel);
+    return false;
+  }
+  const float* xq_out = xq_t.const_data_ptr<float>();
+  const float* xk_out = xk_t.const_data_ptr<float>();
+
+  std::vector<float> gq = load_golden(xq_golden_path, xq_numel);
+  std::vector<float> gk = load_golden(xk_golden_path, xk_numel);
+  if (gq.empty() || gk.empty()) {
+    printf(
+        "FAIL: could not load goldens %s / %s\n",
+        xq_golden_path.c_str(),
+        xk_golden_path.c_str());
+    return false;
+  }
+
+  // Per-element abs-OR-rel on xq and xk (shared helper, defined above).
+  float maq = 0.0f, mrq = 0.0f, mak = 0.0f, mrk = 0.0f;
+  const bool pass_q =
+      quant_within_tol(xq_out, gq.data(), xq_numel, 1e-3f, 1e-3f, &maq, &mrq);
+  const bool pass_k =
+      quant_within_tol(xk_out, gk.data(), xk_numel, 1e-3f, 1e-3f, &mak, &mrk);
+  const float max_abs_err = std::max(maq, mak);
+  const float max_rel_err = std::max(mrq, mrk);
+
+  printf(
+      "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
+      max_abs_err,
+      max_rel_err,
+      xq_numel + xk_numel);
+  if (!(pass_q && pass_k)) {
+    printf("FAIL: apply_rotary_emb exceeds tolerance 1e-3 (abs AND rel)\n");
+    return false;
+  }
+  printf("PASS: apply_rotary_emb test\n");
+  return true;
+}
+
 // Reconstruct _ramp_input bit-for-bit, run the op, compare to the fp64 golden.
 static bool test_q4gsw_config(
     const Q4gswConfig& cfg,
@@ -1472,6 +1583,37 @@ int main(int argc, char** argv) {
        2048},
   };
 
+  // apply_rotary_emb on-GPU configs: multi + decode (env-gated,
+  // run-if-present).
+  struct RopeConfig {
+    const char* name;
+    const char* model_env;
+    const char* xq_env;
+    const char* xk_env;
+    int S;
+    int NH;
+    int NKV;
+    int HD;
+  };
+  const RopeConfig rope_configs[] = {
+      {"multi",
+       "WEBGPU_TEST_ROPE_MODEL",
+       "WEBGPU_TEST_ROPE_XQ_GOLDEN",
+       "WEBGPU_TEST_ROPE_XK_GOLDEN",
+       5,
+       8,
+       2,
+       64},
+      {"decode",
+       "WEBGPU_TEST_ROPE_DECODE_MODEL",
+       "WEBGPU_TEST_ROPE_DECODE_XQ_GOLDEN",
+       "WEBGPU_TEST_ROPE_DECODE_XK_GOLDEN",
+       1,
+       32,
+       8,
+       64},
+  };
+
   // SDPA sweep: configs self-discover their sdpa_<name>.pte/.golden.bin under
   // this directory (default "" = the embedded-file root / cwd). Set
   // WEBGPU_TEST_SDPA_DIR to point at the exported .pte directory (e.g. /tmp/).
@@ -1525,6 +1667,15 @@ int main(int argc, char** argv) {
     const char* g = std::getenv(c.golden_env);
     if (m && ip && g && *m && *ip && *g) {
       ok = test_embedding_q4gsw(m, ip, g, c.num_indices, c.embed, c.name) && ok;
+    }
+  }
+
+  for (const auto& c : rope_configs) {
+    const char* m = std::getenv(c.model_env);
+    const char* xq = std::getenv(c.xq_env);
+    const char* xk = std::getenv(c.xk_env);
+    if (m && xq && xk && *m && *xq && *xk) {
+      ok = test_rope(m, xq, xk, c.S, c.NH, c.NKV, c.HD, c.name) && ok;
     }
   }
 
