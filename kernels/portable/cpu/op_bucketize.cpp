@@ -111,7 +111,7 @@ void bucketize_tensor_impl(
 template <typename CTYPE_COMPUTE, typename CTYPE_OUT, const char* op_name>
 void bucketize_scalar_impl(
     KernelRuntimeContext& context,
-    const Scalar self,
+    const Scalar& self,
     const Tensor& boundaries,
     bool right,
     Tensor& out) {
