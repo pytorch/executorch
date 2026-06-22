@@ -31,7 +31,7 @@ import inspect
 from collections.abc import Callable
 
 import torch
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -132,7 +132,7 @@ def run_registered_fake_tosa_impl(
     return outputs
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "CUSTOM(Tensor[] inputs, str operator_name, str domain_name, int[] implementation_attrs) -> Tensor[]",
     TosaSpecification.all_versions_and_profiles(),
 )
