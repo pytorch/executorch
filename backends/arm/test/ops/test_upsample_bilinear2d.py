@@ -551,12 +551,21 @@ def test_upsample_bilinear2d_vec_vgf_no_quant_Upsample(test_data: torch.Tensor):
 @common.SkipIfNoModelConverter
 def test_upsample_bilinear2d_vec_vgf_no_quant_Interpolate(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
+    match data.dtype:
+        case torch.float16:
+            atol = 1e-2
+            rtol = 1e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Interpolate(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     if not compare:
         pipeline.pop_stage(-1)

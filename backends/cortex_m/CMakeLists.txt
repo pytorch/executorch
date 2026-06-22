@@ -30,6 +30,10 @@ set(CMSIS_NN_LOCAL_PATH
     ""
     CACHE PATH "Path to existing local CMSIS-NN installation"
 )
+option(CORTEX_M_ENABLE_RUNTIME_CHECKS
+       "Enable additional Cortex-M runtime assertions and validation checks"
+       OFF
+)
 
 # Try to find existing / local CMSIS-NN installation. This is useful for
 # debugging and testing with local changes. This is not common, as the CMSIS-NN
@@ -50,6 +54,26 @@ else()
   FetchContent_MakeAvailable(cmsis_nn)
 endif()
 
+if(TARGET cmsis-nn)
+  if(CMSIS_NN_LOCAL_PATH AND EXISTS "${CMSIS_NN_LOCAL_PATH}")
+    set(cmsis_nn_source_dir "${CMSIS_NN_LOCAL_PATH}")
+  else()
+    set(cmsis_nn_source_dir "${cmsis_nn_SOURCE_DIR}")
+  endif()
+  if(cmsis_nn_source_dir)
+    set(cmsis_nn_include_dir "${cmsis_nn_source_dir}/Include")
+    set_target_properties(
+      cmsis-nn
+      PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES
+        "$<BUILD_INTERFACE:${cmsis_nn_include_dir}>;$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cmsis-nn>"
+    )
+    install(DIRECTORY "${cmsis_nn_include_dir}/"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cmsis-nn"
+    )
+  endif()
+endif()
+
 # Cortex-M ops kernel sources
 set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
@@ -57,6 +81,7 @@ set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_pad.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_activation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_avg_pool2d.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_batch_matmul.cpp
@@ -86,6 +111,11 @@ target_link_libraries(
   PRIVATE cmsis-nn
   PRIVATE executorch
   PRIVATE kernels_util_all_deps
+)
+target_compile_definitions(
+  cortex_m_kernels
+  PRIVATE
+    $<$<BOOL:${CORTEX_M_ENABLE_RUNTIME_CHECKS}>:CORTEX_M_ENABLE_RUNTIME_CHECKS>
 )
 
 # Include directories for cortex_m_kernels

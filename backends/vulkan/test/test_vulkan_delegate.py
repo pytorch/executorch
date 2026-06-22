@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import ctypes
+import functools
 import unittest
 from typing import Tuple
 
@@ -40,6 +41,24 @@ try:
     ctypes.CDLL("libvulkan.so.1")
 except:
     pass
+
+
+def disable_test(reason):
+    """Disable a test while still reporting it as executed.
+
+    Some test runners do not handle skipped results consistently, so this keeps
+    disabled tests visible in logs without using unittest.skip.
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            print(f"DISABLED_TEST: {fn.__qualname__}: {reason}")
+            return None
+
+        return wrapper
+
+    return decorator
 
 
 def lower_module(
@@ -743,7 +762,7 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(model, sample_inputs)
 
-    @unittest.skip(
+    @disable_test(
         "Currently this test is failing due to weird partitioning because the eq scalar"
         "operator is not supported yet. Re-enable when the operator is supported."
     )
@@ -810,7 +829,7 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
-    @unittest.skip(
+    @disable_test(
         "Reduce shader does not support multiple reduction axes at the moment"
     )
     def test_vulkan_backend_sum_dim_list(self):
@@ -831,7 +850,7 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
-    @unittest.skip(
+    @disable_test(
         "Reduce shader does not support multiple reduction axes at the moment"
     )
     def test_vulkan_backend_sum(self):
@@ -1028,7 +1047,7 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
-    @unittest.skip("layer norm compute shader not working with swiftshader")
+    @disable_test("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):
@@ -1459,7 +1478,7 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
-    @unittest.skip(
+    @disable_test(
         "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
     )
     def test_vulkan_backend_softmax(self):
@@ -1480,7 +1499,7 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
-    @unittest.skip(
+    @disable_test(
         "Softmax shader with shared memory does not work with swiftshader due to potential swiftshader bug"
     )
     def test_vulkan_backend_logsoftmax(self):
@@ -1512,7 +1531,7 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(GeluModule())
 
-    @unittest.skip(
+    @disable_test(
         "Reduce shader does not support multiple reduction axes at the moment"
     )
     def test_vulkan_backend_mean(self):
@@ -2364,7 +2383,7 @@ class TestVulkanBackend(unittest.TestCase):
             quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
+    @disable_test("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_linear_sequence(self):
         """
         Test a sequence of linear layers quantized with XNNPACK quantization config.
@@ -2439,7 +2458,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
+    @disable_test("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2530,7 +2549,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
+    @disable_test("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence_all_reduced(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2610,7 +2629,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
-    @unittest.skip("Cannot run on swiftshader due to no 8-bit int support")
+    @disable_test("Cannot run on swiftshader due to no 8-bit int support")
     def test_vulkan_backend_torchao_8da4w_quantized_linear(self):
         """
         Test TorchAO 8da4w quantization (int8 dynamic activation + int4 weight) with Vulkan backend.

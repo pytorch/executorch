@@ -42,6 +42,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_PRO_FP_SupportList,
     TOSA_PRO_INT_SupportList,
+    TOSA_PRO_MIXED_INT_SupportList,
 )
 from executorch.backends.arm.tosa.specification import (
     TosaSpecification,
@@ -236,6 +237,17 @@ def get_registered_tosa_support_checks(
     return checks
 
 
+class MXOpsSupportList(OperatorSupportBase):
+    """Accept Arm MX custom ops when the active spec enables MX support."""
+
+    targets = (exir_ops.edge.tosa_mxfp.linear.default,)
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        return node.op == "call_function" and node.target in self.targets
+
+
 def tosa_support_factory(
     tosa_spec: TosaSpecification,
     exported_program: ExportedProgram,
@@ -270,6 +282,8 @@ def tosa_support_factory(
         positive_checks.append(TOSAProINTSupportList())
     elif tosa_spec.support_float():
         positive_checks.append(TOSAProFPSupportList())
+    if tosa_spec.support_extension("mxfp"):
+        positive_checks.append(MXOpsSupportList())
     # TODO: Refactor to use TOSAProSupportLists + negtive checks
     positive_checks += [
         check(tosa_spec, reporter)
@@ -295,6 +309,14 @@ def tosa_support_factory(
     disallowed_dtypes = [torch.float64]
     if not tosa_spec.support_extension("bf16"):
         disallowed_dtypes.append(torch.bfloat16)
+    if not (
+        tosa_spec.support_extension("fp8e4m3") or tosa_spec.support_extension("mxfp")
+    ):
+        disallowed_dtypes.append(torch.float8_e4m3fn)
+    if not (
+        tosa_spec.support_extension("fp8e5m2") or tosa_spec.support_extension("mxfp")
+    ):
+        disallowed_dtypes.append(torch.float8_e5m2)
     if tosa_spec.is_U55_subset:
         disallowed_dtypes.append(torch.bool)
     negative_checks.append(
@@ -306,6 +328,8 @@ def tosa_support_factory(
         negative_checks.append(EthosU55NotSupported(reporter))
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55CastCheck(reporter))
+    if not tosa_spec.support_extension("shape"):
+        negative_checks.append(SymbolicShapeSupportCheck(reporter))
 
     return chain(
         reporter.wrap_check(
@@ -314,6 +338,72 @@ def tosa_support_factory(
         ),
         *negative_checks,
     )
+
+
+class SymbolicShapeSupportCheck(OperatorSupportBase):
+    """Reject symbolic tensor shapes for specs without the shape extension."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        """Initialize the check with a reporter.
+
+        Args:
+            reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+
+        """
+        self.reporter = reporter
+
+    @staticmethod
+    def _has_symbolic_shape(node: fx.Node) -> bool:
+        val = node.meta.get("val")
+        vals = val if isinstance(val, (list, tuple)) else (val,)
+        for node_val in vals:
+            if isinstance(node_val, torch.SymInt):
+                return True
+
+            shape = getattr(node_val, "shape", None)
+            if shape is not None and any(
+                isinstance(dim, torch.SymInt) for dim in shape
+            ):
+                return True
+
+        return False
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Return False for nodes with symbolic tensor input or output shapes.
+
+        Dynamic shapes require the TOSA shape extension. Reject nodes with
+        symbolic tensor dimensions before partitioning when the active spec
+        does not enable that extension.
+
+        Args:
+            submodules (typing.Mapping[str, torch.nn.Module]): Exported modules.
+            node (fx.Node): FX node to check.
+
+        Returns:
+            bool: False if rejected by constraints; otherwise, True.
+
+        """
+        if node.op in ("placeholder", "output"):
+            return True
+        if node.op == "call_function" and node.target in (*Q_OPS, *DQ_OPS):
+            return True
+
+        if self._has_symbolic_shape(node) or any(
+            self._has_symbolic_shape(input_node) for input_node in node.all_input_nodes
+        ):
+            if node.target == exir_ops.edge.aten.upsample_nearest2d.vec:
+                return True
+
+            self.reporter.report_reject(
+                node,
+                "Node has symbolic shape but the TOSA spec does not support "
+                "the shape extension.",
+            )
+            return False
+
+        return True
 
 
 class TOSAProINTSupportList(OperatorSupportBase):
@@ -364,7 +454,7 @@ class TOSAProINTFPSupportList(OperatorSupportBase):
 
         # Select list based on whether the node is quantized.
         if is_quantized(node) or node.target in (*Q_OPS, *DQ_OPS):
-            support_list = TOSA_PRO_INT_SupportList
+            support_list = TOSA_PRO_MIXED_INT_SupportList
         else:
             support_list = TOSA_PRO_FP_SupportList
 
@@ -671,6 +761,9 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
             torch.ops.higher_order.while_loop,
             torch.ops.higher_order.cond,
         ):
+            return True
+
+        if node.target in MXOpsSupportList.targets:
             return True
 
         floating_dtypes = set()

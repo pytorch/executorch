@@ -1,0 +1,48 @@
+@group(0) @binding(0) var<storage, read> input1: array<f32>;
+@group(0) @binding(1) var<storage, read> input2: array<f32>;
+@group(0) @binding(2) var<storage, read_write> output: array<f32>;
+
+struct TensorMeta {
+  ndim: u32,
+  numel: u32,
+  sizes: vec4<u32>,
+  strides: vec4<u32>,
+}
+@group(0) @binding(3) var<uniform> out_meta: TensorMeta;
+@group(0) @binding(4) var<uniform> in1_meta: TensorMeta;
+@group(0) @binding(5) var<uniform> in2_meta: TensorMeta;
+
+override wg_size: u32 = 64u;
+
+@compute @workgroup_size(wg_size, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= out_meta.numel) {
+        return;
+    }
+
+    // Fast path: every input dim matches the output dim -> elementwise.
+    var same = true;
+    for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
+        if (in1_meta.sizes[d] != out_meta.sizes[d] ||
+            in2_meta.sizes[d] != out_meta.sizes[d]) {
+            same = false;
+        }
+    }
+    if (same) {
+        output[idx] = input1[idx] * input2[idx];
+        return;
+    }
+
+    // Broadcast: out idx -> per-input coord (clamp size-1 dims), relinearize.
+    var rem = idx;
+    var l1: u32 = 0u;
+    var l2: u32 = 0u;
+    for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
+        let coord = rem / out_meta.strides[d];
+        rem = rem % out_meta.strides[d];
+        l1 = l1 + min(coord, in1_meta.sizes[d] - 1u) * in1_meta.strides[d];
+        l2 = l2 + min(coord, in2_meta.sizes[d] - 1u) * in2_meta.strides[d];
+    }
+    output[idx] = input1[l1] * input2[l2];
+}

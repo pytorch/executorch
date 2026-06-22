@@ -209,7 +209,7 @@ function setup_root_dir() {
 
 function setup_ethos_u_tools() {
     log_step "ethos-u-tools" "Installing Ethos-U Python tooling"
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r "$et_dir/backends/arm/requirements-arm-ethos-u.txt"
 }
 
 function setup_cortex_m_tools() {
@@ -219,7 +219,13 @@ function setup_cortex_m_tools() {
 
 function setup_mlsdk_dependencies() {
     log_step "mlsdk" "Installing MLSDK dependencies"
-    pip install -r $et_dir/backends/arm/requirements-arm-vgf.txt
+    if [[ "${enable_model_converter}" -eq 1 || "${enable_emulation_layer}" -eq 1 ]]; then
+        pip install -r "$et_dir/backends/arm/requirements-arm-vgf.txt"
+    fi
+
+    if [[ "${enable_vgf_lib}" -eq 1 ]]; then
+        pip install -r "$et_dir/backends/arm/requirements-arm-vgf-runtime.txt"
+    fi
 }
 
 function validate_mlsdk_pip_compatibility() {

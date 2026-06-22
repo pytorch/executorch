@@ -9,7 +9,6 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     _get_default_passes,
     NeutronAtenPassManager,
 )
-
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.quantizer.patterns import (
     AbsPattern,
@@ -32,6 +31,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     LeakyReluInPlacePattern,
     LeakyReluPattern,
     LinearPattern,
+    LogPattern,
     MaxPool1DPattern,
     MaxPool2DPattern,
     MeanDimPattern,
@@ -264,7 +264,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(BatchNormPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(BMMPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(CatPattern(is_qat=is_qat), static_qconfig),
-                OpQuantizer(ClampPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ClampPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(Conv2dPattern(self, is_qat=is_qat), static_qconfig),
                 OpQuantizer(
                     ConvTranspose2dPattern(self, is_qat=is_qat), static_qconfig
@@ -276,6 +276,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 OpQuantizer(LeakyReluPattern(is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(LeakyReluInPlacePattern(is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(LinearPattern(self, is_qat=is_qat), static_fc_qconfig),
+                OpQuantizer(LogPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MaxPool1DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MaxPool2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(MeanDimPattern(is_qat=is_qat), static_qconfig),

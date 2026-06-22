@@ -19,15 +19,15 @@ import os
 import tempfile
 import unittest
 
-# Register Int4Tensor dispatch before any model usage
-import executorch.backends.cuda.int4_dispatch  # noqa: F401
-
+# Register Int4/Int8 dispatch before any model usage
+import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.examples.models.gemma4_31b.export import (
     export_and_lower,
     load_prequantized_model,
 )
+from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
 from executorch.examples.models.gemma4_31b.inference import _move_to_cuda, generate
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
@@ -36,8 +36,10 @@ from executorch.examples.models.gemma4_31b.quant import (
     quantize_model,
 )
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
+    build_gguf_checkpoint,
     build_hf_checkpoint,
     DEFAULT_RECIPE,
+    GGUF_CONFIG,
     MockTokenizer,
     save_checkpoint,
     TINY_CONFIG,
@@ -108,30 +110,27 @@ class TestChunkedPrefill(unittest.TestCase):
         torch.manual_seed(0)
         prompt = torch.randint(0, config.vocab_size, (1, prompt_len), device="cuda")
 
+        temp = torch.tensor([1e-6], dtype=torch.float32, device="cuda")
+
         with torch.no_grad():
             for i in range(prompt_len):
                 tok = prompt[:, i : i + 1]
                 pos = torch.tensor([i], dtype=torch.long, device="cuda")
-                logits_seq = model_seq(tok, pos, None)
+                token_seq = model_seq(tok, pos, temp)
 
         with torch.no_grad():
             chunk1 = prompt[:, :buf_size]
             pos1 = torch.arange(buf_size, dtype=torch.long, device="cuda")
-            model_chunk(chunk1, pos1, None)
+            model_chunk(chunk1, pos1, temp)
 
             chunk2 = prompt[:, buf_size:]
             pos2 = torch.arange(buf_size, prompt_len, dtype=torch.long, device="cuda")
-            logits_chunk = model_chunk(chunk2, pos2, None)
+            token_chunk = model_chunk(chunk2, pos2, temp)
 
-        max_diff = (logits_seq[0, -1].float() - logits_chunk[0, -1].float()).abs().max()
-        self.assertTrue(
-            torch.allclose(
-                logits_seq[0, -1].float(),
-                logits_chunk[0, -1].float(),
-                atol=1e-2,
-                rtol=1e-3,
-            ),
-            f"Chunked prefill diverged: max_diff={max_diff:.4g}",
+        self.assertEqual(
+            int(token_seq.item()),
+            int(token_chunk.item()),
+            "Chunked prefill produced different token than sequential",
         )
 
 
@@ -191,11 +190,13 @@ class TestInt4Inference(unittest.TestCase):
             return self.model(tok, pos, temp)
 
     def test_int4_weights_preserved(self):
-        """Packing passes Int4Tensor through without conversion."""
-        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+        """Packing converts Int4Tensor to CudaCoalescedInt4Tensor."""
+        from executorch.backends.cuda.coalesced_int4_tensor import (
+            CudaCoalescedInt4Tensor,
+        )
 
         w = self.model.layers[0].mlp.gate_proj.weight.data
-        self.assertIsInstance(w, Int4Tensor)
+        self.assertIsInstance(w, CudaCoalescedInt4Tensor)
 
     def test_inference_produces_valid_output(self):
         out = self._forward()
@@ -226,6 +227,67 @@ class TestInt4Inference(unittest.TestCase):
         tok = torch.tensor([[1]], dtype=torch.long, device="cuda")
         emb = self.model.embed_tokens(tok)
         self.assertFalse(emb.isnan().any())
+
+
+class TestGgufCudaPipeline(unittest.TestCase):
+    """GGUF -> CUDA load -> inference -> export (mirrors TestGgufLinearMlx)."""
+
+    def setUp(self):
+        _require_cuda(self)
+        try:
+            import gguf  # noqa: F401
+        except ImportError:
+            self.skipTest("gguf package required")
+
+    def _load(self, tmp):
+        path = os.path.join(tmp, "tiny.gguf")
+        build_gguf_checkpoint(path)
+        return load_gguf_model(path, backend="cuda", config=GGUF_CONFIG)
+
+    def test_load_converts_weights(self):
+        """GGUF -> CUDA: Q4_K -> CudaCoalescedInt4Tensor, Q6_K -> CudaDp4aPlanarInt6Tensor,
+        embedding bf16."""
+        from executorch.backends.cuda.coalesced_int4_tensor import (
+            CudaCoalescedInt4Tensor,
+        )
+        from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+            CudaDp4aPlanarInt6Tensor,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model, _ = self._load(tmp)
+
+        self.assertIsInstance(
+            model.layers[0].self_attn.q_proj.weight.data, CudaCoalescedInt4Tensor
+        )
+        self.assertIsInstance(
+            model.layers[0].mlp.down_proj.weight.data, CudaDp4aPlanarInt6Tensor
+        )
+        # Tied lm_head is repacked to int6 by pack_cuda (it keeps quantization,
+        # unlike the token embedding which is dequantized for the gather).
+        self.assertIsInstance(model.lm_head.weight.data, CudaDp4aPlanarInt6Tensor)
+        # Token embedding is dequantized to bf16 (Int4/packed-int6 can't gather).
+        self.assertEqual(model.embed_tokens.weight.dtype, torch.bfloat16)
+
+    def test_generate(self):
+        """GGUF -> CUDA -> eager generate produces valid tokens (inference.py)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            model, config = self._load(tmp)
+        _move_to_cuda(model, config)
+        model.eval()
+        tokenizer = MockTokenizer(GGUF_CONFIG.vocab_size)
+
+        torch.manual_seed(0)
+        out = generate(model, tokenizer, prompt="hi", max_new_tokens=3, temperature=1.0)
+        self.assertIsInstance(out, str)
+        self.assertGreater(len(out), 0)
+
+    def test_export(self):
+        """GGUF -> CUDA -> export_and_lower produces a .pte (export.py)."""
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as out_dir:
+            model, config = self._load(tmp)
+            export_and_lower(model, config, out_dir)
+            self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
 
 if __name__ == "__main__":

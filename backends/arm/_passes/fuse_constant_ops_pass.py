@@ -174,13 +174,10 @@ class FuseConstantArgsPass(ArmPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            # Don't fuse TOSA dialect ops as they do not have eager forward functions.
-            # Also don't fuse ops whose explicit args/kwargs include symbolic shape values.
-            if (
-                self._is_tosa_dialect_op(node.target)
-                or self._arg_contains_symbolic_shape(node.args)
-                or self._arg_contains_symbolic_shape(node.kwargs)
-            ):
+            # Don't fuse ops whose explicit args/kwargs include symbolic shape values.
+            if self._arg_contains_symbolic_shape(
+                node.args
+            ) or self._arg_contains_symbolic_shape(node.kwargs):
                 continue
 
             input_nodes = node.all_input_nodes
@@ -218,7 +215,7 @@ class FuseConstantArgsPass(ArmPass):
 
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
 
 
 class ComputeConstantOpsAOTPass(ArmPass):
@@ -307,4 +304,4 @@ class ComputeConstantOpsAOTPass(ArmPass):
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

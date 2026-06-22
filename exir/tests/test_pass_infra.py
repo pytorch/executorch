@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,13 +9,24 @@
 
 import unittest
 
+import executorch.exir as exir
 import torch
-from executorch.exir import to_edge
-from executorch.exir.pass_manager import PassManager
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import (
+    ExportedProgramPassBase,
+    ExportedProgramPassResult,
+    ExportPass,
+    ExportPassBaseError,
+    NodeMetadata,
+    ProxyValue,
+)
+from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
-from torch.export import export
-from torch.fx.passes.infra.pass_base import PassBase
+from executorch.exir.program import to_edge
+from torch.export import Dim, export, ExportedProgram
+from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
 class TestPassInfra(unittest.TestCase):
@@ -178,3 +190,370 @@ class TestPassInfra(unittest.TestCase):
         for node in new_gm.graph.nodes:
             if node.target != "output":
                 self.assertIn("val", node.meta)
+
+
+class TestProxyValueSymbolicCoercions(unittest.TestCase):
+    @staticmethod
+    def _symbolic_values() -> tuple[torch.SymInt, torch.SymFloat]:
+        class ViewModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.view(x.size(0), -1)
+
+        exported = export(
+            ViewModule(),
+            (torch.randn(2, 3),),
+            dynamic_shapes=({0: Dim("batch", min=1, max=8)},),
+            strict=True,
+        )
+        gm = to_edge(exported).exported_program().graph_module
+        for node in gm.graph.nodes:
+            value = node.meta.get("val")
+            if isinstance(value, torch.SymInt):
+                return value, torch.sym_float(value)
+        raise AssertionError("Expected a symbolic scalar in exported graph metadata")
+
+    def test_rejects_implicit_symbolic_scalar_coercions(self) -> None:
+        sym_int, sym_float = self._symbolic_values()
+
+        with self.assertRaisesRegex(ExportPassBaseError, "boolean context"):
+            bool(ProxyValue(sym_int, torch.fx.Graph().placeholder("x")))
+
+        with self.assertRaisesRegex(ExportPassBaseError, "converted to int"):
+            int(ProxyValue(sym_int, torch.fx.Graph().placeholder("x")))
+
+        with self.assertRaisesRegex(ExportPassBaseError, "used in index context"):
+            ProxyValue(sym_int, torch.fx.Graph().placeholder("x")).__index__()
+
+        with self.assertRaisesRegex(ExportPassBaseError, "converted to float"):
+            float(ProxyValue(sym_float, torch.fx.Graph().placeholder("x")))
+
+
+class TestExportedProgramPassManager(unittest.TestCase):
+    def test_runs_graph_module_passes_on_exported_program(self) -> None:
+        """
+        Tests that ExportedProgramPassManager runs GraphModule passes
+        on an ExportedProgram and the graph is correctly modified.
+        """
+
+        def replace_add_with_mul(gm: torch.fx.GraphModule) -> PassResult:
+            modified = False
+            for node in gm.graph.find_nodes(
+                op="call_function", target=exir_ops.edge.aten.add.Tensor
+            ):
+                node.target = exir_ops.edge.aten.mul.Tensor
+                modified = True
+            return PassResult(gm, modified)
+
+        def f(x: torch.Tensor) -> torch.Tensor:
+            y = torch.add(x, x)
+            z = torch.add(y, x)
+            return z
+
+        exported_program = (
+            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
+            .to_edge()
+            .exported_program
+        )
+
+        pm = ExportedProgramPassManager(passes=[replace_add_with_mul])
+        result = pm(exported_program)
+
+        # Verify return type
+        self.assertIsInstance(result, ExportedProgramPassResult)
+        self.assertTrue(result.modified)
+
+        # Check that all add ops were replaced with mul
+        self.assertEqual(
+            len(
+                result.exported_program.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+            ),
+            0,
+        )
+
+    def test_updates_constants_on_exported_program(self) -> None:
+        """
+        Tests that ExportedProgramPassManager can update constants
+        in the ExportedProgram using an ExportedProgram-aware pass.
+        """
+
+        class DoubleConstantsPass(ExportedProgramPassBase):
+            """Pass that doubles all constant tensor values in the ExportedProgram."""
+
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                modified = False
+                for key, const in ep.constants.items():
+                    if isinstance(const, torch.Tensor):
+                        ep.constants[key] = const * 2
+                        modified = True
+                return ExportedProgramPassResult(ep, modified)
+
+        class ModuleWithConstant(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = torch.ones(3)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.weight
+
+        module = ModuleWithConstant()
+        exported_program = to_edge(
+            torch.export.export(module, (torch.randn(3),))
+        ).exported_program()
+
+        # Verify there are constants in the ExportedProgram
+        self.assertGreater(
+            len(exported_program.constants), 0, "Expected constants in ExportedProgram"
+        )
+
+        # Store original constant values
+        original_values = {
+            key: const.clone()
+            for key, const in exported_program.constants.items()
+            if isinstance(const, torch.Tensor)
+        }
+
+        pm = ExportedProgramPassManager(passes=[DoubleConstantsPass()])
+        result = pm(exported_program)
+
+        self.assertIsInstance(result, ExportedProgramPassResult)
+        self.assertTrue(result.modified)
+
+        # Verify constants were doubled
+        for key, original_const in original_values.items():
+            new_const = result.exported_program.constants[key]
+            self.assertTrue(
+                torch.allclose(new_const, original_const * 2),
+                f"Constant {key} was not doubled correctly",
+            )
+
+    def test_adds_constant_to_exported_program(self) -> None:
+        """
+        Tests that ExportedProgramPassManager can add a new constant
+        to the ExportedProgram, including updating the graph and input specs.
+        """
+
+        class AddConstantPass(ExportedProgramPassBase):
+            """Pass that adds a new constant tensor to the ExportedProgram."""
+
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                graph = ep.graph_module.graph
+                sig = ep.graph_signature
+
+                # Find the first user input to insert before it
+                placeholders = graph.find_nodes(op="placeholder")
+                assert len(placeholders) == 1
+                user_input_node = placeholders[0]
+
+                # Create a new constant tensor
+                new_constant_name = "_test_added_constant"
+                new_constant_tensor = torch.tensor([1.0, 2.0, 3.0])
+
+                # Add placeholder node for the new constant
+                with graph.inserting_before(user_input_node):
+                    new_placeholder = graph.placeholder(new_constant_name)
+                    # Set up meta for the new placeholder
+                    new_placeholder.meta["val"] = new_constant_tensor
+
+                # Add the constant to the constants dict
+                ep.constants[new_constant_name] = new_constant_tensor
+
+                # Update input specs to include the new constant
+                new_input_spec = InputSpec(
+                    kind=InputKind.CONSTANT_TENSOR,
+                    arg=TensorArgument(name=new_placeholder.name),
+                    target=new_constant_name,
+                    persistent=False,
+                )
+                sig.input_specs = (new_input_spec, sig.input_specs[0])
+
+                return ExportedProgramPassResult(ep, modified=True)
+
+        class IdentityModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x
+
+        exported_program = to_edge(
+            torch.export.export(IdentityModule(), (torch.randn(3),))
+        ).exported_program()
+        assert len(exported_program.constants) == 0
+        assert len(exported_program.graph_signature.input_specs) == 1
+
+        pm = ExportedProgramPassManager(passes=[AddConstantPass()])
+        result = pm(exported_program)
+
+        self.assertIsInstance(result, ExportedProgramPassResult)
+        self.assertTrue(result.modified)
+
+        # Verify the new constant was added to constants dict
+        self.assertEqual(len(result.exported_program.constants), 1)
+        self.assertIn("_test_added_constant", result.exported_program.constants)
+        self.assertTrue(
+            torch.allclose(
+                result.exported_program.constants["_test_added_constant"],
+                torch.tensor([1.0, 2.0, 3.0]),
+            )
+        )
+
+        # Verify input_specs was updated
+        self.assertEqual(
+            len(result.exported_program.graph_signature.input_specs),
+            2,
+        )
+
+        # Verify the new placeholder exists in the graph
+        placeholder_names = [
+            node.target
+            for node in result.exported_program.graph_module.graph.find_nodes(
+                op="placeholder"
+            )
+        ]
+        self.assertTrue(len(placeholder_names) == 2)
+
+        # Verify the new input spec has the correct kind
+        new_spec = None
+        for spec in result.exported_program.graph_signature.input_specs:
+            if spec.target == "_test_added_constant":
+                new_spec = spec
+                break
+        self.assertIsNotNone(new_spec)
+        self.assertEqual(new_spec.kind, InputKind.CONSTANT_TENSOR)
+
+    def test_invalid_pass_creates_call_method(self) -> None:
+        """
+        Tests that ExportedProgramPassManager detects invalid passes
+        that introduce call_method nodes.
+        """
+
+        def introduce_call_method(gm: torch.fx.GraphModule) -> PassResult:
+            node = list(gm.graph.nodes)[-2]
+            with gm.graph.inserting_after(node):
+                gm.graph.call_method("torch.ops.relu", (torch.randn(2),))
+            return PassResult(gm, True)
+
+        def f(x: torch.Tensor) -> torch.Tensor:
+            y = torch.add(x, x)
+            return y
+
+        exported_program = (
+            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
+            .to_edge()
+            .exported_program
+        )
+
+        pm = ExportedProgramPassManager(
+            passes=[introduce_call_method], run_checks_after_each_pass=True
+        )
+
+        with self.assertRaisesRegex(Exception, "call_method"):
+            pm(exported_program)
+
+
+class TestPassBaseSymbolicInputs(unittest.TestCase):
+    class SymSizeModule(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x.view(x.size(0), -1)
+
+    @staticmethod
+    def _find_input_node(gm: torch.fx.GraphModule) -> torch.fx.Node:
+        for node in gm.graph.nodes:
+            if node.op == "placeholder" and "val" in node.meta:
+                return node
+        raise AssertionError("Expected to find an input placeholder")
+
+    @staticmethod
+    def _symbolic_input_shape(node: torch.fx.Node) -> tuple[str | None, ...]:
+        value = node.meta["val"]
+        assert isinstance(value, torch.Tensor)
+        return tuple(
+            str(dim) if isinstance(dim, torch.SymInt) else None for dim in value.shape
+        )
+
+    def _export_dynamic_graph_module(self) -> torch.fx.GraphModule:
+        exported = export(
+            self.SymSizeModule(),
+            (torch.randn(2, 3),),
+            dynamic_shapes=({0: Dim("batch", min=1, max=8)},),
+            strict=True,
+        )
+        return to_edge(exported).exported_program().graph_module
+
+    def test_export_pass_preserves_symbolic_input_metadata(self) -> None:
+        graph_module = self._export_dynamic_graph_module()
+        original_input = self._find_input_node(graph_module)
+        original_snapshot = self._symbolic_input_shape(original_input)
+        self.assertTrue(any(dim is not None for dim in original_snapshot))
+
+        new_graph_module = ExportPass()(graph_module).graph_module
+        new_input = self._find_input_node(new_graph_module)
+
+        self.assertEqual(self._symbolic_input_shape(new_input), original_snapshot)
+
+    def test_export_pass_matches_symbolic_inputs_by_position(self) -> None:
+        class RenamePlaceholderPass(ExportPass):
+            def placeholder(
+                self,
+                name: str,
+                arg: torch.Tensor,
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                return super().placeholder(f"renamed_{name}", arg, meta)
+
+        new_graph_module = RenamePlaceholderPass()(
+            self._export_dynamic_graph_module()
+        ).graph_module
+        new_input = self._find_input_node(new_graph_module)
+
+        self.assertEqual(new_input.name, "renamed_x")
+        self.assertTrue(
+            any(dim is not None for dim in self._symbolic_input_shape(new_input))
+        )
+
+    def test_export_pass_rejects_collapsed_symbolic_input_metadata(self) -> None:
+        class CollapseSymbolicInputPass(ExportPass):
+            def placeholder(
+                self,
+                name: str,
+                arg: torch.Tensor,
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                proxy = super().placeholder(name, arg, meta)
+                if any(isinstance(dim, torch.SymInt) for dim in arg.shape):
+                    proxy.node.meta["val"] = torch.empty(2, 3, device="meta")
+                return proxy
+
+        with self.assertRaisesRegex(
+            ExportPassBaseError,
+            "Input at position 0 did not preserve symbolic metadata",
+        ):
+            CollapseSymbolicInputPass()(self._export_dynamic_graph_module())
+
+    def test_export_pass_can_disable_symbolic_input_validation(self) -> None:
+        class CollapseSymbolicInputPass(ExportPass):
+            def should_preserve_symbolic_input_metadata(self) -> bool:
+                return False
+
+            def placeholder(
+                self,
+                name: str,
+                arg: torch.Tensor,
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                proxy = super().placeholder(name, arg, meta)
+                if any(isinstance(dim, torch.SymInt) for dim in arg.shape):
+                    proxy.node.meta["val"] = torch.empty(2, 3, device="meta")
+                return proxy
+
+        graph_module = self._export_dynamic_graph_module()
+        original_snapshot = self._symbolic_input_shape(
+            self._find_input_node(graph_module)
+        )
+
+        new_graph_module = CollapseSymbolicInputPass()(graph_module).graph_module
+        new_input = self._find_input_node(new_graph_module)
+
+        self.assertNotEqual(self._symbolic_input_shape(new_input), original_snapshot)

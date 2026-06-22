@@ -48,6 +48,21 @@
                 "string": "${hostSystemName}",
                 "list": ["Linux", "Windows"]
             }
+        },
+        {
+            "name": "llama-mlx",
+            "displayName": "Llama runner with MLX backend",
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/llama",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
@@ -73,6 +88,12 @@
             "name": "llama-cuda",
             "displayName": "Build Llama runner with CUDA backend",
             "configurePreset": "llama-cuda",
+            "targets": ["llama_main"]
+        },
+        {
+            "name": "llama-mlx",
+            "displayName": "Build Llama runner with MLX backend",
+            "configurePreset": "llama-mlx",
             "targets": ["llama_main"]
         }
     ],
@@ -130,6 +151,20 @@
                 {
                     "type": "build",
                     "name": "llama-cuda"
+                }
+            ]
+        },
+        {
+            "name": "llama-mlx",
+            "displayName": "Configure and build Llama runner with MLX backend",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "llama-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "llama-mlx"
                 }
             ]
         }

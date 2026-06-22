@@ -42,14 +42,17 @@ list(
   extension_flat_tensor
 )
 
-# CUDA backend (the only supported backend for this example for now)
+# Backend: CUDA or MLX (exactly one required)
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
   list(APPEND link_libraries aoti_cuda_backend)
   executorch_target_link_options_shared_lib(aoti_cuda_backend)
   add_compile_definitions(EXECUTORCH_BUILD_CUDA)
+elseif(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
 else()
-  message(FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON")
+  message(FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON")
 endif()
 
 # Tokenizer (HuggingFace tokenizer.json)
@@ -63,5 +66,11 @@ target_link_libraries(gemma4_31b_runner PUBLIC ${link_libraries})
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(gemma4_31b_runner)
-  target_link_options(gemma4_31b_runner PRIVATE "LINKER:-s")
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(gemma4_31b_runner PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(gemma4_31b_runner)
 endif()

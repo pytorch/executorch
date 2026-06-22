@@ -9,7 +9,7 @@ The model classifies a static RGB test input tensor with shape `[1, 3, 224, 224]
 ## Prerequisites
 
 - Zephyr SDK with ExecuTorch module enabled
-- Python 3.10+ with ExecuTorch, torchvision, and ethos-u-vela installed
+- Python 3.12+ with ExecuTorch, torchvision, and ethos-u-vela installed
 - A board with Arm Ethos-U NPU (e.g., Corstone-300 FVP, Alif E7/E8 DevKit)
 
 ## Corstone-300 FVP (Ethos-U55)
@@ -18,36 +18,67 @@ The model classifies a static RGB test input tensor with shape `[1, 3, 224, 224]
 > ~3 MiB, so the build will link but FVP execution will fail at runtime.
 > Use Corstone-320 (below) for end-to-end MV2 inference.
 
+### Setup FVP paths
+
+Set up FVP paths and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
+
+Config Zephyr Corstone300 FVP
+<!-- RUN setup_corstone300 -->
+```
+export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
+export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
+export ARMFVP_EXTRA_FLAGS="-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_macs=128"
+```
+
 ### Export the model
 
 Export a quantized INT8 MobileNetV2 model with Ethos-U55 delegation:
 
-<!-- RUN test_mv2_ethos-u55_generate_pte -->
+<!-- RUN test_ethos-u55_generate_pte -->
 ```
 python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=mv2_untrained --quantize --delegate --target=ethos-u55-128 --output=mv2_u55_128.pte
 ```
 
 ### Build (link-check only)
 
-<!-- RUN test_mv2_ethos-u55_build -->
+<!-- RUN test_ethos-u55_build -->
 ```
 west build -b mps3/corstone300/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -- -DET_PTE_FILE_PATH=mv2_u55_128.pte
 ```
 
 ## Corstone-320 FVP (Ethos-U85)
 
+### Setup FVP paths
+
+Set up FVP paths, libs and macs used, this will also set `shutdown_on_eot` so the FVP auto stops after it has run the example.
+
+These FVP command-line options are passed through the `ARMFVP_EXTRA_FLAGS`
+environment variable. The sample does not set `ARMFVP_FLAGS` in its
+`CMakeLists.txt`; the base `ARMFVP_FLAGS` come from the selected Zephyr board's
+`board.cmake`.
+
+Config Zephyr Corstone320 FVP
+<!-- RUN setup_corstone320 -->
+```
+export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
+export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
+export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256"
+```
+
 ### Export the model
 
 Export a quantized INT8 MobileNetV2 model with Ethos-U85 delegation:
 
-<!-- RUN test_mv2_ethos-u85_generate_pte -->
+<!-- RUN test_ethos-u85_generate_pte -->
 ```
 python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler --model_name=mv2_untrained --quantize --delegate --target=ethos-u85-256 --output=mv2_u85_256.pte
 ```
 
 ### Build
 
-<!-- RUN test_mv2_ethos-u85_build -->
+<!-- RUN test_ethos-u85_build -->
 ```
 west build -b mps4/corstone320/fvp modules/lib/executorch/zephyr/samples/mv2-ethosu -- -DET_PTE_FILE_PATH=mv2_u85_256.pte
 ```
@@ -72,10 +103,25 @@ python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
 ```
 
 ```bash
-west build -b alif_e8_dk/ae822fa0e5597xx0/rtss_hp \
-    -S ethos-u55-enable \
+west build -d build -b ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp \
     modules/lib/executorch/zephyr/samples/mv2-ethosu -- \
     -DET_PTE_FILE_PATH=mv2_ethosu.pte
+```
+
+### Flash with west
+```bash
+west flash
+```
+If `west flash` does not work on your board, flash with Alif SE Tools instead;
+see the [Zephyr Alif tutorial](../../../docs/source/zephyr_alif_tutorial.md).
+
+### Run
+
+After flashing, make sure the board has `SW4=U4`, open the Zephyr
+console at 115200 baud, and reset again:
+
+```bash
+picocom -b 115200 /dev/ttyACM0
 ```
 
 ## Expected output

@@ -13,6 +13,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     create_shape_node,
     get_first_fake_tensor,
+    permute_fake_tensor_metadata,
 )
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -196,7 +197,7 @@ class RewriteUpsamplePass(ArmPass):
                     args=(x, list(self._NHWC_ORDER)),
                     from_node=node,
                 )
-                pre_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                pre_permute.meta["val"] = permute_fake_tensor_metadata(
                     get_first_fake_tensor(x), list(self._NHWC_ORDER)
                 )
 
@@ -255,9 +256,8 @@ class RewriteUpsamplePass(ArmPass):
                     args=(node_replacement, list(self._NHWC_INVERSE_ORDER)),
                     from_node=node,
                 )
-            post_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
-                node_replacement_fake,
-                list(self._NHWC_INVERSE_ORDER),
+            post_permute.meta["val"] = permute_fake_tensor_metadata(
+                node_replacement_fake, self._NHWC_INVERSE_ORDER
             )
             node.replace_all_uses_with(post_permute)
             graph_module.graph.erase_node(node)

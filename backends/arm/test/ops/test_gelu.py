@@ -6,6 +6,7 @@
 from typing import Tuple
 
 import torch
+
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -174,5 +175,39 @@ def test_gelu_vgf_quant(test_data: input_t1):
         Gelu.aten_op,
         Gelu.exir_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Gelu.test_data)
+@common.XfailIfNoCorstone300
+def test_gelu_a16w8_u55_INT(test_data: input_t1):
+    approximate, data = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        Gelu(approximate),
+        (data,),
+        Gelu.aten_op,
+        Gelu.exir_op,
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Gelu.test_data)
+@common.XfailIfNoCorstone320
+def test_gelu_a16w8_u85_INT(test_data: input_t1):
+    approximate, data = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        Gelu(approximate),
+        (data,),
+        Gelu.aten_op,
+        Gelu.exir_op,
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
     )
     pipeline.run()

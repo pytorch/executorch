@@ -195,9 +195,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  unsloth/gemma-4-31B-it-GGUF)
+    MODEL_NAME="gemma4_31b"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, unsloth/gemma-4-31B-it-GGUF"
     exit 1
     ;;
 esac
@@ -398,8 +406,9 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
 
   # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
   LOCAL_MODEL_DIR=$(mktemp -d)
-  INDUCTOR_CACHE=$(mktemp -d)
-  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE"' EXIT
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
 
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
@@ -413,12 +422,14 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
       --no-compile
   echo "::endgroup::"
 
-  # Copy tokenizer for the runner
+  # Copy tokenizer files for the runner and model-specific serving launcher.
   cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+  cp "$LOCAL_MODEL_DIR/tokenizer_config.json" "${OUTPUT_DIR}/tokenizer_config.json"
 
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"
   EXPORT_LOG=$(mktemp)
+  TMPDIR="$INDUCTOR_TMPDIR" \
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
   python -m executorch.examples.models.qwen3_5_moe.export \
       --prequantized "$LOCAL_MODEL_DIR" \
@@ -459,6 +470,58 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   exit 0
 fi
 
+# Gemma 4 31B: download the Q4_K_M GGUF and export via the GGUF loader
+if [ "$MODEL_NAME" = "gemma4_31b" ]; then
+  pip install safetensors huggingface_hub gguf
+
+  # Download GGUF + tokenizer outside OUTPUT_DIR to avoid uploading on failure.
+  # The unsloth GGUF repo ships the .gguf but no tokenizer.json, so the tokenizer
+  # is fetched from the (non-GGUF) unsloth/gemma-4-31B-it repo.
+  LOCAL_MODEL_DIR=$(mktemp -d)
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
+
+  GGUF_FILE="gemma-4-31B-it-Q4_K_M.gguf"
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it-GGUF', '${GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it', 'tokenizer.json', local_dir='${LOCAL_MODEL_DIR}')"
+  GGUF_PATH="${LOCAL_MODEL_DIR}/${GGUF_FILE}"
+
+  # Sanity check: run inference on the GGUF model
+  echo "::group::Inference sanity check"
+  INFERENCE_OUTPUT=$(python -m executorch.examples.models.gemma4_31b.inference \
+      --gguf "$GGUF_PATH" \
+      --tokenizer-path "${LOCAL_MODEL_DIR}/tokenizer.json" \
+      --prompt "What is the capital of France?" \
+      --max-new-tokens 32 \
+      --temperature 0 \
+      --no-compile 2>&1)
+  echo "$INFERENCE_OUTPUT"
+  if ! echo "$INFERENCE_OUTPUT" | grep -q "Paris"; then
+    echo "ERROR: Inference sanity check failed — expected 'Paris' in output"
+    exit 1
+  fi
+  echo "::endgroup::"
+
+  # Copy tokenizer for the runner
+  cp "${LOCAL_MODEL_DIR}/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  TMPDIR="$INDUCTOR_TMPDIR" \
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.gemma4_31b.export \
+      --gguf "$GGUF_PATH" \
+      --output-dir "${OUTPUT_DIR}"
+  echo "::endgroup::"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
+  exit 0
+fi
+
 MAX_SEQ_LEN_ARG=""
 if [ -n "$MAX_SEQ_LEN" ]; then
   MAX_SEQ_LEN_ARG="--max_seq_len $MAX_SEQ_LEN"
@@ -466,7 +529,7 @@ fi
 
 DEVICE_ARG=""
 if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
-  DEVICE_ARG="--device cuda"
+  DEVICE_ARG="--device cuda:0"
 elif [ "$DEVICE" = "metal" ]; then
   DEVICE_ARG="--device mps"
 fi

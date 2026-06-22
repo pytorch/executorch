@@ -115,6 +115,7 @@ EXECUTORCH_DEFINED_MODELS = [
     "lfm2_350m",  # hybrid
     "lfm2_700m",  # hybrid
     "lfm2_1_2b",  # hybrid
+    "lfm2_5_350m",  # hybrid
     "lfm2_5_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
@@ -133,6 +134,7 @@ HUGGING_FACE_REPO_IDS = {
     "lfm2_350m": "LiquidAI/LFM2-350M",
     "lfm2_700m": "LiquidAI/LFM2-700M",
     "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
+    "lfm2_5_350m": "LiquidAI/LFM2.5-350M",
     "lfm2_5_1_2b": "LiquidAI/LFM2.5-1.2B-Instruct",
 }
 
@@ -229,6 +231,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "vulkan_8w",
             "tosa_8a8w",
             "ethosu_8a8w",
+            "ethosu_16a8w",
             "vgf_8a8w",
             "vgf_16a8w",
         ],
@@ -843,9 +846,19 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.quantization.pt2e_quantize.value
         )
         quantizers.append(coreml_quantizer)
+    arm_quantize_scope = llm_config.quantization.quantize_scope.value
+    if (
+        arm_quantize_scope == "full"
+        and llm_config.backend.vgf.enabled
+        and llm_config.backend.vgf.quantize_scope.value != "full"
+    ):
+        arm_quantize_scope = llm_config.backend.vgf.quantize_scope.value
+
     if llm_config.backend.tosa.enabled and llm_config.quantization.pt2e_quantize:
         tosa_quantizer = get_tosa_quantizer(
-            llm_config.backend.tosa.version, llm_config.quantization.pt2e_quantize.value
+            llm_config.backend.tosa.version,
+            llm_config.quantization.pt2e_quantize.value,
+            arm_quantize_scope,
         )
         quantizers.append(tosa_quantizer)
     if llm_config.backend.ethosu.enabled and llm_config.quantization.pt2e_quantize:
@@ -853,7 +866,9 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.backend.ethosu.target,
             llm_config.backend.ethosu.system_config,
             llm_config.backend.ethosu.memory_mode,
+            llm_config.backend.ethosu.extra_flags,
             llm_config.quantization.pt2e_quantize.value,
+            arm_quantize_scope,
         )
         quantizers.append(ethosu_quantizer)
     if llm_config.backend.vgf.enabled and llm_config.quantization.pt2e_quantize:
@@ -1052,6 +1067,7 @@ def _to_edge_and_lower_llama_arm(
                 llm_config.backend.ethosu.target,
                 llm_config.backend.ethosu.system_config,
                 llm_config.backend.ethosu.memory_mode,
+                llm_config.backend.ethosu.extra_flags,
             )
         )
         modelname = f"ethosu_{modelname}"
@@ -1182,9 +1198,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
 
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm._passes.qnn_pass_manager`
         from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-            get_capture_program_passes,
-            get_passes_dependency_for_capture_program,
-            QnnPassManager,
+            get_qnn_pass_manager_cls,
         )
 
         # pyre-ignore
@@ -1214,8 +1228,9 @@ def _to_edge_and_lower_llama(  # noqa: C901
             )
 
         # TODO: Use to_edge_lower_and_transform for QNN
-        passes_job = get_capture_program_passes()
-        dep_table = get_passes_dependency_for_capture_program()
+        pass_manager_cls = get_qnn_pass_manager_cls()
+        passes_job = pass_manager_cls.get_capture_program_passes()
+        dep_table = pass_manager_cls.get_passes_dependency_for_capture_program()
         passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[ConvertBmmToMatmul][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
@@ -1230,7 +1245,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
             passes_job[SplitGraph] = setting
             dep_table[SplitGraph] = [FoldQDQ]
             dep_table[TagQuantIO] = [SplitGraph]
-        QnnPassManager().transform_for_to_edge_pipeline(
+        pass_manager_cls().transform_for_to_edge_pipeline(
             builder_exported_to_edge.edge_manager.exported_program(),
             dep_table=dep_table,
             passes_job=passes_job,

@@ -103,15 +103,21 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
-set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
+set(_aoti_cuda_shim_sources runtime/cuda_allocator.cpp runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
 # Only build CUDA shims when CUDA language/toolchain is available.
 if(CMAKE_CUDA_COMPILER)
-  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu
-       runtime/shims/int4_plain_mm.cu runtime/shims/sort.cu
-       runtime/shims/rand.cu
+  list(
+    APPEND
+    _aoti_cuda_shim_sources
+    runtime/shims/int4mm.cu
+    runtime/shims/int4_plain_mm.cu
+    runtime/shims/int6_plain_mm.cu
+    runtime/shims/int8_plain_mm.cu
+    runtime/shims/sort.cu
+    runtime/shims/rand.cu
   )
 endif()
 
@@ -179,9 +185,15 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp
+                               runtime/cuda_mutable_state.cpp
+)
+if(_cuda_is_msvc_toolchain)
+  # MSVC links aoti_cuda_backend into portable_lib without relying on C++
+  # symbols exported from aoti_cuda_shims.dll.
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_allocator.cpp)
+endif()
 
-# CUDA backend implementation
 add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
 
 target_include_directories(
@@ -204,7 +216,7 @@ endif()
 # consumers.
 target_link_libraries(
   aoti_cuda_backend PUBLIC cuda_platform extension_tensor CUDA::cudart
-                           ${CMAKE_DL_LIBS}
+                           extension_cuda ${CMAKE_DL_LIBS}
 )
 
 if(_cuda_is_msvc_toolchain)
@@ -227,3 +239,13 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+if(BUILD_TESTING)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+  et_cxx_test(
+    test_cuda_mutable_state SOURCES runtime/test/test_cuda_mutable_state.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
+endif()

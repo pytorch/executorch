@@ -22,7 +22,6 @@ from torch import nn
 
 from .gemma4_config import Gemma4Config
 from .gemma4_cross_decoder import Gemma4CrossDecoder
-from .gemma4_norm import RMSNorm
 from .gemma4_self_decoder import Gemma4SelfDecoder
 
 
@@ -53,7 +52,7 @@ class Gemma4TextModel(nn.Module):
         self.cross_decoder = Gemma4CrossDecoder(config)
 
         # Final normalization
-        self.norm = RMSNorm(
+        self.norm = nn.RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
         )

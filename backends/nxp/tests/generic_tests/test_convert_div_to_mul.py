@@ -4,30 +4,25 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
+
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     ConvertDivToMulPass,
     NeutronAtenPassManager,
 )
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    neutron_target_spec,
-    to_quantized_edge_program,
-)
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-)
-
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import (
     NonstaticDivLinearModel,
     StaticDivLinearModel,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import MulTensor
 
 
 @pytest.fixture(autouse=True)
@@ -185,66 +180,57 @@ def test_convert_div_to_mul_non_static_tensor(mocker, input_shape):
     )
 
 
-@pytest.mark.parametrize(
-    "input_shape, is_scalar",
-    [
-        pytest.param((8, 8, 16), True, id="3D, scalar."),
-        pytest.param((8, 8, 16), False, id="3D, tensor."),
-    ],
-)
-def test_convert_div_to_mul_full_pipeline(mocker, input_shape, is_scalar):
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+class StaticDivModel(torch.nn.Module):
+    def __init__(self, divisor):
+        super().__init__()
+        self.divisor = divisor
 
-    channels = input_shape[-1]
-    if is_scalar:
-        divisor = np.random.uniform(0, 15)
-        model = StaticDivLinearModel(
-            in_channels=channels, out_channels=channels, divisor=divisor
+    def forward(self, x):
+        return x / self.divisor
+
+
+class TestConvertDivToMul:
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            (23,),
+            (3, 7),
+            (2, 3, 4),
+            (1, 2, 3, 4),
+            (1, 2, 3, 2, 1),
+        ],
+        ids=lambda shape: f"{len(shape)}D",
+    )
+    @pytest.mark.parametrize(
+        "is_scalar",
+        [False, True],
+        ids=lambda is_scalar: "scalar" if is_scalar else "tensor",
+    )
+    def test__static__full_pipeline(
+        self, mocker, request, input_shape: tuple[int, ...], is_scalar: bool
+    ):
+        if is_scalar:
+            divisor = np.random.uniform(0.01, 15)
+            model = StaticDivModel(divisor)
+        else:
+            divisor = torch.rand(input_shape) + 0.01
+            model = StaticDivModel(divisor)
+
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            # By the time `DetailedGraphVerifier` checks for operators, the `div` has already been replaced by `mul`.
+            expected_delegated_ops={MulTensor: 1},
+            expected_non_delegated_ops={},
         )
-    else:
-        divisor = torch.rand(input_shape)
-        model = StaticDivLinearModel(
-            in_channels=channels, out_channels=channels, divisor=divisor
+
+        # Cover also negative values to thoroughly test the operator.
+        dataset_creator = RandomDatasetCreator(low=-2, high=2)
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            dataset_creator,
         )
-
-    # Run conversion
-    edge_program = to_quantized_edge_program(
-        model,
-        input_shape,
-    ).exported_program()
-
-    # Capture generated model
-    neutron_ir_model = converter_spy.spy_return[0]
-    edge_partition: ExportedProgram = converter_spy.call_args.args[1]
-
-    # Make sure `aten.div` was converted to `aten.mul`
-    assert not graph_contains_any_of_ops(
-        edge_partition.graph,
-        [
-            exir_ops.edge.aten.div.Tensor,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        edge_partition.graph,
-        [
-            exir_ops.edge.aten.mul.Tensor,
-        ],
-    )
-
-    # Make sure everything was converted.
-    assert not graph_contains_any_of_ops(
-        edge_program.graph,
-        [
-            exir_ops.edge.aten.mul.Tensor,
-            exir_ops.edge.aten.div.Tensor,
-        ],
-    )
-
-    example_input = (np.random.random(input_shape).astype(np.float32) * 50).astype(
-        np.int8
-    )
-    convert_run_compare(
-        edge_partition,
-        input_data=example_input,
-        tfl_model=neutron_ir_model,
-    )

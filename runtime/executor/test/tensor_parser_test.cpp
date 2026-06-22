@@ -229,6 +229,72 @@ TEST(ValidateTensorLayoutTest, DimOrderSizeMismatchIsRejected) {
       validateTensorLayout(s_tensor, layout.get()), Error::InvalidExternalData);
 }
 
+// Tests that validateTensorLayout rejects tensors with a null sizes field
+// instead of dereferencing it, which would SIGSEGV under the default
+// Verification::Minimal load mode.
+TEST(ValidateTensorLayoutTest, NullSizesIsRejected) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<uint8_t> dim_order = {0, 1, 2};
+
+  // Pass 0 for the sizes offset to serialize a null sizes field.
+  auto tensor_offset = executorch_flatbuffer::CreateTensor(
+      builder,
+      executorch_flatbuffer::ScalarType::FLOAT,
+      /*storage_offset=*/0,
+      /*sizes=*/0,
+      builder.CreateVector(dim_order));
+  builder.Finish(tensor_offset);
+
+  const auto* s_tensor = flatbuffers::GetRoot<executorch_flatbuffer::Tensor>(
+      builder.GetBufferPointer());
+  ASSERT_EQ(s_tensor->sizes(), nullptr);
+
+  std::vector<int32_t> expected_sizes = {2, 3, 4};
+  std::vector<uint8_t> expected_dim_order = {0, 1, 2};
+  auto layout = TensorLayout::create(
+      Span<const int32_t>(expected_sizes.data(), expected_sizes.size()),
+      Span<const uint8_t>(expected_dim_order.data(), expected_dim_order.size()),
+      ScalarType::Float);
+  ASSERT_TRUE(layout.ok());
+
+  EXPECT_EQ(
+      validateTensorLayout(s_tensor, layout.get()), Error::InvalidExternalData);
+}
+
+// Tests that validateTensorLayout rejects tensors with a null dim_order field
+// instead of dereferencing it, which would SIGSEGV under the default
+// Verification::Minimal load mode.
+TEST(ValidateTensorLayoutTest, NullDimOrderIsRejected) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<int32_t> sizes = {2, 3, 4};
+
+  // Pass 0 for the dim_order offset to serialize a null dim_order field.
+  auto tensor_offset = executorch_flatbuffer::CreateTensor(
+      builder,
+      executorch_flatbuffer::ScalarType::FLOAT,
+      /*storage_offset=*/0,
+      builder.CreateVector(sizes),
+      /*dim_order=*/0);
+  builder.Finish(tensor_offset);
+
+  const auto* s_tensor = flatbuffers::GetRoot<executorch_flatbuffer::Tensor>(
+      builder.GetBufferPointer());
+  ASSERT_EQ(s_tensor->dim_order(), nullptr);
+
+  std::vector<int32_t> expected_sizes = {2, 3, 4};
+  std::vector<uint8_t> expected_dim_order = {0, 1, 2};
+  auto layout = TensorLayout::create(
+      Span<const int32_t>(expected_sizes.data(), expected_sizes.size()),
+      Span<const uint8_t>(expected_dim_order.data(), expected_dim_order.size()),
+      ScalarType::Float);
+  ASSERT_TRUE(layout.ok());
+
+  EXPECT_EQ(
+      validateTensorLayout(s_tensor, layout.get()), Error::InvalidExternalData);
+}
+
 // Helper to construct a flatbuffers::Vector<int32_t> from raw data.
 // FlatBuffer vectors are stored as [uint32_t length][T elements...].
 namespace {

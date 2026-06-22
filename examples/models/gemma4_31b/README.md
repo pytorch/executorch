@@ -1,7 +1,7 @@
 # Gemma 4 31B-IT
 
 Text-only export of Google's Gemma 4 31B-IT to ExecuTorch with INT4/INT8
-weight quantization. Currently supports the CUDA backend.
+weight quantization. Supports CUDA and MLX (Apple Silicon) backends.
 
 For architecture and design notes see [model.md](model.md).
 
@@ -15,6 +15,7 @@ both export and eager inference:
 |---|---|---|
 | `quantize_and_save.py` | bf16 HF checkpoint → quantized checkpoint (one-time) | ~30 GB CPU |
 | `export.py --prequantized <dir>` | quantized checkpoint → `model.pte` + `model.ptd` | ~24 GB CPU + CUDA for packing |
+| `export.py --gguf <file> [--backend mlx]` | GGUF file (Q4_K_M, etc.) → `model.pte` + `model.ptd` | ~24 GB CPU |
 | `inference.py --prequantized <dir>` | quantized checkpoint → eager generation under `torch.compile` | ~24 GB GPU |
 | `inference.py --gguf <file>` | GGUF file (Q4_K_M, etc.) → eager generation | ~24 GB GPU |
 | `export.py --model-dir <hf>` | one-shot bf16 → quantize → export (no intermediate file) | ~30 GB CPU + CUDA for packing |
@@ -67,6 +68,8 @@ recipe. Writes `model.safetensors`, `config.json`, and `tokenizer.json` into
 
 ## Export to ExecuTorch
 
+### CUDA
+
 ```bash
 python examples/models/gemma4_31b/export.py \
     --prequantized ./gemma4_31b_int4 \
@@ -75,9 +78,60 @@ python examples/models/gemma4_31b/export.py \
     --backend cuda
 ```
 
-Writes `model.pte` and `model.ptd` into `--output-dir`.
+### MLX (Apple Silicon)
+
+```bash
+python examples/models/gemma4_31b/export.py \
+    --prequantized ./gemma4_31b_int4 \
+    --output-dir ./gemma4_31b_exports_mlx \
+    --max-seq-len 4096 \
+    --backend mlx
+```
+
+The same quantized checkpoint works for both backends. MLX exports a single
+method with dynamic sequence length and host-side sampling.
+
+Writes `model.pte` (and optionally `model.ptd`) into `--output-dir`.
+
+#### TurboQuant KV cache (long context, CUDA + MLX)
+
+For long-context inference, add `--turboquant` to swap the full-attention
+layers' KV cache for a TurboQuant TQ4 cache (4-bit codebook + nibble pack).
+This gives ~3.8× cache memory savings on the full-attention layers and lets
+you fit context lengths that wouldn't fit in bf16. Sliding-window layers are
+unaffected. Supported on both the CUDA and MLX backends.
+
+**Long context requires BOTH flags**: `--turboquant` *and* a larger
+`--max-seq-len`. Raising `--max-seq-len` alone keeps a bf16 KV cache, which does
+not fit at long context. On CUDA, `--turboquant` is what enables 128k: Gemma4-31B
+at `--max-seq-len 131072` runs within ~27 GiB at runtime (fits a 32 GB card).
+
+```bash
+# CUDA — 128k context (TQ4 KV)
+python examples/models/gemma4_31b/export.py \
+    --gguf ./gemma-4-31B-it-Q4_K_M.gguf \
+    --output-dir ./gemma4_31b_exports_128k \
+    --max-seq-len 131072 \
+    --backend cuda \
+    --turboquant
+```
+
+```bash
+# MLX (Apple Silicon)
+python examples/models/gemma4_31b/export.py \
+    --prequantized ./gemma4_31b_int4 \
+    --output-dir ./gemma4_31b_exports_mlx_tq \
+    --max-seq-len 65536 \
+    --backend mlx \
+    --turboquant
+```
+
+Use TurboQuant when you need context beyond what bf16 fits; otherwise leave it off.
 
 ## Eager inference
+
+The prompt is automatically wrapped with the Gemma 4 IT chat template.
+Pass `--raw-prompt` to skip template wrapping for pre-formatted input.
 
 ```bash
 python examples/models/gemma4_31b/inference.py \
@@ -102,12 +156,16 @@ model produces sensible text.
 ## Build the runner
 
 ```bash
-make gemma4_31b-cuda
+make gemma4_31b-cuda   # Linux — CUDA backend
+make gemma4_31b-mlx    # macOS — MLX backend (Apple Silicon)
 ```
 
 The binary lands at `cmake-out/examples/models/gemma4_31b/gemma4_31b_runner`.
 
 ## Run the .pte
+
+The prompt is automatically wrapped with the Gemma 4 IT chat template.
+Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
 
 ```bash
 ./gemma4_31b_runner \

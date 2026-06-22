@@ -12,6 +12,7 @@
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/executor/pte_data_map.h>
 #include <xnnpack.h>
+#include <cinttypes>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -179,6 +180,7 @@ Result<const uint8_t*> getConstantDataPtr(
     uint32_t buffer_idx,
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
+    uint64_t constant_data_size,
     const NamedDataMap* named_data_map,
     std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache,
@@ -220,10 +222,20 @@ Result<const uint8_t*> getConstantDataPtr(
           "Null constant_data entry at buffer_idx %u",
           buffer_idx);
       uint64_t offset = constant_data_offset->offset();
+      uint64_t entry_size = constant_data_offset->size();
       bool has_named_key = flatbuffers::IsFieldPresent(
           constant_data_offset, fb_xnnpack::ConstantDataOffset::VT_NAMED_KEY);
       // If there is no tensor name
       if (!has_named_key) {
+        ET_CHECK_OR_RETURN_ERROR(
+            offset <= constant_data_size &&
+                entry_size <= constant_data_size - offset,
+            InvalidProgram,
+            "ConstantDataOffset {offset=%" PRIu64 ", size=%" PRIu64
+            "} out of bounds for constant_data region of size %" PRIu64,
+            offset,
+            entry_size,
+            constant_data_size);
         return constant_data_ptr + offset;
       } else {
         ET_CHECK_OR_RETURN_ERROR(
@@ -266,6 +278,7 @@ Result<const uint8_t*> getConstantDataPtr(
     const fb_xnnpack::XNNTensorValue* tensor_value,
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
+    uint64_t constant_data_size,
     const NamedDataMap* named_data_map,
     std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache,
@@ -274,6 +287,7 @@ Result<const uint8_t*> getConstantDataPtr(
       tensor_value->constant_buffer_idx(),
       flatbuffer_graph,
       constant_data_ptr,
+      constant_data_size,
       named_data_map,
       freeable_buffers,
       weights_cache,
@@ -291,6 +305,7 @@ Error defineTensor(
     ValuePtr value,
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
+    uint64_t constant_data_size,
     std::vector<uint32_t>& input_ids,
     std::vector<uint32_t>& output_ids,
     CompileAllocator& allocator,
@@ -349,6 +364,7 @@ Error defineTensor(
       tensor_value,
       flatbuffer_graph,
       constant_data_ptr,
+      constant_data_size,
       named_data_map,
       freeable_buffers,
       weights_cache,
@@ -505,6 +521,7 @@ Error defineTensor(
               qparams->scale_buffer_idx(),
               flatbuffer_graph,
               constant_data_ptr,
+              constant_data_size,
               named_data_map,
               freeable_buffers,
               weights_cache,
@@ -552,6 +569,7 @@ Error defineTensor(
               qparams->scale_buffer_idx(),
               flatbuffer_graph,
               constant_data_ptr,
+              constant_data_size,
               named_data_map,
               freeable_buffers,
               weights_cache,
@@ -1988,6 +2006,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
   const uint8_t* constant_data = nullptr;
+  uint64_t constant_data_size = 0;
   size_t flatbuffer_size = 0;
   CompileAllocator compile_allocator;
 
@@ -1998,6 +2017,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
     flatbuffer_size = header->flatbuffer_size;
     constant_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
         header->constant_data_offset;
+    constant_data_size = header->constant_data_size;
   } else if (header.error() == Error::NotFound) {
     flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer);
     flatbuffer_size = num_bytes;
@@ -2089,6 +2109,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         value,
         flatbuffer_graph,
         constant_data,
+        constant_data_size,
         input_ids,
         output_ids,
         compile_allocator,

@@ -1,0 +1,15 @@
+{
+  "registries": [
+    {
+      "name": "arm",
+      "kind": "artifact",
+      "location": "https://artifacts.tools.arm.com/vcpkg-registry"
+    }
+  ],
+  "requires": {
+    "arm:tools/open-cmsis-pack/cmsis-toolbox": "2.13.0",
+    "arm:compilers/arm/arm-none-eabi-gcc": "14.3.1",
+    "arm:tools/kitware/cmake": "4.2.1",
+    "arm:tools/ninja-build/ninja": "1.13.2"
+  }
+}

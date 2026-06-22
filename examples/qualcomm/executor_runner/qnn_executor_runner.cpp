@@ -143,6 +143,13 @@ DEFINE_int32(
     "This is a runtime option and will override the profile level set during AOT. "
     "Refer to QnnExecuTorchProfileLevel under qc_compiler_spec.fbs for more info.");
 
+DEFINE_string(
+    heap_profiling_path,
+    "",
+    "Output path for QNN heap-profiling dump. "
+    "Empty disables heap profiling. "
+    "This is a runtime option and will override the path set during AOT.");
+
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
 using executorch::etdump::ETDumpGen;
@@ -201,6 +208,8 @@ class CustomMemory {
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
+  QnnExecuTorchBackendRegister(
+      reinterpret_cast<void*>(executorch::runtime::register_backend));
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -213,7 +222,7 @@ int main(int argc, char** argv) {
   }
 
   // Set runtime options
-  executorch::runtime::BackendOptions<8> backend_options;
+  executorch::runtime::BackendOptions<9> backend_options;
   if (!gflags::GetCommandLineFlagInfoOrDie("log_level").is_default) {
     ET_LOG(Info, "Setting runtime log level: %d", FLAGS_log_level);
     ET_CHECK_MSG(
@@ -290,6 +299,18 @@ int main(int argc, char** argv) {
             Error::Ok,
         "Failed to set backend options: %s",
         QNN_RUNTIME_LPAI_CORE_SELECTION);
+  }
+  if (!gflags::GetCommandLineFlagInfoOrDie("heap_profiling_path").is_default) {
+    ET_LOG(
+        Info,
+        "Setting runtime heap_profiling_path: %s",
+        FLAGS_heap_profiling_path.c_str());
+    ET_CHECK_MSG(
+        backend_options.set_option(
+            QNN_RUNTIME_HEAP_PROFILING_PATH,
+            FLAGS_heap_profiling_path.c_str()) == Error::Ok,
+        "Failed to set backend options: %s",
+        QNN_RUNTIME_HEAP_PROFILING_PATH);
   }
   ET_CHECK_MSG(
       set_option(QNN_BACKEND, backend_options.view()) == Error::Ok,
