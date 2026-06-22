@@ -46,6 +46,8 @@ from torch._export.pass_base import PassType
 
 from torch.export import ExportedProgram
 
+import torch
+
 
 class XNNPACKRemoveCloneOpsTransform(RemoveCloneOpsTransform):
     def __init__(self):
@@ -98,14 +100,18 @@ class XNNPACKPassManager:
         Returns a transformed ExportedProgram
         """
         ep = self.exported_program
-        for pass_ in self.passes:
-            if issubclass(pass_, XNNPACKPass):
-                transform_pass = pass_(ep)
-            elif issubclass(pass_, ExportPass):
-                transform_pass = pass_()
-            else:
-                raise RuntimeError(
-                    f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
-                )
-            ep = _transform(ep, transform_pass)
+
+        with torch.fx.experimental._config.patch(
+            backed_size_oblivious=True
+        ):
+            for pass_ in self.passes:
+                if issubclass(pass_, XNNPACKPass):
+                    transform_pass = pass_(ep)
+                elif issubclass(pass_, ExportPass):
+                    transform_pass = pass_()
+                else:
+                    raise RuntimeError(
+                        f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
+                    )
+                ep = _transform(ep, transform_pass)
         return ep
