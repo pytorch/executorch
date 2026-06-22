@@ -26,7 +26,7 @@ static void asan_unpoison_buffer(void* base, size_t size) {
 #endif
 
 ArmMemoryAllocator::ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
-    : MemoryAllocator(size, base_address), used_(0) {
+    : MemoryAllocator(size, base_address) {
 #if defined(EXECUTORCH_ENABLE_ADDRESS_SANITIZER)
   asan_poison_buffer(base_address, size);
 #endif
@@ -34,35 +34,16 @@ ArmMemoryAllocator::ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
 
 void* ArmMemoryAllocator::allocate(size_t size, size_t alignment) {
   void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
-  if (ret != nullptr) {
 #if defined(EXECUTORCH_ENABLE_ADDRESS_SANITIZER)
+  if (ret != nullptr) {
     asan_unpoison_buffer(ret, size);
-#endif
-    // Align with the same code as in MemoryAllocator::allocate() to keep
-    // used_ "in sync" As alignment is expected to be power of 2 (checked by
-    // MemoryAllocator::allocate()) we can check it the lower bits
-    // (same as alignment - 1) is zero or not.
-    if ((size & (alignment - 1)) == 0) {
-      // Already aligned.
-      used_ += size;
-    } else {
-      used_ = (used_ | (alignment - 1)) + 1 + size;
-    }
   }
+#endif
   return ret;
-}
-
-size_t ArmMemoryAllocator::used_size() const {
-  return used_;
-}
-
-size_t ArmMemoryAllocator::free_size() const {
-  return executorch::runtime::MemoryAllocator::size() - used_;
 }
 
 void ArmMemoryAllocator::reset() {
   executorch::runtime::MemoryAllocator::reset();
-  used_ = 0;
 #if defined(EXECUTORCH_ENABLE_ADDRESS_SANITIZER)
   asan_poison_buffer(base_address(), size());
 #endif
