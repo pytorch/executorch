@@ -252,7 +252,7 @@ class TestTQ4Sdpa(unittest.TestCase):
                 self._run_test(1, H_q, H_kv, 64, 64, 128, is_causal=True)
 
     def test_gqa_8x_head_dim_256(self):
-        """GQA 8:1 with head_dim=256 — matches Qwen 3.5 MoE config."""
+        """GQA 8:1 with head_dim=256."""
         self._run_test(1, 16, 2, 1, 128, 256)
         L = 64
         mask = torch.tril(torch.ones(1, 1, L, L, dtype=torch.bool, device="cuda"))
@@ -374,8 +374,8 @@ class TestTQ4Sdpa(unittest.TestCase):
                 float_mask,
             )
 
-    def test_qwen35_moe_config(self):
-        """Qwen 3.5 MoE: head_dim=256, GQA 16:2, decode + prefill."""
+    def test_config_hd256_gqa_16_2(self):
+        """head_dim=256, GQA 16:2, decode + prefill."""
         self._run_test(1, 16, 2, 1, 256, 256)
         self._run_test(1, 16, 2, 128, 128, 256, is_causal=True)
 
@@ -443,9 +443,8 @@ class TestTQ4Sdpa(unittest.TestCase):
     # Every test above calls tq4_sdpa WITHOUT kv_len and WITHOUT
     # mask_is_causal, so they only exercise the kv_len=None fallback
     # (full-Lk loop) at short KV. The cases below drive the actual
-    # long-context paths used in production by the Gemma-4 31B global
-    # layers (head_dim=512, GQA 8:4) and Qwen 3.5 MoE (head_dim=256,
-    # GQA 16:2):
+    # long-context paths at two representative GQA shapes (head_dim=512
+    # GQA 8:4, and head_dim=256 GQA 16:2):
     #   * the on-device kv_len scalar that bounds the KV loop to the
     #     filled context (decode), and
     #   * the mask_is_causal per-tile causal block-skip (prefill).
@@ -466,7 +465,7 @@ class TestTQ4Sdpa(unittest.TestCase):
     # of a kv_len-long context) there are two ways to place the causal
     # triangle. PyTorch F.sdpa(is_causal=True) uses TOP-LEFT alignment
     # (query row i attends to keys [0, i]) -- wrong for a KV cache. This
-    # kernel and gemma4_31b/model.py::_build_masks use BOTTOM-RIGHT
+    # kernel (and a KV-cache decoder's mask builder) use BOTTOM-RIGHT
     # alignment: query row i is absolute position (kv_len - Lq + i) and
     # attends to keys [0, kv_len - Lq + i]. So the reference below builds
     # an explicit bottom-right mask (q_pos >= cache_pos) rather than
@@ -498,12 +497,12 @@ class TestTQ4Sdpa(unittest.TestCase):
         causal mask) must confine attention to ``[0, kv_len)``.
 
         ``causal=True`` builds a bottom-right-aligned mask (the Lq queries
-        are the last Lq positions of a kv_len-long context), mirroring the
-        production ``q_pos >= cache_pos`` mask in gemma4_31b/model.py
-        ``_build_masks`` and the kernel's ``(kv_len - Lq) + seq_pos`` block
-        bound. We deliberately do NOT use ``F.sdpa(is_causal=True)`` for the
-        reference: PyTorch aligns is_causal top-left when L_q < L_kv, while
-        this kernel (and the model) align bottom-right.
+        are the last Lq positions of a kv_len-long context), mirroring a
+        KV-cache decoder's ``q_pos >= cache_pos`` mask and the kernel's
+        ``(kv_len - Lq) + seq_pos`` block bound. We deliberately do NOT use
+        ``F.sdpa(is_causal=True)`` for the reference: PyTorch aligns
+        is_causal top-left when L_q < L_kv, while this kernel (and such a
+        decoder) align bottom-right.
         """
         torch.manual_seed(seed)
         centroids, boundaries, rotation = _make_codebook_and_rotation(D)
@@ -592,6 +591,7 @@ class TestTQ4Sdpa(unittest.TestCase):
         Lq,
         kv_len,
         buffer_len,
+        B=1,
         seed=42,
     ):
         """Verify split-K output matches fused kernel output for same inputs.
@@ -606,7 +606,6 @@ class TestTQ4Sdpa(unittest.TestCase):
         boundaries = boundaries.cuda()
         rotation = rotation.cuda()
 
-        B = 1
         k = torch.randn(B, H_kv, buffer_len, D, dtype=torch.bfloat16, device="cuda")
         v = torch.randn(B, H_kv, buffer_len, D, dtype=torch.bfloat16, device="cuda")
         # Add garbage tail to ensure split-K respects kv_len bound
@@ -671,22 +670,85 @@ class TestTQ4Sdpa(unittest.TestCase):
             cos,
             0.99,
             f"Split-K vs Fused cosine {cos:.5f} < 0.99 "
-            f"(H_q={H_q} H_kv={H_kv} D={D} kv_len={kv_len})",
+            f"(B={B} H_q={H_q} H_kv={H_kv} D={D} kv_len={kv_len})",
         )
 
-    def test_kv_len_clamp_decode_gemma_global(self):
-        """Decode (Lq=1) kv_len clamp at Gemma-4 31B global-layer shape
-        (head_dim=512, GQA 8:4). N=8192 leaves a 24k garbage tail in a 32k
-        buffer (clamp guard); N=32768 fills the buffer (full 32k loop)."""
+    def test_splitk_batch2(self):
+        """Split-K decode (Lq=1) with batch size B=2.
+
+        Exercises the per-batch indexing in the split-K and reduce kernels
+        (b = pid_bh // H_grid). Split-K output must match the fused-kernel
+        path for the same inputs."""
+        self._run_splitk_vs_fused_test(
+            H_q=16, H_kv=2, D=256, Lq=1, kv_len=512, buffer_len=1024, B=2
+        )
+
+    def test_splitk_noncontiguous_query(self):
+        """Split-K decode (Lq=1, B=2) with a non-contiguous query.
+
+        The host wrapper rotates Q (Q @ Pi^T) before launching the kernel,
+        so a strided query must yield the same result as its contiguous
+        copy. Builds a query whose last-dim stride is 2 by slicing a padded
+        buffer, then checks it matches the contiguous query."""
+        H_q, H_kv, D, kv_len, B = 16, 2, 256, 512, 2
+        torch.manual_seed(42)
+        centroids, boundaries, rotation = _make_codebook_and_rotation(D)
+        centroids = centroids.cuda()
+        boundaries = boundaries.cuda()
+        rotation = rotation.cuda()
+
+        k = torch.randn(B, H_kv, kv_len, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H_kv, kv_len, D, dtype=torch.bfloat16, device="cuda")
+        k_packed, k_norms = _compress(k, boundaries, rotation)
+        v_packed, v_norms = _compress(v, boundaries, rotation)
+
+        q = torch.randn(B, H_q, 1, D, dtype=torch.bfloat16, device="cuda")
+        # Non-contiguous alias with identical values (last-dim stride 2).
+        q_pad = torch.empty(B, H_q, 1, D, 2, dtype=torch.bfloat16, device="cuda")
+        q_pad[..., 0] = q
+        q_nc = q_pad[..., 0]
+        self.assertFalse(q_nc.is_contiguous(), "query should be non-contiguous")
+
+        kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+
+        def _run(query):
+            return self.tq4_sdpa(
+                query,
+                k_packed,
+                k_norms,
+                v_packed,
+                v_norms,
+                centroids,
+                rotation,
+                attn_mask=None,
+                is_causal=False,
+                scale=None,
+                kv_len=kv_len_t,
+                mask_is_causal=False,
+            )
+
+        out_contig = _run(q)
+        out_nc = _run(q_nc)
+
+        self.assertFalse(torch.isnan(out_nc).any(), "NaN in non-contiguous output")
+        cos = _cosine_sim(out_nc, out_contig)
+        self.assertGreater(
+            cos, 0.999, f"non-contiguous vs contiguous query cosine {cos:.5f}"
+        )
+
+    def test_kv_len_clamp_decode_hd512_gqa_8_4(self):
+        """Decode (Lq=1) kv_len clamp at a head_dim=512, GQA 8:4 shape.
+        N=8192 leaves a 24k garbage tail in a 32k buffer (clamp guard);
+        N=32768 fills the buffer (full 32k loop)."""
         for N in (8192, 32768):
             with self.subTest(N=N):
                 self._run_long_kv_test(
                     H_q=8, H_kv=4, D=512, Lq=1, kv_len=N, buffer_len=32768
                 )
 
-    def test_kv_len_clamp_decode_gemma_global_splitk(self):
-        """Split-K decode (Lq=1) at Gemma global shape with long KV.
-        Verifies split-K output matches BOTH (a) fp32 reference over first
+    def test_kv_len_clamp_decode_hd512_gqa_8_4_splitk(self):
+        """Split-K decode (Lq=1) at a head_dim=512, GQA 8:4 shape with long
+        KV. Verifies split-K output matches BOTH (a) fp32 reference over first
         kv_len positions AND (b) existing fused-kernel output (byte-identical
         within fp tolerance). Uses garbage tail as negative control."""
         for N in (8192, 32768):
@@ -707,18 +769,18 @@ class TestTQ4Sdpa(unittest.TestCase):
                     H_q=8, H_kv=4, D=512, Lq=1, kv_len=N, buffer_len=32768
                 )
 
-    def test_kv_len_clamp_decode_qwen(self):
-        """Decode (Lq=1) kv_len clamp at Qwen 3.5 MoE shape
-        (head_dim=256, GQA 16:2)."""
+    def test_kv_len_clamp_decode_hd256_gqa_16_2(self):
+        """Decode (Lq=1) kv_len clamp at a head_dim=256, GQA 16:2 shape."""
         for N in (8192, 32768):
             with self.subTest(N=N):
                 self._run_long_kv_test(
                     H_q=16, H_kv=2, D=256, Lq=1, kv_len=N, buffer_len=32768
                 )
 
-    def test_kv_len_clamp_decode_qwen_splitk(self):
-        """Split-K decode (Lq=1) at Qwen shape with long KV.
-        Verifies split-K output matches BOTH fp32 reference AND fused kernel."""
+    def test_kv_len_clamp_decode_hd256_gqa_16_2_splitk(self):
+        """Split-K decode (Lq=1) at a head_dim=256, GQA 16:2 shape with long
+        KV. Verifies split-K output matches BOTH fp32 reference AND fused
+        kernel."""
         for N in (8192, 32768):
             with self.subTest(N=N):
                 _ = self._run_long_kv_test(
@@ -734,12 +796,12 @@ class TestTQ4Sdpa(unittest.TestCase):
                     H_q=16, H_kv=2, D=256, Lq=1, kv_len=N, buffer_len=32768
                 )
 
-    def test_mask_is_causal_prefill_gemma_global(self):
-        """Chunked prefill (Lq>1) with mask_is_causal at Gemma global shape.
-        The Lq queries are the last Lq of a kv_len-long context; the
-        per-tile causal block-skip plus bottom-right mask must match the
-        fp32 causal reference over the first kv_len positions. A garbage
-        tail beyond kv_len also exercises the clamp."""
+    def test_mask_is_causal_prefill_hd512_gqa_8_4(self):
+        """Chunked prefill (Lq>1) with mask_is_causal at a head_dim=512,
+        GQA 8:4 shape. The Lq queries are the last Lq of a kv_len-long
+        context; the per-tile causal block-skip plus bottom-right mask must
+        match the fp32 causal reference over the first kv_len positions. A
+        garbage tail beyond kv_len also exercises the clamp."""
         for Lq, kv_len, buf in ((256, 4096, 8192), (2048, 8192, 16384)):
             with self.subTest(Lq=Lq, kv_len=kv_len):
                 self._run_long_kv_test(
@@ -752,8 +814,9 @@ class TestTQ4Sdpa(unittest.TestCase):
                     causal=True,
                 )
 
-    def test_mask_is_causal_prefill_qwen(self):
-        """Chunked prefill (Lq>1) with mask_is_causal at Qwen shape."""
+    def test_mask_is_causal_prefill_hd256_gqa_16_2(self):
+        """Chunked prefill (Lq>1) with mask_is_causal at a head_dim=256,
+        GQA 16:2 shape."""
         for Lq, kv_len, buf in ((256, 4096, 8192), (2048, 8192, 16384)):
             with self.subTest(Lq=Lq, kv_len=kv_len):
                 self._run_long_kv_test(
@@ -766,11 +829,11 @@ class TestTQ4Sdpa(unittest.TestCase):
                     causal=True,
                 )
 
-    def test_kv_len_none_fallback_qwen(self):
+    def test_kv_len_none_fallback_hd256_gqa_16_2(self):
         """Regression: the kv_len=None fallback (HAS_KV_LEN False, full-Lk
-        loop) that the Qwen path relies on still matches the fp32 reference.
-        This guards the original behavior the kv_len feature must preserve
-        for callers that pass neither kv_len nor mask_is_causal."""
+        loop) still matches the fp32 reference. This guards the original
+        behavior the kv_len feature must preserve for callers that pass
+        neither kv_len nor mask_is_causal."""
         self._run_long_kv_test(
             H_q=16,
             H_kv=2,
@@ -787,9 +850,9 @@ class TestTQ4Sdpa(unittest.TestCase):
         "128k case is heavy for the 24GB CI runner; set TQ4_RUN_128K=1 to run",
     )
     def test_kv_len_clamp_128k(self):
-        """Full 131072-entry buffer (Qwen shape). (a) kv_len=8192 with a
-        ~123k garbage tail — the clamp keeps decode O(context) and never
-        touches the tail; (b) kv_len=131072 — correctness at true 128k
+        """Full 131072-entry buffer (head_dim=256, GQA 16:2). (a) kv_len=8192
+        with a ~123k garbage tail — the clamp keeps decode O(context) and
+        never touches the tail; (b) kv_len=131072 — correctness at true 128k
         scale. Gated behind TQ4_RUN_128K because the fp32 reference for (b)
         needs >~6GB and CI runs on a 24GB A10G."""
         self._run_long_kv_test(

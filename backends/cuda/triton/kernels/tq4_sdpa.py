@@ -175,8 +175,8 @@ def _tq4_sdpa_fwd_kernel_body(
     # chunk it is chunk_end. This makes the global-layer attention O(context)
     # rather than O(max_seq_len) — the empty tail of the cache is never touched.
     # kv_len is read from a GPU scalar so the bound updates across CUDA-graph
-    # replays (decode is graph-captured). When not provided (HAS_KV_LEN False,
-    # e.g. qwen) it falls back to Lk, preserving the original behavior exactly.
+    # replays (decode is graph-captured). When not provided (HAS_KV_LEN False)
+    # it falls back to Lk, preserving the original behavior exactly.
     if HAS_KV_LEN:
         kv_len = tl.load(KV_LEN_ptr)
     else:
@@ -191,8 +191,8 @@ def _tq4_sdpa_fwd_kernel_body(
     # prefill analogue of the kv_len decode clamp and ~halves the causal-triangle
     # work. For decode (Lq=1, max(seq_pos)=0) this evaluates to kv_len, so decode
     # is byte-identical. Applied only when MASK_IS_CAUSAL (the caller guarantees a
-    # causal mask, e.g. Gemma's full-attention layers); otherwise the full kv_len
-    # bound is kept, which is safe for an arbitrary mask.
+    # causal mask); otherwise the full kv_len bound is kept, which is safe for an
+    # arbitrary mask.
     loop_end = kv_len
     if MASK_IS_CAUSAL:
         max_q_pos = (kv_len - Lq) + tl.max(seq_pos)
@@ -714,8 +714,9 @@ def tq4_sdpa(
         is_causal: apply causal masking (requires L_Q == L_KV)
         scale: softmax scale applied to ``Q @ K^T``. Defaults to
             ``1/sqrt(HEAD_DIM)`` when ``None``. Models that handle their
-            own normalization (e.g. Gemma 4 with QK-norm uses ``1.0``)
-            should pass an explicit value.
+            own normalization (e.g. QK-norm models that fold the
+            ``1/sqrt(d)`` factor into the trained weights, which then use
+            ``1.0``) should pass an explicit value.
         kv_len: Optional GPU int scalar = number of valid (filled) KV
             positions. When provided, the inner KV loop is bounded to
             ``kv_len`` instead of the full pre-allocated ``L_KV``, making
@@ -876,7 +877,7 @@ def tq4_sdpa(
 # Split-K decode kernel (flash-decoding) for TQ4
 # ==============================================================================
 # When L_q == 1 with GQA, the standard kernel launches only
-# ceil(num_groups / BLOCK_M) * B * H_kv CTAs (e.g. 4 for gemma global 8:4).
+# ceil(num_groups / BLOCK_M) * B * H_kv CTAs (e.g. 4 for a B=1, 8:4 GQA shape).
 # Split-K partitions the KV sequence across many CTAs for better occupancy,
 # then reduces partial results in a second kernel.
 
@@ -1201,7 +1202,7 @@ def _launch_tq4_decode_splitk(
         H_grid = H_KV
         # Size BLOCK_M to the actually-packed rows (L_q * num_groups; for decode
         # L_q=1 so == num_groups), rounded up to the bf16 tensor-core MMA minimum
-        # of 16 -- instead of a fixed 64. Gemma4 global has num_groups=8, so the
+        # of 16 -- instead of a fixed 64. For example with num_groups=8, the
         # old BLOCK_M=64 left 56/64 M-rows idle (the QK/PV MMAs still computed all
         # 64 rows) AND made acc[BLOCK_M, HEAD_DIM] fp32 = 64*512*4 = 128 KB/CTA,
         # which blows past the register file and spills to local memory. Matching

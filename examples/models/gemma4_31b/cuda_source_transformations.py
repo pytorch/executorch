@@ -100,9 +100,10 @@ def _turboquant_attention_forward(
         self.kv_cache.centroids,
         self.kv_cache.rotation,
         attn_mask,
-        False,  # is_causal — attn_mask already encodes causal masking
+        False,  # is_causal: attn_mask already encodes causal masking
         self.scaling,
         kv_len,
+        True,  # mask_is_causal: Gemma full-attention mask is standard causal
     )
 
     y = y.transpose(1, 2).contiguous().view(B, T, self.n_heads * self.head_dim)
