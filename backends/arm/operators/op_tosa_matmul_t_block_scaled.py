@@ -53,7 +53,13 @@ class MatMulTBlockScaledVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [A_data, B_data],
-            [ts.DType.FP8E4M3, ts.DType.FP8E5M2],
+            [
+                ts.DType.FP4E2M1,
+                ts.DType.FP6E2M3,
+                ts.DType.FP6E3M2,
+                ts.DType.FP8E4M3,
+                ts.DType.FP8E5M2,
+            ],
             self.tosa_spec,
         )
         validate_valid_dtype(
