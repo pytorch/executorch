@@ -75,7 +75,7 @@ void layer_norm(
   // For small normalized dimensions, fall back to the portable scalar
   // implementation since SIMD vectorization setup/tail-handling overhead
   // exceeds the benefit for small N.
-  constexpr size_t kSmallNThreshold = 256;
+  constexpr size_t kSmallNThreshold = 1024;
   if (N < kSmallNThreshold) {
     layer_norm_scalar<CTYPE>(
         input_data,
