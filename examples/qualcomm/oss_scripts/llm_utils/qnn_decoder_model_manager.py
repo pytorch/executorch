@@ -171,16 +171,6 @@ class QnnLLMEdgeManager:
         calibration_data,
         tokenizer_path,
     ):
-        try:
-            from executorch.examples.qualcomm.oss_scripts.llm_utils.eval_decoder_model_qnn import (
-                GraphModuleCalibrationWrapper,
-            )
-            from lm_eval.evaluator import simple_evaluate
-        except ImportError:
-            raise ImportError(
-                "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
-            )
-
         tokenizer = get_tokenizer(tokenizer_path)
         logging.info(
             f"Calibrating with tasks: {calibration_tasks}, limit: {calibration_limit}, calibration_data: {calibration_data}, tokenizer_path: {tokenizer_path}, seq_length: {self.config.max_seq_len}"
@@ -211,6 +201,17 @@ class QnnLLMEdgeManager:
             max_len=calibration_seq_length,
         )
         if calibration_tasks is not None and calibration_limit is not None:
+            # Import lazily so only import lm_eval when user use it.
+            try:
+                from executorch.examples.qualcomm.oss_scripts.llm_utils.eval_decoder_model_qnn import (
+                    GraphModuleCalibrationWrapper,
+                )
+                from lm_eval.evaluator import simple_evaluate
+            except ImportError:
+                raise ImportError(
+                    "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
+                )
+
             eval_wrapper = GraphModuleCalibrationWrapper(
                 model=self.graph_module,
                 tokenizer=tokenizer,

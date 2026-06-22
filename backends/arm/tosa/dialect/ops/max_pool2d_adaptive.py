@@ -10,7 +10,7 @@ from executorch.backends.arm.tosa.dialect.ops.max_pool2d import (
     compute_max_pool2d_output_shape,
     validate_max_pool2d_dtype,
 )
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
     get_context_spec,
@@ -35,7 +35,7 @@ def _is_directly_representable(
     return remainder in (0, 1)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "MAX_POOL2D_ADAPTIVE(Tensor input, SymInt[2] kernel, SymInt[2] stride, SymInt[4] pad) -> Tensor",
     TosaSpecification.all_profiles_for_version("1.1"),
 )

@@ -6,7 +6,7 @@
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops._common import validate_nan_mode
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -51,7 +51,7 @@ def _validate_argmax_dtype(dtype: torch.dtype) -> None:
     raise TosaValueError(f"Unsupported dtype {dtype} for ARGMAX", op="ARGMAX")
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     'ARGMAX(Tensor input, int axis, *, str nan_mode="PROPAGATE") -> Tensor',
     TosaSpecification.all_versions_and_profiles(),
 )
