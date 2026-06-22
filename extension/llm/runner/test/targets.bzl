@@ -18,6 +18,18 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "test_jinja_chat_formatter",
+        srcs = ["test_jinja_chat_formatter.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:runner_lib",
+        ],
+        # runner_lib drops jinja2cpp/chat_templates on Apple (jinja2cpp does not
+        # compile under libc++), so this test cannot build there. CXX/Android
+        # only; fbcode builds it via its own path.
+        platforms = ["CXX", "ANDROID"],
+    )
+
+    runtime.cxx_test(
         name = "test_text_llm_runner",
         srcs = ["test_text_llm_runner.cpp"],
         deps = [
