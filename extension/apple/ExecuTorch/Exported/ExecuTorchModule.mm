@@ -263,11 +263,11 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
     std::vector<std::string> dataFilePathsVector;
     if (dataFilePaths != nil) {
       for (NSString *dataFile in dataFilePaths) {
-        dataFilePathsVector.emplace_back(dataFile.UTF8String);
+        dataFilePathsVector.emplace_back(dataFile.UTF8String ?: "");
       }
     }
     _module = std::make_unique<Module>(
-      filePath.UTF8String,
+      filePath.UTF8String ?: "",
       dataFilePathsVector,
       static_cast<Module::LoadMode>(loadMode)
     );
@@ -418,7 +418,7 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 - (nullable NSArray<ExecuTorchValue *> *)executeMethod:(NSString *)methodName
                                             withInputs:(NSArray<ExecuTorchValue *> *)values
                                                  error:(NSError **)error {
-  const char *methodNameString = methodName.UTF8String;
+  const char *methodNameString = methodName.UTF8String ?: "";
   __block auto errorCode = Error::Ok;
   [values enumerateObjectsUsingBlock:^(ExecuTorchValue *value, NSUInteger index, BOOL *stop) {
     errorCode = _module->set_input(methodNameString, toEValue(value), index);
