@@ -22,6 +22,12 @@ from executorch.backends.qualcomm.export_utils import (
     SimpleADB,
 )
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
+from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
+from executorch.examples.qualcomm.oss_scripts.llama.dataset import (
+    DatasetBuilder,
+    MessageSample,
+    preprocess_encoder_inputs,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     ATTENTION_SINK_EVICTOR,
     AUDIO_ENCODER,
@@ -32,13 +38,17 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     TOK_EMBEDDING,
     VISION_ENCODER,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
-    INFERENCE_REGISTRY,
-    retrieve_info_from_pte,
+from executorch.examples.qualcomm.oss_scripts.llama.inference import (
+    DecoderInference,
+    EncoderInference,
+    ModelInference,
 )
-
+from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
+from executorch.examples.qualcomm.oss_scripts.llama.utils import (
+    retrieve_info_from_pte,
+    safe_dataloader_iter,
+)
 from executorch.examples.qualcomm.utils import make_output_dir
-
 from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 from pytorch_tokenizers.tiktoken import TiktokenTokenizer
@@ -92,13 +102,14 @@ class EvalBase(ABC):
         pte_paths: Dict,
         runtime_tokenizer_path: str,
         is_multimodal: bool,
-        modality_inputs=None,
+        dataset_builder: Optional[DatasetBuilder] = None,
     ):
         self.args = args
         self.pte_paths = pte_paths
         self.runtime_tokenizer_path = runtime_tokenizer_path
         self.qnn_sdk = os.getenv("QNN_SDK_ROOT")
         self.is_multimodal = is_multimodal
+        self.dataset_builder = dataset_builder
 
         self.device_workspace = (
             f"/data/local/tmp/{getpass.getuser()}/executorch/static_llm"
@@ -124,9 +135,6 @@ class EvalBase(ABC):
         self.runner_base_cmd = self._init_runner_base_cmd()
 
     def _init_runner_base_cmd(self):
-        """
-        If a runner cmd could be shared across all EvalBase class, place it here to reduce redundant code.
-        """
         args = self.args
         base_cmd = ""
         if args.enable_x86_64:
@@ -181,7 +189,6 @@ class EvalBase(ABC):
                     "--shared_buffer",
                 ]
             )
-
             if self.is_multimodal:
                 encoder_path = self.pte_paths[
                     next(
@@ -214,6 +221,45 @@ class EvalBase(ABC):
 
         return base_cmd
 
+    def _init_multimodal_base_cmd(self, modality_inputs):
+        args = self.args
+        modality_input_cmd = []
+        modality_input_files = []
+        for modality, inputs in modality_inputs.items():
+            if not all([inputs[0], modality in MODALITY_INPUT_FLAG_MAP]):
+                continue
+
+            input_list_filename = f"{modality}_input_list.txt"
+            input_list_file, input_files = generate_inputs(
+                self.args.artifact,
+                input_list_filename=input_list_filename,
+                inputs=inputs,
+                prefix_input_filename=modality,
+            )
+            modality_input_files.append(input_list_file)
+            modality_input_files.extend(input_files)
+            if args.enable_x86_64:
+                input_list_filename = f"{self.args.artifact}/{input_list_filename}"
+                # Rewrite the input list so each entry is an absolute path,
+                # because the x86 runner does not cd into the artifact directory.
+                with open(input_list_file, "r") as f:
+                    lines = f.readlines()
+                with open(input_list_file, "w") as f:
+                    for line in lines:
+                        tokens = line.rstrip("\n").split(" ")
+                        f.write(
+                            " ".join(
+                                f"{self.args.artifact}/{t}" if t else t for t in tokens
+                            )
+                            + "\n"
+                        )
+            modality_input_cmd.append(
+                f"--{MODALITY_INPUT_FLAG_MAP[modality]} {input_list_filename}"
+            )
+        modality_input_cmd = " ".join(modality_input_cmd)
+
+        return modality_input_cmd, modality_input_files
+
     @final
     def _get_adb(self):
         args = self.args
@@ -231,11 +277,6 @@ class EvalBase(ABC):
 
     @abstractmethod
     def run(self) -> Any:
-        # Performs execution and comparison.
-        # Returns:
-        #   Any: The result of execution.
-        #   The type of the return value are determined by the implementation.
-        #   The caller can return anything and handle it themselves.
         pass
 
 
@@ -243,41 +284,18 @@ class DefaultEval(EvalBase):
     def __init__(
         self,
         args,
+        decoder_model_config,
         pte_paths,
         runtime_tokenizer_path,
         is_multimodal,
-        modality_inputs=None,
+        dataset_builder,
     ):
         super().__init__(
-            args, pte_paths, runtime_tokenizer_path, is_multimodal, modality_inputs
+            args, pte_paths, runtime_tokenizer_path, is_multimodal, dataset_builder
         )
         self.adb = self._get_adb()
         self.inference_speed = 0
-
-        modality_input_cmd = []
-        self.modality_input_files = []
-        for modality, inputs in modality_inputs.items():
-            if not all([inputs[0], modality in MODALITY_INPUT_FLAG_MAP]):
-                continue
-
-            # Specify the input list filename by it's modality.
-            # This helps distinguish inputs coming from different encoders,
-            # especially in models like OMI where vision and audio encoders coexist.
-            input_list_filename = f"{modality}_input_list.txt"
-            input_list_file, input_files = generate_inputs(
-                self.args.artifact,
-                input_list_filename=input_list_filename,
-                inputs=inputs,
-                prefix_input_filename=modality,
-            )
-            self.modality_input_files.append(input_list_file)
-            self.modality_input_files.extend(input_files)
-            if args.enable_x86_64:
-                input_list_filename = f"{self.args.artifact}/{input_list_filename}"
-            modality_input_cmd.append(
-                f"--{MODALITY_INPUT_FLAG_MAP[modality]} {input_list_filename}"
-            )
-        self.modality_input_cmd = " ".join(modality_input_cmd)
+        self.decoder_model_config = decoder_model_config
 
         lookahead_args = " ".join(
             [
@@ -301,26 +319,39 @@ class DefaultEval(EvalBase):
                 f"--seq_len {args.max_seq_len}",
             ]
         )
-        if self.is_multimodal:
-            self.runner_cmd = " ".join(
-                [
-                    self.runner_cmd,
-                    self.modality_input_cmd,
-                ]
-            )
 
-    def run(self, prompt):
+        self.modality_input_files = []
+
+    def run(self, prompt, audio_paths=None, image_paths=None):
         multi_prompts = " ".join([f'--prompt "{p}"' for p in prompt])
 
         model_output_holder = []
         performance_holder = []
 
+        runner_cmd = self.runner_cmd
+
+        if self.is_multimodal:
+            modality_inputs = preprocess_encoder_inputs(
+                self.decoder_model_config,
+                self.args.decoder_model,
+                audio_paths or [],
+                image_paths or [],
+            )
+            modality_input_cmd, self.modality_input_files = (
+                self._init_multimodal_base_cmd(modality_inputs)
+            )
+            runner_cmd = " ".join(
+                [
+                    runner_cmd,
+                    modality_input_cmd,
+                ]
+            )
+
         if self.args.enable_x86_64:
-            # x86 emulator is intended for CI and not performance. Check only the first few tokens.
             seq_len = min(self.args.max_seq_len, 320 if self.is_multimodal else 32)
             runner_cmd = " ".join(
                 [
-                    self.runner_cmd,
+                    runner_cmd,
                     multi_prompts,
                     f"--seq_len {seq_len}",
                 ]
@@ -341,7 +372,7 @@ class DefaultEval(EvalBase):
             )
         else:
             runner_cmd = " ".join(
-                [self.runner_cmd, multi_prompts, f"--seq_len {self.args.max_seq_len}"]
+                [runner_cmd, multi_prompts, f"--seq_len {self.args.max_seq_len}"]
             )
 
             extra_files = [self.runtime_tokenizer_path]
@@ -373,8 +404,8 @@ class DefaultEval(EvalBase):
 
 class SqnrEval(EvalBase):
     """
-    SQNR Evaluator will only evaluate the given prompt's logit output.
-    It won't evaluate the generated token's logit.
+    SQNR Evaluator: compares FP32 nn.Module logits vs on-device QNN logits.
+
     """
 
     def __init__(
@@ -383,16 +414,24 @@ class SqnrEval(EvalBase):
         get_example_inputs: Callable,
         args,
         pte_paths,
-        tokenizer,
+        tokenizer_wrapper: TokenizerWrapper,
+        decoder_model_config: LLMModelConfig,
         runtime_tokenizer_path,
         is_multimodal,
+        dataset_builder,
+        encoder: Optional[Union[torch.nn.Module, torch.fx.GraphModule]] = None,
+        tok_embedding: Optional[Union[torch.nn.Module, torch.fx.GraphModule]] = None,
+        audio_token_id: Optional[int] = None,
+        image_token_id: Optional[int] = None,
     ):
-        super().__init__(args, pte_paths, runtime_tokenizer_path, is_multimodal)
+        super().__init__(
+            args, pte_paths, runtime_tokenizer_path, is_multimodal, dataset_builder
+        )
         self.inference_speed = 0
         self.source_model = source_model
         self.get_example_inputs = get_example_inputs
         self.adb = self._get_adb()
-        self.tokenizer = tokenizer
+        self.tokenizer = tokenizer_wrapper.tokenizer
         self.enable_x86_64 = args.enable_x86_64
         self.max_seq_length = args.max_seq_len
         self.enable_attention_sink = args.use_attention_sink is not None
@@ -404,6 +443,20 @@ class SqnrEval(EvalBase):
         self.logits_zero_point = pte_meta_info["logits_zero_point"]
         self.kv_io_bit_width = pte_meta_info["kv_io_bit_width"]
 
+        self._inference = ModelInference(
+            decoder=DecoderInference(
+                get_example_inputs=get_example_inputs,
+                audio_token_id=audio_token_id,
+                image_token_id=image_token_id,
+                max_context_len=self.max_seq_length,
+                use_i64_token=args.embedding_quantize is not None,
+            ),
+            encoder=EncoderInference() if encoder is not None else None,
+        )
+        self._encoder_module = encoder
+        self._tok_embedding_module = tok_embedding
+        self.decoder_model_config = decoder_model_config
+
         if args.model_mode != "kv":
             logging.warning(
                 f"Current Sqnr Eval does not support {args.model_mode}, switching to kv mode."
@@ -413,7 +466,6 @@ class SqnrEval(EvalBase):
             logging.warning(
                 f"The pte provided has a max_context_len {pte_max_context_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
             )
-            # If attention sink is enabled, we can use a longer sequence length than max_context_len in the PTE
             if (
                 not self.enable_attention_sink
                 and pte_max_context_len < self.max_seq_length
@@ -423,24 +475,36 @@ class SqnrEval(EvalBase):
                 )
                 self.max_seq_length = pte_max_context_len
 
-    def run(self, prompt):
-        result = INFERENCE_REGISTRY[True](
-            get_example_inputs=self.get_example_inputs,
-            prompt=prompt,
-            module=self.source_model,
-            tokenizer=self.tokenizer,
-            max_seq_len=self.max_seq_length,
-            use_i64_token=self.args.embedding_quantize is not None,
-            collect_logits=True,
+    def run(self, message: MessageSample, audio_paths=None, image_paths=None):
+        dataloaders = self.dataset_builder.build_runtime_dataloader(message)
+        audio_dataloader = dataloaders.get(AUDIO_ENCODER)
+        vision_dataloader = dataloaders.get(VISION_ENCODER)
+        text_dataloader = dataloaders[TEXT_DECODER]
+        audio_batch, vision_batch, text_batch = next(
+            iter(
+                zip(
+                    safe_dataloader_iter(audio_dataloader),
+                    safe_dataloader_iter(vision_dataloader),
+                    text_dataloader,
+                )
+            )
         )
-        golden_logits = result.logits
+        token_ids = text_batch["token_ids"]
+        input_ids, attn_mask = text_batch["input_ids"], text_batch["attention_mask"]
+        encoder_inputs = (audio_batch or vision_batch or {}).get("inputs")
+        logits = self._inference.predict_step(
+            self.source_model,
+            input_ids=input_ids,
+            attn_mask=attn_mask,
+            tok_embedding=self._tok_embedding_module,
+            encoder_module=self._encoder_module,
+            encoder_inputs=encoder_inputs,
+        )
 
         input_file_name = f"{self.args.artifact}/input_tokens.raw"
-
-        # Make sure the encode param aligns with encode param under all register_inference function.
-        # This ensures the token used for device is same as token used for nn.Module.
-        inps = torch.tensor(self.tokenizer.encode(prompt, bos=True, eos=False))
-        inps = inps.to(torch.uint64).numpy()
+        prompt_len = len(token_ids[0])
+        golden_logits = logits[:, :prompt_len, :]
+        inps = input_ids[0, :prompt_len].to(torch.uint64).numpy()
         inps.tofile(input_file_name)
 
         assert (
@@ -450,10 +514,29 @@ class SqnrEval(EvalBase):
         output_logits_holder = []
         output_performance_holder = []
 
+        runner_cmd = self.runner_base_cmd
+
+        if self.is_multimodal:
+            modality_inputs = preprocess_encoder_inputs(
+                self.decoder_model_config,
+                self.args.decoder_model,
+                audio_paths or [],
+                image_paths or [],
+            )
+            modality_input_cmd, self.modality_input_files = (
+                self._init_multimodal_base_cmd(modality_inputs)
+            )
+            runner_cmd = " ".join(
+                [
+                    runner_cmd,
+                    modality_input_cmd,
+                ]
+            )
+
         if self.enable_x86_64:
             runner_cmd = " ".join(
                 [
-                    self.runner_base_cmd,
+                    runner_cmd,
                     f"--seq_len {inps.size + 1}",
                     f"--eval_mode {EVAL_MODE['kv']}",
                     "--temperature 0",
@@ -461,7 +544,6 @@ class SqnrEval(EvalBase):
                     f"--tokenized_prompt {input_file_name}",
                 ]
             )
-
             subprocess.run(
                 runner_cmd,
                 shell=True,
@@ -485,7 +567,7 @@ class SqnrEval(EvalBase):
         else:
             runner_cmd = " ".join(
                 [
-                    self.runner_base_cmd,
+                    runner_cmd,
                     f"--seq_len {inps.size + 1}",
                     f"--eval_mode {EVAL_MODE['kv']}",
                     "--temperature 0",
@@ -493,8 +575,12 @@ class SqnrEval(EvalBase):
                     f"--tokenized_prompt {os.path.basename(input_file_name)}",
                 ]
             )
+            extra_files = [input_file_name, self.runtime_tokenizer_path]
+            if self.is_multimodal:
+                extra_files.extend(self.modality_input_files)
             self.adb.push(
-                inputs=[], files=[input_file_name, self.runtime_tokenizer_path]
+                inputs=[],
+                files=extra_files,
             )
             self.adb.execute(custom_runner_cmd=runner_cmd)
             self.adb.pull(
@@ -528,9 +614,7 @@ class SqnrEval(EvalBase):
 
 class TaskEval(EvalBase):
     class QnnRunnerEvalWrapper(EagerEvalWrapper):
-        """
-        A wrapper class to run tasks with QNN on device.
-        """
+        """Runs lm_eval tasks on device via QNN runner."""
 
         def __init__(  # noqa: C901
             self,
@@ -579,7 +663,6 @@ class TaskEval(EvalBase):
                 logging.warning(
                     f"The pte provided has a max_context_len {pte_max_context_len}, which is different from --max_seq_len {self.max_seq_length} provided to the script, please ensure this is desired."
                 )
-                # If attention sink is enabled, we can use a longer sequence length than max_context_len in the PTE
                 if (
                     not self.enable_attention_sink
                     and pte_max_context_len < self.max_seq_length
@@ -591,14 +674,12 @@ class TaskEval(EvalBase):
 
             if not self.enable_x86_64:
                 self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
-            # n seq len = n-1 cache len, so we set len(inps) = n-1 during _model_call
             # pyre-ignore
             super().__init__(None, tokenizer, self.max_seq_length - 1)
 
         def _model_call(self, inps):
             _, seq_len = inps.shape
             input_file_name = f"{self.args.artifact}/input_tokens.raw"
-            # This is the dtype required by runtime tokenizer.
             inps = inps.to(torch.uint64).numpy()
             inps.tofile(input_file_name)
             output_logits_holder = []
@@ -635,7 +716,6 @@ class TaskEval(EvalBase):
                     output_holder=output_performance_holder,
                     host_performance_path=self.host_performance_path,
                 )
-
             else:
                 runner_cmd = " ".join(
                     [
