@@ -183,7 +183,10 @@ Tensor& bucketize_tensor_out(
       InvalidArgument,
       out);
   ET_KERNEL_CHECK(
-      context, tensors_have_same_shape(self, out), InvalidArgument, out);
+      context,
+      resize_tensor(out, self.sizes()) == Error::Ok,
+      InvalidArgument,
+      out);
   ET_KERNEL_CHECK(
       context, tensors_have_same_dim_order(self, out), InvalidArgument, out);
   ET_KERNEL_CHECK(
