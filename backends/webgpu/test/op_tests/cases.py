@@ -30,12 +30,12 @@ from executorch.backends.webgpu.test.ops.add.test_add import (
     AddModule,
     AddSelfModule,
 )
-from executorch.backends.webgpu.test.ops.mul.test_mul import (
+from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
 )
 
-from executorch.backends.webgpu.test.ops.permute.test_permute import (
+from executorch.backends.webgpu.test.ops.test_permute import (
     CONFIGS as _PERMUTE_CONFIGS,
     PermuteModule,
 )
@@ -45,31 +45,31 @@ from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _ramp,
     RmsNormModule,
 )
-from executorch.backends.webgpu.test.ops.select.test_select import (
+from executorch.backends.webgpu.test.ops.test_select import (
     CONFIGS as _SELECT_CONFIGS,
     SelectModule,
 )
-from executorch.backends.webgpu.test.ops.sigmoid.test_sigmoid import (
+from executorch.backends.webgpu.test.ops.test_sigmoid import (
     _det_input as _sigmoid_det_input,
     N as _SIGMOID_N,
     SigmoidModule,
 )
 
-from executorch.backends.webgpu.test.ops.slice.test_slice import (
+from executorch.backends.webgpu.test.ops.test_slice import (
     CONFIGS as _SLICE_CONFIGS,
     SliceModule,
 )
 
-from executorch.backends.webgpu.test.ops.squeeze.test_squeeze import (
+from executorch.backends.webgpu.test.ops.test_squeeze import (
     CONFIGS as _SQUEEZE_CONFIGS,
     SqueezeModule,
 )
 
-from executorch.backends.webgpu.test.ops.unsqueeze.test_unsqueeze import (
+from executorch.backends.webgpu.test.ops.test_unsqueeze import (
     CONFIGS as _UNSQUEEZE_CONFIGS,
     UnsqueezeModule,
 )
-from executorch.backends.webgpu.test.ops.view_copy.test_view_copy import (
+from executorch.backends.webgpu.test.ops.test_view_copy import (
     CONFIGS as _VIEW_CONFIGS,
     ViewModule,
 )
