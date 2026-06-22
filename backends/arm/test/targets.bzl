@@ -58,6 +58,7 @@ def define_arm_tests():
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
+        "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
         "misc/tosa_dialect/test_tosa_resize.py",
         "misc/test_tosa_spec.py",
