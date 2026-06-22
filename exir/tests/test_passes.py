@@ -2310,6 +2310,8 @@ class TestPasses(unittest.TestCase):
 
         m = Module()
         n = m.to_copy_count()
+        # CSE deduplicates the two identical branches, reducing 4 _to_copy ops to 2
+        n_after_cse = 2
         input = torch.randn([2, 3, 4, 5]).to(memory_format=torch.contiguous_format)
 
         # 1. vanilla export, no edge ops
@@ -2328,7 +2330,7 @@ class TestPasses(unittest.TestCase):
         _do_checks(
             edge_prog.graph_module.code,
             edge_aten_op_str,
-            n,
+            n_after_cse,
             [aten_op_str, edge_dim_order_op_str],
         )
 
@@ -2338,11 +2340,12 @@ class TestPasses(unittest.TestCase):
         _do_checks(
             new_res.graph_module.code,
             edge_aten_op_str,
-            n,
+            n_after_cse,
             [aten_op_str, edge_dim_order_op_str],
         )
 
         # 2b. let's try with dim order enabled, we should see edge dim order ops but not edge aten ops
+        # CSE does not deduplicate dim_order ops (non-aten ops are treated as unsafe)
         edge_prog_dim_order = to_edge(
             ep, compile_config=exir.EdgeCompileConfig(_skip_dim_order=False)
         )._edge_programs["forward"]

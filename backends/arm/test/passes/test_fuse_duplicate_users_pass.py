@@ -20,8 +20,9 @@ class ModuleWithOps(torch.nn.Module):
 
 
 class FuseaAvgPool(ModuleWithOps):
+    # CSE deduplicates the 3 identical avg(x) calls to 1 during to_edge
     ops_before_pass = {
-        "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 3,
+        "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
     }
     ops_after_pass = {"executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1}
 
@@ -34,8 +35,9 @@ class FuseaAvgPool(ModuleWithOps):
 
 
 class FuseAvgPoolChain(ModuleWithOps):
+    # CSE deduplicates the 3 identical avg(avg(x)) chains to 1 chain of 2 during to_edge
     ops_before_pass = {
-        "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 6,
+        "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 2,
     }
     ops_after_pass = {"executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 2}
 
