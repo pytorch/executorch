@@ -119,6 +119,7 @@ endif()
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
+  ${QNN_EXECUTORCH_ROOT_DIR}/runtime/pal/include
 )
 
 set(_qnn_schema__srcs backends/qualcomm/serialization/qc_compiler_spec.fbs)
@@ -175,6 +176,7 @@ add_library(qnn_logger STATIC)
 add_library(qnn_manager STATIC)
 add_library(qnn_mem_manager STATIC)
 add_library(qnn_op_package_manager STATIC)
+add_library(qnn_pal STATIC)
 add_library(qnn_profiler STATIC)
 add_library(qnn_schema INTERFACE ${_qnn_schema__outputs})
 add_library(qnn_sys_function_interface INTERFACE)
@@ -188,11 +190,12 @@ add_library(wrappers STATIC)
 target_link_libraries(wrappers PRIVATE qnn_executorch_logging)
 target_link_libraries(
   qnn_implementation PRIVATE qnn_function_interface qnn_executorch_logging
-                             ${CMAKE_DL_LIBS}
+                             qnn_pal ${CMAKE_DL_LIBS}
 )
 target_link_libraries(
-  qnn_sys_implementation PRIVATE qnn_sys_function_interface
-                                 qnn_executorch_logging ${CMAKE_DL_LIBS}
+  qnn_sys_implementation
+  PRIVATE qnn_sys_function_interface qnn_executorch_logging qnn_pal
+          ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_executorch_logging PRIVATE qnn_schema)
 target_link_libraries(qnn_profiler PRIVATE qnn_executorch_logging)
@@ -243,6 +246,7 @@ target_link_libraries(
           qnn_context
           qnn_graph
           qnn_mem_manager
+          qnn_pal
 )
 
 target_link_libraries(
@@ -297,7 +301,7 @@ else()
   )
 endif()
 target_link_libraries(
-  shared_buffer PRIVATE qnn_executorch_logging ${CMAKE_DL_LIBS}
+  shared_buffer PRIVATE qnn_executorch_logging qnn_pal ${CMAKE_DL_LIBS}
 )
 #
 # add linker option

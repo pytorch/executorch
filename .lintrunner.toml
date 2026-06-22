@@ -9,6 +9,7 @@ exclude_patterns = [
     '.github/scripts/**',
     'exir/serde/**',
     'exir/_serialize/generated/executorch_flatbuffer/**',
+    'devtools/bundled_program/serialize/generated/**',
 ]
 command = [
     'python',
@@ -41,6 +42,7 @@ exclude_patterns = [
     '**/third-party/**',
     'exir/serde/**',
     'exir/_serialize/generated/executorch_flatbuffer/**',
+    'devtools/bundled_program/serialize/generated/**',
 ]
 command = [
     'python',
@@ -194,7 +196,6 @@ exclude_patterns = [
 
     # Kernel areas to onboard separately.
     'kernels/optimized/**',
-    'kernels/portable/**',
 
     # Runtime areas to onboard incrementally.
     'runtime/backend/**',
@@ -243,6 +244,23 @@ command = [
     '--extra-arg=--suppress=duplicateBranch:*kernels/test/*',
     '--extra-arg=--suppress=useStlAlgorithm:*kernels/test/*',
     '--extra-arg=--suppress=functionStatic:*kernels/test/*',
+    # Portable kernels are referenced through generated registration tables,
+    # which cppcheck CTU does not see as direct C++ calls.
+    '--extra-arg=--suppress=unusedFunction:*kernels/portable/*',
+    # Cppcheck does not parse several ExecuTorch macro idioms used heavily in
+    # portable kernels, including empty macro arguments and printf-style macros
+    # concatenated into string literals.
+    '--extra-arg=--suppress=unknownMacro:*kernels/portable/*',
+    '--extra-arg=--suppress=syntaxError:*kernels/portable/*',
+    # Keep style-only portable-kernel findings scoped to this tree rather than
+    # rewriting broad helper code for lint-only advice.
+    '--extra-arg=--suppress=useStlAlgorithm:*kernels/portable/*',
+    '--extra-arg=--suppress=variableScope:*kernels/portable/*',
+    '--extra-arg=--suppress=constParameterReference:*kernels/portable/*',
+    '--extra-arg=--suppress=constParameterPointer:*kernels/portable/*',
+    '--extra-arg=--suppress=functionStatic:*kernels/portable/*',
+    '--extra-arg=--suppress=knownConditionTrueFalse:*kernels/portable/*',
+    '--extra-arg=--suppress=invalidFunctionArg:*kernels/portable/*',
     '--',
     '@{{PATHSFILE}}'
 ]
@@ -373,6 +391,7 @@ exclude_patterns = [
     '**/*.gif',
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
+    'examples/llm_server',
     'backends/cadence/utils/FACTO',
     'examples/cuda',
     'examples/qualcomm',

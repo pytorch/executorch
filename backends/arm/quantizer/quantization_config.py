@@ -21,7 +21,6 @@ from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
-    FixedQParamsQuantizationSpec,
     QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
@@ -295,6 +294,7 @@ class TOSAQuantizationConfig(QuantizationConfig):
         # MLETORCH-1853: Fix lazy import when moving files around
         from executorch.backends.arm.quantizer.quantization_annotator import (
             _fixed_input_qspec_ops,
+            _get_fixed_qparams_qspec,
         )
 
         if node is None or input_node is None:
@@ -305,28 +305,17 @@ class TOSAQuantizationConfig(QuantizationConfig):
                 return super().get_input_act_qspec(node, input_node)
             else:
                 return SharedQuantizationSpec((node.args[0], node))
-        elif node.target in _fixed_input_qspec_ops:
-
+        elif node.target == torch.ops.aten.grid_sampler.default:
+            if input_node != node.args[0]:
+                return None
             input_act_qspec = super().get_input_act_qspec(node, input_node)
-            if not hasattr(input_act_qspec, "dtype") or not isinstance(
-                input_act_qspec.dtype, torch.dtype
-            ):
-                raise ValueError(
-                    f"{node.target} requires an input activation quantization "
-                    "spec to use fixed input qparams."
-                )
-            dtype = getattr(input_act_qspec, "dtype", None)
-            num_bits = torch.iinfo(dtype).bits
-
-            qparams = _fixed_input_qspec_ops[node.target][num_bits]
-            return FixedQParamsQuantizationSpec(
-                dtype=dtype,
-                scale=qparams.scale,
-                zero_point=qparams.zero_point,
-                quant_min=input_act_qspec.quant_min,
-                quant_max=input_act_qspec.quant_max,
-                qscheme=input_act_qspec.qscheme,
-                is_dynamic=input_act_qspec.is_dynamic,
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_input_qspec_ops, input_act_qspec
+            )
+        elif node.target in _fixed_input_qspec_ops:
+            input_act_qspec = super().get_input_act_qspec(node, input_node)
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_input_qspec_ops, input_act_qspec
             )
 
         return super().get_input_act_qspec(node, input_node)
@@ -371,6 +360,19 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         if node is None:
             return super().get_output_act_qspec()
+        # MLETORCH-1853: Fix lazy import when moving files around
+        from executorch.backends.arm.quantizer.quantization_annotator import (
+            _fixed_output_qspec_ops,
+            _get_fixed_qparams_qspec,
+        )
+
+        if node.target in _fixed_output_qspec_ops:
+            output_act_qspec = super().get_output_act_qspec(node)
+            if output_act_qspec is None:
+                return None
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_output_qspec_ops, output_act_qspec
+            )
         if node.target not in self.SHARED_OUTPUT_ACT_QSPEC_PATTERNS:
             return super().get_output_act_qspec()
         if len(node.args) == 0:
