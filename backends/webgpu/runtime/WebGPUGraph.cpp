@@ -540,6 +540,13 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
       const int64_t* src = static_cast<const int64_t*>(in.data);
       std::vector<int32_t> narrowed(numel);
       for (size_t e = 0; e < numel; e++) {
+#ifndef NDEBUG
+        // Index tensors (tokens/positions) are far below int32 range in
+        // practice; assert in debug that the narrowing is lossless.
+        if (static_cast<int32_t>(src[e]) != src[e]) {
+          throw std::runtime_error("WebGPU: int64 index overflows int32");
+        }
+#endif
         narrowed[e] = static_cast<int32_t>(src[e]);
       }
       wgpuQueueWriteBuffer(

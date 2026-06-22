@@ -141,16 +141,19 @@ Error XNNWeightsCache::initialize_for_runtime(
     return Error::Ok;
   }
 
-  // Already loaded earlier this session; just reopen the write fd that
-  // save_packed_index() closed. Subsequent reserve_space can extend the
-  // file for any entries not in the saved trailer.
-  if (cache_loaded_) {
+  // Entries already in memory (from a prior load_packed_cache or a prior
+  // fresh-write session). Just reopen the write fd that save_packed_index
+  // closed; subsequent reserve_space can extend the file. Using metadata
+  // emptiness (not a separate flag) as the gate avoids a latent bug
+  // where fresh-write→save→re-init re-enters load_packed_cache and
+  // double-mmaps the same file.
+  if (!name_to_packed_data_metadata_.empty()) {
     packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR);
     return Error::Ok;
   }
 
-  // First init for this path: try to load the saved trailer; on success
-  // open a write fd for any new entries. If load fails, fall through to
+  // No in-memory entries: try to load the saved trailer; on success open
+  // a write fd for any new entries. If load fails, fall through to
   // fresh-write below.
   if (load_packed_cache()) {
     ET_LOG(
@@ -211,24 +214,31 @@ Result<std::vector<std::string>> XNNWeightsCache::finalize_for_runtime() {
   }
 
 #ifndef _WIN32
-  // Schedule async flush for newly added regions only.
-  // MS_ASYNC returns immediately; OS flushes in the background.
+  // Synchronous flush for newly added regions. MS_SYNC blocks until the
+  // dirty pages are written to disk and marked clean
   if (mmap_regions_.size() > mmap_regions_synced_) {
     size_t new_count = mmap_regions_.size() - mmap_regions_synced_;
     for (size_t i = mmap_regions_synced_; i < mmap_regions_.size(); ++i) {
       if (mmap_regions_[i].addr != nullptr) {
-        msync(mmap_regions_[i].addr, mmap_regions_[i].size, MS_ASYNC);
+        msync(mmap_regions_[i].addr, mmap_regions_[i].size, MS_SYNC);
       }
     }
     mmap_regions_synced_ = mmap_regions_.size();
     ET_LOG(
         Info,
-        "Scheduled async flush: %zu new regions (%zu total), %zu MB packed weights",
+        "Synced %zu new regions (%zu total), %zu MB packed weights",
         new_count,
         mmap_regions_.size(),
         packed_file_used_ / (1024 * 1024));
   }
 #endif
+
+  // Auto-trigger save_packed_index when this compile session added new
+  // packed entries to the file.
+  if (!packed_cache_path_.empty() &&
+      mmap_regions_.size() > mmap_regions_at_last_save_) {
+    (void)save_packed_index();
+  }
 
   return packed_data_names;
 }
@@ -280,7 +290,6 @@ void XNNWeightsCache::full_unload() {
   packed_data_ptrs_.clear();
   ptr_to_file_offset_.clear();
   file_ptr_to_region_index_.clear();
-  cache_loaded_ = false;
   if (packed_file_fd_ >= 0) {
     close(packed_file_fd_);
     packed_file_fd_ = -1;
@@ -346,6 +355,19 @@ size_t XNNWeightsCache::look_up(
   auto packed_weight_entry =
       context->name_to_packed_data_metadata_.find(weight_bias_name);
   if (packed_weight_entry == context->name_to_packed_data_metadata_.end()) {
+    return SIZE_MAX;
+  }
+  // XNNPACK upgrade detection: a ukernel whose implementation changed
+  // produces a different seed. Reject the cached entry so look_up_or_insert
+  // falls through to re-pack with the current ukernel.
+  if (packed_weight_entry->second.seed != cache_key->seed) {
+    ET_LOG(
+        Info,
+        "look_up: seed mismatch for '%s' (cached=0x%08x, current=0x%08x); "
+        "treating as miss for re-pack",
+        weight_bias_name.c_str(),
+        packed_weight_entry->second.seed,
+        cache_key->seed);
     return SIZE_MAX;
   }
   packed_weight_entry->second.in_current_runtime = true;
@@ -474,6 +496,7 @@ size_t XNNWeightsCache::look_up_or_insert(
     packed_data_metadata.ref_count =
         0; // ref_count is only incremented after finalizing for runtime
     packed_data_metadata.in_current_runtime = true;
+    packed_data_metadata.seed = cache_key->seed;
     context->name_to_packed_data_metadata_[weight_bias_name] =
         packed_data_metadata;
   } else {
@@ -524,7 +547,7 @@ Error XNNWeightsCache::save_packed_index() {
   std::vector<uint8_t> buf;
   uint32_t entry_count = 0;
 
-  // Index entry: [name_len:u32][name][file_offset:u64][data_size:u64]
+  // Index entry: [name_len:u32][name][file_offset:u64][data_size:u64][seed:u32]
   for (const auto& [name, meta] : name_to_packed_data_metadata_) {
     void* ptr = packed_data_ptrs_[meta.offset];
     auto it = ptr_to_file_offset_.find(ptr);
@@ -536,6 +559,7 @@ Error XNNWeightsCache::save_packed_index() {
     buf.insert(buf.end(), name.begin(), name.end());
     append_le(buf, static_cast<uint64_t>(it->second));
     append_le(buf, static_cast<uint64_t>(meta.data_size));
+    append_le(buf, meta.seed);
   }
 
   // Footer: [index_start:u64][entry_count:u32][magic:u32][version:u32]
@@ -559,11 +583,18 @@ Error XNNWeightsCache::save_packed_index() {
     ET_LOG(Error, "fsync of packed cache failed (errno=%d)", errno);
     // Continue — data is in page cache; durability is best-effort.
   }
+  // Log the final file size (= index_start + trailer) so production
+  // logs surface unbounded growth from orphan packs: a same-name
+  // re-pack leaves the old packed bytes in the file even though the
+  // trailer drops the old entry. Monitoring file_bytes over time tells
+  // us when GC or a size cap is needed.
+  const size_t file_bytes = index_start + buf.size();
   ET_LOG(
       Info,
-      "Saved packed weight index: %u entries at offset %zu",
+      "Saved packed weight index: %u entries at offset %zu, file_bytes=%zu",
       entry_count,
-      index_start);
+      index_start,
+      file_bytes);
 
   // Promote freshly-packed entries to from_load now that they're durable
   // on disk, so delete_packed_data preserves them across unload/reload.
@@ -576,13 +607,21 @@ Error XNNWeightsCache::save_packed_index() {
   }
 
   mmap_regions_at_last_save_ = mmap_regions_.size();
+  // Advance packed_file_used_ PAST the trailer we just wrote. Without
+  // this, the next reserve_space (e.g. another PTE's compile inheriting
+  // this path) would write at index_start, overwriting the trailer we
+  // just wrote and breaking cross-process cache reuse (next launch's
+  // load_packed_cache reads garbage at file end → invalid magic →
+  // ftruncate(0) → all data lost). The old trailer becomes orphan dead
+  // bytes; the new save will write a new trailer at end of the new
+  // packs, keeping the trailer always at file end.
+  packed_file_used_ = index_start + buf.size();
 
-  // Close the fd so the next init re-enters load_packed_cache and reads
-  // the trailer we just wrote.
-  if (close(packed_file_fd_) != 0) {
-    ET_LOG(Error, "close of packed cache fd failed (errno=%d)", errno);
-  }
-  packed_file_fd_ = -1;
+  // Keep fd open. Subsequent finalize_for_runtime calls auto-trigger
+  // save, which needs a live fd. Closing here would force every init to
+  // re-enter load_packed_cache + open_locked round-trip — unnecessary
+  // since the fd remains valid for both reads and writes through the
+  // process lifetime.
 #endif
   return Error::Ok;
 }
@@ -635,7 +674,8 @@ bool XNNWeightsCache::load_packed_cache() {
   for (uint32_t i = 0; i < entry_count && cursor + 4 <= end; ++i) {
     uint32_t name_len = read_le<uint32_t>(cursor);
     cursor += 4;
-    if (cursor + name_len + 16 > end) {
+    // [file_offset:u64][data_size:u64][seed:u32] = 20 bytes
+    if (cursor + name_len + 20 > end) {
       // Truncated entry header: trailer doesn't match the entry_count we
       // read from the footer, so the cache is corrupt. Apply the same
       // full rollback as the invalid-bounds branch below — otherwise the
@@ -660,6 +700,8 @@ bool XNNWeightsCache::load_packed_cache() {
     cursor += 8;
     uint64_t data_size = read_le<uint64_t>(cursor);
     cursor += 8;
+    uint32_t seed = read_le<uint32_t>(cursor);
+    cursor += 4;
 
     // Bounds check: the entry's bytes must lie entirely inside the
     // packed-data region.
@@ -692,13 +734,21 @@ bool XNNWeightsCache::load_packed_cache() {
     meta.ref_count = 0;
     meta.in_current_runtime = false;
     meta.from_load = true;
+    meta.seed = seed;
     name_to_packed_data_metadata_[name] = meta;
   }
 
-  cache_loaded_ = true;
-  packed_file_used_ = index_start;
+  // Start writing new packs AFTER the existing trailer (not at the
+  // trailer's offset). Writing at index_start would overwrite the
+  // valid trailer this PTE just loaded, breaking cross-process reuse
+  // (next launch reads garbage at file end → magic invalid →
+  // ftruncate(0) → all data lost). The old trailer becomes orphan
+  // bytes in the middle of the file; save_packed_index writes a new
+  // trailer at the new end including all entries (old + new).
+  packed_file_used_ = file_size;
   // In-memory state matches the on-disk trailer; the next save would be
-  // a no-op. Initialize watermark so save_packed_index short-circuits.
+  // a no-op until new packs arrive. Initialize watermark so
+  // save_packed_index short-circuits.
   mmap_regions_at_last_save_ = mmap_regions_.size();
   return true;
 #else
