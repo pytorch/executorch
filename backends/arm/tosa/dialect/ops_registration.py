@@ -7,9 +7,6 @@
 from typing import Callable, Iterable, List, ParamSpec, TypeVar
 
 from executorch.backends.arm.tosa.dialect.lib import register_tosa_dialect_op
-from executorch.backends.arm.tosa.dialect.real_impl import (
-    make_tosa_reference_model_impl,
-)
 
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -44,32 +41,10 @@ def register_fake_tosa_op(
 
     """
 
-    return register_tosa_op(op_schema, tosa_specs, include_real_impl=False)
-
-
-def register_tosa_op(
-    op_schema: str,
-    tosa_specs: Iterable[TosaSpecification],
-    include_real_impl: bool = True,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Register a TOSA op with fake/meta and optional real eager execution."""
-
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         # Only call register_tosa_dialect_op if the function hasn't been registered yet.
         if func not in _registered_tosa_ops_by_func:
-            real_impl = None
-            if include_real_impl:
-                real_impl = make_tosa_reference_model_impl(
-                    fake_func=func,
-                    op_schema=op_schema,
-                )
-
-            op_callable = register_tosa_dialect_op(
-                op_schema,
-                fake_func=func,
-                real_func=real_impl,
-                real_dispatch_key="CompositeExplicitAutograd",
-            )
+            op_callable = register_tosa_dialect_op(op_schema, func)
             _registered_tosa_ops_by_func[func] = op_callable
         else:
             op_callable = _registered_tosa_ops_by_func[func]

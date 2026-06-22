@@ -7,7 +7,7 @@ from typing import Literal
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.resize_utils import (
     calculate_tosa_resize_output_hw,
     get_tosa_resize_output_hw_validation_error,
@@ -68,7 +68,7 @@ def _validate_resize_parameters(input_hw, output_hw, scale, offset, border, tosa
         raise TosaValueError(validation_error, op="RESIZE")
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "RESIZE(Tensor input, SymInt[4] scale_factors, SymInt[2] offset, SymInt[2] border, *, str resize_mode) -> Tensor",  # schema
     TosaSpecification.all_versions_and_profiles(),  # target TOSA specifications
 )
