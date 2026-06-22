@@ -74,7 +74,7 @@ void bucketize_tensor_impl(
     KernelRuntimeContext& context,
     const Tensor& self,
     const Tensor& boundaries,
-    const bool& right,
+    bool right,
     Tensor& out) {
   auto in_load_fn = get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
       context, self, SupportedTensorDtypes::REALHBF16);
@@ -113,7 +113,7 @@ void bucketize_scalar_impl(
     KernelRuntimeContext& context,
     const Scalar self,
     const Tensor& boundaries,
-    const bool& right,
+    bool right,
     Tensor& out) {
   CTYPE_COMPUTE compute_val = utils::scalar_to<CTYPE_COMPUTE>(self);
 
