@@ -17,7 +17,7 @@ Maps HuggingFace model weights to the custom architecture, handling:
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 import torch
 
@@ -227,6 +227,7 @@ def convert_hf_to_custom(
     checkpoint_path: str,
     config: Gemma4Config,
     dtype: Optional[torch.dtype] = None,
+    get_weight_mapping: Optional[Callable] = False,
 ) -> Dict[str, torch.Tensor]:
     """Convert HuggingFace checkpoint to custom format.
 
@@ -242,7 +243,10 @@ def convert_hf_to_custom(
 
     hf_state_dict = _load_safetensors_weights(checkpoint_path)
 
-    mapping = _get_weight_mapping(config)
+    if not get_weight_mapping:
+        mapping = _get_weight_mapping(config)
+    else:
+        mapping = get_weight_mapping(config)
 
     converted_state_dict = {}
     unmapped_keys = []

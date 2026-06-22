@@ -666,6 +666,11 @@ def export_llama(args) -> None:
                 "Pass --calib_tasks to match the previous --tasks behavior."
             )
         raise RuntimeError("Please provide --eval_tasks to eval perplexity")
+    if args.decoder_model == "gemma4-e2b" and not args.embedding_quantize:
+        raise RuntimeError(
+            "gemma4-e2b requires --embedding-quantize: "
+            "per-layer embedding is too large for HTP quantization."
+        )
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
     ), f"Unknown decoder_model: {args.decoder_model}."
