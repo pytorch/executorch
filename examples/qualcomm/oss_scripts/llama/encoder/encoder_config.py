@@ -13,10 +13,10 @@ from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_quant_recipe
     InternVL3EncoderQuantRecipe,
     SmolVLMEncoderQuantRecipe,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.audio_encoder import (
+from executorch.examples.qualcomm.oss_scripts.llama.model.encoders.audio import (
     GraniteSpeechCTCEncoderWrapper,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.vision_encoder import (
+from executorch.examples.qualcomm.oss_scripts.llama.model.encoders.vision import (
     Idefics3VisionEncoder,
     InternVL3VisionEncoder,
 )

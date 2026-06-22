@@ -5,7 +5,7 @@
 # pyre-unsafe
 # LICENSE file in the root directory of this source tree.
 
-from .convert_weights import convert_hf_to_custom  # noqa: F401
+from .convert_weights import convert_hf_to_custom, convert_weights  # noqa: F401
 from .gemma4_attention import (  # noqa: F401
     apply_rotary_emb,
     apply_rotary_emb_single,

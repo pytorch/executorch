@@ -28,7 +28,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
     VISION_ENCODER,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import ModelArgs
+from executorch.examples.qualcomm.oss_scripts.llama.model import ModelArgs
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
     StaticLLMQuantRecipe,
 )

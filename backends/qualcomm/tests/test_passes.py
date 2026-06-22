@@ -162,9 +162,7 @@ class TestPasses(unittest.TestCase):
         from executorch.examples.qualcomm.oss_scripts.llama.masking_utils import (
             CausalAttentionMask,
         )
-        from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
-            LlamaAttention,
-        )
+        from executorch.examples.qualcomm.oss_scripts.llama.model import LlamaAttention
 
         # Initailize model config
         args = ModelArgs()

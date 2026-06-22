@@ -8144,6 +8144,14 @@ class TestExampleLLMScript(TestQNN):
                 hellaswag_acc_norm=None,
                 sqnr=10,
             ),
+            "gemma4-e2b": TestExampleLLMScript.LlmSpecs(
+                SM8650=20,
+                SM8750=30,
+                pte_size=4_500_000_000,  # 4.5 GB
+                wikitext_ppl=120,
+                hellaswag_acc_norm=None,
+                sqnr=10,
+            ),
             "glm-1_5b": TestExampleLLMScript.LlmSpecs(
                 SM8650=42,
                 SM8750=52,
@@ -8342,6 +8350,14 @@ class TestExampleLLMScript(TestQNN):
                     f"{self.llama_artifacts}/params.json",
                     "--tokenizer_model",
                     f"{self.llama_artifacts}/tokenizer.model",
+                ]
+            )
+
+        if self.model_name == "gemma4-e2b":
+            cmds.extend(
+                [
+                    "--embedding-quantize",
+                    "4,32",
                 ]
             )
 

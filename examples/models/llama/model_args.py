@@ -11,6 +11,7 @@ class ActFn(Enum):
     SILU = "silu"
     GELU = "gelu"
     GELU_APPROX = "gelu_approx"
+    GELU_APPROX_TANH = "gelu_pytorch_tanh"
 
     @classmethod
     def from_string(cls, value: str) -> "ActFn":
@@ -29,7 +30,7 @@ class ActFn(Enum):
             return F.silu
         elif self == ActFn.GELU:
             return F.gelu
-        elif self == ActFn.GELU_APPROX:
+        elif self == ActFn.GELU_APPROX or self == ActFn.GELU_APPROX_TANH:
             return partial(F.gelu, approximate="tanh")
         else:
             raise ValueError(f"Unsupported activation function: {self}")
@@ -172,6 +173,13 @@ class ModelArgs:
     # gemma2 attn and output soft capping
     final_logit_softcapping: Optional[float] = None
     attn_logit_softcapping: Optional[float] = None
+    # gemma4: head_dim override for full-attention layers (sliding layers keep head_dim).
+    global_head_dim: Optional[int] = None
+    # gemma4: per layer embedding
+    hidden_size_per_layer_input: Optional[int] = None
+    vocab_size_per_layer_input: Optional[int] = None
+    # gemma4: cross-decoder (KV-shared) layers use 2x hidden_dim in FeedForward.
+    use_double_wide_mlp: bool = False
 
     # rlformers forward-pass features for on-device model parity
     normalize_tok_embeddings: bool = False
@@ -225,3 +233,49 @@ class ModelArgs:
         # Convert string act_fn to enum if needed
         if isinstance(self.act_fn, str):
             self.act_fn = ActFn.from_string(self.act_fn)
+
+    def get_layer_type(self, layer_idx: int) -> str:
+        return self.layer_types[layer_idx]
+
+    def is_sliding_attention(self, layer_idx: int) -> bool:
+        return (
+            self.layer_types and self.get_layer_type(layer_idx) == "sliding_attention"
+        )
+
+    def get_head_dim(self, layer_idx: int) -> int:
+        if not self.global_head_dim:
+            return self.head_dim
+        if self.is_sliding_attention(layer_idx):
+            return self.head_dim
+        return self.global_head_dim
+
+    def is_kv_shared_layer(self, layer_idx: int) -> bool:
+        first_kv_shared_layer_idx = self.n_layers - self.num_kv_shared_layers
+        return layer_idx >= first_kv_shared_layer_idx and first_kv_shared_layer_idx > 0
+
+    def get_intermediate_size(self, layer_idx: int) -> int:
+        if self.use_double_wide_mlp and self.is_kv_shared_layer(layer_idx):
+            return self.hidden_dim * 2
+        return self.hidden_dim
+
+    def get_kv_shared_layer_index(self, layer_idx: int) -> Optional[int]:
+        if not self.is_kv_shared_layer(layer_idx):
+            return None
+        first_kv_shared_layer_idx = self.n_layers - self.num_kv_shared_layers
+        current_layer_type = self.get_layer_type(layer_idx)
+        for i in range(first_kv_shared_layer_idx - 1, -1, -1):
+            if self.get_layer_type(i) == current_layer_type:
+                return i
+        return None
+
+    def is_kv_donor_layer(self, layer_idx: int) -> bool:
+        if self.is_kv_shared_layer(layer_idx):
+            return False
+        first_kv_shared_layer_idx = self.n_layers - self.num_kv_shared_layers
+        if first_kv_shared_layer_idx <= 0:
+            return False
+        current_layer_type = self.get_layer_type(layer_idx)
+        for i in range(first_kv_shared_layer_idx - 1, -1, -1):
+            if self.get_layer_type(i) == current_layer_type:
+                return layer_idx == i
+        return False

@@ -22,6 +22,9 @@
     "hidden_size_per_layer_input": 256,
     "num_kv_shared_layers": 20,
     "tie_word_embeddings": true,
+    "post_attention_norm": true,
+    "post_ffn_norm": true,
+    "use_ffn_norm": true,
     "layer_types": [
       "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",
       "sliding_attention","sliding_attention","sliding_attention","sliding_attention","full_attention",

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import os
 from abc import ABC
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from executorch.examples.models.codegen import (
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
 from executorch.examples.models.gemma2 import convert_weights as convert_gemma2_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
+from executorch.examples.models.gemma4 import convert_weights as convert_gemma4_weights
 
 from executorch.examples.models.glm import convert_weights as convert_glm_weights
 from executorch.examples.models.granite import (
@@ -59,9 +61,10 @@ from executorch.examples.qualcomm.oss_scripts.llama.encoder.encoder_config impor
     SmolVLMEncoder,
     VisionModalityConfig,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+from executorch.examples.qualcomm.oss_scripts.llama.model import (
     LlamaModel,
     LlamaModelWithoutEmbedding,
+    ModelArgs,
     MultiScopeAwareLlamaModel,
 )
 
@@ -69,6 +72,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     CodegenQuantRecipe,
     Gemma2QuantRecipe,
     Gemma3QuantRecipe,
+    Gemma4QuantRecipe,
     Gemma_2BQuantRecipe,
     GLM_1_5B_InstructQuantRecipe,
     Granite_3_3_2B_InstructQuantRecipe,
@@ -100,6 +104,7 @@ LLM_VARIANT_ARCHS: Dict[str, LlamaModel] = {
     "smolvlm_500m_instruct": LlamaModelWithoutEmbedding,
     "internvl3_1b": LlamaModelWithoutEmbedding,
     "gemma2-2b": MultiScopeAwareLlamaModel,
+    "gemma4-e2b": MultiScopeAwareLlamaModel,
 }
 
 
@@ -602,3 +607,56 @@ class SmolVLM_500M(LLMModelConfig):
     r2 = False
     r3 = False
     quant_recipe = SmolVLMQuantRecipe
+
+
+def load_gemma4_model_args(params_path: str) -> ModelArgs:
+    with open(params_path) as f:
+        config_dict = json.load(f)
+    text_config = config_dict.get("text_config", config_dict)
+
+    return ModelArgs(
+        dim=text_config["hidden_size"],
+        n_layers=text_config["num_hidden_layers"],
+        n_heads=text_config["num_attention_heads"],
+        n_kv_heads=text_config["num_key_value_heads"],
+        head_dim=text_config["head_dim"],
+        global_head_dim=text_config["global_head_dim"],
+        vocab_size=text_config["vocab_size"],
+        hidden_dim=text_config["intermediate_size"],
+        norm_eps=text_config["rms_norm_eps"],
+        max_position_embeddings=text_config["max_position_embeddings"],
+        rope_theta=text_config["rope_theta"],
+        local_rope_theta=text_config["rope_local_base_freq"],
+        partial_rotary_factor=text_config["partial_rotary_factor"],
+        sliding_window=text_config["sliding_window"],
+        layer_types=text_config["layer_types"],
+        final_logit_softcapping=text_config["final_logit_softcapping"],
+        hidden_size_per_layer_input=text_config["hidden_size_per_layer_input"],
+        vocab_size_per_layer_input=text_config["vocab_size_per_layer_input"],
+        num_kv_shared_layers=text_config["num_kv_shared_layers"],
+        use_double_wide_mlp=text_config["use_double_wide_mlp"],
+        post_attention_norm=text_config["post_attention_norm"],
+        post_ffn_norm=text_config["post_ffn_norm"],
+        use_ffn_norm=text_config["use_ffn_norm"],
+        act_fn=text_config["hidden_activation"],
+        model_architecture=config_dict["model_type"],
+    )
+
+
+@register_llm_model("gemma4-e2b")
+@dataclass(init=False, frozen=True)
+class Gemma4_E2B(LLMModelConfig):
+    repo_id: str = "google/gemma-4-e2b-it"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/gemma4/config/e2b_config.json"
+    )
+    convert_weights = convert_gemma4_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 4
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Gemma4QuantRecipe

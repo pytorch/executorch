@@ -63,4 +63,5 @@ DECODER_MODEL_VERSION = {
     "glm-1_5b": "glm",
     "smolvlm_500m_instruct": "smolvlm",
     "internvl3_1b": "internvl3",
+    "gemma4-e2b": "gemma4",
 }

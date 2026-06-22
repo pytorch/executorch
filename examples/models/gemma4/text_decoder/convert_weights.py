@@ -21,9 +21,39 @@ from typing import Dict, Optional
 
 import torch
 
+from executorch.examples.models.checkpoint import get_mapped_key
+
 from .gemma4_config import Gemma4Config
 
 logger = logging.getLogger(__name__)
+
+
+# Weight mappings from Gemma 4's checkpoint to ExecuTorch's transformer parameters.
+_GEMMA4_TO_EXECUTORCH = {
+    "model.language_model.embed_tokens.weight": "tok_embeddings.weight",
+    "model.language_model.embed_tokens_per_layer.weight": "embed_tokens_per_layer.weight",
+    "model.language_model.per_layer_model_projection.weight": "per_layer_model_projection.weight",
+    "model.language_model.per_layer_projection_norm.weight": "per_layer_projection_norm.weight",
+    "model.language_model.norm.weight": "norm.weight",
+    "model.language_model.lm_head.weight": "output.weight",
+    "model.language_model.layers.{}.self_attn.q_proj.weight": "layers.{}.attention.wq.weight",
+    "model.language_model.layers.{}.self_attn.k_proj.weight": "layers.{}.attention.wk.weight",
+    "model.language_model.layers.{}.self_attn.v_proj.weight": "layers.{}.attention.wv.weight",
+    "model.language_model.layers.{}.self_attn.o_proj.weight": "layers.{}.attention.wo.weight",
+    "model.language_model.layers.{}.self_attn.q_norm.weight": "layers.{}.attention.q_norm_fn.weight",
+    "model.language_model.layers.{}.self_attn.k_norm.weight": "layers.{}.attention.k_norm_fn.weight",
+    "model.language_model.layers.{}.mlp.gate_proj.weight": "layers.{}.feed_forward.w1.weight",
+    "model.language_model.layers.{}.mlp.up_proj.weight": "layers.{}.feed_forward.w3.weight",
+    "model.language_model.layers.{}.mlp.down_proj.weight": "layers.{}.feed_forward.w2.weight",
+    "model.language_model.layers.{}.layer_scalar": "layers.{}.layer_scalar",
+    "model.language_model.layers.{}.per_layer_input_gate.weight": "layers.{}.per_layer_input_gate.weight",
+    "model.language_model.layers.{}.per_layer_projection.weight": "layers.{}.per_layer_projection.weight",
+    "model.language_model.layers.{}.input_layernorm.weight": "layers.{}.attention_norm.weight",
+    "model.language_model.layers.{}.post_attention_layernorm.weight": "layers.{}.post_attention_norm.weight",
+    "model.language_model.layers.{}.pre_feedforward_layernorm.weight": "layers.{}.ffn_norm.weight",
+    "model.language_model.layers.{}.post_feedforward_layernorm.weight": "layers.{}.post_ffn_norm.weight",
+    "model.language_model.layers.{}.post_per_layer_input_norm.weight": "layers.{}.post_per_layer_input_norm.weight",
+}
 
 
 def _download_manifold_file(manifold_path: str, local_path: Path) -> None:
@@ -277,6 +307,43 @@ def convert_hf_to_custom(
         logger.warning(f"Unmapped keys: {len(unmapped_keys)}")
 
     return converted_state_dict
+
+
+def convert_weights(input_dir: str, output_file: str) -> None:
+    logger.info(f"Loading weights from {input_dir}")
+
+    hf_state_dict = _load_safetensors_weights(input_dir)
+
+    converted_state_dict = {}
+    unmapped_keys = []
+    for hf_key, tensor in hf_state_dict.items():
+        try:
+            qnn_key = get_mapped_key(hf_key, _GEMMA4_TO_EXECUTORCH)
+        except Exception:
+            unmapped_keys.append(hf_key)
+            logger.warning(f"Unmapped key: {hf_key}")
+            continue
+        converted_state_dict[qnn_key] = tensor.to(torch.float32)
+        logger.debug(f"Mapped {hf_key} -> {qnn_key}")
+
+    lm_head_key = "output.weight"
+    embed_tokens_key = "tok_embeddings.weight"
+    if (
+        lm_head_key not in converted_state_dict
+        and embed_tokens_key in converted_state_dict
+    ):
+        logger.info(
+            f"Using tied embeddings: copying {embed_tokens_key} to {lm_head_key}"
+        )
+        converted_state_dict[lm_head_key] = converted_state_dict[
+            embed_tokens_key
+        ].clone()
+
+    logger.info(f"Converted {len(converted_state_dict)} weights")
+    if unmapped_keys:
+        logger.warning(f"Unmapped keys: {len(unmapped_keys)}")
+
+    torch.save(converted_state_dict, output_file)
 
 
 def verify_conversion(

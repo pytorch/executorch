@@ -6,8 +6,9 @@
 
 from executorch.examples.models.gemma4.text_decoder import (
     convert_hf_to_custom,
+    convert_weights,
     Gemma4Config,
     Gemma4Model,
 )
 
-__all__ = ["Gemma4Config", "Gemma4Model", "convert_hf_to_custom"]
+__all__ = ["Gemma4Config", "Gemma4Model", "convert_hf_to_custom", "convert_weights"]

@@ -78,12 +78,10 @@ from executorch.examples.qualcomm.oss_scripts.llama.mix_precision_analyzer impor
     PerLayerSqnrAnalyzer,
     save_suggest_recipes,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.embedding import (
-    TokenEmbedding,
-)
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
+from executorch.examples.qualcomm.oss_scripts.llama.model import (
     LlamaModel,
     ModelArgs,
+    TokenEmbedding,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.quantize import PTQStrategy
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
@@ -187,9 +185,22 @@ class TextDecoder(Component):
         params_path = (
             config.params_path if control_args.params is None else control_args.params
         )
+        if control_args.decoder_model == "gemma4-e2b":
+            from executorch.examples.qualcomm.oss_scripts.llama import (
+                load_gemma4_model_args,
+            )
+
+            model_args = load_gemma4_model_args(params_path)
+        else:
+            with open(params_path) as f:
+                model_args = ModelArgs(**json.load(f))
         with open(params_path) as f:
             self.model_args = process_model_args(
-                control_args, ModelArgs(**json.load(f)), self.quant_recipe, config, mode
+                control_args,
+                model_args,
+                self.quant_recipe,
+                config,
+                mode,
             )
         # prepare instance
         self.tok_embedding, self.decoder = self._prepare_model()
@@ -308,8 +319,8 @@ class TextDecoder(Component):
         for layer in decoder.layers:
             if getattr(layer.attention, "prepare_attention_conv", None):
                 layer.attention.prepare_attention_conv()
-            if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
-                layer.feed_forward.prepare_feedfoward_conv()
+            if getattr(layer.feed_forward, "prepare_feedforward_conv", None):
+                layer.feed_forward.prepare_feedforward_conv()
 
         decoder = convert_linear_to_conv2d(decoder)
 
@@ -320,16 +331,10 @@ class TextDecoder(Component):
 
         # check embedding fallback
         if self.control_args.embedding_quantize:
-            decoder = get_quant_embedding_transform(
-                embedding_quantize=self.control_args.embedding_quantize
-            )(decoder)
             self.passes_job[I64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "skip_node"
             ] = {"tokens"}
             if self.apply_embedding:
-                tok_embedding = get_quant_embedding_transform(
-                    embedding_quantize=self.control_args.embedding_quantize
-                )(tok_embedding)
                 self.tok_embedding_passes_job[I64toI32][
                     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
                 ]["skip_node"] = {"tokens"}
@@ -398,15 +403,8 @@ class TextDecoder(Component):
                 decoder.vocab_size,
             ),
         }
-        # shape of k caches and v caches
-        self.kv_cache_shape = {
-            # single head, kv input
-            (self.meta["get_head_dim"], self.meta["get_max_context_len"]),
-            (self.meta["get_max_context_len"], self.meta["get_head_dim"]),
-            # single head, kv output
-            (self.meta["get_head_dim"], self.meta["get_ar_len"]),
-            (self.meta["get_ar_len"], self.meta["get_head_dim"]),
-        }
+        self.kv_cache_shape = decoder.get_kv_cache_shapes()
+        self.freq_shape = decoder.get_freq_shapes()
 
         if self.apply_embedding:
             self.tok_embedding_export_input = (
@@ -462,10 +460,6 @@ class TextDecoder(Component):
             ),
         }
 
-        freq_shape = {
-            (self.meta["get_ar_len"], self.meta["get_head_dim"] // 2),
-        }
-
         freq_op = {
             exir_ops.edge.aten.select.int,
         }
@@ -473,7 +467,8 @@ class TextDecoder(Component):
 
         if node.op == "placeholder":
             if (
-                len(users := list(node.users)) == 1
+                len(users := list(node.users)) > 0
+                and "args_" in node.name
                 and users[0].meta["val"].size()[-2:] in self.kv_cache_shape
             ):
                 quant_io_type = fixed_point_type["kv_type"]
@@ -495,7 +490,22 @@ class TextDecoder(Component):
             quant_io_type = fixed_point_type["io_type"]
 
         # tag select op as quantized tensors for freq_sin and freq_cos. It is caused by sharding
-        if node.target in freq_op and node.meta["val"].size() in freq_shape:
+        if node.target in freq_op and node.meta["val"].size() in self.freq_shape:
+            quant_io_type = fixed_point_type["io_type"]
+
+        # tag per-layer embedding.
+        if (
+            self.control_args.decoder_model == "gemma4-e2b"
+            and "stack_trace" in node.meta
+            and "per_layer_inputs[ind]" in node.meta["stack_trace"]
+        ):
+            quant_io_type = fixed_point_type["io_type"]
+
+        # tag donor kv
+        if self.control_args.decoder_model == "gemma4-e2b" and (
+            is_node_src_start_with_name(node, "full_k")
+            or is_node_src_start_with_name(node, "full_v")
+        ):
             quant_io_type = fixed_point_type["io_type"]
 
         return quant_io_type
@@ -565,6 +575,16 @@ class TextDecoder(Component):
                 raise RuntimeError(
                     f"unknown logits io bit width {self.quant_recipe.get_logits_output_bit_width()}"
                 )
+
+        # embedding fallback and quantization
+        if self.control_args.embedding_quantize:
+            self.decoder = get_quant_embedding_transform(
+                embedding_quantize=self.control_args.embedding_quantize
+            )(self.decoder)
+            if self.apply_embedding:
+                self.tok_embedding = get_quant_embedding_transform(
+                    embedding_quantize=self.control_args.embedding_quantize
+                )(self.tok_embedding)
 
         data = request.method_data[TEXT_DECODER]
 
@@ -852,7 +872,12 @@ class HybridTextDecoder(Component):
                 if "args_" in node.name:
                     args_idx = int(node.name.split("_")[-1])
 
-                    if args_idx >= self.decode.meta["get_n_layers"]:
+                    n_cache_layers = (
+                        self.decode.meta["get_n_self_layers"]
+                        if self.control_args.decoder_model == "gemma4-e2b"
+                        else self.decode.meta["get_n_layers"]
+                    )
+                    if args_idx >= n_cache_layers:
                         v_input_cache_nodes.append(node)
                     else:
                         k_input_cache_nodes.append(node)

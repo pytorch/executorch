@@ -4,11 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.examples.models.llama.model_args import ModelArgs
-
-from .text_decoder import (
+from .attention_sink import AttentionSinkRope
+from .blocks import (
     ATTENTION_REGISTRY,
-    AttentionSinkRope,
     DECODER_LAYER_REGISTRY,
     FEED_FORWARD_REGISTRY,
     FeedForward,
@@ -17,29 +15,37 @@ from .text_decoder import (
     LayerNorm,
     LlamaAttention,
     LlamaDecoderLayer,
-    LlamaModel,
-    LlamaModelWithoutEmbedding,
-    MultiScopeAwareLlamaModel,
     Norm,
     NORM_REGISTRY,
     register_attention,
     register_decoder_layer,
     register_feed_forward,
     register_norm,
-    register_rope,
-    register_rope_precompute,
     repeat_kv,
     RMSNorm,
+    YOCOCrossDecoderLayer,
+)
+from .embedding import TokenEmbedding
+from .rope import (
+    register_rope,
+    register_rope_precompute,
     ROPE_PRECOMPUTE_REGISTRY,
     ROPE_REGISTRY,
     RopeFreqs,
-    TokenEmbedding,
-    YOCOCrossDecoderLayer,
+)
+from .static_llama import (
+    LlamaModel,
+    LlamaModelWithoutEmbedding,
+    MultiScopeAwareLlamaModel,
 )
 
 
 __all__ = [
-    "ModelArgs",
+    "AttentionSinkRope",
+    "FEED_FORWARD_REGISTRY",
+    "FeedForward",
+    "FeedForwardBase",
+    "register_feed_forward",
     "NORM_REGISTRY",
     "Norm",
     "LayerNorm",
@@ -50,15 +56,10 @@ __all__ = [
     "RopeFreqs",
     "register_rope",
     "register_rope_precompute",
-    "FEED_FORWARD_REGISTRY",
-    "FeedForward",
-    "FeedForwardBase",
-    "register_feed_forward",
     "repeat_kv",
     "LlamaAttention",
     "LlamaDecoderLayer",
     "TokenEmbedding",
-    "AttentionSinkRope",
     "LlamaModel",
     "LlamaModelWithoutEmbedding",
     "MultiScopeAwareLlamaModel",
