@@ -48,6 +48,7 @@ set(WEBGPU_SRCS
     runtime/ops/squeeze/Squeeze.cpp
     runtime/ops/unsqueeze/Unsqueeze.cpp
     runtime/ops/slice/Slice.cpp
+    runtime/ops/permute/Permute.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})

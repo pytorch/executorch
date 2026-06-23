@@ -125,6 +125,11 @@ class WebGPUGraph {
   int64_t get_int(int id) const {
     return ints_[id];
   }
+  // Int values of a serialized IntList (e.g. permute dims). int64 (FlatBuffer
+  // [long]) to match the schema and the get_int convention.
+  const std::vector<int64_t>& get_int_list(int id) const {
+    return int_lists_[id];
+  }
   bool get_bool(int id) const {
     return bools_[id];
   }
@@ -241,7 +246,8 @@ class WebGPUGraph {
     Null,
     String,
     SymInt,
-    ValueList
+    ValueList,
+    IntList
   };
 
   ValueType get_value_type(int id) const {
@@ -258,6 +264,7 @@ class WebGPUGraph {
   std::vector<ValueType> value_types_;
   std::vector<WebGPUTensor> tensors_;
   std::vector<int64_t> ints_;
+  std::vector<std::vector<int64_t>> int_lists_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
   std::vector<std::vector<int>> value_lists_;
