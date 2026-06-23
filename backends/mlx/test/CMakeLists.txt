@@ -76,7 +76,7 @@ target_include_directories(
   mlx_mutable_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
 )
 target_link_libraries(
-  mlx_mutable_state_test PRIVATE mlxdelegate mlx executorch_core
+  mlx_mutable_state_test PRIVATE mlxdelegate mlx_schema mlx executorch_core
 )
 if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   target_compile_options(
