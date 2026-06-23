@@ -163,6 +163,8 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.node import Node
 
+_LEAKY_RELU_DEFAULT_NEGATIVE_SLOPE = 0.01
+
 
 def require_static_int(value: Any, param_name: str, op_name: str) -> None:
     """
@@ -2801,7 +2803,9 @@ def _leaky_relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "aten.leaky_relu")
 
     x = args[0]
-    negative_slope = float(args[1]) if len(args) > 1 else 0.01
+    negative_slope = _LEAKY_RELU_DEFAULT_NEGATIVE_SLOPE
+    if len(args) > 1 and args[1] is not None:
+        negative_slope = float(args[1])
 
     x_meta = n.args[0].meta.get("val")
     if x_meta is None:
