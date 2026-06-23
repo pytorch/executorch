@@ -6,7 +6,7 @@
 import torch
 
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -120,7 +120,7 @@ def _validate_nan_mode(nan_mode: str, op: str) -> None:
         )
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "REDUCE_ALL(Tensor input, *, int axis) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -130,7 +130,7 @@ def REDUCE_ALL(x: torch.Tensor, *, axis: int) -> torch.Tensor:
     return torch.empty(size=_reduce_shape(x, axis), dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "REDUCE_ANY(Tensor input, *, int axis) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -140,7 +140,7 @@ def REDUCE_ANY(x: torch.Tensor, *, axis: int) -> torch.Tensor:
     return torch.empty(size=_reduce_shape(x, axis), dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     'REDUCE_MAX(Tensor input, *, int axis, str nan_mode="PROPAGATE") -> Tensor',
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -153,7 +153,7 @@ def REDUCE_MAX(
     return torch.empty(size=_reduce_shape(x, axis), dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     'REDUCE_MIN(Tensor input, *, int axis, str nan_mode="PROPAGATE") -> Tensor',
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -166,7 +166,7 @@ def REDUCE_MIN(
     return torch.empty(size=_reduce_shape(x, axis), dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "REDUCE_PRODUCT(Tensor input, *, int axis) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -176,7 +176,7 @@ def REDUCE_PRODUCT(x: torch.Tensor, *, axis: int) -> torch.Tensor:
     return torch.empty(size=_reduce_shape(x, axis), dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "REDUCE_SUM(Tensor input, *, int axis) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
