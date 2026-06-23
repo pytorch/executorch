@@ -56,7 +56,7 @@ def get_output_shape(node: Node) -> tuple[torch.Size] | torch.Size | None:
 
 
 def is_clamp_preserved_under_quantization(
-    node: Node, min_val: int = 0, max_val: int | None = None
+    node: Node, min_val: float = 0, max_val: float | None = None
 ) -> bool:
     """
     Checks if Clamp/ReLU/HardTanh is preserved under quantization and did
