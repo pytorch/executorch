@@ -34,6 +34,7 @@ from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
 from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_pad import DecomposePad
+from .decompose_pdist import DecomposePDist
 from .decompose_reciprocal import DecomposeReciprocal
 from .decompose_remainder import DecomposeRemainder
 from .decompose_roll import DecomposeRoll
@@ -99,6 +100,7 @@ __all__ = [
     DecomposeMaxPool3d,
     DecomposeMinMaxDim,
     DecomposePad,
+    DecomposePDist,
     DecomposeReciprocal,
     DecomposeRemainder,
     DecomposeRoll,
