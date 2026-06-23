@@ -1,0 +1,242 @@
+{
+  "entries": {
+    "xnnpack.models.resnet.test_fp32_resnet18": {
+      "darwin-arm64-apple-m3-pro-mac15-6-nosme2-pybinding-buffer-threads1-_portable_lib.cpython-313-darwin.so": {
+        "host": {
+          "cpu_id": "apple-m3-pro-mac15-6",
+          "cpu_model": "Apple M3 Pro",
+          "linux_features": [],
+          "machine": "arm64",
+          "macos_features": {
+            "hw.optional.arm.FEAT_BF16": "1",
+            "hw.optional.arm.FEAT_DotProd": "1",
+            "hw.optional.arm.FEAT_FP16": "1",
+            "hw.optional.arm.FEAT_I8MM": "1",
+            "hw.optional.arm.FEAT_SME": "0",
+            "hw.optional.arm.FEAT_SME2": "0"
+          },
+          "macos_model": "Mac15,6",
+          "ml_features": [
+            "fp",
+            "asimd",
+            "bf16",
+            "asimddp",
+            "fphp",
+            "i8mm"
+          ],
+          "processor": "arm",
+          "release": "25.5.0",
+          "sme2_available": false,
+          "system": "Darwin"
+        },
+        "kernel_path": {
+          "backend": "xnnpack",
+          "basis": [
+            "host.ml_features",
+            "runtime.linked_symbols"
+          ],
+          "confidence": "expected_not_proven",
+          "expected_hardware_path": "kleidiai+neon",
+          "host_ml_features": [
+            "fp",
+            "asimd",
+            "bf16",
+            "asimddp",
+            "fphp",
+            "i8mm"
+          ],
+          "runtime_symbol_hints": {
+            "avx2_symbols_present": false,
+            "avx512_symbols_present": false,
+            "avx_symbols_present": false,
+            "kleidiai_symbols_present": true,
+            "neon_symbols_present": true,
+            "neonsme2_symbols_present": true,
+            "sme2_symbols_present": true,
+            "sme_symbols_present": true,
+            "sse_symbols_present": false,
+            "xnnpack_symbols_present": true
+          }
+        },
+        "metrics": {
+          "cv_pct": 0.246957433434771,
+          "load_mode": "buffer",
+          "max_ms": 41.886459,
+          "mean_ms": 41.6864669,
+          "median_ms": 41.6786465,
+          "min_ms": 41.502291,
+          "p90_ms": 41.7885084,
+          "samples_ms": [
+            41.502291,
+            41.560417,
+            41.886459,
+            41.729917,
+            41.675084,
+            41.651167,
+            41.777625,
+            41.682209,
+            41.65375,
+            41.74575
+          ],
+          "thread_count_observed": 1,
+          "thread_count_requested": 1,
+          "timed_runs": 10,
+          "warmup_runs": 2
+        },
+        "recorded_at_utc": "2026-06-25T09:24:37.854788+00:00",
+        "test_id": "xnnpack.models.resnet.test_fp32_resnet18",
+        "threshold_pct": 10.0,
+        "timing_runtime": {
+          "avx2_symbols_present": false,
+          "avx512_symbols_present": false,
+          "avx_symbols_present": false,
+          "kind": "pybinding",
+          "kleidiai_symbols_present": true,
+          "native_mtime_utc": "2026-06-24T13:58:43+00:00",
+          "native_path": "extension/pybindings/_portable_lib.cpython-313-darwin.so",
+          "neon_symbols_present": true,
+          "neonsme2_symbols_present": true,
+          "pte_load_mode": "buffer",
+          "runtime_key": "darwin-arm64-apple-m3-pro-mac15-6-nosme2-pybinding-buffer-threads1-_portable_lib.cpython-313-darwin.so",
+          "sme2_symbols_present": true,
+          "sme_symbols_present": true,
+          "sse_symbols_present": false,
+          "thread_count": 1,
+          "xnnpack_symbols_present": true
+        }
+      },
+      "linux-aarch64-aarch64-0x41-0x000-nosme2-pybinding-buffer-threads1-_portable_lib.cpython-312-aarch64-linux-gnu.so": {
+        "host": {
+          "cpu_id": "aarch64-0x41-0x000",
+          "cpu_model": "aarch64",
+          "linux_features": [
+            "fp",
+            "asimd",
+            "evtstrm",
+            "aes",
+            "pmull",
+            "sha1",
+            "sha2",
+            "crc32",
+            "atomics",
+            "fphp",
+            "asimdhp",
+            "cpuid",
+            "asimdrdm",
+            "jscvt",
+            "fcma",
+            "lrcpc",
+            "dcpop",
+            "sha3",
+            "asimddp",
+            "sha512",
+            "asimdfhm",
+            "dit",
+            "uscat",
+            "ilrcpc",
+            "flagm",
+            "sb",
+            "paca",
+            "pacg",
+            "dcpodp",
+            "flagm2",
+            "frint",
+            "bf16",
+            "afp"
+          ],
+          "machine": "aarch64",
+          "macos_features": {},
+          "macos_model": null,
+          "ml_features": [
+            "fp",
+            "asimd",
+            "asimddp",
+            "asimdhp",
+            "bf16",
+            "fphp"
+          ],
+          "processor": "aarch64",
+          "release": "6.8.0-117-generic",
+          "sme2_available": false,
+          "system": "Linux"
+        },
+        "kernel_path": {
+          "backend": "xnnpack",
+          "basis": [
+            "host.ml_features",
+            "runtime.linked_symbols"
+          ],
+          "confidence": "expected_not_proven",
+          "expected_hardware_path": "kleidiai+neon",
+          "host_ml_features": [
+            "fp",
+            "asimd",
+            "asimddp",
+            "asimdhp",
+            "bf16",
+            "fphp"
+          ],
+          "runtime_symbol_hints": {
+            "avx2_symbols_present": false,
+            "avx512_symbols_present": false,
+            "avx_symbols_present": false,
+            "kleidiai_symbols_present": true,
+            "neon_symbols_present": true,
+            "neonsme2_symbols_present": true,
+            "sme2_symbols_present": true,
+            "sme_symbols_present": true,
+            "sse_symbols_present": false,
+            "xnnpack_symbols_present": true
+          }
+        },
+        "metrics": {
+          "cv_pct": 1.1082648754607403,
+          "load_mode": "buffer",
+          "max_ms": 43.026209,
+          "mean_ms": 41.900096,
+          "median_ms": 41.9061045,
+          "min_ms": 41.338542,
+          "p90_ms": 42.3321956,
+          "samples_ms": [
+            41.604084,
+            41.338542,
+            41.700709,
+            41.923334,
+            42.255083,
+            43.026209,
+            41.34325,
+            41.987333,
+            41.888875,
+            41.933541
+          ],
+          "thread_count_observed": 1,
+          "thread_count_requested": 1,
+          "timed_runs": 10,
+          "warmup_runs": 2
+        },
+        "recorded_at_utc": "2026-06-26T13:41:33.202559+00:00",
+        "test_id": "xnnpack.models.resnet.test_fp32_resnet18",
+        "threshold_pct": 10.0,
+        "timing_runtime": {
+          "avx2_symbols_present": false,
+          "avx512_symbols_present": false,
+          "avx_symbols_present": false,
+          "kind": "pybinding",
+          "kleidiai_symbols_present": true,
+          "native_mtime_utc": "2026-06-12T13:39:04+00:00",
+          "native_path": "extension/pybindings/_portable_lib.cpython-312-aarch64-linux-gnu.so",
+          "neon_symbols_present": true,
+          "neonsme2_symbols_present": true,
+          "pte_load_mode": "buffer",
+          "runtime_key": "linux-aarch64-aarch64-0x41-0x000-nosme2-pybinding-buffer-threads1-_portable_lib.cpython-312-aarch64-linux-gnu.so",
+          "sme2_symbols_present": true,
+          "sme_symbols_present": true,
+          "sse_symbols_present": false,
+          "thread_count": 1,
+          "xnnpack_symbols_present": true
+        }
+      }
+    }
+  },
+  "version": 1
+}
