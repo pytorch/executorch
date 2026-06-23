@@ -985,6 +985,14 @@ table IfNode {
     else_chain_idx: uint32;            // index into MLXGraph.instruction_chains
 }
 
+table RandomBitsNode {
+    out: Tid (required);
+    shape: [IntOrVid] (required);
+    seed: IntOrVid;              // OPTIONAL: present -> random::key(seed);
+                                 //           absent  -> MLX global KeySequence
+    width: int32 = 4;            // bytes per element (4 -> uint32)
+}
+
 // Custom Metal kernel execution via mlx::core::fast::metal_kernel().
 // Two-phase API:
 //   1. Factory: metal_kernel(name, input_names, output_names, source, header,
@@ -1161,7 +1169,8 @@ union OpNode {
     BitwiseAndNode,
     BitwiseOrNode,
     BitwiseXorNode,
-    IfNode
+    IfNode,
+    RandomBitsNode
     // BC: Add new op nodes here (append only)
 }
 

@@ -18,10 +18,13 @@ from __future__ import annotations
 import operator
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+# Registers torch.ops.mlx.sample so _sample_handler can target it at import time.
+import executorch.backends.mlx.custom_kernel_ops.sample  # noqa: F401  E402
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_lifted_constant,
     emit_quantized_biases,
+    emit_shape,
     parse_dequant_node,
     to_mlx_qparams,
     torch_dtype_to_scalar_type,
@@ -115,6 +118,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     PartitionNode,
     PowerNode,
     ProdNode,
+    RandomBitsNode,
     ReciprocalNode,
     RemainderNode,
     RepeatNode,
@@ -3451,6 +3455,105 @@ def _argmax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 x=P.slot_to_tid(x), out=P.slot_to_tid(out), axis=dim, keepdims=keepdim
             )
         )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.mlx.sample.default])
+def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Gumbel-max sampling: argmax(logits / temperature + gumbel_noise).
+
+    Reproduces MLX's uniform -> gumbel -> argmax layering in the IR using the
+    new RandomBitsNode plus existing elementwise nodes, so a sampled token id is
+    produced on-device instead of returning the full logits tensor.
+    """
+    args = P.args(n)
+    require_args(args, 2, 3, "mlx.sample")
+    require_kwargs(P.kwargs(n), set(), "mlx.sample")
+    logits, temperature = args[0], args[1]
+    seed = args[2] if len(args) > 2 and args[2] is not None else None
+
+    dt = n.args[0].meta["val"].dtype
+    shape = emit_shape(P, n.args[0], logits)
+
+    # Optional runtime seed: tensor -> SymInt (Vid) via ItemIntNode. Absent ->
+    # leave RandomBitsNode.seed unset (MLX global RNG).
+    seed_field = None
+    if seed is not None:
+        _, seed_val = P.make_tmp_value_slot()
+        P.emit(ItemIntNode(x=P.slot_to_tid(seed), out=P.slot_to_vid(seed_val)))
+        seed_field = P.to_int_or_vid(seed_val)
+
+    # uniform u in [0, 1): bits/uint32_max, clamped just below 1 (random.cpp:95)
+    _, bits = P.make_tmp_slot()
+    P.emit(
+        RandomBitsNode(out=P.slot_to_tid(bits), shape=shape, width=4, seed=seed_field)
+    )
+    _, bits_f = P.make_tmp_slot()
+    P.emit(
+        AsTypeNode(
+            x=P.slot_to_tid(bits),
+            out=P.slot_to_tid(bits_f),
+            scalar_type=torch_dtype_to_scalar_type(torch.float32),
+        )
+    )
+    umax = emit_lifted_constant(P, 4294967295.0, torch.float32)
+    _, div0 = P.make_tmp_slot()
+    P.emit(
+        DivideNode(
+            a=P.slot_to_tid(bits_f), b=P.slot_to_tid(umax), out=P.slot_to_tid(div0)
+        )
+    )
+    prev1 = emit_lifted_constant(
+        P, float(torch.nextafter(torch.tensor(1.0), torch.tensor(0.0))), torch.float32
+    )
+    _, clamp = P.make_tmp_slot()
+    P.emit(
+        MinimumNode(
+            a=P.slot_to_tid(div0), b=P.slot_to_tid(prev1), out=P.slot_to_tid(clamp)
+        )
+    )
+    # gumbel noise g = -log(-log(u)) (random.cpp:367), computed in float32.
+    # Keep the uniform in float32 through the log chain: casting it down to a
+    # low-precision dtype (e.g. bf16) can round the clamp (~0.99999994) back up
+    # to 1.0 -> log(1.0)=0 -> -log(0)=+inf, which then dominates argmax (a fixed
+    # seed makes that the same token every step). Only the finite gumbel is cast
+    # to the logits dtype.
+    _, l1 = P.make_tmp_slot()
+    P.emit(LogNode(x=P.slot_to_tid(clamp), out=P.slot_to_tid(l1)))
+    _, g1 = P.make_tmp_slot()
+    P.emit(NegNode(x=P.slot_to_tid(l1), out=P.slot_to_tid(g1)))
+    _, l2 = P.make_tmp_slot()
+    P.emit(LogNode(x=P.slot_to_tid(g1), out=P.slot_to_tid(l2)))
+    _, g_f32 = P.make_tmp_slot()
+    P.emit(NegNode(x=P.slot_to_tid(l2), out=P.slot_to_tid(g_f32)))
+    _, g = P.make_tmp_slot()
+    P.emit(
+        AsTypeNode(
+            x=P.slot_to_tid(g_f32),
+            out=P.slot_to_tid(g),
+            scalar_type=torch_dtype_to_scalar_type(dt),
+        )
+    )
+
+    # sample: argmax(logits / temperature + g) over the vocab axis
+    _, scaled = P.make_tmp_slot()
+    P.emit(
+        DivideNode(
+            a=P.slot_to_tid(logits),
+            b=P.slot_to_tid(temperature),
+            out=P.slot_to_tid(scaled),
+        )
+    )
+    _, noisy = P.make_tmp_slot()
+    P.emit(
+        AddNode(a=P.slot_to_tid(scaled), b=P.slot_to_tid(g), out=P.slot_to_tid(noisy))
+    )
+    out = P.make_or_get_slot(n)
+    P.emit(
+        ArgmaxNode(
+            x=P.slot_to_tid(noisy), out=P.slot_to_tid(out), axis=-1, keepdims=False
+        )
+    )
     return out
 
 

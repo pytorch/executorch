@@ -831,7 +831,12 @@ def _emit_py_prebuild(kind: str, fld: FBSField) -> List[str]:
     if kind in _PY_PREBUILD_OFFSET:
         suffix = "_off"
         expr = _PY_PREBUILD_OFFSET[kind].format(name=n)
-        return [f"        {n}{suffix} = {expr}"]
+        # optional_str carries its own None handling; other compound offset
+        # fields (int_or_vid, etc.) must be guarded when optional so a None
+        # value is serialized as an absent field rather than crashing.
+        if fld.required or kind == "optional_str":
+            return [f"        {n}{suffix} = {expr}"]
+        return [f"        {n}{suffix} = {expr} if op.{n} is not None else None"]
     return []
 
 
@@ -855,7 +860,12 @@ def _emit_py_add(
         return [f"        {add}(builder, op.{n})"]
     # Pre-built offsets (string, compound types)
     if kind in ("str", "int_or_vid", "float_or_vid", "vid_or_tid", "int_or_vid_or_tid"):
-        return [f"        {add}(builder, {n}_off)"]
+        if fld.required:
+            return [f"        {add}(builder, {n}_off)"]
+        return [
+            f"        if {n}_off is not None:",
+            f"            {add}(builder, {n}_off)",
+        ]
     # Pre-built vectors (required vs optional)
     if kind in (
         "list_int",
@@ -1056,6 +1066,8 @@ def _fbs_type_to_cpp(
             return "std::optional<Tid>"
         if fbs_type == "Vid":
             return "std::optional<Vid>"
+        if fbs_type in ("IntOrVid", "FloatOrVid", "VidOrTid", "IntOrVidOrTid"):
+            return f"std::optional<{cpp_type}>"
         if fld is not None and fld.default == "null" and fbs_type in FBS_TO_CPP:
             return f"std::optional<{cpp_type}>"
 
@@ -1140,7 +1152,7 @@ def _generate_loader_case(table: FBSTable) -> List[str]:
 
         fb_field_name = fld.name
         kind = _get_field_kind(fld, table)
-        load_lines = _emit_cpp_load(kind, fld.name, fb_field_name, table)
+        load_lines = _emit_cpp_load(kind, fld.name, fb_field_name, table, fld)
         if load_lines is None:
             raise ValueError(
                 f"Unhandled field kind '{kind}' for field '{fld.name}' in table '{table.name}'. "
@@ -1172,16 +1184,24 @@ _CPP_CONVERTER = {
 }
 
 
-def _emit_cpp_load(
-    kind: str, name: str, fb_name: str, table=None
+def _emit_cpp_load(  # noqa: C901
+    kind: str, name: str, fb_name: str, table=None, fld=None
 ) -> "List[str] | None":
     """Emit C++ load lines for a field kind, or None if kind is unrecognized."""
     # Interned string fields share one std::string via the load-time pool.
     if _is_interned_str(table, name) and kind in ("str", "optional_str"):
         return [f"      node.{name} = strpool.intern(fb->{fb_name}());"]
-    # Required struct / compound via converter
+    # Struct / compound via converter
     if kind in _CPP_CONVERTER:
         conv = _CPP_CONVERTER[kind]
+        # Optional compound fields (e.g. an optional IntOrVid) must be
+        # presence-guarded; convert_* throws on a null FlatBuffer pointer.
+        if fld is not None and not fld.required:
+            return [
+                f"      if (fb->{fb_name}()) {{",
+                f"        node.{name} = {conv}(fb->{fb_name}());",
+                "      }",
+            ]
         return [f"      node.{name} = {conv}(fb->{fb_name}());"]
     # Scalars (direct value)
     if kind in ("int", "float", "bool"):

@@ -1695,6 +1695,19 @@ exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, argmax(x, n.axis, n.keepdims, s));
 }
 
+inline void exec_random_bits(
+    const RandomBitsNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  auto shape = to_shape(n.shape, st);
+  check_allocation_bounded(shape, uint32, "random_bits");
+  std::optional<array> key = std::nullopt;
+  if (n.seed.has_value()) {
+    key = random::key(static_cast<uint64_t>(resolve_int(n.seed.value(), st)));
+  }
+  st.set_tensor(n.out, random::bits(shape, n.width, key, s));
+}
+
 inline void
 exec_argmin(const ArgminNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -2056,6 +2069,9 @@ class Interpreter {
         break;
       case OpCode::ARGMAX:
         ops::exec_argmax(std::get<ArgmaxNode>(instr.node), st, s);
+        break;
+      case OpCode::RANDOM_BITS:
+        ops::exec_random_bits(std::get<RandomBitsNode>(instr.node), st, s);
         break;
       case OpCode::SLICE_UPDATE:
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);
