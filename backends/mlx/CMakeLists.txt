@@ -255,8 +255,10 @@ option(ET_MLX_ALLOW_CUSTOM_KERNEL_EXECUTION
        ON
 )
 
-set(_mlx_backend__srcs ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
-                       ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
+set(_mlx_backend__srcs
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXLoader.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/MLXBackend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/mlx_mutable_state.cpp
 )
 
 add_library(mlxdelegate ${_mlx_backend__srcs})
