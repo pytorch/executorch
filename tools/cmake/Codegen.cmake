@@ -221,6 +221,7 @@ function(generate_bindings_for_kernels)
     )
   endif()
 
+  message("Command - ${_gen_command}")
   add_custom_command(
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}

@@ -26,7 +26,11 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
+
+add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
 # Find prebuilt executorch lib
 find_package(executorch CONFIG REQUIRED)
@@ -66,8 +70,8 @@ set(SOURCES
     ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/system_MIMXRT685S_dsp.c
     ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/debug_console_lite/fsl_assert.c
     ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/debug_console_lite/fsl_debug_console.c
-    ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp/board_hifi4.c
-    ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp/pin_mux.c
+    ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/hifi4/board_hifi4.c
+    ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/hifi4/pin_mux.c
     ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/str/fsl_str.c
 )
 
@@ -78,37 +82,63 @@ target_include_directories(
   PUBLIC ${NXP_SDK_ROOT_DIR}
          ${NXP_SDK_ROOT_DIR}/components/uart
          ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/drivers
+         ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/periph
          ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/debug_console_lite
          ${NXP_SDK_ROOT_DIR}/components/lists
          ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S
          ${NXP_SDK_ROOT_DIR}/CMSIS/Core/Include
          ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/str
-         ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp
+         ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/hifi4
 )
 
-add_library(extension_runner_util STATIC IMPORTED)
-set_property(
-  TARGET extension_runner_util
-  PROPERTY
-    IMPORTED_LOCATION
-    "${CMAKE_CURRENT_LIST_DIR}/../../cmake-out/extension/runner_util/libextension_runner_util.a"
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib
+  ${CMAKE_CURRENT_BINARY_DIR}/backends/cadence/hifi/third-party/nnlib
 )
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/operators)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/kernels)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/operators
+  ${CMAKE_CURRENT_BINARY_DIR}/backends/cadence/hifi/operators
+)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/kernels
+  ${CMAKE_CURRENT_BINARY_DIR}/backends/cadence/hifi/kernels
+)
+
+# Generate C++ bindings to register kernels into both PyTorch (for AOT) and
+# Executorch (for runtime). In order to fit the model into i.MXRT600 memory, we
+# use selective kernel registration based on MODEL_PATH, and lik to
+# cadence_ops_lib_selective.
+gen_selected_ops(
+  LIB_NAME "cadence_ops_lib_selective" OPS_FROM_MODEL "${MODEL_PATH}"
+)
+generate_bindings_for_kernels(
+  LIB_NAME "cadence_ops_lib_selective" OPS_SCHEMA_YAML FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/backends/cadence/aot/functions_hifi.yaml
+)
+message("Generated files: ${gen_command_sources}")
+
+gen_operators_lib(
+  LIB_NAME "cadence_ops_lib_selective" KERNEL_LIBS custom_ops DEPS
+  aten_ops_cadence
+)
 
 # Generate the model header file
 add_custom_command(
   OUTPUT ${CMAKE_BINARY_DIR}/model_pte.h
-  COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/utils/gen_header.py
-          --model_path ${MODEL_PATH} --header_output_path ${CMAKE_BINARY_DIR}
+  COMMAND
+    ${PYTHON_EXECUTABLE} ${EXECUTORCH_ROOT}/backends/cadence/utils/gen_header.py
+    --model_path ${MODEL_PATH} --header_output_path ${CMAKE_BINARY_DIR}
   COMMENT "Converting .pte model to header file..."
-  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/utils/gen_header.py
+  DEPENDS ${EXECUTORCH_ROOT}/backends/cadence/utils/gen_header.py
 )
 
 add_custom_target(gen_model_header DEPENDS ${CMAKE_BINARY_DIR}/model_pte.h)
 
-add_executable(cadence_executorch_example executor_runner.cpp)
+add_executable(
+  cadence_executorch_example
+  ${EXECUTORCH_ROOT}/backends/cadence/executor_runner.cpp
+)
 add_dependencies(cadence_executorch_example gen_model_header)
 
 # lint_cmake: -linelength
@@ -120,9 +150,10 @@ target_include_directories(
 target_link_options(
   cadence_executorch_example PRIVATE
   -mlsp=${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/xtensa/min-rt
+  -Wl,--orphan-handling=place
 )
 target_link_libraries(
-  cadence_executorch_example dsp_mu_polling_libs cadence_ops_lib
+  cadence_executorch_example dsp_mu_polling_libs cadence_ops_lib_selective
   extension_runner_util executorch
 )
 
@@ -130,12 +161,13 @@ add_custom_command(
   TARGET cadence_executorch_example
   POST_BUILD
   COMMAND
-    ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/utils/post_compilation.py
-    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME} ${CMAKE_BINARY_DIR}
+    ${PYTHON_EXECUTABLE}
+    ${EXECUTORCH_ROOT}/backends/cadence/utils/post_compilation.py
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.elf ${CMAKE_BINARY_DIR}
   COMMENT
     "Generating .bin files that can be used to flash the DSP with. Copy over
     the dsp_text_release.bin and dsp_data_release.bin that are generated into
     your NXP MCUXpresso IDE workspace and flash the DSP with these binaries."
     DEPENDS
-    ${CMAKE_CURRENT_LIST_DIR}/utils/post_compilation.py
+    ${EXECUTORCH_ROOT}/backends/cadence/utils/post_compilation.py
 )

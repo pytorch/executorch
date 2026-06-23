@@ -47,7 +47,9 @@ In order to be able to succesfully build and run ExecuTorch on a Xtensa HiFi4 DS
     - Needed to flash the board with the firmware images. You can install this on the same platform that you installed the MCUXpresso IDE on.
     - Note: depending on the version of the NXP board, another probe than JLink might be installed. In any case, flashing is done using the MCUXpresso IDE in a similar way.
  - [MCUXpresso SDK](https://mcuxpresso.nxp.com/en/select?device=EVK-MIMXRT685)
-    - Download this SDK to your Linux machine, extract it and take a note of the path where you store it. You'll need this later.
+    - Download this SDK, version 25.12.00 to your Linux machine, extract it and take a note of the path where you store it. You'll need this later.
+    - Note there are 2 variants of the SDK - the CLI only ARMGCC and for the MCUXpresso IDE. The SDK variant for the MCUXpresso IDE contains the SDK only for the i.MX RT600 platforms, whereas the ARMGCC toolchain contains the SDK for multiple SoCs. That means you need to adjust the env variables accordingly. 
+    - If not noted otherwise, the links in this tutorial are valid for MCUXpresso SDK 25.12.00, MCUXPresso IDE variant. 
 - [Xtensa compiler](https://tensilicatools.com/platform/i-mx-rt600/)
     - Download this to your Linux machine. This is needed to build ExecuTorch for the HiFi4 DSP.
 - For cases with optimized kernels, the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4).
@@ -264,7 +266,8 @@ export XTENSA_TOOLCHAIN=/home/user_name/cadence/XtDevTools/install/tools
 export TOOLCHAIN_VER=RI-2023.11-linux
 # The Xtensa core that you're targeting.
 # For HiFi4 (NXP RT600):
-export XTENSA_CORE=VANILLA_HIFI
+#export XTENSA_CORE=VANILLA_HIFI
+export XTENSA_CORE=nxp_rt600_RI23_11_newlib
 # For Fusion G3:
 # export XTENSA_CORE=VANILLA_G3
 # For Vision P6:
@@ -278,11 +281,11 @@ The Cadence backend supports multiple DSP families:
 - **Vision P-Series DSPs**: Core `VANILLA_VISION`, enable with `-DEXECUTORCH_VISION_OPT=ON`
 ```
 
-***Step 2***. Clone the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4), which contains optimized kernels and primitives for HiFi4 DSPs, with `git clone git@github.com:foss-xtensa/nnlib-hifi4.git`.
+***Step 2***. Run the `backends/cadence/install_requirements.sh`. This clones the Cadence Neural Network Library (nn-lib) . 
 
 ***Step 3***. Run the CMake build.
 In order to run the CMake build, you need the path to the following:
-- The Program generated in the previous step
+- The Program generated in the previous step, typically will have the name `CadenceDemoModel.pte`.
 - Path to the NXP SDK root. This should have been installed already in the [Setting up Developer Environment](#setting-up-developer-environment) section. This is the directory that contains the folders such as boards, components, devices, and other.
 
 ```bash
@@ -307,7 +310,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_PREFIX_PATH=<path_to_executorch>/cmake-out \
     -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> \
     -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> \
-    -DNN_LIB_BASE_DIR=<path_to_nnlib_cloned_in_step_2> \
+    -DNN_LIB_BASE_DIR=<path_to_executorch>/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4 \
     -Bcmake-out/examples/cadence \
     examples/cadence
 
@@ -316,8 +319,8 @@ cmake --build cmake-out/examples/cadence -j8 -t cadence_executorch_example
 
 After having succesfully run the above step you should see two binary files in their CMake output directory.
 ```bash
-> ls cmake-xt/*.bin
-cmake-xt/dsp_data_release.bin  cmake-xt/dsp_text_release.bin
+> ls cmake-out/examples/cadence/*.bin
+cmake-out/examples/cadence/dsp_data_release.bin  cmake-out/examples/cadence/dsp_text_release.bin
 ```
 
 ## Deploying and Running on Device

@@ -15,6 +15,9 @@ endif()
 
 set(TOOLCHAIN_HOME ${XTENSA_TOOLCHAIN_PATH}/$ENV{TOOLCHAIN_VER}/XtensaTools)
 
+set(CMAKE_SYSTEM_NAME Generic-ELF)
+set(CMAKE_SYSTEM_PROCESSOR xtensa)
+
 set(LINKER ld)
 set(BINTOOLS gnu)
 

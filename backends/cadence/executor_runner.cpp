@@ -49,6 +49,7 @@ static uint8_t method_allocator_pool[18 * 1024U]; // 4 MB
 
 using executorch::runtime::Error;
 using executorch::runtime::Result;
+using executorch::runtime::EValue;
 
 void LED_INIT();
 void LED_TOGGLE();
