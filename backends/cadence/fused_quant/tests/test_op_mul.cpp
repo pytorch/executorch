@@ -14,10 +14,10 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
+using std::optional;
 
 namespace {
 
