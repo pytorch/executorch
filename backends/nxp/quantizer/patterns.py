@@ -712,6 +712,15 @@ class DropoutPattern(SharedSpecPattern):
         return [torch.ops.aten.dropout.default]
 
 
+class ExpPattern(SharedSpecPattern):
+    """
+    Quantizer for Exp operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.exp.default]
+
+
 class FlattenPattern(SharedSpecPattern):
     """
     Quantizer for Flatten operator.
