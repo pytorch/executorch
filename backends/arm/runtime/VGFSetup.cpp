@@ -3506,9 +3506,7 @@ bool VgfRepr::process_vgf(
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_MAP_IO_MEMORY");
 
-    if (!map_persis
-
-            tent_io_memory()) {
+    if (!map_persistent_io_memory()) {
       ET_LOG(Error, "Failed to persistently map VGF IO memory");
       return false;
     }
