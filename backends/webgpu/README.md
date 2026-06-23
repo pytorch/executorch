@@ -140,11 +140,10 @@ backends/webgpu/
     ├── test_webgpu_native.cpp     # C++ native test runner
     ├── test_wgsl_codegen.py       # Shader codegen check
     ├── native/                    # C++ operator tests
-    └── ops/                       # Python export tests
-        ├── add/
-        │   └── test_add.py        # add export tests
-        └── rms_norm/
-            └── test_rms_norm.py   # rms_norm export tests
+    └── ops/                       # Python op test suites (flat: test_<op>.py)
+        ├── test_add.py
+        ├── test_rms_norm.py
+        └── ...                    # one test_<op>.py per op
 ```
 
 ## Requirements
