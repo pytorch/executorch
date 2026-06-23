@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import math
 from typing import Optional
 
 import torch
@@ -89,6 +88,23 @@ def validate_conv2d_args_dtypes(  # noqa: C901
     return output_dtype
 
 
+def conv_output_dim(
+    input_dim: int | torch.SymInt,
+    kernel_dim: int,
+    stride: int,
+    pad_before: int | torch.SymInt,
+    pad_after: int | torch.SymInt,
+    dilation: int,
+) -> int | torch.SymInt:
+    receptive_field = dilation * (kernel_dim - 1) + 1
+    total_pad = pad_before + pad_after
+
+    if stride == 1:
+        return input_dim + total_pad - receptive_field + 1
+
+    return (input_dim + total_pad - receptive_field) // stride + 1
+
+
 @register_fake_tosa_op(
     "CONV2D(Tensor input, "
     "Tensor weight, "
@@ -110,17 +126,14 @@ def CONV2D(
 
     output_dtype = validate_conv2d_args_dtypes(tosa_spec, x, weight, bias, op="CONV2D")
 
-    torch_pad = [pad[0], pad[2]]
     N = x.shape[0]
+    H_in, W_in = x.shape[1:3]
     C_out = weight.shape[0]
-    H_in, W_in = x.shape[1], x.shape[2]
-    H_out = math.floor(
-        (H_in + 2 * torch_pad[0] - dilation[0] * (weight.shape[1] - 1) - 1) / stride[0]
-        + 1
+    H_out = conv_output_dim(
+        H_in, weight.shape[1], stride[0], pad[0], pad[1], dilation[0]
     )
-    W_out = math.floor(
-        (W_in + 2 * torch_pad[1] - dilation[1] * (weight.shape[2] - 1) - 1) / stride[1]
-        + 1
+    W_out = conv_output_dim(
+        W_in, weight.shape[2], stride[1], pad[2], pad[3], dilation[1]
     )
     output_shape = [N, H_out, W_out, C_out]
     return torch.empty(size=output_shape, dtype=output_dtype)
