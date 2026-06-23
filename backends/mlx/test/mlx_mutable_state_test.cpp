@@ -29,15 +29,16 @@ namespace {
 
 int g_failures = 0;
 
-#define CHECK(cond)                                              \
-  do {                                                           \
-    if (!(cond)) {                                               \
-      std::printf("FAIL: %s (line %d)\n", #cond, __LINE__);      \
-      ++g_failures;                                              \
-    }                                                            \
+#define CHECK(cond)                                         \
+  do {                                                      \
+    if (!(cond)) {                                          \
+      std::printf("FAIL: %s (line %d)\n", #cond, __LINE__); \
+      ++g_failures;                                         \
+    }                                                       \
   } while (0)
 
-// Build a minimal program with a single 1-element float mutable buffer at tid 0.
+// Build a minimal program with a single 1-element float mutable buffer at tid
+// 0.
 MLXProgram make_program() {
   MLXProgram program;
   program.num_mutable_buffer_tensors = 1;

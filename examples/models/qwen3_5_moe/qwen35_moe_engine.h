@@ -7,8 +7,8 @@
  */
 
 // Engine/Session adapter for the Qwen3.5 MoE exported prefill/decode methods.
-// CUDA builds can host multiple sessions on one loaded model by rebinding the
-// model's mutable buffers before each execute.
+// CUDA and MLX builds can host multiple sessions on one loaded model by
+// rebinding the model's mutable buffers before each execute.
 
 #pragma once
 

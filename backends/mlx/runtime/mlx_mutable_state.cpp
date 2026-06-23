@@ -39,11 +39,14 @@ struct Context {
   std::unordered_map<int, std::unordered_map<const void*, MutableBufferData>>
       sessions;
   int next_token{0};
+  // Sticky setup failure. Once set (e.g. by nested load scopes), available(),
+  // validate_coverage(), create_session(), and rebind fail consistently.
+  Error build_error{Error::Ok};
 };
 
-// Process-global registry. MLX serializes execution via its own global mutex and
-// the engine serializes per session, but the registry itself is guarded here so
-// context/session lifecycle calls from other threads are safe.
+// Process-global registry. MLX serializes execution via its own global mutex
+// and the engine serializes per session, but the registry itself is guarded
+// here so context/session lifecycle calls from other threads are safe.
 std::mutex& registry_mutex() {
   static std::mutex m;
   return m;
@@ -93,6 +96,22 @@ void mutable_state_destroy_context(MutableStateContext ctx) {
 }
 
 void mutable_state_begin_load(MutableStateContext ctx) {
+  if (tl_loading_ctx != kInvalidMutableContext) {
+    // Nested load scopes would silently overwrite the thread-local association.
+    // Mark both the already-active and the new context invalid instead.
+    std::lock_guard<std::mutex> g(registry_mutex());
+    auto active = contexts().find(tl_loading_ctx);
+    if (active != contexts().end()) {
+      active->second.build_error = Error::InvalidState;
+    }
+    auto nested = contexts().find(ctx);
+    if (nested != contexts().end()) {
+      nested->second.build_error = Error::InvalidState;
+    }
+    ET_LOG(Error, "mutable_state: nested load scopes are not supported");
+    tl_loading_ctx = kInvalidMutableContext;
+    return;
+  }
   tl_loading_ctx = ctx;
 }
 
@@ -105,7 +124,9 @@ bool mutable_state_available(MutableStateContext ctx) {
     return false;
   }
   std::lock_guard<std::mutex> g(registry_mutex());
-  return contexts().count(ctx) != 0;
+  auto it = contexts().find(ctx);
+  return it != contexts().end() && it->second.build_error == Error::Ok &&
+      !it->second.handles.empty();
 }
 
 int64_t mutable_state_bytes_per_session(MutableStateContext ctx) {
@@ -130,8 +151,15 @@ int64_t mutable_state_bytes_per_session(MutableStateContext ctx) {
 }
 
 Error mutable_state_validate_coverage(MutableStateContext ctx) {
+  std::lock_guard<std::mutex> g(registry_mutex());
+  auto it = contexts().find(ctx);
+  if (it == contexts().end()) {
+    return Error::InvalidArgument;
+  }
+  if (it->second.build_error != Error::Ok) {
+    return it->second.build_error;
+  }
   // MLX clones all mutable buffers by tid; there is no FQN coverage to verify.
-  (void)ctx;
   return Error::Ok;
 }
 
@@ -142,9 +170,18 @@ Result<int> mutable_state_create_session(MutableStateContext ctx) {
     ET_LOG(Error, "mutable_state_create_session: unknown context %d", ctx);
     return Error::InvalidState;
   }
-  int token = it->second.next_token++;
+  Context& c = it->second;
+  if (c.build_error != Error::Ok) {
+    return c.build_error;
+  }
+  if (c.handles.empty()) {
+    ET_LOG(
+        Error, "mutable_state_create_session: no backend handles registered");
+    return Error::NotSupported;
+  }
+  int token = c.next_token++;
   // Per-handle buffers are allocated lazily on first execute.
-  it->second.sessions[token];
+  c.sessions[token];
   return token;
 }
 
@@ -202,6 +239,13 @@ Error mutable_state_rebind_for_execute(
   std::lock_guard<std::mutex> g(registry_mutex());
   auto hit = handle_ctx().find(handle);
   if (hit == handle_ctx().end()) {
+    if (tl_active_token != kNoMutableSession) {
+      ET_LOG(
+          Error,
+          "mutable_state_rebind_for_execute: active session set but handle has "
+          "no mutable-state context");
+      return Error::Internal;
+    }
     // Handle was not loaded under a multi-session owner: keep default buffers.
     return Error::Ok;
   }
@@ -210,14 +254,17 @@ Error mutable_state_rebind_for_execute(
     return Error::Ok;
   }
   Context& ctx = cit->second;
+  if (ctx.build_error != Error::Ok) {
+    return ctx.build_error;
+  }
   HandleInfo& info = ctx.handles[handle];
 
   const bool active_for_this_ctx =
       tl_active_token != kNoMutableSession && tl_active_ctx == hit->second;
 
   if (!active_for_this_ctx) {
-    // No session selected. Refuse if sessions exist (running against the default
-    // buffers here would not isolate state from created sessions).
+    // No session selected. Refuse if sessions exist (running against the
+    // default buffers here would not isolate state from created sessions).
     if (!ctx.sessions.empty()) {
       ET_LOG(
           Error,

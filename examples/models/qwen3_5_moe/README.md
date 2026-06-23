@@ -356,8 +356,11 @@ Session/memory semantics on MLX:
   (`DELETE`/reset). Named sessions are not auto-closed — close them to free slots.
   MLX's Metal allocator pools freed buffers (so RSS may not shrink immediately),
   but they are reused by later sessions, keeping memory bounded.
-- Sessions interleave rather than run in parallel (MLX serializes GPU dispatch via
-  a global mutex).
+- Requests are processed **one at a time** (a single in-flight request per
+  worker). A request runs to completion and head-of-line-blocks every other
+  session until it finishes; there is no token-level interleaving or parallel
+  execution. This holds on both MLX and CUDA; multi-session provides memory
+  isolation and warm resume, not added throughput.
 
 ### Tiny Model Test
 

@@ -551,8 +551,8 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
     }
   }
 #elif defined(EXECUTORCH_BUILD_MLX)
-  // MLX owns mutable buffers directly and clones them per session; no FQN
-  // registration or coverage check is required.
+  // MLX owns mutable buffers directly and selects per-session storage at
+  // execute time; no FQN registration or coverage check is required.
   mutable_state = std::make_unique<MutableStateContextOwner>();
 #endif
 

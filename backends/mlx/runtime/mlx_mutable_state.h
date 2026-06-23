@@ -20,8 +20,8 @@
 // create sessions and execute with one active session selected.
 //
 // Unlike the CUDA backend, the MLX runtime owns mutable buffers directly in a
-// swappable container (ExecutionState::mutable_buffers is a MutableBufferData*),
-// so per-session isolation is a pointer swap to a freshly zero-allocated
+// swappable container (ExecutionState::mutable_buffers is a
+// MutableBufferData*), so per-session isolation is a pointer swap to a fresh
 // MutableBufferData — no FQN registration / constant-repoint hook is needed.
 
 namespace executorch {
@@ -136,6 +136,8 @@ class ET_EXPERIMENTAL MutableStateContextOwner final {
     return std::forward<Fn>(fn)();
   }
 
+  // True only after this context has been associated with at least one loaded
+  // MLX backend handle and can create isolated mutable-buffer sessions.
   bool available() const {
     return detail::mutable_state_available(ctx_);
   }
@@ -148,7 +150,9 @@ class ET_EXPERIMENTAL MutableStateContextOwner final {
     return detail::mutable_state_validate_coverage(ctx_);
   }
 
-  ::executorch::runtime::Result<int> create_session() const {
+  // Creates an isolated mutable-buffer session for this context.
+  // Fails if no loaded MLX backend handle has been associated with the context.
+  ET_NODISCARD ::executorch::runtime::Result<int> create_session() const {
     return detail::mutable_state_create_session(ctx_);
   }
 
