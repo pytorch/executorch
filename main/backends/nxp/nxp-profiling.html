@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Arm Ethos-U Troubleshooting &#8212; ExecuTorch main documentation</title>
+    <title>NXP eIQ Profiling Support &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -50,19 +50,19 @@
     <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../../_static/copybutton.js?v=f281be69"></script>
     <script src="../../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/arm-ethos-u/arm-ethos-u-troubleshooting';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/nxp/nxp-profiling';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/arm-ethos-u/arm-ethos-u-troubleshooting.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/nxp/nxp-profiling.html" />
     <link rel="icon" href="../../_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="EdgeIR Operator support for the U55 backend" href="U55_op_support.html" />
-    <link rel="prev" title="Quantization" href="arm-ethos-u-quantization.html" />
+    <link rel="next" title="Cadence Xtensa Backend" href="../../backends-cadence.html" />
+    <link rel="prev" title="NXP eIQ Neutron Kernel Selective Kernel Registration" href="nxp-kernel-selection.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -691,7 +691,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="arm-ethos-u-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-ethos-u/arm-ethos-u-overview.html">
                   Arm Ethos-U Backend
                 </a>
               </li>
@@ -715,7 +715,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../nxp/nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
@@ -1349,7 +1349,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="arm-ethos-u-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-ethos-u/arm-ethos-u-overview.html">
                   Arm Ethos-U Backend
                 </a>
               </li>
@@ -1373,7 +1373,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../nxp/nxp-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="nxp-overview.html">
                   NXP eIQ Neutron Backend
                 </a>
               </li>
@@ -1831,13 +1831,13 @@ document.write(`
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../backends-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="arm-ethos-u-overview.html">Arm Ethos-U Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="arm-ethos-u-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="arm-ethos-u-quantization.html">Quantization</a></li>
-<li class="toctree-l2 current active"><a class="current reference internal" href="#">Arm Ethos-U Troubleshooting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="U55_op_support.html">EdgeIR Operator support for the U55 backend</a></li>
-<li class="toctree-l2"><a class="reference internal" href="U85_op_support.html">EdgeIR Operator support for the U85 backend</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-overview.html">Arm Ethos-U Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/arm-ethos-u-troubleshooting.html">Arm Ethos-U Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/tutorials/ethos-u-getting-started.html">Getting Started Tutorial</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/U55_op_support.html">EdgeIR Operator support for the U55 backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-ethos-u/U85_op_support.html">EdgeIR Operator support for the U85 backend</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../arm-cortex-m/arm-cortex-m-overview.html">Arm Cortex-M Backend</a></li>
@@ -1850,17 +1850,17 @@ document.write(`
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../nxp/nxp-overview.html">NXP eIQ Neutron Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="nxp-overview.html">NXP eIQ Neutron Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="nxp-partitioner.html">Partitioner API</a></li>
 
-<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-quantization.html">NXP eIQ Neutron Quantization</a></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../nxp/tutorials/nxp-tutorials.html">NXP Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../nxp/tutorials/nxp-basic-tutorial.html">Getting started with eIQ Neutron NPU ExecuTorch backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nxp-quantization.html">NXP eIQ Neutron Quantization</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="tutorials/nxp-tutorials.html">NXP Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="tutorials/nxp-basic-tutorial.html">Getting started with eIQ Neutron NPU ExecuTorch backend</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-dim-order.html">NXP eIQ Dim Order Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-kernel-selection.html">NXP eIQ Neutron Kernel Selective Kernel Registration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../nxp/nxp-profiling.html">NXP eIQ Profiling Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nxp-dim-order.html">NXP eIQ Dim Order Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nxp-kernel-selection.html">NXP eIQ Neutron Kernel Selective Kernel Registration</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">NXP eIQ Profiling Support</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -1911,9 +1911,9 @@ document.write(`
     <li class="breadcrumb-item"><a href="../../backends-section.html" class="nav-link">Backends</a></li>
     
     
-    <li class="breadcrumb-item"><a href="arm-ethos-u-overview.html" class="nav-link">Arm Ethos-U Backend</a></li>
+    <li class="breadcrumb-item"><a href="nxp-overview.html" class="nav-link">NXP eIQ Neutron Backend</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">Arm Ethos-U...</li>
+    <li class="breadcrumb-item active" aria-current="page">NXP eIQ...</li>
   </ul>
 </nav>
 </div>
@@ -1961,13 +1961,13 @@ document.write(`
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="arm-ethos-u-overview.html">
-      <meta itemprop="name" content="Arm Ethos-U Backend">
+      <link itemprop="item" href="nxp-overview.html">
+      <meta itemprop="name" content="NXP eIQ Neutron Backend">
       <meta itemprop="position" content="2">
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="Arm Ethos-U Troubleshooting">
+      <meta itemprop="name" content="NXP eIQ Profiling Support">
       <meta itemprop="position" content="3">
     </div>
   </div>
@@ -1981,40 +1981,188 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="arm-ethos-u-troubleshooting">
-<h1>Arm Ethos-U Troubleshooting<a class="headerlink" href="#arm-ethos-u-troubleshooting" title="Link to this heading">#</a></h1>
-<p>This page describes common issues that you may encounter when using the Arm Ethos-U backend and how to debug and resolve them.</p>
-<section id="understanding-memory-footprint-using-the-ethos-u-compiler">
-<h2>Understanding memory footprint using the Ethos-U compiler<a class="headerlink" href="#understanding-memory-footprint-using-the-ethos-u-compiler" title="Link to this heading">#</a></h2>
-<p>As part of the <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code> step, you will see a memory footprint information presented as:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Total</span> <span class="n">SRAM</span> <span class="n">used</span>                               <span class="mf">2467.27</span> <span class="n">KiB</span>
-<span class="n">Total</span> <span class="n">Off</span><span class="o">-</span><span class="n">chip</span> <span class="n">Flash</span> <span class="n">used</span>                       <span class="mf">12.20</span> <span class="n">KiB</span>
+  <section id="nxp-eiq-profiling-support">
+<h1>NXP eIQ Profiling Support<a class="headerlink" href="#nxp-eiq-profiling-support" title="Link to this heading">#</a></h1>
+<p>The eIQ Neutron Backend is integrated with the
+<a class="reference external" href="https://docs.pytorch.org/executorch/stable/delegate-debugging.html">Developer Tools</a>
+to provide visibility into delegated operator execution time.</p>
+<p>There are three steps required to obtain profiling results for an NXP‑delegated model:</p>
+<ul class="simple">
+<li><p>Convert the model with profiling support enabled.</p></li>
+<li><p>Generate the artifacts consumed by the Developer Tools (<code class="docutils literal notranslate"><span class="pre">ETRecord</span></code>, <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>).</p></li>
+<li><p>Create and run the Inspector class to consume these artifacts and print the results.</p></li>
+</ul>
+<hr class="docutils" />
+<section id="convert-a-model-with-the-profiling-support">
+<h2>Convert a model with the profiling support<a class="headerlink" href="#convert-a-model-with-the-profiling-support" title="Link to this heading">#</a></h2>
+<p>Profiling data is generated only for a <strong>profilable</strong> model.
+To convert a model with profiling enabled, the <code class="docutils literal notranslate"><span class="pre">--use-profiling</span></code> flag must be set.</p>
+<p>See the <code class="docutils literal notranslate"><span class="pre">aot_neutron_compile.py</span></code> example and its
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/README.md">README</a>
+for additional details.</p>
+<p>The following command creates a profilable <code class="docutils literal notranslate"><span class="pre">cifar10_nxp_delegate.pte</span></code> model and the corresponding <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> for the
+<strong>i.MX RT700</strong> board:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.nxp.aot_neutron_compile<span class="w"> </span>--quantize<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--delegate<span class="w"> </span>-m<span class="w"> </span>cifar10<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--use_profiling
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">Total</span> <span class="pre">SRAM</span> <span class="pre">used</span></code> indicates the peak SRAM utilization needed by the NPU in order to perform an inference. In the snippet above, the Ethos-U compiler requires 2467.27 KiB of SRAM in order to schedule the inference.
-Therefore, from an application standpoint, you need to ensure you have at least 2467.27 KiB of SRAM on the SoC to run this model. The Ethos-U compiler provides a scheduling algorithm allowing to
-lower the peak SRAM usage within reasonable limits, you need to add the <code class="docutils literal notranslate"><span class="pre">--optimise</span> <span class="pre">Size</span></code> or <code class="docutils literal notranslate"><span class="pre">--arena-cache-size</span></code> CLI options for to the compile spec. You can read more about the options of the
-Ethos-U compiler in the documentation <a class="reference external" href="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md#optimise">here</a>. If the peak SRAM usage remains too high in
-Shared Sram memory mode, you would need to us the Dedicated Sram mode in order to store the Neural Network and the Ethos-U scratch buffer in the external memory.
-The main advantage of the Dedicated_Sram memory mode is that you can run large models and still benefit from the low-latency/high-bandwidth of the SRAM, used as a cache.
-It is important to highlight that when you specify a memory mode in the compile spec, in the runtime, the user is expected to place the scratch buffer and NN in the correct memory location.
-In other words, when you specify for ex. Shared Sram memory mode, the runtime application logic should place the ethos-U scratch buffer in the on-chip memory and the NN in the external memory for optimal performance.
-You can see how  this coupling between the memory mode and runtime application is done in the
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md">Ethos-U porting guide</a></p>
+<p>For installation details, see <a class="reference internal" href="nxp-overview.html"><span class="doc">NXP eIQ Neutron Backend</span></a>.</p>
 </section>
-<section id="using-bundled-io-and-etdump">
-<h2>Using Bundled.io and ETdump<a class="headerlink" href="#using-bundled-io-and-etdump" title="Link to this heading">#</a></h2>
-<p>The arm_executor_runner supports <a class="reference external" href="https://docs.pytorch.org/executorch/stable/bundled-io.html">bundled-io</a> and <a class="reference external" href="https://docs.pytorch.org/executorch/stable/etdump.html">ETdump</a> debugging tools.</p>
-<p>To enable bundled-io, set <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_DEVTOOLS=ON</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">-DET_BUNDLE_IO=ON</span></code> when building the executor_runner. To enable ETdump, set <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_ARM_ETDUMP=ON</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> when building the executor_runner.</p>
+<hr class="docutils" />
+<section id="generate-etrecord-optional">
+<h2>Generate ETRecord (Optional)<a class="headerlink" href="#generate-etrecord-optional" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is an optional artifact that contains model graphs and metadata used to link runtime profiling results
+back to the eager model.</p>
+<p>The recommended approach is to enable <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> generation by passing <code class="docutils literal notranslate"><span class="pre">generate_etrecord=True</span></code> to export API calls.
+After export completes, retrieve the <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> using the <code class="docutils literal notranslate"><span class="pre">get_etrecord()</span></code> method, and save it using the <code class="docutils literal notranslate"><span class="pre">save()</span></code> method:</p>
+<section id="example">
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.etrecord</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_etrecord</span>
+
+<span class="c1"># 1. Open a model and export the model to ATEN</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+
+<span class="c1"># 2. Transform and lower</span>
+<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">generate_neutron_compile_spec</span><span class="p">(</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">)</span>
+<span class="n">partitioners</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">[</span>
+        <span class="n">NeutronPartitioner</span><span class="p">(</span>
+            <span class="n">compile_spec</span><span class="p">,</span>
+            <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">),</span>
+            <span class="n">post_quantization_state_dict</span><span class="o">=</span><span class="n">module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+        <span class="p">)</span>
+    <span class="p">]</span>
+<span class="p">)</span>
+<span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">export</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+    <span class="n">transform_passes</span><span class="o">=</span><span class="n">NeutronEdgePassManager</span><span class="p">(),</span>
+    <span class="n">generate_etrecord</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="n">partitioners</span><span class="p">,</span>
+    <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span>
+        <span class="n">_core_aten_ops_exception_list</span><span class="o">=</span><span class="n">core_aten_ops_exception_list</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">)</span>
+
+<span class="c1"># 3. Export to ExecuTorch program</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+    <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="p">)</span>
+<span class="c1"># Save ETRecord</span>
+<span class="n">exec_prog</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;etrecord.bin&quot;</span><span class="p">)</span>
+
+</pre></div>
+</div>
 </section>
-<section id="issues-with-memory-formats">
-<h2>Issues with memory formats<a class="headerlink" href="#issues-with-memory-formats" title="Link to this heading">#</a></h2>
-<p>Tensors of rank 4 and higher have two differing <a class="reference external" href="https://pytorch.org/blog/tensor-memory-format-matters/">memory format</a> standards used.
-PyTorch defaults to contiguous/ channels first/ NCHW memory formats, compared to TOSA which only supports channels last/NHWC memory format.
-To support this, the backend inserts a transpose in the beginning if the incoming memory format is contiguous, and correspondingly a
-transpose in the end if the outgoing memory format is contiguous. Note that this means that you may avoid transposing the data unneccessarily if the runtime integration and
-full network is converted to use channels last. A word of caution must be given here however - changing memory format has been noted to have side effects such as
-unsupported ops being inserted into the graph, and it is currently not widely tested, so the feature must so far be viewed as experimental.</p>
+<section id="complete-example">
+<h3>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">#</a></h3>
+<p>A full implementation is available
+in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/aot_neutron_compile.py">aot_neutron_compile.py</a>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">--use_profiling</span></code> flag is used to create a <strong>profilable</strong> model and the corresponding <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> file<br />
+(see <a class="reference internal" href="#convert-a-model-with-profiling-support"><span class="xref myst">Convert a model with profiling support</span></a> for the full command).</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="generate-etdump">
+<h2>Generate ETDump<a class="headerlink" href="#generate-etdump" title="Link to this heading">#</a></h2>
+<p>The next step is to generate an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>. An <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> contains runtime data collected during model inference execution.</p>
+<p>To generate an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>, ensure that the ExecuTorch runtime library is integrated with the Developer Tools and built
+with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> flag enabled.</p>
+<p>Only models converted with profiling support will produce an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> containing execution times for all Neutron
+operators. Otherwise, the dump will include only the final delegate execution time.</p>
+<p>Neutron software provides a profiling mechanism that logs individual operator execution times to a dedicated runtime
+output. This data is then used to generate post‑time events after the inference has completed.</p>
+<section id="id1">
+<h3>Example<a class="headerlink" href="#id1" title="Link to this heading">#</a></h3>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/devtools/etdump/etdump_flatcc.h&gt;</span>
+</pre></div>
+</div>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. Create ETDumpGen BEFORE inference.</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">etdump_gen_ptr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">executorch</span><span class="o">::</span><span class="n">etdump</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="n">executorch</span><span class="o">::</span><span class="n">etdump</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">*</span><span class="w"> </span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen_ptr</span><span class="p">.</span><span class="n">get</span><span class="p">();</span>
+
+<span class="c1">// 2. Load a method from the program by name with ETDump generator for profiling.</span>
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">Method</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">load_method</span><span class="p">(</span><span class="n">method_name</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">memory_manager</span><span class="p">,</span><span class="w"> </span><span class="n">etdump_gen</span><span class="p">);</span>
+
+<span class="c1">// 3. Input tensor setup.</span>
+<span class="n">Tensor</span><span class="o">::</span><span class="n">SizesType</span><span class="w"> </span><span class="n">sizes</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">32</span><span class="p">,</span><span class="w"> </span><span class="mi">32</span><span class="p">};</span>
+<span class="n">Tensor</span><span class="o">::</span><span class="n">DimOrderType</span><span class="w"> </span><span class="n">dim_order</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">};</span>
+<span class="n">TensorImpl</span><span class="w"> </span><span class="nf">impl</span><span class="p">(</span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="n">sizes</span><span class="p">,</span><span class="w"> </span><span class="n">image_data</span><span class="p">,</span><span class="w"> </span><span class="n">dim_order</span><span class="p">);</span>
+<span class="n">Tensor</span><span class="w"> </span><span class="nf">tensor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">impl</span><span class="p">);</span>
+<span class="n">Error</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method</span><span class="o">-&gt;</span><span class="n">set_input</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+
+<span class="c1">// 4. Execute.</span>
+<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method</span><span class="o">-&gt;</span><span class="n">execute</span><span class="p">();</span>
+
+<span class="c1">// Get ETDump.</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">executorch</span><span class="o">::</span><span class="n">etdump</span><span class="o">::</span><span class="n">ETDumpResult</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">nullptr</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">PRINTF</span><span class="p">(</span><span class="s">&quot;Add a brakepoint here and run this command in Debugger Console: &quot;</span>
+<span class="w">    	       </span><span class="s">&quot;dump binary memory trace.etdump result.buf (result.buf + result.size)</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>To save an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> file from the board to a PC, use the <strong>Debug Console</strong> in the MCUXpresso IDE:</p>
+<ul>
+<li><p>Set a breakpoint at the <code class="docutils literal notranslate"><span class="pre">PRINTF(...)</span></code> line in the example above.</p></li>
+<li><p>Enter the following command in the Debug Console and press <strong>Enter</strong>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">dump</span> <span class="n">binary</span> <span class="n">memory</span> <span class="n">trace</span><span class="o">.</span><span class="n">etdump</span> <span class="n">result</span><span class="o">.</span><span class="n">buf</span> <span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">buf</span> <span class="o">+</span> <span class="n">result</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+</pre></div>
+</div>
+</li>
+</ul>
+<figure style="border:1px solid #ccc; padding:8px; display:inline-block;">
+  <img src="../../_static/img/nxp/nxp-mcuxpresso-etdump.png" width="500" alt="Save ETDump in MCUXPresso project" />
+  <figcaption>
+        <b>Figure 1:</b> Save ETDump in MCUXPresso Project.
+  </figcaption>
+</figure>
+<p>The resulting <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> file is generated in the project folder within the MCUXpresso workspace.</p>
+<blockquote>
+<div><p><strong>Note:</strong><br />
+Profilable models print profiling data to the terminal. Generating this dump may take longer than executing the
+Neutron kernels themselves, but this overhead can be ignored as it affects only models with profiling support
+enabled. The dump generation time is included in the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> as the final kernel entry.</p>
+</div></blockquote>
+</section>
+</section>
+<hr class="docutils" />
+<section id="creating-an-inspector">
+<h2>Creating an Inspector<a class="headerlink" href="#creating-an-inspector" title="Link to this heading">#</a></h2>
+<p>The <a class="reference external" href="https://docs.pytorch.org/executorch/1.0/model-inspector.html">Inspector</a> APIs provide a way to analyze the
+contents of <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> and <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>, enabling developers to gain insights into model architecture
+and performance statistics.</p>
+<p><code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is an optional argument used to obtain a mapping between the original model and the converted Neutron model.</p>
+<p>An <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> generated on the board contains metadata for each Neutron operator, including its unique identifier.<br />
+To visualize this metadata in the Inspector results table, set the <code class="docutils literal notranslate"><span class="pre">include_delegate_debug_data</span> <span class="pre">=</span> <span class="pre">True</span></code> argument.</p>
+<section id="id2">
+<h3>Example<a class="headerlink" href="#id2" title="Link to this heading">#</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
+
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><span class="s2">&quot;/path/to/etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">(</span><span class="n">include_delegate_debug_data</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="id3">
+<h3>Complete Example<a class="headerlink" href="#id3" title="Link to this heading">#</a></h3>
+<p>A full implementation is available
+in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/analyzing_with_inspector.py">analyzing_with_inspector.py</a>. &#64;lint-ignore</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="summary">
+<h2>Summary<a class="headerlink" href="#summary" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>Build the model with the <code class="docutils literal notranslate"><span class="pre">--use_profiling</span></code> flag enabled.</p></li>
+<li><p>Build the ExecuTorch runtime library with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> flag and the ETDump Developer Tool.</p></li>
+<li><p>Use the Debug Console in MCUXpresso to save the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> file from the board to a PC.</p></li>
+<li><p>Visualize the profiling results using the Inspector.</p></li>
+</ul>
 </section>
 </section>
 
@@ -2061,20 +2209,20 @@ unsupported ops being inserted into the graph, and it is currently not widely te
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="arm-ethos-u-quantization.html"
+       href="nxp-kernel-selection.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Quantization</p>
+        <p class="prev-next-title">NXP eIQ Neutron Kernel Selective Kernel Registration</p>
       </div>
     </a>
     <a class="right-next"
-       href="U55_op_support.html"
+       href="../../backends-cadence.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">EdgeIR Operator support for the U55 backend</p>
+        <p class="prev-next-title">Cadence Xtensa Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2100,20 +2248,20 @@ unsupported ops being inserted into the graph, and it is currently not widely te
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="arm-ethos-u-quantization.html"
+       href="nxp-kernel-selection.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Quantization</p>
+        <p class="prev-next-title">NXP eIQ Neutron Kernel Selective Kernel Registration</p>
       </div>
     </a>
     <a class="right-next"
-       href="U55_op_support.html"
+       href="../../backends-cadence.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">EdgeIR Operator support for the U55 backend</p>
+        <p class="prev-next-title">Cadence Xtensa Backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2135,9 +2283,22 @@ unsupported ops being inserted into the graph, and it is currently not widely te
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#understanding-memory-footprint-using-the-ethos-u-compiler">Understanding memory footprint using the Ethos-U compiler</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-bundled-io-and-etdump">Using Bundled.io and ETdump</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#issues-with-memory-formats">Issues with memory formats</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#convert-a-model-with-the-profiling-support">Convert a model with the profiling support</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#generate-etrecord-optional">Generate ETRecord (Optional)</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#complete-example">Complete Example</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#generate-etdump">Generate ETDump</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Example</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#creating-an-inspector">Creating an Inspector</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">Example</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">Complete Example</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#summary">Summary</a></li>
 </ul>
   </nav></div>
     
@@ -2145,7 +2306,7 @@ unsupported ops being inserted into the graph, and it is currently not widely te
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/arm-ethos-u/arm-ethos-u-troubleshooting.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/nxp/nxp-profiling.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -2159,7 +2320,7 @@ unsupported ops being inserted into the graph, and it is currently not widely te
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="../../_sources/backends/arm-ethos-u/arm-ethos-u-troubleshooting.md.txt">
+      <a href="../../_sources/backends/nxp/nxp-profiling.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2359,11 +2520,11 @@ unsupported ops being inserted into the graph, and it is currently not widely te
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Arm Ethos-U Troubleshooting",
-       "headline": "Arm Ethos-U Troubleshooting",
+       "name": "NXP eIQ Profiling Support",
+       "headline": "NXP eIQ Profiling Support",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/backends/arm-ethos-u/arm-ethos-u-troubleshooting.html",
-       "articleBody": "Arm Ethos-U Troubleshooting# This page describes common issues that you may encounter when using the Arm Ethos-U backend and how to debug and resolve them. Understanding memory footprint using the Ethos-U compiler# As part of the to_edge_transform_and_lower step, you will see a memory footprint information presented as: Total SRAM used 2467.27 KiB Total Off-chip Flash used 12.20 KiB The Total SRAM used indicates the peak SRAM utilization needed by the NPU in order to perform an inference. In the snippet above, the Ethos-U compiler requires 2467.27 KiB of SRAM in order to schedule the inference. Therefore, from an application standpoint, you need to ensure you have at least 2467.27 KiB of SRAM on the SoC to run this model. The Ethos-U compiler provides a scheduling algorithm allowing to lower the peak SRAM usage within reasonable limits, you need to add the --optimise Size or --arena-cache-size CLI options for to the compile spec. You can read more about the options of the Ethos-U compiler in the documentation here. If the peak SRAM usage remains too high in Shared Sram memory mode, you would need to us the Dedicated Sram mode in order to store the Neural Network and the Ethos-U scratch buffer in the external memory. The main advantage of the Dedicated_Sram memory mode is that you can run large models and still benefit from the low-latency/high-bandwidth of the SRAM, used as a cache. It is important to highlight that when you specify a memory mode in the compile spec, in the runtime, the user is expected to place the scratch buffer and NN in the correct memory location. In other words, when you specify for ex. Shared Sram memory mode, the runtime application logic should place the ethos-U scratch buffer in the on-chip memory and the NN in the external memory for optimal performance. You can see how this coupling between the memory mode and runtime application is done in the Ethos-U porting guide Using Bundled.io and ETdump# The arm_executor_runner supports bundled-io and ETdump debugging tools. To enable bundled-io, set -DEXECUTORCH_BUILD_DEVTOOLS=ON when building Executorch and -DET_BUNDLE_IO=ON when building the executor_runner. To enable ETdump, set -DEXECUTORCH_BUILD_ARM_ETDUMP=ON when building Executorch and -DEXECUTORCH_ENABLE_EVENT_TRACER=ON when building the executor_runner. Issues with memory formats# Tensors of rank 4 and higher have two differing memory format standards used. PyTorch defaults to contiguous/ channels first/ NCHW memory formats, compared to TOSA which only supports channels last/NHWC memory format. To support this, the backend inserts a transpose in the beginning if the incoming memory format is contiguous, and correspondingly a transpose in the end if the outgoing memory format is contiguous. Note that this means that you may avoid transposing the data unneccessarily if the runtime integration and full network is converted to use channels last. A word of caution must be given here however - changing memory format has been noted to have side effects such as unsupported ops being inserted into the graph, and it is currently not widely tested, so the feature must so far be viewed as experimental.",
+       "url": "/backends/nxp/nxp-profiling.html",
+       "articleBody": "NXP eIQ Profiling Support# The eIQ Neutron Backend is integrated with the Developer Tools to provide visibility into delegated operator execution time. There are three steps required to obtain profiling results for an NXP\u2011delegated model: Convert the model with profiling support enabled. Generate the artifacts consumed by the Developer Tools (ETRecord, ETDump). Create and run the Inspector class to consume these artifacts and print the results. Convert a model with the profiling support# Profiling data is generated only for a profilable model. To convert a model with profiling enabled, the --use-profiling flag must be set. See the aot_neutron_compile.py example and its README for additional details. The following command creates a profilable cifar10_nxp_delegate.pte model and the corresponding ETRecord for the i.MX RT700 board: python -m examples.nxp.aot_neutron_compile --quantize \\ --delegate -m cifar10 \\ --use_profiling For installation details, see NXP eIQ Neutron Backend. Generate ETRecord (Optional)# ETRecord is an optional artifact that contains model graphs and metadata used to link runtime profiling results back to the eager model. The recommended approach is to enable ETRecord generation by passing generate_etrecord=True to export API calls. After export completes, retrieve the ETRecord using the get_etrecord() method, and save it using the save() method: Example# from executorch.devtools.etrecord import generate_etrecord # 1. Open a model and export the model to ATEN model = model.eval() exported_program = torch.export.export(model, example_inputs, strict=True) module = exported_program.module() # 2. Transform and lower compile_spec = generate_neutron_compile_spec(\"imxrt700\") partitioners = ( [ NeutronPartitioner( compile_spec, NeutronTargetSpec(target=\"imxrt700\"), post_quantization_state_dict=module.state_dict(), ) ] ) edge_program_manager = to_edge_transform_and_lower( export(module, example_inputs, strict=True), transform_passes=NeutronEdgePassManager(), generate_etrecord=True, partitioner=partitioners, compile_config=EdgeCompileConfig( _core_aten_ops_exception_list=core_aten_ops_exception_list, ), ) # 3. Export to ExecuTorch program exec_prog = edge_program_manager.to_executorch( config=ExecutorchBackendConfig(extract_delegate_segments=False) ) # Save ETRecord exec_prog.get_etrecord().save(\"etrecord.bin\") Complete Example# A full implementation is available in aot_neutron_compile.py. The --use_profiling flag is used to create a profilable model and the corresponding ETRecord file (see Convert a model with profiling support for the full command). Generate ETDump# The next step is to generate an ETDump. An ETDump contains runtime data collected during model inference execution. To generate an ETDump, ensure that the ExecuTorch runtime library is integrated with the Developer Tools and built with the ET_EVENT_TRACER_ENABLED flag enabled. Only models converted with profiling support will produce an ETDump containing execution times for all Neutron operators. Otherwise, the dump will include only the final delegate execution time. Neutron software provides a profiling mechanism that logs individual operator execution times to a dedicated runtime output. This data is then used to generate post\u2011time events after the inference has completed. Example# #include \u003cexecutorch/devtools/etdump/etdump_flatcc.h\u003e // 1. Create ETDumpGen BEFORE inference. auto etdump_gen_ptr = std::make_unique\u003cexecutorch::etdump::ETDumpGen\u003e(); executorch::etdump::ETDumpGen* etdump_gen = etdump_gen_ptr.get(); // 2. Load a method from the program by name with ETDump generator for profiling. Result\u003cMethod\u003e method = program-\u003eload_method(method_name, \u0026memory_manager, etdump_gen); // 3. Input tensor setup. Tensor::SizesType sizes[] = {1, 1, 32, 32}; Tensor::DimOrderType dim_order[] = {0, 2, 3, 1}; TensorImpl impl(ScalarType::Float, 4, sizes, image_data, dim_order); Tensor tensor(\u0026impl); Error status = method-\u003eset_input(tensor, 0); // 4. Execute. status = method-\u003eexecute(); // Get ETDump. if (etdump_gen != nullptr) { executorch::etdump::ETDumpResult result = etdump_gen-\u003eget_etdump_data(); if (result.buf != nullptr \u0026\u0026 result.size \u003e 0) { PRINTF(\"Add a brakepoint here and run this command in Debugger Console: \" \"dump binary memory trace.etdump result.buf (result.buf + result.size)\\r\\n\"); } } To save an ETDump file from the board to a PC, use the Debug Console in the MCUXpresso IDE: Set a breakpoint at the PRINTF(...) line in the example above. Enter the following command in the Debug Console and press Enter: dump binary memory trace.etdump result.buf (result.buf + result.size) Figure 1: Save ETDump in MCUXPresso Project. The resulting ETDump file is generated in the project folder within the MCUXpresso workspace. Note: Profilable models print profiling data to the terminal. Generating this dump may take longer than executing the Neutron kernels themselves, but this overhead can be ignored as it affects only models with profiling support enabled. The dump generation time is included in the ETDump as the final kernel entry. Creating an Inspector# The Inspector APIs provide a way to analyze the contents of ETRecord and ETDump, enabling developers to gain insights into model architecture and performance statistics. ETRecord is an optional argument used to obtain a mapping between the original model and the converted Neutron model. An ETDump generated on the board contains metadata for each Neutron operator, including its unique identifier. To visualize this metadata in the Inspector results table, set the include_delegate_debug_data = True argument. Example# from executorch.devtools import Inspector inspector = Inspector(etdump_path=\"/path/to/etdump.etdp\", etrecord=\"/path/to/etrecord.bin\") inspector.print_data_tabular(include_delegate_debug_data = True) Complete Example# A full implementation is available in analyzing_with_inspector.py. @lint-ignore Summary# Build the model with the --use_profiling flag enabled. Build the ExecuTorch runtime library with the ET_EVENT_TRACER_ENABLED flag and the ETDump Developer Tool. Use the Debug Console in MCUXpresso to save the ETDump file from the board to a PC. Visualize the profiling results using the Inspector.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2372,7 +2533,7 @@ unsupported ops being inserted into the graph, and it is currently not widely te
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/backends/arm-ethos-u/arm-ethos-u-troubleshooting.html"
+         "@id": "/backends/nxp/nxp-profiling.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
