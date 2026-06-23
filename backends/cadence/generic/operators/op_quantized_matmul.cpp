@@ -21,12 +21,12 @@ namespace generic {
 namespace native {
 
 using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::quantize;
+using std::optional;
 
 // The quantized matmul. The quantized matmul accumulates in a wider register,
 // whose type is TA.

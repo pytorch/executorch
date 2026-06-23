@@ -129,6 +129,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.tan.default,
     exir_ops.edge.aten.silu.default,
     exir_ops.edge.aten.detach_copy.default,
+    exir_ops.edge.aten.round.default,
 }
 
 
