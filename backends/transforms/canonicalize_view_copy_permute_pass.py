@@ -14,13 +14,14 @@ from executorch.backends.transforms.dim_maps import (
     _is_permutation,
     _normalize_dim,
     _normalize_dims,
+    normalize_view_shape,
     ViewMap,
 )
-
-from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, Node
+from torch.fx.experimental.symbolic_shapes import free_unbacked_symbols
 from torch.fx.node import Target
 from torch.fx.passes.infra.pass_base import PassResult
 
@@ -231,10 +232,14 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
             return True
 
         if node.target == self._VIEW_TARGET and next_node.target == self._VIEW_TARGET:
-            # Fuse conscutive views
-            self._set_node_op(
-                node, self._VIEW_TARGET, input_node, self._shape(next_node)
-            )
+            shape = self._shape(next_node)
+            if any(isinstance(dim, Node) for dim in next_node.args[1]) or any(
+                isinstance(dim, torch.SymInt) and free_unbacked_symbols(dim)
+                for dim in shape
+            ):
+                return False
+            # Fuse consecutive views
+            self._set_node_op(node, self._VIEW_TARGET, input_node, shape)
             self._remove_node(graph_module, chain, index + 1, replacement=node)
             return True
 
@@ -396,8 +401,14 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         ]
         return permuted_non_singleton_axes == non_singleton_axes
 
-    @staticmethod
-    def _view_map(view_node: Node) -> ViewMap | None:
+    @classmethod
+    def _view_map(cls, view_node: Node) -> ViewMap | None:
+        if any(isinstance(dim, Node) for dim in view_node.args[1]) or any(
+            isinstance(dim, torch.SymInt) and free_unbacked_symbols(dim)
+            for dim in cls._shape(view_node)
+        ):
+            return None
+
         try:
             return ViewMap(view_node)
         except AssertionError:
@@ -431,12 +442,47 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         arg: Sequence[_Dim],
     ) -> None:
         node.target = target
-        node.args = (input_node, list(arg))
-        refresh_permute_view_meta(node)
+        if target == self._VIEW_TARGET:
+            with node.graph.inserting_before(node):
+                shape_arg = materialize_symints(node.graph, arg)
+        else:
+            shape_arg = list(arg)
+        node.args = (input_node, shape_arg)
+        self._refresh_meta(node, arg)
 
     def _permute_dims(self, node: Node) -> list[int]:
         assert self._is_permute(node), "Expected permute node"
         return list(cast(Sequence[int], node.args[1]))
+
+    def _refresh_meta(self, node: Node, shape: Sequence[_Dim] | None = None) -> None:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        input_val = input_node.meta.get("val")
+        is_permute = self._is_permute(node) or node.target == self._PERMUTE_TARGET
+        if input_val is None or (node.target != self._VIEW_TARGET and not is_permute):
+            return
+
+        # Compute new meta shapes to preserve SymInts.
+        if isinstance(input_val, torch.Tensor):
+            if node.target == self._VIEW_TARGET:
+                view_shape = (
+                    shape if shape is not None else cast(Sequence[_Dim], node.args[1])
+                )
+                node.meta["val"] = input_val.new_empty(
+                    tuple(normalize_view_shape(input_val.shape, view_shape))
+                )
+                return
+
+            if is_permute:
+                dims = _normalize_dims(
+                    cast(Sequence[int], node.args[1]), len(input_val.shape)
+                )
+                node.meta["val"] = input_val.new_empty(
+                    tuple(input_val.shape[dim] for dim in dims)
+                )
+                return
+
+        node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
 
     @staticmethod
     def _shape(node: Node) -> list[_Dim]:

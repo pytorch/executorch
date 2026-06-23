@@ -6,10 +6,10 @@
 import torch
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.symbolic_shape_utils import materialize_symints
 from executorch.backends.arm._passes.symbolic_to_tosa_shape_pass import (
     SymbolicToTosaShapesPass,
 )
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 
