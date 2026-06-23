@@ -285,12 +285,12 @@ class NeutronBackend(BackendDetails):
                 neutron_model = NeutronConverterManager(
                     dump_kernel_selection_code
                 ).convert(
-                tflite_model,
-                target,
-                delegation_tag,
-                fetch_constants_to_sram,
+                    tflite_model,
+                    target,
+                    delegation_tag,
+                    fetch_constants_to_sram,
                     use_profiling,
-            )
+                )
                 tmp.seek(0)
                 log_output = tmp.read().decode()
             # Get mapping from tflite to neutron
