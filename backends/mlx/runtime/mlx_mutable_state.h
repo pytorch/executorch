@@ -129,6 +129,16 @@ class ET_EXPERIMENTAL MutableStateContextOwner final {
 
   // Selects this context/session while `fn` executes. The caller is responsible
   // for serializing execution that touches the same loaded program.
+  //
+  // Thread-safety contract: destroy_session()/forget_handle() only take the
+  // registry mutex, while rebind (under with_active_session) hands execute a
+  // raw pointer into Context::sessions that is dereferenced after the lock is
+  // released. The caller must therefore guarantee a session is never destroyed
+  // while it is the active session mid-execute (the engine upholds this: a
+  // session's buffers are freed only when its owning LLMSession drops, never
+  // concurrently with its own execute). Destroying *other* sessions
+  // concurrently is safe — unordered_map keeps element pointers stable across
+  // rehash.
   template <typename Fn>
   auto with_active_session(int token, Fn&& fn) const
       -> decltype(std::forward<Fn>(fn)()) {
@@ -137,7 +147,7 @@ class ET_EXPERIMENTAL MutableStateContextOwner final {
   }
 
   // True only after this context has been associated with at least one loaded
-  // MLX backend handle and can create isolated mutable-buffer sessions.
+  // MLX backend handle can create isolated mutable-buffer sessions.
   bool available() const {
     return detail::mutable_state_available(ctx_);
   }

@@ -257,10 +257,34 @@ Error mutable_state_rebind_for_execute(
   if (ctx.build_error != Error::Ok) {
     return ctx.build_error;
   }
-  HandleInfo& info = ctx.handles[handle];
+  // Invariant: a handle present in handle_ctx() is present in ctx.handles. Look
+  // it up explicitly (not operator[]) so a broken invariant fails loudly
+  // instead of inserting a {nullptr, nullptr} entry that later null-derefs in
+  // load_mutable_buffers(*info.program, ...).
+  auto info_it = ctx.handles.find(handle);
+  if (info_it == ctx.handles.end()) {
+    ET_LOG(
+        Error,
+        "mutable_state_rebind_for_execute: handle has a context but no "
+        "registered HandleInfo (invariant broken)");
+    return Error::Internal;
+  }
+  HandleInfo& info = info_it->second;
 
+  const bool has_active_session = tl_active_token != kNoMutableSession;
   const bool active_for_this_ctx =
-      tl_active_token != kNoMutableSession && tl_active_ctx == hit->second;
+      has_active_session && tl_active_ctx == hit->second;
+
+  // A session is active, but for a different context than the one this handle
+  // belongs to. Falling back to default buffers would silently execute with the
+  // wrong model/session state, so refuse instead.
+  if (has_active_session && !active_for_this_ctx) {
+    ET_LOG(
+        Error,
+        "mutable_state_rebind_for_execute: active context mismatch (a session "
+        "is active for a different loaded program than the one executing)");
+    return Error::Internal;
+  }
 
   if (!active_for_this_ctx) {
     // No session selected. Refuse if sessions exist (running against the
