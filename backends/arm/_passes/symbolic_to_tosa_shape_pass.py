@@ -14,8 +14,8 @@ from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.symbolic_materialization_helper import (
     SymbolMaterializationHelpers,
 )
-from executorch.backends.arm._passes.symbolic_shape_utils import materialize_symints
 from executorch.backends.arm.tosa.dialect.shape import meta_has_shape_mark
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import NodeMetadata, ProxyValue
 

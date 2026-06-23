@@ -11,7 +11,7 @@ from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-
+from torch.fx import Graph, GraphModule
 
 _VIEW = exir_ops.edge.aten.view_copy.default
 _PERMUTE = exir_ops.edge.aten.permute_copy.default
@@ -144,3 +144,25 @@ def test_fuse_view_copy_transform_runs_again_after_new_fusable_view_tosa_FP():
         ],
     )
     pipeline.run()
+
+
+def test_fuse_view_copy_transform_keeps_shape_nodes_topologically_ordered():
+    graph = Graph()
+    x = graph.placeholder("x")
+    view_1 = graph.call_function(
+        exir_ops.edge.aten.view_copy.default,
+        (x, [1, 2]),
+    )
+    sym_size = graph.call_function(torch.ops.aten.sym_size.int, (x, 0))
+    view_2 = graph.call_function(
+        exir_ops.edge.aten.view_copy.default,
+        (view_1, [sym_size, 2]),
+    )
+    graph.output(view_2)
+
+    graph_module = GraphModule({}, graph)
+    FuseViewCopyTransform().merge_view_copy_chains(graph_module.graph)
+
+    graph_module.graph.lint()
+    assert view_1.args[1] == [1, 2]
+    assert view_2.args[1] == [sym_size, 2]
