@@ -30,6 +30,12 @@ from executorch.backends.webgpu.test.ops.add.test_add import (
     AddModule,
     AddSelfModule,
 )
+from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
+    _CASES,
+    _linspace_weight,
+    _ramp,
+    RmsNormModule,
+)
 from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
@@ -38,16 +44,9 @@ from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
 )
-
 from executorch.backends.webgpu.test.ops.test_permute import (
     CONFIGS as _PERMUTE_CONFIGS,
     PermuteModule,
-)
-from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
-    _CASES,
-    _linspace_weight,
-    _ramp,
-    RmsNormModule,
 )
 from executorch.backends.webgpu.test.ops.test_select import (
     CONFIGS as _SELECT_CONFIGS,

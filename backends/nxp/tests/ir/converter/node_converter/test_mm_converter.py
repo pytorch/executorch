@@ -51,7 +51,7 @@ class TestMmConversion(unittest.TestCase):
                 "lowered_module" in node.name for node in edge_program.graph.nodes
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
                 np.int8
@@ -85,7 +85,7 @@ class TestMmConversion(unittest.TestCase):
                 "lowered_module" in node.name for node in edge_program.graph.nodes
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
                 np.int8
