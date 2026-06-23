@@ -17,8 +17,8 @@ kernels = {
 definitions_yaml = "fbcode/executorch/kernels/test/supported_features.yaml"
 
 
-def gen_overriden_values():
-    overriden_values = {}
+def gen_overridden_values():
+    overridden_values = {}
     for name, path in kernels.items():
         with open(path) as f:
             overrides = yaml.full_load(f)
@@ -30,14 +30,14 @@ def gen_overriden_values():
                     if feature == "namespace":
                         # we handled namespace previously
                         continue
-                    overriden_values[namespace, feature, name] = value
-    return overriden_values
+                    overridden_values[namespace, feature, name] = value
+    return overridden_values
 
 
 def make_md_table():
     print("# Supported features table")
 
-    overriden_values = gen_overriden_values()
+    overridden_values = gen_overridden_values()
     with open(definitions_yaml) as f:
         definitions = yaml.full_load(f)
 
@@ -53,7 +53,7 @@ def make_md_table():
                 # we handled namespace previously
                 continue
             values = [
-                str(overriden_values.get((namespace, feature, k), value["default"]))
+                str(overridden_values.get((namespace, feature, k), value["default"]))
                 for k in kernels
             ]
             print("|", "|".join([feature] + values), "|")
