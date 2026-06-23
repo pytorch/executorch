@@ -84,7 +84,7 @@ class HierarchicalAllocator final {
       size_t offset_bytes,
       size_t size_bytes) {
     // Check for integer overflow in offset_bytes + size_bytes.
-    size_t end_bytes = 0;
+    uint64_t end_bytes = 0;
     ET_CHECK_OR_RETURN_ERROR(
         !c10::add_overflows(offset_bytes, size_bytes, &end_bytes),
         InvalidArgument,
