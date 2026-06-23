@@ -17,7 +17,7 @@ import unittest
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
-from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import RmsNormModule
+from executorch.backends.webgpu.test.ops.test_rms_norm import RmsNormModule
 from executorch.backends.webgpu.test.tester import WEBGPU_SUPPORTED_OPS
 from executorch.exir import to_edge_transform_and_lower
 
