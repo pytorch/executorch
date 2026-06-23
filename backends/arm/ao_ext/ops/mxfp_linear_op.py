@@ -13,13 +13,13 @@ op during export.
 import torch
 import torch.nn.functional as F
 from executorch.backends.arm.ao_ext.mxfp import (
+    _cast_to_block_scaled_cpu_ref,
     mxfp_dtype_to_str,
     mxfp_str_to_dtype,
     MXFPDType,
     MXFPOpConfig,
 )
 from executorch.backends.arm.ao_ext.mxfp_tosa_lib import MXFP_TOSA_LIB
-from torchao.prototype.mx_formats.config import ScaleCalculationMode
 from torchao.prototype.mx_formats.mx_tensor import to_dtype, to_mx
 
 
@@ -91,27 +91,6 @@ def _mxfp_linear_fake(
         )
     output_shape = (*input.shape[:-1], weight_qdata.shape[1])
     return input.new_empty(output_shape, dtype=torch.float32)
-
-
-def _cast_to_block_scaled_cpu_ref(
-    input: torch.Tensor,
-    output_dtype: MXFPDType,
-    block_size: int,
-) -> torch.Tensor:
-    """Emulate the current TOSA activation cast in eager mode."""
-    input_scale, input_qdata = to_mx(
-        input.to(torch.float32).contiguous(),
-        elem_dtype=output_dtype,
-        block_size=block_size,
-        scaling_mode=ScaleCalculationMode.RCEIL,
-    )
-    return to_dtype(
-        input_qdata,
-        input_scale,
-        output_dtype,
-        block_size,
-        torch.float32,
-    )
 
 
 @torch.library.impl("tosa_mxfp::linear", "cpu", lib=MXFP_TOSA_LIB)
