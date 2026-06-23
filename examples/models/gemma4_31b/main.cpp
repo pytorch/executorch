@@ -23,8 +23,11 @@
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
+#include <executorch/runtime/core/portable_type/device.h>
+#include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
@@ -79,16 +82,26 @@ DEFINE_bool(
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::extension::from_blob;
+using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
+using ::executorch::extension::TensorPtr;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
+#ifdef EXECUTORCH_BUILD_CUDA
+using ::executorch::extension::clone_tensor_ptr_to;
+#endif
 
 using SizesType = executorch::aten::SizesType;
 
-// Read a sampled token ID from a scalar float output (CUDA path).
+// Read a sampled token ID from a scalar int64 output (CUDA path).
+//
+// The model now emits the sampled token as int64 (see sampler.py), matching
+// the decode method's int64 token input so the on-device output buffer can be
+// aliased directly as the next step's input. We still copy the 8-byte scalar
+// back to the host here for EOS detection and detokenization.
 static uint64_t read_token(const executorch::aten::Tensor& output) {
   const void* ptr = output.const_data_ptr();
-  float val = 0.0f;
+  int64_t val = 0;
 
 #ifdef EXECUTORCH_BUILD_CUDA
   cudaPointerAttributes attrs{};
@@ -96,7 +109,7 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
       attrs.type == cudaMemoryTypeDevice;
   if (on_device) {
     cudaError_t err =
-        cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(&val, ptr, sizeof(int64_t), cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
       ET_LOG(
           Error,
@@ -105,13 +118,13 @@ static uint64_t read_token(const executorch::aten::Tensor& output) {
       return 0;
     }
   } else {
-    memcpy(&val, ptr, sizeof(float));
+    memcpy(&val, ptr, sizeof(int64_t));
   }
 #else
-  memcpy(&val, ptr, sizeof(float));
+  memcpy(&val, ptr, sizeof(int64_t));
 #endif
 
-  return static_cast<uint64_t>(llrintf(val));
+  return static_cast<uint64_t>(val);
 }
 
 int main(int argc, char** argv) {
@@ -181,6 +194,8 @@ int main(int argc, char** argv) {
       FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
 
 #ifdef EXECUTORCH_BUILD_CUDA
+  const auto cuda_device =
+      executorch::aten::Device(executorch::aten::DeviceType::CUDA, 0);
   if (FLAGS_cuda_graph) {
     executorch::runtime::BackendOptions<2> cuda_opts;
     cuda_opts.set_option("enable_cuda_graph_for_method", "decode");
@@ -217,8 +232,9 @@ int main(int argc, char** argv) {
     ET_LOG(Error, "Failed to load decode method");
     return 1;
   }
-  auto temp_tensor =
-      from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
+  auto temp_tensor = clone_tensor_ptr_to(
+      from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float),
+      cuda_device);
 #else
   if (FLAGS_cuda_graph) {
     ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
@@ -286,6 +302,12 @@ int main(int argc, char** argv) {
   // ---------------------------------------------------------------
   uint64_t cur_token = 0;
   int64_t prefill_pos = 0;
+#ifdef EXECUTORCH_BUILD_CUDA
+  // Alias of the most recent forward's on-device int64 output token. The last
+  // prefill chunk's output seeds the first decode step (no token H2D); each
+  // decode step then re-aliases its own output for the next step.
+  TensorPtr device_out_token;
+#endif
   while (prefill_pos < num_prompt_tokens) {
     int64_t chunk_len =
         std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
@@ -303,6 +325,12 @@ int main(int argc, char** argv) {
         executorch::aten::ScalarType::Long);
     auto pos_tensor = from_blob(
         pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
+
+#ifdef EXECUTORCH_BUILD_CUDA
+    // skip_h2d: prefill/decode method inputs must already live in CUDA memory.
+    tokens_tensor = clone_tensor_ptr_to(tokens_tensor, cuda_device);
+    pos_tensor = clone_tensor_ptr_to(pos_tensor, cuda_device);
+#endif
 
     std::vector<EValue> inputs;
     inputs.push_back(EValue(tokens_tensor));
@@ -322,7 +350,11 @@ int main(int argc, char** argv) {
     }
 
 #ifdef EXECUTORCH_BUILD_CUDA
-    cur_token = read_token(result.get()[0].toTensor());
+    const auto& out_tensor = result.get()[0].toTensor();
+    cur_token = read_token(out_tensor);
+    // Keep the sampled token on device: alias the output buffer so it feeds
+    // straight into the next forward as the int64 token input (zero copy).
+    device_out_token = make_tensor_ptr(out_tensor);
 #else
     cur_token = static_cast<uint64_t>(
         llm::logits_to_token(result.get()[0].toTensor(), temp_val));
@@ -354,21 +386,69 @@ int main(int argc, char** argv) {
   // Decode loop
   // ---------------------------------------------------------------
   int64_t pos = num_prompt_tokens;
-  std::vector<int64_t> decode_token_data = {static_cast<int64_t>(cur_token)};
   std::vector<int64_t> decode_pos_data = {pos};
+  auto decode_pos_cpu = from_blob(
+      decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
+#ifdef EXECUTORCH_BUILD_CUDA
+  // Fixed device-resident position input slot: the decode method always reads
+  // the position from this same address every step (cuda-graph-safe). Seeded
+  // once here with a one-time H2D; refreshed each step by an on-device D2D.
+  auto decode_pos = clone_tensor_ptr_to(decode_pos_cpu, cuda_device);
+  // Upload the FULL decode position array to device ONCE (a single H2D - the
+  // one-time copy we keep). Each step copies its position from here into the
+  // fixed slot with a device-to-device copy, so there is NO per-round pos H2D.
+  std::vector<int64_t> pos_seq_data(FLAGS_max_new_tokens);
+  for (int32_t i = 0; i < FLAGS_max_new_tokens; i++) {
+    pos_seq_data[i] = num_prompt_tokens + i;
+  }
+  auto pos_seq_dev = clone_tensor_ptr_to(
+      from_blob(
+          pos_seq_data.data(),
+          {S(FLAGS_max_new_tokens)},
+          executorch::aten::ScalarType::Long),
+      cuda_device);
+  auto* pos_seq_dev_ptr =
+      static_cast<int64_t*>(pos_seq_dev->mutable_data_ptr());
+  auto* decode_pos_slot_ptr =
+      static_cast<int64_t*>(decode_pos->mutable_data_ptr());
+#else
+  // Non-CUDA (MLX) path: keep host token/pos buffers; the backend stages them
+  // and the host samples from the returned logits.
+  std::vector<int64_t> decode_token_data = {static_cast<int64_t>(cur_token)};
   auto decode_tokens = from_blob(
       decode_token_data.data(), {1, 1}, executorch::aten::ScalarType::Long);
-  auto decode_pos = from_blob(
-      decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
+  auto decode_pos = decode_pos_cpu;
+#endif
 
   uint64_t prev_token = cur_token;
   bool hit_eos = eos_ids.find(cur_token) != eos_ids.end();
   for (int32_t step = 0; step < FLAGS_max_new_tokens && !hit_eos; step++) {
-    decode_token_data[0] = static_cast<int64_t>(cur_token);
+#ifdef EXECUTORCH_BUILD_CUDA
+    // No per-round H2D: copy this step's position from the pre-uploaded device
+    // position array into the fixed position slot with an on-device D2D. With
+    // the token aliased on device (Option A) and the position staged via D2D,
+    // the per-round HtoD count is zero (independent of decode length).
+    // cudaMemcpy D2D is host-synchronous, so the slot is updated before the
+    // decode kernels read it; with cuda graph enabled this becomes a captured
+    // cudaMemcpyAsync on the decode stream into this same fixed slot.
+    ET_CHECK_MSG(
+        cudaMemcpy(
+            decode_pos_slot_ptr,
+            pos_seq_dev_ptr + step,
+            sizeof(int64_t),
+            cudaMemcpyDeviceToDevice) == cudaSuccess,
+        "Failed to copy decode position D2D");
+#else
     decode_pos_data[0] = pos;
+    decode_token_data[0] = static_cast<int64_t>(cur_token);
+#endif
 
     std::vector<EValue> inputs;
+#ifdef EXECUTORCH_BUILD_CUDA
+    inputs.push_back(EValue(device_out_token));
+#else
     inputs.push_back(EValue(decode_tokens));
+#endif
     inputs.push_back(EValue(decode_pos));
 
 #ifdef EXECUTORCH_BUILD_CUDA
@@ -385,7 +465,10 @@ int main(int argc, char** argv) {
 
     prev_token = cur_token;
 #ifdef EXECUTORCH_BUILD_CUDA
-    cur_token = read_token(result.get()[0].toTensor());
+    const auto& out_tensor = result.get()[0].toTensor();
+    cur_token = read_token(out_tensor);
+    // Alias this step's on-device output token as the next step's token input.
+    device_out_token = make_tensor_ptr(out_tensor);
 #else
     cur_token = static_cast<uint64_t>(
         llm::logits_to_token(result.get()[0].toTensor(), temp_val));
