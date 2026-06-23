@@ -8,7 +8,9 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 
+#include <atomic>
 #include <cstring>
+#include <new>
 
 #include <gtest/gtest.h>
 
@@ -24,6 +26,59 @@ using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+
+namespace {
+// When set, the replacement nothrow aligned operator new below returns nullptr,
+// simulating an allocation failure without needing a real OOM.
+std::atomic<bool> g_fail_aligned_nothrow_alloc{false};
+
+// RAII guard to ensure flag is reset even if test asserts early.
+struct FailAllocGuard {
+  FailAllocGuard() {
+    g_fail_aligned_nothrow_alloc.store(true, std::memory_order_relaxed);
+  }
+  ~FailAllocGuard() {
+    g_fail_aligned_nothrow_alloc.store(false, std::memory_order_relaxed);
+  }
+};
+} // namespace
+
+// Detect ASAN to avoid multiple definition link error and to skip test when
+// ASAN runtime provides its own strong operator new.
+#if defined(__SANITIZE_ADDRESS__) || \
+    (defined(__has_feature) && __has_feature(address_sanitizer))
+#define ET_TEST_ASAN_ENABLED 1
+#else
+#define ET_TEST_ASAN_ENABLED 0
+#endif
+
+#if !ET_TEST_ASAN_ENABLED
+// Replaces the global nothrow aligned allocation function for this test binary
+// so FileDataLoader's segment allocation can be made to fail on demand. When
+// the toggle is off it forwards to the real aligned allocator. We call the
+// throwing aligned new inside a try/catch and convert exceptions to nullptr
+// to emulate nothrow semantics without recursing into this same nothrow
+// overload (calling ::operator new(size, alignment, std::nothrow) here would
+// infinite-loop). Memory allocated here is released through the default
+// operator delete, which is not replaced.
+// This is a strong (non-weak) replacement so it reliably overrides libc++'s
+// default on all platforms (a weak definition loses to libc++'s own weak
+// definition on Apple's linker, leaving the override silently unused). Under
+// ASAN this whole block is excluded so it can't clash with ASAN's allocator.
+void* operator new(
+    std::size_t size,
+    std::align_val_t alignment,
+    const std::nothrow_t& /* tag */) noexcept {
+  if (g_fail_aligned_nothrow_alloc.load(std::memory_order_relaxed)) {
+    return nullptr;
+  }
+  try {
+    return ::operator new(size, alignment);
+  } catch (...) {
+    return nullptr;
+  }
+}
+#endif // !ET_TEST_ASAN_ENABLED
 
 class FileDataLoaderTest : public ::testing::TestWithParam<size_t> {
  protected:
@@ -146,6 +201,46 @@ TEST_P(FileDataLoaderTest, OutOfBoundsLoadFails) {
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }
+
+#if !ET_TEST_ASAN_ENABLED
+TEST_P(FileDataLoaderTest, AllocationFailureDuringLoadReturnsError) {
+  // Create a temp file; contents don't matter.
+  uint8_t data[256] = {};
+  TempFile tf(data, sizeof(data));
+
+  Result<FileDataLoader> fdl =
+      FileDataLoader::from(tf.path().c_str(), alignment());
+  ASSERT_EQ(fdl.error(), Error::Ok);
+
+  // Force the segment allocation inside load() to fail. The loader must surface
+  // Error::MemoryAllocationFailed rather than letting std::bad_alloc escape,
+  // which would abort the process in the exception-free runtime.
+  FailAllocGuard fail_guard;
+  Result<FreeableBuffer> fb = fdl->load(
+      /*offset=*/0,
+      /*size=*/sizeof(data),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+
+  EXPECT_EQ(fb.error(), Error::MemoryAllocationFailed);
+}
+#endif // !ET_TEST_ASAN_ENABLED
+
+#if !ET_TEST_ASAN_ENABLED
+TEST_P(FileDataLoaderTest, AllocationFailureDuringFromReturnsError) {
+  // Create a temp file; contents don't matter.
+  uint8_t data[256] = {};
+  TempFile tf(data, sizeof(data));
+
+  // Force the filename allocation inside from() to fail. FileDataLoader::from
+  // copies the filename using et_aligned_alloc and must return
+  // Error::MemoryAllocationFailed on nullptr rather than throwing.
+  FailAllocGuard fail_guard;
+  Result<FileDataLoader> fdl =
+      FileDataLoader::from(tf.path().c_str(), alignment());
+
+  EXPECT_EQ(fdl.error(), Error::MemoryAllocationFailed);
+}
+#endif // !ET_TEST_ASAN_ENABLED
 
 TEST_P(FileDataLoaderTest, FromMissingFileFails) {
   // Wrapping a file that doesn't exist should fail.
