@@ -8,6 +8,7 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -92,10 +93,16 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   graph.add_uniform_buffer_bytes(sizeof(RmsNormParams));
 
+  // Select the vec4 kernel when the row width is a multiple of 4 (every Llama
+  // hidden size qualifies); fall back to the scalar kernel otherwise. The two
+  // kernels are numerically equivalent and share the same bind group +
+  // dispatch.
+  const bool use_vec4 = (row_width % 4u == 0u);
+
   // Create shader module from built-in WGSL source
   WGPUShaderSourceWGSL wgsl_desc = {};
   wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kRmsNormWGSL, WGPU_STRLEN};
+  wgsl_desc.code = {use_vec4 ? kRmsNormVec4WGSL : kRmsNormWGSL, WGPU_STRLEN};
 
   WGPUShaderModuleDescriptor shader_desc = {};
   shader_desc.nextInChain = &wgsl_desc.chain;
@@ -176,6 +183,9 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   static_assert(
       kRmsNormWorkgroupSizeX == 64,
       "must match @workgroup_size and WG_SIZE in rms_norm.wgsl");
+  static_assert(
+      kRmsNormVec4WorkgroupSizeX == 64,
+      "must match @workgroup_size and WG_SIZE in rms_norm_vec4.wgsl");
   graph.add_dispatch({pipeline, bind_group, num_rows});
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
