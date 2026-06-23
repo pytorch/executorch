@@ -17,6 +17,19 @@ python_unittest(
     ],
 )
 
+python_unittest(
+    name = "test_index",
+    srcs = [
+        "ops/index/test_index.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:lib",
+    ],
+)
+
 runtime.python_library(
     name = "tester",
     srcs = ["tester.py"],
