@@ -65,36 +65,36 @@ PREPACK_TIED_MODEL="/tmp/webgpu_prepack_tied_const.pte"
 PREPACK_TIED_GOLDEN="/tmp/webgpu_prepack_tied_const_golden.bin"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import export_all_quantized_linear_models
+from executorch.backends.webgpu.test.ops.test_quantized_linear import export_all_quantized_linear_models
 export_all_quantized_linear_models('/tmp')
 " || echo "WARN: q4gsw export failed; required configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import export_embedding_q4gsw_model
+from executorch.backends.webgpu.test.ops.test_embedding_q4gsw import export_embedding_q4gsw_model
 export_embedding_q4gsw_model('${EMBEDDING_MODEL}', '${EMBEDDING_GOLDEN}', '${EMBEDDING_INDICES}')
 export_embedding_q4gsw_model('${EMBEDDING_LLAMA1B_MODEL}', '${EMBEDDING_LLAMA1B_GOLDEN}', '${EMBEDDING_LLAMA1B_INDICES}', 'llama1b')
 " || echo "WARN: embedding_q4gsw export failed; embedding configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.rope.test_rope import export_rope_model
+from executorch.backends.webgpu.test.ops.test_rope import export_rope_model
 export_rope_model('${ROPE_MODEL}', '${ROPE_XQ_GOLDEN}', '${ROPE_XK_GOLDEN}')
 export_rope_model('${ROPE_DECODE_MODEL}', '${ROPE_DECODE_XQ_GOLDEN}', '${ROPE_DECODE_XK_GOLDEN}', 'decode')
 " || echo "WARN: rope export failed; apply_rotary_emb configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.prepack.test_prepack import export_prepack_model, export_prepack_two_const_model, export_prepack_tied_const_model
+from executorch.backends.webgpu.test.ops.test_prepack import export_prepack_model, export_prepack_two_const_model, export_prepack_tied_const_model
 export_prepack_model('${PREPACK_MODEL}', '${PREPACK_GOLDEN}')
 export_prepack_two_const_model('${PREPACK2_MODEL}', '${PREPACK2_GOLDEN}')
 export_prepack_tied_const_model('${PREPACK_TIED_MODEL}', '${PREPACK_TIED_GOLDEN}')
 " || echo "WARN: prepack export failed; prepack configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
+from executorch.backends.webgpu.test.ops.test_dispatch_order import export_dispatch_order_cases
 export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 " || { echo "WARN: dispatch_order export failed; skipping dispatch_order native test"; DISPATCH_ORDER_OK=0; }
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_update_cache import (
+from executorch.backends.webgpu.test.ops.test_update_cache import (
     export_update_cache_cases,
     export_update_cache_replay,
     export_update_cache_negative,
@@ -107,7 +107,7 @@ export_update_cache_negative('${UPDATE_CACHE_DIR}')
 # Non-fatal: a failed sdpa export makes the required 4k/8k configs hard-fail in
 # webgpu_native_test below (precise per-config error), so don't exit/mask here.
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import (
+from executorch.backends.webgpu.test.ops.test_sdpa import (
     export_all_sdpa_models,
     export_replay_sequences,
     export_dynamic_decode,

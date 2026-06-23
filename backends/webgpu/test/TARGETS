@@ -7,7 +7,7 @@ oncall("executorch")
 python_unittest(
     name = "test_add",
     srcs = [
-        "ops/add/test_add.py",
+        "ops/test_add.py",
     ],
     deps = [
         "//caffe2:torch",
