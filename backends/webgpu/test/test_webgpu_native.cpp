@@ -1490,12 +1490,11 @@ static bool test_symint_roundtrip(const std::string& blob_path) {
     return false;
   }
   const auto& in_ids = graph.input_ids();
-  std::vector<std::pair<const void*, size_t>> fake_inputs(
-      in_ids.size(), {nullptr, 0});
+  std::vector<InputData> fake_inputs(in_ids.size());
   int64_t fake_pos = 5;
   for (size_t i = 0; i < in_ids.size(); i++) {
     if (in_ids[i] == srcs[0].input_tensor_id) {
-      fake_inputs[i] = {&fake_pos, sizeof(int64_t)};
+      fake_inputs[i] = {&fake_pos, sizeof(int64_t), true};
     }
   }
   graph.update_symints_from_inputs(fake_inputs);
