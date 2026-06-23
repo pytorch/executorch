@@ -30,15 +30,15 @@ from executorch.backends.webgpu.test.ops.add.test_add import (
     AddModule,
     AddSelfModule,
 )
-from executorch.backends.webgpu.test.ops.test_mul import (
-    CONFIGS as _MUL_CONFIGS,
-    MulModule,
-)
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _CASES,
     _linspace_weight,
     _ramp,
     RmsNormModule,
+)
+from executorch.backends.webgpu.test.ops.test_mul import (
+    CONFIGS as _MUL_CONFIGS,
+    MulModule,
 )
 
 # rms_norm coverage is exactly the 14 cases the native test covered.
