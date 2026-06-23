@@ -78,6 +78,12 @@ class SimplePermute(torch.nn.Module):
         return torch.permute(x, self.dims)
 
 
+class SimpleMoveAxis(torch.nn.Module):
+
+    def forward(self, x):
+        return torch.moveaxis(x, 1, -1)
+
+
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
 )
@@ -114,6 +120,17 @@ def test_permute_u55_INT(test_data):
         (test_data,),
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
+    )
+    pipeline.run()
+
+
+def test_moveaxis_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t1](
+        SimpleMoveAxis(),
+        (torch.rand(1, 4, 5, 6),),
+        "torch.ops.aten.moveaxis.int",
+        exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
+        run_on_fvp=False,
     )
     pipeline.run()
 
