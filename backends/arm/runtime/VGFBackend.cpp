@@ -6,8 +6,11 @@
  */
 
 #include <cinttypes>
+#include <cstdlib>
+#include <cstring>
 #include <list>
 #include <numeric>
+#include <string>
 
 using namespace std;
 
@@ -99,6 +102,17 @@ void vkml_free_basics(
   //       a crash there.
   //  vkDestroyDevice(*device, nullptr);
   //  vkDestroyInstance(*instance, nullptr);
+}
+
+bool vgf_neural_statistics_profiling_enabled() {
+  const char* value = std::getenv("EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS");
+  if (value == nullptr || value[0] == '\0') {
+    return false;
+  }
+
+  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
+      std::strcmp(value, "FALSE") != 0 && std::strcmp(value, "off") != 0 &&
+      std::strcmp(value, "OFF") != 0;
 }
 
 class VGFBackend final : public ::executorch::runtime::BackendInterface {
@@ -364,6 +378,28 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
+
+    if (event_tracer != nullptr && vgf_neural_statistics_profiling_enabled()) {
+      // We attach the neural statistics JSON blob to ETDump as delegate
+      // metadata, when event tracer is active.
+
+      // This is “synthetic” event, which we use as a carrier for metadata
+      EventTracerEntry neural_statistics_event =
+          event_tracer_start_profiling_delegate(
+              event_tracer,
+              kVgfNeuralStatisticsDelegateEventName,
+              /*delegate_debug_id=*/-1);
+
+      // Ask VGF representation for neural accelerator diagnostics
+      std::string neural_statistics_metadata =
+          repr->collect_neural_statistics_metadata();
+
+      event_tracer_end_profiling_delegate(
+          event_tracer,
+          neural_statistics_event,
+          neural_statistics_metadata.data(),
+          neural_statistics_metadata.size());
+    }
 
     EventTracerEntry copy_outputs_event = event_tracer_start_profiling_delegate(
         event_tracer,
