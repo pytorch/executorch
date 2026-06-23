@@ -14,7 +14,7 @@ program through the compiled op_test_runner (see backends/mlx/test/README.md
 for building it).
 
 Usage:
-    python -m unittest executorch.backends.mlx.custom_kernel_ops.test.test_sample
+    python -m unittest executorch.backends.mlx.test.test_sample
 """
 
 import shutil
@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 # Registers torch.ops.mlx.sample.
-import executorch.backends.mlx.custom_kernel_ops.sample  # noqa: F401
+import executorch.backends.mlx.custom_ops  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.llm.sampling import SamplingHead

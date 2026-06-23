@@ -16,7 +16,9 @@ class SamplingHead(nn.Module):
 
         forward(*model_args, temperature, seed=None, **model_kwargs) -> token_id
 
-      temperature: scalar float tensor, e.g. torch.tensor(0.8)
+      temperature: scalar float tensor, e.g. torch.tensor(0.8). Must be > 0;
+                   logits are divided by it, so 0.0 yields inf/nan. For greedy,
+                   pass a small epsilon (e.g. 1e-4), not 0.
       seed:        scalar int tensor (seeded) or None (unseeded export)
     """
 

@@ -391,3 +391,35 @@ def gather_qmm_fake(
     else:
         batch = w.shape[:-2]
     return x.new_empty((*batch, M, N))
+
+
+@torch.library.custom_op("mlx::sample", mutates_args=())
+def sample(
+    logits: Tensor, temperature: Tensor, seed: Optional[Tensor] = None
+) -> Tensor:
+    """
+    Gumbel-max sampling from softmax(logits / temperature).
+    logits:      [B, vocab]
+    temperature: scalar float tensor    (runtime input)
+    seed:        scalar int tensor or None
+                 - tensor -> deterministic, keyed RNG (random::key(seed))
+                 - None   -> MLX global KeySequence (non-deterministic)
+    -> token_id: [B] int64
+
+    Host/CPU reference used for export (shape/meta) and distributional checks
+    only. It is NOT bit-identical to the lowered on-device graph: this uses torch
+    RNG (plain torch.rand, no uint32/nextafter uniform) while the delegate uses
+    MLX RNG, so a given seed does not reproduce the same tokens host vs. device.
+    """
+    if seed is None:
+        u = torch.rand(logits.shape)  # global RNG
+    else:
+        gen = torch.Generator().manual_seed(int(seed.item()))
+        u = torch.rand(logits.shape, generator=gen)
+    gumbel = -torch.log(-torch.log(u))
+    return torch.argmax(logits / temperature + gumbel, dim=-1)
+
+
+@torch.library.register_fake("mlx::sample")
+def sample_fake(logits, temperature, seed=None):
+    return logits.new_empty(logits.shape[:-1], dtype=torch.long)

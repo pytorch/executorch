@@ -18,8 +18,6 @@ from __future__ import annotations
 import operator
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-# Registers torch.ops.mlx.sample so _sample_handler can target it at import time.
-import executorch.backends.mlx.custom_kernel_ops.sample  # noqa: F401  E402
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_lifted_constant,
