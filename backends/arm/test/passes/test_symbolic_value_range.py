@@ -68,3 +68,16 @@ def test_evaluate_symbolic_expr_values_bails_out_for_large_symbol_ranges() -> No
     shape_env, symint = _make_shape_env(hint=3, compiler_min=1, compiler_max=400)
 
     assert evaluate_symbolic_expr_values(symint, shape_env) is None
+
+
+def test_evaluate_symbolic_expr_values_does_not_require_shape_env_bounds(
+    monkeypatch,
+) -> None:
+    shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
+
+    def raise_recursion(_expr):
+        raise RecursionError
+
+    monkeypatch.setattr(shape_env, "bound_sympy", raise_recursion)
+
+    assert evaluate_symbolic_expr_values(symint, shape_env) == {2, 3, 4, 5, 6}
