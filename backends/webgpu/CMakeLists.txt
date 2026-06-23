@@ -42,6 +42,15 @@ set(WEBGPU_SRCS
     runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
     runtime/ops/rope/RotaryEmbedding.cpp
     runtime/ops/prepack/Prepack.cpp
+    runtime/ops/view_copy/ViewCopy.cpp
+    runtime/ops/select/Select.cpp
+    runtime/ops/sigmoid/UnaryOp.cpp
+    runtime/ops/squeeze/Squeeze.cpp
+    runtime/ops/unsqueeze/Unsqueeze.cpp
+    runtime/ops/slice/Slice.cpp
+    runtime/ops/permute/Permute.cpp
+    runtime/ops/cat/Cat.cpp
+    runtime/ops/index/Index.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
