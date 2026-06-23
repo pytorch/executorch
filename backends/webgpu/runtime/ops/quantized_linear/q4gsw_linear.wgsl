@@ -18,47 +18,66 @@ struct Params {
 
 override wg_size: u32 = 64u;
 
-// One workgroup per row m, threads stride N; loop logical K only (in-bounds).
+// Register-tiled GEMM: dequant weight once per (n,k), reused across TM rows.
+const TM: u32 = 4u;
+const TN: u32 = 4u;
+
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(
-    @builtin(workgroup_id) wid: vec3<u32>,
-    @builtin(local_invocation_id) lid: vec3<u32>) {
-  let m = wid.x;
-  if (m >= params.M) {
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let nrt = (params.M + TM - 1u) / TM;
+  let nct = (params.N + TN - 1u) / TN;
+  let tiles = nrt * nct;
+  if (gid.x >= tiles) {
     return;
   }
-  let in_base = m * params.K;
+  let row_tile = gid.x / nct;
+  let col_tile = gid.x % nct;
+  let m0 = row_tile * TM;
+  let n0 = col_tile * TN;
 
-  var n: u32 = lid.x;
+  var acc: array<f32, 16>; // TM * TN
+  for (var i: u32 = 0u; i < TM * TN; i = i + 1u) {
+    acc[i] = 0.0;
+  }
+
+  var k: u32 = 0u;
   loop {
-    if (n >= params.N) {
+    if (k >= params.K) {
       break;
     }
-    var acc: f32 = 0.0;
-    var k: u32 = 0u;
-    loop {
-      if (k >= params.K) {
-        break;
-      }
-      // Packed weight byte for (n, k): row stride K_packed bytes, byte k/2.
-      let byte_idx = n * params.K_packed + (k >> 1u);
+    for (var nl: u32 = 0u; nl < TN; nl = nl + 1u) {
+      // Clamp to last valid column; overhang result is never stored.
+      let n_eff = min(n0 + nl, params.N - 1u);
+      let byte_idx = n_eff * params.K_packed + (k >> 1u);
       let word = t_weight[byte_idx >> 2u];
       let b = (word >> ((byte_idx & 3u) * 8u)) & 0xFFu;
       var nib: u32;
       if ((k & 1u) == 0u) {
-        nib = b & 0x0Fu;       // even k -> low nibble
+        nib = b & 0x0Fu;         // even k -> low nibble
       } else {
         nib = (b >> 4u) & 0x0Fu; // odd k -> high nibble
       }
       let q = f32(i32(nib) - 8); // +8-shifted on pack; recover signed [-8,7]
-      let scale = t_scales[(k / params.group_size) * params.padded_N + n];
-      acc = acc + t_input[in_base + k] * q * scale;
-      k = k + 1u;
+      let dq = q * t_scales[(k / params.group_size) * params.padded_N + n_eff];
+      for (var ml: u32 = 0u; ml < TM; ml = ml + 1u) {
+        let m_eff = min(m0 + ml, params.M - 1u);
+        acc[ml * TN + nl] = acc[ml * TN + nl] + t_input[m_eff * params.K + k] * dq;
+      }
     }
-    if (params.has_bias != 0u) {
-      acc = acc + t_bias[n];
+    k = k + 1u;
+  }
+
+  for (var ml: u32 = 0u; ml < TM; ml = ml + 1u) {
+    let m = m0 + ml;
+    for (var nl: u32 = 0u; nl < TN; nl = nl + 1u) {
+      let n = n0 + nl;
+      if (m < params.M && n < params.N) {
+        var v = acc[ml * TN + nl];
+        if (params.has_bias != 0u) {
+          v = v + t_bias[n];
+        }
+        t_out[m * params.N + n] = v;
+      }
     }
-    t_out[m * params.N + n] = acc;
-    n = n + wg_size;
   }
 }
