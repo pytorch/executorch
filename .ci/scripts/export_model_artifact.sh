@@ -422,9 +422,8 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
       --no-compile
   echo "::endgroup::"
 
-  # Copy tokenizer files for the runner and model-specific serving launcher.
+  # Copy tokenizer for the runner
   cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
-  cp "$LOCAL_MODEL_DIR/tokenizer_config.json" "${OUTPUT_DIR}/tokenizer_config.json"
 
   # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
   echo "::group::Export"

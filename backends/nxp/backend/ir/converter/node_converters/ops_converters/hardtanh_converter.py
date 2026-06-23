@@ -3,16 +3,43 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
-    ClampConverter,
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    is_not_qdq_node,
+    NodeConverter,
+    Partition,
 )
+from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
+    BuiltinOperator,
+)
+from executorch.backends.nxp.backend.neutron_operator_support import (
+    activation_supported_on_target,
+)
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
+from torch.nn import Parameter
 
 
-class HardTanhConverter(ClampConverter):
+class HardTanhConverter(NodeConverter):
+
+    # Maps possible input parameters of HardTanh to equivalent ReLU-based operators supported by TFLite.
+    SUPPORTED_MODES_MAP = {
+        (0.0, 6.0): BuiltinOperator.RELU6,
+        (-1.0, 1.0): BuiltinOperator.RELU_N1_TO_1,
+        (0.0, 1.0): BuiltinOperator.RELU_0_TO_1,
+        (0.0, float("inf")): BuiltinOperator.RELU,
+    }
+
+    # Maps possible modes of HardTanh to equivalent ReLU bounds.
+    SUPPORTED_BOUNDS_MAP = {
+        "ReluN1To1": (-1.0, 1.0),
+        "Relu0To1": (0.0, 1.0),
+        "Relu6": (0.0, 6.0),
+        "Relu": (0.0, float("inf")),
+    }
+
     @staticmethod
-    def _get_bounds(node: Node) -> tuple[float | None, float | None]:
+    def _get_hardtanh_bounds(node: Node) -> tuple[float, float]:
         args = node.args
 
         match len(args):
@@ -35,3 +62,51 @@ class HardTanhConverter(ClampConverter):
                 )
 
         return min_val, max_val
+
+    @staticmethod
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        bounds = HardTanhConverter._get_hardtanh_bounds(node)
+        return bounds in HardTanhConverter.SUPPORTED_MODES_MAP
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
+        bounds = HardTanhConverter._get_hardtanh_bounds(node)
+
+        # Neutron cannot delegate a partition where ReLU or ReLU6 is the only operator
+        # and at the same time the node does not satisfy delegation requirements.
+        # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfuly.
+        if bounds in [
+            cls.SUPPORTED_BOUNDS_MAP["Relu"],
+            cls.SUPPORTED_BOUNDS_MAP["Relu6"],
+        ]:
+            is_alone_in_partition = cls.is_node_alone_in_partition(
+                node, partition_list, filter_fn=is_not_qdq_node
+            )
+            if is_alone_in_partition:
+                return activation_supported_on_target(node)
+
+        return True
+
+    def convert(self, node: Node):
+        """Convert 'aten::hardtanh' to its supported ReLU equivalent."""
+        self.assert_convertible(node)
+
+        t_op = self._create_tflite_op_with_io_tensors(node)
+
+        bounds = HardTanhConverter._get_hardtanh_bounds(node)
+
+        op = self.SUPPORTED_MODES_MAP[bounds]
+        t_op.opcode_index = self.builder.op_code_index_for_op_type(op)
+
+        self.builder.append_operators([t_op])

@@ -62,7 +62,7 @@ class LinearReLUModule(torch.nn.Module):
         return self.relu(x)
 
 
-class TestReLU:
+class TestReLUNewNeutronFlow:
     @pytest.mark.parametrize(
         ["model", "input_shape"],
         [
@@ -98,7 +98,7 @@ class TestReLU:
             ),
         ],
     )
-    def test_relu_conversion__full_pipeline(self, mocker, request, model, input_shape):
+    def test_relu_conversion__full_pipeline(self, mocker, model, input_shape):
         model = model()  # Avoid model creation at import time
         is_conv_module = not hasattr(model, "linear")
 
@@ -108,20 +108,19 @@ class TestReLU:
                 {Convolution: 1, Relu: 1} if is_conv_module else {AddMm: 1, Relu: 1}
             ),
             expected_non_delegated_ops={},
-            ops_to_ignore={
+            ops_to_ignore=[
                 PermuteCopy,
                 ViewCopy,
                 QuantizePerTensor,
                 DequantizePerTensor,
                 DequantizePerChannel,
-            },
+            ],
         )
 
         lower_run_compare(
             model,
             input_shape,
             graph_verifier,
-            request,
         )
 
     @pytest.mark.parametrize(
@@ -137,9 +136,7 @@ class TestReLU:
             ),
         ],
     )
-    def test_relu_conversion__non_delegated_with_old_flow(
-        self, mocker, request, input_shape
-    ):
+    def test_relu_conversion__non_delegated_with_old_flow(self, mocker, input_shape):
         verifier = DetailedGraphVerifier(
             mocker=mocker,
             expected_delegated_ops={Relu: 1},
@@ -149,9 +146,8 @@ class TestReLU:
         lower_run_compare(
             ReLUModule(),
             input_shape,
-            verifier,
-            request,
-            RandomDatasetCreator(low=-1, high=1),
+            dlg_model_verifier=verifier,
+            dataset_creator=RandomDatasetCreator(low=-1, high=1),
         )
 
     @pytest.mark.parametrize(

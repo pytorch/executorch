@@ -12,7 +12,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -174,45 +173,6 @@ ValueRef prepack_quantized_conv2d_dw_weight(
 }
 
 //
-// Resize
-//
-
-// resize_args = { input, kernel_size, stride, padding, dilation }
-//
-// Depthwise conv output H/W follows the same formula as a regular conv (channel
-// count is unchanged: groups == in_channels == out_channels). Without this the
-// DynamicDispatchNode freezes the output at the build-time upper bound. N/C are
-// shape-independent and stay as currently allocated. Mirrors the regular q8ta
-// conv resize (resize_q8ta_conv2d_node).
-void resize_q8ta_conv2d_dw_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef in = resize_args.at(0);
-  const ValueRef kernel_size = resize_args.at(1);
-  const ValueRef stride = resize_args.at(2);
-  const ValueRef padding = resize_args.at(3);
-  const ValueRef dilation = resize_args.at(4);
-
-  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
-
-  const std::vector<int64_t> out_hw = calc_out_sizes_hw(
-      *graph,
-      in_sizes,
-      kernel_size,
-      /*kernel_size_only=*/true,
-      {stride, padding, dilation, dilation},
-      /*transposed=*/false);
-
-  std::vector<int64_t> new_sizes = graph->sizes_of(out);
-  const size_t ndim = new_sizes.size();
-  new_sizes.at(ndim - 2) = out_hw.at(0);
-  new_sizes.at(ndim - 1) = out_hw.at(1);
-  graph->virtual_resize(out, new_sizes);
-}
-
-//
 // Dispatch nodes
 //
 
@@ -298,10 +258,10 @@ void add_conv2d_dw_q8ta_q8csw_q8to_4w4c_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args: { input, kernel_size, stride, padding, dilation }
-      {packed_int8_input, kernel_size, stride, padding, dilation},
+      // Resize args
+      {},
       // Resizing Logic
-      resize_q8ta_conv2d_dw_node));
+      nullptr));
 }
 
 void add_q8ta_conv2d_dw_node(
@@ -403,10 +363,8 @@ void add_q8ta_conv2d_dw_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args: { input, kernel_size, stride, padding, dilation }
-      {packed_int8_input, kernel_size, stride, padding, dilation},
-      // Resizing Logic
-      resize_q8ta_conv2d_dw_node));
+      // Resize args
+      {}));
 }
 
 //

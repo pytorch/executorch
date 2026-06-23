@@ -98,21 +98,20 @@ Error WebGPUBackend::execute(
   const size_t num_outputs = graph->output_ids().size();
 
   // Copy inputs from EValue tensors to GPU buffers
-  std::vector<InputData> inputs;
+  std::vector<std::pair<const void*, size_t>> inputs;
   inputs.reserve(num_inputs);
   for (size_t i = 0; i < num_inputs; i++) {
     const auto& tensor = args[i]->toTensor();
-    const bool host_is_int64 =
-        tensor.scalar_type() == executorch::aten::ScalarType::Long;
-    inputs.push_back({tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
+    inputs.emplace_back(tensor.const_data_ptr(), tensor.nbytes());
   }
+  graph->copy_inputs(inputs);
+
   // Fail loud as a runtime Error so a throw never crosses the backend boundary.
   try {
-    graph->copy_inputs(inputs);
     graph->update_symints_from_inputs(inputs);
     graph->propagate_resize();
   } catch (const std::exception& e) {
-    ET_LOG(Error, "WebGPU input copy / symint refresh failed: %s", e.what());
+    ET_LOG(Error, "WebGPU symint refresh/resize failed: %s", e.what());
     return Error::Internal;
   }
 

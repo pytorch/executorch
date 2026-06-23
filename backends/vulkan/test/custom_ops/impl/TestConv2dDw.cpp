@@ -53,13 +53,7 @@ static std::string pick_conv2d_dw_shader_with_selector(
   if (is_3x3) {
     kernel_name += "_output_tile_3x3";
     if (impl_selector == "b1x1") {
-      // The _b1x1 batch-tile variant exists only for the non-sned family;
-      // sned (stride != dilation) shaders are not batch-tiled. Match
-      // pick_conv2d_dw_shader and only append it when stride == dilation,
-      // otherwise fall back to the un-suffixed sned shader.
-      if (stride_equals_dilation) {
-        kernel_name += "_b1x1";
-      }
+      kernel_name += "_b1x1";
     } else if (impl_selector == "b4x2") {
       // b4x2 is the default (no suffix)
     } else {

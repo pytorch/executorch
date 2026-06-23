@@ -5,9 +5,7 @@ on:
   pull_request:
     paths:
       - "schema/**"
-      - "devtools/bundled_program/schema/**"
-      - "exir/_serialize/generated/**"
-      - "devtools/bundled_program/serialize/generated/**"
+      - "exir/_serialize/generated/executorch_flatbuffer/**"
 
 jobs:
   exir-flatbuffer:
@@ -33,17 +31,5 @@ jobs:
           if ! git diff --cached --quiet -- exir/_serialize/generated/executorch_flatbuffer; then
             echo "Error: executorch_flatbuffer has uncommitted changes."
             echo "Please run 'python exir/_serialize/generate_program.py' to regenerate the files and commit the changes."
-            exit 1
-          fi
-
-      - name: Generate bundled program flatbuffer Python
-        run: python devtools/bundled_program/serialize/generate_bundled_program.py
-
-      - name: Validate bundled_program_flatbuffer is unchanged
-        run: |
-          git add -A devtools/bundled_program/serialize/generated
-          if ! git diff --cached --quiet -- devtools/bundled_program/serialize/generated; then
-            echo "Error: bundled_program_flatbuffer has uncommitted changes."
-            echo "Please run 'python devtools/bundled_program/serialize/generate_bundled_program.py' to regenerate the files and commit the changes."
             exit 1
           fi

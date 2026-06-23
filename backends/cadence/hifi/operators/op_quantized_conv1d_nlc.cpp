@@ -238,7 +238,7 @@ void quantized_conv1d_nlc_per_tensor_out(
     int64_t output_zero_point,
     int64_t out_multiplier,
     int64_t out_shift,
-    __ET_UNUSED const std::optional<Tensor>& offset,
+    __ET_UNUSED const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out) {
   // HiFi nnlib kernels only support dilation=1.
   // Fall back to generic implementation for dilation > 1.

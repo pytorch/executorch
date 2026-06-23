@@ -343,7 +343,7 @@ def append_qdq(
     return dq_node
 
 
-def create_const_node(
+def get_const_node(
     graph: torch.fx.Graph,
     graph_module: torch.fx.GraphModule,
     attr_name: str,

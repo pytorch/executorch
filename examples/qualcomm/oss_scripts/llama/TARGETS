@@ -24,6 +24,17 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "decoder_utils",
+    srcs = [
+        "decoder_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:eval_library",
+    ],
+)
+
+runtime.python_library(
     name = "masking_utils",
     srcs = [
         "masking_utils.py",
@@ -71,34 +82,6 @@ runtime.python_library(
         "tokenizer.py",
     ],
     deps = [
-        ":decoder_constants",
-        ":static_llama",
-        "//caffe2:torch",
-        "fbsource//third-party/pypi/transformers:transformers",
-    ],
-)
-
-runtime.python_library(
-    name = "utils",
-    srcs = [
-        "utils.py",
-    ],
-    deps = [
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-    ],
-)
-
-runtime.python_library(
-    name = "inference",
-    srcs = [
-        "inference/__init__.py",
-        "inference/decoder.py",
-        "inference/encoder.py",
-        "inference/model.py",
-    ],
-    deps = [
-        ":masking_utils",
         "//caffe2:torch",
     ],
 )
@@ -106,76 +89,11 @@ runtime.python_library(
 runtime.python_library(
     name = "dataset",
     srcs = [
-        "dataset/__init__.py",
-        "dataset/builders.py",
-        "dataset/collators.py",
-        "dataset/config.py",
-        "dataset/datasets.py",
-        "dataset/loaders.py",
-        "dataset/preprocessors.py",
-        "dataset/schema.py",
+        "dataset.py",
     ],
     deps = [
-        ":decoder_constants",
-        ":encoder",
-        ":masking_utils",
         ":tokenizer",
         "//caffe2:torch",
-        "//executorch/examples/models/llama:eval_library",
-        "fbsource//third-party/pypi/lm-eval:lm-eval",
-        "fbsource//third-party/pypi/transformers:transformers",
-    ],
-)
-
-runtime.python_library(
-    name = "quantize",
-    srcs = [
-        "quantize/__init__.py",
-        "quantize/ptq.py",
-        "quantize/strategy.py",
-    ],
-    deps = [
-        ":decoder_constants",
-        ":inference",
-        ":utils",
-        "//caffe2:torch",
-        "//executorch/backends/qualcomm/_passes:passes",
-    ],
-)
-
-runtime.python_library(
-    name = "mix_precision_analyzer",
-    srcs = [
-        "mix_precision_analyzer.py",
-    ],
-    deps = [
-        ":inference",
-        "//caffe2:torch",
-        "//executorch/backends/qualcomm/quantizer:quantizer",
-        "//executorch/devtools:lib",
-        "//executorch/exir:lib",
-        "//pytorch/ao:torchao",
-    ],
-)
-
-runtime.python_library(
-    name = "evaluator",
-    srcs = [
-        "evaluator/__init__.py",
-        "evaluator/device_evaluator.py",
-        "evaluator/lm_eval_adapter.py",
-    ],
-    deps = [
-        ":dataset",
-        ":decoder_constants",
-        ":inference",
-        ":tokenizer",
-        ":utils",
-        "//caffe2:torch",
-        "//executorch/backends/qualcomm:export_utils",
-        "//executorch/examples/models/llama:eval_library",
-        "//pytorch/ao:torchao",
-        "fbsource//third-party/pypi/lm-eval:lm-eval",
     ],
 )
 
@@ -188,16 +106,10 @@ runtime.python_library(
         "wrappers/llm_wrappers.py",
     ],
     deps = [
-        ":dataset",
         ":decoder_constants",
         ":encoder",
-        ":evaluator",
-        ":inference",
-        ":mix_precision_analyzer",
-        ":quantize",
         ":static_llama",
         ":static_llm_quant_recipe",
-        ":tokenizer",
         "//caffe2:torch",
         "//executorch/backends/qualcomm:export_utils",
         "//executorch/backends/qualcomm/_passes:passes",
@@ -217,11 +129,10 @@ runtime.python_library(
     deps = [
         ":dataset",
         ":decoder_constants",
+        ":decoder_utils",
         ":encoder",
-        ":evaluator",
         ":masking_utils",
         ":static_llm_quant_recipe",
-        ":tokenizer",
         ":wrappers",
         "//executorch/examples/models/llama:source_transformation",
         "//caffe2:torch",
@@ -267,6 +178,22 @@ python_binary(
     deps = [
         ":llama_lib",
     ],
+)
+
+python_binary(
+    name = "eval_llama_qnn",
+    srcs = ["eval_llama_qnn.py"],
+    main_function = "executorch.examples.qualcomm.oss_scripts.llama.eval_llama_qnn.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
+    deps = [
+        ":llama_lib",
+        "//executorch/examples/models/llama:eval_library",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
+        "fbsource//third-party/pypi/lm-eval:lm-eval",
+    ],
+    keep_gpu_sections = True,
 )
 
 runtime.command_alias(

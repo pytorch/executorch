@@ -6,7 +6,6 @@
 import torch
 
 from executorch.backends.arm.ao_ext.mxfp import MXFPOpConfig
-from executorch.backends.arm.ao_ext.ops.mxfp_conv2d_op import transform_conv2d_to_mxfp
 from executorch.backends.arm.ao_ext.ops.mxfp_linear_op import transform_linear_to_mxfp
 from torchao.quantization.transform_module import register_quantize_module_handler
 
@@ -21,7 +20,5 @@ def _transform_to_mxfp(
     """
     if isinstance(module, torch.nn.Linear):
         return transform_linear_to_mxfp(module, config)
-    elif isinstance(module, torch.nn.Conv2d):
-        return transform_conv2d_to_mxfp(module, config)
     else:
         return module

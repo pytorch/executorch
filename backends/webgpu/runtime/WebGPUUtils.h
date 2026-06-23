@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -47,27 +46,6 @@ inline uint32_t compute_1d_workgroup_count(
         ": workgroup count exceeds the 1D dispatch limit");
   }
   return count;
-}
-
-// Create a uniform buffer mapped-at-creation, copy `size` bytes in, and unmap.
-inline WGPUBuffer
-make_uniform(WGPUDevice device, const void* data, size_t size) {
-  WGPUBufferDescriptor desc = {};
-  desc.size = size;
-  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  desc.mappedAtCreation = true;
-  WGPUBuffer buf = wgpuDeviceCreateBuffer(device, &desc);
-  if (!buf) {
-    throw std::runtime_error("make_uniform: buffer creation failed");
-  }
-  void* ptr = wgpuBufferGetMappedRange(buf, 0, size);
-  if (!ptr) {
-    wgpuBufferRelease(buf);
-    throw std::runtime_error("make_uniform: mapped range is null");
-  }
-  std::memcpy(ptr, data, size);
-  wgpuBufferUnmap(buf);
-  return buf;
 }
 
 } // namespace executorch::backends::webgpu::utils

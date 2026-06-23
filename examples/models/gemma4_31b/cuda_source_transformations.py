@@ -77,15 +77,9 @@ def _turboquant_attention_forward(
     # uncompressed K/V is never materialized.
     k_packed, k_norms, v_packed, v_norms = self.kv_cache.update(input_pos, k, v)
 
-    # Number of valid (filled) KV positions = input_pos[0] + T. Passing this to
-    # tq4_sdpa bounds its KV loop to the actual context instead of the full
-    # pre-allocated buffer (max_seq_len for global layers), making attention
-    # O(context) instead of O(max_seq_len). Kept as a GPU scalar (no ``.item()``)
-    # so the bound is captured correctly by the decode CUDA graph. Decode: T=1 ->
-    # input_pos+1; prefill chunk: T -> chunk_end.
-    # NOTE: this call-site argument was dropped during a rebase, which silently
-    # disabled the O(context) bound and forced a full max_seq_len sweep every
-    # step (catastrophic at 128k: ~2.7 tok/s decode vs ~37+ when bounded).
+    # Number of valid (filled) KV positions = input_pos[0] + T. Bounds tq4_sdpa's
+    # KV loop to the actual context (O(context), not O(max_seq_len)) and enables
+    # the split-K decode path. GPU scalar (no .item()) so it's CUDA-graph-safe.
     kv_len = input_pos[0] + input_pos.shape[0]
 
     # ``scale=self.scaling`` (= 1.0 for Gemma 4) — overrides tq4_sdpa's
@@ -100,7 +94,7 @@ def _turboquant_attention_forward(
         self.kv_cache.centroids,
         self.kv_cache.rotation,
         attn_mask,
-        False,  # is_causal: attn_mask already encodes causal masking
+        False,  # is_causal — attn_mask already encodes causal masking
         self.scaling,
         kv_len,
         True,  # mask_is_causal: Gemma full-attention mask is standard causal

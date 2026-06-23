@@ -9,35 +9,9 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
-
-//
-// Resize
-//
-
-// resize_args = { block_config_ref } (unused here)
-//
-// Elementwise binary with broadcasting: output = broadcast(in_a, in_b). Without
-// this the DynamicDispatchNode freezes the output at the build-time upper
-// bound. Mirrors the fp32 resize_binary_op_node (same arg-group layout: inputs
-// are args[1].refs[0] and [1]).
-void resize_q8ta_binary_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef in_a = args.at(1).refs.at(0);
-  const ValueRef in_b = args.at(1).refs.at(1);
-
-  const std::vector<int64_t> a_sizes = graph->sizes_of(in_a);
-  const std::vector<int64_t> b_sizes = graph->sizes_of(in_b);
-  graph->virtual_resize(
-      out, calculate_broadcasted_output_size(a_sizes, b_sizes));
-}
 
 //
 // Dispatch nodes
@@ -137,7 +111,7 @@ void add_q8ta_binary_node(
       // Resize args
       {block_config_ref},
       // Resizing Logic
-      resize_q8ta_binary_node));
+      nullptr));
 }
 
 //

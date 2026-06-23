@@ -11,6 +11,6 @@ EXECUTORCH_DIR=$(dirname $(dirname $SCRIPT_DIR))
 cd $EXECUTORCH_DIR
 
 # '-c /dev/null' is used to ignore root level pytest.ini.
-pytest -c /dev/null -n "logical" backends/nxp/tests/
+pytest -c /dev/null backends/nxp/tests/
 
 python -m unittest discover -s backends/nxp/tests/ -v

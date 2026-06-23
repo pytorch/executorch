@@ -158,13 +158,9 @@ class TurboQuantKVCache(nn.Module):
         k_packed, k_norms = self._compress(k_val)
         v_packed, v_norms = self._compress(v_val)
 
-        # index_copy_ (not self.x[:, :, input_pos] = ...) keeps the decode
-        # write CUDA-graph-capturable: a static scatter along the position
-        # dim, matching the model's flat global KV cache. Plain index
-        # assignment lowers to index_put_, which breaks cuda_graph capture.
-        self.k_packed.index_copy_(2, input_pos, k_packed)
-        self.k_norms.index_copy_(2, input_pos, k_norms)
-        self.v_packed.index_copy_(2, input_pos, v_packed)
-        self.v_norms.index_copy_(2, input_pos, v_norms)
+        self.k_packed[:, :, input_pos] = k_packed
+        self.k_norms[:, :, input_pos] = k_norms
+        self.v_packed[:, :, input_pos] = v_packed
+        self.v_norms[:, :, input_pos] = v_norms
 
         return self.k_packed, self.k_norms, self.v_packed, self.v_norms

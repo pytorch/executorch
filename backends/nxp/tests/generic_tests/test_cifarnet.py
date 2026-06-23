@@ -34,7 +34,7 @@ def cifar_test_files(tmp_path_factory):
 
 
 @pytest.mark.parametrize("channels_last", [False, True])
-def test_cifarnet(mocker, request, cifar_test_files, channels_last):
+def test_cifarnet(mocker, cifar_test_files, channels_last):
     model = (
         CifarNet(
             pth_file=os.path.join(
@@ -64,10 +64,9 @@ def test_cifarnet(mocker, request, cifar_test_files, channels_last):
     lower_run_compare(
         model,
         [input_spec],
-        BaseGraphVerifier(1, non_dlg_nodes),
-        request,
         dataset_creator=CopyDatasetCreator(cifar_test_files),
         output_comparator=comparator,
+        dlg_model_verifier=BaseGraphVerifier(1, non_dlg_nodes),
         mocker=mocker,
         # Run the channels last reference in PyTorch as the ExecuTorch CPU model contains incorrectly
         #  lowered channels last convolution weights, which cause incorrect inference results. The issue
@@ -80,7 +79,7 @@ def test_cifarnet(mocker, request, cifar_test_files, channels_last):
     )
 
 
-def test_cifarnet_qat(mocker, request, cifar_test_files):
+def test_cifarnet_qat(mocker, cifar_test_files):
     model = CifarNet().get_eager_model().eval()
 
     input_shape = (1, 3, 32, 32)
@@ -95,10 +94,9 @@ def test_cifarnet_qat(mocker, request, cifar_test_files):
     lower_run_compare(
         model,
         input_shape,
-        BaseGraphVerifier(1, non_dlg_nodes),
-        request,
         dataset_creator=CopyDatasetCreator(cifar_test_files),
         output_comparator=comparator,
+        dlg_model_verifier=BaseGraphVerifier(1, non_dlg_nodes),
         mocker=mocker,
         use_qat=True,
     )

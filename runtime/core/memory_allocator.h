@@ -178,22 +178,6 @@ class MemoryAllocator {
     return size_;
   }
 
-  // Returns the number of bytes currently allocated from this allocator. The
-  // default implementation reports the bump cursor's offset from the base
-  // (cur_ - begin_); subclasses backed by a different allocator should override
-  // this to match their own accounting.
-  virtual size_t used_size() const {
-    return static_cast<size_t>(cur_ - begin_);
-  }
-
-  // Returns the number of bytes still available for allocation, not accounting
-  // for any alignment padding a future allocation may require. The default
-  // implementation reports end_ - cur_; subclasses should override to stay
-  // consistent with used_size().
-  virtual size_t free_size() const {
-    return static_cast<size_t>(end_ - cur_);
-  }
-
   // Resets the current pointer to the base address. It does nothing to
   // the contents.
   virtual void reset() {

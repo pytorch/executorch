@@ -48,7 +48,7 @@ class MergedDataMap final
   ET_NODISCARD
   executorch::runtime::Result<
       const executorch::ET_RUNTIME_NAMESPACE::TensorLayout>
-  get_tensor_layout(std::string_view key) const override;
+  get_tensor_layout(executorch::aten::string_view key) const override;
 
   /**
    * Retrieve read-only data for the specified key.
@@ -59,7 +59,7 @@ class MergedDataMap final
    */
   ET_NODISCARD
   executorch::runtime::Result<executorch::runtime::FreeableBuffer> get_data(
-      std::string_view key) const override;
+      executorch::aten::string_view key) const override;
 
   /**
    * Loads the data of the specified tensor into the provided buffer.
@@ -72,7 +72,7 @@ class MergedDataMap final
    * @returns an Error indicating if the load was successful.
    */
   ET_NODISCARD executorch::runtime::Error load_data_into(
-      std::string_view key,
+      executorch::aten::string_view key,
       void* buffer,
       size_t size) const override;
 

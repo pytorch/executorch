@@ -26,9 +26,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.devtools.inspector._intermediate_output_capturer import (
     IntermediateOutputCapturer,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.inference import DecoderInference
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
-from torch.utils.data import DataLoader
 from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.utils import compute_error
 
@@ -76,49 +74,45 @@ class PerLayerSqnrAnalyzer:
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
         }
 
-    def analyze(
-        self,
-        decoder_inference: DecoderInference,
-        text_dataloader: DataLoader,
-        num_sharding: int = 5,
-    ) -> "SqnrReport":
+    def analyze(self, samples: List[Tuple], num_sharding: int = 5) -> "SqnrReport":
         """
-        Evaluates both the fp32 and QDQ graphs using batches from text_dataloader
+        Evaluates both the fp32 and QDQ graphs using the provided input_samples
         and computes the per-node Signal-to-Quantization-Noise Ratio (SQNR).
 
         Args:
-            decoder_inference: Provides get_inputs() to assemble each
-                batch into the compiled model's input signature.
-            text_dataloader: DataLoader for text-only calibration batches.
-            num_sharding: Number of contiguous layer groups to bucket the model
-                into for SQNR aggregation.
+            input_samples: A list of tuples containing tensors corresponding to the model's inputs.
+            num_sharding: Number of contiguous layer groups to bucket the model into for SQNR
+                aggregation. Rather than flagging individual layers, layers are grouped into
+                ``num_sharding`` consecutive ranges (e.g. layers 0-7, 8-15, …) and the SQNR
+                is averaged within each group. Because upgrading isolated layers is usually ineffective: quantization error from surrounding
+                low-precision layers accumulates and dominates downstream behavior.
 
         Returns:
             An ``SqnrReport`` object containing the aggregated analysis results.
         """
-        self._assign_debug_handles(self.fp32_gm)
-        self._assign_debug_handles(self.qdq_gm)
+        input_samples = [sample for sample in samples if sample is not None]
 
-        num_samples = 0
-        path_sqnr_sum = defaultdict(float)
-        for text_batch in text_dataloader:
-            input_ids = text_batch["input_ids"]
-            attn_mask = text_batch["attention_mask"]
-            sample = tuple(decoder_inference.get_inputs(input_ids, attn_mask))
-            fp_outputs = self._capture(self.fp32_gm, sample)
-            qdq_outputs = self._capture(self.qdq_gm, sample)
-            for path, sqnr in self._match_and_score(fp_outputs, qdq_outputs).items():
-                path_sqnr_sum[path] += sqnr
-            num_samples += 1
-
-        if num_samples == 0:
+        if not input_samples:
             logging.warning("No input samples provided for analysis.")
             return SqnrReport(
                 self.model_name, defaultdict(list), [], self.analysis_recipe
             )
 
+        self._assign_debug_handles(self.fp32_gm)
+        self._assign_debug_handles(self.qdq_gm)
+
+        num_samples = len(input_samples)
         logging.info(f"num samples: {num_samples}")
 
+        # Accumulate SQNR per module path across all input samples
+        path_sqnr_sum = defaultdict(float)
+        for sample in input_samples:
+            fp_outputs = self._capture(self.fp32_gm, sample)
+            qdq_outputs = self._capture(self.qdq_gm, sample)
+            for path, sqnr in self._match_and_score(fp_outputs, qdq_outputs).items():
+                path_sqnr_sum[path] += sqnr
+
+        # Average the SQNRs and group them by normalized layer ranges
         report = defaultdict(list)
         for path, total_sqnr in path_sqnr_sum.items():
             group = self._normalize_group_name(

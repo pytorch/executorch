@@ -10,14 +10,21 @@ using executorch::runtime::MemoryAllocator;
 
 #pragma once
 
-// Custom allocator that poisons/unpoisons its buffer for AddressSanitizer. The
-// used and free byte counts are reported by the base MemoryAllocator's
-// used_size() / free_size().
+// Setup our own allocator that can show some extra stuff like used and free
+// memory info
 class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
  public:
   ArmMemoryAllocator(uint32_t size, uint8_t* base_address);
 
   void* allocate(size_t size, size_t alignment = kDefaultAlignment) override;
 
-  void reset() override;
+  // Returns the used size of the allocator's memory buffer.
+  size_t used_size() const;
+
+  // Returns the free size of the allocator's memory buffer.
+  size_t free_size() const;
+  void reset();
+
+ private:
+  size_t used_;
 };

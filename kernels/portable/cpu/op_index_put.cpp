@@ -19,7 +19,8 @@ namespace executor {
 namespace native {
 
 using Tensor = executorch::aten::Tensor;
-using TensorOptList = executorch::aten::ArrayRef<std::optional<Tensor>>;
+using TensorOptList =
+    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>>;
 
 Tensor& index_put_out(
     KernelRuntimeContext& ctx,

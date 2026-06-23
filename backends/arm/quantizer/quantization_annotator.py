@@ -532,7 +532,6 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.selu.default,
     torch.ops.aten.celu.default,
     torch.ops.aten.floor.default,
-    torch.ops.aten.round.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,

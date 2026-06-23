@@ -21,7 +21,7 @@ bool validate_transpose_conv2d_arguments(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
-    const std::optional<Tensor>& bias,
+    const torch::executor::optional<Tensor>& bias,
     const Tensor& output,
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts) {
@@ -88,7 +88,7 @@ Tensor& quantized_transpose_conv2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
-    const std::optional<Tensor>& bias,
+    const torch::executor::optional<Tensor>& bias,
     const Int64ArrayRef stride,
     const Int64ArrayRef padding,
     const Int64ArrayRef output_padding,

@@ -17,7 +17,7 @@ from executorch.backends.nxp.tests.nsys_testing import (
 from executorch.backends.nxp.tests.ops_aliases import AvgPool2D, MulTensor
 
 
-def test__single_quantized_inputs(mocker, request):
+def test__single_quantized_inputs(mocker):
     input_spec = ModelInputSpec((2, 4, 6, 7))
     model = AvgPool2dModule(False, 0)
     graph_verifier = DetailedGraphVerifier(
@@ -29,19 +29,19 @@ def test__single_quantized_inputs(mocker, request):
         model,
         [input_spec],
         graph_verifier,
-        request,
         remove_quant_io_ops=True,
     )
 
-    test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000.bin").exists()
+    assert (
+        OUTPUTS_DIR / "test__single_quantized_inputs" / "dataset_quant" / "0000.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
     assert output_tensor_spec[0].dtype == torch.int8
 
 
-def test__single_quantized_inputs_edge_python_reference(mocker, request):
+def test__single_quantized_inputs_edge_python_reference(mocker):
     input_spec = ModelInputSpec((2, 4, 6, 7))
     model = AvgPool2dModule(False, 0)
     graph_verifier = DetailedGraphVerifier(
@@ -53,20 +53,23 @@ def test__single_quantized_inputs_edge_python_reference(mocker, request):
         model,
         [input_spec],
         graph_verifier,
-        request,
         reference_model=ReferenceModel.QUANTIZED_EDGE_PYTHON,
         remove_quant_io_ops=True,
     )
 
-    test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000.bin").exists()
+    assert (
+        OUTPUTS_DIR
+        / "test__single_quantized_inputs_edge_python_reference"
+        / "dataset_quant"
+        / "0000.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
     assert output_tensor_spec[0].dtype == torch.int8
 
 
-def test__multiple_quantized_inputs(mocker, request):
+def test__multiple_quantized_inputs(mocker):
     x_input_spec = ModelInputSpec((1, 4, 8, 8))
     model = MulTensorModule()
     graph_verifier = DetailedGraphVerifier(
@@ -78,19 +81,23 @@ def test__multiple_quantized_inputs(mocker, request):
         model,
         [x_input_spec, x_input_spec],
         graph_verifier,
-        request,
         remove_quant_io_ops=True,
     )
 
-    test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000" / "00.bin").exists()
+    assert (
+        OUTPUTS_DIR
+        / "test__multiple_quantized_inputs"
+        / "dataset_quant"
+        / "0000"
+        / "00.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
     assert output_tensor_spec[0].dtype == torch.int8
 
 
-def test__multiple_quantized_inputs_edge_python_reference(mocker, request):
+def test__multiple_quantized_inputs_edge_python_reference(mocker):
     x_input_spec = ModelInputSpec((1, 4, 8, 8))
     model = MulTensorModule()
     graph_verifier = DetailedGraphVerifier(
@@ -102,13 +109,17 @@ def test__multiple_quantized_inputs_edge_python_reference(mocker, request):
         model,
         [x_input_spec, x_input_spec],
         graph_verifier,
-        request,
         reference_model=ReferenceModel.QUANTIZED_EDGE_PYTHON,
         remove_quant_io_ops=True,
     )
 
-    test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000" / "00.bin").exists()
+    assert (
+        OUTPUTS_DIR
+        / "test__multiple_quantized_inputs_edge_python_reference"
+        / "dataset_quant"
+        / "0000"
+        / "00.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return

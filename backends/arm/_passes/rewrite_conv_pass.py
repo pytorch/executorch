@@ -97,25 +97,23 @@ class RewriteConvPass(ArmPass):
 
         if isinstance(mod_remainder, torch.SymInt):
             shape_env = get_context_shape_env()
-            exact_values = evaluate_symbolic_expr_values(mod_remainder, shape_env)
+            exact_values = evaluate_symbolic_expr_values(
+                mod_remainder.node.expr, shape_env
+            )
             if exact_values is not None:
                 mod_remainder_upper = max(exact_values)
-                if len(exact_values) == 1:
-                    mod_remainder = int(next(iter(exact_values)))
-                elif mod_remainder_upper == 0:
-                    mod_remainder = 0
-                else:
-                    return pad - mod_remainder
             else:
-                # SizeAdjustInputPass already trims symbolic remainder classes
-                # that would force negative padding. Keep the symbolic
-                # expression here instead of asking ShapeEnv to normalize it.
-                return pad - mod_remainder
-        if mod_remainder > pad:
-            raise RuntimeError(
-                "This case should be handled by SizeAdjustInputPass, is it enabled?\n"
-            )
+                value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
+                mod_remainder_upper = int(value_ranges.upper)
+            if mod_remainder_upper == 0:
+                mod_remainder = 0
+        else:
+            mod_remainder_upper = mod_remainder
 
+        if mod_remainder_upper > pad:
+            raise RuntimeError(
+                "This case should be handled by the SizeAdjustInputPass, is it enabled?\n"
+            )
         return pad - mod_remainder
 
     def _is_depthwise_conv2d(self, node: torch.fx.Node) -> bool:

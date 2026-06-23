@@ -49,10 +49,12 @@ class AudioModalityConfig(MultiModalityConfig):
 
     Attributes:
         audio_seq_len: Number of audio tokens in the sequence.
+        audio_url: Default audio URL for validation and calibration.
     """
 
     audio_seq_len: int
     n_bins: int
+    audio_url: str
 
     def create_encoder(self, config):
         return self.encoder_class(config, n_bins=self.n_bins)
@@ -69,11 +71,13 @@ class VisionModalityConfig(MultiModalityConfig):
         img_seq_len: Number of image tokens/patches in the sequence.
         img_resized_h: Target height for image resizing (pixels).
         img_resized_w: Target width for image resizing (pixels).
+        img_url: Default image URL for validation and calibration.
     """
 
     img_seq_len: int
     img_resized_h: int
     img_resized_w: int
+    img_url: str
 
     def create_encoder(self, config):
         return self.encoder_class(
@@ -90,6 +94,7 @@ class GraniteSpeechEncoder(AudioModalityConfig):
     encoder_class = GraniteSpeechCTCEncoderWrapper
     audio_seq_len = 171
     n_bins = 844
+    audio_url = "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true"
     quant_recipe = GraniteSpeechEncoderQuantRecipe
     num_sharding = 8
 
@@ -104,6 +109,7 @@ class SmolVLMEncoder(VisionModalityConfig):
     img_seq_len = 64
     img_resized_h = 512
     img_resized_w = 512
+    img_url = "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"
     quant_recipe = SmolVLMEncoderQuantRecipe
 
 
@@ -117,4 +123,5 @@ class InternVL3Encoder(VisionModalityConfig):
     img_seq_len = 256
     img_resized_h = 448
     img_resized_w = 448
+    img_url = "http://images.cocodataset.org/val2017/000000039769.jpg"
     quant_recipe = InternVL3EncoderQuantRecipe

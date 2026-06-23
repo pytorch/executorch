@@ -5,11 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Union
+from typing import List, Union
 
 import torch
-
-PADDING_MASK_VALUE = -255.0
 
 
 def create_causal_attn_mask(max_batch_size: int, ar_len: int, max_context_len: int):
@@ -23,14 +21,14 @@ def create_causal_attn_mask(max_batch_size: int, ar_len: int, max_context_len: i
 
     ● = activate (can attend), ○ = inactivate (masked)
     """
-    mask = torch.full((ar_len, ar_len), PADDING_MASK_VALUE)
+    mask = torch.full((ar_len, ar_len), -255.0)
     mask_cond = torch.arange(ar_len)
     mask.masked_fill_(mask_cond.view(1, ar_len) <= mask_cond.view(ar_len, 1), 0)
 
     if max_context_len != ar_len:
         mask = torch.cat(
             [
-                torch.ones(ar_len, max_context_len - ar_len) * PADDING_MASK_VALUE,
+                torch.ones(ar_len, max_context_len - ar_len) * -255.0,
                 mask,
             ],
             dim=-1,
@@ -52,7 +50,7 @@ def create_sliding_window_attn_mask(
 
     ● = activate (can attend), ○ = inactivate (masked)
     """
-    mask = torch.full((ar_len, ar_len), PADDING_MASK_VALUE)
+    mask = torch.full((ar_len, ar_len), -255.0)
     mask_cond = torch.arange(ar_len)
     mask.masked_fill_(
         (mask_cond.view(1, ar_len) <= mask_cond.view(ar_len, 1))
@@ -63,7 +61,7 @@ def create_sliding_window_attn_mask(
     if max_context_len != ar_len:
         mask = torch.cat(
             [
-                torch.ones(ar_len, max_context_len - ar_len) * PADDING_MASK_VALUE,
+                torch.ones(ar_len, max_context_len - ar_len) * -255.0,
                 mask,
             ],
             dim=-1,
@@ -98,6 +96,7 @@ class BaseAttentionMask(ABC):
     def smart_mask_init(self, pos):
         """
         Initialize the attention mask by smart mask initialization method after model forward.
+
         Args:
             pos (int): Current position in the sequence.
         """
@@ -114,17 +113,6 @@ class BaseAttentionMask(ABC):
             lade_pos_offset (List[int]): Position offset of lookahead attention mask.
         """
         pass
-
-    def _extra_init_kwargs(self) -> dict:
-        return {}
-
-    def _mask_padding_positions(
-        self, input_ids: List[List[int]], max_seq_length: int
-    ) -> None:
-        """Mask positions beyond each sequence's actual length."""
-        actual_lens = torch.tensor([len(seq) for seq in input_ids])
-        pad_rows = torch.arange(max_seq_length).unsqueeze(0) >= actual_lens.unsqueeze(1)
-        self.mask.masked_fill_(pad_rows.unsqueeze(-1), PADDING_MASK_VALUE)
 
 
 class CausalAttentionMask(BaseAttentionMask):
@@ -146,22 +134,28 @@ class CausalAttentionMask(BaseAttentionMask):
     def smart_mask_update(self, pos, n_updates, _):
         """
         Smart Mask mechanism for attention mask updating
+
         Initial mask(5x15) layout (before any updates):
             Each row represents a query token in the autoregressive context.
             ● = activate (can attend), ○ = inactivate (masked)
+
             0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ●
+
         After 1st update (e.g., pos=0, n_updates=5, sliding_window=3):
             Newly added tokens are unmasked (set to 0).
+
             0 ● ● ● ● ● ○ ○ ○ ○ ○ ● ○ ○ ○ ○
             1 ● ● ● ● ● ○ ○ ○ ○ ○ ● ● ○ ○ ○
             2 ● ● ● ● ● ○ ○ ○ ○ ○ ● ● ● ○ ○
             3 ● ● ● ● ● ○ ○ ○ ○ ○ ● ● ● ● ○
             4 ● ● ● ● ● ○ ○ ○ ○ ○ ● ● ● ● ●
+
         After 2nd update (e.g., pos=5, n_updates=5):
+
             0 ● ● ● ● ● ● ● ● ● ● ● ○ ○ ○ ○
             1 ● ● ● ● ● ● ● ● ● ● ● ● ○ ○ ○
             2 ● ● ● ● ● ● ● ● ● ● ● ● ● ○ ○
@@ -171,16 +165,6 @@ class CausalAttentionMask(BaseAttentionMask):
         start_pos = pos
         end_pos = pos + n_updates
         self.mask[:, :, start_pos:end_pos] = 0
-
-    @classmethod
-    def from_input_ids(
-        cls, input_ids: List[List[int]], max_seq_length: int, **kwargs
-    ) -> "CausalAttentionMask":
-        """Build a causal mask and apply padding for variable-length sequences."""
-        mask = cls(len(input_ids), max_seq_length, max_seq_length)
-        mask._mask = mask._mask.clone()
-        mask._mask_padding_positions(input_ids, max_seq_length)
-        return mask
 
 
 class SlidingWindowAttentionMask(BaseAttentionMask):
@@ -210,24 +194,31 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
     def smart_mask_update(self, pos, n_updates, lade_pos_offset):
         """
         Smart Mask mechanism for attention mask updating
+
         Initial mask(5x15) layout (before any updates):
             Each row represents a query token in the autoregressive context.
             ● = activate (can attend), ○ = inactivate (masked)
+
             0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
+
         After 1st update (e.g., pos=0, n_updates=5, sliding_window=3):
             Newly added tokens are unmasked (set to 0).
             Earlier tokens lose access to older cache due to sliding window limits.
+
             0 ○ ○ ○ ● ● ○ ○ ○ ○ ○ ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ● ○ ○ ○ ○ ○ ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
+
+
         After 2nd update (e.g., pos=5, n_updates=5, sliding_window=3):
             Sliding window shifts again, masking older positions and activate new position.
+
             0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
@@ -249,24 +240,7 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             if end_pos > available_cache_len:
                 # Mask tokens that are no longer within the sliding window
                 # TODO: [Optional]: it can be optimized by computing the exact start index
-                self.mask[:, i, : end_pos - available_cache_len] = PADDING_MASK_VALUE
-
-    def _extra_init_kwargs(self) -> dict:
-        return {"sliding_window": self.sliding_window}
-
-    @classmethod
-    def from_input_ids(
-        cls,
-        input_ids: List[List[int]],
-        max_seq_length: int,
-        sliding_window: int,
-        **kwargs,
-    ) -> "SlidingWindowAttentionMask":
-        """Build a sliding-window mask and apply padding for variable-length sequences."""
-        mask = cls(len(input_ids), max_seq_length, max_seq_length, sliding_window)
-        mask._mask = mask._mask.clone()
-        mask._mask_padding_positions(input_ids, max_seq_length)
-        return mask
+                self.mask[:, i, : end_pos - available_cache_len] = -255.0
 
 
 class AttentionMask:
@@ -283,28 +257,3 @@ class AttentionMask:
 
     def __iter__(self):
         return iter([mask.mask for mask in self.masks])
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
-        return tuple(m.mask[idx] for m in self.masks)
-
-    @classmethod
-    def from_input_ids(
-        cls,
-        template: "AttentionMask",
-        input_ids: List[List[int]],
-        max_seq_length: int,
-    ) -> "AttentionMask":
-        """
-        Build a calibration AttentionMask that mirrors template's mask types.
-
-        Delegates construction to each mask's own classmethod so that adding a
-        new mask type only requires implementing from_input_ids on that class —
-        no edits needed here.
-        """
-        masks = [
-            type(base_mask).from_input_ids(
-                input_ids, max_seq_length, **base_mask._extra_init_kwargs()
-            )
-            for base_mask in template.masks
-        ]
-        return cls(masks)

@@ -44,6 +44,8 @@ examples/espressif/
 ├── executor_runner/
 │   ├── CMakeLists.txt           # Component/standalone CMake build
 │   ├── esp_executor_runner.cpp  # Main executor runner
+│   ├── esp_memory_allocator.h   # Custom memory allocator
+│   ├── esp_memory_allocator.cpp
 │   ├── esp_perf_monitor.h       # Performance monitoring
 │   ├── esp_perf_monitor.cpp
 │   └── pte_to_header.py         # Convert .pte to C header

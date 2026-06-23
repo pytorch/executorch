@@ -1,7 +1,6 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
-    "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
@@ -21,7 +20,7 @@ def define_common_targets():
             "*.h",
         ]),
         define_static_target = True,
-        platforms = [ANDROID, CXX],
+        platforms = [ANDROID],
         visibility = ["PUBLIC"],
         deps = [
             qnn_third_party_dep("api"),

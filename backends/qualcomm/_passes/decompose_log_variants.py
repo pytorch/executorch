@@ -11,7 +11,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import copy_meta, create_const_node
+from .utils import copy_meta, get_const_node
 
 
 class DecomposeLogVariants(ExportPass):
@@ -50,7 +50,7 @@ class DecomposeLogVariants(ExportPass):
             div_op = exir_ops.edge.aten.div.Tensor
             attr_name = f"_log_base_{n}_constant"
             if attr_name not in const_cache:
-                const_cache[attr_name] = create_const_node(
+                const_cache[attr_name] = get_const_node(
                     graph, graph_module, attr_name, math.log(n), node
                 )
             div_arg = const_cache[attr_name]
@@ -81,7 +81,7 @@ class DecomposeLogVariants(ExportPass):
             log_op = exir_ops.edge.aten.log.default
             attr_name = f"_log1p_addend_{p}_constant"
             if attr_name not in const_cache:
-                const_cache[attr_name] = create_const_node(
+                const_cache[attr_name] = get_const_node(
                     graph, graph_module, attr_name, p, node
                 )
             add_arg = const_cache[attr_name]

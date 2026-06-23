@@ -57,7 +57,7 @@ using ::executorch::runtime::KernelRuntimeContext;
       output_zero_point,
       out_multiplier,
       out_shift,
-      std::optional<Tensor>(),
+      ::executorch::aten::optional<Tensor>(),
       out);
 }
 

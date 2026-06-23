@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
-import hashlib
 import os
 import typing
 from abc import ABC, abstractmethod
@@ -277,21 +276,18 @@ class AotiBackend(ABC):
 
         # Create named data store
         named_data_store = NamedDataStore()
+        method_name = cls.method_name_from_compile_specs(compile_specs)
 
-        # Key each blob by a content hash so partitions in one method get distinct
-        # keys (a method-name-only key collides). Runtime recovers them from
-        # processed_bytes below.
-        so_blob_key = hashlib.sha256(so_data).hexdigest() + "_so_blob"
-        weights_blob_key = hashlib.sha256(blob_data).hexdigest() + "_weights_blob"
-
-        named_data_store.add_named_data(so_blob_key, so_data, 1, None)
+        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
         external_tag = (
             f"aoti_{device_name}_blob" if cls.save_data_externally() else None
         )
 
-        named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
+        named_data_store.add_named_data(
+            method_name + "_weights_blob", blob_data, 1, external_tag
+        )
 
         # Clean up the generated files
         os.remove(so_path)
@@ -303,11 +299,8 @@ class AotiBackend(ABC):
         # the next preprocess call (e.g. for the next method).
         cls.release_moved_tensors(device_edge_program, compile_specs)
 
-        # The runtime cannot recompute these hash keys, so carry them (one per line).
-        processed_bytes = (so_blob_key + "\n" + weights_blob_key).encode("utf-8")
-
         return PreprocessResult(
-            processed_bytes=processed_bytes,
+            processed_bytes=b"",
             debug_handle_map={},
             data_store_output=named_data_store.get_named_data_store_output(),
         )

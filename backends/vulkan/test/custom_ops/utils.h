@@ -603,22 +603,6 @@ class TestCase {
     return target_execute_time_us_;
   }
 
-  // When true, the ComputeGraph built for this test case sets
-  // GraphConfig::force_resize, so every DynamicDispatchNode runs its resize
-  // function on each execute() even when no input shape changed. Because the
-  // output is already allocated at the swept shape, the resize must recompute
-  // the same shape from the current input — a wrong resize formula resizes the
-  // output to a mismatched shape and surfaces as a test failure. Default true
-  // (opt-out): every custom_ops test exercises its resize formulas across the
-  // swept shapes. Call set_force_resize(false) for the rare op whose resize fn
-  // is intentionally not shape-preserving under a fixed output allocation.
-  void set_force_resize(bool force_resize) {
-    force_resize_ = force_resize;
-  }
-  bool get_force_resize() const {
-    return force_resize_;
-  }
-
   void add_input_spec(const ValueSpec& spec) {
     inputs_.push_back(spec);
   }
@@ -664,7 +648,6 @@ class TestCase {
     shader_filter_ = kDefaultShaderFilter;
     op_invocations_per_execute_ = 0;
     target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
-    force_resize_ = true;
   }
 
  private:
@@ -677,7 +660,6 @@ class TestCase {
   std::vector<std::string> shader_filter_;
   int op_invocations_per_execute_ = 0; // 0 = adaptive
   int target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
-  bool force_resize_ = true;
 };
 
 //

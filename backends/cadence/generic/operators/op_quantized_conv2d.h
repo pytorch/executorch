@@ -205,7 +205,7 @@ quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_out(
     int64_t output_zero_point,
     int64_t out_multiplier,
     int64_t out_shift,
-    const std::optional<Tensor>& offset,
+    const ::executorch::aten::optional<Tensor>& offset,
     Tensor& out);
 
 ::executorch::aten::Tensor& quantized_conv2d_depthwise_nhwc_out(

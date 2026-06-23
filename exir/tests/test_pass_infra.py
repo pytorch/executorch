@@ -15,9 +15,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
     ExportedProgramPassBase,
     ExportedProgramPassResult,
-    ExportPass,
     ExportPassBaseError,
-    NodeMetadata,
     ProxyValue,
 )
 from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
@@ -451,109 +449,3 @@ class TestExportedProgramPassManager(unittest.TestCase):
 
         with self.assertRaisesRegex(Exception, "call_method"):
             pm(exported_program)
-
-
-class TestPassBaseSymbolicInputs(unittest.TestCase):
-    class SymSizeModule(torch.nn.Module):
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return x.view(x.size(0), -1)
-
-    @staticmethod
-    def _find_input_node(gm: torch.fx.GraphModule) -> torch.fx.Node:
-        for node in gm.graph.nodes:
-            if node.op == "placeholder" and "val" in node.meta:
-                return node
-        raise AssertionError("Expected to find an input placeholder")
-
-    @staticmethod
-    def _symbolic_input_shape(node: torch.fx.Node) -> tuple[str | None, ...]:
-        value = node.meta["val"]
-        assert isinstance(value, torch.Tensor)
-        return tuple(
-            str(dim) if isinstance(dim, torch.SymInt) else None for dim in value.shape
-        )
-
-    def _export_dynamic_graph_module(self) -> torch.fx.GraphModule:
-        exported = export(
-            self.SymSizeModule(),
-            (torch.randn(2, 3),),
-            dynamic_shapes=({0: Dim("batch", min=1, max=8)},),
-            strict=True,
-        )
-        return to_edge(exported).exported_program().graph_module
-
-    def test_export_pass_preserves_symbolic_input_metadata(self) -> None:
-        graph_module = self._export_dynamic_graph_module()
-        original_input = self._find_input_node(graph_module)
-        original_snapshot = self._symbolic_input_shape(original_input)
-        self.assertTrue(any(dim is not None for dim in original_snapshot))
-
-        new_graph_module = ExportPass()(graph_module).graph_module
-        new_input = self._find_input_node(new_graph_module)
-
-        self.assertEqual(self._symbolic_input_shape(new_input), original_snapshot)
-
-    def test_export_pass_matches_symbolic_inputs_by_position(self) -> None:
-        class RenamePlaceholderPass(ExportPass):
-            def placeholder(
-                self,
-                name: str,
-                arg: torch.Tensor,
-                meta: NodeMetadata,
-            ) -> ProxyValue:
-                return super().placeholder(f"renamed_{name}", arg, meta)
-
-        new_graph_module = RenamePlaceholderPass()(
-            self._export_dynamic_graph_module()
-        ).graph_module
-        new_input = self._find_input_node(new_graph_module)
-
-        self.assertEqual(new_input.name, "renamed_x")
-        self.assertTrue(
-            any(dim is not None for dim in self._symbolic_input_shape(new_input))
-        )
-
-    def test_export_pass_rejects_collapsed_symbolic_input_metadata(self) -> None:
-        class CollapseSymbolicInputPass(ExportPass):
-            def placeholder(
-                self,
-                name: str,
-                arg: torch.Tensor,
-                meta: NodeMetadata,
-            ) -> ProxyValue:
-                proxy = super().placeholder(name, arg, meta)
-                if any(isinstance(dim, torch.SymInt) for dim in arg.shape):
-                    proxy.node.meta["val"] = torch.empty(2, 3, device="meta")
-                return proxy
-
-        with self.assertRaisesRegex(
-            ExportPassBaseError,
-            "Input at position 0 did not preserve symbolic metadata",
-        ):
-            CollapseSymbolicInputPass()(self._export_dynamic_graph_module())
-
-    def test_export_pass_can_disable_symbolic_input_validation(self) -> None:
-        class CollapseSymbolicInputPass(ExportPass):
-            def should_preserve_symbolic_input_metadata(self) -> bool:
-                return False
-
-            def placeholder(
-                self,
-                name: str,
-                arg: torch.Tensor,
-                meta: NodeMetadata,
-            ) -> ProxyValue:
-                proxy = super().placeholder(name, arg, meta)
-                if any(isinstance(dim, torch.SymInt) for dim in arg.shape):
-                    proxy.node.meta["val"] = torch.empty(2, 3, device="meta")
-                return proxy
-
-        graph_module = self._export_dynamic_graph_module()
-        original_snapshot = self._symbolic_input_shape(
-            self._find_input_node(graph_module)
-        )
-
-        new_graph_module = CollapseSymbolicInputPass()(graph_module).graph_module
-        new_input = self._find_input_node(new_graph_module)
-
-        self.assertNotEqual(self._symbolic_input_shape(new_input), original_snapshot)

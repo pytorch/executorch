@@ -16,12 +16,12 @@ namespace generic {
 namespace native {
 
 using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::quantize;
-using std::optional;
 
 // This implements a generic 2d transposed_conv kernel that operates on raw
 // pointers. The version handles both quantized and fp32 convolutions.

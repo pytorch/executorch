@@ -39,70 +39,11 @@ def _symbol_values(symbol: sympy.Symbol, shape_env: ShapeEnv) -> _ExactValues:
     return frozenset(sympy.Integer(value) for value in range(lower, upper + 1))
 
 
-def _expr_symbols_to_values(
-    expr: sympy.Basic,
-    shape_env: ShapeEnv,
-) -> dict[sympy.Symbol, _ExactValues]:
-    return {symbol: _symbol_values(symbol, shape_env) for symbol in expr.free_symbols}
-
-
-def _try_expr_to_int(expr: sympy.Basic) -> Optional[int]:
-    integer_value = _expr_to_int(expr)
-    if integer_value is not None:
-        return integer_value
-
-    try:
-        return _expr_to_int(sympy.simplify(expr))
-    except (RecursionError, TypeError):
-        return None
-
-
-def _constant_expr_values(expr: sympy.Basic) -> Optional[set[int]]:
-    if expr.free_symbols:
-        return None
-
-    integer_value = _try_expr_to_int(expr)
-    return {integer_value} if integer_value is not None else None
-
-
-def _evaluate_exact_values(
-    expr: sympy.Basic,
-    shape_env: ShapeEnv,
-) -> _ExactValues:
-    try:
-        return sympy_interp(
-            _ExactValueAnalysis,
-            _expr_symbols_to_values(expr, shape_env),
-            expr,
-            missing_handler=lambda symbol: _symbol_values(symbol, shape_env),
-        )
-    except (RecursionError, TypeError):
-        return None
-
-
-def _exact_values_to_ints(exact_values: _ExactValues) -> Optional[set[int]]:
-    if exact_values is None:
-        return None
-
-    result: set[int] = set()
-    for value in exact_values:
-        integer_value = _try_expr_to_int(value)
-        if integer_value is None:
-            return None
-        result.add(integer_value)
-    return result
-
-
 def _map_values(values: _ExactValues, fn) -> _ExactValues:
     if values is None:
         return None
 
-    result = set()
-    for value in values:
-        try:
-            result.add(fn(value))
-        except (RecursionError, TypeError):
-            return None
+    result = {sympy.simplify(fn(value)) for value in values}
     if len(result) > _MAX_SET_SIZE:
         return None
     return frozenset(result)
@@ -114,13 +55,7 @@ def _combine_values(lhs: _ExactValues, rhs: _ExactValues, fn) -> _ExactValues:
     if len(lhs) * len(rhs) > _MAX_SET_SIZE * _MAX_SET_SIZE:
         return None
 
-    result = set()
-    for a in lhs:
-        for b in rhs:
-            try:
-                result.add(fn(a, b))
-            except (RecursionError, TypeError):
-                return None
+    result = {sympy.simplify(fn(a, b)) for a in lhs for b in rhs}
     if len(result) > _MAX_SET_SIZE:
         return None
     return frozenset(result)
@@ -146,12 +81,6 @@ class _ExactValueAnalysis:
         return _combine_values(lhs, rhs, lambda a, b: sympy.Mod(a, b))
 
     @staticmethod
-    def floordiv(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
-        if rhs is None or any(value == 0 for value in rhs):
-            return None
-        return _combine_values(lhs, rhs, lambda a, b: sympy.floor(a / b))
-
-    @staticmethod
     def pow(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
         return _combine_values(lhs, rhs, lambda a, b: a**b)
 
@@ -175,15 +104,35 @@ def evaluate_symbolic_expr_values(
 ) -> Optional[set[int]]:
     """Return a best-effort finite set of possible integer values.
 
-    The helper avoids ShapeEnv bound queries here because some exported dynamic
-    expressions trigger very deep SymPy normalization. Instead, it relies on a
-    small exact-set analysis over bounded symbols using ``sympy_interp``.
+    The helper first relies on ``bound_sympy`` for cheap singleton detection.
+    When interval bounds are not precise enough, it falls back to a small
+    exact-set analysis over bounded symbols using ``sympy_interp``.
 
     """
-    root_expr = expr.node.expr if isinstance(expr, torch.SymInt) else expr
+    root_expr = sympy.simplify(
+        expr.node.expr if isinstance(expr, torch.SymInt) else expr
+    )
+    value_range = shape_env.bound_sympy(root_expr)
+    if value_range.is_int and value_range.is_singleton():
+        singleton = _expr_to_int(value_range.lower)
+        return {singleton} if singleton is not None else None
 
-    constant_values = _constant_expr_values(root_expr)
-    if constant_values is not None:
-        return constant_values
+    exact_values = sympy_interp(
+        _ExactValueAnalysis,
+        {
+            symbol: _symbol_values(symbol, shape_env)
+            for symbol in root_expr.free_symbols
+        },
+        root_expr,
+        missing_handler=lambda symbol: _symbol_values(symbol, shape_env),
+    )
+    if exact_values is None:
+        return None
 
-    return _exact_values_to_ints(_evaluate_exact_values(root_expr, shape_env))
+    result: set[int] = set()
+    for value in exact_values:
+        integer_value = _expr_to_int(sympy.simplify(value))
+        if integer_value is None:
+            return None
+        result.add(integer_value)
+    return result

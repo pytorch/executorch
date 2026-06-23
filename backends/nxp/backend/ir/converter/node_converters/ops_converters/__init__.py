@@ -31,9 +31,6 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import (
     ConvolutionConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.exp_converter import (
-    ExpConverter,
-)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
     GetItemConverter,
 )
@@ -114,7 +111,6 @@ __all__ = [
     "CloneConverter",
     "ConstantPadNDConverter",
     "ConvolutionConverter",
-    "ExpConverter",
     "GetItemConverter",
     "HardTanhConverter",
     "LeakyReluConverter",

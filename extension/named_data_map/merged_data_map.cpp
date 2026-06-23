@@ -12,13 +12,13 @@
 #include <unordered_map>
 #include <vector>
 
+using executorch::aten::string_view;
 using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::ET_RUNTIME_NAMESPACE::TensorLayout;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
-using std::string_view;
 
 namespace executorch::extension {
 namespace ET_MERGED_DATA_MAP_NAMESPACE {

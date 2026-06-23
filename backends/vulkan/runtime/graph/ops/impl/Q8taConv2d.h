@@ -123,12 +123,7 @@ void add_q8ta_conv2d_pw_node(
     const ValueRef packed_bias,
     const uint32_t activation_type,
     const ValueRef packed_int8_output,
-    const int32_t groups = 1,
-    const ValueRef conv_input = kDummyValueRef,
-    const ValueRef kernel_size = kDummyValueRef,
-    const ValueRef stride = kDummyValueRef,
-    const ValueRef padding = kDummyValueRef,
-    const ValueRef dilation = kDummyValueRef);
+    const int32_t groups = 1);
 
 std::vector<int64_t> calculate_q8ta_im2col_sizes(
     ComputeGraph* graph,

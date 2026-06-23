@@ -336,15 +336,11 @@ def test_rewrite_conv_dynamic_keeps_static_padding_when_symbolic_remainder_is_ze
     assert all(not isinstance(p, torch.SymInt) for p in padding)
 
 
-def test_rewrite_conv_adjust_pad_if_needed_static_allows_negative_padding_until_later_validation():
+def test_rewrite_conv_adjust_pad_if_needed_static_raises_before_negative_padding():
     rewrite_pass, _, _ = _make_rewrite_pass((torch.randn(1, 3, 9, 12),))
 
-    try:
+    with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
         rewrite_pass._adjust_pad_if_needed(6, 2, 3, 0, 1)
-    except RuntimeError as e:
-        assert "SizeAdjustInputPass" in str(e)
-    else:
-        pytest.fail("Expected RuntimeError was not raised")
 
 
 def test_rewrite_conv_adjust_pad_if_needed_static_positive_padding_stays_non_negative():
@@ -391,7 +387,7 @@ def test_rewrite_conv_adjust_pad_if_needed_symbolic_exact_zero_keeps_positive_pa
     assert adjusted_pad == 1
 
 
-def test_rewrite_conv_adjust_pad_if_needed_symbolic_positive_padding_range_returns_symbolic_padding():
+def test_rewrite_conv_adjust_pad_if_needed_symbolic_positive_padding_range_raises_before_negative_padding():
     rewrite_pass, shape_env, input_len = _make_rewrite_pass(
         (torch.randn(1, 3, 8, 8),),
         dynamic_shapes={
@@ -403,9 +399,8 @@ def test_rewrite_conv_adjust_pad_if_needed_symbolic_positive_padding_range_retur
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
     ):
-        adjusted_pad = rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 1, 1)
-
-    assert isinstance(adjusted_pad, torch.SymInt)
+        with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
+            rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 1, 1)
 
 
 def test_rewrite_conv_symbolic_comparison_with_int_specializes_to_hint():
@@ -443,12 +438,11 @@ def test_rewrite_conv_symbolic_comparison_with_int_specializes_to_hint():
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
     ):
-        adjusted_pad = rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 0, 1)
+        with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
+            rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 0, 1)
 
-    assert isinstance(adjusted_pad, torch.SymInt)
 
-
-def test_rewrite_conv_adjust_pad_if_needed_symbolic_zero_padding_range_returns_symbolic_padding():
+def test_rewrite_conv_adjust_pad_if_needed_symbolic_zero_padding_range_raises_before_negative_padding():
     rewrite_pass, shape_env, input_len = _make_rewrite_pass(
         (torch.randn(1, 3, 8, 8),),
         dynamic_shapes={
@@ -460,19 +454,5 @@ def test_rewrite_conv_adjust_pad_if_needed_symbolic_zero_padding_range_returns_s
     with TosaLoweringContext(
         TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
     ):
-        adjusted_pad = rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 0, 1)
-
-    assert isinstance(adjusted_pad, torch.SymInt)
-
-
-def test_rewrite_conv_adjust_pad_if_needed_symbolic_singleton_overflow_still_raises():
-    rewrite_pass, shape_env, input_len = _make_rewrite_pass(
-        (torch.randn(1, 3, 9, 12),),
-        dynamic_shapes=_multiples_of_three_dynamic_shapes(),
-    )
-
-    with TosaLoweringContext(
-        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), shape_env=shape_env
-    ):
         with pytest.raises(RuntimeError, match="SizeAdjustInputPass"):
-            rewrite_pass._adjust_pad_if_needed(input_len, 3, 3, 1, 1)
+            rewrite_pass._adjust_pad_if_needed(input_len, 2, 3, 0, 1)

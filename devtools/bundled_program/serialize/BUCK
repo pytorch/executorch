@@ -9,7 +9,7 @@ fbcode_target(_kind = runtime.python_library,
     name = "lib",
     srcs = [
         "__init__.py",
-    ] + glob(["generated/**/*.py"]),
+    ],
     resources = {
         "//executorch/devtools/bundled_program/schema:bundled_program_schema.fbs": "bundled_program_schema.fbs",
         "//executorch/devtools/bundled_program/schema:scalar_type.fbs": "scalar_type.fbs",
@@ -19,7 +19,6 @@ fbcode_target(_kind = runtime.python_library,
     # Please ask before changing this.
     visibility = ["PUBLIC"],
     deps = [
-        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "fbsource//third-party/pypi/setuptools:setuptools",
         "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",
         "//executorch/exir/_serialize:lib",

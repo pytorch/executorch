@@ -10,7 +10,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
-from .utils import copy_meta, create_const_node
+from .utils import copy_meta, get_const_node
 
 
 class DecomposeVar(ExportPass):
@@ -155,7 +155,7 @@ class DecomposeVar(ExportPass):
                                 attr_name = get_new_attr_name_with_prefix(
                                     "_var_scale_const_"
                                 )(graph_module)
-                                const_cache[cache_key] = create_const_node(
+                                const_cache[cache_key] = get_const_node(
                                     graph, graph_module, attr_name, scale, node
                                 )
                             scale_node = const_cache[cache_key]

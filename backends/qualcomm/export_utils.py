@@ -276,10 +276,6 @@ class SimpleADB:
         self.skip_push = qnn_config.skip_push
         self.backend_library_paths = {}
 
-        if self.direct_build_folder and self.dump_intermediate_outputs:
-            raise ValueError(
-                "Per-tensor dumping is currently not supported in direct mode."
-            )
         if self.direct_build_folder:
             direct_general_artifacts = [
                 f"{self.build_path}/examples/qualcomm/direct_executor_runner/libqnn_executorch_stub.so",
@@ -441,8 +437,9 @@ class SimpleADB:
                         f"--input_list_path {self.input_list_filename}",
                         f"--etdump_path {self.etdump_path}",
                         "--shared_buffer" if self.shared_buffer else "",
+                        f"--debug_output_path {self.debug_output_path}",
                         (
-                            f"--debug_output_path {self.debug_output_path} --dump_intermediate_outputs"
+                            "--dump_intermediate_outputs"
                             if self.dump_intermediate_outputs
                             else ""
                         ),

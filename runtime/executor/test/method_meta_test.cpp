@@ -38,7 +38,7 @@ class TensorInfoTestFriend final {
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
-      std::string_view name) {
+      executorch::aten::string_view name) {
     return TensorInfo::create(
                Span<const int32_t>(sizes.data(), sizes.size()),
                Span<const uint8_t>(dim_order.data(), dim_order.size()),
@@ -236,7 +236,7 @@ TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
           Span<const uint8_t>(dim_order.data(), dim_order.size()),
           executorch::aten::ScalarType::Float,
           false, // is_memory_planned
-          std::string_view{nullptr, 0}),
+          executorch::aten::string_view{nullptr, 0}),
       "");
 }
 

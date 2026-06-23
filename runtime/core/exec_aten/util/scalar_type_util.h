@@ -51,7 +51,7 @@ using ScalarType = at::ScalarType;
 namespace executorch {
 namespace aten {
 using ScalarType = torch::executor::ScalarType;
-using string_view = std::string_view;
+using string_view = torch::executor::string_view;
 } // namespace aten
 } // namespace executorch
 #endif // USE_ATEN_LIB

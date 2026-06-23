@@ -14,12 +14,10 @@
 
 import logging
 import os  # nosec B404 - used alongside subprocess for tool invocation
-import shlex
 import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
-from dataclasses import dataclass
-from typing import Any, final, List
+from typing import final, List
 
 from executorch.backends.arm._passes import RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
@@ -40,7 +38,7 @@ from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-no
 )
 from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
     model_converter_env,
-    require_model_converter_executable,
+    require_model_converter_binary,
 )
 from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
     BackendDetails,
@@ -53,94 +51,6 @@ from torch.export.exported_program import ExportedProgram
 
 # debug functionality
 logger = logging.getLogger(__name__)
-
-STATUS_OK = "PASS"
-STATUS_FAIL = "FAIL"
-VGF_BACKEND_NAME = "VgfBackend"
-
-
-@dataclass(frozen=True)
-class VgfRuntimeEnvironmentCheck:
-    """One VGF runtime backend environment preflight result.
-
-    This lives next to the Python VGF backend name and backend implementation,
-    while importing the actual ExecuTorch runtime lazily so AoT import behavior
-    remains unchanged.
-
-    """
-
-    name: str
-    status: str
-    detail: str
-    action: str | None = None
-
-    @property
-    def ok(self) -> bool:
-        return self.status != STATUS_FAIL
-
-    def to_dict(self) -> dict[str, str | None]:
-        return {
-            "name": self.name,
-            "status": self.status,
-            "detail": self.detail,
-            "action": self.action,
-        }
-
-
-def _load_runtime() -> Any:
-    from executorch.runtime import Runtime
-
-    return Runtime.get()
-
-
-def check_vgf_runtime_backend_environment() -> VgfRuntimeEnvironmentCheck:
-    """Check whether the installed runtime exposes the VGF backend."""
-
-    try:
-        runtime = _load_runtime()
-    except Exception as exc:
-        return VgfRuntimeEnvironmentCheck(
-            "VGF runtime backend",
-            STATUS_FAIL,
-            f"Could not initialize executorch.runtime.Runtime: {exc}",
-            "Install or rebuild ExecuTorch with runtime pybindings. For source "
-            "builds, enable the VGF runtime backend and reinstall the package.",
-        )
-
-    try:
-        registered_backend_names = list(
-            runtime.backend_registry.registered_backend_names
-        )
-        is_available = runtime.backend_registry.is_available(
-            backend_name=VGF_BACKEND_NAME
-        )
-    except Exception as exc:
-        return VgfRuntimeEnvironmentCheck(
-            "VGF runtime backend",
-            STATUS_FAIL,
-            f"Runtime backend registry query failed: {exc}",
-            "Reinstall or rebuild ExecuTorch with backend registry pybindings.",
-        )
-
-    if is_available:
-        return VgfRuntimeEnvironmentCheck(
-            "VGF runtime backend",
-            STATUS_OK,
-            f"{VGF_BACKEND_NAME} is available in the runtime backend registry.",
-        )
-
-    rendered = ", ".join(registered_backend_names[:20])
-    if len(registered_backend_names) > 20:
-        rendered += ", ..."
-
-    return VgfRuntimeEnvironmentCheck(
-        "VGF runtime backend",
-        STATUS_FAIL,
-        f"{VGF_BACKEND_NAME} is not available. Registered backends: "
-        f"{rendered or '<none>'}.",
-        "Use a runtime build/package that includes the VGF backend. For source "
-        "builds, configure with -DEXECUTORCH_BUILD_VGF=ON and reinstall.",
-    )
 
 
 def _register_grid_sampler_rewrite_pass() -> None:
@@ -252,52 +162,6 @@ class VgfBackend(BackendDetails):
         return PreprocessResult(processed_bytes=binary)
 
 
-def _format_repro_command(command: List[str]) -> str:
-    """Return a shell-safe command string for reproducing converter failures."""
-    return " ".join(shlex.quote(arg) for arg in command)
-
-
-def _copy_failure_artifacts(
-    tosa_path: str,
-    artifact_path: str | None,
-    tag_name: str,
-) -> str | None:
-    """Copy the failing TOSA input to the artifact directory, if configured.
-
-    Args:
-        tosa_path: Temporary TOSA flatbuffer passed to model-converter.
-        artifact_path: User-configured intermediate artifact directory.
-        tag_name: Optional delegation tag used to disambiguate artifacts.
-
-    Returns:
-        Path to the copied TOSA file, or None if no artifact path was configured.
-
-    """
-    if not artifact_path:
-        return None
-
-    os.makedirs(artifact_path, exist_ok=True)
-
-    suffix = f"_{tag_name}" if tag_name else ""
-    failure_tosa_path = os.path.join(
-        artifact_path,
-        f"failed_model_converter_input{suffix}.tosa",
-    )
-    shutil.copy2(tosa_path, failure_tosa_path)
-    return failure_tosa_path
-
-
-def _replace_converter_input_path(
-    conversion_command: List[str],
-    input_path: str,
-) -> List[str]:
-    """Return a converter command that uses a preserved TOSA input path."""
-    input_flag_index = conversion_command.index("-i")
-    repro_command = list(conversion_command)
-    repro_command[input_flag_index + 1] = input_path
-    return repro_command
-
-
 def vgf_compile(
     tosa_flatbuffer: bytes,
     compile_flags: List[str],
@@ -327,7 +191,7 @@ def vgf_compile(
             f.write(tosa_flatbuffer)
 
         compile_flags = [f for f in compile_flags if f and f.strip()]
-        converter_binary = str(require_model_converter_executable())
+        converter_binary = require_model_converter_binary()
         vgf_path = tosa_path + ".vgf"
         conversion_command = [
             converter_binary,
@@ -346,21 +210,11 @@ def vgf_compile(
                 env=model_converter_env(),
             )
         except subprocess.CalledProcessError as process_error:
-            failure_tosa_path = _copy_failure_artifacts(
-                tosa_path,
-                artifact_path,
-                tag_name,
-            )
-            repro_command = (
-                _replace_converter_input_path(conversion_command, failure_tosa_path)
-                if failure_tosa_path
-                else conversion_command
-            )
+            conversion_command_str = " ".join(conversion_command)
             raise RuntimeError(
-                "Vgf compiler failed.\n"
-                f"Repro command:\n  {_format_repro_command(repro_command)}\n"
-                f"Stderr:\n{process_error.stderr.decode()}\n"
-                f"Stdout:\n{process_error.stdout.decode()}"
+                f"Vgf compiler ('{conversion_command_str}') failed with error:\n \
+                {process_error.stderr.decode()}\n \
+                Stdout:\n{process_error.stdout.decode()}"
             )
 
         if artifact_path:

@@ -4,7 +4,6 @@ runtime.python_library(
     name = "operator_support",
     srcs = glob(["*.py"]),
     deps = [
-        "//executorch/backends/arm:ao_ext",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/backends/arm/tosa:resize_utils",

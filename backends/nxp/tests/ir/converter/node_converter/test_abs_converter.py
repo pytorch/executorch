@@ -68,7 +68,7 @@ class TestAbs:
         dataset = RandomDatasetCreator(low=low, high=high)
         return dataset
 
-    def test__basic_nsys_inference(self, mocker, request):
+    def test__basic_nsys_inference(self, mocker):
         input_shape = (2, 3, 6, 7)
         model = AbsModule()
         graph_verifier = DetailedGraphVerifier(
@@ -80,11 +80,10 @@ class TestAbs:
             model,
             input_shape,
             graph_verifier,
-            request,
             dataset_creator,
         )
 
-    def test__basic_nsys_inference__big(self, mocker, request):
+    def test__basic_nsys_inference__big(self, mocker):
         # some operators have delegation requirement that size must be < 4096
         input_shape = (4097, 1)
         model = AbsModule()
@@ -97,6 +96,5 @@ class TestAbs:
             model,
             input_shape,
             graph_verifier,
-            request,
             dataset_creator,
         )

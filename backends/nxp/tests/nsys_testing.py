@@ -3,22 +3,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import datetime
 import functools
+import inspect
 import logging
 import os.path
-import re
 import shutil
 import subprocess
 from copy import deepcopy
 from enum import Enum
-from importlib.metadata import version
 from os import environ, mkdir
 from typing import Callable, Iterable
 
 import numpy as np
 import torch
-import yaml
 from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
@@ -43,11 +40,10 @@ from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
-from executorch.backends.nxp.tests.utils import save_pte_program, store_txt_input_tensor
+from executorch.backends.nxp.tests.utils import save_pte_program
 from executorch.devtools.visualization.visualization_utils import (
     visualize_with_clusters,
 )
-from pytest import FixtureRequest
 from pytest_mock import MockerFixture
 from torch.export import ExportedProgram
 from torch.fx import GraphModule
@@ -59,7 +55,6 @@ NSYS_PATH = test_config.NSYS_PATH
 NSYS_CONFIG_PATH = test_config.NSYS_CONFIG_PATH
 NSYS_FIRMWARE_PATH = test_config.NSYS_FIRMWARE_PATH
 NEUTRON_TEST_PATH = test_config.NEUTRON_TEST_PATH
-PROJECT_DIR = test_config.PROJECT_DIR
 
 
 class ReferenceModel(Enum):
@@ -124,7 +119,6 @@ def _run_delegated_executorch_program(
         delegated_program = to_quantized_executorch_program(
             model,
             input_spec,
-            intermediates_dir=test_dir,
             dataset_dir=calibration_dataset_dir,
             delegate_to_npu=True,
             use_qat=use_qat,
@@ -132,7 +126,6 @@ def _run_delegated_executorch_program(
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
         )
-
     except RuntimeError as e:
         if "Model converted with neutron-converter has" in str(e) and hasattr(
             dlg_model_verifier, "check_num_delegated_nodes"
@@ -398,7 +391,6 @@ def lower_run_compare(
     model: torch.nn.Module,
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...],
     dlg_model_verifier: GraphVerifier,
-    request: FixtureRequest,
     dataset_creator=None,
     output_comparator=None,
     mocker: MockerFixture = None,
@@ -416,12 +408,11 @@ def lower_run_compare(
     :param model: Executed PyTorch model.
     :param input_spec: Model input specification. Can be either tuple of ints - single float32 input model - or Iterable
         of ModelInputSpec.
-    :param dlg_model_verifier: Graph verifier instance.
-    :param request: PyTest request needed for correct test name extraction.
     :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
-    :param mocker: Mocker instance used by visualizer.
+    :param dlg_model_verifier: Graph verifier instance.
     :param reference_model: Version of the model which will be run to obtain reference output data.
+    :param mocker: Mocker instance used by visualizer.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
     :param operators_not_to_delegate: list of operators not to delegate.
@@ -439,7 +430,7 @@ def lower_run_compare(
     model_to_delegate = model
     model_to_not_delegate = deepcopy(model)
 
-    test_name = get_test_name(request)
+    test_name = _get_caller_name()
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
 
     shutil.rmtree(test_dir, ignore_errors=True)
@@ -547,11 +538,6 @@ def lower_run_compare(
 
     output_tensor_spec = _get_program_output_spec(delegated_program)
 
-    if logging.root.isEnabledFor(logging.DEBUG):
-        _generate_txt_test_data(
-            calibration_dataset_dir, testing_dataset_dir, list(input_spec)
-        )
-        dump_debug_test_summary(test_name, test_dir)
     npu_results_dir = os.path.join(test_dir, "results_npu")
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     output_comparator.compare_results(
@@ -563,12 +549,10 @@ def lower_run_compare_ptq_qat(
     model: torch.nn.Module,
     input_spec: list[ModelInputSpec] | tuple,
     dlg_model_verifier: GraphVerifier,
-    request: FixtureRequest,
     train_fn: Callable[[torch.fx.GraphModule], None],
     dataset_creator=None,
     output_comparator=None,
     mocker: MockerFixture = None,
-    operators_not_to_delegate: list[str] = None,
 ):
     """
     Run provided program twice and compare it's results.
@@ -578,12 +562,10 @@ def lower_run_compare_ptq_qat(
     :param input_spec: Model input specification. Can be either tuple - single float32 input model - or list
         of ModelInputSpec.
     :param dlg_model_verifier: Graph verifier instance.
-    :param request: PyTest request needed for correct test name extraction.
     :param train_fn: Train/finetune function for QAT training.
     :param dataset_creator: Creator that should fill provided `dataset_dir` with model input samples.
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
     :param mocker: Mocker instance used by visualizer.
-    :param operators_not_to_delegate: list of operators not to delegate.
     """
     assert_NSYS()
 
@@ -595,7 +577,7 @@ def lower_run_compare_ptq_qat(
     model_ptq = model
     model_qat = deepcopy(model)
 
-    test_name = get_test_name(request)
+    test_name = _get_caller_name()
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
 
     shutil.rmtree(test_dir, ignore_errors=True)
@@ -624,7 +606,6 @@ def lower_run_compare_ptq_qat(
         ptq_results_dir,
         mocker,
         use_qat=False,
-        operators_not_to_delegate=operators_not_to_delegate,
     )
 
     _ = _run_delegated_executorch_program(
@@ -639,14 +620,10 @@ def lower_run_compare_ptq_qat(
         mocker,
         use_qat=True,
         train_fn=train_fn,
-        operators_not_to_delegate=operators_not_to_delegate,
     )
 
     output_tensor_spec = _get_program_output_spec(delegated_program_ptq)
 
-    if logging.root.isEnabledFor(logging.DEBUG):
-        dump_debug_test_summary(test_name, test_dir)
-        shutil.make_archive(test_dir, "zip", test_dir)
     ptq_results_dir = os.path.join(test_dir, "results_ptq")
     qat_results_dir = os.path.join(test_dir, "results_qat")
     output_comparator.compare_results(
@@ -680,13 +657,13 @@ def _parse_input_quant_params(
     return q_params
 
 
-def get_test_name(request):
-    # PyTest request is available, extract correct name including test class and params
-    test_name = request.node.nodeid.lstrip(":")
-    # Escape unacceptable characters from test name to make sure it is a valid filesystem directory name
-    test_name = re.sub(r'[<>:"/\\|?* ,()`]', "_", test_name)
-    test_name = test_name.strip(" .")
-    return test_name
+def _get_caller_name():
+    test_function_names = ["lower_run_compare", "lower_run_compare_ptq_qat"]
+    for idx, frame in enumerate(inspect.stack()):
+        if frame.function in test_function_names:
+            # Look one index above to get caller
+            return inspect.stack()[idx + 1].function
+    return None
 
 
 def execute_cmd(cmd, cwd="."):
@@ -748,60 +725,3 @@ def _get_program_output_spec(exported_program) -> list[torch.Tensor]:
     output_tensors_spec = list(exported_program.graph.output_node().meta["val"])
 
     return output_tensors_spec
-
-
-def get_executorch_git_info() -> dict[str, str]:
-    git_branch_cmd = f"git -C {PROJECT_DIR} branch --show-current"
-    git_branch, _, _ = execute_cmd(git_branch_cmd)
-    git_commit_cmd = f"git -C {PROJECT_DIR} rev-parse --short HEAD"
-    git_commit, _, _ = execute_cmd(git_commit_cmd)
-    return {"git_branch": git_branch, "git_commit": git_commit}
-
-
-def dump_debug_test_summary(test_name: str, test_dir: str):
-    git_info = get_executorch_git_info()
-
-    summary = {
-        "test_name": test_name,
-        "date_time": datetime.datetime.now().isoformat(),
-        "git_branch": git_info["git_branch"],
-        "git_commit": git_info["git_commit"],
-        "eiq_neutron_sdk_version": version("eiq_neutron_sdk"),
-        "eiq_nsys_version": version("eiq_nsys"),
-    }
-    with open(os.path.join(test_dir, "summary.yaml"), "w") as f:
-        yaml.dump(summary, f)
-
-
-def _generate_txt_test_data(
-    calibration_dataset_dir: str,
-    testing_dataset_dir: str,
-    input_tensor_spec: list[ModelInputSpec],
-):
-    # Generates txt tensor variants for input datasets
-    # Testing dataset can point to calibration dataset
-    dataset_paths = (
-        [calibration_dataset_dir, testing_dataset_dir]
-        if calibration_dataset_dir != testing_dataset_dir
-        else [testing_dataset_dir]
-    )
-    for d_path in dataset_paths:
-        quant_dataset = d_path.endswith("dataset_quant")
-
-        # For multiple input tests, list each sample dir, for single input tests the input files are in d_path
-        sample_dirs = [os.path.join(d_path, file) for file in os.listdir(d_path)]
-        sample_dirs = [file for file in sample_dirs if os.path.isdir(file)]
-        # Single input dataset has tensor directly in dataset path
-        if len(sample_dirs) == 0:
-            for input_tensor_name in sorted(os.listdir(d_path)):
-                input_tensor_path = os.path.join(d_path, input_tensor_name)
-                tensor_spec = input_tensor_spec[0]
-                store_txt_input_tensor(input_tensor_path, tensor_spec, quant_dataset)
-        else:
-            for sample_dir in sample_dirs:
-                for idx, input_tensor_name in enumerate(os.listdir(sample_dir)):
-                    input_tensor_path = os.path.join(sample_dir, input_tensor_name)
-                    tensor_spec = input_tensor_spec[idx]
-                    store_txt_input_tensor(
-                        input_tensor_path, tensor_spec, quant_dataset
-                    )

@@ -28,6 +28,7 @@ if(ESP_PLATFORM)
     SRCS
     "esp_executor_runner.cpp"
     "esp_pal.cpp"
+    "esp_memory_allocator.cpp"
     "esp_perf_monitor.cpp"
     INCLUDE_DIRS
     "."
@@ -282,7 +283,7 @@ else()
   add_executable(esp_executor_runner)
   target_sources(
     esp_executor_runner PRIVATE esp_executor_runner.cpp esp_pal.cpp
-                                esp_perf_monitor.cpp
+                                esp_perf_monitor.cpp esp_memory_allocator.cpp
   )
 
   target_link_libraries(

@@ -73,6 +73,7 @@
 #include <executorch/runtime/platform/runtime.h>
 
 #include "esp_executor_runner.h"
+#include "esp_memory_allocator.h"
 #include "esp_perf_monitor.h"
 
 #if defined(ESP_PLATFORM)
@@ -477,8 +478,8 @@ struct RunnerContext {
   bool bundle_io = false;
   Box<BufferDataLoader> loader;
   Box<Program> program;
-  Box<MemoryAllocator> method_allocator;
-  Box<MemoryAllocator> temp_allocator;
+  Box<EspMemoryAllocator> method_allocator;
+  Box<EspMemoryAllocator> temp_allocator;
   std::vector<Span<uint8_t>> planned_spans;
   Box<HierarchicalAllocator> planned_memory;
   Box<MemoryManager> memory_manager;
@@ -1019,7 +1020,7 @@ bool et_runner_init(void) {
     return false;
   }
 #endif
-  MemoryAllocator file_allocator(
+  EspMemoryAllocator file_allocator(
       method_allocation_pool_size, method_allocation_pool);
   auto [buffer, buffer_size] =
       load_file_from_fs("/spiffs/model.pte", file_allocator);

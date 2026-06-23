@@ -93,31 +93,14 @@ method with dynamic sequence length and host-side sampling.
 
 Writes `model.pte` (and optionally `model.ptd`) into `--output-dir`.
 
-#### TurboQuant KV cache (long context, CUDA + MLX)
+#### TurboQuant KV cache (long context, MLX only)
 
 For long-context inference, add `--turboquant` to swap the full-attention
 layers' KV cache for a TurboQuant TQ4 cache (4-bit codebook + nibble pack).
 This gives ~3.8× cache memory savings on the full-attention layers and lets
-you fit context lengths that wouldn't fit in bf16. Sliding-window layers are
-unaffected. Supported on both the CUDA and MLX backends.
-
-**Long context requires BOTH flags**: `--turboquant` *and* a larger
-`--max-seq-len`. Raising `--max-seq-len` alone keeps a bf16 KV cache, which does
-not fit at long context. On CUDA, `--turboquant` is what enables 128k: Gemma4-31B
-at `--max-seq-len 131072` runs within ~27 GiB at runtime (fits a 32 GB card).
+you fit context lengths that wouldn't fit in bf16. Sliding-window layers are unaffected.
 
 ```bash
-# CUDA — 128k context (TQ4 KV)
-python examples/models/gemma4_31b/export.py \
-    --gguf ./gemma-4-31B-it-Q4_K_M.gguf \
-    --output-dir ./gemma4_31b_exports_128k \
-    --max-seq-len 131072 \
-    --backend cuda \
-    --turboquant
-```
-
-```bash
-# MLX (Apple Silicon)
 python examples/models/gemma4_31b/export.py \
     --prequantized ./gemma4_31b_int4 \
     --output-dir ./gemma4_31b_exports_mlx_tq \

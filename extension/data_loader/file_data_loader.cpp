@@ -13,7 +13,6 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
-#include <new>
 
 #include <executorch/runtime/platform/compat_unistd.h>
 #include <fcntl.h>
@@ -45,12 +44,7 @@ namespace extension {
 
 namespace {
 inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
-  // Use the nothrow form so allocation failure returns nullptr instead of
-  // throwing std::bad_alloc. ExecuTorch is built exception-free and callers
-  // (e.g. FileDataLoader::load) check for nullptr and return
-  // Error::MemoryAllocationFailed; a throw here would unwind with no landing
-  // pad and abort the process.
-  return ::operator new(size, alignment, std::nothrow);
+  return ::operator new(size, alignment);
 }
 
 inline void et_aligned_free(void* ptr, std::align_val_t alignment) {

@@ -64,34 +64,6 @@ utils::uvec3 q8ta_linear_local_wg_size(
 }
 
 //
-// Resize
-//
-
-// resize_args = {}
-//
-// Quantized linear/matmul: output = [*input.shape[:-1], out_features]. The
-// leading/M dims follow the input; out_features (the last dim) is
-// weight-derived and shape-independent, so it stays as currently allocated.
-// Without this the DynamicDispatchNode freezes the output (incl. the M dim) at
-// the build-time upper bound. Mirrors the fp32 resize_linear_qw_node shape
-// logic, generalized to arbitrary input rank.
-void resize_q8ta_linear_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef in = args.at(1).refs.at(0);
-
-  std::vector<int64_t> new_sizes = graph->sizes_of(in);
-  const std::vector<int64_t> out_sizes = graph->sizes_of(out);
-  // Keep out_features (last dim, weight-derived); take all leading dims from
-  // in.
-  new_sizes.at(new_sizes.size() - 1) = out_sizes.at(out_sizes.size() - 1);
-  graph->virtual_resize(out, new_sizes);
-}
-
-//
 // Dispatch node
 //
 
@@ -163,7 +135,7 @@ void add_q8ta_linear_node(
       // Resize args
       {},
       // Resizing Logic
-      resize_q8ta_linear_node));
+      nullptr));
 }
 
 //

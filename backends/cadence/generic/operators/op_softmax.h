@@ -26,7 +26,7 @@ namespace native {
     __ET_UNUSED ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& X,
     int64_t dim,
-    __ET_UNUSED std::optional<bool> half_to_float,
+    __ET_UNUSED ::executorch::aten::optional<bool> half_to_float,
     ::executorch::aten::Tensor& Y);
 
 } // namespace native

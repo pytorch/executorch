@@ -44,9 +44,7 @@ class TestAdaptiveAvgPool2D:
             ),
         ],
     )
-    def test__basic_nsys_inference(
-        self, mocker, request, use_qat, input_shape, output_size
-    ):
+    def test__basic_nsys_inference(self, mocker, use_qat, input_shape, output_size):
         model = AdaptiveAvgPool2dModule(output_size)
         graph_verifier = DetailedGraphVerifier(
             mocker,
@@ -62,7 +60,6 @@ class TestAdaptiveAvgPool2D:
             model,
             input_shape,
             graph_verifier,
-            request,
             RandomDatasetCreator(low=-1, high=1),
             output_comparator=output_comparator,
             use_qat=use_qat,
@@ -72,7 +69,7 @@ class TestAdaptiveAvgPool2D:
         strict=True,
         reason="Known Neutron bad compute issue. Will be fixed in Neutron SW 3.1.2.",
     )
-    def test__know_neutron_issue(self, mocker, request):
+    def test__know_neutron_issue(self, mocker):
         input_shape = (2, 3, 10, 15)
         output_size = (5, 5)
         model = AdaptiveAvgPool2dModule(output_size)
@@ -89,12 +86,11 @@ class TestAdaptiveAvgPool2D:
             model,
             input_shape,
             graph_verifier,
-            request,
             RandomDatasetCreator(low=-1, high=1),
             output_comparator=output_comparator,
         )
 
-    def test__kernel_size_and_stride_limit(self, mocker, request):
+    def test__kernel_size_and_stride_limit(self, mocker):
         input_shape = (1, 3, 4, 4096)  # input_size = (1, 4096)
         output_size = (
             2,
@@ -118,7 +114,6 @@ class TestAdaptiveAvgPool2D:
             model,
             input_shape,
             graph_verifier,
-            request,
             RandomDatasetCreator(low=-1, high=1),
             output_comparator=output_comparator,
         )

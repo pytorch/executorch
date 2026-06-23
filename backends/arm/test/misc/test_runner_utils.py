@@ -3,13 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
-import numpy as np
-import torch
 from executorch.backends.arm.test import runner_utils
 
 
@@ -117,115 +113,3 @@ def test_get_elf_path_accepts_nested_runner_output(monkeypatch, tmp_path: Path) 
     monkeypatch.setattr(runner_utils, "_elf_search_roots", lambda: [tmp_path])
 
     assert runner_utils.get_elf_path("corstone-300") == str(elf_path)
-
-
-def test_shape_inference_json_uses_tosa_input_layout(tmp_path: Path) -> None:
-    test_case_path = tmp_path / "test_case.json"
-    artifact_path = tmp_path / "model.tosa"
-    input_tensor = torch.randn(1, 3, 4, 5).to(memory_format=torch.channels_last)
-
-    runner_utils.TosaReferenceModelDispatch()._generate_shape_inference_json(
-        b"",
-        artifact_path,
-        test_case_path,
-        ["input"],
-        (input_tensor,),
-    )
-
-    test_case = json.loads(test_case_path.read_text(encoding="utf-8"))
-
-    assert test_case == {
-        "tosa_file": str(artifact_path),
-        "shapes": {"input": [1, 4, 5, 3]},
-    }
-
-
-def test_numpy_to_torch_tensor_converts_dynamic_nhwc_output(monkeypatch) -> None:
-    symbolic_dim = object()
-    output_tensor = SimpleNamespace(
-        shape=(1, 3, symbolic_dim, 5),
-        dtype=torch.float32,
-        dim_order=lambda: runner_utils.NHWC_ORDER,
-    )
-    monkeypatch.setattr(
-        runner_utils, "get_first_fake_tensor", lambda output_node: output_tensor
-    )
-    array = np.arange(60, dtype=np.float32).reshape(1, 4, 5, 3)
-
-    result = runner_utils.numpy_to_torch_tensor(array, cast(Any, object()))
-
-    assert result.shape == (1, 3, 4, 5)
-    assert result.is_contiguous(memory_format=torch.channels_last)
-    torch.testing.assert_close(result, torch.from_numpy(array).permute(0, 3, 1, 2))
-
-
-def test_numpy_to_torch_tensor_converts_dynamic_nnhwc_output(monkeypatch) -> None:
-    symbolic_dim = object()
-    output_tensor = SimpleNamespace(
-        shape=(1, 2, 3, symbolic_dim, 5),
-        dtype=torch.float32,
-        dim_order=lambda: runner_utils.NNHWC_ORDER,
-    )
-    monkeypatch.setattr(
-        runner_utils, "get_first_fake_tensor", lambda output_node: output_tensor
-    )
-    array = np.arange(120, dtype=np.float32).reshape(1, 2, 4, 5, 3)
-
-    result = runner_utils.numpy_to_torch_tensor(array, cast(Any, object()))
-
-    assert result.shape == (1, 2, 3, 4, 5)
-    assert result.dim_order() == runner_utils.NNHWC_ORDER
-    torch.testing.assert_close(result, torch.from_numpy(array).permute(0, 1, 4, 2, 3))
-
-
-def _program_with_user_input(name: str) -> SimpleNamespace:
-    return SimpleNamespace(
-        graph_signature=SimpleNamespace(user_inputs=[name]),
-        graph=SimpleNamespace(nodes=[SimpleNamespace(op="placeholder", name=name)]),
-    )
-
-
-def test_user_inputs_need_shape_inference_rejects_static_input(monkeypatch) -> None:
-    monkeypatch.setattr(
-        runner_utils,
-        "get_first_fake_tensor",
-        lambda node: SimpleNamespace(shape=(1, 2)),
-    )
-
-    assert not runner_utils.user_inputs_need_shape_inference(
-        cast(Any, _program_with_user_input("input"))
-    )
-
-
-def test_user_inputs_need_shape_inference_accepts_symbolic_input(monkeypatch) -> None:
-    symbolic_dim = object()
-    monkeypatch.setattr(
-        runner_utils,
-        "get_first_fake_tensor",
-        lambda node: SimpleNamespace(shape=(1, symbolic_dim)),
-    )
-
-    assert runner_utils.user_inputs_need_shape_inference(
-        cast(Any, _program_with_user_input("input"))
-    )
-
-
-def test_user_inputs_need_shape_inference_ignores_non_user_inputs(monkeypatch) -> None:
-    program = SimpleNamespace(
-        graph_signature=SimpleNamespace(user_inputs=["input"]),
-        graph=SimpleNamespace(
-            nodes=[
-                SimpleNamespace(op="placeholder", name="input"),
-                SimpleNamespace(op="placeholder", name="param"),
-            ]
-        ),
-    )
-
-    def fake_tensor(node):
-        if node.name == "input":
-            return SimpleNamespace(shape=(1, 2))
-        return SimpleNamespace(shape=(1, object()))
-
-    monkeypatch.setattr(runner_utils, "get_first_fake_tensor", fake_tensor)
-
-    assert not runner_utils.user_inputs_need_shape_inference(cast(Any, program))

@@ -147,56 +147,6 @@ cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
 `--cuda_graph` is intentionally single-session only. CUDA graph replay captures
 device pointers, so it is not combined with per-session mutable-state rebinding.
 
-## OpenAI-compatible serving
-
-The CUDA build also produces `qwen3_5_moe_worker`, a C++ model-execution worker
-used by the generic `examples/llm_server` control plane. The Qwen launcher wires
-in the model's Hugging Face chat template and Qwen XML tool-call parser:
-
-```bash
-python -m executorch.examples.models.qwen3_5_moe.serve \
-    --model-path qwen35_moe_exports/model.pte \
-    --data-path qwen35_moe_exports/aoti_cuda_blob.ptd \
-    --tokenizer-path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
-    --hf-tokenizer ~/models/Qwen3.5-35B-A3B \
-    --model-id qwen3.5-moe \
-    --max-context 4096 \
-    --max-sessions 4 \
-    --no-think
-```
-
-`--max-sessions` controls how many isolated sessions the worker can host on one
-weight load. One slot is reserved for anonymous requests; clients should send a
-stable `session_id` (or session-affinity header) to get per-conversation
-isolation and warm append-only resume.
-
-### Use from pi
-
-Point pi at the Qwen server via `~/.pi/agent/models.json`:
-
-```json
-{
-  "providers": {
-    "executorch": {
-      "baseUrl": "http://127.0.0.1:8000/v1",
-      "api": "openai-completions",
-      "apiKey": "x",
-      "models": [
-        {
-          "id": "qwen3.5-moe",
-          "compat": { "sendSessionAffinityHeaders": true }
-        }
-      ]
-    }
-  }
-}
-```
-
-The model id must match `--model-id`. `sendSessionAffinityHeaders` lets pi route
-each conversation or subagent to a stable server session; without it, requests
-use the anonymous scratch session and do not get per-conversation isolation or
-warm resume.
-
 ### CUDA no-bleed test
 
 The CUDA build also produces `test_qwen35_moe_nobleed`, which validates that two
@@ -261,38 +211,7 @@ python export.py \
 | `--qembedding` | (none) | Embedding quantization: `8w` |
 | `--tiny-test` | off | Build tiny model with random weights for CI testing |
 
-### Build (MLX)
-
-Like the CUDA/Metal builds, the `make` target builds ExecuTorch core with the
-MLX backend and the runner binary. Requires Apple Silicon (Darwin).
-
-```bash
-make qwen3_5_moe-mlx
-```
-
-This builds ExecuTorch with MLX support, then the runner binary at
-`cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner` (with `mlx.metallib`
-copied next to it). Unlike CUDA, the MLX `.pte` is self-contained — no `.ptd`
-data file is produced or needed.
-
-### Run (MLX, C++ runner)
-
-The C++ runner requires a local HuggingFace `tokenizer.json` (the MLX `.pte` and
-a `tokenizer.json`; no `--data_path`):
-
-```bash
-cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
-    --model_path ./qwen35_moe_mlx/model.pte \
-    --tokenizer_path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
-    --prompt "What is the capital of France?" \
-    --max_new_tokens 50
-```
-
-The MLX export emits a single dynamic-seq `forward` method; the runner loads and
-calls it for both prefill and decode (sampling on host), matching the Python
-runner. See the [Run](#run) section above for the full flag list.
-
-### Run (MLX, Python)
+### Run (MLX)
 
 ```bash
 python -m executorch.examples.models.qwen3_5_moe.run \

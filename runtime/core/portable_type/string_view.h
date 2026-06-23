@@ -10,13 +10,11 @@
 
 #include <string_view>
 
-#include <executorch/runtime/platform/compiler.h>
-
 namespace executorch {
 namespace runtime {
 namespace etensor {
 
-using string_view ET_DEPRECATED = std::string_view;
+using std::string_view;
 
 } // namespace etensor
 } // namespace runtime
@@ -26,6 +24,6 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using string_view ET_DEPRECATED = std::string_view;
+using ::executorch::runtime::etensor::string_view;
 } // namespace executor
 } // namespace torch

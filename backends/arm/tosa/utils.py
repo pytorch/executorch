@@ -164,10 +164,6 @@ def build_reshape_tosa(
 def normalize_symint(shape):
     """Dynamic shapes in executorch are represented with torch.SymInt objects in
     the shapes, in TOSA we do not have this concept and instead use -1.
-
-    This function replaces each symbolic dimension with -1. Static dimensions
-    are preserved unchanged.
-
     """
     removed_symints = tuple([-1 if isinstance(d, torch.SymInt) else d for d in shape])
     return list(removed_symints)

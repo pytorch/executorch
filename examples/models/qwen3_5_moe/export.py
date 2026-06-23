@@ -768,16 +768,10 @@ def _export_mlx(model, config, args):
     gc.collect()
 
     print("Lowering to ExecuTorch with MLX backend...")
-    # Largest prefill chunk the runner may submit in one forward call. The MLX
-    # runner chunks long prompts to cap peak memory; bound it by the compiled
-    # dynamic max (max_seq_len - 1) so a chunk can never exceed what `forward`
-    # was compiled for.
-    max_prefill_chunk = min(1024, config.max_seq_len - 1)
     metadata = {
         "get_max_seq_len": config.max_seq_len,
         "get_vocab_size": config.vocab_size,
         "get_n_layers": config.num_hidden_layers,
-        "get_max_prefill_chunk": max_prefill_chunk,
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,

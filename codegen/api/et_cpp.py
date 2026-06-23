@@ -40,6 +40,7 @@ from .types import (
     tensorT,
 )
 
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -277,7 +278,7 @@ def default_expr(d: str, t: Type) -> str:
 
     if isinstance(t, OptionalType):
         if d == "None":
-            return "std::nullopt"
+            return "torch::executor::nullopt"
 
         return default_expr(d, t.elem)
 

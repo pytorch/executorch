@@ -180,7 +180,6 @@ def to_quantized_edge_program(
     operators_not_to_delegate: list[str] = None,
     get_calibration_inputs_fn: GetCalibrationInputsFn = get_random_calibration_inputs,
     target: str = "imxrt700",
-    intermediates_dir: str | None = None,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
     remove_quant_io_ops: bool = False,
@@ -218,7 +217,6 @@ def to_quantized_edge_program(
     preserve_ops = [torch.ops.aten.prelu.default]
     compile_spec = generate_neutron_compile_spec(
         target,
-        intermediates_dir=intermediates_dir,
         operators_not_to_delegate=operators_not_to_delegate,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         fetch_constants_to_sram=fetch_constants_to_sram,
@@ -268,7 +266,6 @@ def to_quantized_edge_program(
 def to_quantized_executorch_program(
     model: torch.nn.Module,
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
-    intermediates_dir: str | None = None,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
     use_neutron_for_format_conversion: bool = True,
@@ -290,7 +287,6 @@ def to_quantized_executorch_program(
     edge_program_manager = to_quantized_edge_program(
         model,
         input_spec,
-        intermediates_dir=intermediates_dir,
         use_qat=use_qat,
         train_fn=train_fn,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,

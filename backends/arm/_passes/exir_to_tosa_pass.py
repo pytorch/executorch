@@ -5,38 +5,37 @@
 
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 from executorch.backends.arm._passes.aten_to_tosa_activation_functions import (
-    get_activation_replacement,
+    rewrite_clamp,
+    rewrite_erf,
+    rewrite_sigmoid,
+    rewrite_tanh,
 )
-from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import rewrite_argmax
-from executorch.backends.transforms.aten_to_dialect_pass import (
-    AtenToDialectPass,
-    DialectNodeSpec,
-)
+from executorch.backends.transforms.aten_to_dialect_pass import AtenToDialectPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.fx import Node
 
 
 class ExirToTosaPass(AtenToDialectPass):
     """Rewrite simple EXIR ops to equivalent backend TOSA dialect ops.
 
-    Rewrite functions are registered with the shared ATen-to-dialect pass
-    infrastructure.
+    Rewrite functions are grouped by op category and registered with the shared
+    ATen-to-dialect pass infrastructure.
 
     """
 
 
-@ExirToTosaPass.register_dialect_substitution(exir_ops.edge.aten.argmax.default)
-def _get_tensor_operators_replacement(
-    node: Node, pass_: AtenToDialectPass
-) -> DialectNodeSpec:
-    return rewrite_argmax(node, pass_)
+_ACTIVATION_FUNCTION_REWRITES = {
+    exir_ops.edge.aten.clamp.default: rewrite_clamp,
+    exir_ops.edge.aten.erf.default: rewrite_erf,
+    exir_ops.edge.aten.sigmoid.default: rewrite_sigmoid,
+    exir_ops.edge.aten.tanh.default: rewrite_tanh,
+}
 
+_DIRECT_REWRITE_CATEGORIES = {
+    "activation_functions": _ACTIVATION_FUNCTION_REWRITES,
+}
 
-@ExirToTosaPass.register_dialect_substitution(exir_ops.edge.aten.clamp.default)
-@ExirToTosaPass.register_dialect_substitution(exir_ops.edge.aten.erf.default)
-@ExirToTosaPass.register_dialect_substitution(exir_ops.edge.aten.sigmoid.default)
-@ExirToTosaPass.register_dialect_substitution(exir_ops.edge.aten.tanh.default)
-def _get_activation_replacement(
-    node: Node, pass_: AtenToDialectPass
-) -> DialectNodeSpec | None:
-    return get_activation_replacement(node, pass_)
+# Register each category's ATen targets with the function that builds the
+# corresponding TOSA dialect node spec.
+for _rewrite_category in _DIRECT_REWRITE_CATEGORIES.values():
+    for _edge_target, _rewrite_fn in _rewrite_category.items():
+        ExirToTosaPass.register_dialect_substitution(_edge_target)(_rewrite_fn)

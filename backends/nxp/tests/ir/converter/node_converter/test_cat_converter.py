@@ -56,7 +56,7 @@ class CatMaxPoolModule(torch.nn.Module):
 
 class TestCat:
 
-    def test__qat(self, mocker, request, use_qat):
+    def test__qat(self, mocker, use_qat):
         input_shape = (2, 3, 5)
         num_inputs = 2
 
@@ -66,11 +66,11 @@ class TestCat:
             mocker, expected_delegated_ops={Cat: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(model, input_shapes, graph_verifier, request, use_qat=use_qat)
+        lower_run_compare(model, input_shapes, graph_verifier, use_qat=use_qat)
 
     @pytest.mark.parametrize("dim", list(range(-3, 3)), ids=lambda dim: f"dim={dim}")
     @pytest.mark.parametrize("num_inputs", [2, 5], ids=lambda n: f"n={n}")
-    def test__same_shapes(self, mocker, request, dim, num_inputs):
+    def test__same_shapes(self, mocker, dim, num_inputs):
         input_shape = (2, 3, 5)
         input_shapes = [ModelInputSpec(input_shape) for _ in range(num_inputs)]
 
@@ -79,11 +79,11 @@ class TestCat:
             mocker, expected_delegated_ops={Cat: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(model, input_shapes, graph_verifier, request)
+        lower_run_compare(model, input_shapes, graph_verifier)
 
     @pytest.mark.parametrize("dim", [0, -3, 2, -1], ids=lambda dim: f"dim={dim}")
     @pytest.mark.parametrize("num_inputs", [2, 5], ids=lambda n: f"n={n}")
-    def test__same_shapes__channels_first(self, mocker, request, dim, num_inputs):
+    def test__same_shapes__channels_first(self, mocker, dim, num_inputs):
         input_shape = (2, 3, 4, 5)
         input_shapes = [ModelInputSpec(input_shape) for _ in range(num_inputs)]
 
@@ -94,12 +94,12 @@ class TestCat:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shapes, graph_verifier, request)
+        lower_run_compare(model, input_shapes, graph_verifier)
 
     @pytest.mark.parametrize("dim", [0, -1], ids=lambda dim: f"dim={dim}")
     @pytest.mark.parametrize("rank", [2, 3, 4], ids=lambda rank: f"rank={rank}")
     @pytest.mark.parametrize("num_inputs", [2, 3], ids=lambda n: f"n={n}")
-    def test__different_shapes(self, mocker, request, dim, rank, num_inputs):
+    def test__different_shapes(self, mocker, dim, rank, num_inputs):
         # The input shapes can only differ in the `dim` dimension. So we can just assign a different one for each input.
         # e.g. [(2, 3, 4), (3, 3, 4), (4, 3, 4), (5, 3, 4), (6, 3, 4)]
         base_shape = [i + 2 for i in range(rank)]
@@ -113,11 +113,11 @@ class TestCat:
             mocker, expected_delegated_ops={Cat: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(model, input_shapes, graph_verifier, request)
+        lower_run_compare(model, input_shapes, graph_verifier)
 
     @pytest.mark.parametrize("dim", [1, -1], ids=lambda dim: f"dim={dim}")
     @pytest.mark.parametrize("num_inputs", [2, 5], ids=lambda n: f"n={n}")
-    def test__different_shapes__channels_first(self, mocker, request, dim, num_inputs):
+    def test__different_shapes__channels_first(self, mocker, dim, num_inputs):
         # The input shapes can only differ in the `dim` dimension. So we can just assign a different one for each input.
         # e.g. [(1, 3, 4, 5), (2, 3, 4, 5)]
         base_shape = (2, 3, 4, 5)
@@ -133,7 +133,7 @@ class TestCat:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shapes, graph_verifier, request)
+        lower_run_compare(model, input_shapes, graph_verifier)
 
     def test__single_input__alone_in_partition__not_delegated(self):
         # The operator is a noop, and there is no other op in the model. The Neutron Converter would produce an empty
@@ -149,7 +149,7 @@ class TestCat:
         )
         assert graph_contains_any_of_ops(delegated_ep.graph, [Cat])
 
-    def test__single_input__not_alone_in_partition__delegated(self, mocker, request):
+    def test__single_input__not_alone_in_partition__delegated(self, mocker):
         # The operator is a noop, but there is another op in the model, so they are both delegated.
         input_shape = [ModelInputSpec((2, 3, 4, 5))]
 
@@ -160,4 +160,4 @@ class TestCat:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shape, graph_verifier, request)
+        lower_run_compare(model, input_shape, graph_verifier)

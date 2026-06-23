@@ -93,7 +93,7 @@ def test_dialect_avg_pool2d(test_case, cortex_m_target):
         qtol=1,
     )
 
-    from executorch.backends.cortex_m.library import cmsis_nn
+    import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 
     module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
     pool_target = exir_ops.edge.cortex_m.quantized_avg_pool2d.default

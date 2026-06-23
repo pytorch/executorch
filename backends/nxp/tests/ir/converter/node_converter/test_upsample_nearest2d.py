@@ -53,7 +53,6 @@ class TestUpsampleNearest2D:
         model,
         input_shape,
         mocker,
-        request,
         use_qat=False,
         expected_delegated_ops=None,
     ):
@@ -73,7 +72,6 @@ class TestUpsampleNearest2D:
             model,
             input_shape,
             graph_verifier,
-            request,
             dataset_creator,
             use_qat=use_qat,
         )
@@ -87,11 +85,11 @@ class TestUpsampleNearest2D:
         )
         assert graph_contains_any_of_ops(delegated_ep.graph, [UpsampleNearest2D])
 
-    def test__qat(self, mocker, request, use_qat):
+    def test__qat(self, mocker, use_qat):
         input_shape = (1, 2, 3, 4)
         output_size = (6, 8)
         model = UpsampleNearestModule(size=output_size)
-        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
+        self.assert_delegated(model, input_shape, mocker, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "input_shape, output_size",
@@ -107,9 +105,9 @@ class TestUpsampleNearest2D:
             pytest.param((2, 2, 3, 4), (24, 8), id="batch=2, scale_h=8, scale_w=2"),
         ],
     )
-    def test__output_size(self, mocker, request, input_shape, output_size):
+    def test__output_size(self, mocker, input_shape, output_size):
         model = UpsampleNearestModule(size=output_size)
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__output_size__unsupported(self):
         input_shape = (1, 2, 3, 4)
@@ -133,9 +131,9 @@ class TestUpsampleNearest2D:
             pytest.param((2, 2, 3, 4), (2, 8), id="batch=2, scale_h=2, scale_w=8"),
         ],
     )
-    def test__scales(self, mocker, request, input_shape, scale):
+    def test__scales(self, mocker, input_shape, scale):
         model = UpsampleNearestModule(scale=scale)
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__scales__unsupported(self):
         input_shape = (1, 2, 3, 4)
@@ -149,7 +147,7 @@ class TestUpsampleNearest2D:
         model = UpsampleNearestModule(scale=scale)
         self.assert_not_delegated(model, input_shape)
 
-    def test__noop__not_alone_in_partition__delegated(self, mocker, request):
+    def test__noop__not_alone_in_partition__delegated(self, mocker):
         input_shape = (1, 2, 3, 4)
         scale = 1
         model = UpsampleNearestAddModule(scale=scale)
@@ -157,6 +155,5 @@ class TestUpsampleNearest2D:
             model,
             input_shape,
             mocker,
-            request,
             expected_delegated_ops={UpsampleNearest2D: 1, AddTensor: 1},
         )

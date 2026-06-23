@@ -1,6 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,7 +10,7 @@ from dataclasses import dataclass
 from enum import auto, Enum
 from typing import Optional
 
-from executorch.backends.cortex_m.library import cmsis_nn
+import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 
 
 class CortexM(Enum):

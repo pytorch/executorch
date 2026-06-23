@@ -217,17 +217,8 @@ class DecomposeMyOp(ExportPass):
 
 ### Registration (all decompose passes)
 1. `_passes/__init__.py` — import + `__all__`
-2. `_passes/qnn_pass_manager.py` — The pass manager uses classmethods for pipeline definitions:
-   - **Import** — add to the import block at top of file
-   - **`get_annotation_passes()`** — add pass class to the returned list (runs before quantizer, ATen IR)
-   - **`get_export_passes()`** — add pass class if needed for float-only path (runs after quantization, before to-edge)
-   - **`get_default_pass_activations()`** — add `(PassClass, True)` ONLY if the pass also needs to run in the to-edge pipeline
-   - **`get_passes_dependency_for_capture_program()`** — add `PassClass: [RemoveRedundancy]` dependency ONLY if also in `get_default_pass_activations`
-
-**When to add to which pipeline:**
-- **Annotation only** (most common for decompose passes): `get_annotation_passes()` — pass decomposes the op before the quantizer sees it
-- **Export pipeline** too: if the float-only test fails without it (op doesn't get handled by PyTorch's built-in decomposition during to-edge)
-- **Capture program** (to-edge) too: if the op can appear in edge dialect and needs decomposition there (e.g., `DecomposeVar`, `DecomposeCDist`, `DecomposeDiagonal`)
+2. `_passes/qnn_pass_manager.py` — import + `transform_for_annotation_pipeline` + `transform_for_export_pipeline` + `get_capture_program_passes`
+3. `_passes/utils.py` — add to `get_passes_dependency_for_capture_program()` with `[RemoveRedundancy]` dependency
 
 ---
 
@@ -264,4 +255,4 @@ class DecomposeMyOp(ExportPass):
 
 **Native QNN Op:** `qnn_constants.py` → `op_my_op.py` → `builders/__init__.py` → `htp_rules.py` → `lpai_rules.py` → `layout_transform.py` → `tests/models.py` → `test_qnn_delegate.py` → `partition/utils.py` (skip decomp) → `common_defs.py` (remove to_be_implemented) → `builders/README.md`
 
-**Decompose Pass:** `_passes/decompose_my_op.py` → `_passes/__init__.py` → `qnn_pass_manager.py` (`get_annotation_passes` + optionally `get_export_passes`; if also needed in to-edge: `get_default_pass_activations` + `get_passes_dependency_for_capture_program`) → `tests/models.py` → `test_qnn_delegate.py` → `common_defs.py` → `builders/README.md`
+**Decompose Pass:** `_passes/decompose_my_op.py` → `_passes/__init__.py` → `qnn_pass_manager.py` (annotation + export + capture) → `_passes/utils.py` (dependency) → `tests/models.py` → `test_qnn_delegate.py` → `common_defs.py` → `builders/README.md`

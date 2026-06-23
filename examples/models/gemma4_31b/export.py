@@ -171,7 +171,6 @@ def _export_cuda(
     )
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
-    from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
     from torch.export import Dim, export
 
     inductor_config.coordinate_descent_tuning = False
@@ -271,14 +270,6 @@ def _export_cuda(
                 alloc_graph_input=False,
             ),
             emit_mutable_buffer_names=True,
-            # Keep method inputs/outputs device-resident so the CUDA backend
-            # does not insert boundary H2D/D2H copies: the runner stages inputs
-            # in CUDA memory and reads the sampled token back with a single
-            # small D2H. CUDA-only (no effect on the MLX path).
-            propagate_device_config=PropagateDeviceConfig(
-                skip_h2d_for_method_inputs=True,
-                skip_d2h_for_method_outputs=True,
-            ),
         ),
     )
 

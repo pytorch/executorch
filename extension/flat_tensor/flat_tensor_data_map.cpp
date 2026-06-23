@@ -49,7 +49,7 @@ bool is_aligned(const void* data) {
 }
 
 Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
-    std::string_view key,
+    executorch::aten::string_view key,
     const flatbuffers::Vector<
         flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>* named_data,
     const flatbuffers::Vector<
@@ -127,7 +127,7 @@ Result<const TensorLayout> create_tensor_layout(
 } // namespace
 
 ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_tensor_layout(
-    std::string_view key) const {
+    executorch::aten::string_view key) const {
   Result<uint64_t> segment_end_offset = get_segment_end_offset(header_);
   if (!segment_end_offset.ok()) {
     return segment_end_offset.error();
@@ -144,7 +144,7 @@ ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_tensor_layout(
 }
 
 ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
-    std::string_view key) const {
+    executorch::aten::string_view key) const {
   Result<uint64_t> segment_end_offset = get_segment_end_offset(header_);
   if (!segment_end_offset.ok()) {
     return segment_end_offset.error();
@@ -170,7 +170,7 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
 }
 
 ET_NODISCARD Error FlatTensorDataMap::load_data_into(
-    ET_UNUSED std::string_view key,
+    ET_UNUSED executorch::aten::string_view key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
   Result<uint64_t> segment_end_offset = get_segment_end_offset(header_);

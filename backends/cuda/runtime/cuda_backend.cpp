@@ -319,12 +319,8 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
-    std::string so_blob_key;
-    std::string weights_blob_key;
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        executorch::backends::aoti::resolve_blob_keys(
-            processed, method_name, so_blob_key, weights_blob_key),
-        "Malformed named-data key payload");
+    std::string so_blob_key =
+        method_name.empty() ? "so_blob" : method_name + "_so_blob";
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
     auto aoti_dso_buffer = named_data_map->get_data(so_blob_key.c_str());
@@ -398,11 +394,11 @@ class ET_EXPERIMENTAL CudaBackend final
     // methods are independent sub-graphs that may have FQN collisions
     // (e.g. parakeet).
     if (is_weight_sharing_across_methods_enabled()) {
-      ET_CHECK_OK_OR_RETURN_ERROR(load_constants_with_cache(
-          handle, named_data_map, method_name, weights_blob_key));
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          load_constants_with_cache(handle, named_data_map, method_name));
     } else {
       ET_CHECK_OK_OR_RETURN_ERROR(
-          load_constants_legacy(handle, named_data_map, weights_blob_key));
+          load_constants_legacy(handle, named_data_map, method_name));
     }
 
     // Use shared CUDA stream if enabled via options, otherwise create one.
@@ -1015,14 +1011,13 @@ class ET_EXPERIMENTAL CudaBackend final
   Error load_constants_with_cache(
       cuda::CudaDelegateHandle* handle,
       const NamedDataMap* named_data_map,
-      const std::string& method_name,
-      const std::string& weights_blob_key) const {
+      const std::string& method_name) const {
     // Check if the required APIs are available
     if (!handle->get_num_constants || !handle->get_constant_name ||
         !handle->get_constant_original_fqn || !handle->extract_constants_map ||
         !handle->update_user_managed_constant_buffer_pairs) {
       // Fall back to the legacy path
-      return load_constants_legacy(handle, named_data_map, weights_blob_key);
+      return load_constants_legacy(handle, named_data_map, method_name);
     }
 
     // Step 1: Enumerate constants and partition into cached/uncached
@@ -1074,6 +1069,8 @@ class ET_EXPERIMENTAL CudaBackend final
     if (!uncached_fqns.empty()) {
       // Need to load from blob — use update_constants_from_blob for all,
       // then extract the new constants into the cache.
+      std::string weights_blob_key =
+          method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
       auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
 
       ET_CHECK_OR_RETURN_ERROR(
@@ -1193,7 +1190,9 @@ class ET_EXPERIMENTAL CudaBackend final
   Error load_constants_legacy(
       cuda::CudaDelegateHandle* handle,
       const NamedDataMap* named_data_map,
-      const std::string& weights_blob_key) const {
+      const std::string& method_name) const {
+    std::string weights_blob_key =
+        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
     auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
     if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
       ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());

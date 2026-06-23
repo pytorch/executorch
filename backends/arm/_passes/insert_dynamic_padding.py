@@ -29,7 +29,6 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
     target_ops = (
         exir_ops.backend.tosa.CONV2D.default,
-        exir_ops.backend.tosa.CONV3D.default,
         exir_ops.backend.tosa.DEPTHWISE_CONV2D.default,
         exir_ops.backend.tosa.MAX_POOL2D.default,
         exir_ops.backend.tosa.AVG_POOL2D.default,
@@ -58,12 +57,11 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
         if not self._is_dynamic_padding(padding):
             return super().call_operator(op, args, kwargs, meta, updated)
 
-        # Create a pad op before the convolution/pool op.
+        # Create a pad op before conv2d
         input_tensor = args[0]
 
         zero_padding_pair = [0, 0]
-        spatial_rank = 3 if op == exir_ops.backend.tosa.CONV3D.default else 2
-        zero_spatial_padding = [0] * (spatial_rank * 2)
+        zero_spatial_padding = [0, 0, 0, 0]
         N_padding = super().call_shape_operator(
             exir_ops.backend.tosa.CONST_SHAPE.default,
             (zero_padding_pair,),
@@ -95,7 +93,7 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
             meta,
             True,
         )
-        new_args = list(args)
-        new_args[0] = pad_res
-        new_args[padding_index] = zero_spatial_padding
-        return super().call_operator(op, tuple(new_args), kwargs, meta, updated)
+        new_conv2d_args = list(args)
+        new_conv2d_args[0] = pad_res
+        new_conv2d_args[padding_index] = zero_spatial_padding
+        return super().call_operator(op, tuple(new_conv2d_args), kwargs, meta, updated)

@@ -13,21 +13,6 @@
 
 namespace vkcompute {
 
-// quantize / dequantize are elementwise: output shape == input shape. Without a
-// resize function the DynamicDispatchNode freezes the output at the build-time
-// upper bound, so on a dynamic-shape graph (e.g. a 238-row input fed to a
-// 241-allocated graph) the FIRST quantize_per_tensor freezes everything
-// downstream at 241. Propagate the input's current sizes to the output.
-void resize_q8ta_qdq_node(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-  const ValueRef in = args.at(1).refs.at(0);
-  graph->virtual_resize(out, graph->sizes_of(in));
-}
-
 void add_q8ta_quantize_node(
     ComputeGraph& graph,
     const ValueRef fp_input,
@@ -95,9 +80,7 @@ void add_q8ta_quantize_node(
        inp_block_config.as_packed_int(),
        outp_block_config.as_packed_int()},
       // Resize args
-      {block_config_ref},
-      // Resize function: output shape == input shape (elementwise).
-      resize_q8ta_qdq_node));
+      {block_config_ref}));
 }
 
 void add_q8ta_dequantize_node(
@@ -167,9 +150,7 @@ void add_q8ta_dequantize_node(
        outp_block_config.as_packed_int(),
        inp_block_config.as_packed_int()},
       // Resize args
-      {block_config_ref},
-      // Resize function: output shape == input shape (elementwise).
-      resize_q8ta_qdq_node));
+      {block_config_ref}));
 }
 
 } // namespace vkcompute

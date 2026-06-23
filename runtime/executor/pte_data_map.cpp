@@ -26,7 +26,8 @@ namespace internal {
 }
 
 ET_NODISCARD
-Result<FreeableBuffer> PteDataMap::get_data(std::string_view key) const {
+Result<FreeableBuffer> PteDataMap::get_data(
+    executorch::aten::string_view key) const {
   for (uint32_t i = 0; i < named_data_->size(); i++) {
     const auto* named_data_item = named_data_->Get(i);
     ET_CHECK_OR_RETURN_ERROR(

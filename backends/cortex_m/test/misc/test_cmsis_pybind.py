@@ -1,4 +1,5 @@
 # Copyright 2026 Arm Limited and/or its affiliates.
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,7 +11,7 @@ import pytest
 
 def _import_cmsis_nn():
     try:
-        return importlib.import_module("executorch.backends.cortex_m.library.cmsis_nn")
+        return importlib.import_module("cmsis_nn")
     except Exception as exc:
         pytest.fail(f"Failed to resolve cmsis_nn: {exc}")
 

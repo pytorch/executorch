@@ -51,14 +51,14 @@ def reseed_model_per_test_run():
 
 class TestMaxPool2D:
     # noinspection PyMethodMayBeStatic
-    def assert_delegated(self, model, input_shape, mocker, request):
+    def assert_delegated(self, model, input_shape, mocker):
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1},
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shape, graph_verifier, request)
+        lower_run_compare(model, input_shape, graph_verifier)
 
     # noinspection PyMethodMayBeStatic
     def assert_not_delegated(self, model, input_shape):
@@ -70,12 +70,12 @@ class TestMaxPool2D:
         )
         assert graph_contains_any_of_ops(delegated_ep.graph, [MaxPool2DWithIndices])
 
-    def test__basic_nsys_inference(self, mocker, request):
+    def test__basic_nsys_inference(self, mocker):
         input_shape = (2, 4, 6, 7)  # The old flow limited the batch size to 1.
         model = MaxPool2dModule()
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
-    def test__basic_nsys_inference_qat(self, mocker, request):
+    def test__basic_nsys_inference_qat(self, mocker):
         input_shape = (2, 11, 7, 16)  # The old flow limited the batch size to 1.
         model = MaxPool2dModule()
         graph_verifier = DetailedGraphVerifier(
@@ -88,21 +88,20 @@ class TestMaxPool2D:
             model,
             input_shape,
             graph_verifier,
-            request,
             use_qat=True,
         )
 
-    def test__large_kernel_size(self, mocker, request):
+    def test__large_kernel_size(self, mocker):
         kernel_size = (1, 5000)
         input_shape = (1, 4) + kernel_size
         model = MaxPool2dModule(kernel_size, stride=1)
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
-    def test__stride_limit__no_padding(self, mocker, request):
+    def test__stride_limit__no_padding(self, mocker):
         stride = 4096
         input_shape = (1, 4, 1, 4096)
         model = MaxPool2dModule(1, stride=stride)
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__stride_limit_exceeded__no_padding(self):
         stride = 4097  # Exceeds the stride limit.
@@ -110,12 +109,12 @@ class TestMaxPool2D:
         model = MaxPool2dModule(1, stride=stride)
         self.assert_not_delegated(model, input_shape)
 
-    def test__stride_limit__padding(self, mocker, request):
+    def test__stride_limit__padding(self, mocker):
         padding = 1
         stride = 4096
         input_shape = (1, 2, 3, stride)
         model = MaxPool2dModule(3, stride=stride, padding=padding)
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__stride_limit_exceeded__padding(self):
         padding = 1
@@ -127,7 +126,7 @@ class TestMaxPool2D:
     @pytest.mark.skip(
         reason="Large padding requires large kernel size which results in an extremely slow test."
     )
-    def test__padding_limit(self, mocker, request):
+    def test__padding_limit(self, mocker):
         # As the padding is added wia a `Pad` operator (not the `MaxPool` arguments), there is no limit to the padded
         #  value. But as padding can be at most half of the kernel size (PyTorch requirement) and kernel size is limited
         #  to 4096, padding of 2048 is the limit.
@@ -135,16 +134,16 @@ class TestMaxPool2D:
         kernel_size = padding * 2
         input_shape = (1, 1, 2, 3)
         model = MaxPool2dModule(kernel_size, padding=padding)
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
-    def test__padding__max_pool_limit_exceeded(self, mocker, request):
+    def test__padding__max_pool_limit_exceeded(self, mocker):
         # NeutronIR `MaxPool` padding is limited to 32. But as it is added by the `Pad` operator instead, there is no
         #  limit. This tests ensures the `MaxPool` padding limit is not a problem.
         padding = 33
         kernel_size = padding * 2
         input_shape = (1, 2, 3, 4)
         model = MaxPool2dModule(kernel_size, padding=padding)
-        self.assert_delegated(model, input_shape, mocker, request)
+        self.assert_delegated(model, input_shape, mocker)
 
     def test__padding_to_kernel_ratio_exceeded(self):
         # Both PyTorch and Neutron require the padding to be at most half of the kernel size.
@@ -161,7 +160,7 @@ class TestMaxPool2D:
 class TestMaxPool1D:
 
     # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
-    def test__basic_nsys_inference__view_not_delegated(self, mocker, request):
+    def test__basic_nsys_inference__view_not_delegated(self, mocker):
         input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
         model = MaxPool1DModule()
 
@@ -171,4 +170,4 @@ class TestMaxPool1D:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shape, graph_verifier, request)
+        lower_run_compare(model, input_shape, graph_verifier)

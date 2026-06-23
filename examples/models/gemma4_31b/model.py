@@ -484,7 +484,7 @@ class Gemma4_31B(nn.Module):
             temperature: 1-D float tensor for Gumbel-max sampling.
 
         Returns:
-            (B, 1) sampled token IDs as int64.
+            (B, 1) sampled token IDs as float.
         """
         x = self.embed_tokens(tokens) * self.embed_normalizer
 

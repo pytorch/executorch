@@ -10,6 +10,8 @@
 # pyre-ignore-all-errors[16]
 from __future__ import annotations
 
+import copy
+
 import math
 import typing
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
@@ -110,7 +112,7 @@ def stride_from_dim_order(sizes: List[int], dim_order: List[int]) -> List[int]:
     """
     if len(sizes) == 0:
         return []
-    strides = list(sizes)
+    strides = copy.deepcopy(sizes)
     ndim = len(sizes)
     strides[dim_order[ndim - 1]] = 1
     for i in range(ndim - 2, -1, -1):

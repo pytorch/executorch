@@ -33,9 +33,6 @@ fbcode_target(_kind = python_library,
         "//executorch/examples/models/phi_4_mini:phi_4_mini",  # @manual
         "//executorch/examples/models/smollm2:smollm2",  # @manual
         "//executorch/examples/models/smollm3:smollm3",  # @manual
-        "//executorch/examples/models/smolvlm:smolvlm",  # @manual
-        "//executorch/examples/models/whisper:whisper",  # @manual
-        "//executorch/examples/models/yolo26:yolo26",  # @manual
     ],
 )
 

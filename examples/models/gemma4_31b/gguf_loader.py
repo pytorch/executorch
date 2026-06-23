@@ -17,12 +17,9 @@ backend:
   linear and embedding. ``embed_tokens`` and ``lm_head`` stay tied -- they share
   the one quantized tensor.
 * **CUDA**: Q4_K -> ``Int4Tensor``, Q6_K -> ``CudaDp4aPlanarInt6Tensor`` (a genuine
-  6-bit packed weight, lossless, symmetric). ``embed_tokens`` and ``lm_head`` are
-  untied: ``lm_head`` keeps a packed (int6/int4) matmul weight, while the token
-  embedding becomes a gatherable ``IntxUnpackedToInt8Tensor`` (int8) -- the truly
-  packed int4/int6 tensors can't gather. For the Q6_K tied weight the decode is
-  done once and shared between the two, avoiding a whole-tensor bf16 dequant and
-  a second decode (see ``_untie_embed_lm_head``).
+  6-bit packed weight, lossless, symmetric); ``lm_head`` keeps the quantized
+  tensor but the token embedding is dequantized to bf16 (the packed tensors can't
+  gather), so they are untied.
 
 Usage:
     model, config = load_gguf_model("model.gguf", backend="cuda")
@@ -119,55 +116,6 @@ def _resolve_tied_lm_head(model, lm_head_weight, packers):
         )
 
 
-def _untie_embed_lm_head(model, gtensor, weight, backend):
-    """Untie the GGUF token-embed / lm_head weight, returning ``(embed, lm_head)``.
-
-    GGUF ties ``embed_tokens`` and ``lm_head`` to one quantized weight. The
-    returned ``lm_head`` is packed into ``model.lm_head`` after the streaming loop
-    (``_resolve_tied_lm_head``), or is ``None`` when this function already
-    assigned it.
-
-    * **MLX**: keep both tied on the raw ``ExportableGGUFTensor``.
-    * **CUDA** (Q6_K or Q4_K): untie so ``lm_head`` keeps a packed low-bit matmul
-      weight while the token embedding becomes a gatherable int8
-      ``IntxUnpackedToInt8Tensor`` -- the truly packed int4/int6 tensors can't
-      gather. Instead of dequantizing the whole ~1.4 B-element weight to bf16
-      (2 B/elem), decode it once to int8 (1 B/elem; the decode is lossless so the
-      result is numerically identical), halving the embedding's host + GPU-constant
-      footprint. The token embedding (Q4_K for the Gemma checkpoint) is the single
-      biggest weight, so this is the dominant saving vs the bf16 path. ``lm_head``:
-        - Q6_K -> ``CudaDp4aPlanarInt6Tensor`` from the *same* int8 decode and
-          assigned here (``pack_linear_for_cuda`` would mis-route an int8 tensor to
-          the int8 path), so the post-loop resolve is a no-op.
-        - Q4_K -> kept as the native ``Int4Tensor`` and returned, so
-          ``_resolve_tied_lm_head`` packs it to ``CudaCoalescedInt4Tensor`` (same
-          as a regular Q4_K linear).
-    * **CUDA, other types**: fall back to the bf16 embedding.
-    """
-    if backend == "mlx":
-        return weight, gtensor
-
-    if gtensor.ggml_type in ("q6_k", "q4_k"):
-        intx = gtensor.to_intx_unpacked_to_int8_tensor()
-        if gtensor.ggml_type == "q6_k":
-            import torch.nn as nn
-            from executorch.backends.cuda.dp4a_planar_int6_tensor import (
-                CudaDp4aPlanarInt6Tensor,
-            )
-
-            model.lm_head.weight = nn.Parameter(
-                CudaDp4aPlanarInt6Tensor._from_intx_int8(intx), requires_grad=False
-            )
-            return intx, None
-        # Q4_K: ``weight`` is the native Int4Tensor; let _resolve_tied_lm_head
-        # pack it to CudaCoalescedInt4Tensor. Only the embedding switches to int8.
-        return intx, weight
-
-    from executorch.examples.models.gemma4_31b.quant import dequantize_weight
-
-    return dequantize_weight(weight, torch.bfloat16), weight
-
-
 def load_gguf_model(
     gguf_path: str,
     max_seq_len: int = 4096,
@@ -192,7 +140,7 @@ def load_gguf_model(
         Gemma4_31BConfig,
         materialize_runtime_buffers,
     )
-    from executorch.examples.models.gemma4_31b.quant import pack_one
+    from executorch.examples.models.gemma4_31b.quant import dequantize_weight, pack_one
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor, iter_gguf
 
     if backend == "cuda":
@@ -213,7 +161,7 @@ def load_gguf_model(
     with torch.device("meta"):
         model = Gemma4_31B(config)
 
-    lm_head_weight = None  # tied weight resolved into lm_head after the loop
+    lm_head_weight = None  # weight reused for a tied lm_head
     n_processed = 0
 
     print(f"Streaming GGUF from {gguf_path}...")
@@ -225,9 +173,11 @@ def load_gguf_model(
         if isinstance(value, ExportableGGUFTensor):
             weight = _convert_weight(model, model_key, value, backend)
             if model_key == "embed_tokens.weight":
-                weight, lm_head_weight = _untie_embed_lm_head(
-                    model, value, weight, backend
-                )
+                # Tied lm_head reuses the embedding weight: MLX wants the raw
+                # ExportableGGUFTensor (linear pattern), CUDA the quant tensor.
+                lm_head_weight = value if backend == "mlx" else weight
+                if backend == "cuda":
+                    weight = dequantize_weight(weight, torch.bfloat16)
             value = weight
         elif value.dtype == torch.float32:
             value = value.to(torch.bfloat16)

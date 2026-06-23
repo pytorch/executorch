@@ -19,7 +19,8 @@ namespace native {
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& weight,
     const ::executorch::aten::Tensor& weight_scales,
-    const std::optional<::executorch::aten::Tensor>& weight_zero_points,
+    const ::executorch::aten::optional<::executorch::aten::Tensor>&
+        weight_zero_points,
     const ::executorch::aten::Tensor& indices,
     bool pruned_weights,
     ::executorch::aten::Tensor& out);

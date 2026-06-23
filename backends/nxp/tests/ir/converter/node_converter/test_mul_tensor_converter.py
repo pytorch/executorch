@@ -41,7 +41,7 @@ class TestMulTensor:
             pytest.param((1, 4, 8, 8), id="4D."),
         ],
     )
-    def test__basic_nsys_inference(self, mocker, request, x_input_shape):
+    def test__basic_nsys_inference(self, x_input_shape, mocker):
         x_input_spec = ModelInputSpec(x_input_shape)
         model = MulTensorModule()
         graph_verifier = DetailedGraphVerifier(
@@ -52,7 +52,6 @@ class TestMulTensor:
             model,
             [x_input_spec, x_input_spec],
             graph_verifier,
-            request,
         )
 
     @pytest.mark.parametrize(
@@ -62,7 +61,7 @@ class TestMulTensor:
             pytest.param((1, 4, 8, 8), id="4D."),
         ],
     )
-    def test__basic_nsys_inference_qat(self, mocker, request, x_input_shape):
+    def test__basic_nsys_inference_qat(self, x_input_shape, mocker):
         x_input_spec = ModelInputSpec(x_input_shape)
         model = MulTensorModule()
         graph_verifier = DetailedGraphVerifier(
@@ -73,7 +72,6 @@ class TestMulTensor:
             model,
             [x_input_spec, x_input_spec],
             graph_verifier,
-            request,
             use_qat=True,
         )
 
@@ -92,13 +90,13 @@ class TestMulTensor:
             ),
         ],
     )
-    def test__correct_broadcast(self, input_spec, mocker, request):
+    def test__correct_broadcast(self, input_spec, mocker):
         model = MulTensorModule()
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={MulTensor: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(model, input_spec, graph_verifier, request)
+        lower_run_compare(model, input_spec, graph_verifier)
 
     @pytest.mark.parametrize(
         "input_spec",
@@ -136,7 +134,7 @@ class TestMulTensor:
             ),
         ],
     )
-    def test__w_conv(self, mocker, request, x_input_shape):
+    def test__w_conv(self, x_input_shape, mocker):
         model = MulTensorConvModule()
 
         n, c, h, w = x_input_shape
@@ -153,7 +151,6 @@ class TestMulTensor:
             model,
             [x_input_spec, y_input_spec],
             graph_verifier,
-            request,
         )
 
     @pytest.mark.parametrize(
