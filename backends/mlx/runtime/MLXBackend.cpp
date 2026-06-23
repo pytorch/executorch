@@ -9,6 +9,7 @@
 #include "MLXExecutor.h"
 #include "MLXInterpreter.h"
 #include "MLXLoader.h"
+#include "mlx_mutable_state.h"
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -277,6 +278,12 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         eval(handle->constants.tensors);
       }
 
+      // Register the handle with the per-session mutable-state manager. This is
+      // a no-op unless a multi-session owner is active for this load (see
+      // mlx_mutable_state.h); single-session execution is unaffected.
+      mutable_state_note_handle(
+          handle, &handle->program, &handle->mutable_buffers);
+
     } catch (const std::exception& e) {
       ET_LOG(Error, "Failed to load MLX program: %s", e.what());
       handle->~MLXHandle();
@@ -366,6 +373,14 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           }
         }
 
+        // Select the active session's mutable buffers (KV cache, recurrent/conv
+        // state) before running. No-op for single-session handles; weights stay
+        // shared via ExecutionState::constants.
+        if (Error rebind_err = mutable_state_rebind_for_execute(h, h->state);
+            rebind_err != Error::Ok) {
+          return rebind_err;
+        }
+
         // Run the MLX program (builds lazy computation graph)
         h->interpreter.run(program, h->state, h->stream);
 
@@ -431,6 +446,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
   void destroy(DelegateHandle* handle) const override {
     std::lock_guard<std::mutex> lock(mlx_global_mutex());
     if (handle != nullptr) {
+      mutable_state_forget_handle(handle);
       auto* mlx_handle = static_cast<MLXHandle*>(handle);
       mlx_handle->~MLXHandle();
     }

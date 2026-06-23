@@ -190,6 +190,7 @@ def to_quantized_edge_program(
     use_quant_state_dict: bool = True,
     fetch_constants_to_sram: bool = False,
     dump_kernel_selection_code: bool = False,
+    use_profiling: bool = False,
     delegate_to_npu=True,
 ) -> EdgeProgramManager:
     _neutron_target_spec = NeutronTargetSpec(target)
@@ -223,6 +224,7 @@ def to_quantized_edge_program(
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         fetch_constants_to_sram=fetch_constants_to_sram,
         dump_kernel_selection_code=dump_kernel_selection_code,
+        use_profiling=use_profiling,
     )
     post_quant_state_dict = (
         exir_program_aten__module_quant.state_dict() if use_quant_state_dict else None
@@ -244,6 +246,7 @@ def to_quantized_edge_program(
         export(exir_program_aten__module_quant, example_input, strict=True),
         transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
+        generate_etrecord=use_profiling,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
             _core_aten_ops_exception_list=core_aten_ops_exception_list,
@@ -274,6 +277,7 @@ def to_quantized_executorch_program(
     use_neutron_for_format_conversion: bool = True,
     dataset_dir: str | None = None,
     delegate_to_npu=True,
+    use_profiling: bool = False,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
 ) -> ExecutorchProgramManager:
@@ -295,6 +299,7 @@ def to_quantized_executorch_program(
         train_fn=train_fn,
         use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         delegate_to_npu=delegate_to_npu,
+        use_profiling=use_profiling,
         operators_not_to_delegate=operators_not_to_delegate,
         remove_quant_io_ops=remove_quant_io_ops,
         **get_calibration_inputs_fn,

@@ -89,6 +89,7 @@ endif()
 
 if(TARGET mlxdelegate)
   executorch_target_copy_mlx_metallib(qwen3_5_moe_runner)
+  executorch_target_copy_mlx_metallib(qwen3_5_moe_worker)
 endif()
 
 if(EXECUTORCH_BUILD_CUDA)
