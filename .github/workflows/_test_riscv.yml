@@ -64,9 +64,7 @@ jobs:
         # Allows failure in `echo | jq` pipeline to bubble up and fail the workflow
         set -o pipefail
 
-        # Using process substitution so subprocesses inside the loop (called from .ci/scripts/test_riscv_qemu.sh)
-        # don't inherit and consume bytes from the jq pipe, corrupting iteration.
-        while IFS= read -r qemu_cpu_ext; do
+        for qemu_cpu_ext in $(echo '${{ inputs.qemu-cpu-ext }}' | jq -r '.[]'); do
           variant_slug="${qemu_cpu_ext//,/_}"; variant_slug="${variant_slug//=/_}"; variant_slug="${variant_slug:-base}"
           build_dir="riscv_test/${{ inputs.model }}${{ inputs.quantize && '_q' || '' }}/${{ inputs.backend }}/${{ inputs.os }}-${{ inputs.arch }}-${variant_slug}"
 
@@ -105,4 +103,4 @@ jobs:
               echo
             ) >> $GITHUB_STEP_SUMMARY
           fi
-        done < <(echo '${{ inputs.qemu-cpu-ext }}' | jq -r '.[]')
+        done
