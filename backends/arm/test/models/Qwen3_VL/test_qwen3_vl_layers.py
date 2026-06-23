@@ -560,6 +560,31 @@ def test_qwen3_vl_tosa_mxfp8_fp32(test_case: Qwen3VLTestCase):
         pipeline.run()
 
 
+@common.parametrize(
+    "test_case",
+    TOSA_MXFP8_TEST_CASES,
+)
+def test_qwen3_vl_tosa_mxfp8_bf16(test_case: Qwen3VLTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    model, inputs = _to_bfloat16(model, inputs)
+    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+
+    with torch.no_grad():
+        pipeline = MXFPTosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=aten_op_mxfp_linear,
+            exir_op=[],
+            filter_fn=_is_linear,
+            frobenius_threshold=0.05,
+            cosine_threshold=0.995,
+            mxfp_config=mxfp_config,
+            tosa_version="1.1",
+            tosa_extensions=["bf16", "mxfp"],
+        )
+        pipeline.run()
+
+
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_case",
