@@ -1,0 +1,64 @@
+{
+  "name": "executorch",
+  "version-string": "1.2.0-alpha",
+  "description": "ExecuTorch: On-device AI across mobile, embedded and edge for PyTorch. PyTorch's unified on-device AI inference framework for deploying models from smartphones to microcontrollers.",
+  "homepage": "https://pytorch.org/executorch/",
+  "license": "BSD-3-Clause",
+  "supports": "!uwp",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "features": {
+    "xnnpack": {
+      "description": "Build with XNNPACK backend support",
+      "dependencies": []
+    },
+    "coreml": {
+      "description": "Build with CoreML backend support (Apple platforms only)",
+      "dependencies": []
+    },
+    "mps": {
+      "description": "Build with MPS (Metal Performance Shaders) backend support (Apple platforms only)",
+      "dependencies": []
+    },
+    "vulkan": {
+      "description": "Build with Vulkan backend support",
+      "dependencies": []
+    },
+    "qnn": {
+      "description": "Build with Qualcomm QNN backend support",
+      "dependencies": []
+    },
+    "portable-ops": {
+      "description": "Build with portable CPU operators",
+      "dependencies": []
+    },
+    "optimized-ops": {
+      "description": "Build with optimized CPU operators",
+      "dependencies": []
+    },
+    "quantized-ops": {
+      "description": "Build with quantized operators",
+      "dependencies": []
+    },
+    "pybind": {
+      "description": "Build Python bindings",
+      "dependencies": [
+        "pybind11"
+      ]
+    },
+    "tests": {
+      "description": "Build tests",
+      "dependencies": [
+        "gtest"
+      ]
+    }
+  }
+}
