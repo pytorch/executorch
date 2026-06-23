@@ -64,6 +64,8 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
 
 **→{doc}`nxp-kernel-selection` — Neutron Firmware Kernel Selection support.**
 
+**→{doc}`nxp-profiling` — Neutron models profiling.**
+
 ```{toctree}
 :maxdepth: 2
 :hidden:
@@ -74,4 +76,5 @@ nxp-quantization
 tutorials/nxp-tutorials
 nxp-dim-order
 nxp-kernel-selection
+nxp-profiling
 ```
