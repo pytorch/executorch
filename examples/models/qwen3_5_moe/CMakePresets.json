@@ -70,9 +70,9 @@
         },
         {
             "name": "qwen3-5-moe-mlx",
-            "displayName": "Build Qwen3.5 MoE runner (MLX)",
+            "displayName": "Build Qwen3.5 MoE runner and worker (MLX)",
             "configurePreset": "qwen3-5-moe-mlx",
-            "targets": ["qwen3_5_moe_runner"]
+            "targets": ["qwen3_5_moe_runner", "qwen3_5_moe_worker"]
         }
     ],
     "workflowPresets": [
