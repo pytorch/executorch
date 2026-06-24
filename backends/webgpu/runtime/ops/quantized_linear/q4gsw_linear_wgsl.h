@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear.wgsl - DO NOT EDIT.
-// wgsl-sha256: f0fd0371418fdacd3387645888689caf86a387a623ed08f8337610e30f844ede
+// wgsl-sha256: dc6a55014ae4543bd80e5e22c3fb52896aca96e0589f700803327d8121ada489
 inline constexpr const char* kQ4gswLinearWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_input: array<f32>;
@@ -38,12 +38,15 @@ override wg_size: u32 = 64u;
 // Register-tiled GEMM: dequant weight once per (n,k), reused across TM rows.
 const TM: u32 = 4u;
 const TN: u32 = 4u;
+const TILE_ELEMS: u32 = TM * TN; // accumulator size; keeps acc in sync with TM/TN
 
 @compute @workgroup_size(wg_size, 1, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let nrt = (params.M + TM - 1u) / TM;
   let nct = (params.N + TN - 1u) / TN;
   let tiles = nrt * nct;
+  // M==0 or N==0 -> tiles==0 -> every thread returns here, so the M-1u/N-1u
+  // clamps below never underflow (the host also rejects M==0/N==0).
   if (gid.x >= tiles) {
     return;
   }
@@ -52,8 +55,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let m0 = row_tile * TM;
   let n0 = col_tile * TN;
 
-  var acc: array<f32, 16>; // TM * TN
-  for (var i: u32 = 0u; i < TM * TN; i = i + 1u) {
+  var acc: array<f32, TILE_ELEMS>;
+  for (var i: u32 = 0u; i < TILE_ELEMS; i = i + 1u) {
     acc[i] = 0.0;
   }
 
@@ -61,6 +64,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   loop {
     if (k >= params.K) {
       break;
+    }
+    // Load the TM input values for column k once; reused across all TN columns.
+    var in_reg: array<f32, TM>;
+    for (var ml: u32 = 0u; ml < TM; ml = ml + 1u) {
+      let m_eff = min(m0 + ml, params.M - 1u);
+      in_reg[ml] = t_input[m_eff * params.K + k];
     }
     for (var nl: u32 = 0u; nl < TN; nl = nl + 1u) {
       // Clamp to last valid column; overhang result is never stored.
@@ -77,8 +86,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       let q = f32(i32(nib) - 8); // +8-shifted on pack; recover signed [-8,7]
       let dq = q * t_scales[(k / params.group_size) * params.padded_N + n_eff];
       for (var ml: u32 = 0u; ml < TM; ml = ml + 1u) {
-        let m_eff = min(m0 + ml, params.M - 1u);
-        acc[ml * TN + nl] = acc[ml * TN + nl] + t_input[m_eff * params.K + k] * dq;
+        acc[ml * TN + nl] = acc[ml * TN + nl] + in_reg[ml] * dq;
       }
     }
     k = k + 1u;
