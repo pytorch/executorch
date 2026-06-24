@@ -961,16 +961,11 @@ class TensorRepSet:
     def first_valid_texture_layout(self):
         return list(self.valid_texture_layouts)[0]
 
-    def make_tensor_repr(
-        self,
-        prefer_storage: VkStorageType = VkStorageType.TEXTURE_3D,
-    ) -> TensorRepr:
+    def make_tensor_repr(self) -> TensorRepr:
         """
         Pick a representation (i.e. TensorRepr) from the set of possible representations.
         If there are multiple valid representations, then:
-        1. Honor `prefer_storage` when that storage type is valid for this repset
-           (this is how `storage_type_override` forces buffer storage graph-wide);
-           otherwise prefer texture over buffer.
+        1. Prefer texture storage over buffer storage
         2. Pick the first available memory layout.
         """
         if self.is_empty():
@@ -980,9 +975,6 @@ class TensorRepSet:
             return TensorRepr(
                 VkStorageType.DEFAULT_STORAGE, VkMemoryLayout.DEFAULT_LAYOUT
             )
-
-        if prefer_storage == VkStorageType.BUFFER and self.buffer_is_valid():
-            return TensorRepr(VkStorageType.BUFFER, self.first_valid_buffer_layout())
 
         if self.texture_is_valid():
             return TensorRepr(
@@ -1611,25 +1603,21 @@ class OpRepSets:
         self.assert_sync_contraints()
         return True
 
-    def pick_representations(
-        self,
-        prefer_storage: VkStorageType = VkStorageType.TEXTURE_3D,
-    ) -> Tuple[TensorReprList, TensorReprList]:
+    def pick_representations(self) -> Tuple[TensorReprList, TensorReprList]:
         """
         For each tensor participating in the op, pick a representation for it among the
-        possible represetntation sets. `prefer_storage` biases the choice when a tensor
-        admits both storage types (see TensorRepSet.make_tensor_repr).
+        possible represetntation sets.
         """
         args_repr_list = TensorReprList([])
         outs_repr_list = TensorReprList([])
 
         for i in range(len(self.op_node.args)):
             arg_repset = self.args_repset_list[i]
-            args_repr_list.append(arg_repset.make_tensor_repr(prefer_storage))
+            args_repr_list.append(arg_repset.make_tensor_repr())
 
         for i in range(num_tensors_in_node(self.op_node)):
             out_repset = self.outs_repset_list[i]
-            outs_repr_list.append(out_repset.make_tensor_repr(prefer_storage))
+            outs_repr_list.append(out_repset.make_tensor_repr())
 
         return args_repr_list, outs_repr_list
 

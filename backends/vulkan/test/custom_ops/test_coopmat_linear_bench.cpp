@@ -4,12 +4,10 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-// Consolidated coopmat-vs-tiled microbenchmark for the four quantized-linear
-// types at Llama 3.1 8B prefill shapes:
+// Consolidated coopmat-vs-tiled microbenchmark for the two int4-quantized
+// linear types at Llama 3.1 8B prefill shapes:
 //   4w    = linear_q4gsw          (weight-only int4)
 //   8da4w = linear_dq8ca_q4gsw    (dyn-act int8 x int4 weight)
-//   8w    = linear_q8csw          (weight-only int8)
-//   8da8w = linear_dq8ca_q8csw    (dyn-act int8 x int8 weight)
 //
 // Baseline (tiled) is selected by Texture3D+Half output storage; coopmat is
 // selected by Buffer+Half (the runtime gate in QuantizedLinear.cpp picks the
@@ -124,19 +122,6 @@ static TestCase make_case(
     tc.add_input_spec(weight_scales);
     tc.add_input_spec(group_size_spec);
     tc.add_input_spec(bias);
-  } else if (cfg.op_name == "linear_q8csw") {
-    tc.add_input_spec(input);
-    tc.add_input_spec(qweight);
-    tc.add_input_spec(weight_scales);
-    tc.add_input_spec(bias);
-  } else { // linear_dq8ca_q8csw
-    tc.add_input_spec(input);
-    tc.add_input_spec(input_scale);
-    tc.add_input_spec(input_zp);
-    tc.add_input_spec(qweight);
-    tc.add_input_spec(weight_sums);
-    tc.add_input_spec(weight_scales);
-    tc.add_input_spec(bias);
   }
   tc.add_output_spec(output);
   return tc;
@@ -235,7 +220,7 @@ static const std::vector<std::pair<int64_t, int64_t>> kShapes = {
     {14336, 4096}, // down_proj
 };
 static const std::vector<std::string> kOps = {
-    "linear_q4gsw", "linear_dq8ca_q4gsw", "linear_q8csw", "linear_dq8ca_q8csw"};
+    "linear_q4gsw", "linear_dq8ca_q4gsw"};
 static constexpr int64_t kM = 1024;
 static constexpr int64_t kGroup = 128;
 

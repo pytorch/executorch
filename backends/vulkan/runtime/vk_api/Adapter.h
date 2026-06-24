@@ -270,6 +270,18 @@ class Adapter final {
 #endif /* VK_KHR_cooperative_matrix */
   }
 
+  // True when VK_COMPONENT_TYPE_SINT8_KHR is enumerated in the device's
+  // cooperative matrix property list — required for coopmat<int8> shaders.
+  inline bool supports_int8_cooperative_matrix() const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    return physical_device_.supports_int8_coopmat;
+#else
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
   inline bool supports_int16_shader_types() {
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;

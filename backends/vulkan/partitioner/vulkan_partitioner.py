@@ -7,7 +7,6 @@
 # pyre-strict
 
 import logging
-import os
 from typing import Any, Callable, Dict, final, List, Mapping, Optional, Set, Tuple
 
 import executorch.backends.vulkan.patterns as vk_patterns
@@ -331,14 +330,6 @@ class VulkanPartitioner(Partitioner):
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
             self.options = compile_options
-
-        # Benchmark hook: ET_VK_FORCE_BUFFER=1 forces whole-graph buffer storage so the
-        # coopmat shaders become eligible, without editing the export script. An explicit
-        # storage_type_override in compile_options always wins.
-        if "storage_type_override" not in self.options and os.environ.get(
-            "ET_VK_FORCE_BUFFER"
-        ):
-            self.options["storage_type_override"] = VkStorageType.BUFFER
 
         compile_spec = parse_compile_options(self.options)
         self.delegation_spec = DelegationSpec(VulkanBackend.__name__, compile_spec)

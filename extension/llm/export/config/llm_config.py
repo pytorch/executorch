@@ -413,7 +413,6 @@ class QuantizationConfig:
     QMODE_OPTIONS: ClassVar[List[str]] = [
         "int8",
         "8da4w",
-        "8da8w",
         "8da4w-gptq",
         "4w",
     ]

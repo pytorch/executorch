@@ -4,16 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# coopmat variants of the weight-only quantized linear tiled shaders (fp16
-# act x INT weight, dequantized to fp16 at the shared-memory store). One
-# template, two weight formats:
+# coopmat variant of the weight-only int4 quantized linear tiled shader (fp16
+# act x INT4 weight, dequantized to fp16 at the shared-memory store).
 #   WEIGHT_NBITS=4 -> linear_q4gsw_coopmat (INT4 group-symmetric)
-#   WEIGHT_NBITS=8 -> linear_q8csw_coopmat (INT8 per-channel symmetric)
 # Forces buffer storage for activation/output (coopMatLoad/Store on buffers);
 # INT weight storage can be texture2d or buffer (matches the tiled path).
 # DTYPE = half only; fp32 activations are not supported.
-# Geometry follows the double-buffered reference (coopmat_mm_ref): 128x128
-# tile, K-step 16, 8 subgroups x 32 threads (subgroup size 32 forced).
+# Geometry follows the double-buffered reference (coopmat_mm_ref): 128x64
+# tile, K-step 16, 4 subgroups x 32 threads (subgroup size 32 forced). The
+# 128x64 / 2x2-subgroup-grid geometry is the tile-sweep optimum for M5 EVT1
+# (dbuf1_opt, ~+25% over the prior 128x128 / 4x2 layout). NOTE: the C++
+# dispatch in QuantizedLinear.cpp must keep kQ4gswCoopmatDims.n and .wg_size
+# in sync with WG_TILE_N (64) and WG_SIZE (= SG_GRID_X*SG_GRID_Y*SUBGROUP = 128).
 
 linear_qw_coopmat:
   parameter_names_with_default_values:
@@ -25,9 +27,9 @@ linear_qw_coopmat:
     MMA_N: 16
     MMA_K: 16
     WG_TILE_M: 128
-    WG_TILE_N: 128
+    WG_TILE_N: 64
     WG_TILE_K: 16
-    SG_GRID_X: 4
+    SG_GRID_X: 2
     SG_GRID_Y: 2
     SUBGROUP_SIZE: 32
   shader_variants:
@@ -36,10 +38,4 @@ linear_qw_coopmat:
       WEIGHT_STORAGE: texture2d
     - NAME: linear_q4gsw_coopmat_buffer_buffer_half
       WEIGHT_NBITS: 4
-      WEIGHT_STORAGE: buffer
-    - NAME: linear_q8csw_coopmat_buffer_texture2d_half
-      WEIGHT_NBITS: 8
-      WEIGHT_STORAGE: texture2d
-    - NAME: linear_q8csw_coopmat_buffer_buffer_half
-      WEIGHT_NBITS: 8
       WEIGHT_STORAGE: buffer

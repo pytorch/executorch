@@ -7,10 +7,9 @@
  */
 
 /*
- * KHR Cooperative Matrix variants of the dynamically-quantized-activation
- * linear tiled shaders. One template, two weight formats (WEIGHT_NBITS):
+ * KHR Cooperative Matrix variant of the dynamically-quantized-activation
+ * linear tiled shader (WEIGHT_NBITS=4):
  *   4  ->  linear_dq8ca_q4gsw_coopmat   INT4 group-symmetric weight
- *   8  ->  linear_dq8ca_q8csw_coopmat   INT8 per-channel symmetric weight
  *
  * Performs: out[M,N] = dequant(int8_act) * dequant(int_w) (+ bias)
  * via coopmat<int8> x coopmat<int8> -> coopmat<int32> on the matrix unit.

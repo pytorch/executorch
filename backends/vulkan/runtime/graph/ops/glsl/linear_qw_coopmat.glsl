@@ -7,11 +7,10 @@
  */
 
 /*
- * KHR Cooperative Matrix variants of the weight-only quantized linear tiled
- * shaders. One template, two weight formats (WEIGHT_NBITS in the yaml):
+ * KHR Cooperative Matrix variant of the weight-only int4 quantized linear
+ * tiled shader (WEIGHT_NBITS=4 in the yaml):
  *   4  ->  linear_q4gsw_coopmat   INT4 group-symmetric weight
  *          (group_size = 4 * K4_per_group)
- *   8  ->  linear_q8csw_coopmat   INT8 per-channel symmetric weight
  *
  * Performs: out[M,N] = activation[M,K] * weight^T[N,K] (+ bias)
  *
