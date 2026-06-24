@@ -22,30 +22,21 @@ override wg_size: u32 = 64;
 const TM: u32 = 4u;
 const TN: u32 = 4u;
 
+// D is a multiple of 4 (host-guarded), so a d4 chunk is fully in-bounds — no per-lane check.
 fn load_q_vec4(s: u32, h: u32, d4: u32) -> vec4<f32> {
-  var r = vec4<f32>(0.0, 0.0, 0.0, 0.0);
   if (s >= params.S) {
-    return r;
+    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
-  let base = s * params.Hq * params.D + h * params.D;
-  if (d4 + 0u < params.D) { r.x = t_q[base + d4 + 0u]; }
-  if (d4 + 1u < params.D) { r.y = t_q[base + d4 + 1u]; }
-  if (d4 + 2u < params.D) { r.z = t_q[base + d4 + 2u]; }
-  if (d4 + 3u < params.D) { r.w = t_q[base + d4 + 3u]; }
-  return r;
+  let base = s * params.Hq * params.D + h * params.D + d4;
+  return vec4<f32>(t_q[base], t_q[base + 1u], t_q[base + 2u], t_q[base + 3u]);
 }
 
 fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
-  var r = vec4<f32>(0.0, 0.0, 0.0, 0.0);
   if (c >= params.context_len) {
-    return r;
+    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
-  let base = c * params.Hkv * params.D + kvh * params.D;
-  if (d4 + 0u < params.D) { r.x = t_k_cache[base + d4 + 0u]; }
-  if (d4 + 1u < params.D) { r.y = t_k_cache[base + d4 + 1u]; }
-  if (d4 + 2u < params.D) { r.z = t_k_cache[base + d4 + 2u]; }
-  if (d4 + 3u < params.D) { r.w = t_k_cache[base + d4 + 3u]; }
-  return r;
+  let base = c * params.Hkv * params.D + kvh * params.D + d4;
+  return vec4<f32>(t_k_cache[base], t_k_cache[base + 1u], t_k_cache[base + 2u], t_k_cache[base + 3u]);
 }
 
 fn store_qk(s: u32, c: u32, h: u32, raw: f32) {
