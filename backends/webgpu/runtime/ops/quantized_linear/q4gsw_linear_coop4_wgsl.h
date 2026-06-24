@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_coop4.wgsl - DO NOT EDIT.
-// wgsl-sha256: 6e296f0583118d1ff0df914dd3ac078e7f4e526d99be7d233531a47fddb93f89
+// wgsl-sha256: 3031886e68c375e617dfb263da39c492c6de4d8c1fb4073d70b18823a3e6a4fe
 inline constexpr const char* kQ4gswLinearCoop4WGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_input: array<f32>;
@@ -35,9 +35,9 @@ struct Params {
 
 // Cooperative-over-K GEMV with u32-batched coalesced weight loads (64 lanes).
 const WG: u32 = 64u;
-var<workgroup> partial: array<f32, 64>;
+var<workgroup> partial: array<f32, WG>;
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(WG, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(num_workgroups) ngrp: vec3<u32>,
