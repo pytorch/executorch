@@ -34,6 +34,14 @@ struct Q4gswParams {
 };
 static_assert(sizeof(Q4gswParams) == 32, "Q4gswParams must be 32 bytes");
 
+// Register-tile dims; MUST match TM/TN in q4gsw_linear.wgsl.
+constexpr int64_t kQ4gswTileM = 4;
+constexpr int64_t kQ4gswTileN = 4;
+// ceil(a/b) for positive int64 (WebGPUUtils has no ceil-div helper).
+inline int64_t q4gsw_ceil_div(int64_t a, int64_t b) {
+  return (a + b - 1) / b;
+}
+
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
 void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int in_id = args.at(0);
@@ -85,9 +93,17 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU linear_q4gsw: N*K_packed must be a multiple of 4 (u32-packed)");
   }
 
-  // One workgroup per output row (M); validate dispatch before any alloc.
-  const uint32_t workgroup_count =
-      utils::compute_1d_workgroup_count(device, M, 1, "linear_q4gsw");
+  // Register-tiled GEMM: one thread per TM x TN tile; validate before alloc.
+  const uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
+  const int64_t total_tiles =
+      q4gsw_ceil_div(M, kQ4gswTileM) * q4gsw_ceil_div(N, kQ4gswTileN);
+  if (total_tiles > static_cast<int64_t>(UINT32_MAX)) {
+    throw std::runtime_error(
+        "WebGPU linear_q4gsw: tile count exceeds the 1D dispatch limit");
+  }
+  const uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+      device, static_cast<uint32_t>(total_tiles), wg_size, "linear_q4gsw");
 
   // fp32-only byte-size guards (no runtime dtype); fp16 scales -> bail.
   const uint64_t scales_numel =
@@ -186,8 +202,6 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUPipelineLayout pipeline_layout =
       wgpuDeviceCreatePipelineLayout(device, &pl_desc);
 
-  const uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
