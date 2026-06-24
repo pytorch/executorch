@@ -206,11 +206,12 @@ class MXFPConv2dOp(torch.nn.Module):
         padding: tuple[int, int],
         dilation: tuple[int, int],
         groups: int,
-        config: MXFPOpConfig,
+        weight_dtype: MXFPDType,
+        block_size: int,
     ) -> None:
         super().__init__()
-        self.config = config
-        self.weight_dtype = mxfp_dtype_to_str(config.weight_dtype)
+        self.weight_dtype = mxfp_dtype_to_str(weight_dtype)
+        self.block_size = block_size
 
         self.register_buffer("weight_qdata", weight_qdata, persistent=True)
         self.register_buffer("weight_scale", weight_scale, persistent=True)
@@ -241,7 +242,7 @@ class MXFPConv2dOp(torch.nn.Module):
             list(self.padding),
             list(self.dilation),
             self.groups,
-            self.config.block_size,
+            self.block_size,
             self.weight_dtype,
         )
 
@@ -283,5 +284,6 @@ def transform_conv2d_to_mxfp(
         padding,
         dilation,
         module.groups,
-        config,
+        config.weight_dtype,
+        config.block_size,
     )

@@ -570,9 +570,12 @@ def register_param_mutation(ep: ExportedProgram, node: torch.fx.Node, tag: str) 
     mutated two incompatible ways, which is corruption, so that case raises.
 
     A per-ExportedProgram registry mapping `param_key -> tag` is lazily
-    initialized on `ep` (`ep._et_vk_param_modification_tags`) so it persists
-    across the per-match replacement calls within a single pass run without
-    module-scope mutable state.
+    initialized on `ep` (`ep._et_vk_param_modification_tags`) without
+    module-scope mutable state. Because it is stored on `ep`, it persists for the
+    lifetime of that ExportedProgram -- across all pass runs on it, not just one
+    -- and there is no reset hook, so a pass that legitimately needs to re-mutate
+    an already-tagged param must clear `ep._et_vk_param_modification_tags`
+    itself.
 
     Returns True on the first call for a given param (and records the tag),
     signalling the caller to proceed with the mutation. Returns False on a
@@ -584,6 +587,21 @@ def register_param_mutation(ep: ExportedProgram, node: torch.fx.Node, tag: str) 
     if registry is None:
         registry = {}
         ep._et_vk_param_modification_tags = registry
+
+    # The guard keys on the state-dict FQN that get_tensor_name resolves, which
+    # only exists for parameter / buffer / lifted-constant placeholders (via
+    # inputs_to_{parameters,buffers,lifted_tensor_constants}). For any other node
+    # kind get_tensor_name falls through to node.target, which is not a stable
+    # storage key, so the guard would silently key on the wrong identity. Reject
+    # such nodes up front.
+    if not (
+        is_param(ep, node) or is_buffer(ep, node) or is_lifted_tensor_constant(ep, node)
+    ):
+        raise RuntimeError(
+            "register_param_mutation expects a parameter / buffer / "
+            f"lifted-constant placeholder, but got node {node.name!r} "
+            f"(op={node.op!r}, target={node.target!r})."
+        )
 
     param_key = get_tensor_name(ep, node)
 
