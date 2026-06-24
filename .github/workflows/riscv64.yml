@@ -58,6 +58,7 @@ jobs:
       backend: ${{ matrix.backend }}
       os: ${{ matrix.os }}
       arch: ${{ matrix.arch }}
+      timeout: ${{ matrix.os == 'baremetal' && 60 || 30 }}
       # JSON array of QEMU -cpu *extension* strings (no rv32/rv64 prefix - that
       # comes from `arch`). The script splices them as `<arch>,<ext>`. xnnpack
       # benefits from RVV so it sweeps multiple vlen; everything else just uses
