@@ -119,6 +119,15 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
+runtime.python_library(
+    name = "public_api",
+    srcs = ["__init__.py"],
+    deps = [
+        ":ethosu",
+        ":vgf",
+        "//executorch/backends/arm/quantizer:lib",
+    ],
+)
 
 runtime.python_library(
     name = "process_node",

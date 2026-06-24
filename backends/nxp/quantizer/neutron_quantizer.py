@@ -25,6 +25,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     Conv2dPattern,
     ConvTranspose2dPattern,
     DropoutPattern,
+    ExpPattern,
     FlattenPattern,
     HardTanhInPlacePattern,
     HardTanhPattern,
@@ -270,6 +271,7 @@ class NeutronQuantizer(ComposableQuantizer):
                     ConvTranspose2dPattern(self, is_qat=is_qat), static_qconfig
                 ),
                 OpQuantizer(DropoutPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(ExpPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(FlattenPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(HardTanhPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(HardTanhInPlacePattern(is_qat=is_qat), static_qconfig),
