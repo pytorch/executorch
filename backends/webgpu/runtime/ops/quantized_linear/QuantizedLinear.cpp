@@ -38,10 +38,6 @@ static_assert(sizeof(Q4gswParams) == 32, "Q4gswParams must be 32 bytes");
 // Register-tile dims; MUST match TM/TN in q4gsw_linear.wgsl.
 constexpr int64_t kQ4gswTileM = 4;
 constexpr int64_t kQ4gswTileN = 4;
-// ceil(a/b) for positive int64 (WebGPUUtils has no ceil-div helper).
-inline int64_t q4gsw_ceil_div(int64_t a, int64_t b) {
-  return (a + b - 1) / b;
-}
 
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
 void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -140,8 +136,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       throw std::runtime_error("WebGPU linear_q4gsw: zero GEMV dispatch");
     }
   } else {
-    const int64_t total_tiles =
-        q4gsw_ceil_div(M, kQ4gswTileM) * q4gsw_ceil_div(N, kQ4gswTileN);
+    const int64_t total_tiles = utils::div_up<int64_t>(M, kQ4gswTileM) *
+        utils::div_up<int64_t>(N, kQ4gswTileN);
     if (total_tiles > static_cast<int64_t>(UINT32_MAX)) {
       throw std::runtime_error(
           "WebGPU linear_q4gsw: tile count exceeds the 1D dispatch limit");
