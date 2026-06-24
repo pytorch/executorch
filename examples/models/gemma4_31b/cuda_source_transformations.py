@@ -89,9 +89,12 @@ def _turboquant_attention_forward(
     # step (catastrophic at 128k: ~2.7 tok/s decode vs ~37+ when bounded).
     kv_len = input_pos[0] + input_pos.shape[0]
 
-    # ``scale=self.scaling`` (= 1.0 for Gemma 4) — overrides tq4_sdpa's
-    # default ``1/sqrt(D)`` because Gemma's QK-norm has absorbed the
-    # 1/sqrt(d) factor into trained weights.
+    # ``scale=self.scaling`` (= 1.0 for Gemma 4) — overrides the kernel's default
+    # ``1/sqrt(D)`` because Gemma's QK-norm absorbed the 1/sqrt(d) factor into the
+    # trained weights. ``mask_is_causal=True`` lets tq4_sdpa dispatch internally:
+    # prefill (T>1) takes the no-spill causal-offset path (the explicit attn_mask
+    # is unused there) and decode (T==1) takes the split-K path — one op, one
+    # call. KV cache stays TQ4 (turboquant intact).
     y = torch.ops.triton.tq4_sdpa(
         q,
         k_packed,
