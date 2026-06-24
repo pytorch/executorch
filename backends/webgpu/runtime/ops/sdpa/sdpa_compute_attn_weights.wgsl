@@ -85,9 +85,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   acc[2] = vec4<f32>(0.0, 0.0, 0.0, 0.0);
   acc[3] = vec4<f32>(0.0, 0.0, 0.0, 0.0);
 
+  // Skip fully-masked causal tiles; mirrors Vulkan attn_weights_tiled.glsl.
+  let skip_tile = c0 > s0 + (TM - 1u) + params.input_pos;
   var d4: u32 = 0u;
   loop {
-    if (d4 >= params.D) {
+    if (d4 >= params.D || skip_tile) {
       break;
     }
     var q: array<vec4<f32>, TM>;
