@@ -70,7 +70,7 @@ Tensor& log_softmax_out(
                   size,
                   stride);
 
-              ACC temp_sum = apply_unary_map_reduce_fn<CTYPE, ACC>(
+              const ACC exp_sum = apply_unary_map_reduce_fn<CTYPE, ACC>(
                   [max_in](const CTYPE val_in) {
                     return std::exp(
                         static_cast<ACC>(val_in) - static_cast<ACC>(max_in));
@@ -81,13 +81,13 @@ Tensor& log_softmax_out(
                   in_data + base,
                   size,
                   stride);
-              temp_sum = std::log(temp_sum);
+              const ACC log_sum = std::log(exp_sum);
 
               apply_unary_map_fn(
-                  [max_in, temp_sum](const CTYPE val_in) {
+                  [max_in, log_sum](const CTYPE val_in) {
                     return static_cast<CTYPE>(
                         static_cast<ACC>(val_in) - static_cast<ACC>(max_in) -
-                        temp_sum);
+                        log_sum);
                   },
                   in_data + base,
                   out_data + base,

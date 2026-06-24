@@ -147,6 +147,56 @@ cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
 `--cuda_graph` is intentionally single-session only. CUDA graph replay captures
 device pointers, so it is not combined with per-session mutable-state rebinding.
 
+## OpenAI-compatible serving
+
+The CUDA build also produces `qwen3_5_moe_worker`, a C++ model-execution worker
+used by the generic `examples/llm_server` control plane. The Qwen launcher wires
+in the model's Hugging Face chat template and Qwen XML tool-call parser:
+
+```bash
+python -m executorch.examples.models.qwen3_5_moe.serve \
+    --model-path qwen35_moe_exports/model.pte \
+    --data-path qwen35_moe_exports/aoti_cuda_blob.ptd \
+    --tokenizer-path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
+    --hf-tokenizer ~/models/Qwen3.5-35B-A3B \
+    --model-id qwen3.5-moe \
+    --max-context 4096 \
+    --max-sessions 4 \
+    --no-think
+```
+
+`--max-sessions` controls how many isolated sessions the worker can host on one
+weight load. One slot is reserved for anonymous requests; clients should send a
+stable `session_id` (or session-affinity header) to get per-conversation
+isolation and warm append-only resume.
+
+### Use from pi
+
+Point pi at the Qwen server via `~/.pi/agent/models.json`:
+
+```json
+{
+  "providers": {
+    "executorch": {
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "api": "openai-completions",
+      "apiKey": "x",
+      "models": [
+        {
+          "id": "qwen3.5-moe",
+          "compat": { "sendSessionAffinityHeaders": true }
+        }
+      ]
+    }
+  }
+}
+```
+
+The model id must match `--model-id`. `sendSessionAffinityHeaders` lets pi route
+each conversation or subagent to a stable server session; without it, requests
+use the anonymous scratch session and do not get per-conversation isolation or
+warm resume.
+
 ### CUDA no-bleed test
 
 The CUDA build also produces `test_qwen35_moe_nobleed`, which validates that two
@@ -211,7 +261,38 @@ python export.py \
 | `--qembedding` | (none) | Embedding quantization: `8w` |
 | `--tiny-test` | off | Build tiny model with random weights for CI testing |
 
-### Run (MLX)
+### Build (MLX)
+
+Like the CUDA/Metal builds, the `make` target builds ExecuTorch core with the
+MLX backend and the runner binary. Requires Apple Silicon (Darwin).
+
+```bash
+make qwen3_5_moe-mlx
+```
+
+This builds ExecuTorch with MLX support, then the runner binary at
+`cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner` (with `mlx.metallib`
+copied next to it). Unlike CUDA, the MLX `.pte` is self-contained — no `.ptd`
+data file is produced or needed.
+
+### Run (MLX, C++ runner)
+
+The C++ runner requires a local HuggingFace `tokenizer.json` (the MLX `.pte` and
+a `tokenizer.json`; no `--data_path`):
+
+```bash
+cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner \
+    --model_path ./qwen35_moe_mlx/model.pte \
+    --tokenizer_path ~/models/Qwen3.5-35B-A3B/tokenizer.json \
+    --prompt "What is the capital of France?" \
+    --max_new_tokens 50
+```
+
+The MLX export emits a single dynamic-seq `forward` method; the runner loads and
+calls it for both prefill and decode (sampling on host), matching the Python
+runner. See the [Run](#run) section above for the full flag list.
+
+### Run (MLX, Python)
 
 ```bash
 python -m executorch.examples.models.qwen3_5_moe.run \
@@ -220,6 +301,66 @@ python -m executorch.examples.models.qwen3_5_moe.run \
     --prompt "What is the capital of France?" \
     --max-new-tokens 50
 ```
+
+### Serving (MLX, multi-session)
+
+The MLX worker hosts multiple isolated sessions on **one** weight load, so an
+OpenAI-compatible server can serve concurrent conversations without duplicating
+the ~weights. `make qwen3_5_moe-mlx` builds both `qwen3_5_moe_runner` and
+`qwen3_5_moe_worker` (each with `mlx.metallib` copied alongside).
+
+Start the server (it auto-locates the worker binary):
+
+```bash
+# tokenizer.json the C++ worker opens (resolve from the HF cache)
+TOKENIZER_JSON=$(ls "${HF_HOME:-$HOME/.cache/huggingface}"/hub/models--Qwen--Qwen3.5-35B-A3B/snapshots/*/tokenizer.json | head -n1)
+
+python -m executorch.examples.models.qwen3_5_moe.serve \
+    --model-path ./qwen35_moe_mlx/model.pte \
+    --tokenizer-path "$TOKENIZER_JSON" \
+    --hf-tokenizer Qwen/Qwen3.5-35B-A3B \
+    --max-sessions 4 \
+    --host 127.0.0.1 \
+    --port 8000
+```
+
+- `--tokenizer-path` is the raw `tokenizer.json` **file** the worker loads;
+  `--hf-tokenizer` (HF id or local dir) supplies the chat template on the Python
+  side. No `--data-path` (the MLX `.pte` is self-contained).
+- `--max-sessions N` caps physical sessions on the single weight load. One slot
+  is reserved for anonymous requests (requests sent without a session id), so
+  `N` allows `N-1` concurrently named sessions.
+
+Query it (OpenAI-compatible) from another terminal. Route each conversation to a
+session with the `session_id` header:
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H "Content-Type: application/json" -H "session_id: alice" \
+  -d '{"model":"qwen3.5-moe",
+       "messages":[{"role":"user","content":"What is the capital of France?"}],
+       "max_tokens":50,"chat_template_kwargs":{"enable_thinking":false}}'
+```
+
+Endpoints: `GET /health`, `GET /v1/models`, `POST /v1/chat/completions`,
+`DELETE /v1/sessions/{id}` (free a session + its slot), `POST /v1/sessions/{id}/reset`.
+
+Session/memory semantics on MLX:
+- This server uses the standard **stateless** OpenAI contract — send the full
+  `messages` history each request. `session_id` + warm-resume is a KV-cache reuse
+  optimization for the shared prefix, not server-side memory.
+- Each session adds **one** set of mutable buffers (KV + recurrent/conv state) on
+  top of the shared weights; per-session cost scales with `max_seq_len`. Weights
+  are never duplicated.
+- KV persists across requests for a live session and is **released on close**
+  (`DELETE`/reset). Named sessions are not auto-closed — close them to free slots.
+  MLX's Metal allocator pools freed buffers (so RSS may not shrink immediately),
+  but they are reused by later sessions, keeping memory bounded.
+- Requests are processed **one at a time** (a single in-flight request per
+  worker). A request runs to completion and head-of-line-blocks every other
+  session until it finishes; there is no token-level interleaving or parallel
+  execution. This holds on both MLX and CUDA; multi-session provides memory
+  isolation and warm resume, not added throughput.
 
 ### Tiny Model Test
 
