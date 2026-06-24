@@ -60,11 +60,29 @@ def _cuda(self, qdata, scale, zero, group_size):
     return _dequant_matmul(self, qdata, scale, zero, group_size)
 
 
+# Chunked dequant for the export GPU budget. The lm_head dequant (N = vocab_size,
+# e.g. 262144) runs through the int4_plain_mm custom op (M=1); AOTI executes that
+# op's CUDA impl during autotune / cpp_wrapper codegen, where it transiently holds
+# ~5 full-size bf16 temporaries (low/high/data/data-z/w_deq) — ~10 GiB for a
+# 262144-row weight even though the final w_deq is only ~2.6 GiB. Chunking along N
+# caps that at ~chunk rows. It is numerically identical (F.linear output rows are
+# independent), and because only the lm_head (custom-op) path crosses the N
+# threshold — never the M>4 prefill inline path — it never enters the runtime
+# graph: ZERO runtime / accuracy impact. Applied unconditionally to any weight
+# whose row count exceeds the threshold.
+_DEQUANT_N_THRESHOLD = 65536
+_DEQUANT_N_CHUNK = 32768
+
+
 def _dequant_matmul(x, qdata, scale, zero, group_size):
     """Dequant INT4 weights to input dtype and call F.linear.
 
     scale/zero are in the coalesced [N, n_groups] layout (baked into the
     weight constant at pack time), aligned row-for-row with qdata's [N, *].
+
+    Large weights (N > threshold, i.e. the lm_head) are chunked along N to bound
+    the dequant intermediate (see note above); smaller weights take the original
+    single-shot dequant.
     """
     N, K_half = qdata.shape
     K = K_half * 2
@@ -72,16 +90,24 @@ def _dequant_matmul(x, qdata, scale, zero, group_size):
     gs_half = group_size // 2
     dtype = x.dtype
 
-    p = qdata.to(torch.uint8).reshape(N, n_groups, gs_half)
-    low = (p & 0x0F).to(dtype)
-    high = ((p >> 4) & 0x0F).to(dtype)
-    data = torch.stack([low, high], dim=-1).reshape(N, n_groups, group_size)
+    def _dq(qd, sc, ze, rows):
+        p = qd.to(torch.uint8).reshape(rows, n_groups, gs_half)
+        low = (p & 0x0F).to(dtype)
+        high = ((p >> 4) & 0x0F).to(dtype)
+        data = torch.stack([low, high], dim=-1).reshape(rows, n_groups, group_size)
+        s = sc.to(dtype).unsqueeze(-1)
+        z = ze.to(dtype).unsqueeze(-1)
+        w_deq = ((data - z) * s).reshape(rows, K)
+        return F.linear(x, w_deq)
 
-    s = scale.to(dtype).unsqueeze(-1)
-    z = zero.to(dtype).unsqueeze(-1)
-    w_deq = ((data - z) * s).reshape(N, K)
+    if N <= _DEQUANT_N_THRESHOLD:
+        return _dq(qdata, scale, zero, N)
 
-    return F.linear(x, w_deq)
+    outs = []
+    for i in range(0, N, _DEQUANT_N_CHUNK):
+        j = min(i + _DEQUANT_N_CHUNK, N)
+        outs.append(_dq(qdata[i:j], scale[i:j], zero[i:j], j - i))
+    return torch.cat(outs, dim=-1)
 
 
 # ---------------------------------------------------------------------------
