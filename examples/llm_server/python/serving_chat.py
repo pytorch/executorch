@@ -184,6 +184,29 @@ class ServingChat:
             text = parsed.normal_text
         return None, self._visible_content(text)
 
+    @staticmethod
+    def _log_generation_stats(
+        session_id: Optional[str], stats: GenStats, finish: str
+    ) -> None:
+        logger.info(
+            "llm_turn_stats session_id=%s reason=%s prompt_tokens=%d "
+            "reused_prompt_tokens=%d prefilled_prompt_tokens=%d "
+            "completion_tokens=%d prefill_ms=%.1f prefill_tok_s=%.1f "
+            "decode_ms=%.1f decode_tok_s=%.1f total_ms=%.1f finish=%s",
+            session_id or "<scratch>",
+            stats.session_reset_reason,
+            stats.prompt_tokens,
+            stats.reused_prompt_tokens,
+            stats.prefilled_prompt_tokens,
+            stats.completion_tokens,
+            stats.prefill_ms,
+            stats.prefill_tok_s,
+            stats.decode_ms,
+            stats.decode_tok_s,
+            stats.total_ms,
+            finish,
+        )
+
     async def _clean(
         self, stream: AsyncIterator[str], stops: list[str], on_stop=None
     ) -> AsyncIterator[str]:
@@ -480,6 +503,7 @@ class ServingChat:
         finish = self._finish_reason(
             req, stats.completion_tokens, tool_calls, stopped, stats.finish_reason
         )
+        self._log_generation_stats(req.session_id, stats, finish)
         return ChatCompletionResponse(
             model=self._model_id,
             choices=[
@@ -623,6 +647,7 @@ class ServingChat:
                 stopped=stop_hit[0],
                 worker_finish=stats.finish_reason,
             )
+        self._log_generation_stats(req.session_id, stats, finish)
         yield chunk(DeltaMessage(), finish=finish)
         if req.stream_options and req.stream_options.include_usage:
             usage_chunk = ChatCompletionChunk(
