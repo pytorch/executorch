@@ -54,9 +54,14 @@ elseif(EXECUTORCH_BUILD_CUDA)
   list(APPEND link_libraries aoti_cuda_backend)
   executorch_target_link_options_shared_lib(aoti_cuda_backend)
   add_compile_definitions(EXECUTORCH_BUILD_CUDA)
+elseif(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+  add_compile_definitions(EXECUTORCH_BUILD_MLX)
 else()
   message(
-    FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_METAL=ON"
+    FATAL_ERROR
+      "Set EXECUTORCH_BUILD_CUDA=ON, EXECUTORCH_BUILD_METAL=ON, or EXECUTORCH_BUILD_MLX=ON"
   )
 endif()
 
@@ -69,9 +74,22 @@ target_include_directories(
 )
 target_link_libraries(qwen3_5_moe_runner PUBLIC ${link_libraries})
 
+add_executable(qwen3_5_moe_worker qwen35_moe_worker.cpp qwen35_moe_engine.cpp)
+target_include_directories(
+  qwen3_5_moe_worker PUBLIC ${_common_include_directories} ${_json_include}
+)
+target_link_libraries(qwen3_5_moe_worker PUBLIC ${link_libraries})
+
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(qwen3_5_moe_runner)
   target_link_options(qwen3_5_moe_runner PRIVATE "LINKER:-s")
+  target_link_options_gc_sections(qwen3_5_moe_worker)
+  target_link_options(qwen3_5_moe_worker PRIVATE "LINKER:-s")
+endif()
+
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(qwen3_5_moe_runner)
+  executorch_target_copy_mlx_metallib(qwen3_5_moe_worker)
 endif()
 
 if(EXECUTORCH_BUILD_CUDA)

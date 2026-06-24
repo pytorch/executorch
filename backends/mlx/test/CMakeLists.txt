@@ -69,3 +69,22 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
     multi_thread_test_runner PRIVATE ${_mlx_sanitizer_link_options}
   )
 endif()
+
+# Per-session mutable-state manager unit test (no model/tokenizer needed).
+add_executable(mlx_mutable_state_test mlx_mutable_state_test.cpp)
+target_include_directories(
+  mlx_mutable_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+target_link_libraries(
+  mlx_mutable_state_test PRIVATE mlxdelegate mlx_schema mlx executorch_core
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_mutable_state_test PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_mutable_state_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+add_test(NAME mlx_mutable_state COMMAND mlx_mutable_state_test)
