@@ -569,6 +569,70 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
           context_, Span<EValue*>(bad_stack)));
 }
 
+TEST_F(RegisterPrimOpsTest, TestETSelect) {
+  EXPECT_TRUE(hasOpsFn("executorch_prim::et_select.default"));
+
+  testing::TensorFactory<ScalarType::Int> tf;
+
+  // self: shape [4, 3], data {1..12}
+  auto self = tf.make({4, 3}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  auto self_evalue = EValue(self);
+
+  // select(dim=0, index=2) -> shape [3], data {7, 8, 9}
+  auto dim_evalue = EValue(static_cast<int64_t>(0));
+  auto index_evalue = EValue(static_cast<int64_t>(2));
+
+  auto out = tf.ones({3});
+  internal::reset_data_ptr(out);
+  auto out_evalue = EValue(out);
+
+  EValue* stack[4] = {&self_evalue, &dim_evalue, &index_evalue, &out_evalue};
+  getOpsFn("executorch_prim::et_select.default")(
+      context_, Span<EValue*>(stack));
+
+  EXPECT_TENSOR_EQ(out, tf.make({3}, {7, 8, 9}));
+  // Verify data pointer sharing: out should point into self's memory
+  auto* self_base = static_cast<const uint8_t*>(self.const_data_ptr());
+  auto* out_base = static_cast<const uint8_t*>(out.const_data_ptr());
+  // offset = index(2) * stride(3) * sizeof(int32_t) = 2 * 3 * 4 = 24
+  EXPECT_EQ(out_base, self_base + 24);
+}
+
+TEST_F(RegisterPrimOpsTest, TestETSelectDynamicShape) {
+  testing::TensorFactory<ScalarType::Int> tf;
+
+  // self: shape [2, 6] at max capacity, resized to [2, 3] to simulate
+  // dynamic dim 1. After resize, strides become {3, 1}, so the first 6
+  // elements are the logical data for shape [2, 3].
+  auto self = tf.make(
+      {2, 6},
+      {1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0},
+      {},
+      TensorShapeDynamism::DYNAMIC_BOUND);
+  SizesType self_sizes[2] = {2, 3};
+  EXPECT_EQ(resize_tensor(self, {self_sizes, 2}), Error::Ok);
+  auto self_evalue = EValue(self);
+
+  // select(dim=0, index=1) -> shape [3], data {4, 5, 6}
+  auto dim_evalue = EValue(static_cast<int64_t>(0));
+  auto index_evalue = EValue(static_cast<int64_t>(1));
+
+  // out: max capacity 6, resized to 1 to force et_select to resize it.
+  auto out = tf.zeros({6}, TensorShapeDynamism::DYNAMIC_BOUND);
+  SizesType out_sizes[1] = {1};
+  EXPECT_EQ(resize_tensor(out, {out_sizes, 1}), Error::Ok);
+  internal::reset_data_ptr(out);
+  auto out_evalue = EValue(out);
+
+  EValue* stack[4] = {&self_evalue, &dim_evalue, &index_evalue, &out_evalue};
+  getOpsFn("executorch_prim::et_select.default")(
+      context_, Span<EValue*>(stack));
+
+  // et_select should have resized out from [1] to [3]
+  EXPECT_EQ(out.size(0), 3);
+  EXPECT_TENSOR_EQ(out, tf.make({3}, {4, 5, 6}));
+}
+
 TEST_F(RegisterPrimOpsTest, TestCeil) {
   std::array<double, 10> inputs = {
       0.0, 0.25, 0.5, 0.75, 1.0, 1.75, -0.5, -1.0, -1.5, 9.999999};
