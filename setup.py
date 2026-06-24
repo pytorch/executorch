@@ -308,7 +308,7 @@ class Version:
 # is Release.
 def get_build_type(is_debug=None) -> str:
     debug = int(os.environ.get("DEBUG", 0) or 0) if is_debug is None else is_debug
-    return "Debug" if debug else "Release"
+    return "Debug" if debug else "RelWithDebInfo"
 
 
 def get_dynamic_lib_name(name: str) -> str:
