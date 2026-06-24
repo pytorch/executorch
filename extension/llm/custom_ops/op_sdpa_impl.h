@@ -1098,7 +1098,7 @@ void cpu_flash_attention(
     }
   };
   torch::executor::parallel_for(
-      0, batchSize * num_head * qSlice, 1, compute_lambda);
+      0, batchSize * num_head * qSlice, 1, compute_lambda, num_thread);
 }
 } // namespace sdpa::impl
 } // namespace native

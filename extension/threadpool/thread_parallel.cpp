@@ -36,14 +36,21 @@ void set_thread_num(int64_t thread_num) {
   thread_num_ = thread_num;
 }
 
-inline std::tuple<int64_t, int64_t>
-calc_num_tasks_and_chunk_size(int64_t begin, int64_t end, int64_t grain_size) {
+inline std::tuple<int64_t, int64_t> calc_num_tasks_and_chunk_size(
+    int64_t begin,
+    int64_t end,
+    int64_t grain_size,
+    int64_t num_threads) {
   if ((end - begin) < grain_size) {
     return std::make_tuple(1, std::max((int64_t)0, end - begin));
   }
-  // Choose number of tasks based on grain size and number of threads.
-  int64_t chunk_size =
-      divup((end - begin), get_threadpool()->get_thread_count());
+  // Choose number of tasks based on grain size and number of threads. A
+  // caller-supplied num_threads pins this to the same count it sized its
+  // per-thread scratch with; <= 0 means use the threadpool's current count.
+  if (num_threads <= 0) {
+    num_threads = get_threadpool()->get_thread_count();
+  }
+  int64_t chunk_size = divup((end - begin), num_threads);
   // Make sure each task is at least grain_size size.
   chunk_size = std::max(grain_size, chunk_size);
   int64_t num_tasks = divup((end - begin), chunk_size);
@@ -54,7 +61,8 @@ bool parallel_for(
     const int64_t begin,
     const int64_t end,
     const int64_t grain_size,
-    runtime::FunctionRef<void(int64_t, int64_t)> f) {
+    runtime::FunctionRef<void(int64_t, int64_t)> f,
+    const int64_t num_threads) {
   ET_CHECK_OR_RETURN_FALSE(
       begin >= 0 && end >= 0 && end >= begin,
       "begin = %" PRId64 ", end = %" PRId64,
@@ -63,7 +71,7 @@ bool parallel_for(
   ET_CHECK_OR_RETURN_FALSE(grain_size > 0, "grain_size = %" PRId64, grain_size);
   int64_t num_tasks = 0, chunk_size = 0;
   std::tie(num_tasks, chunk_size) =
-      calc_num_tasks_and_chunk_size(begin, end, grain_size);
+      calc_num_tasks_and_chunk_size(begin, end, grain_size, num_threads);
 
   auto task = [&f, begin, end, chunk_size](size_t task_id) {
     set_thread_num(task_id);

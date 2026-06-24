@@ -60,6 +60,11 @@ constexpr int64_t GRAIN_SIZE = 32768;
  * described below
  * f: user function applied in parallel to the chunks, signature:
  *   void f(int64_t begin, int64_t end)
+ * num_threads: number of threads to partition the work across. When <= 0
+ *   (the default), the threadpool's current thread count is used. Callers that
+ *   pre-size per-thread scratch indexed by get_thread_num() should pass the
+ *   same count they sized with, so the number of chunks (and thus the maximum
+ *   get_thread_num()) cannot exceed that count.
  * Returns true if all work items are processed successfully, false otherwise
  *
  * Warning: parallel_for does NOT copy thread local states from the current
@@ -70,7 +75,8 @@ bool parallel_for(
     const int64_t begin,
     const int64_t end,
     const int64_t grain_size,
-    runtime::FunctionRef<void(int64_t, int64_t)> f);
+    runtime::FunctionRef<void(int64_t, int64_t)> f,
+    const int64_t num_threads = -1);
 
 int64_t get_thread_num();
 
@@ -81,7 +87,9 @@ bool parallel_for(
     const int64_t begin,
     const int64_t end,
     const int64_t grain_size,
-    const Func& func) {
+    const Func& func,
+    const int64_t num_threads = -1) {
+  (void)num_threads;
   return internal::parallel_for_no_threadpool(begin, end, grain_size, func);
 }
 
