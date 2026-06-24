@@ -77,7 +77,7 @@ def test_generate_manifest(tmp_path):
 def test_every_case_delegates():
     # Contract: every registered case must lower to a VulkanBackend delegate. An op that
     # silently CPU-falls-back would otherwise produce a misleading golden-equals-golden pass.
-    for op in ("add", "rms_norm"):
+    for op in ("add", "sigmoid", "rms_norm"):
         suite = op_test_registry[op]
         for case in suite.cases:
             _module, _inputs, prog = g.export_case(suite, case)
