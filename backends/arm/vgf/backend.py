@@ -14,6 +14,7 @@
 
 import logging
 import os  # nosec B404 - used alongside subprocess for tool invocation
+import shlex
 import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
@@ -251,6 +252,52 @@ class VgfBackend(BackendDetails):
         return PreprocessResult(processed_bytes=binary)
 
 
+def _format_repro_command(command: List[str]) -> str:
+    """Return a shell-safe command string for reproducing converter failures."""
+    return " ".join(shlex.quote(arg) for arg in command)
+
+
+def _copy_failure_artifacts(
+    tosa_path: str,
+    artifact_path: str | None,
+    tag_name: str,
+) -> str | None:
+    """Copy the failing TOSA input to the artifact directory, if configured.
+
+    Args:
+        tosa_path: Temporary TOSA flatbuffer passed to model-converter.
+        artifact_path: User-configured intermediate artifact directory.
+        tag_name: Optional delegation tag used to disambiguate artifacts.
+
+    Returns:
+        Path to the copied TOSA file, or None if no artifact path was configured.
+
+    """
+    if not artifact_path:
+        return None
+
+    os.makedirs(artifact_path, exist_ok=True)
+
+    suffix = f"_{tag_name}" if tag_name else ""
+    failure_tosa_path = os.path.join(
+        artifact_path,
+        f"failed_model_converter_input{suffix}.tosa",
+    )
+    shutil.copy2(tosa_path, failure_tosa_path)
+    return failure_tosa_path
+
+
+def _replace_converter_input_path(
+    conversion_command: List[str],
+    input_path: str,
+) -> List[str]:
+    """Return a converter command that uses a preserved TOSA input path."""
+    input_flag_index = conversion_command.index("-i")
+    repro_command = list(conversion_command)
+    repro_command[input_flag_index + 1] = input_path
+    return repro_command
+
+
 def vgf_compile(
     tosa_flatbuffer: bytes,
     compile_flags: List[str],
@@ -299,11 +346,21 @@ def vgf_compile(
                 env=model_converter_env(),
             )
         except subprocess.CalledProcessError as process_error:
-            conversion_command_str = " ".join(conversion_command)
+            failure_tosa_path = _copy_failure_artifacts(
+                tosa_path,
+                artifact_path,
+                tag_name,
+            )
+            repro_command = (
+                _replace_converter_input_path(conversion_command, failure_tosa_path)
+                if failure_tosa_path
+                else conversion_command
+            )
             raise RuntimeError(
-                f"Vgf compiler ('{conversion_command_str}') failed with error:\n \
-                {process_error.stderr.decode()}\n \
-                Stdout:\n{process_error.stdout.decode()}"
+                "Vgf compiler failed.\n"
+                f"Repro command:\n  {_format_repro_command(repro_command)}\n"
+                f"Stderr:\n{process_error.stderr.decode()}\n"
+                f"Stdout:\n{process_error.stdout.decode()}"
             )
 
         if artifact_path:
