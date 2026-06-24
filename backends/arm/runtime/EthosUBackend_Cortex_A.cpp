@@ -323,6 +323,23 @@ Error invoke_linux_driver(
 }
 } // namespace
 
+bool platform_is_available() {
+  // Open the NPU device driver; thrown if it is absent or unopenable.
+  const LinuxDriverOptions defaults;
+  try {
+    EthosU::Device device(defaults.device_path.c_str());
+    (void)device;
+    return true;
+  } catch (const std::exception& e) {
+    ET_LOG(
+        Info,
+        "Ethos-U device %s not available: %s",
+        defaults.device_path.c_str(),
+        e.what());
+    return false;
+  }
+}
+
 PlatformState* platform_init(
     ArrayRef<CompileSpec> specs,
     MemoryAllocator* allocator) {

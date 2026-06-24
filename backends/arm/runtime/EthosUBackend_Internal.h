@@ -77,6 +77,9 @@ extern unsigned char* ethosu_fast_scratch;
 extern size_t ethosu_fast_scratch_size;
 }
 
+// Returns whether the Ethos-U device driver is available
+bool platform_is_available();
+
 PlatformState* platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> specs,
     executorch::runtime::MemoryAllocator* allocator);
