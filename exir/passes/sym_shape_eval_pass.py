@@ -111,7 +111,7 @@ def index_Tensor(args, kwargs) -> List[Optional[int]]:  # noqa: C901
     # elements across all mask indices with a number of elements other than 1.
     if len(mask_indices) > 0 and (len(broadcast_sizes) == 0 or broadcast_sizes[0] == 1):
         upper_bound_broadcast_size = 1
-        intialized = False
+        initialized = False
         for mask in mask_indices:
             mask_numel = eval_expr(mask.numel())
             if mask_numel != 1:
