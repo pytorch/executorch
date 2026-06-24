@@ -33,7 +33,7 @@ ${layout_declare_tensor(B, "w", "t_packed_int8_input", "int", OUTPUT_STORAGE, is
 ${layout_declare_tensor(B, "w", "t_int8_input_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_input", DTYPE, INPUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_int8_input_scales", DTYPE, "texture3d")}
-${layout_declare_tensor(B, "r", "t_int8_input_zps", "int8", "texture3d")}
+${layout_declare_tensor(B, "r", "t_int8_input_zps", "float", "texture3d")}
 
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
 
