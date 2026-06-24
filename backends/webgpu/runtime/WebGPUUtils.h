@@ -18,6 +18,12 @@
 
 namespace executorch::backends::webgpu::utils {
 
+// Integer ceil-division (mirrors Vulkan utils::div_up).
+template <typename Type>
+inline constexpr Type div_up(const Type& numerator, const Type& denominator) {
+  return (numerator + denominator - 1) / denominator;
+}
+
 // Clamp workgroup size to device limit (SwiftShader caps at 128).
 inline uint32_t clamp_workgroup_size(WGPUDevice device, uint32_t desired) {
   WGPULimits limits = {};
