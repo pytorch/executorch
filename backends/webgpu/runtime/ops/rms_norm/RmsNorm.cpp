@@ -95,8 +95,9 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // Select the vec4 kernel when the row width is a multiple of 4 (every Llama
   // hidden size qualifies); fall back to the scalar kernel otherwise. The two
-  // kernels are numerically equivalent and share the same bind group +
-  // dispatch.
+  // kernels are equivalent up to floating-point reassociation (the vec4
+  // reduction reorders the sum, so not bit-identical) and share the same bind
+  // group + dispatch.
   const bool use_vec4 = (row_width % 4u == 0u);
 
   // Create shader module from built-in WGSL source
