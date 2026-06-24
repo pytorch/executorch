@@ -18,9 +18,9 @@ struct Params {
 
 // Cooperative-over-K GEMV with u32-batched coalesced weight loads (64 lanes).
 const WG: u32 = 64u;
-var<workgroup> partial: array<f32, 64>;
+var<workgroup> partial: array<f32, WG>;
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(WG, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(num_workgroups) ngrp: vec3<u32>,
