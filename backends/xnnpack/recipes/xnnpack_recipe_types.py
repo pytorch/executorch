@@ -27,7 +27,7 @@ class XNNPackRecipeType(RecipeType):
         "xnnpack_torchao_int8da_int4w_per_channel"
     )
     # INT8 Dynamic Activations INT4 Weight Quantization, default group_size = 32
-    # can be overriden by group_size kwarg
+    # can be overridden by group_size kwarg
     TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR = (
         "xnnpack_torchao_int8da_int4w_per_tensor"
     )
