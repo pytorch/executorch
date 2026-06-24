@@ -1,7 +1,10 @@
 # WebGPU Backend — TODO
 
 ## Current State (Prototype)
-- Single op: `aten.add.Tensor` (fp32, buffer storage)
+- Runtime support for transformer-oriented fp32 and LLM custom ops, including
+  `aten.add.Tensor`, `aten.mul.Tensor`, `aten.sigmoid.default`,
+  `et_vk.rms_norm.default`,
+  fused SDPA with KV cache, 4-bit quantized linear/embedding, RoPE, and prepack.
 - No Python AOT code — directly consumes Vulkan delegate (.pte exported via VulkanPartitioner)
 - Reuses Vulkan FlatBuffer format (VH00 header + VK00 payload)
 - Registers as `"VulkanBackend"` at runtime — mutually exclusive with Vulkan backend at link time
@@ -30,7 +33,7 @@ element-wise ops (add→relu→mul→clamp) at compile time. Embed via the exist
 `shaders: [VkBytes]` field in schema.fbs.
 
 ## Next Steps
-1. **More ops**: sub, mul, relu, linear (matmul), softmax, layer_norm
+1. **More ops**: sub, relu, linear (matmul), softmax, layer_norm, shape ops
 2. **fp16 support**: Feature-detect `shader-f16`, fallback to fp32
 3. **Buffer pooling**: Reuse GPU buffers to avoid OOM at scale
 4. **Pipeline caching**: Cache compiled pipelines across runs

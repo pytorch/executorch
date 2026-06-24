@@ -36,11 +36,12 @@ def test_decorator_registers():
     assert suite.atol == 1e-3 and isinstance(XL, int)
 
 
-def test_add_rms_norm_registered():
+def test_add_sigmoid_rms_norm_registered():
     from executorch.backends.webgpu.test.op_tests import cases  # registers
 
-    assert {"add", "rms_norm"} <= set(op_test_registry)
+    assert {"add", "sigmoid", "rms_norm"} <= set(op_test_registry)
     assert len(op_test_registry["add"].cases) >= 3  # regular/self/scalar/chained
+    assert len(op_test_registry["sigmoid"].cases) >= 4  # regular/range/chained
     # Exact parity, no hardcoded literal (real _CASES == 14; import so it can't drift):
     assert len(op_test_registry["rms_norm"].cases) == len(cases.RMS_NORM_CASES)
     # weight is a construction param, NOT a forward input:
@@ -74,7 +75,8 @@ def test_heavy_forces_not_required():
 def test_golden_dtype_default():
     from executorch.backends.webgpu.test.op_tests import cases  # noqa: F401  registers
 
-    # fp64 oracle is the default; the two landed compute ops keep it. (Per-op golden_dtype
+    # fp64 oracle is the default; these compute ops keep it. (Per-op golden_dtype
     # for gather/copy ops is asserted in each op's own tests-diff.)
     assert op_test_registry["add"].golden_dtype == "float64"
+    assert op_test_registry["sigmoid"].golden_dtype == "float64"
     assert op_test_registry["rms_norm"].golden_dtype == "float64"

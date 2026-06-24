@@ -2,7 +2,7 @@
 
 Run ExecuTorch models on the GPU via [WebGPU](https://www.w3.org/TR/webgpu/). The backend compiles delegated subgraphs into WGSL compute shaders executed natively through [Dawn](https://dawn.googlesource.com/dawn), whose Tint compiler is the reference WGSL implementation (Metal on macOS, Vulkan on Linux/Windows).
 
-> **Status: Prototype, under active development.** The backend runs the core of transformer inference today — `add`, `rms_norm`, fused scaled-dot-product attention with KV cache, and 4-bit weight-only quantized linear — plus quantized embedding, rotary embedding, and constant prepacking. See [Progress](#progress) for shipped milestones.
+> **Status: Prototype, under active development.** The backend runs the core of transformer inference today — `add`, `mul`, `sigmoid`, `rms_norm`, fused scaled-dot-product attention with KV cache, and 4-bit weight-only quantized linear — plus quantized embedding, rotary embedding, and constant prepacking. See [Progress](#progress) for shipped milestones.
 
 ## Progress
 
@@ -20,14 +20,7 @@ Milestones landed on `main`:
 | 2026-06 | Added the attention core of transformer inference — fused scaled-dot-product attention (`sdpa_with_kv_cache`) with an `update_cache` operator for autoregressive decode | [#20086](https://github.com/pytorch/executorch/pull/20086), [#20087](https://github.com/pytorch/executorch/pull/20087) |
 | 2026-06 | Added on-GPU kernel timing via WebGPU timestamp queries, for true GPU-side profiling | [#20201](https://github.com/pytorch/executorch/pull/20201) |
 | 2026-06 | Added the dominant compute in quantized LLMs — 4-bit weight-only quantized linear (`linear_q4gsw`), a dequantize-and-matmul kernel | [#20226](https://github.com/pytorch/executorch/pull/20226), [#20227](https://github.com/pytorch/executorch/pull/20227) |
-
-In review:
-
-| Milestone | Pull Request |
-|---|---|
-| Adds 4-bit quantized embedding (`embedding_q4gsw`) | [#20263](https://github.com/pytorch/executorch/pull/20263) |
-| Adds rotary position embedding / RoPE (`apply_rotary_emb`) | [#20264](https://github.com/pytorch/executorch/pull/20264) |
-| Adds constant prepacking (`prepack`) for end-to-end model weight handling | [#20265](https://github.com/pytorch/executorch/pull/20265) |
+| 2026-06 | Added token embedding, rotary position embedding, and constant prepacking for end-to-end model weight handling | [#20414](https://github.com/pytorch/executorch/pull/20414) |
 
 ## Architecture
 
@@ -61,14 +54,17 @@ Key design choices:
 | Operator | WGSL Shader | Notes |
 |---|---|---|
 | `aten.add.Tensor` | `binary_add.wgsl` | Element-wise with alpha: `out = in1 + alpha * in2` |
+| `aten.mul.Tensor` | `binary_mul.wgsl` | Element-wise multiply with broadcasting |
+| `aten.sigmoid.default` | `sigmoid.wgsl` | Element-wise sigmoid activation |
 | `et_vk.rms_norm.default` | `rms_norm.wgsl` | Root-mean-square normalization |
 | `sdpa_with_kv_cache.default` | `sdpa_compute_attn_weights.wgsl`, `sdpa_softmax.wgsl`, `sdpa_compute_out.wgsl` | Fused scaled-dot-product attention (QK / softmax / AV) with KV cache |
 | `llama.update_cache.default` | `update_cache.wgsl` | In-place KV cache update for autoregressive decode |
 | `et_vk.linear_q4gsw.default` | `q4gsw_linear.wgsl` | 4-bit weight-only quantized linear (dequantize + matmul) |
+| `et_vk.embedding_q4gsw.default` | `embedding_q4gsw.wgsl` | 4-bit groupwise-symmetric quantized embedding |
+| `et_vk.apply_rotary_emb.default` | `rotary_embedding.wgsl` | Interleaved rotary positional embedding |
+| `et_vk.prepack.default` | N/A | Constant materialization into GPU buffers |
 
-**In review:** quantized embedding (`embedding_q4gsw`), rotary embedding (`apply_rotary_emb`), and constant prepacking (`prepack`).
-
-**Planned:** `mul`, `sigmoid`, shape ops (`view`, `permute`, `slice`, `select`, `cat`, `squeeze`/`unsqueeze`), and `index` — the remaining ops needed for end-to-end Llama 3.2 1B.
+**Planned:** shape ops (`view`, `permute`, `slice`, `select`, `cat`, `squeeze`/`unsqueeze`) and `index` — the remaining ops needed for end-to-end Llama 3.2 1B.
 
 ## Quick Start
 

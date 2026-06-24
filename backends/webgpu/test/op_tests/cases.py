@@ -16,6 +16,7 @@ import torch
 from executorch.backends.webgpu.test.op_tests.test_suite import (
     Case,
     InputSpec,
+    M,
     M1,
     M2,
     register_op_test,
@@ -36,6 +37,12 @@ from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _ramp,
     RmsNormModule,
 )
+from executorch.backends.webgpu.test.ops.sigmoid.test_sigmoid import (
+    _sigmoid_range,
+    _sigmoid_wide_range,
+    SigmoidChainedModule,
+    SigmoidModule,
+)
 
 # rms_norm coverage is exactly the 14 cases the native test covered.
 RMS_NORM_CASES = _CASES
@@ -46,6 +53,13 @@ def _add_factory(variant: str = "regular") -> torch.nn.Module:
         "regular": AddModule,
         "self": AddSelfModule,
         "chained": AddChainedModule,
+    }[variant]()
+
+
+def _sigmoid_factory(variant: str = "regular") -> torch.nn.Module:
+    return {
+        "regular": SigmoidModule,
+        "chained": SigmoidChainedModule,
     }[variant]()
 
 
@@ -78,6 +92,40 @@ def _add_suite() -> WebGPUTestSuite:
                 name="chained",
                 construct={"variant": "chained"},
                 inputs=((M1, M2), (M1, M2)),
+            ),
+        ],
+    )
+
+
+@register_op_test("sigmoid")
+def _sigmoid_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=_sigmoid_factory,
+        cases=[
+            Case(
+                name="regular_1d",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(M,), gen=_sigmoid_range),),
+            ),
+            Case(
+                name="regular_2d",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(M1, M2), gen=_sigmoid_range),),
+            ),
+            Case(
+                name="regular_4d",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(XS, S, S1, S2), gen=_sigmoid_range),),
+            ),
+            Case(
+                name="wide_range",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(M1, M2), gen=_sigmoid_wide_range),),
+            ),
+            Case(
+                name="chained",
+                construct={"variant": "chained"},
+                inputs=(InputSpec(shape=(M1, M2), gen=_sigmoid_range),),
             ),
         ],
     )

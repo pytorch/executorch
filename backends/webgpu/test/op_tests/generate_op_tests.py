@@ -8,7 +8,7 @@
 
 Per case: export the module to `<id>.pte`, write its inputs + torch golden as raw
 little-endian fp32, and emit `manifest.json` for the C++ gtest driver to consume.
-Run: `python -m ...generate_op_tests --output <dir> [--ops add,rms_norm]`.
+Run: `python -m ...generate_op_tests --output <dir> [--ops add,sigmoid,rms_norm]`.
 """
 
 from __future__ import annotations
