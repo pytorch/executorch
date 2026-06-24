@@ -125,7 +125,7 @@ Tensor& _softmax_f32_f32_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& X,
     int64_t dim,
-    __ET_UNUSED ::executorch::aten::optional<bool> half_to_float,
+    __ET_UNUSED std::optional<bool> half_to_float,
     Tensor& Y) {
   _softmax_out(ctx, X, dim, false, Y);
 

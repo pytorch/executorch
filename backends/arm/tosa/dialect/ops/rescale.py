@@ -7,7 +7,7 @@ from typing import List
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -15,7 +15,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "RESCALE(Tensor input1, ScalarType dtype, float[] scale, int in_zp, int out_zp, *, bool input_unsigned=False, bool output_unsigned=False) -> Tensor",  # schema
     TosaSpecification.all_versions_for_profile("INT"),  # target TOSA specifications
 )
