@@ -845,7 +845,7 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
-    set(SUPPORT_REGEX_LOOKAHEAD ON)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/chat_template)
     # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so
     # that transitively depends on tokenizers. Need to build tokenizers with
     # -fPIC.
