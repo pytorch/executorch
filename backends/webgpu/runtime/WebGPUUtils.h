@@ -18,6 +18,12 @@
 
 namespace executorch::backends::webgpu::utils {
 
+// Ceiling division for non-negative integers (mirrors Vulkan's utils::div_up).
+template <typename T>
+inline T div_up(T a, T b) {
+  return (a + b - 1) / b;
+}
+
 // Clamp workgroup size to device limit (SwiftShader caps at 128).
 inline uint32_t clamp_workgroup_size(WGPUDevice device, uint32_t desired) {
   WGPULimits limits = {};
@@ -34,7 +40,7 @@ inline uint32_t compute_1d_workgroup_count(
     uint32_t num_threads,
     uint32_t workgroup_size,
     const char* op_name) {
-  uint32_t count = (num_threads + workgroup_size - 1) / workgroup_size;
+  uint32_t count = div_up(num_threads, workgroup_size);
   WGPULimits limits = {};
   uint32_t max_count =
       wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
