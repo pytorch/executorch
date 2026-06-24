@@ -1,0 +1,126 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <ATen/cpu/vec/functional.h>
+#include <ATen/cpu/vec/vec.h>
+
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
+#include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/platform/assert.h>
+
+namespace torch {
+namespace executor {
+namespace native {
+
+using Tensor = executorch::aten::Tensor;
+using ScalarType = executorch::aten::ScalarType;
+
+Tensor& opt_mean_dim_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    optional<ArrayRef<int64_t>> dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out) {
+  (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx,
+      check_mean_dim_args(in, dim_list, keepdim, dtype, out),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
+      InvalidArgument,
+      out);
+
+  // Vectorized fast path: contiguous tensor, single innermost-dim reduction,
+  // same input/output dtype. Covers the RMSNorm reduction pattern.
+  if (in.numel() > 0 && dim_list.has_value() && dim_list.value().size() == 1 &&
+      in.scalar_type() == out.scalar_type()) {
+    const int64_t d = dim_list.value()[0] < 0 ? dim_list.value()[0] + in.dim()
+                                              : dim_list.value()[0];
+    if (d >= 0 && d < in.dim() && d == in.dim() - 1 &&
+        tensor_is_contiguous(in)) {
+      const int64_t reduce_size = in.size(d);
+      const int64_t outer_size = in.numel() / reduce_size;
+
+      // @lint-ignore CLANGTIDY facebook-hte-CArray
+      static constexpr const char op_name[] = "mean.out";
+      ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
+        const CTYPE* in_data = in.const_data_ptr<CTYPE>();
+        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+        const CTYPE denom = static_cast<CTYPE>(reduce_size);
+
+        // at::vec::reduce_all handles the SIMD main loop, horizontal reduce,
+        // and scalar tail internally — mirrors the at::vec::map pattern used
+        // by op_add.cpp / op_mul.cpp in this directory. The lambda takes
+        // `auto` because reduce_all for Half/BFloat16 converts to
+        // Vectorized<float> internally and invokes the lambda on fVec.
+        for (int64_t i = 0; i < outer_size; i++) {
+          const CTYPE sum = at::vec::reduce_all<CTYPE>(
+              [](const auto& a, const auto& b) { return a + b; },
+              in_data + i * reduce_size,
+              reduce_size);
+          out_data[i] = sum / denom;
+        }
+      });
+      return out;
+    }
+  }
+
+  // Slow path: identical to portable. Falls back through MapReduceOverDimList.
+  std::optional<MapReduceOverDimListPlan> plan;
+  if (in.numel() > 0) {
+    plan.emplace(in, dim_list);
+  }
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "mean.out";
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
+    ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+      CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+      const size_t num = get_reduced_dim_product(in, dim_list);
+      const bool success = parallel_for_each_reduce_over_dim_list_output_index(
+          in, dim_list, out, [&](const auto begin, const auto end) {
+            for (const auto out_ix : c10::irange(begin, end)) {
+              CTYPE_OUT sum = 0;
+              if (plan.has_value()) {
+                sum = plan->execute<CTYPE_IN, CTYPE_OUT>(
+                    [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
+                    [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                    out_ix);
+              }
+              out_data[out_ix] = sum / static_cast<float>(num);
+            }
+          });
+      ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");
+    });
+  });
+
+  return out;
+}
+
+Tensor& opt_mean_dtype_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    optional<ScalarType> dtype,
+    Tensor& out) {
+  return opt_mean_dim_out(ctx, in, ArrayRef<int64_t>(), false, dtype, out);
+}
+
+} // namespace native
+} // namespace executor
+} // namespace torch

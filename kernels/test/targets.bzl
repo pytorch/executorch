@@ -277,7 +277,7 @@ def define_common_targets():
     _common_op_test("op_max_pool2d_with_indices_test", ["aten", "portable"])
     _common_op_test("op_max_pool2d_with_indices_backward_test", ["aten", "portable"])
     _common_op_test("op_maximum_test", ["aten", "portable"])
-    _common_op_test("op_mean_test", ["aten", "portable"])
+    _common_op_test("op_mean_test", ["aten", "portable", "optimized"])
     _common_op_test("op_min_test", ["aten", "portable"])
     _common_op_test("op_minimum_test", ["aten", "portable"])
     _common_op_test("op_mm_test", ["aten", "portable", "optimized"])
