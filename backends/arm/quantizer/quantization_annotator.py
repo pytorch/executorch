@@ -532,6 +532,7 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.selu.default,
     torch.ops.aten.celu.default,
     torch.ops.aten.floor.default,
+    torch.ops.aten.round.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,
@@ -629,6 +630,16 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
 _transpose_dimname = getattr(torch.ops.aten.transpose, "Dimname", None)
 if _transpose_dimname is not None:
     _one_to_one_shared_input_qspec.add(_transpose_dimname)
+
+for _op in (
+    getattr(torch.ops.aten.moveaxis, "int", None),
+    getattr(torch.ops.aten.moveaxis, "intlist", None),
+    getattr(torch.ops.aten.movedim, "int", None),
+    getattr(torch.ops.aten.movedim, "intlist", None),
+):
+    if _op is not None:
+        _one_to_one_shared_input_qspec.add(_op)
+
 
 _one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.alias.default,

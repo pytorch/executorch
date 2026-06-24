@@ -41,7 +41,9 @@ class TestSliceTensorConverter:
         return f"{prefix}rank={len(input_shape)}_dims={str(dims)}_starts={str(starts)}_ends={str(ends)}"
 
     @staticmethod
-    def assert_delegated_and_correct(model, input_shape, num_slices, mocker, use_qat):
+    def assert_delegated_and_correct(
+        model, input_shape, num_slices, mocker, request, use_qat
+    ):
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={SliceCopy: num_slices},
@@ -54,6 +56,7 @@ class TestSliceTensorConverter:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset,
             comparator,
             use_qat=use_qat,
@@ -182,12 +185,14 @@ class TestSliceTensorConverter:
             ),
         ],
     )
-    def test_nsys_inference__basic(self, input_shape, dims, starts, ends, mocker):
+    def test_nsys_inference__basic(
+        self, input_shape, dims, starts, ends, mocker, request
+    ):
         model = SliceTensorModule(dims, starts, ends)
 
         num_slices = len(dims)
         self.assert_delegated_and_correct(
-            model, input_shape, num_slices, mocker, use_qat=False
+            model, input_shape, num_slices, mocker, request, use_qat=False
         )
 
     @pytest.mark.parametrize(
@@ -209,7 +214,9 @@ class TestSliceTensorConverter:
             ),
         ],
     )
-    def test_nsys_inference__reduction(self, input_shape, dims, starts, ends, mocker):
+    def test_nsys_inference__reduction(
+        self, input_shape, dims, starts, ends, mocker, request
+    ):
         model = SliceTensorModule(dims, starts, ends)
 
         slice_lengths = [e - s for s, e in zip(starts, ends)]
@@ -219,7 +226,7 @@ class TestSliceTensorConverter:
         else:
             num_slices = len(dims)
             self.assert_delegated_and_correct(
-                model, input_shape, num_slices, mocker, use_qat=False
+                model, input_shape, num_slices, mocker, request, use_qat=False
             )
 
     @pytest.mark.parametrize(
@@ -241,12 +248,14 @@ class TestSliceTensorConverter:
             ),
         ],
     )
-    def test_nsys_inference__clipped(self, input_shape, dims, starts, ends, mocker):
+    def test_nsys_inference__clipped(
+        self, input_shape, dims, starts, ends, mocker, request
+    ):
         model = SliceTensorModule(dims, starts, ends)
 
         num_slices = len(dims)
         self.assert_delegated_and_correct(
-            model, input_shape, num_slices, mocker, use_qat=False
+            model, input_shape, num_slices, mocker, request, use_qat=False
         )
 
     @pytest.mark.parametrize(
@@ -269,13 +278,13 @@ class TestSliceTensorConverter:
         ],
     )
     def test_nsys_inference__normalization(
-        self, input_shape, dims, starts, ends, mocker
+        self, input_shape, dims, starts, ends, mocker, request
     ):
         model = SliceTensorModule(dims, starts, ends)
 
         num_slices = len(dims)
         self.assert_delegated_and_correct(
-            model, input_shape, num_slices, mocker, use_qat=False
+            model, input_shape, num_slices, mocker, request, use_qat=False
         )
 
     @pytest.mark.parametrize(
@@ -304,12 +313,14 @@ class TestSliceTensorConverter:
             ),
         ],
     )
-    def test_nsys_inference__big(self, input_shape, dims, starts, ends, mocker):
+    def test_nsys_inference__big(
+        self, input_shape, dims, starts, ends, mocker, request
+    ):
         model = SliceTensorModule(dims, starts, ends)
 
         num_slices = len(dims)
         self.assert_delegated_and_correct(
-            model, input_shape, num_slices, mocker, use_qat=False
+            model, input_shape, num_slices, mocker, request, use_qat=False
         )
 
     @pytest.mark.parametrize(
@@ -336,7 +347,7 @@ class TestSliceTensorConverter:
 
         self.assert_model_without_slices(model, input_shape)
 
-    def test_nsys_inference__with_conv(self, mocker):
+    def test_nsys_inference__with_conv(self, mocker, request):
         input_shape = (11, 13, 5, 7)
         in_channels = input_shape[1]
         out_channels = 19
@@ -360,12 +371,13 @@ class TestSliceTensorConverter:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset,
             comparator,
             use_qat=False,
         )
 
-    def test_nsys_inference__qat(self, mocker):
+    def test_nsys_inference__qat(self, mocker, request):
         input_shape = (7, 13, 7, 9)
         dims = (0, 1, 2, 3)
         starts = (1, 2, 3, 2)
@@ -375,5 +387,5 @@ class TestSliceTensorConverter:
 
         num_slices = len(dims)
         self.assert_delegated_and_correct(
-            model, input_shape, num_slices, mocker, use_qat=True
+            model, input_shape, num_slices, mocker, request, use_qat=True
         )

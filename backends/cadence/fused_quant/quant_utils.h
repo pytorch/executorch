@@ -64,8 +64,8 @@ struct QParams {
 };
 
 inline QParams extract_qparams(
-    const executorch::aten::optional<executorch::aten::Tensor>& scale_tensor,
-    const executorch::aten::optional<executorch::aten::Tensor>& zp_tensor,
+    const std::optional<executorch::aten::Tensor>& scale_tensor,
+    const std::optional<executorch::aten::Tensor>& zp_tensor,
     int64_t quant_min,
     int64_t quant_max,
     const executorch::aten::Tensor& data_tensor) {
