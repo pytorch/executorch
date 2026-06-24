@@ -273,9 +273,6 @@ def replace_torchao_quantized_embedding_patterns(
     graph_module: torch.fx.GraphModule,
     match: TorchAOQuantizedEmbeddingMatch,
 ):
-    weight_tensor = get_param_tensor(ep, match.weight_node)
-    assert weight_tensor is not None
-
     # The weight repack mutates the state dict entry in place, so it must run
     # exactly once per backing storage; a second repack of the already-packed
     # weight would corrupt it. The repack
@@ -289,6 +286,9 @@ def replace_torchao_quantized_embedding_patterns(
     # also raises if the same weight is later re-mutated with a different tag
     # (i.e. an incompatible packing format), surfacing corruption loudly.
     if utils.register_param_mutation(ep, match.weight_node, "embedding_q4gsw"):
+        weight_tensor = get_param_tensor(ep, match.weight_node)
+        assert weight_tensor is not None
+
         # The shader applies a fixed signed-4-bit offset (subtract 8), which
         # assumes symmetric quantization (zero_point == 0). Verify on the real
         # tensor.
