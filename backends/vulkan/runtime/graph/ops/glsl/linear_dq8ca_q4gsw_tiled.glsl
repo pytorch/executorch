@@ -46,7 +46,7 @@ ${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=Fa
 ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", PACKED_INT8_INPUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_int8_input_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_int8_input_scales", DTYPE, "texture3d")}
-${layout_declare_tensor(B, "r", "t_int8_input_zps", "int8", "texture3d")}
+${layout_declare_tensor(B, "r", "t_int8_input_zps", "float", "texture3d")}
 ${layout_declare_tensor(B, "r", "t_packed_int4_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}

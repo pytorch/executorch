@@ -89,6 +89,41 @@ def test_transpose_tosa_INT():
     )
 
 
+def test_moveaxis_movedim_tosa_INT():
+    check_annotation(
+        SingleOpModel(
+            torch.moveaxis,
+            (torch.randn(2, 3, 4),),
+            source=1,
+            destination=-1,
+        ),
+    )
+    check_annotation(
+        SingleOpModel(
+            torch.moveaxis,
+            (torch.randn(2, 3, 4),),
+            source=(0, 1),
+            destination=(-1, -2),
+        ),
+    )
+    check_annotation(
+        SingleOpModel(
+            torch.movedim,
+            (torch.randn(2, 3, 4),),
+            source=1,
+            destination=-1,
+        ),
+    )
+    check_annotation(
+        SingleOpModel(
+            torch.movedim,
+            (torch.randn(2, 3, 4),),
+            source=(0, 1),
+            destination=(-1, -2),
+        ),
+    )
+
+
 def test_tile_tosa_INT():
     check_annotation(
         SingleOpModel(torch.tile, (torch.randn(4, 4),), dims=(2,)),

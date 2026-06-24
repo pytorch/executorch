@@ -9,7 +9,7 @@ import torch
 
 from executorch.backends.arm.constants import MAX_RANK
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -73,7 +73,7 @@ def _shape_product(shape: Iterable[int | torch.SymInt], op: str) -> int | torch.
     return result
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "CONCAT(Tensor[] input1, *, int axis) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -124,7 +124,7 @@ def CONCAT(inputs: list[torch.Tensor], *, axis: int) -> torch.Tensor:
     return torch.empty(size=output_shape, dtype=reference.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "PAD(Tensor input1, SymInt[] padding, *, Scalar value) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -151,7 +151,7 @@ def PAD(x: torch.Tensor, padding: list[int | torch.SymInt], *, value) -> torch.T
     return torch.empty(size=output_shape, dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "RESHAPE(Tensor input1, SymInt[] shape) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -166,7 +166,7 @@ def RESHAPE(x: torch.Tensor, shape: list[int | torch.SymInt]) -> torch.Tensor:
     return torch.empty(size=shape, dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "REVERSE(Tensor input1, *, int axis) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -182,7 +182,7 @@ def REVERSE(x: torch.Tensor, *, axis: int) -> torch.Tensor:
     return torch.empty_like(x)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "SLICE(Tensor input1, SymInt[] start, SymInt[] size) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -219,7 +219,7 @@ def SLICE(
     return torch.empty(size=size, dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "TILE(Tensor input1, SymInt[] multiples) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -241,7 +241,7 @@ def TILE(x: torch.Tensor, multiples: list[int | torch.SymInt]) -> torch.Tensor:
     return torch.empty(size=output_shape, dtype=x.dtype)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "TRANSPOSE(Tensor input, int[] perms) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )

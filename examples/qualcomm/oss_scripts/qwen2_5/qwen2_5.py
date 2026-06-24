@@ -14,7 +14,6 @@ from multiprocessing.connection import Client
 
 import torch
 from executorch.backends.qualcomm.export_utils import (
-    get_backend_type,
     QnnConfig,
     setup_common_args_and_variables,
     SimpleADB,
@@ -75,7 +74,7 @@ def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
             args.calibration_limit,
             args.prompt,
             tokenizer_json_path,
-            get_backend_type(qnn_config.backend),
+            qnn_config.backend,
             qnn_config.soc_model,
         )
 
@@ -158,7 +157,7 @@ def inference(args: argparse, qnn_config: QnnConfig):
             runner="examples/models/llama/llama_main",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=[], input_list="", files=[tokenizer_json_path])
+        adb.push(inputs=[], files=[tokenizer_json_path])
         adb.execute(custom_runner_cmd=runner_cmd)
 
         adb.pull(host_output_path=args.artifact, callback=post_process)
