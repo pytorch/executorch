@@ -1699,11 +1699,12 @@ inline void exec_random_bits(
     const RandomBitsNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  // Only width=4 (uint32) is supported; reject other widths.
-  if (n.width != 4) {
-    throw std::runtime_error("random_bits: only width=4 (uint32) is supported");
+  // random::bits supports width (bytes/element) in {1, 2, 4} -> uint8/uint16/uint32.
+  if (n.width != 1 && n.width != 2 && n.width != 4) {
+    throw std::runtime_error("random_bits: width must be 1, 2, or 4");
   }
   auto shape = to_shape(n.shape, st);
+  // uint32 (4 bytes, the widest supported) is a safe upper bound for the guard.
   check_allocation_bounded(shape, uint32, "random_bits");
   std::optional<array> key = std::nullopt;
   if (n.seed.has_value()) {

@@ -395,12 +395,18 @@ def gather_qmm_fake(
 
 @torch.library.custom_op("mlx::sample", mutates_args=())
 def sample(
-    logits: Tensor, temperature: Tensor, seed: Optional[Tensor] = None
+    logits: Tensor,
+    temperature: Tensor,
+    top_p: Tensor,
+    seed: Optional[Tensor] = None,
 ) -> Tensor:
     """
-    Gumbel-max sampling from softmax(logits / temperature).
+    Gumbel-max sampling from softmax(logits / temperature), with top-p (nucleus).
     logits:      [B, vocab]
-    temperature: scalar float tensor    (runtime input)
+    temperature: scalar float tensor    (runtime input). temperature == 0 is
+                 greedy: return argmax(logits) directly.
+    top_p:       scalar float tensor in (0, 1]. top_p=1.0 keeps every
+                 token, i.e. it is off.
     seed:        scalar int tensor or None
                  - tensor -> deterministic, keyed RNG (random::key(seed))
                  - None   -> MLX global KeySequence (non-deterministic)
@@ -411,15 +417,27 @@ def sample(
     RNG (plain torch.rand, no uint32/nextafter uniform) while the delegate uses
     MLX RNG, so a given seed does not reproduce the same tokens host vs. device.
     """
+    if float(temperature) == 0:
+        return torch.argmax(logits, dim=-1)
+    # whole chain in fp32 to match the lowered graph (bf16 sums mis-rank ties).
+    scaled = logits.float() / temperature
+    probs = torch.softmax(scaled, dim=-1)
+    s_probs, _ = torch.sort(probs, dim=-1, descending=True)
+    cum = torch.cumsum(s_probs, dim=-1)
+    keep = (cum - s_probs) <= top_p
+    thresh = torch.where(keep, s_probs, s_probs.new_tensor(float("inf"))).amin(
+        dim=-1, keepdim=True
+    )
+    scaled = torch.where(probs >= thresh, scaled, scaled.new_tensor(float("-inf")))
     if seed is None:
-        u = torch.rand(logits.shape)  # global RNG
+        u = torch.rand(scaled.shape)  # global RNG
     else:
         gen = torch.Generator().manual_seed(int(seed.item()))
-        u = torch.rand(logits.shape, generator=gen)
+        u = torch.rand(scaled.shape, generator=gen)
     gumbel = -torch.log(-torch.log(u))
-    return torch.argmax(logits / temperature + gumbel, dim=-1)
+    return torch.argmax(scaled + gumbel, dim=-1)
 
 
 @torch.library.register_fake("mlx::sample")
-def sample_fake(logits, temperature, seed=None):
+def sample_fake(logits, temperature, top_p, seed=None):
     return logits.new_empty(logits.shape[:-1], dtype=torch.long)

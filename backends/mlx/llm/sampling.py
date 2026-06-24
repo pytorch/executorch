@@ -14,19 +14,24 @@ class SamplingHead(nn.Module):
     """
     Wraps a model that returns logits and samples a token id on-device.
 
-        forward(*model_args, temperature, seed=None, **model_kwargs) -> token_id
+        forward(*model_args, temperature, seed=None, top_p=1.0, **model_kwargs)
+            -> token_id
 
-      temperature: scalar float tensor, e.g. torch.tensor(0.8). Must be > 0;
-                   logits are divided by it, so 0.0 yields inf/nan. For greedy,
-                   pass a small epsilon (e.g. 1e-4), not 0.
+      temperature: scalar float tensor, e.g. torch.tensor(0.8). Must be >= 0;
+                   temperature=0 is greedy (returns argmax, no division).
       seed:        scalar int tensor (seeded) or None (unseeded export)
+      top_p:       scalar float tensor in (0, 1] for nucleus sampling. top_p=1.0
+                   (the default) keeps every token, i.e. no filtering. Pass it
+                   as a runtime input to tune per request.
     """
 
     def __init__(self, model: nn.Module):
         super().__init__()
         self.model = model
 
-    def forward(self, *args, temperature, seed=None, **kwargs):
+    def forward(self, *args, temperature, seed=None, top_p=1.0, **kwargs):
         logits = self.model(*args, **kwargs)  # [B, S, vocab]
         last = logits[:, -1, :]  # [B, vocab]
-        return torch.ops.mlx.sample(last, temperature, seed)
+        if not isinstance(top_p, torch.Tensor):
+            top_p = torch.tensor(float(top_p))
+        return torch.ops.mlx.sample(last, temperature, top_p, seed)

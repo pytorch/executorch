@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
+    emit_if_else,
     emit_lifted_constant,
     emit_quantized_biases,
     emit_shape,
@@ -3463,95 +3464,193 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     Reproduces MLX's uniform -> gumbel -> argmax layering in the IR using the
     new RandomBitsNode plus existing elementwise nodes, so a sampled token id is
     produced on-device instead of returning the full logits tensor.
+
+    temperature == 0 is greedy: an IfNode branches to a plain argmax(logits),
+    skipping the sampling chain (so 0 is exact, not the small-epsilon approx).
     """
     args = P.args(n)
-    require_args(args, 2, 3, "mlx.sample")
+    require_args(args, 3, 4, "mlx.sample")
     require_kwargs(P.kwargs(n), set(), "mlx.sample")
-    logits, temperature = args[0], args[1]
-    seed = args[2] if len(args) > 2 and args[2] is not None else None
+    logits, temperature, top_p = args[0], args[1], args[2]
+    seed = args[3] if len(args) > 3 and args[3] is not None else None
 
-    dt = n.args[0].meta["val"].dtype
-    shape = emit_shape(P, n.args[0], logits)
-
-    # Optional runtime seed: tensor -> SymInt (Vid) via ItemIntNode. Absent ->
-    # leave RandomBitsNode.seed unset (MLX global RNG).
-    seed_field = None
-    if seed is not None:
-        _, seed_val = P.make_tmp_value_slot()
-        P.emit(ItemIntNode(x=P.slot_to_tid(seed), out=P.slot_to_vid(seed_val)))
-        seed_field = P.to_int_or_vid(seed_val)
-
-    # uniform u in [0, 1): bits/uint32_max, clamped just below 1 (random.cpp:95)
-    _, bits = P.make_tmp_slot()
-    P.emit(
-        RandomBitsNode(out=P.slot_to_tid(bits), shape=shape, width=4, seed=seed_field)
-    )
-    _, bits_f = P.make_tmp_slot()
-    P.emit(
-        AsTypeNode(
-            x=P.slot_to_tid(bits),
-            out=P.slot_to_tid(bits_f),
-            scalar_type=torch_dtype_to_scalar_type(torch.float32),
-        )
-    )
-    umax = emit_lifted_constant(P, 4294967295.0, torch.float32)
-    _, div0 = P.make_tmp_slot()
-    P.emit(
-        DivideNode(
-            a=P.slot_to_tid(bits_f), b=P.slot_to_tid(umax), out=P.slot_to_tid(div0)
-        )
-    )
-    prev1 = emit_lifted_constant(
-        P, float(torch.nextafter(torch.tensor(1.0), torch.tensor(0.0))), torch.float32
-    )
-    _, clamp = P.make_tmp_slot()
-    P.emit(
-        MinimumNode(
-            a=P.slot_to_tid(div0), b=P.slot_to_tid(prev1), out=P.slot_to_tid(clamp)
-        )
-    )
-    # gumbel noise g = -log(-log(u)) (random.cpp:367), computed in float32.
-    # Keep the uniform in float32 through the log chain: casting it down to a
-    # low-precision dtype (e.g. bf16) can round the clamp (~0.99999994) back up
-    # to 1.0 -> log(1.0)=0 -> -log(0)=+inf, which then dominates argmax (a fixed
-    # seed makes that the same token every step). Only the finite gumbel is cast
-    # to the logits dtype.
-    _, l1 = P.make_tmp_slot()
-    P.emit(LogNode(x=P.slot_to_tid(clamp), out=P.slot_to_tid(l1)))
-    _, g1 = P.make_tmp_slot()
-    P.emit(NegNode(x=P.slot_to_tid(l1), out=P.slot_to_tid(g1)))
-    _, l2 = P.make_tmp_slot()
-    P.emit(LogNode(x=P.slot_to_tid(g1), out=P.slot_to_tid(l2)))
-    _, g_f32 = P.make_tmp_slot()
-    P.emit(NegNode(x=P.slot_to_tid(l2), out=P.slot_to_tid(g_f32)))
-    _, g = P.make_tmp_slot()
-    P.emit(
-        AsTypeNode(
-            x=P.slot_to_tid(g_f32),
-            out=P.slot_to_tid(g),
-            scalar_type=torch_dtype_to_scalar_type(dt),
-        )
-    )
-
-    # sample: argmax(logits / temperature + g) over the vocab axis
-    _, scaled = P.make_tmp_slot()
-    P.emit(
-        DivideNode(
-            a=P.slot_to_tid(logits),
-            b=P.slot_to_tid(temperature),
-            out=P.slot_to_tid(scaled),
-        )
-    )
-    _, noisy = P.make_tmp_slot()
-    P.emit(
-        AddNode(a=P.slot_to_tid(scaled), b=P.slot_to_tid(g), out=P.slot_to_tid(noisy))
-    )
+    temp_dt = n.args[1].meta["val"].dtype
     out = P.make_or_get_slot(n)
+
+    def emit_greedy():
+        P.emit(
+            ArgmaxNode(
+                x=P.slot_to_tid(logits),
+                out=P.slot_to_tid(out),
+                axis=-1,
+                keepdims=False,
+            )
+        )
+
+    def emit_sample():
+        shape = emit_shape(P, n.args[0], logits)
+
+        # Optional runtime seed: tensor -> SymInt (Vid) via ItemIntNode. Absent ->
+        # leave RandomBitsNode.seed unset (MLX global RNG).
+        seed_field = None
+        if seed is not None:
+            _, seed_val = P.make_tmp_value_slot()
+            P.emit(ItemIntNode(x=P.slot_to_tid(seed), out=P.slot_to_vid(seed_val)))
+            seed_field = P.to_int_or_vid(seed_val)
+
+        # uniform u in [0, 1): bits/uint32_max, clamped just below 1 (random.cpp:95)
+        _, bits = P.make_tmp_slot()
+        P.emit(
+            RandomBitsNode(
+                out=P.slot_to_tid(bits), shape=shape, width=4, seed=seed_field
+            )
+        )
+        _, bits_f = P.make_tmp_slot()
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(bits),
+                out=P.slot_to_tid(bits_f),
+                scalar_type=torch_dtype_to_scalar_type(torch.float32),
+            )
+        )
+        umax = emit_lifted_constant(P, 4294967295.0, torch.float32)
+        _, div0 = P.make_tmp_slot()
+        P.emit(
+            DivideNode(
+                a=P.slot_to_tid(bits_f), b=P.slot_to_tid(umax), out=P.slot_to_tid(div0)
+            )
+        )
+        prev1 = emit_lifted_constant(
+            P,
+            float(torch.nextafter(torch.tensor(1.0), torch.tensor(0.0))),
+            torch.float32,
+        )
+        _, clamp = P.make_tmp_slot()
+        P.emit(
+            MinimumNode(
+                a=P.slot_to_tid(div0), b=P.slot_to_tid(prev1), out=P.slot_to_tid(clamp)
+            )
+        )
+        # gumbel g = -log(-log(u)); whole chain stays fp32 (bf16 mis-ranks ties; clamp->1.0->+inf).
+        _, l1 = P.make_tmp_slot()
+        P.emit(LogNode(x=P.slot_to_tid(clamp), out=P.slot_to_tid(l1)))
+        _, g1 = P.make_tmp_slot()
+        P.emit(NegNode(x=P.slot_to_tid(l1), out=P.slot_to_tid(g1)))
+        _, l2 = P.make_tmp_slot()
+        P.emit(LogNode(x=P.slot_to_tid(g1), out=P.slot_to_tid(l2)))
+        _, g = P.make_tmp_slot()
+        P.emit(NegNode(x=P.slot_to_tid(l2), out=P.slot_to_tid(g)))
+
+        # sample: argmax(logits / temperature + g) over the vocab axis, in float32
+        _, logits_f = P.make_tmp_slot()
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(logits),
+                out=P.slot_to_tid(logits_f),
+                scalar_type=torch_dtype_to_scalar_type(torch.float32),
+            )
+        )
+        _, scaled = P.make_tmp_slot()
+        P.emit(
+            DivideNode(
+                a=P.slot_to_tid(logits_f),
+                b=P.slot_to_tid(temperature),
+                out=P.slot_to_tid(scaled),
+            )
+        )
+
+        # top-p nucleus mask; SortNode is ascending-only, so sort -probs for descending.
+        _, probs = P.make_tmp_slot()
+        P.emit(SoftmaxNode(x=P.slot_to_tid(scaled), out=P.slot_to_tid(probs), axis=-1))
+        _, neg_p = P.make_tmp_slot()
+        P.emit(NegNode(x=P.slot_to_tid(probs), out=P.slot_to_tid(neg_p)))
+        _, sorted_neg = P.make_tmp_slot()
+        P.emit(SortNode(x=P.slot_to_tid(neg_p), out=P.slot_to_tid(sorted_neg), axis=-1))
+        _, sorted_p = P.make_tmp_slot()
+        P.emit(NegNode(x=P.slot_to_tid(sorted_neg), out=P.slot_to_tid(sorted_p)))
+        _, cum = P.make_tmp_slot()
+        P.emit(CumsumNode(x=P.slot_to_tid(sorted_p), out=P.slot_to_tid(cum), axis=-1))
+        _, prefix = P.make_tmp_slot()
+        P.emit(
+            SubtractNode(
+                a=P.slot_to_tid(cum),
+                b=P.slot_to_tid(sorted_p),
+                out=P.slot_to_tid(prefix),
+            )
+        )
+        # remove sorted tokens whose prefix mass already exceeds top_p (top-1: 0)
+        _, remove = P.make_tmp_slot()
+        P.emit(
+            GreaterNode(
+                a=P.slot_to_tid(prefix),
+                b=P.slot_to_tid(top_p),
+                out=P.slot_to_tid(remove),
+            )
+        )
+        pos_inf = emit_lifted_constant(P, float("inf"), torch.float32)
+        _, kept = P.make_tmp_slot()
+        P.emit(
+            WhereNode(
+                condition=P.slot_to_tid(remove),
+                x=P.slot_to_tid(pos_inf),
+                y=P.slot_to_tid(sorted_p),
+                out=P.slot_to_tid(kept),
+            )
+        )
+        # threshold = smallest kept probability (per row)
+        _, thresh = P.make_tmp_slot()
+        P.emit(
+            MinNode(
+                x=P.slot_to_tid(kept),
+                out=P.slot_to_tid(thresh),
+                axes=[-1],
+                keepdims=True,
+            )
+        )
+        _, drop = P.make_tmp_slot()
+        P.emit(
+            LessNode(
+                a=P.slot_to_tid(probs),
+                b=P.slot_to_tid(thresh),
+                out=P.slot_to_tid(drop),
+            )
+        )
+        neg_inf = emit_lifted_constant(P, float("-inf"), torch.float32)
+        _, masked = P.make_tmp_slot()
+        P.emit(
+            WhereNode(
+                condition=P.slot_to_tid(drop),
+                x=P.slot_to_tid(neg_inf),
+                y=P.slot_to_tid(scaled),
+                out=P.slot_to_tid(masked),
+            )
+        )
+
+        _, noisy = P.make_tmp_slot()
+        P.emit(
+            AddNode(
+                a=P.slot_to_tid(masked), b=P.slot_to_tid(g), out=P.slot_to_tid(noisy)
+            )
+        )
+        P.emit(
+            ArgmaxNode(
+                x=P.slot_to_tid(noisy), out=P.slot_to_tid(out), axis=-1, keepdims=False
+            )
+        )
+
+    # temperature == 0 -> greedy: IfNode branches to argmax(logits), skipping sampling.
+    zero = emit_lifted_constant(P, 0.0, temp_dt)
+    _, is_sampling = P.make_tmp_slot()
     P.emit(
-        ArgmaxNode(
-            x=P.slot_to_tid(noisy), out=P.slot_to_tid(out), axis=-1, keepdims=False
+        GreaterNode(
+            a=P.slot_to_tid(temperature),
+            b=P.slot_to_tid(zero),
+            out=P.slot_to_tid(is_sampling),
         )
     )
+    _, cond_val = P.make_tmp_value_slot()
+    P.emit(ItemIntNode(x=P.slot_to_tid(is_sampling), out=P.slot_to_vid(cond_val)))
+    emit_if_else(P, P.to_int_or_vid(cond_val), emit_sample, emit_greedy)
     return out
 
 

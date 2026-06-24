@@ -572,7 +572,7 @@ def generate_python_serializers(schema: FBSSchema) -> str:
         "",
         "from __future__ import annotations",
         "",
-        "from typing import List, Tuple, Dict",
+        "from typing import Dict, List, Optional, Tuple",
         "",
         "import flatbuffers",
         "",
@@ -640,8 +640,10 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "class GeneratedOpBuilders:",
             '    """Mixin class with auto-generated op builder methods."""',
             "",
-            "    def _build_int_or_vid(self, builder: flatbuffers.Builder, iov: IntOrVid) -> int:",
-            '        """Build an IntOrVid table."""',
+            "    def _build_int_or_vid(self, builder: flatbuffers.Builder, iov: IntOrVid) -> Optional[int]:",
+            '        """Build an IntOrVid table (None -> absent field, like _shared_string)."""',
+            "        if iov is None:",
+            "            return None",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate import IntOrVid as FBIntOrVidModule",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
             "",
@@ -653,8 +655,10 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "            FBIntOrVidModule.AddVid(builder, CreateVid(builder, iov.vid.idx))",
             "        return FBIntOrVidModule.End(builder)",
             "",
-            "    def _build_float_or_vid(self, builder: flatbuffers.Builder, fov: FloatOrVid) -> int:",
-            '        """Build a FloatOrVid table."""',
+            "    def _build_float_or_vid(self, builder: flatbuffers.Builder, fov: FloatOrVid) -> Optional[int]:",
+            '        """Build a FloatOrVid table (None -> absent field)."""',
+            "        if fov is None:",
+            "            return None",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate import FloatOrVid as FBFloatOrVidModule",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
             "",
@@ -665,8 +669,10 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "            FBFloatOrVidModule.AddVid(builder, CreateVid(builder, fov.vid.idx))",
             "        return FBFloatOrVidModule.End(builder)",
             "",
-            "    def _build_vid_or_tid(self, builder: flatbuffers.Builder, vot: VidOrTid) -> int:",
-            '        """Build a TidOrVid table."""',
+            "    def _build_vid_or_tid(self, builder: flatbuffers.Builder, vot: VidOrTid) -> Optional[int]:",
+            '        """Build a TidOrVid table (None -> absent field)."""',
+            "        if vot is None:",
+            "            return None",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate import VidOrTid as FBVidOrTidModule",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Tid import CreateTid",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
@@ -679,8 +685,10 @@ def generate_python_serializers(schema: FBSSchema) -> str:
             "            FBVidOrTidModule.AddVid(builder, CreateVid(builder, vot.vid.idx))",
             "        return FBVidOrTidModule.End(builder)",
             "",
-            "    def _build_int_or_vid_or_tid(self, builder: flatbuffers.Builder, ivt: IntOrVidOrTid) -> int:",
-            '        """Build an IntOrVidOrTid table."""',
+            "    def _build_int_or_vid_or_tid(self, builder: flatbuffers.Builder, ivt: IntOrVidOrTid) -> Optional[int]:",
+            '        """Build an IntOrVidOrTid table (None -> absent field)."""',
+            "        if ivt is None:",
+            "            return None",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate import IntOrVidOrTid as FBIntOrVidOrTidModule",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Tid import CreateTid",
             "        from executorch.backends.mlx.serialization._generated.mlx_delegate.Vid import CreateVid",
@@ -831,12 +839,7 @@ def _emit_py_prebuild(kind: str, fld: FBSField) -> List[str]:
     if kind in _PY_PREBUILD_OFFSET:
         suffix = "_off"
         expr = _PY_PREBUILD_OFFSET[kind].format(name=n)
-        # optional_str carries its own None handling; other compound offset
-        # fields (int_or_vid, etc.) must be guarded when optional so a None
-        # value is serialized as an absent field rather than crashing.
-        if fld.required or kind == "optional_str":
-            return [f"        {n}{suffix} = {expr}"]
-        return [f"        {n}{suffix} = {expr} if op.{n} is not None else None"]
+        return [f"        {n}{suffix} = {expr}"]
     return []
 
 

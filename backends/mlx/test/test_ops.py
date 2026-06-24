@@ -25,6 +25,7 @@ See README.md in this directory for full documentation.
 """
 
 import os
+import unittest
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -35,6 +36,7 @@ from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa:
     custom_ops,
     ops,
 )
+from executorch.backends.mlx.llm.sampling import SamplingHead
 from torch.export import Dim
 
 from .test_utils import OpTestCase, register_test
@@ -7579,3 +7581,217 @@ class Int4QuantizedEmbeddingTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
         return (x,)
+
+
+class _LogitsPassthrough(nn.Module):
+    """Stand-in for a model returning logits [B, S, vocab]."""
+
+    def forward(self, logits: torch.Tensor) -> torch.Tensor:
+        return logits
+
+
+class SeededSampleModel(nn.Module):
+    """SamplingHead with temperature AND seed as runtime forward inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed):
+        return self.head(logits, temperature=temperature, seed=seed)
+
+
+class UnseededSampleModel(nn.Module):
+    """SamplingHead with temperature as a runtime input and no seed."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature):
+        return self.head(logits, temperature=temperature)
+
+
+class TopPSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_p as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_p):
+        return self.head(logits, temperature=temperature, seed=seed, top_p=top_p)
+
+
+@register_test
+class SampleSeededTest(OpTestCase):
+    """Seeded sample lowers to one MLX segment; seed threads in via ItemIntNode."""
+
+    name = "sample_seeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,  # temperature==0 greedy branch
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,  # sampling branch + greedy branch
+        "ItemIntNode": 2,  # seed + temperature>0 condition
+        "SoftmaxNode": 1,  # top-p nucleus chain
+        "SortNode": 1,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "WhereNode": 2,
+    }
+
+    def create_model(self) -> nn.Module:
+        return SeededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 4, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+        )
+
+
+@register_test
+class SampleUnseededTest(OpTestCase):
+    """Unseeded sample lowers without a seed field (only the cond ItemIntNode)."""
+
+    name = "sample_unseeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 1,  # temperature>0 condition only (no seed)
+        "SoftmaxNode": 1,  # top-p nucleus chain (top_p defaults to 1.0)
+    }
+
+    def create_model(self) -> nn.Module:
+        return UnseededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(1, 4, 256), torch.tensor(0.8))
+
+
+@register_test
+class SampleTopPTest(OpTestCase):
+    """Top-p sample emits the nucleus chain (softmax/sort/cumsum/min/where)."""
+
+    name = "sample_top_p"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 2,
+        "SoftmaxNode": 1,
+        "SortNode": 1,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "WhereNode": 2,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopPSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 4, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(0.9),
+        )
+
+
+def _ref_gumbel_max(logits: torch.Tensor, temperature: float, seed: int):
+    """Independent Gumbel-max reference using the same torch RNG as the op."""
+    gen = torch.Generator().manual_seed(seed)
+    u = torch.rand(logits.shape, generator=gen)
+    gumbel = -torch.log(-torch.log(u))
+    return torch.argmax(logits / temperature + gumbel, dim=-1)
+
+
+def _tv_distance(p: torch.Tensor, q: torch.Tensor) -> float:
+    """Total-variation distance between two discrete distributions."""
+    return 0.5 * torch.abs(p - q).sum().item()
+
+
+def _sample(logits, temperature, seed: Optional[int], top_p: float = 1.0):
+    t = torch.tensor(float(temperature))
+    s = None if seed is None else torch.tensor(int(seed), dtype=torch.int64)
+    p = torch.tensor(float(top_p))  # 1.0 = off
+    return torch.ops.mlx.sample(logits, t, p, s)
+
+
+class TestSampleOp(unittest.TestCase):
+    """Eager reference behavior of mlx::sample (no export / no runtime)."""
+
+    def test_greedy_parity_small_temperature(self):
+        # Small temperature -> Gumbel-max collapses to argmax(logits).
+        torch.manual_seed(0)
+        logits = torch.randn(8, 1024)
+        token = _sample(logits, 1e-4, seed=0)
+        self.assertTrue(torch.equal(token, torch.argmax(logits, dim=-1)))
+
+    def test_greedy_temperature_zero(self):
+        # temperature == 0 is exact greedy: argmax(logits), no RNG, no division.
+        torch.manual_seed(0)
+        logits = torch.randn(8, 1024)
+        token = _sample(logits, 0.0, seed=0)
+        self.assertTrue(torch.equal(token, torch.argmax(logits, dim=-1)))
+
+    def test_matches_independent_gumbel_reference(self):
+        # Same seed -> bit-identical token vs an independent Gumbel-max impl.
+        torch.manual_seed(1)
+        logits = torch.randn(8, 512)
+        for seed in (0, 1, 7, 42):
+            got = _sample(logits, 0.8, seed=seed)
+            expected = _ref_gumbel_max(logits, 0.8, seed)
+            self.assertTrue(torch.equal(got, expected), f"mismatch at seed={seed}")
+
+    def test_distribution_matches_softmax(self):
+        # Empirical token frequencies match softmax(logits / T).
+        vocab = 5
+        temperature = 1.0
+        torch.manual_seed(0)
+        base = torch.randn(vocab)
+        n = 20000
+        tokens = _sample(base.expand(n, vocab), temperature, seed=0)
+
+        empirical = torch.bincount(tokens, minlength=vocab).float() / n
+        target = torch.softmax(base / temperature, dim=-1)
+        tv = _tv_distance(empirical, target)
+        self.assertLess(tv, 0.05, f"TV distance {tv:.4f} too large")
+
+    def test_determinism_seeded(self):
+        # Same seed -> identical draws; different seed -> different draws.
+        torch.manual_seed(0)
+        logits = torch.randn(256, 64)
+        a = _sample(logits, 1.0, seed=123)
+        b = _sample(logits, 1.0, seed=123)
+        c = _sample(logits, 1.0, seed=124)
+        self.assertTrue(torch.equal(a, b))
+        self.assertFalse(torch.equal(a, c))
+
+    def test_unseeded_varies_across_calls(self):
+        # seed=None uses the global RNG -> draws vary, tokens stay in range.
+        torch.manual_seed(0)
+        logits = torch.randn(256, 64)
+        a = _sample(logits, 1.0, seed=None)
+        b = _sample(logits, 1.0, seed=None)
+        self.assertFalse(torch.equal(a, b))
+        self.assertGreaterEqual(int(a.min()), 0)
+        self.assertLess(int(a.max()), 64)
+
+    def test_top_p_restricts_to_nucleus(self):
+        # probs [0.5, 0.3, 0.15, 0.05]; top_p=0.9 keeps {0,1,2}, drops index 3.
+        base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
+        tokens = _sample(base.expand(5000, 4), 1.0, seed=0, top_p=0.9)
+        self.assertTrue((tokens != 3).all())  # tail token never drawn
+        self.assertEqual(set(tokens.tolist()), {0, 1, 2})  # nucleus covered
+
+    def test_top_p_one_keeps_all(self):
+        # top_p=1.0 -> no filtering; the tail token (index 3) is reachable.
+        base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
+        tokens = _sample(base.expand(20000, 4), 1.0, seed=0, top_p=1.0)
+        self.assertTrue((tokens == 3).any())
