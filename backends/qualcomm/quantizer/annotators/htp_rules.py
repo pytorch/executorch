@@ -1077,7 +1077,11 @@ class MaskedFill(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.bmm.default, torch.ops.aten.matmul.default],
+    [
+        torch.ops.aten.bmm.default,
+        torch.ops.aten.matmul.default,
+        torch.ops.aten.mm.default,
+    ],
     QnnConstants.OpMatMul.op_name,
 )
 class MatMul(GeneralOpDef):
