@@ -13,11 +13,11 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_compute_attn_weights.wgsl - DO NOT EDIT.
-// wgsl-sha256: 02bf5c41356e612cd1ded73116c4a270230b898ac913b9e73cee9c658e890693
+// wgsl-sha256: 4eef09b234fd926cdc0daf18d03e39cf4fd57dfa4bc67724b4878b7dc68d1254
 inline constexpr const char* kSdpaComputeAttnWeightsWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
-@group(0) @binding(1) var<storage, read> t_q: array<f32>;
-@group(0) @binding(2) var<storage, read> t_k_cache: array<f32>;
+@group(0) @binding(1) var<storage, read> t_q: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> t_k_cache: array<vec4<f32>>;
 
 struct Params {
   S: u32,
@@ -45,7 +45,7 @@ fn load_q_vec4(s: u32, h: u32, d4: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = s * params.Hq * params.D + h * params.D + d4;
-  return vec4<f32>(t_q[base], t_q[base + 1u], t_q[base + 2u], t_q[base + 3u]);
+  return t_q[base / 4u];
 }
 
 fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
@@ -53,7 +53,7 @@ fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = c * params.Hkv * params.D + kvh * params.D + d4;
-  return vec4<f32>(t_k_cache[base], t_k_cache[base + 1u], t_k_cache[base + 2u], t_k_cache[base + 3u]);
+  return t_k_cache[base / 4u];
 }
 
 fn store_qk(s: u32, c: u32, h: u32, raw: f32) {

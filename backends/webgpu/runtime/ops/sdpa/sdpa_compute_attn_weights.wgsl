@@ -1,6 +1,6 @@
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
-@group(0) @binding(1) var<storage, read> t_q: array<f32>;
-@group(0) @binding(2) var<storage, read> t_k_cache: array<f32>;
+@group(0) @binding(1) var<storage, read> t_q: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> t_k_cache: array<vec4<f32>>;
 
 struct Params {
   S: u32,
@@ -28,7 +28,7 @@ fn load_q_vec4(s: u32, h: u32, d4: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = s * params.Hq * params.D + h * params.D + d4;
-  return vec4<f32>(t_q[base], t_q[base + 1u], t_q[base + 2u], t_q[base + 3u]);
+  return t_q[base / 4u];
 }
 
 fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
@@ -36,7 +36,7 @@ fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = c * params.Hkv * params.D + kvh * params.D + d4;
-  return vec4<f32>(t_k_cache[base], t_k_cache[base + 1u], t_k_cache[base + 2u], t_k_cache[base + 3u]);
+  return t_k_cache[base / 4u];
 }
 
 fn store_qk(s: u32, c: u32, h: u32, raw: f32) {

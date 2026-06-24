@@ -13,11 +13,11 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_compute_out.wgsl - DO NOT EDIT.
-// wgsl-sha256: 22dd3c036494b8412e63c9391c2b570ff370ceb53e609558060a66916981a218
+// wgsl-sha256: 2ffa0eb520b1054e43a10fd13e6b287bd35777f1cfc29bd39e9d668772528191
 inline constexpr const char* kSdpaComputeOutWGSL = R"(
-@group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
+@group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> t_attn_weights_softmax: array<f32>;
-@group(0) @binding(2) var<storage, read> t_v_cache: array<f32>;
+@group(0) @binding(2) var<storage, read> t_v_cache: array<vec4<f32>>;
 
 struct Params {
   S: u32,
@@ -55,7 +55,7 @@ fn load_v_d4(c: u32, kvh: u32, d0: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = c * params.Hkv * params.D + kvh * params.D + d0;
-  return vec4<f32>(t_v_cache[base], t_v_cache[base + 1u], t_v_cache[base + 2u], t_v_cache[base + 3u]);
+  return t_v_cache[base / 4u];
 }
 
 // Branch-free loaders for the aligned body: caller guarantees c4..c4+3 < context_len.
@@ -69,15 +69,15 @@ fn load_a_vec4_nc(s: u32, h: u32, c4: u32) -> vec4<f32> {
 
 fn load_v_d4_nc(c: u32, kvh: u32, d0: u32) -> vec4<f32> {
   let base = c * params.Hkv * params.D + kvh * params.D + d0;
-  return vec4<f32>(t_v_cache[base], t_v_cache[base + 1u], t_v_cache[base + 2u], t_v_cache[base + 3u]);
+  return t_v_cache[base / 4u];
 }
 
-fn store_out(s: u32, d: u32, h: u32, val: f32) {
-  if (s >= params.S || d >= params.D) {
+fn store_out_vec4(s: u32, d0: u32, h: u32, val: vec4<f32>) {
+  if (s >= params.S) {
     return;
   }
-  let idx = s * params.Hq * params.D + h * params.D + d;
-  t_out[idx] = val;
+  let idx = s * params.Hq * params.D + h * params.D + d0;
+  t_out[idx / 4u] = val;
 }
 
 @compute @workgroup_size(wg_size, 1, 1)
@@ -145,11 +145,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (m >= TM) {
       break;
     }
-    let ov = acc[m];
-    store_out(s0 + m, d0 + 0u, h, ov.x);
-    store_out(s0 + m, d0 + 1u, h, ov.y);
-    store_out(s0 + m, d0 + 2u, h, ov.z);
-    store_out(s0 + m, d0 + 3u, h, ov.w);
+    store_out_vec4(s0 + m, d0, h, acc[m]);
     m = m + 1u;
   }
 }
