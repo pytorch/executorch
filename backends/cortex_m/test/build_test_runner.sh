@@ -46,6 +46,7 @@ aten::full.out,\
 aten::ge.Tensor_out,\
 aten::unsqueeze_copy.out,\
 aten::select_copy.int_out,\
+aten::slice_copy.Tensor_out,\
 aten::amax.out"
 
 ${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0"
