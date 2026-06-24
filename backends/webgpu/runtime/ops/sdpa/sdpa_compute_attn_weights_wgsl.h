@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_compute_attn_weights.wgsl - DO NOT EDIT.
-// wgsl-sha256: fabbf7f1dcbcac85bb2798ed23c904061d7629afd1abce19c290c81e5f54a47c
+// wgsl-sha256: e9bdc2272bba2716655e96be0597571701b4ec1496f78a85660e29d108f655f9
 inline constexpr const char* kSdpaComputeAttnWeightsWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
 @group(0) @binding(1) var<storage, read> t_q: array<f32>;
@@ -107,18 +107,21 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (d4 >= params.D) {
       break;
     }
-    let q0 = load_q_vec4(s0 + 0u, h, d4);
-    let q1 = load_q_vec4(s0 + 1u, h, d4);
-    let q2 = load_q_vec4(s0 + 2u, h, d4);
-    let q3 = load_q_vec4(s0 + 3u, h, d4);
-    let k0 = load_k_vec4(c0 + 0u, kvh, d4);
-    let k1 = load_k_vec4(c0 + 1u, kvh, d4);
-    let k2 = load_k_vec4(c0 + 2u, kvh, d4);
-    let k3 = load_k_vec4(c0 + 3u, kvh, d4);
-    acc[0] += vec4<f32>(dot(q0, k0), dot(q0, k1), dot(q0, k2), dot(q0, k3));
-    acc[1] += vec4<f32>(dot(q1, k0), dot(q1, k1), dot(q1, k2), dot(q1, k3));
-    acc[2] += vec4<f32>(dot(q2, k0), dot(q2, k1), dot(q2, k2), dot(q2, k3));
-    acc[3] += vec4<f32>(dot(q3, k0), dot(q3, k1), dot(q3, k2), dot(q3, k3));
+    var q: array<vec4<f32>, TM>;
+    var k: array<vec4<f32>, TN>;
+    for (var i: u32 = 0u; i < TM; i = i + 1u) {
+      q[i] = load_q_vec4(s0 + i, h, d4);
+    }
+    for (var j: u32 = 0u; j < TN; j = j + 1u) {
+      k[j] = load_k_vec4(c0 + j, kvh, d4);
+    }
+    for (var i: u32 = 0u; i < TM; i = i + 1u) {
+      acc[i] += vec4<f32>(
+          dot(q[i], k[0]),
+          dot(q[i], k[1]),
+          dot(q[i], k[2]),
+          dot(q[i], k[3]));
+    }
     d4 = d4 + 4u;
   }
 

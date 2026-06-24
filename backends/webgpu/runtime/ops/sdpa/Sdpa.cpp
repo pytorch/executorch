@@ -29,9 +29,6 @@ namespace {
 // Register-tile dims; MUST match TM/TN in the reg WGSL kernels.
 constexpr int64_t kSdpaTileM = 4;
 constexpr int64_t kSdpaTileN = 4;
-inline int64_t sdpa_ceil_div(int64_t a, int64_t b) {
-  return (a + b - 1) / b;
-}
 
 // Uniform param structs (all 16-byte aligned, matching the WGSL Params).
 struct UpdateCacheParams {
@@ -477,8 +474,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       throw std::runtime_error(
           "WebGPU sdpa: Hq*S*context_len exceeds uint32 max");
     }
-    const int64_t qk_tiles = Hq * sdpa_ceil_div(S, kSdpaTileM) *
-        sdpa_ceil_div(context_len, kSdpaTileN);
+    const int64_t qk_tiles = Hq * utils::div_up(S, kSdpaTileM) *
+        utils::div_up(context_len, kSdpaTileN);
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(qk_tiles), qk_wg, "QK");
     AttnWeightsParams p = make_attn_weights_params(
@@ -527,7 +524,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // --- Dispatch 5: AV -> out. One thread per TM x TN tile.
   {
     const int64_t av_tiles =
-        Hq * sdpa_ceil_div(S, kSdpaTileM) * sdpa_ceil_div(D, kSdpaTileN);
+        Hq * utils::div_up(S, kSdpaTileM) * utils::div_up(D, kSdpaTileN);
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(av_tiles), av_wg, "AV");
     ComputeOutParams p = make_compute_out_params(S, Hq, Hkv, D, context_len, g);
@@ -600,8 +597,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           AttnWeightsParams qp =
               make_attn_weights_params(S, Hq, Hkv, D, ctx, pos, g, scale);
           wgpuQueueWriteBuffer(gr.queue(), qk_buf, 0, &qp, sizeof(qp));
-          const int64_t qk_tiles = Hq * sdpa_ceil_div(S, kSdpaTileM) *
-              sdpa_ceil_div(ctx, kSdpaTileN);
+          const int64_t qk_tiles = Hq * utils::div_up(S, kSdpaTileM) *
+              utils::div_up(ctx, kSdpaTileN);
           const uint32_t qk_wgc = utils::compute_1d_workgroup_count(
               gr.device(),
               static_cast<uint32_t>(qk_tiles),
