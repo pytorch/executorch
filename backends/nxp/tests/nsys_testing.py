@@ -101,6 +101,8 @@ def _run_delegated_executorch_program(
     mocker,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    use_profiling: bool = False,
+    use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
 ) -> tuple[ExportedProgram, str]:
@@ -129,6 +131,8 @@ def _run_delegated_executorch_program(
             delegate_to_npu=True,
             use_qat=use_qat,
             train_fn=train_fn,
+            use_profiling=use_profiling,
+            use_neutron_for_format_conversion=use_neutron_for_format_conversion,
             operators_not_to_delegate=operators_not_to_delegate,
             remove_quant_io_ops=remove_quant_io_ops,
         )
@@ -405,6 +409,8 @@ def lower_run_compare(
     reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    use_profiling: bool = False,
+    use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
 ):
@@ -424,6 +430,10 @@ def lower_run_compare(
     :param reference_model: Version of the model which will be run to obtain reference output data.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
+    :param use_profiling: Enable profiling for neutron delegated model.
+    :param use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
+                                                ensure that the IO matches the executorch partition, which will be
+                                                delegated to Neutron,
     :param operators_not_to_delegate: list of operators not to delegate.
     :param remove_quant_io_ops: If true, IO q-ops are removed and verification is done on quantized
         version of dataset (quantized INT8 input samples).
@@ -468,6 +478,8 @@ def lower_run_compare(
         mocker,
         use_qat=use_qat,
         train_fn=train_fn,
+        use_profiling=use_profiling,
+        use_neutron_for_format_conversion=use_neutron_for_format_conversion,
         operators_not_to_delegate=operators_not_to_delegate,
         remove_quant_io_ops=remove_quant_io_ops,
     )
