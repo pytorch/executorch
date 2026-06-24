@@ -44,7 +44,7 @@ TestCase create_test_case_from_config(
         config.channel_size < kRefDimSizeLimit);
   std::string prefix = is_perf ? "PERF" : "ACCU";
   std::string in_dtype = dtype_short(input_dtype);
-  std::string out_dtype = "f32,i8"; // pair: (scale, zero_point)
+  std::string out_dtype = "f32,f32"; // pair: (scale, zero_point)
   std::string shape_str = "[" + std::to_string(config.num_channels) + "," +
       std::to_string(config.channel_size) + "]";
   std::string storage_str = repr_str(storage_type, utils::kWidthPacked);
@@ -81,10 +81,10 @@ TestCase create_test_case_from_config(
       utils::kWidthPacked,
       DataGenType::ZEROS);
 
-  // Output zero_point tensor (int8) - [num_channels]
+  // Output zero_point tensor (float) - [num_channels]
   ValueSpec zero_point_out(
       {config.num_channels},
-      vkapi::kChar, // int8 for quantized zero point
+      vkapi::kFloat,
       utils::kTexture3D, // Always buffer as per requirement
       utils::kWidthPacked,
       DataGenType::ZEROS);
@@ -289,7 +289,7 @@ void choose_qparams_per_channel_reference_impl(TestCase& test_case) {
 
   // Prepare output data
   auto& scale_ref_data = scale_out_spec.get_ref_float_data();
-  auto& zero_point_ref_data = zero_point_out_spec.get_ref_int8_data();
+  auto& zero_point_ref_data = zero_point_out_spec.get_ref_float_data();
   scale_ref_data.resize(num_channels);
   zero_point_ref_data.resize(num_channels);
 
@@ -312,9 +312,9 @@ void choose_qparams_per_channel_reference_impl(TestCase& test_case) {
     calculate_scale_and_zero_point_reference(
         min_val, max_val, quant_min, quant_max, scale, zero_point);
 
-    // Store results (cast zero_point to int8)
+    // Store results
     scale_ref_data[channel] = scale;
-    zero_point_ref_data[channel] = static_cast<int8_t>(zero_point);
+    zero_point_ref_data[channel] = static_cast<float>(zero_point);
   }
 }
 
