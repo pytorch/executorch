@@ -5,7 +5,10 @@
 
 import warnings
 
-from executorch.backends.arm.common.pipeline_config import SoftmaxDecompositionConfig
+from executorch.backends.arm.common.pipeline_config import (
+    LeakyReLULoweringConfig,
+    SoftmaxDecompositionConfig,
+)
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
@@ -72,11 +75,18 @@ def test_compile_spec_vgf_no_quant():
         EthosUCompileSpec._from_list(spec_list)
 
 
-def test_compile_spec_vgf_uses_default_pipeline_config():
+def test_compile_spec_vgf_defaults_leaky_relu_to_decompose():
     compile_spec = VgfCompileSpec()
     pipeline_config = compile_spec._get_pass_pipeline_config()
 
-    assert pipeline_config.is_default()
+    assert pipeline_config.leaky_relu is LeakyReLULoweringConfig.DECOMPOSE
+
+
+def test_compile_spec_tosa_defaults_leaky_relu_to_decompose():
+    compile_spec = TosaCompileSpec("TOSA-1.0+INT")
+    pipeline_config = compile_spec._get_pass_pipeline_config()
+
+    assert pipeline_config.leaky_relu is LeakyReLULoweringConfig.DECOMPOSE
 
 
 def test_compile_spec_tosa_INT():
