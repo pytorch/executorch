@@ -91,8 +91,10 @@ xfails_max_pool2d: dict[str, xfail_type] = {
 
 
 @parametrize("test_case", test_cases, xfails=xfails_max_pool2d)
-def test_dialect_max_pool2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_max_pool2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -101,8 +103,10 @@ def test_dialect_max_pool2d(test_case):
 
 
 @parametrize("test_case", fallback_test_cases)
-def test_dialect_max_pool2d_fallback(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_max_pool2d_fallback(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         {
             "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
@@ -119,6 +123,8 @@ def test_dialect_max_pool2d_fallback(test_case):
 
 
 @parametrize("test_case", test_cases, xfails=xfails_max_pool2d)
-def test_implementation_max_pool2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_max_pool2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)

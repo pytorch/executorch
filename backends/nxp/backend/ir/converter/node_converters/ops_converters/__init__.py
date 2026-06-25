@@ -31,6 +31,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import (
     ConvolutionConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.exp_converter import (
+    ExpConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
     GetItemConverter,
 )
@@ -39,6 +42,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.leaky_relu_converter import (
     LeakyReluConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.log_converter import (
+    LogConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool2d_with_indices_converter import (
     MaxPool2DWithIndicesConverter,
@@ -108,9 +114,11 @@ __all__ = [
     "CloneConverter",
     "ConstantPadNDConverter",
     "ConvolutionConverter",
+    "ExpConverter",
     "GetItemConverter",
     "HardTanhConverter",
     "LeakyReluConverter",
+    "LogConverter",
     "MaxPool2DWithIndicesConverter",
     "MeanDimConverter",
     "MMConverter",

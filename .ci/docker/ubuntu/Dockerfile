@@ -93,9 +93,10 @@ RUN rm install_arm.sh
 
 ARG ZEPHYR_SDK
 COPY ./common/install_zephyr.sh install_zephyr.sh
+COPY ./common/zephyr_sdk_release_proxy.py zephyr_sdk_release_proxy.py
 COPY ./common/utils.sh utils.sh
 RUN if [ -n "${ZEPHYR_SDK}" ]; then bash ./install_zephyr.sh; fi
-RUN rm install_zephyr.sh utils.sh
+RUN rm install_zephyr.sh zephyr_sdk_release_proxy.py utils.sh
 
 ARG QNN_SDK
 
