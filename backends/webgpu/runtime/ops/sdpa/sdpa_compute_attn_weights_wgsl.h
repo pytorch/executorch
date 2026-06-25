@@ -13,11 +13,11 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_compute_attn_weights.wgsl - DO NOT EDIT.
-// wgsl-sha256: d177264689e6c50e1794a0599808f3cfe6f30ba99c5084d3c8324da4b9f89d10
+// wgsl-sha256: 4eef09b234fd926cdc0daf18d03e39cf4fd57dfa4bc67724b4878b7dc68d1254
 inline constexpr const char* kSdpaComputeAttnWeightsWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
-@group(0) @binding(1) var<storage, read> t_q: array<f32>;
-@group(0) @binding(2) var<storage, read> t_k_cache: array<f32>;
+@group(0) @binding(1) var<storage, read> t_q: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> t_k_cache: array<vec4<f32>>;
 
 struct Params {
   S: u32,
@@ -39,30 +39,21 @@ override wg_size: u32 = 64;
 const TM: u32 = 4u;
 const TN: u32 = 4u;
 
+// D is a multiple of 4 (host-guarded), so a d4 chunk is fully in-bounds — no per-lane check.
 fn load_q_vec4(s: u32, h: u32, d4: u32) -> vec4<f32> {
-  var r = vec4<f32>(0.0, 0.0, 0.0, 0.0);
   if (s >= params.S) {
-    return r;
+    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
-  let base = s * params.Hq * params.D + h * params.D;
-  if (d4 + 0u < params.D) { r.x = t_q[base + d4 + 0u]; }
-  if (d4 + 1u < params.D) { r.y = t_q[base + d4 + 1u]; }
-  if (d4 + 2u < params.D) { r.z = t_q[base + d4 + 2u]; }
-  if (d4 + 3u < params.D) { r.w = t_q[base + d4 + 3u]; }
-  return r;
+  let base = s * params.Hq * params.D + h * params.D + d4;
+  return t_q[base / 4u];
 }
 
 fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
-  var r = vec4<f32>(0.0, 0.0, 0.0, 0.0);
   if (c >= params.context_len) {
-    return r;
+    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
-  let base = c * params.Hkv * params.D + kvh * params.D;
-  if (d4 + 0u < params.D) { r.x = t_k_cache[base + d4 + 0u]; }
-  if (d4 + 1u < params.D) { r.y = t_k_cache[base + d4 + 1u]; }
-  if (d4 + 2u < params.D) { r.z = t_k_cache[base + d4 + 2u]; }
-  if (d4 + 3u < params.D) { r.w = t_k_cache[base + d4 + 3u]; }
-  return r;
+  let base = c * params.Hkv * params.D + kvh * params.D + d4;
+  return t_k_cache[base / 4u];
 }
 
 fn store_qk(s: u32, c: u32, h: u32, raw: f32) {
