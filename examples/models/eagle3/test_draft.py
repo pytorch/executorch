@@ -73,6 +73,119 @@ def test_norm_before_residual_changes_output():
     assert not torch.allclose(outs[0], outs[1]), "norm_before_residual had no effect"
 
 
+def test_kv_cache_matches_full_recompute():
+    # Cached prefill + single-step decode must equal stateless full recompute.
+    torch.manual_seed(0)
+    cfg = tiny_config()
+    model = Eagle3Draft(cfg).to(torch.float32).eval()
+    T, prefill = 6, 3
+    feat = model.fuse(
+        torch.randn(1, T, len(cfg.aux_hidden_state_layers) * cfg.target_hidden_size)
+    )
+    emb = model.embed(torch.randint(0, cfg.target_vocab_size, (T,))).unsqueeze(0)
+
+    with torch.no_grad():
+        ref_logits, ref_g = model(emb, feat, torch.arange(T))
+
+        model.reset_cache()
+        pl, pg = model.forward_cached(
+            emb[:, :prefill], feat[:, :prefill], torch.arange(prefill)
+        )
+        torch.testing.assert_close(pl, ref_logits[:, :prefill])
+        torch.testing.assert_close(pg, ref_g[:, :prefill])
+
+        for i in range(prefill, T):
+            sl, sg = model.forward_cached(
+                emb[:, i : i + 1], feat[:, i : i + 1], torch.arange(i, i + 1)
+            )
+            torch.testing.assert_close(sl, ref_logits[:, i : i + 1])
+            torch.testing.assert_close(sg, ref_g[:, i : i + 1])
+
+
+def test_reset_cache_isolates_sequences():
+    # A second sequence after reset_cache must match a fresh full recompute.
+    torch.manual_seed(0)
+    cfg = tiny_config()
+    model = Eagle3Draft(cfg).to(torch.float32).eval()
+    T = 4
+    feat = model.fuse(
+        torch.randn(1, T, len(cfg.aux_hidden_state_layers) * cfg.target_hidden_size)
+    )
+    emb = model.embed(torch.randint(0, cfg.target_vocab_size, (T,))).unsqueeze(0)
+    with torch.no_grad():
+        model.forward_cached(emb, feat, torch.arange(T))  # pollute the cache
+        model.reset_cache()
+        cached, _ = model.forward_cached(emb, feat, torch.arange(T))
+        ref, _ = model(emb, feat, torch.arange(T))
+    torch.testing.assert_close(cached, ref)
+
+
+def test_offset_seed_after_reset_is_rejected():
+    # The contiguous-from-0 invariant is enforced in eager: an offset seed would
+    # attend to zeroed slots, so forward_cached rejects it outright.
+    torch.manual_seed(0)
+    cfg = tiny_config()
+    model = Eagle3Draft(cfg).to(torch.float32).eval()
+    T = 4
+    feat = model.fuse(
+        torch.randn(1, T, len(cfg.aux_hidden_state_layers) * cfg.target_hidden_size)
+    )
+    emb = model.embed(torch.randint(0, cfg.target_vocab_size, (T,))).unsqueeze(0)
+    model.reset_cache()
+    with pytest.raises(ValueError, match="non-contiguous cache seed"):
+        model.forward_cached(emb, feat, torch.arange(10, 10 + T))
+
+
+def test_gapped_positions_rejected():
+    cfg = tiny_config()
+    model = Eagle3Draft(cfg).to(torch.float32).eval()
+    emb = torch.randn(1, 3, cfg.hidden_size)
+    feat = torch.randn(1, 3, cfg.hidden_size)
+    model.reset_cache()
+    with pytest.raises(ValueError, match="contiguous ascending"):
+        model.forward_cached(emb, feat, torch.tensor([0, 2, 3]))
+
+
+def test_rollback_reseed_is_allowed():
+    # Overwriting already-written slots (speculative rollback) must be accepted.
+    torch.manual_seed(0)
+    cfg = tiny_config()
+    model = Eagle3Draft(cfg).to(torch.float32).eval()
+    emb = model.embed(torch.randint(0, cfg.target_vocab_size, (6,))).unsqueeze(0)
+    feat = model.fuse(
+        torch.randn(1, 6, len(cfg.aux_hidden_state_layers) * cfg.target_hidden_size)
+    )
+    with torch.no_grad():
+        model.reset_cache()
+        model.forward_cached(emb, feat, torch.arange(6))  # write slots 0..5
+        # re-decode at slot 4 (a rejected proposal rolled back) — allowed.
+        model.forward_cached(emb[:, 4:5], feat[:, 4:5], torch.arange(4, 5))
+
+
+def test_post_rollback_gap_is_rejected():
+    # A rollback overwrite shrinks the valid prefix: after writing 0..5 then
+    # re-decoding slot 4, slot 5 holds stale (rejected) K/V, so a write starting
+    # at 6 must be rejected until slot 5 is rewritten.
+    cfg = tiny_config()
+    model = Eagle3Draft(cfg).to(torch.float32).eval()
+    model.reset_cache()
+    model._validate_contiguous(torch.arange(6))  # write slots 0..5
+    model._validate_contiguous(torch.arange(4, 5))  # rollback overwrite slot 4
+    with pytest.raises(ValueError, match="non-contiguous"):
+        model._validate_contiguous(torch.arange(6, 7))  # slot 5 stale -> rejected
+    model._validate_contiguous(torch.arange(5, 6))  # rewrite slot 5 -> ok
+    model._validate_contiguous(torch.arange(6, 7))  # now slot 6 -> ok
+
+
+def test_forward_cached_rejects_batch_gt_1():
+    cfg = tiny_config()
+    model = Eagle3Draft(cfg).to(torch.float32).eval()
+    emb = torch.randn(2, 3, cfg.hidden_size)
+    feat = torch.randn(2, 3, cfg.hidden_size)
+    with pytest.raises(ValueError, match="batch size 1"):
+        model.forward_cached(emb, feat, torch.arange(3))
+
+
 def test_draft_to_target_mapping():
     model = Eagle3Draft(tiny_config()).eval()
     model.d2t.copy_(torch.arange(model.config.draft_vocab_size))  # offset = id
