@@ -140,6 +140,7 @@ _CASES = [
     {"name": "distinct_rows", "shape": (1, 1, 5, 256), "input_fn": _distinct_rows},
     {"name": "single_row", "shape": (1, 1, 1, 896)},
     {"name": "mixed_sign", "shape": (1, 1, 4, 128), "input_fn": _mixed_sign},
+    {"name": "llama_hidden_2048", "shape": (1, 1, 1, 2048)},
     {"name": "large_4096", "shape": (1, 1, 1, 4096)},
     {"name": "large_8192", "shape": (1, 1, 1, 8192)},
     {
