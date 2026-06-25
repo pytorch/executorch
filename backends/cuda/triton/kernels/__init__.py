@@ -17,6 +17,7 @@ from executorch.backends.cuda.triton.kernels.int4_matmul import (
     int4_matvec,
 )
 from executorch.backends.cuda.triton.kernels.sdpa import sdpa, sdpa_decode_splitk
+from executorch.backends.cuda.triton.kernels.sdpa_midm import sdpa_midm
 from executorch.backends.cuda.triton.kernels.topk import topk
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "moe_align_block_size",
     "sdpa",
     "sdpa_decode_splitk",
+    "sdpa_midm",
     "topk",
 ]
 

@@ -168,6 +168,12 @@ class Gemma4_31BConfig:
     # Runtime
     max_seq_len: int = 4096
 
+    # Route the full-attention layers' SDPA through the length-bounded mid-M
+    # Triton kernel for small query windows (e.g. EAGLE target_verify). Off by
+    # default; enable via Gemma4_31B.set_midm_sdpa(True) before export. Only
+    # affects non-sliding layers and M in [2, MIDM_MAX_M].
+    use_midm_sdpa: bool = False
+
     # EAGLE-3 auxiliary hidden-state taps. Indices use the HF/vLLM convention:
     # 0 = embedding output, k = output after decoder layer k-1. Empty disables
     # tap collection.
@@ -283,6 +289,11 @@ class Gemma4Attention(nn.Module):
 
         self.register_buffer("inv_freq", self._compute_inv_freq(), persistent=False)
 
+        # Mid-M SDPA is opt-in (set by Gemma4_31B.set_midm_sdpa) and only valid
+        # for full-attention layers — sliding layers use a ring cache whose slot
+        # index != position, which the flat-buffer kernel assumes.
+        self.use_midm_sdpa = False
+
         # KV cache. Sliding layers use a ring buffer (2x window) to save
         # memory; full layers use a flat buffer (max_seq_len).
         if self.is_sliding:
@@ -330,6 +341,7 @@ class Gemma4Attention(nn.Module):
         x: torch.Tensor,
         input_pos: torch.Tensor,
         attn_mask: torch.Tensor,
+        valid_len=None,
     ) -> torch.Tensor:
         B, T, _ = x.shape
 
@@ -368,15 +380,35 @@ class Gemma4Attention(nn.Module):
         # 1/sqrt(d) factor into their trained weights, so the standard SDPA
         # default of 1/sqrt(head_dim) would over-divide. enable_gqa lets the
         # kernel handle the head ratio without us materializing expanded K/V.
-        y = F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=attn_mask,
-            is_causal=False,
-            enable_gqa=True,
-            scale=self.scaling,
-        )
+        # Length-bounded mid-M kernel for small verify windows on full-attention
+        # layers; falls back to F.sdpa otherwise (M==1 decode, large-M prefill,
+        # sliding layers, or when disabled). Imported lazily and only when
+        # enabled so a CPU / non-mid-M import of the model never pulls in triton
+        # or the CUDA backend. M is static per exported method, so the mid-M
+        # branch resolves at trace time.
+        if self.use_midm_sdpa:
+            from executorch.backends.cuda.triton.kernels.sdpa_midm import midm_sdpa
+
+            y = midm_sdpa(
+                q,
+                k,
+                v,
+                input_pos,
+                attn_mask,
+                scale=self.scaling,
+                enable=True,
+                valid_len=valid_len,
+            )
+        else:
+            y = F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=attn_mask,
+                is_causal=False,
+                enable_gqa=True,
+                scale=self.scaling,
+            )
         y = y.transpose(1, 2).contiguous().view(B, T, self.n_heads * self.head_dim)
         return self.o_proj(y)
 
@@ -415,12 +447,13 @@ class Gemma4DecoderLayer(nn.Module):
         input_pos: torch.Tensor,
         sliding_mask: torch.Tensor,
         full_mask: torch.Tensor,
+        valid_len=None,
     ) -> torch.Tensor:
         attn_mask = sliding_mask if self.is_sliding else full_mask
 
         residual = x
         h = self.input_layernorm(x)
-        h = self.self_attn(h, input_pos, attn_mask)
+        h = self.self_attn(h, input_pos, attn_mask, valid_len)
         h = self.post_attention_layernorm(h)
         x = residual + h
 
@@ -501,6 +534,7 @@ class Gemma4_31B(nn.Module):
         tokens: torch.LongTensor,
         input_pos: torch.LongTensor,
         collect_taps: bool,
+        kv_window: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Embed -> decoder layers -> final norm.
 
@@ -523,8 +557,18 @@ class Gemma4_31B(nn.Module):
             taps.append(x)  # index 0 == embedding output
 
         sliding_mask, full_mask = self._build_masks(input_pos)
+        # Single shared key bound for the mid-M kernel: computed once here (not
+        # per layer) so the graph has one SymInt, and only for the verify window
+        # (T in [2, MIDM_MAX_M]) so prefill/decode never materialize it.
+        # valid_len = the window tensor's length (a BACKED SymInt, like prefill's
+        # dynamic T) -> the ET CUDA backend lowers it; an unbacked .item() bound
+        # does not. The runner passes a (anchor_pos + K + 1,)-length window for
+        # target_verify; prefill/decode pass None (-> F.sdpa, kernel unused).
+        valid_len = None
+        if self.config.use_midm_sdpa and kv_window is not None:
+            valid_len = kv_window.shape[0]
         for i, layer in enumerate(self.layers):
-            x = layer(x, input_pos, sliding_mask, full_mask)
+            x = layer(x, input_pos, sliding_mask, full_mask, valid_len)
             if collect_taps and (i + 1) in tap_layers:
                 taps.append(x)  # output of layer i == hidden-state index i+1
 
@@ -565,23 +609,37 @@ class Gemma4_31B(nn.Module):
         validate_eagle_tap_layers(layers, self.config.num_hidden_layers)
         self.config.eagle_tap_layers = list(layers)
 
+    def set_midm_sdpa(self, enabled: bool) -> None:
+        """Route full-attention layers' SDPA through the mid-M kernel (small
+        query windows only). No-op on sliding layers (ring cache). Call before
+        export; the dispatch is M-gated so prefill/decode are unaffected."""
+        self.config.use_midm_sdpa = enabled
+        for layer in self.layers:
+            if not layer.self_attn.is_sliding:
+                layer.self_attn.use_midm_sdpa = enabled
+
     def forward_logits_taps(
         self,
         tokens: torch.LongTensor,
         input_pos: torch.LongTensor,
         last_logits_only: bool = True,
+        kv_window: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         """Return soft-capped logits and EAGLE-3 tap features.
 
         Defaults to final-position logits. Set ``last_logits_only=False`` to
         materialize per-position float32 logits over the full vocabulary.
+        ``kv_window`` (length = valid KV positions) enables the mid-M SDPA bound
+        for the verify forward; None keeps standard F.sdpa.
 
         Returns:
             logits: (B, 1, vocab_size) soft-capped float32, or (B, T, vocab_size)
                     when ``last_logits_only=False``.
             taps:   (B, T, len(eagle_tap_layers) * hidden_size) or None.
         """
-        x, taps = self._decode(tokens, input_pos, collect_taps=True)
+        x, taps = self._decode(
+            tokens, input_pos, collect_taps=True, kv_window=kv_window
+        )
         if last_logits_only:
             x = x[:, -1:, :]
         logits = self.lm_head(x).float()
