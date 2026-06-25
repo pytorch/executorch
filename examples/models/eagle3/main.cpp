@@ -230,8 +230,7 @@ int main(int argc, char** argv) {
       Module::LoadMode::MmapUseMlockIgnoreErrors,
       /*event_tracer=*/nullptr,
       /*memory_allocator=*/nullptr,
-      /*temp_allocator=*/nullptr,
-      /*share_memory_arenas=*/true);
+      /*temp_allocator=*/nullptr);
 
   // Weight sharing across methods (prefill and target_verify share the target).
 #ifdef EXECUTORCH_BUILD_CUDA

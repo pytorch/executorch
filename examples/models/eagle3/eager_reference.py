@@ -56,7 +56,7 @@ def load_target(target_dir: str, max_seq_len: int, bf16: bool = False):
     )
     _move_to_cuda(model, config)
     model.eval()
-    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     return model
 

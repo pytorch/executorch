@@ -36,6 +36,7 @@ class TestTanh:
         model,
         input_shape,
         mocker,
+        request,
         use_qat=False,
         expected_delegated_ops=None,
     ):
@@ -55,6 +56,7 @@ class TestTanh:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
             use_qat=use_qat,
         )
@@ -63,10 +65,10 @@ class TestTanh:
     def inplace(self, request):
         return request.param
 
-    def test__qat__inplace(self, mocker, use_qat, inplace):
+    def test__qat__inplace(self, mocker, request, use_qat, inplace):
         shape = (23,)
         model = TanhModule(inplace)
-        self.assert_delegated(model, shape, mocker, use_qat=use_qat)
+        self.assert_delegated(model, shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "shape",
@@ -79,16 +81,20 @@ class TestTanh:
         ],
         ids=lambda shape: f"{len(shape)}D",
     )
-    def test__shapes(self, mocker, shape):
+    def test__shapes(self, mocker, request, shape):
         model = TanhModule()
-        self.assert_delegated(model, shape, mocker)
+        self.assert_delegated(model, shape, mocker, request)
 
-    def test__with_convolution(self, mocker):
+    def test__with_convolution(self, mocker, request):
         input_shape = (1, 3, 12, 16)
         channels = input_shape[1]
         model = Conv2dWithActivation(
             activation=torch.tanh, in_channels=channels, out_channels=channels
         )
         self.assert_delegated(
-            model, input_shape, mocker, expected_delegated_ops={Tanh: 1, Convolution: 1}
+            model,
+            input_shape,
+            mocker,
+            request,
+            expected_delegated_ops={Tanh: 1, Convolution: 1},
         )
