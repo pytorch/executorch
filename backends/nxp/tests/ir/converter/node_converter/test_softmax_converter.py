@@ -106,7 +106,15 @@ def test_softmax_delegation(input_shape, dim: int, mocker):
         # `dim` must be the second dimension, which must be a multiple of 8 (num_macs).
         pytest.param((1, 8, 2, 3), 1, id="4D_dim_1"),
         pytest.param((1, 8, 64, 64), 1, id="4D_WxH_limit"),
-        pytest.param((64, 128, 1, 64), -3, id="4D_dim_-3_total_size_limit"),
+        pytest.param(
+            (64, 128, 1, 64),
+            -3,
+            id="4D_dim_-3_total_size_limit",
+            marks=pytest.mark.xfail(
+                reason="EIEX-877: should start working when `softmax` is properly supported using new MLIR flow.",
+                strict=True,
+            ),
+        ),
     ],
 )
 def test_softmax_delegation__channel_first(input_shape, dim: int, mocker):
@@ -188,8 +196,24 @@ def test_softmax_delegation__unsupported_dimension_sizes(input_shape, dim: int):
 @pytest.mark.parametrize(
     "input_shape,dim",
     [
-        pytest.param((2, 8, 64, 64), -1, id="4D_WxH_exceeded"),
-        pytest.param((64, 128 + 8, 1, 64), -1, id="4D_total_size_exceeded"),
+        pytest.param(
+            (2, 8, 64, 64),
+            -1,
+            id="4D_WxH_exceeded",
+            marks=pytest.mark.xfail(
+                reason="EIEX-877: should start working when `softmax` is properly supported using new MLIR flow.",
+                strict=True,
+            ),
+        ),
+        pytest.param(
+            (64, 128 + 8, 1, 64),
+            -1,
+            id="4D_total_size_exceeded",
+            marks=pytest.mark.xfail(
+                reason="EIEX-877: should start working when `softmax` is properly supported using new MLIR flow.",
+                strict=True,
+            ),
+        ),
     ],
 )
 def test_softmax_delegation__unsupported_dimension_sizes__channels_first(
