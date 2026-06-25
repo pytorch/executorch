@@ -13,13 +13,13 @@ op during export.
 import torch
 import torch.nn.functional as F
 from executorch.backends.arm.ao_ext.mxfp import (
+    _cast_to_block_scaled_cpu_ref,
     mxfp_dtype_to_str,
     mxfp_str_to_dtype,
     MXFPDType,
     MXFPOpConfig,
 )
 from executorch.backends.arm.ao_ext.mxfp_tosa_lib import MXFP_TOSA_LIB
-from torchao.prototype.mx_formats.config import ScaleCalculationMode
 from torchao.prototype.mx_formats.mx_tensor import to_dtype, to_mx
 
 
@@ -31,6 +31,12 @@ MXFP_TOSA_LIB.define(
     "linear(Tensor input, Tensor weight_qdata, Tensor weight_scale, "
     "Tensor? bias=None, SymInt block_size=32, str weight_payload_dtype='') -> Tensor"
 )
+
+
+_SUPPORTED_OUTPUT_DTYPES: set[torch.dtype] = {
+    torch.float32,
+    torch.bfloat16,
+}
 
 
 def _get_mx_elem_dtype(
@@ -93,27 +99,6 @@ def _mxfp_linear_fake(
     return input.new_empty(output_shape, dtype=torch.float32)
 
 
-def _cast_to_block_scaled_cpu_ref(
-    input: torch.Tensor,
-    output_dtype: MXFPDType,
-    block_size: int,
-) -> torch.Tensor:
-    """Emulate the current TOSA activation cast in eager mode."""
-    input_scale, input_qdata = to_mx(
-        input.to(torch.float32).contiguous(),
-        elem_dtype=output_dtype,
-        block_size=block_size,
-        scaling_mode=ScaleCalculationMode.RCEIL,
-    )
-    return to_dtype(
-        input_qdata,
-        input_scale,
-        output_dtype,
-        block_size,
-        torch.float32,
-    )
-
-
 @torch.library.impl("tosa_mxfp::linear", "cpu", lib=MXFP_TOSA_LIB)
 def _mxfp_linear_cpu(
     input: torch.Tensor,
@@ -158,11 +143,14 @@ class MXFPLinearOp(torch.nn.Module):
         weight_qdata: torch.Tensor,
         weight_scale: torch.Tensor,
         bias: torch.Tensor | None,
-        config: MXFPOpConfig,
+        weight_dtype: MXFPDType,
+        block_size: int,
+        output_dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__()
-        self.config = config
-        self.weight_dtype = mxfp_dtype_to_str(config.weight_dtype)
+        self.weight_dtype = mxfp_dtype_to_str(weight_dtype)
+        self.block_size = block_size
+        self.output_dtype = output_dtype
 
         self.register_buffer("weight_qdata", weight_qdata, persistent=True)
         self.register_buffer("weight_scale", weight_scale, persistent=True)
@@ -179,14 +167,17 @@ class MXFPLinearOp(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.ops.tosa_mxfp.linear.default(
+        output = torch.ops.tosa_mxfp.linear.default(
             x,
             self.weight_qdata,
             self.weight_scale,
             self.bias,
-            self.config.block_size,
+            self.block_size,
             self.weight_dtype,
         )
+        if self.output_dtype != torch.float32:
+            output = output.to(self.output_dtype)
+        return output
 
 
 def transform_linear_to_mxfp(
@@ -216,4 +207,14 @@ def transform_linear_to_mxfp(
     weight_scale = weight_scale.unsqueeze(0)
 
     bias = module.bias.detach().to(torch.float32) if module.bias is not None else None
-    return MXFPLinearOp(weight_qdata, weight_scale, bias, config)
+    output_dtype = weight.dtype
+    if output_dtype not in _SUPPORTED_OUTPUT_DTYPES:
+        raise ValueError(f"Unsupported output_dtype: {output_dtype}")
+    return MXFPLinearOp(
+        weight_qdata,
+        weight_scale,
+        bias,
+        config.weight_dtype,
+        config.block_size,
+        output_dtype,
+    )

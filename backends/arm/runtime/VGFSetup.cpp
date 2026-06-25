@@ -783,6 +783,73 @@ static bool find_memory_index(
       memory_type_out);
 }
 
+bool VgfRepr::map_persistent_io_memory() {
+  unmap_persistent_io_memory();
+
+  for (auto& io : IOs) {
+    if (io.memory == VK_NULL_HANDLE) {
+      ET_LOG(Error, "Cannot persistently map null Vulkan IO memory");
+      unmap_persistent_io_memory();
+      return false;
+    }
+
+    void* persistent_memory = nullptr;
+
+    // IO resources may alias the same VkDeviceMemory. Vulkan memory must not be
+    // mapped more than once at the same time, so map each unique memory once
+    // and share the returned pointer across aliased IO entries.
+    // Make sure that memory is HOST_VISIBLE and HOST_COHERENT.
+    bool found_existing_mapping = false;
+    auto mapped_memory_it = std::find_if(
+        persistent_mapped_memories.begin(),
+        persistent_mapped_memories.end(),
+        [&](const auto& mapped_memory) {
+          return mapped_memory.memory == io.memory;
+        });
+
+    if (mapped_memory_it != persistent_mapped_memories.end()) {
+      persistent_memory = mapped_memory_it->data;
+      found_existing_mapping = true;
+    }
+
+    if (!found_existing_mapping) {
+      VkResult result = vkMapMemory(
+          vk_device, io.memory, 0, VK_WHOLE_SIZE, 0, &persistent_memory);
+      if (result != VK_SUCCESS) {
+        ET_LOG(
+            Error,
+            "Failed to persistently map Vulkan IO memory, error %d",
+            result);
+        unmap_persistent_io_memory();
+        return false;
+      }
+
+      persistent_mapped_memories.push_back(PersistentMappedMemory{
+          .memory = io.memory,
+          .data = persistent_memory,
+      });
+    }
+
+    io.persistent_memory = persistent_memory;
+  }
+
+  return true;
+}
+
+void VgfRepr::unmap_persistent_io_memory() {
+  for (const auto& mapped_memory : persistent_mapped_memories) {
+    if (mapped_memory.memory != VK_NULL_HANDLE &&
+        mapped_memory.data != nullptr) {
+      vkUnmapMemory(vk_device, mapped_memory.memory);
+    }
+  }
+  persistent_mapped_memories.clear();
+
+  for (auto& io : IOs) {
+    io.persistent_memory = nullptr;
+  }
+}
+
 VkResult allocate_memory(
     VkPhysicalDevice physical,
     VkDevice device,
@@ -1844,6 +1911,7 @@ bool VgfRepr::process_vgf(
                  VK_NULL_HANDLE,
                  tensor_memory,
                  {0, 0, 0},
+                 nullptr,
                  owns_memory,
                  true,
                  is_in});
@@ -1936,6 +2004,7 @@ bool VgfRepr::process_vgf(
                  VK_NULL_HANDLE,
                  buffer_memory,
                  {0, 0, 0},
+                 nullptr,
                  owns_memory,
                  true,
                  is_in});
@@ -2122,6 +2191,7 @@ bool VgfRepr::process_vgf(
                  image_memory,
                  staging_memory,
                  image_extent,
+                 nullptr,
                  true,
                  owns_image_memory,
                  is_in});
@@ -3438,6 +3508,15 @@ bool VgfRepr::process_vgf(
     vkEndCommandBuffer(vk_execute_cmd);
   }
 
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_MAP_IO_MEMORY");
+
+    if (!map_persistent_io_memory()) {
+      ET_LOG(Error, "Failed to persistently map VGF IO memory");
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -3498,6 +3577,8 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
 }
 
 void VgfRepr::free_vgf() {
+  unmap_persistent_io_memory();
+
   if (vk_timestamp_query_pool != VK_NULL_HANDLE) {
     vkDestroyQueryPool(vk_device, vk_timestamp_query_pool, nullptr);
     vk_timestamp_query_pool = VK_NULL_HANDLE;
