@@ -13,6 +13,13 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
+from executorch.backends.qualcomm.builders.qnn_constants import (
+    is_context_loader_node,
+    is_context_loader_target,
+    OpContextLoader,
+)
+from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
+from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
@@ -28,13 +35,120 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.exir import to_edge
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.library import Library
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestPasses(unittest.TestCase):
+    def test_context_loader_edge_op_is_delegated(self):
+        op_name = "ctx_loader_delegation"
+        graph_name = "forward"
+        ctx_bin = b"qnn_context_binary"
+        custom_op = Library(OpContextLoader.namespace, "FRAGMENT")
+        self.addCleanup(custom_op._destroy)
+        custom_op.define(f"{op_name}(Tensor[] inputs) -> Any")
+
+        @torch.library.impl(
+            custom_op, op_name, dispatch_key="CompositeExplicitAutograd"
+        )
+        def op_impl(inputs):
+            return (torch.zeros((1, 2), device="meta", dtype=inputs[0].dtype),)
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return getattr(
+                    getattr(torch.ops, OpContextLoader.namespace), op_name
+                ).default((x,))
+
+        exported_program = torch.export.export(
+            Model(), (torch.ones(1, 2),), strict=True
+        )
+        edge_program_manager = to_edge(
+            {graph_name: exported_program},
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        context_loader_nodes = [
+            node
+            for node in edge_program_manager._edge_programs[graph_name].graph.nodes
+            if is_context_loader_node(node, op_name)
+        ]
+        self.assertEqual(1, len(context_loader_nodes))
+        self.assertTrue(is_context_loader_node(context_loader_nodes[0]))
+        context_loader_nodes[0].meta[OpContextLoader.meta_ctx_bin] = ctx_bin
+        self.assertEqual(
+            ctx_bin,
+            context_loader_nodes[0].meta[OpContextLoader.meta_ctx_bin],
+        )
+
+        support = QnnOperatorSupport.__new__(QnnOperatorSupport)
+        support.phase = "QnnPartitioner"
+        self.assertTrue(support.is_node_supported(None, context_loader_nodes[0]))
+
+    def test_is_context_loader_target_predicate(self):
+        op_name = "ctx_loader_predicate"
+        custom_op = Library(OpContextLoader.namespace, "FRAGMENT")
+        self.addCleanup(custom_op._destroy)
+        custom_op.define(f"{op_name}(Tensor[] inputs) -> Any")
+
+        # Plain OpOverload in the context-loader namespace must match (the
+        # _op unwrap must not break the non-edge-dialect target case).
+        qaisw_op = getattr(
+            getattr(torch.ops, OpContextLoader.namespace), op_name
+        ).default
+        self.assertTrue(is_context_loader_target(qaisw_op, op_name))
+        self.assertFalse(is_context_loader_target(qaisw_op, "different_op"))
+
+        # Ops in other namespaces must not match, including an edge op
+        # (unwrapped via _op) whose namespace is not the loader's.
+        self.assertFalse(is_context_loader_target(torch.ops.aten.add.default))
+        self.assertFalse(is_context_loader_target(exir_ops.edge.aten.add.Tensor))
+
+    def test_build_op_wrappers_returns_context_binary(self):
+        op_name = "ctx_loader_build"
+        graph_name = "forward"
+        ctx_bin = b"qnn_context_binary"
+        custom_op = Library(OpContextLoader.namespace, "FRAGMENT")
+        self.addCleanup(custom_op._destroy)
+        custom_op.define(f"{op_name}(Tensor[] inputs) -> Any")
+
+        @torch.library.impl(
+            custom_op, op_name, dispatch_key="CompositeExplicitAutograd"
+        )
+        def op_impl(inputs):
+            return (torch.zeros((1, 2), device="meta", dtype=inputs[0].dtype),)
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return getattr(
+                    getattr(torch.ops, OpContextLoader.namespace), op_name
+                ).default((x,))
+
+        exported_program = torch.export.export(
+            Model(), (torch.ones(1, 2),), strict=True
+        )
+        edge_program = to_edge(
+            {graph_name: exported_program},
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )._edge_programs[graph_name]
+        for node in edge_program.graph.nodes:
+            if is_context_loader_node(node, op_name):
+                node.meta[OpContextLoader.meta_ctx_bin] = ctx_bin
+
+        # For a graph whose only op is the context-binary loader, _build_op_wrappers
+        # returns the stamped context binary directly, before any QNN compilation.
+        result = QnnBackend._build_op_wrappers(
+            edge_program,
+            enable_tensor_dump=False,
+            op_package_infos=[],
+            use_mha2sha=False,
+            backend_type=QnnExecuTorchBackendType.kHtpBackend,
+        )
+        self.assertEqual(ctx_bin, result)
+
     def _build_quantized_graph(self):
         """Build a quantized graph through AnnotateQuantAttrs + FoldQDQ."""
 

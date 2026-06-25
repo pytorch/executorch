@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
-from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.qnn_constants import is_context_loader_node
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
@@ -95,7 +95,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         if (
             node.target in allow_list_operator
             # bypass if custom op appears
-            or OpContextLoader.namespace == node.target.namespace
+            or is_context_loader_node(node)
             # bypass dequantize op for parameters & buffers
             or node.meta.get(QCOM_BYPASS_NODE, False)
         ):

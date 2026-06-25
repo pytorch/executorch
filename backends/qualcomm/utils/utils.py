@@ -26,7 +26,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
     QNN_TENSOR_TYPE_MAP,
 )
-from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.qnn_constants import (
+    is_context_loader_node,
+    OpContextLoader,
+)
 from executorch.backends.qualcomm.partition.qnn_partitioner import (
     generate_qnn_executorch_option,
     get_skip_decomp_table,
@@ -959,15 +962,13 @@ def from_context_binary(  # noqa: C901
     # temporarily remove the first parameter name.
     edge_prog_mgr = to_edge(
         {graph_name: bundle_prog["exported_program"]},
-        # do not alter name for custom op
-        compile_config=EdgeCompileConfig(_use_edge_ops=False),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
     # update meta with context binary
     for n in edge_prog_mgr._edge_programs[graph_name].graph.nodes:
-        if n.op == "call_function" and OpContextLoader.namespace in str(n.target):
+        if is_context_loader_node(n, op_name):
             n.meta[OpContextLoader.meta_ctx_bin] = ctx_bin
-            break
 
     bundle_prog["edge_program_manager"] = edge_prog_mgr.to_backend(
         QnnPartitioner(compiler_specs)
