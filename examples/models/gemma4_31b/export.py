@@ -195,8 +195,9 @@ def _export_cuda(
 
     # Prefill (T>=2): shim does dequant+cuBLAS (optimal for large M).
     max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
-    seq_dim = Dim("seq_len", min=5, max=max_prefill)
-    print(f"Exporting prefill (T in [2, {max_prefill}])...")
+    min_prefill = 5
+    seq_dim = Dim("seq_len", min=min_prefill, max=max_prefill)
+    print(f"Exporting prefill (T in [{min_prefill}, {max_prefill}])...")
     with torch.no_grad():
         prefill_ep = export(
             model,
@@ -255,6 +256,8 @@ def _export_cuda(
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
+            "get_min_prefill_chunk": min_prefill,
+            "get_sliding_window": config.sliding_window,
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
@@ -379,6 +382,7 @@ def _export_mlx(
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
+            "get_sliding_window": config.sliding_window,
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,

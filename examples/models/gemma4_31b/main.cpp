@@ -71,6 +71,11 @@ DEFINE_double(temperature, 0.8, "Sampling temperature (0 = near-greedy).");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_int32(bos_id, 2, "BOS token id to prepend (Gemma convention: 2).");
 DEFINE_int32(eos_id, 1, "EOS token id (Gemma convention: 1).");
+DEFINE_int32(
+    max_prefill_chunk,
+    0,
+    "Override the prefill chunk size (<=0 uses metadata). Experiment: chunking "
+    "above sliding_window is inexact for sliding layers across boundaries.");
 DEFINE_bool(
     raw_prompt,
     false,
@@ -180,12 +185,54 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  int64_t max_prefill_chunk = (*metadata_result)[llm::kMaxSeqLen] - 1;
+  int64_t exported_max_prefill = (*metadata_result)[llm::kMaxSeqLen] - 1;
   {
     auto get_result = module->get("get_max_prefill_chunk");
     if (get_result.ok()) {
-      max_prefill_chunk = get_result->toScalar().to<int64_t>();
+      exported_max_prefill = get_result->toScalar().to<int64_t>();
     }
+  }
+  // Cap prefill chunks at the sliding window: a chunk larger than the window
+  // overflows the 2*window ring cache across chunk boundaries, truncating
+  // sliding attention for the first ~(chunk-window) queries of each chunk (the
+  // global flat-cache layers stay exact). The export sets max_prefill =
+  // 2*sliding_window, so window = max_prefill/2 (prefer get_sliding_window
+  // metadata when present).
+  int64_t sliding_window = exported_max_prefill / 2;
+  {
+    auto sw = module->get("get_sliding_window");
+    if (sw.ok()) {
+      sliding_window = sw->toScalar().to<int64_t>();
+    }
+  }
+  int64_t max_prefill_chunk = std::min(sliding_window, exported_max_prefill);
+  if (FLAGS_max_prefill_chunk > 0) {
+    max_prefill_chunk =
+        std::min<int64_t>(FLAGS_max_prefill_chunk, exported_max_prefill);
+  }
+  // The exported prefill accepts T in [min_prefill, max_prefill]; a final chunk
+  // shorter than min_prefill (and > 1) is an out-of-range shape. Read the lower
+  // bound so chunking can avoid it (fallback 1 keeps older exports working: a
+  // length-1 tail already routes to decode).
+  int64_t min_prefill = 1;
+  {
+    auto r = module->get("get_min_prefill_chunk");
+    if (r.ok()) {
+      min_prefill = r->toScalar().to<int64_t>();
+    }
+  }
+  // A --max_prefill_chunk below the exported minimum has no valid prefill shape
+  // (and a cap of 1 would make the tail adjustment compute chunk_len == 0 and
+  // loop forever), so reject it rather than feed an out-of-range / zero chunk.
+  if (FLAGS_max_prefill_chunk > 0 && max_prefill_chunk < min_prefill) {
+    ET_LOG(
+        Error,
+        "--max_prefill_chunk (%d) is below the exported prefill minimum "
+        "(%" PRId64 "); use a value >= %" PRId64 " or omit it.",
+        FLAGS_max_prefill_chunk,
+        min_prefill,
+        min_prefill);
+    return 1;
   }
 
   auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
@@ -295,6 +342,21 @@ int main(int argc, char** argv) {
   printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
   stats.num_prompt_tokens = num_prompt_tokens;
 
+  // A prompt of 2..min_prefill-1 tokens has no valid prefill shape (the CUDA
+  // export specializes prefill to T >= min_prefill) and is too long for the
+  // single-token decode path, so reject it. A 1-token prompt is fine: it goes
+  // through decode below.
+  if (num_prompt_tokens > 1 && num_prompt_tokens < min_prefill) {
+    ET_LOG(
+        Error,
+        "Prompt (%" PRId64
+        " tokens) is below the exported prefill minimum %" PRId64
+        "; use a longer prompt.",
+        num_prompt_tokens,
+        min_prefill);
+    return 1;
+  }
+
   stats.inference_start_ms = llm::time_in_ms();
 
   // ---------------------------------------------------------------
@@ -309,8 +371,14 @@ int main(int argc, char** argv) {
   TensorPtr device_out_token;
 #endif
   while (prefill_pos < num_prompt_tokens) {
-    int64_t chunk_len =
-        std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
+    int64_t remaining = num_prompt_tokens - prefill_pos;
+    int64_t chunk_len = std::min(remaining, max_prefill_chunk);
+    // Shrink this chunk so the tail it leaves is never in (1, min_prefill):
+    // such a tail would be an out-of-range prefill shape. A length-1 tail is
+    // fine (routed to decode below); a >= min_prefill tail is fine too.
+    if (remaining - chunk_len > 1 && remaining - chunk_len < min_prefill) {
+      chunk_len = remaining - min_prefill;
+    }
 
     std::vector<int64_t> token_data(
         prompt_tokens.begin() + prefill_pos,
