@@ -406,6 +406,60 @@ class HardtanhTest(OpTestCase):
         return (x,)
 
 
+class LeakyReLUModel(nn.Module):
+    """Model that applies leaky_relu with an optional negative slope."""
+
+    def __init__(self, negative_slope: Optional[float] = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.negative_slope is None:
+            return torch.nn.functional.leaky_relu(x)
+        return torch.nn.functional.leaky_relu(x, negative_slope=self.negative_slope)
+
+
+@register_test
+class LeakyReLUTest(OpTestCase):
+    """Test case for leaky_relu activation with various negative slopes."""
+
+    name = "leaky_relu"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        negative_slope: Optional[float] = 0.01,
+    ):
+        self.shape = shape
+        self.negative_slope = negative_slope
+        shape_str = "x".join(str(s) for s in shape)
+        slope_str = "default" if negative_slope is None else f"slope{negative_slope}"
+        self.name = f"leaky_relu_{slope_str}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["LeakyReLUTest"]:
+        return [
+            cls(shape=(2, 3, 4), negative_slope=0.01),
+            cls(shape=(2, 3, 4), negative_slope=None),
+            cls(shape=(4, 8), negative_slope=0.1),
+            cls(shape=(10,), negative_slope=0.2),
+            cls(shape=(10,), negative_slope=1.5),
+            cls(shape=(2, 8, 16), negative_slope=0.01),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return LeakyReLUModel(self.negative_slope)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        numel = 1
+        for size in self.shape:
+            numel *= size
+        x = torch.linspace(-4.0, 4.0, steps=numel).reshape(self.shape)
+        return (x,)
+
+
 class GELUModel(nn.Module):
     """Simple model using GELU activation."""
 

@@ -166,6 +166,8 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.node import Node
 
+_LEAKY_RELU_DEFAULT_NEGATIVE_SLOPE = 0.01
+
 
 def require_static_int(value: Any, param_name: str, op_name: str) -> None:
     """
@@ -2783,6 +2785,63 @@ def _relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         MaximumNode(
             a=P.slot_to_tid(x),
             b=P.slot_to_tid(zero_slot),
+            out=P.slot_to_tid(out),
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.leaky_relu.default])
+def _leaky_relu_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.leaky_relu.default - leaky rectified linear unit.
+
+    leaky_relu(x) = x          if x >= 0
+                  = slope * x  otherwise
+
+    Implemented as where(x >= 0, x, slope * x) so it stays correct for any
+    negative_slope (including values > 1), matching eager PyTorch.
+    """
+    args = P.args(n)
+    require_args(args, 1, 2, "aten.leaky_relu")
+    require_kwargs(P.kwargs(n), set(), "aten.leaky_relu")
+
+    x = args[0]
+    negative_slope = _LEAKY_RELU_DEFAULT_NEGATIVE_SLOPE
+    if len(args) > 1 and args[1] is not None:
+        negative_slope = float(args[1])
+
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise ValueError("Input tensor metadata not found for leaky_relu")
+    dtype = x_meta.dtype
+
+    zero_slot = emit_lifted_constant(P, 0.0, dtype)
+    slope_slot = emit_lifted_constant(P, negative_slope, dtype)
+
+    _, cond_slot = P.make_tmp_slot()
+    P.emit(
+        GreaterEqualNode(
+            a=P.slot_to_tid(x),
+            b=P.slot_to_tid(zero_slot),
+            out=P.slot_to_tid(cond_slot),
+        )
+    )
+
+    _, scaled_slot = P.make_tmp_slot()
+    P.emit(
+        MultiplyNode(
+            a=P.slot_to_tid(slope_slot),
+            b=P.slot_to_tid(x),
+            out=P.slot_to_tid(scaled_slot),
+        )
+    )
+
+    out = P.make_or_get_slot(n)
+    P.emit(
+        WhereNode(
+            condition=P.slot_to_tid(cond_slot),
+            x=P.slot_to_tid(x),
+            y=P.slot_to_tid(scaled_slot),
             out=P.slot_to_tid(out),
         )
     )

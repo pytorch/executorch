@@ -712,6 +712,15 @@ class DropoutPattern(SharedSpecPattern):
         return [torch.ops.aten.dropout.default]
 
 
+class ExpPattern(SharedSpecPattern):
+    """
+    Quantizer for Exp operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.exp.default]
+
+
 class FlattenPattern(SharedSpecPattern):
     """
     Quantizer for Flatten operator.
@@ -917,7 +926,6 @@ class MulTensorPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
-        input_nodes = node.all_input_nodes
 
         qspec = FixedQParamsQuantizationSpec(
             dtype=torch.int8,
@@ -927,15 +935,6 @@ class MulTensorPattern(QuantizationPattern):
             quant_max=127,
             qscheme=torch.per_tensor_affine,
         )
-
-        # The "Mul" operator in Neutron IR requires a specific scale and zero_point
-        # (defined above) for its inputs.
-        # Since these input nodes have already been annotated by their own patterns
-        # which didn't take the requirements of "Mul" into account, we need to overwrite
-        # the existing "quantization_annotation".
-        for input_node in input_nodes:
-            if "quantization_annotation" in input_node.meta:
-                input_node.meta["quantization_annotation"].output_qspec = qspec
 
         return PartitionAnchors(
             inputs=[(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)],
