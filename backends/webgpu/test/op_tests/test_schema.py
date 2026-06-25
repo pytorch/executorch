@@ -41,7 +41,7 @@ def test_add_rms_norm_registered():
 
     assert {"add", "rms_norm"} <= set(op_test_registry)
     assert len(op_test_registry["add"].cases) >= 3  # regular/self/scalar/chained
-    # Exact parity, no hardcoded literal (real _CASES == 14; import so it can't drift):
+    # Exact parity, no hardcoded literal (real _CASES == 15; import so it can't drift):
     assert len(op_test_registry["rms_norm"].cases) == len(cases.RMS_NORM_CASES)
     # weight is a construction param, NOT a forward input:
     rms0 = op_test_registry["rms_norm"].cases[0]
