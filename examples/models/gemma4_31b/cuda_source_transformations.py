@@ -94,9 +94,15 @@ def _turboquant_attention_forward(
     # step (catastrophic at 128k: ~2.7 tok/s decode vs ~37+ when bounded).
     kv_len = input_pos[0] + input_pos.shape[0]
 
-    # ``scale=self.scaling`` (= 1.0 for Gemma 4) — overrides tq4_sdpa's
-    # default ``1/sqrt(D)`` because Gemma's QK-norm has absorbed the
-    # 1/sqrt(d) factor into trained weights.
+    # attn_mask=None for BOTH prefill and decode: tq4_sdpa applies causal masking
+    # analytically (mask_is_causal + kv_len, absolute causal-offset), so the SDPA
+    # call is identical across the two exported methods — AOTI dedups the shared
+    # weights blob (~26 GB). Prefill takes the no-spill analytic path; decode takes
+    # split-K with HAS_MASK=False, whose autotune list is curated (tq4_sdpa.py) to
+    # the profiled-optimal BLOCK_N configs, so HAS_MASK=False does not regress
+    # decode. ``scale=self.scaling`` (= 1.0 for Gemma 4) overrides tq4_sdpa's
+    # 1/sqrt(D) default (Gemma's QK-norm folded that factor into the weights).
+    sdpa_attn_mask = None
     y = torch.ops.triton.tq4_sdpa(
         q,
         k_packed,
@@ -105,8 +111,8 @@ def _turboquant_attention_forward(
         v_norms,
         self.kv_cache.centroids,
         self.kv_cache.rotation,
-        attn_mask,
-        False,  # is_causal: attn_mask already encodes causal masking
+        sdpa_attn_mask,
+        False,  # is_causal: needs L_q==L_kv; causal comes from mask_is_causal
         self.scaling,
         kv_len,
         True,  # mask_is_causal: Gemma full-attention mask is standard causal
