@@ -52,6 +52,9 @@ def _turboquant_attention_forward(
 
     Mirrors the default forward up to (and including) RoPE; only the
     cache update and SDPA call differ.
+
+    NOTE: ``attn_mask`` is unused here and will be reconstucted in
+    the kernel to save data transfer, but is passed to the default forward
     """
     B, T, _ = x.shape
 
@@ -94,9 +97,6 @@ def _turboquant_attention_forward(
     # step (catastrophic at 128k: ~2.7 tok/s decode vs ~37+ when bounded).
     kv_len = input_pos[0] + input_pos.shape[0]
 
-    # ``scale=self.scaling`` (= 1.0 for Gemma 4) — overrides tq4_sdpa's
-    # default ``1/sqrt(D)`` because Gemma's QK-norm has absorbed the
-    # 1/sqrt(d) factor into trained weights.
     y = torch.ops.triton.tq4_sdpa(
         q,
         k_packed,
@@ -105,8 +105,8 @@ def _turboquant_attention_forward(
         v_norms,
         self.kv_cache.centroids,
         self.kv_cache.rotation,
-        attn_mask,
-        False,  # is_causal: attn_mask already encodes causal masking
+        None,  # reconstuct attention mask in the kernel to save data transfer
+        False,  # is_causal: needs L_q==L_kv; causal comes from mask_is_causal
         self.scaling,
         kv_len,
         True,  # mask_is_causal: Gemma full-attention mask is standard causal
