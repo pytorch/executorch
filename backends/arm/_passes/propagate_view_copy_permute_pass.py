@@ -5,12 +5,14 @@
 
 # pyre-unsafe
 
+import copy
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import Any, cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
+from executorch.backends.arm._passes.arm_pass_utils import refresh_node_meta
 from executorch.backends.arm._passes.dim_maps import PermuteMap, ViewMap
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_spec
@@ -27,6 +29,13 @@ from .remove_permutes_around_elementwise_tosa_ops import (
 )
 
 _Dim = int | torch.SymInt
+
+
+@dataclass(frozen=True)
+class _ForkBranchSplit:
+    next_node: torch.fx.Node
+    source_shape: tuple[_Dim, ...]
+    arg_update: tuple[Any, Any] | None
 
 
 class PropagateViewCopyPermutePass(ArmPass, ABC):
@@ -159,12 +168,14 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
                 break
 
             if len(next_nodes) > 1:
-                if self._maybe_split_downwards_slice_fanout(node, next_nodes):
+                if self._maybe_split_fork(
+                    node, frontier, previous_frontier, next_nodes
+                ):
                     return True
                 break
 
             next_node = next_nodes[0]
-            if self.is_elementwise(next_node) and self._is_unary_elementwise(next_node):
+            if self._can_move_through_elementwise(node, frontier, next_node):
                 previous_frontier = frontier
                 frontier = next_node
                 moved = True
@@ -195,7 +206,8 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
 
         assert previous_frontier is not None
         self._move_node(node, frontier, previous_frontier)
-        refresh_permute_view_meta(node)
+        refresh_node_meta(frontier)
+        refresh_node_meta(node)
         return True
 
     def fuse_vertical(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -254,12 +266,15 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         """
         return False
 
-    def _maybe_split_downwards_slice_fanout(
-        self, node: torch.fx.Node, next_nodes: Sequence[torch.fx.Node]
+    def _maybe_split_fork(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        previous_frontier: torch.fx.Node | None,
+        next_nodes: Sequence[torch.fx.Node],
     ) -> bool:
-        """Swap x2 = x1.permute; y1 = x2.slice_copy[0]; y2 = x2.slice_copy[1] to
-        y1 = x1.permute.slice_copy[0]; y2 = x1.permute.slice_copy[1] Only if
-        permutes after slice are noops.
+        """Optionally split a transform over a fork in the propagation
+        direction.
         """
         return False
 
@@ -334,46 +349,48 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
                 )
         return True
 
-    def _is_unary_elementwise(self, node: torch.fx.Node) -> bool:
-        if node.target == exir_ops.backend.tosa.TABLE.default:
-            return True
-        return len(node.all_input_nodes) == 1
-
-    def _would_strand_layout_op_on_wider_elements(
-        self, next_node: torch.fx.Node
+    def _can_move_through_elementwise(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
     ) -> bool:
-        """Whether crossing next_node leaves the layout op on wider elements.
+        """Return whether ``moving_node`` can cross an elementwise operation.
 
-        Crossing next_node upward moves the layout op onto next_node's input. When
-        next_node narrows the dtype (its input has wider elements than its output,
-        e.g. an int32 to int8 rescale), the layout op then has more bytes to move, so
-        block the crossing and keep it on the narrow side. The sole exception is a
-        placeholder input consumed only by next_node: moving the layout op onto such
-        a graph input folds it into the input's dim_order at no runtime cost. A
-        placeholder with other consumers cannot be relaid out for free, so the
-        crossing is still blocked. Valid for upward propagation only, where
-        next_node's single input is where the layout op would land.
+        Only simple single-input, single-output operations are handled here.
+        Multi-input elementwise operations are handled by horizontal fusion.
 
         """
-        input_nodes = next_node.all_input_nodes
-        if len(input_nodes) != 1:
-            return False
-        node_val = next_node.meta.get("val")
-        producer = input_nodes[0]
-        producer_val = producer.meta.get("val")
-        if not isinstance(node_val, torch.Tensor) or not isinstance(
-            producer_val, torch.Tensor
+        if (
+            not self.is_elementwise(next_node)
+            or (
+                len(next_node.all_input_nodes) != 1
+                and next_node.target != exir_ops.backend.tosa.TABLE.default
+            )
+            or not isinstance(next_node.meta.get("val"), torch.Tensor)
         ):
             return False
-        if producer_val.element_size() <= node_val.element_size():
-            return False
-        return producer.op != "placeholder" or len(producer.users) != 1
 
-    @staticmethod
-    def _is_contiguous_nonempty(dims: Sequence[int]) -> bool:
-        sorted_dims = sorted(set(dims))
-        return bool(sorted_dims) and sorted_dims == list(
-            range(sorted_dims[0], sorted_dims[-1] + 1)
+        if moving_node.target == self._VIEW_TARGET:
+            view_map = ViewMap(moving_node)
+            if not view_map.is_valid_map:
+                return False
+            if (
+                next_node.target in self._TRANSPARENT_TARGETS
+                or next_node.target == exir_ops.backend.tosa.RESCALE.default
+            ) and view_map.source_rank != view_map.target_rank:
+                return False
+
+        if moving_node.target != self._PERMUTE_TARGET:
+            return True
+
+        dims = self._dim_arg(moving_node.args[1])
+        source_rank = len(dims) if isinstance(dims, Sequence) else None
+        next_val = next_node.meta.get("val")
+        return (
+            source_rank is not None
+            and isinstance(next_val, torch.Tensor)
+            and len(next_val.shape) == source_rank
         )
 
 
@@ -408,15 +425,36 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
             for user in frontier.users
         ):
             return False
-        if any(
-            self._would_strand_layout_op_on_wider_elements(next_node)
-            for next_node in next_nodes
-        ):
-            return False
         return all(
             all(prev_node is frontier for prev_node in self._get_prev_nodes(next_node))
             for next_node in next_nodes
         )
+
+    def _can_move_through_elementwise(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        if super()._can_move_through_elementwise(moving_node, frontier, next_node):
+            return True
+        if moving_node.target != self._PERMUTE_TARGET or not self.is_elementwise(
+            next_node
+        ):
+            return False
+
+        frontier_val = frontier.meta.get("val")
+        if not isinstance(frontier_val, torch.Tensor):
+            return False
+        rank = len(frontier_val.shape)
+        layout_dependent_inputs = [
+            input_node
+            for input_node in next_node.all_input_nodes
+            if not FuseIdenticalInputTransformsPass.is_layout_invariant(
+                input_node, rank
+            )
+        ]
+        return len(layout_dependent_inputs) == 1
 
     def _maybe_swap_permute_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
@@ -443,9 +481,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         new_shape = view_map.remap_target_shape(input_shape)
 
         if next_node.target in self._REDUCTION_TARGETS:
-            return self._maybe_swap_reduction_view_args(
-                node, next_node, view_map, new_shape
-            )
+            return self._maybe_swap_reduction_view_args(node, next_node, view_map)
         if next_node.target == exir_ops.edge.aten.slice_copy.Tensor:
             return self._maybe_swap_slice_view_args(
                 node, next_node, view_map, input_shape, new_shape
@@ -457,16 +493,15 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         node: torch.fx.Node,
         next_node: torch.fx.Node,
         view_map: ViewMap,
-        new_shape: list[_Dim] | None,
     ) -> Any | None:
-        if new_shape is None:
-            return None
         if len(next_node.args) <= 2 or next_node.args[2] is not True:
             return None
         reduction_dims = cast(int | Sequence[int], next_node.args[1])
-        new_dims = view_map.map_dim(reduction_dims)
-        if new_dims is None or not self._is_contiguous_nonempty(new_dims):
+        input_val = next_node.all_input_nodes[0].meta["val"]
+        swap = view_map.map_reduction_after_view(input_val.shape, reduction_dims)
+        if swap is None:
             return None
+        new_shape, new_dims = swap
         new_next_node_args = (*next_node.args[:1], new_dims, *next_node.args[2:])
         return ((*node.args[:1], new_shape), new_next_node_args)
 
@@ -478,46 +513,45 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         input_shape: list[_Dim],
         new_shape: list[_Dim] | None,
     ) -> Any | None:
-        if new_shape is None:
-            return self._maybe_swap_unit_slice_view_args(
-                node, next_node, view_map, input_shape
-            )
-
-        slice_dim = cast(int, next_node.args[1])
-        new_dim = self._map_slice_dim(view_map, slice_dim)
-        if new_dim is None:
-            return None
-        new_next_node_args = (*next_node.args[:1], new_dim, *next_node.args[2:])
-        return ((*node.args[:1], new_shape), new_next_node_args)
-
-    def _maybe_swap_unit_slice_view_args(
-        self,
-        node: torch.fx.Node,
-        next_node: torch.fx.Node,
-        view_map: ViewMap,
-        input_shape: list[_Dim],
-    ) -> Any | None:
         if len(next_node.args) < 4:
             return None
+
         step = next_node.args[4] if len(next_node.args) > 4 else 1
-        remapped_slice = view_map.remap_unit_slice(
+        unit_slice_swap = view_map.remap_unit_slice(
             input_shape,
             cast(int, next_node.args[1]),
             cast(_Dim, next_node.args[2]),
             cast(_Dim, next_node.args[3]),
             cast(_Dim, step),
         )
-        if remapped_slice is None:
+        if unit_slice_swap is not None:
+            new_shape, new_dim, new_start, new_end = unit_slice_swap
+            if not self._valid_slice_interval(new_shape, new_dim, new_start, new_end):
+                return None
+            new_next_node_args = (
+                *next_node.args[:1],
+                new_dim,
+                new_start,
+                new_end,
+                *next_node.args[4:],
+            )
+            return ((*node.args[:1], new_shape), new_next_node_args)
+
+        if new_shape is None:
             return None
 
-        new_shape, new_dim, new_start, new_end = remapped_slice
-        new_next_node_args = (
-            *next_node.args[:1],
-            new_dim,
-            new_start,
-            new_end,
-            *next_node.args[4:],
-        )
+        slice_dim = cast(int, next_node.args[1])
+        mapped_dim = self._map_slice_dim(view_map, slice_dim)
+        if mapped_dim is None:
+            return None
+        if not self._valid_slice_interval(
+            new_shape,
+            mapped_dim,
+            cast(_Dim, next_node.args[2]),
+            cast(_Dim, next_node.args[3]),
+        ):
+            return None
+        new_next_node_args = (*next_node.args[:1], mapped_dim, *next_node.args[2:])
         return ((*node.args[:1], new_shape), new_next_node_args)
 
     @staticmethod
@@ -537,6 +571,16 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         ):
             return None
         return new_dim
+
+    @staticmethod
+    def _valid_slice_interval(
+        shape: Sequence[_Dim], dim: int, start: _Dim, end: _Dim
+    ) -> bool:
+        try:
+            dim = dim % len(shape)
+            return 0 <= start < end <= shape[dim]
+        except (RuntimeError, TypeError):
+            return False
 
     def _move_node(
         self,
@@ -674,9 +718,10 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         if next_node.target in self._REDUCTION_TARGETS:
             if len(next_node.args) <= 2 or next_node.args[2] is not True:
                 return None
-            new_dims = view_map.map_dim_inverse(next_node.args[1])
-            if new_dims is None:
+            swap = view_map.map_reduction_before_view(next_node.args[1])
+            if swap is None:
                 return None
+            new_dims, output_shape = swap
         elif next_node.target == exir_ops.edge.aten.slice_copy.Tensor:
             new_dims = view_map.map_dim_inverse(next_node.args[1])
             if new_dims is None:
@@ -684,44 +729,156 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
             if len(new_dims) != 1:
                 return None
             new_dims = new_dims[0]
+            output_shape = list(next_node.meta["val"].shape)
         else:
             return None
 
-        output_val = next_node.meta["val"]
         new_next_node_args = (*next_node.args[:1], new_dims, *next_node.args[2:])
-        return ((*node.args[:1], list(output_val.shape)), new_next_node_args)
+        return ((*node.args[:1], output_shape), new_next_node_args)
 
-    def _maybe_split_downwards_slice_fanout(
-        self, node: torch.fx.Node, next_nodes: Sequence[torch.fx.Node]
+    def _maybe_split_fork(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        previous_frontier: torch.fx.Node | None,
+        next_nodes: Sequence[torch.fx.Node],
     ) -> bool:
-        """Duplicate a permute onto each slice branch.
+        if frontier is not node and previous_frontier is None:
+            return False
+        plan = self._plan_fork_split(node, frontier, next_nodes)
+        if plan is None:
+            return False
+        producer, branch_splits = plan
+        self._apply_fork_split(node, frontier, producer, branch_splits)
+        return True
 
-        The duplicated permutes are left before the slices; later propagation
-        iterations handle swapping each one through its slice.
+    def _plan_fork_split(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> tuple[torch.fx.Node, tuple[_ForkBranchSplit, ...]] | None:
+        """Validate every fork branch and return an all-or-nothing rewrite plan.
+
+        Fork propagation is only implemented for permutes. The permutation must be
+        valid, every branch must support the same propagation step, and every branch
+        output must retain the permutation rank. Planning all branches before editing
+        is essential: discovering one unsupported branch after mutating earlier ones
+        would leave a partially rewritten graph.
+
+        Each planned branch records both its pre-permute shape and any argument update
+        needed when crossing reductions or slices.
 
         """
-        if node.target != self._PERMUTE_TARGET:
-            return False
-        if not all(
-            next_node.target == exir_ops.edge.aten.slice_copy.Tensor
-            and next_node.all_input_nodes == [node]
-            for next_node in next_nodes
-        ):
-            return False
-
+        if node.target != self._PERMUTE_TARGET or len(node.all_input_nodes) != 1:
+            return None
         producer = node.all_input_nodes[0]
-        for next_node in next_nodes:
-            with next_node.graph.inserting_before(next_node):
-                branch_permute = next_node.graph.call_function(
-                    self._PERMUTE_TARGET,
-                    args=(producer, node.args[1]),
-                )
-            branch_permute.meta = dict(node.meta)
-            next_node.replace_input_with(node, branch_permute)
+        if not isinstance(producer.meta.get("val"), torch.Tensor):
+            return None
+        permute_dims = self._dim_arg(node.args[1])
+        if not isinstance(permute_dims, Sequence):
+            return None
+        rank = len(permute_dims)
+        normalized_dims = [dim if dim >= 0 else dim + rank for dim in permute_dims]
+        if sorted(normalized_dims) != list(range(rank)):
+            return None
 
-        if len(node.users) == 0:
+        branch_splits = []
+        for next_node in next_nodes:
+            if self._can_move_through_elementwise(
+                node, frontier, next_node
+            ) or self._can_split_through_elementwise(node, frontier, next_node):
+                arg_update = None
+            elif self.is_swappable(next_node):
+                arg_update = self._maybe_swap_args(node, next_node)
+                if arg_update is None:
+                    return None
+            else:
+                return None
+
+            next_val = next_node.meta.get("val")
+            if not isinstance(next_val, torch.Tensor) or len(next_val.shape) != rank:
+                return None
+            source_shape: list[_Dim] = [1] * rank
+            for output_axis, source_axis in enumerate(normalized_dims):
+                source_shape[source_axis] = next_val.shape[output_axis]
+            branch_splits.append(
+                _ForkBranchSplit(next_node, tuple(source_shape), arg_update)
+            )
+        return producer, tuple(branch_splits)
+
+    def _can_split_through_elementwise(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        if not self.is_elementwise(next_node):
+            return False
+        frontier_val = frontier.meta.get("val")
+        if not isinstance(frontier_val, torch.Tensor):
+            return False
+        rank = len(frontier_val.shape)
+        return all(
+            input_node is frontier
+            or FuseIdenticalInputTransformsPass.is_layout_invariant(input_node, rank)
+            for input_node in next_node.all_input_nodes
+        )
+
+    def _apply_fork_split(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        producer: torch.fx.Node,
+        branch_splits: Sequence[_ForkBranchSplit],
+    ) -> None:
+        """Apply a validated fork plan and place one transform after each
+        branch.
+
+        If propagation already crossed operators before reaching the fork, the
+        original path is first detached from the permute. Each branch is then
+        rewired to the pre-permute layout, its metadata is updated to that
+        layout, and a copy of the original permute is inserted after it.
+        Argument-changing operations use the transform arguments captured during
+        planning.
+
+        """
+        if frontier is not node:
+            original_user = next(iter(node.users))
+            original_user.replace_input_with(node, producer)
+
+        for branch_split in branch_splits:
+            next_node = branch_split.next_node
+            old_next_meta = copy.copy(next_node.meta)
+            if frontier is node:
+                next_node.replace_input_with(node, producer)
+            if branch_split.arg_update is not None:
+                branch_input = (
+                    producer if frontier is node else branch_split.arg_update[1][0]
+                )
+                next_node.args = (branch_input, *branch_split.arg_update[1][1:])
+            next_node.meta = copy.copy(next_node.meta)
+            next_node.meta["val"] = old_next_meta["val"].new_empty(
+                branch_split.source_shape
+            )
+            transform_suffix = (
+                node.args[1:]
+                if branch_split.arg_update is None
+                else branch_split.arg_update[0][1:]
+            )
+            with next_node.graph.inserting_after(next_node):
+                branch_transform = next_node.graph.call_function(
+                    cast(Any, node.target),
+                    args=(next_node, *transform_suffix),
+                    kwargs=dict(node.kwargs),
+                )
+            branch_transform.meta = old_next_meta
+            for user in list(next_node.users):
+                if user is not branch_transform:
+                    user.replace_input_with(next_node, branch_transform)
+
+        if not node.users:
             node.graph.erase_node(node)
-        return True
 
     def _move_node(
         self,

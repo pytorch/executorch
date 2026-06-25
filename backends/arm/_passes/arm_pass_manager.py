@@ -128,6 +128,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    MoveDataMovementOpsToSmallerDtypePass,
     NormalizeDelegateIOLayoutPass,
     NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
@@ -635,6 +636,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 PropagateViewCopyPermuteUpPass(self.compile_spec, exported_program),
                 # Propagation can leave a binary op with mismatched operand ranks,
                 # which TOSA rejects; re-match ranks before lowering.
+                MoveDataMovementOpsToSmallerDtypePass(),
                 MatchArgRanksPass(exported_program),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),

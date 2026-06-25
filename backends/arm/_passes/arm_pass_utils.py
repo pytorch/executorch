@@ -9,15 +9,11 @@
 import operator
 import traceback
 from inspect import isclass
-from typing import cast, Optional, Sequence
+from typing import Any, cast, Optional, Sequence
 
 import torch
 import torch.fx
 
-from executorch.backends.arm._passes.dim_maps import (
-    _normalize_dims,
-    normalize_view_shape,
-)
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
@@ -36,8 +32,7 @@ from torch._export.utils import (
 from torch._ops import OpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
-
-_Dim = int | torch.SymInt
+from torch.fx.node import map_arg
 
 
 def is_submodule_node(node: torch.fx.Node):
@@ -252,41 +247,30 @@ def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
     return NodeMetadata(plain_meta_dict)
 
 
-def refresh_permute_view_meta(node: torch.fx.Node) -> None:
-    """Compute new meta-vals, specifically preserving SymInts for view/permute
-    nodes.
+def refresh_node_meta(node: torch.fx.Node) -> None:
+    """Best-effort refresh of a call_function node's output value metadata.
+
+    Node arguments are replaced by their metadata values and evaluated through
+    the operator's FakeTensor/meta implementation, which preserves symbolic
+    dimensions when the operator supports them. Missing input metadata or
+    unsupported meta evaluation leaves the existing output metadata unchanged.
+
     """
-    input_node = node.all_input_nodes[0]
-    input_val = input_node.meta.get("val")
-    if input_val is None or node.target not in {
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
-    }:
+    if node.op != "call_function" or "val" not in node.meta:
         return
 
-    if not isinstance(input_val, torch.Tensor):
-        node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
+    try:
+        args = map_arg(
+            node.args,
+            lambda arg: arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg,
+        )
+        kwargs = map_arg(
+            node.kwargs,
+            lambda arg: arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg,
+        )
+        node.meta["val"] = cast(Any, node.target)(*args, **kwargs)
+    except Exception:
         return
-
-    # Compute new meta shapes to preserve SymInts.
-    match node.target:
-        case exir_ops.edge.aten.view_copy.default:
-            node.meta["val"] = input_val.new_empty(
-                tuple(
-                    normalize_view_shape(
-                        input_val.shape, cast(Sequence[_Dim], node.args[1])
-                    )
-                )
-            )
-        case exir_ops.edge.aten.permute_copy.default:
-            dims = _normalize_dims(
-                cast(Sequence[int], node.args[1]), len(input_val.shape)
-            )
-            node.meta["val"] = input_val.new_empty(
-                tuple(input_val.shape[dim] for dim in dims)
-            )
-        case _:
-            node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
 
 
 def insert_scalar(

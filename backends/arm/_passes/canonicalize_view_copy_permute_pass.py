@@ -10,7 +10,7 @@ from typing import cast, Sequence, Set, Type
 import torch
 
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
+from executorch.backends.arm._passes.arm_pass_utils import refresh_node_meta
 from executorch.backends.arm._passes.dim_maps import (
     _dim_equals,
     _is_permutation,
@@ -361,7 +361,7 @@ class CanonicalizeViewCopyPermutePass(ArmPass):
     ) -> None:
         node.target = target
         node.args = (input_node, list(arg))
-        refresh_permute_view_meta(node)
+        refresh_node_meta(node)
 
     def _permute_dims(self, node: Node) -> list[int]:
         assert node.target == self._PERMUTE_TARGET, "Expected permute node"
