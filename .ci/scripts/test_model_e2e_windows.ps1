@@ -176,7 +176,11 @@ try {
 
     Write-Host "::group::Build ExecuTorch (CUDA)"
     $numCores = [Math]::Max([Environment]::ProcessorCount - 1, 1)
-    cmake --preset llm-release-cuda @cmakeCudaArgs
+    # EXECUTORCH_BUILD_EXTENSION_IMAGE defaults OFF in the preset, so it must be
+    # enabled explicitly here (matching the Makefile CUDA target used on Linux).
+    # The dinov2 runner links the installed extension_image.lib; without this the
+    # main install never builds it and dinov2_runner fails to link (LNK1181).
+    cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON @cmakeCudaArgs
     cmake --build cmake-out --target install --config Release -j $numCores
     Write-Host "::endgroup::"
 

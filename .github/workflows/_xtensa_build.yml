@@ -1,0 +1,94 @@
+# Reusable: cross-compile cadence_executor_runner for one Cadence Xtensa core.
+#
+# A native job (not linux_job_v2) because the GitHub OIDC token must be minted on
+# the runner host: the ACTIONS_ID_TOKEN_REQUEST_* vars do not cross into
+# linux_job_v2's docker exec. So the role is assumed on the host, then the build
+# runs inside the CI image via docker run with the creds passed in. Binding the
+# environment also gives the OIDC token the environment claim. The licensed
+# toolchain + core configs are fetched at runtime from an auth-gated store;
+# role/region/store come from CI variables and are not committed.
+name: xtensa-build
+
+on:
+  workflow_call:
+    inputs:
+      backend:
+        description: "Cadence backend to build (hifi4 | vision | fusion_g3)"
+        required: true
+        type: string
+      ref:
+        description: "Git ref to check out"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  build:
+    name: ${{ inputs.backend }}
+    runs-on: linux.2xlarge
+    environment: cadence
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout executorch
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.ref }}
+
+      - name: Calculate docker image
+        id: calculate-docker-image
+        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
+        with:
+          docker-image-name: ci-image:executorch-ubuntu-22.04-clang12
+
+      - name: Pull docker image
+        run: docker pull "${{ steps.calculate-docker-image.outputs.docker-image }}"
+
+      - name: Assume Cadence artifacts role (host OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.CADENCE_CI_AWS_ROLE }}
+          aws-region: ${{ vars.CADENCE_CI_AWS_REGION }}
+
+      - name: Cross-compile cadence_executor_runner
+        env:
+          DOCKER_IMAGE: ${{ steps.calculate-docker-image.outputs.docker-image }}
+          BACKEND: ${{ inputs.backend }}
+          XTENSA_S3_BUCKET: ${{ vars.CADENCE_CI_S3_BUCKET }}
+        shell: bash
+        run: |
+          set -eux
+          # OIDC/role assumption already happened on the host above; pass the
+          # resulting AWS creds and the store/backend into the CI image, where
+          # the toolchain download + cross-compile run.
+          docker run --rm \
+            -e BACKEND -e XTENSA_S3_BUCKET \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
+            -e AWS_DEFAULT_REGION -e AWS_REGION \
+            -v "${GITHUB_WORKSPACE}:/work/executorch" -w /work/executorch \
+            "${DOCKER_IMAGE}" \
+            bash -c '
+              set -exo pipefail
+              eval "$(/opt/conda/bin/conda shell.bash hook)"
+              conda activate "$(conda env list --json | jq -r ".envs | .[-1]")"
+              ./install_requirements.sh > /dev/null
+              pip install --quiet awscli
+              # hifi4/fusion_g3 optimized kernels need the foss-xtensa nnlib
+              # sources, which are not vendored in executorch; the cadence
+              # installer clones them. vision has no nnlib dependency.
+              if [ "${BACKEND}" != "vision" ]; then
+                backends/cadence/install_requirements.sh
+              fi
+              source .ci/scripts/setup-xtensa-tools.sh "${BACKEND}"
+              .ci/scripts/build-cadence-xtensa.sh --no-run
+              chmod -R a+rX cmake-out
+            '
+
+      - name: Upload runner
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadence-xtensa-build-${{ inputs.backend }}
+          path: cmake-out/backends/cadence/cadence_executor_runner
+          if-no-files-found: error

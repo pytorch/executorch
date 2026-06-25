@@ -14,17 +14,20 @@ from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
+from .decompose_addmm import DecomposeAddmm
 from .decompose_any import DecomposeAny
 from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
+from .decompose_div_mode import DecomposeDivMode
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_hardsigmoid import DecomposeHardsigmoid
+from .decompose_hyperbolic_variants import DecomposeHyperbolicVariants
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
@@ -39,6 +42,7 @@ from .decompose_tan import DecomposeTan
 from .decompose_threshold import DecomposeThreshold
 from .decompose_triu import DecomposeTriu
 from .decompose_trunc import DecomposeTrunc
+from .decompose_var import DecomposeVar
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
@@ -52,14 +56,13 @@ from .insert_requantize import InsertRequantize
 from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
+from .lpai_partition_fallback_support import LpaiPartitionFallbackSupport
 from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
-from .reduce_dynamic_range import ReduceDynamicRange
 from .remove_0d_tensor import Remove0DTensor
 from .remove_redundancy import RemoveRedundancy
 from .replace_arange_args import ReplaceArangeArgs
-from .replace_inf_values import ReplaceInfValues
 from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
@@ -75,16 +78,19 @@ __all__ = [
     ConvertMhaToSha,
     ConvertSquareToPow,
     DecomposeAcos,
+    DecomposeAddmm,
     DecomposeAny,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
+    DecomposeDivMode,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
+    DecomposeHyperbolicVariants,
     DecomposeHardsigmoid,
     DecomposeLinalgVectorNorm,
     DecomposeLogVariants,
@@ -100,6 +106,7 @@ __all__ = [
     DecomposeThreshold,
     DecomposeTriu,
     DecomposeTrunc,
+    DecomposeVar,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -113,14 +120,13 @@ __all__ = [
     InsertRequantize,
     LayoutTransform,
     LiftConstantScalarOperands,
+    LpaiPartitionFallbackSupport,
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
-    ReduceDynamicRange,
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceInfValues,
     ResolveDebugHandle,
     SeqMSE,
     TagQuantIO,
