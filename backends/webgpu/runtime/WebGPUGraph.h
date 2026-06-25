@@ -42,6 +42,12 @@ struct WebGPUDispatch {
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
   std::string kernel_name; // bench label
+  // DMA copy command; default Compute keeps existing positional inits valid.
+  enum class Kind { Compute, Copy };
+  Kind kind = Kind::Compute;
+  WGPUBuffer copy_src = nullptr;
+  WGPUBuffer copy_dst = nullptr;
+  size_t copy_nbytes = 0;
 };
 
 struct OutputCopy {
@@ -192,6 +198,17 @@ class WebGPUGraph {
 
   void add_dispatch(WebGPUDispatch dispatch) {
     dispatches_.push_back(dispatch);
+  }
+
+  // Record an in-graph-order buffer-to-buffer DMA (e.g. a flat copy).
+  void add_buffer_copy(WGPUBuffer src, WGPUBuffer dst, size_t nbytes) {
+    WebGPUDispatch d;
+    d.kind = WebGPUDispatch::Kind::Copy;
+    d.copy_src = src;
+    d.copy_dst = dst;
+    d.copy_nbytes = nbytes;
+    d.kernel_name = "flat_copy";
+    dispatches_.push_back(d);
   }
 
   // Materialize a recorded prepack-routed constant into dst via one CPU->GPU
