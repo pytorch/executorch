@@ -14,6 +14,7 @@ from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_mha_to_sha import ConvertMhaToSha
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
+from .decompose_addmm import DecomposeAddmm
 from .decompose_any import DecomposeAny
 from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
@@ -26,6 +27,7 @@ from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
 from .decompose_glu import DecomposeGlu
 from .decompose_hardsigmoid import DecomposeHardsigmoid
+from .decompose_hyperbolic_variants import DecomposeHyperbolicVariants
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_log_variants import DecomposeLogVariants
 from .decompose_maxpool3d import DecomposeMaxPool3d
@@ -76,6 +78,7 @@ __all__ = [
     ConvertMhaToSha,
     ConvertSquareToPow,
     DecomposeAcos,
+    DecomposeAddmm,
     DecomposeAny,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
@@ -87,6 +90,7 @@ __all__ = [
     DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
+    DecomposeHyperbolicVariants,
     DecomposeHardsigmoid,
     DecomposeLinalgVectorNorm,
     DecomposeLogVariants,

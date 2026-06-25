@@ -36,19 +36,42 @@
                 "type": "equals",
                 "rhs": "Darwin"
             }
+        },
+        {
+            "name": "qwen3-5-moe-mlx",
+            "displayName": "Qwen3.5 MoE runner (MLX)",
+            "inherits": ["qwen3-5-moe-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
         }
     ],
     "buildPresets": [
         {
             "name": "qwen3-5-moe-cuda",
-            "displayName": "Build Qwen3.5 MoE runner + no-bleed test (CUDA)",
+            "displayName": "Build Qwen3.5 MoE runner, worker, and no-bleed test (CUDA)",
             "configurePreset": "qwen3-5-moe-cuda",
-            "targets": ["qwen3_5_moe_runner", "test_qwen35_moe_nobleed"]
+            "targets": [
+                "qwen3_5_moe_runner",
+                "qwen3_5_moe_worker",
+                "test_qwen35_moe_nobleed"
+            ]
         },
         {
             "name": "qwen3-5-moe-metal",
-            "displayName": "Build Qwen3.5 MoE runner (Metal)",
+            "displayName": "Build Qwen3.5 MoE runner and worker (Metal)",
             "configurePreset": "qwen3-5-moe-metal",
+            "targets": ["qwen3_5_moe_runner", "qwen3_5_moe_worker"]
+        },
+        {
+            "name": "qwen3-5-moe-mlx",
+            "displayName": "Build Qwen3.5 MoE runner (MLX)",
+            "configurePreset": "qwen3-5-moe-mlx",
             "targets": ["qwen3_5_moe_runner"]
         }
     ],
@@ -78,6 +101,20 @@
                 {
                     "type": "build",
                     "name": "qwen3-5-moe-metal"
+                }
+            ]
+        },
+        {
+            "name": "qwen3-5-moe-mlx",
+            "displayName": "Configure and build Qwen3.5 MoE runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "qwen3-5-moe-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "qwen3-5-moe-mlx"
                 }
             ]
         }
