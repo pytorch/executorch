@@ -71,6 +71,11 @@ class GenStats:
     reused_prompt_tokens: int = 0
     prefilled_prompt_tokens: int = 0
     session_reset_reason: Optional[str] = None
+    prefill_ms: float = 0.0
+    decode_ms: float = 0.0
+    total_ms: float = 0.0
+    prefill_tok_s: float = 0.0
+    decode_tok_s: float = 0.0
     # Exact token ids generated this turn, for an adapter's transcript
     # store. Empty when the worker doesn't report them (e.g. a stop-trimmed turn).
     generated_token_ids: list = field(default_factory=list)
@@ -115,6 +120,11 @@ class _GenerationBridge:
         self._stats.reused_prompt_tokens = getattr(s, "reused_prompt_tokens", 0)
         self._stats.prefilled_prompt_tokens = getattr(s, "prefilled_prompt_tokens", 0)
         self._stats.session_reset_reason = getattr(s, "session_reset_reason", None)
+        self._stats.prefill_ms = getattr(s, "prefill_ms", 0.0)
+        self._stats.decode_ms = getattr(s, "decode_ms", 0.0)
+        self._stats.total_ms = getattr(s, "total_ms", 0.0)
+        self._stats.prefill_tok_s = getattr(s, "prefill_tok_s", 0.0)
+        self._stats.decode_tok_s = getattr(s, "decode_tok_s", 0.0)
         self._stats.generated_token_ids = getattr(s, "generated_token_ids", [])
 
     def run(self) -> None:
