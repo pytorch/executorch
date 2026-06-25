@@ -186,7 +186,7 @@ def test_gather_tosa_FP_fp8(test_data: tuple[input_params, str]):
         transform_passes=[
             InsertInt32CastsAfterInt64PlaceholdersPass(),
         ],  # int64 index are not currently supported and need to be cast to int32
-        run_on_tosa_ref_model=False,  # torch.gather() has no eager CPU FP8 implementation here, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
         tosa_extensions=[tosa_extension],
     )
     pipeline.run()

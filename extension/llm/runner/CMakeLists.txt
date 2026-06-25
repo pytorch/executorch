@@ -28,6 +28,12 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 #
 executorch_load_build_variables()
 
+add_library(extension_llm_session INTERFACE)
+target_link_libraries(extension_llm_session INTERFACE executorch_core)
+target_include_directories(
+  extension_llm_session INTERFACE ${_common_include_directories}
+)
+
 # build llm runner library
 list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
@@ -81,6 +87,7 @@ if(EXECUTORCH_BUILD_CUDA)
   endif()
 endif()
 
+install(TARGETS extension_llm_session EXPORT ExecuTorchTargets)
 install(
   TARGETS extension_llm_runner
   EXPORT ExecuTorchTargets

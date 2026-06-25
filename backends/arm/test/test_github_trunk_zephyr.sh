@@ -31,6 +31,7 @@ README_PATH="${README_PATH:-}"
 HELLO_README_PATH="zephyr/samples/hello-executorch/README.md"
 MV2_README_PATH="zephyr/samples/mv2-ethosu/README.md"
 DEFAULT_MV2_TARGET_LIST="ethos-u55,ethos-u85"
+ZEPHYR_DEV_ROOT="${ZEPHYR_DEV_ROOT:-zephyr_dev_root}"
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
@@ -38,10 +39,11 @@ Usage: $(basename "$0") [OPTIONS]
 Options:
   -t, --target-list LIST      Comma-separated targets (default: ${TARGET_LIST})
   -r, --readme PATH           Run only one README path
+      --zephyr-dev-root PATH  Zephyr workspace directory (default: ${ZEPHYR_DEV_ROOT})
   -h, --help                  Show this help and exit
 
 When --readme is used, --target-list or TARGET_LIST is required.
-You can also set TARGET_LIST or README_PATH environment variable.
+You can also set TARGET_LIST, README_PATH, or ZEPHYR_DEV_ROOT environment variables.
 Examples:
   $(basename "$0")
   $(basename "$0") -t ethos-u55,cortex-m55
@@ -85,6 +87,19 @@ while [[ $# -gt 0 ]]; do
             README_PATH="${1#*=}"
             shift
             ;;
+        --zephyr-dev-root)
+            if [[ -z "${2:-}" || "$2" == -* ]]; then
+                echo "Error: $1 requires a non-empty argument."
+                usage
+                exit 2
+            fi
+            ZEPHYR_DEV_ROOT="$2"
+            shift 2
+            ;;
+        --zephyr-dev-root=*)
+            ZEPHYR_DEV_ROOT="${1#*=}"
+            shift
+            ;;
         *)
             echo "Error: Unknown option: $1"
             usage
@@ -104,16 +119,20 @@ cd "${ROOT_DIR}"
 run_zephyr_readme() {
     local readme_path="$1"
     local targets="$2"
+    local setup_arg="${3:-}"
 
     echo "Running ${readme_path} targets: ${targets}"
     .ci/scripts/test_zephyr.sh \
         --zephyr-samples-readme-path "${readme_path}" \
-        --targets "${targets}"
+        --targets "${targets}" \
+        --zephyr-dev-root "${ZEPHYR_DEV_ROOT}" \
+        ${setup_arg}
 }
 
 if [[ -n "${README_PATH}" ]]; then
     run_zephyr_readme "${README_PATH}" "${TARGET_LIST}"
 else
-    run_zephyr_readme "${HELLO_README_PATH}" "${TARGET_LIST}"
-    run_zephyr_readme "${MV2_README_PATH}" "${DEFAULT_MV2_TARGET_LIST}"
+    .ci/scripts/test_zephyr.sh --setup-only --zephyr-dev-root "${ZEPHYR_DEV_ROOT}"
+    run_zephyr_readme "${HELLO_README_PATH}" "${TARGET_LIST}" "--skip-zephyr-setup"
+    run_zephyr_readme "${MV2_README_PATH}" "${DEFAULT_MV2_TARGET_LIST}" "--skip-zephyr-setup"
 fi

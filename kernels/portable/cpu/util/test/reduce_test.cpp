@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -50,8 +51,6 @@ void _apply_over_dim_list(
 
 TEST(ReduceUtilTest, ApplyOverDim) {
   TensorFactory<ScalarType::Long> tf;
-  optional<ArrayRef<int64_t>> dim_list;
-
   Tensor in = tf.zeros({2, 4, 5, 3});
   _apply_over_dim(in, 0);
   // clang-format off
@@ -85,8 +84,6 @@ TEST(ReduceUtilTest, ApplyOverDim) {
   // clang-format on
 
   in = tf.zeros({2, 4, 5, 3});
-  int64_t dim_array_2[1] = {2};
-  dim_list = optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_2, 1});
   _apply_over_dim(in, 2);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -103,8 +100,6 @@ TEST(ReduceUtilTest, ApplyOverDim) {
   // clang-format on
 
   in = tf.zeros({2, 4, 5, 3});
-  int64_t dim_array_3[1] = {3};
-  dim_list = optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_3, 1});
   _apply_over_dim(in, 3);
   // clang-format off
   EXPECT_TENSOR_EQ(in, tf.make({2, 4, 5, 3}, {
@@ -470,7 +465,7 @@ TEST(ReduceUtilTest, ApplyOnZeroDimTensorOverDimListNonEmpty) {
       optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0, 1});
 
   Tensor in = tf.ones({});
-  _apply_over_dim_list(in, dim_list), "";
+  _apply_over_dim_list(in, dim_list);
   EXPECT_TENSOR_EQ(in, tf.make({}, {0}));
 }
 

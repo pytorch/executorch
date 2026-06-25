@@ -408,7 +408,7 @@ cases = {
     "maxpool2d_dilation": TransposeCountCase(
         MaxPool2dDilatedModule(),
         (torch.randn(1, 2, 8, 8),),
-        4,
+        2,
     ),
     "lstm": TransposeCountCase(
         LstmModule(),
@@ -428,7 +428,7 @@ cases = {
     "multihead_attention_rank3": TransposeCountCase(
         MultiheadAttentionModule(),
         (torch.randn(2, 4, 8),),
-        8,
+        7,
     ),
     "cumsum_rank3_dim0": TransposeCountCase(
         CumsumModule(),
@@ -444,7 +444,7 @@ cases = {
         Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 5
     ),
     "model_2_conv_mha_linear_layernorm": TransposeCountCase(
-        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 9
+        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 8
     ),
     "model_3_lstm_linear": TransposeCountCase(
         Model3LstmLinear(), (torch.randn(2, 16, 8),), 2
@@ -513,7 +513,7 @@ cases_channels_last = {
     "pixel_shuffle_channels_last": TransposeCountCase(
         PixelShuffleModule(),
         (torch.randn(1, 8, 2, 2).to(memory_format=torch.channels_last),),
-        3,
+        1,
     ),
     "grouped_conv_channels_last": TransposeCountCase(
         GroupedConvModule(),
@@ -538,7 +538,7 @@ cases_channels_last = {
     "maxpool2d_dilation_channels_last": TransposeCountCase(
         MaxPool2dDilatedModule(),
         (torch.randn(1, 2, 8, 8).to(memory_format=torch.channels_last),),
-        6,
+        4,
     ),
     "groupnorm_channels_last": TransposeCountCase(
         GroupNormModule(),

@@ -381,7 +381,8 @@ class TestPropagateDevicePass(unittest.TestCase):
                 )
 
     def test_copy_nodes_require_non_cpu_memory_planning(self):
-        """Default lowering keeps legacy device tags without runtime copy ops."""
+        """With enable_non_cpu_memory_planning disabled, lowering keeps legacy
+        device tags without inserting runtime copy ops."""
 
         class Model(torch.nn.Module):
             def forward(self, a, b):
@@ -391,7 +392,10 @@ class TestPropagateDevicePass(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2))
 
         for pipeline, gm in _lower_model_to_executorch(
-            model, inputs, DeviceAwarePartitioner("cuda:0")
+            model,
+            inputs,
+            DeviceAwarePartitioner("cuda:0"),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=False),
         ):
             with self.subTest(pipeline=pipeline):
                 device_copy_nodes = _collect_device_copy_nodes(gm)
