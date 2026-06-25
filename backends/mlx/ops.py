@@ -3496,7 +3496,7 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         if seed is not None:
             _, seed_val = P.make_tmp_value_slot()
             P.emit(ItemIntNode(x=P.slot_to_tid(seed), out=P.slot_to_vid(seed_val)))
-            seed_field = P.to_int_or_vid(seed_val)
+            seed_field = P.slot_to_vid(seed_val)
 
         # uniform u in [0, 1): bits/uint32_max, clamped just below 1 (random.cpp:95)
         _, bits = P.make_tmp_slot()

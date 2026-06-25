@@ -1708,7 +1708,8 @@ inline void exec_random_bits(
   check_allocation_bounded(shape, uint32, "random_bits");
   std::optional<array> key = std::nullopt;
   if (n.seed.has_value()) {
-    key = random::key(static_cast<uint64_t>(resolve_int(n.seed.value(), st)));
+    key = random::key(
+        static_cast<uint64_t>(st.const_value_ref<int32_t>(n.seed.value())));
   }
   st.set_tensor(n.out, random::bits(shape, n.width, key, s));
 }

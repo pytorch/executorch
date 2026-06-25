@@ -988,7 +988,7 @@ table IfNode {
 table RandomBitsNode {
     out: Tid (required);
     shape: [IntOrVid] (required);
-    seed: IntOrVid;              // OPTIONAL: present -> random::key(seed);
+    seed: Vid;                   // OPTIONAL: present -> random::key(seed);
                                  //           absent  -> MLX global KeySequence
     width: int32 = 4;            // bytes per element (4 -> uint32)
 }

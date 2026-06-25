@@ -403,8 +403,9 @@ def sample(
     """
     Gumbel-max sampling from softmax(logits / temperature), with top-p (nucleus).
     logits:      [B, vocab]
-    temperature: scalar float tensor    (runtime input). temperature == 0 is
-                 greedy: return argmax(logits) directly.
+    temperature: scalar float tensor    (runtime input). temperature <= 0 is
+                 greedy: return argmax(logits) directly (matches the device,
+                 which branches on temperature > 0).
     top_p:       scalar float tensor in (0, 1]. top_p=1.0 keeps every
                  token, i.e. it is off.
     seed:        scalar int tensor or None
@@ -417,7 +418,7 @@ def sample(
     RNG (plain torch.rand, no uint32/nextafter uniform) while the delegate uses
     MLX RNG, so a given seed does not reproduce the same tokens host vs. device.
     """
-    if float(temperature) == 0:
+    if float(temperature) <= 0:  # matches the device cond (temperature > 0)
         return torch.argmax(logits, dim=-1)
     # whole chain in fp32 to match the lowered graph (bf16 sums mis-rank ties).
     scaled = logits.float() / temperature
