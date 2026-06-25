@@ -18,10 +18,10 @@
 
 namespace executorch::backends::webgpu::utils {
 
-// Integer ceil-division (mirrors Vulkan utils::div_up).
-template <typename Type>
-inline constexpr Type div_up(const Type& numerator, const Type& denominator) {
-  return (numerator + denominator - 1) / denominator;
+// Ceiling division for non-negative integers (mirrors Vulkan's utils::div_up).
+template <typename T>
+inline T div_up(T a, T b) {
+  return (a + b - 1) / b;
 }
 
 // Clamp workgroup size to device limit (SwiftShader caps at 128).
@@ -40,7 +40,7 @@ inline uint32_t compute_1d_workgroup_count(
     uint32_t num_threads,
     uint32_t workgroup_size,
     const char* op_name) {
-  uint32_t count = (num_threads + workgroup_size - 1) / workgroup_size;
+  uint32_t count = div_up(num_threads, workgroup_size);
   WGPULimits limits = {};
   uint32_t max_count =
       wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
@@ -74,6 +74,18 @@ make_uniform(WGPUDevice device, const void* data, size_t size) {
   std::memcpy(ptr, data, size);
   wgpuBufferUnmap(buf);
   return buf;
+}
+
+// Clamp a 1D workgroup count to the device limit, for grid-stride kernels that
+// loop over any excess work (vs compute_1d_workgroup_count, which throws).
+inline uint32_t clamp_workgroup_count(WGPUDevice device, uint32_t desired) {
+  WGPULimits limits = {};
+  uint32_t max_count =
+      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+          limits.maxComputeWorkgroupsPerDimension > 0
+      ? limits.maxComputeWorkgroupsPerDimension
+      : 65535u; // WebGPU spec-default floor
+  return std::min(desired, max_count);
 }
 
 } // namespace executorch::backends::webgpu::utils
