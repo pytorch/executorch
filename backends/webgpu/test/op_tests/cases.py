@@ -49,6 +49,16 @@ from executorch.backends.webgpu.test.ops.test_sigmoid import (
     N as _SIGMOID_N,
     SigmoidModule,
 )
+
+from executorch.backends.webgpu.test.ops.test_squeeze import (
+    CONFIGS as _SQUEEZE_CONFIGS,
+    SqueezeModule,
+)
+
+from executorch.backends.webgpu.test.ops.test_unsqueeze import (
+    CONFIGS as _UNSQUEEZE_CONFIGS,
+    UnsqueezeModule,
+)
 from executorch.backends.webgpu.test.ops.test_view_copy import (
     CONFIGS as _VIEW_CONFIGS,
     ViewModule,
@@ -183,4 +193,30 @@ def _sigmoid_suite() -> WebGPUTestSuite:
         ],
         atol=1e-4,
         rtol=1e-4,
+    )
+
+
+@register_op_test("squeeze")
+def _squeeze_suite() -> WebGPUTestSuite:
+    # CONFIGS: name -> (shape, dim) where dim is an int or a tuple.
+    return WebGPUTestSuite(
+        module_factory=lambda dim: SqueezeModule(dim),
+        cases=[
+            Case(name=n, construct={"dim": dim}, inputs=(shape,))
+            for n, (shape, dim) in _SQUEEZE_CONFIGS.items()
+        ],
+        golden_dtype="float32",  # reshape copies values; fp64 bit-identical
+    )
+
+
+@register_op_test("unsqueeze")
+def _unsqueeze_suite() -> WebGPUTestSuite:
+    # CONFIGS: name -> (shape, dim).
+    return WebGPUTestSuite(
+        module_factory=lambda dim: UnsqueezeModule(dim),
+        cases=[
+            Case(name=n, construct={"dim": dim}, inputs=(shape,))
+            for n, (shape, dim) in _UNSQUEEZE_CONFIGS.items()
+        ],
+        golden_dtype="float32",  # reshape copies values; fp64 bit-identical
     )
