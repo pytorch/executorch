@@ -40,6 +40,10 @@ from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
 )
+from executorch.backends.webgpu.test.ops.test_view_copy import (
+    CONFIGS as _VIEW_CONFIGS,
+    ViewModule,
+)
 
 # rms_norm coverage is exactly the 15 cases the native test covered.
 RMS_NORM_CASES = _CASES
@@ -121,3 +125,22 @@ def _mul_suite() -> WebGPUTestSuite:
             Case(name=name, inputs=(sa, sb)) for name, (sa, sb) in _MUL_CONFIGS.items()
         ],
     )
+
+
+def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
+    """Builder for ops whose per-case spec is a (shape, fn) pair (view/select/slice).
+    The fn is a `construct` kwarg baked into the .pte module, never a serialized input.
+    """
+    return WebGPUTestSuite(
+        module_factory=lambda fn: module_cls(fn),
+        cases=[
+            Case(name=n, construct={"fn": fn}, inputs=(shape,))
+            for n, (shape, fn) in configs.items()
+        ],
+        golden_dtype="float32",  # gather/copy: fp64 bit-identical, skip dual-oracle
+    )
+
+
+@register_op_test("view_copy")
+def _view_copy_suite() -> WebGPUTestSuite:
+    return _fn_config_suite(ViewModule, _VIEW_CONFIGS)
