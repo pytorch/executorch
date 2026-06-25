@@ -36,10 +36,8 @@ def _validate_clamp_dtype(dtype: torch.dtype, op: str) -> None:
             )
         return
 
-        _validate_float_dtype(dtype, op)
-        return
-
-    raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
+    _validate_float_dtype(dtype, op)
+    return
 
 
 def _validate_float_dtype(dtype: torch.dtype, op: str) -> None:

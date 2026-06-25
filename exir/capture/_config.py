@@ -128,9 +128,12 @@ class ExecutorchBackendConfig:
 
     # When True, memory planning partitions specs by device and runs the
     # algorithm independently per device, producing separate buffers for CPU
-    # vs. accelerator memory.  Default False preserves the legacy behavior
-    # where all tensors are planned into CPU memory regardless of device.
-    enable_non_cpu_memory_planning: bool = False
+    # vs. accelerator memory.  This is the default: device (e.g. CUDA) delegate
+    # inputs/outputs are planned into real accelerator memory, and
+    # PropagateDevicePass inserts explicit h2d/d2h copies at delegate
+    # boundaries.  Set to False to fall back to the legacy behavior where all
+    # tensors are planned into CPU memory regardless of device.
+    enable_non_cpu_memory_planning: bool = True
 
     # Add ops to the set of re-inplace ops to be used by the reinplace pass.
     # Re-inplace pass checks the eligibility of an op to be re-inplaced and

@@ -7,4 +7,3 @@
 
 ai_ml_emulation_layer_for_vulkan == 0.9.0
 ai_ml_sdk_model_converter == 0.9.0
-ai_ml_sdk_vgf_library == 0.9.0

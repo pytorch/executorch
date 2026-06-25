@@ -49,6 +49,10 @@ def validate_max_pool2d_dtype(
         supported_float_types.append(torch.bfloat16)
     if tosa_spec.support_extension("int16"):
         supported_int_types.append(torch.int16)
+    if tosa_spec.support_extension("fp8e4m3"):
+        supported_float_types.append(torch.float8_e4m3fn)
+    if tosa_spec.support_extension("fp8e5m2"):
+        supported_float_types.append(torch.float8_e5m2)
 
     if x.dtype in supported_int_types:
         if not tosa_spec.support_integer():
