@@ -294,16 +294,14 @@ def _tq4_sdpa_fwd_kernel_body(
 
 @triton.autotune(
     configs=[
-        # No-spill prefill configs, pruned to the profiled-optimal set for the
-        # gemma4 global shape (heavy-shape optimum = BLOCK_M=32/BLOCK_N=32/w4/s2).
-        # BLOCK_M=32 keeps the fp32 acc[BLOCK_M, HEAD_DIM] in registers (BLOCK_M=64
-        # at HEAD_DIM=512 = 128 KB/CTA spills to local memory) and BLOCK_N<=64
-        # keeps the staged decompressed K/V tile within the A100 SMEM budget.
-        # BLOCK_M=16 / BLOCK_N=16 configs were pruned (slower; BLOCK_N=16 also
-        # measured low cosine ~0.79-0.93 at this shape).
         triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_warps=8, num_stages=2),
         triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=3),
         triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=2),
+        # Extra BLOCK_N in {32,64} configs for smaller-SMEM GPUs (e.g. RTX 5090);
+        # correctness-safe (cos~1.0), never BLOCK_N=16 (numerically wrong).
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=8, num_stages=2),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=4),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_warps=8, num_stages=3),
     ],
     key=["Lq", "Lk", "HEAD_DIM", "HAS_MASK", "IS_CAUSAL", "NUM_GROUPS", "PACK_GQA"],
 )
@@ -783,17 +781,14 @@ def tq4_sdpa(
 
 @triton.autotune(
     configs=[
-        # Split-K decode configs, curated to the profiled-optimal set so the
-        # HAS_MASK=False specialization (decode passes attn_mask=None too, for the
-        # AOTI weights-blob dedup) bakes a good config: BLOCK_N=32/w4/s2 is the
-        # primary optimum (964us@127K, 344us@32K), BLOCK_N=64/w8/s3 wins at 127K
-        # (914us), BLOCK_N=128/w8/s2 is a safe fallback. Other configs were pruned:
-        # BLOCK_N=64/w2/s1 (12.8ms), 128/w4/s{1,2,3} (up to 9.4ms) and 32/w2/s1 are
-        # catastrophic for HAS_MASK=False; the rest were not measured-optimal and
-        # are dropped so AOTI cannot bake a slow one (no autotune lottery).
         triton.Config({"BLOCK_N": 32}, num_warps=4, num_stages=2),
         triton.Config({"BLOCK_N": 64}, num_warps=8, num_stages=3),
         triton.Config({"BLOCK_N": 128}, num_warps=8, num_stages=2),
+        # Extra BLOCK_N in {32,64} configs for smaller-SMEM GPUs (e.g. RTX 5090);
+        # correctness-safe (cos~1.0), never BLOCK_N=16 (numerically wrong).
+        triton.Config({"BLOCK_N": 32}, num_warps=8, num_stages=2),
+        triton.Config({"BLOCK_N": 64}, num_warps=4, num_stages=2),
+        triton.Config({"BLOCK_N": 32}, num_warps=4, num_stages=3),
     ],
     key=["Lk", "HEAD_DIM", "NUM_GROUPS", "HAS_MASK", "PACK_GQA"],
 )
