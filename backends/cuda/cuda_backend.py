@@ -166,11 +166,29 @@ def _compile_time_cpu_clones(target_device: torch.device):
 
 
 def _is_kv_buffer(name, v) -> bool:
-    return (
-        isinstance(v, torch.Tensor)
-        and not isinstance(v, torch.nn.Parameter)
-        and "kv_cache" in name
-    )
+    """True only for an actual KV-cache *content* buffer that is safe to free.
+
+    The low-memory path (``_move_to_device_resize_kv``) frees every buffer this
+    matches and re-synthesizes it as ZEROS in both the lifted graph and the
+    serialized ``.ptd`` (see ``_full_zeros_preserving_strides`` /
+    ``_get_const_synthesize_zeros``). That is only valid for genuine KV *content*,
+    which is all-zeros at export time (caches start empty).
+
+    It must NOT match the non-zero constants that some KV-cache modules register
+    alongside the cache — e.g. TurboQuant registers its codebook/rotation
+    (``centroids``/``boundaries``/``rotation``/``rotation_T``) as buffers on the
+    ``kv_cache`` module, so their FQNs also contain ``kv_cache``. Freeing+zeroing
+    those silently corrupts the serialized model (TQ4 dequant -> 0 -> garbage).
+    Gate on the buffer actually being all-zeros so only empty KV content is freed;
+    this is robust to any future constant name (a non-zero buffer is never freed).
+    """
+    if not isinstance(v, torch.Tensor) or isinstance(v, torch.nn.Parameter):
+        return False
+    if "kv_cache" not in name or v.numel() == 0 or v.is_meta:
+        return False
+    # Only the genuinely all-zero KV content may be freed + re-zeroed; non-zero
+    # constants (TurboQuant centroids/rotation/...) must be preserved as-is.
+    return bool(torch.count_nonzero(v) == 0)
 
 
 def _empty_strided_on_device(v, location):
