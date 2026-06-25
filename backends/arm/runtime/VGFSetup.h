@@ -45,10 +45,16 @@ typedef struct IO {
   VkDeviceMemory image_memory;
   VkDeviceMemory memory;
   VkExtent3D image_extent;
+  void* persistent_memory = nullptr;
   bool owns_memory = true;
   bool owns_image_memory = true;
   bool is_input;
 } IO;
+
+typedef struct PersistentMappedMemory {
+  VkDeviceMemory memory = VK_NULL_HANDLE;
+  void* data = nullptr;
+} PersistentMappedMemory;
 
 typedef struct SegmentState {
   int segment_id = -1;
@@ -128,18 +134,19 @@ class VgfRepr {
   std::vector<SegmentState> segments;
   std::vector<ResourceAlloc> extra_allocs;
 
-  bool map_io(IO* io, void** handle) {
-    VkResult result =
-        vkMapMemory(vk_device, io->memory, 0, VK_WHOLE_SIZE, 0, handle);
-    if (result != VK_SUCCESS) {
-      ET_LOG(Error, "Failed to map Vulkan IO memory");
+  // Mapping to persistent IO memory
+  static bool map_io(IO* io, void** handle) {
+    if (io->persistent_memory == nullptr) {
+      ET_LOG(Error, "Vulkan IO memory is not persistently mapped");
       return false;
     }
+    *handle = io->persistent_memory;
     return true;
   }
 
-  void unmap_io(IO* io) {
-    vkUnmapMemory(vk_device, io->memory);
+  // Unmapping to persistent IO memory
+  static void unmap_io(IO* io) {
+    (void)io;
   }
 
   ~VgfRepr() {
@@ -163,10 +170,15 @@ class VgfRepr {
   // per-VgfRepr-instance objects allocated in process_vgf, used (can be more
   // than once) in execute_vgf
   VkCommandBuffer vk_execute_cmd = VK_NULL_HANDLE;
+  VkFence vk_execute_fence = VK_NULL_HANDLE;
   // Note: the vector of tensor memory is stored in IOs above
 
   bool init_timestamp_queries();
   void read_timestamp_queries(executorch::runtime::EventTracer* event_tracer);
+
+  std::vector<PersistentMappedMemory> persistent_mapped_memories;
+  bool map_persistent_io_memory();
+  void unmap_persistent_io_memory();
 };
 
 } // namespace vgf

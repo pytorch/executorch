@@ -242,6 +242,13 @@ class MLXProgramBuilder:
         """Create a temporary value (SymInt) slot."""
         return self.slot_manager.make_tmp_value_slot()
 
+    def tmp_scope(self):
+        """Context manager scoping temporary slot ids for reuse.
+
+        See :meth:`SlotManager.tmp_scope`.
+        """
+        return self.slot_manager.tmp_scope()
+
     def make_or_get_constant(self, name: str, tensor: torch.Tensor) -> Slot:
         """
         Creates an extra constant outside of the ExportedProgram state_dict.
@@ -529,7 +536,8 @@ class MLXProgramBuilder:
 
             if self.node_info[n].handler is not None:
                 handler = self.node_info[n].handler
-                handler(self, n)
+                with self.tmp_scope():
+                    handler(self, n)
                 self._mark_supported(n, handler=handler)
                 continue
 
@@ -558,7 +566,8 @@ class MLXProgramBuilder:
                 continue
 
             try:
-                handler(self, n)
+                with self.tmp_scope():
+                    handler(self, n)
                 self._mark_supported(n, handler=handler)
             except Exception as e:
                 trace_str = traceback.format_exc()
@@ -688,14 +697,26 @@ class MLXProgramBuilder:
                     # Inputs, outputs, mutable buffers - always include
                     used_slots.add(s)
 
+        # Count distinct physical slots. Slots that share (id_space, idx) are the
+        # same slot reused across disjoint lifetimes (delete-as-you-go reclaim /
+        # tmp_scope) and are coalesced to a single global id below, so they must
+        # be counted once. (For non-tensors, SymInt/SymBool share the vid pool.)
+        #
+        # NOTE: the key here is (is_tensor, id_space, idx), while
+        # _create_slot_mappings keys only on (id_space, idx). The two stay
+        # equivalent only because tids and vids are coalesced in separate passes
+        # there (is_tensor is constant within each), so this count matches the
+        # number of distinct global ids per space. Keep the two in sync.
         num_tensors: Dict[IdSpace, int] = defaultdict(int)
         num_values: Dict[IdSpace, int] = defaultdict(int)
-        seen: Set[Slot] = set()
+        seen_keys: Set[Tuple[bool, IdSpace, int]] = set()
         for s in used_slots:
-            if s in seen:
+            is_tensor = s.id_type == IdType.Tensor
+            key = (is_tensor, s.id_space, s.idx)
+            if key in seen_keys:
                 continue
-            seen.add(s)
-            if s.id_type == IdType.Tensor:
+            seen_keys.add(key)
+            if is_tensor:
                 num_tensors[s.id_space] += 1
             else:
                 num_values[s.id_space] += 1
@@ -719,19 +740,28 @@ class MLXProgramBuilder:
             IdSpace.Temp: 4,
         }
 
+        # Coalesce slots that share (id_space, idx) to a single global id. Such
+        # slots are the same physical slot reused across disjoint lifetimes
+        # (delete-as-you-go reclaim / tmp_scope), so they must map to the same
+        # global Tid/Vid. Sorting by (id_space, idx) keeps per-space id ranges
+        # contiguous, matching the counts from _collect_used_slots.
+        def _coalesce(slots: List[Slot]) -> Dict[Slot, int]:
+            mapping: Dict[Slot, int] = {}
+            key_to_global: Dict[Tuple[IdSpace, int], int] = {}
+            for s in sorted(slots, key=lambda s: (id_space_order[s.id_space], s.idx)):
+                key = (s.id_space, s.idx)
+                gid = key_to_global.get(key)
+                if gid is None:
+                    gid = len(key_to_global)
+                    key_to_global[key] = gid
+                mapping[s] = gid
+            return mapping
+
         # Create Tid mapping
-        slot_to_tid = sorted(
-            [s for s in used_slots if s.id_type == IdType.Tensor],
-            key=lambda s: (id_space_order[s.id_space], s.idx),
-        )
-        slot_to_tid = {s: idx for idx, s in enumerate(slot_to_tid)}
+        slot_to_tid = _coalesce([s for s in used_slots if s.id_type == IdType.Tensor])
 
         # Create Vid mapping
-        slot_to_vid = sorted(
-            [s for s in used_slots if s.id_type != IdType.Tensor],
-            key=lambda s: (id_space_order[s.id_space], s.idx),
-        )
-        slot_to_vid = {s: idx for idx, s in enumerate(slot_to_vid)}
+        slot_to_vid = _coalesce([s for s in used_slots if s.id_type != IdType.Tensor])
 
         # Remap all Tid/Vid values in instructions to use global indices
         if hasattr(self, "_tid_slot_map"):

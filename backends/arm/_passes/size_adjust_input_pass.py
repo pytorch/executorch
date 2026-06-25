@@ -62,6 +62,41 @@ def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
         return input > other
 
 
+def _get_slice_adjustment(
+    remainder: SymIntLike,
+    pad: int,
+    stride: int,
+) -> SymIntLike | None:
+    """Return the amount to slice from the end of a conv dimension.
+
+    The required trim is ``max(remainder - pad, 0)``. For symbolic shapes we
+    encode that clamp using only integer arithmetic that the TOSA shape
+    materializer already supports: a sum of floor-div terms over the possible
+    residue classes.
+
+    """
+    if not isinstance(remainder, torch.SymInt):
+        return remainder - pad if remainder > pad else None
+
+    shape_env = get_context_shape_env()
+    exact_values = evaluate_symbolic_expr_values(remainder.node.expr, shape_env)
+    if exact_values is not None:
+        adjustments = {max(value - pad, 0) for value in exact_values}
+        if len(adjustments) == 1:
+            adjustment = next(iter(adjustments))
+            return adjustment if adjustment > 0 else None
+
+    if pad >= stride - 1:
+        return None
+
+    adjustment: SymIntLike | None = None  # type: ignore[no-redef]
+    for threshold in range(pad + 1, stride):
+        term = (remainder + stride - threshold) // stride
+        adjustment = term if adjustment is None else adjustment + term
+
+    return adjustment
+
+
 def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
     slices: Slices = []
 
@@ -85,8 +120,12 @@ def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
         remainder = conv_remainder(
             input_shape[dim], pad, dilation, weight_shape[dim], stride
         )
-        if _greater_than(remainder, pad):
-            adjustment = remainder - pad
+        adjustment = _get_slice_adjustment(
+            remainder,
+            pad,
+            stride,
+        )
+        if adjustment is not None:
             args = (dim, 0, input_shape[dim] - adjustment)
             slices.append(args)
 
@@ -218,7 +257,7 @@ class SizeAdjustInputPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
-        modified_graph = False
+        modified = False
         for node in graph.nodes:
             if node.op != "call_function":
                 continue
@@ -240,11 +279,9 @@ class SizeAdjustInputPass(ArmPass):
                     )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
-                modified_graph = True
+                modified = True
 
-        if modified_graph:
+        if modified:
             graph_module = super().call(graph_module).graph_module
-            graph.eliminate_dead_code()
-            graph_module.recompile()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
