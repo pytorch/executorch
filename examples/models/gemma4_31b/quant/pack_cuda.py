@@ -6,9 +6,19 @@
 
 """CUDA packer: assign quantized weights to model modules.
 
-Passes ``Int4Tensor`` and ``IntxUnpackedToInt8Tensor`` through as
-``nn.Parameter`` without conversion.  The Int4Tensor dispatch override
-(``int4_dispatch.py``) handles F.linear at runtime.
+Repacks native torchao quantized tensors into the ExecuTorch-internal CUDA
+layouts read by the decode kernels:
+
+  * ``Int4Tensor`` -> ``CudaCoalescedInt4Tensor`` (bakes the scale/zero transpose
+    into the coalesced [N, n_groups] layout).
+  * Q6_K ``ExportableGGUFTensor`` -> ``CudaDp4aPlanarInt6Tensor`` (the genuine 6-bit
+    ql/qh split bit-planes; the Q6_K block decode is reused from gguf.py, not
+    duplicated).
+
+A genuine INT8 ``IntxUnpackedToInt8Tensor`` is left unchanged for the int8 path
+(Q6_K no longer arrives as an int8 tensor, so the routing is unambiguous).
+The quantize_op_dispatch package (``int4_dispatch`` / ``int6_dispatch`` /
+``int8_dispatch``) handles F.linear at runtime.
 
 No CUDA is required for packing.  The backend-agnostic ``pack_model``
 dispatcher lives in ``pack.py``.
@@ -27,15 +37,50 @@ from .pack import ModulePackerFn, pack_model  # noqa: F401
 
 
 def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
-    """Assign a quantized weight to an ``nn.Linear`` module."""
+    """Assign a quantized weight to an ``nn.Linear`` module.
+
+    Routes by weight type: ``Int4Tensor`` -> coalesced INT4, Q6_K
+    ``ExportableGGUFTensor`` -> packed INT6, genuine ``IntxUnpackedToInt8Tensor``
+    -> int8 passthrough.
+    """
+    from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+    from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+        CudaDp4aPlanarInt6Tensor,
+    )
+    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     w = weights["weight"]
-    if isinstance(w, (Int4Tensor, IntxUnpackedToInt8Tensor)):
-        module.weight = nn.Parameter(w, requires_grad=False)
+    if isinstance(w, Int4Tensor):
+        # Convert to the ExecuTorch-internal CudaCoalescedInt4Tensor, which
+        # repacks scale/zero from torchao's native [n_groups, N] layout into the
+        # coalesced [N, n_groups] layout the CUDA decode kernel reads (see
+        # int4_dispatch.py / int4_plain_mm.cuh). The transpose lives in
+        # CudaCoalescedInt4Tensor.from_int4_tensor, so it is baked into the
+        # serialized weight constant and the exported decode graph carries NO
+        # per-step transpose/clone — AOTInductor (freezing=False) does not
+        # constant-fold ops on parameters, so the transpose must already live in
+        # the constant for the coalesced layout to pay off.
+        w = CudaCoalescedInt4Tensor.from_int4_tensor(w)
+    elif isinstance(w, ExportableGGUFTensor) and w.ggml_type == "q6_k":
+        # GGUF Q6_K: repack the native ExportableGGUFTensor into the genuine 6-bit
+        # CudaDp4aPlanarInt6Tensor (ql/qh split bit-planes, 0.75 B/elem) for the
+        # W6A8 dp4a decode kernel. from_exportable_gguf reuses the shared Q6_K
+        # decode (gguf.py) then bakes the bit-pack into the weight constant, once.
+        w = CudaDp4aPlanarInt6Tensor.from_exportable_gguf(w)
+    elif isinstance(w, IntxUnpackedToInt8Tensor):
+        # Genuine INT8 weight: left unchanged for the int8 dp4a path. The
+        # mixed-precision HQQ-INT4 ("sensitive") checkpoint reaches this branch
+        # for its int8 tensors — edge-layer v_proj/down_proj are quantized to
+        # INT8 while the rest is INT4 (see GEMMA4_31B_SENSITIVE_RECIPE in
+        # quantize_and_save.py). Q6_K never reaches here (it arrives as an
+        # ExportableGGUFTensor, handled above), so int4 vs int6 vs int8 routing
+        # stays unambiguous.
+        pass
     else:
         raise ValueError(f"Unsupported weight type: {type(w).__name__}")
+    module.weight = nn.Parameter(w, requires_grad=False)
 
 
 def pack_embedding_for_cuda(

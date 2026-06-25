@@ -405,6 +405,60 @@ class HardtanhTest(OpTestCase):
         return (x,)
 
 
+class LeakyReLUModel(nn.Module):
+    """Model that applies leaky_relu with an optional negative slope."""
+
+    def __init__(self, negative_slope: Optional[float] = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.negative_slope is None:
+            return torch.nn.functional.leaky_relu(x)
+        return torch.nn.functional.leaky_relu(x, negative_slope=self.negative_slope)
+
+
+@register_test
+class LeakyReLUTest(OpTestCase):
+    """Test case for leaky_relu activation with various negative slopes."""
+
+    name = "leaky_relu"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        negative_slope: Optional[float] = 0.01,
+    ):
+        self.shape = shape
+        self.negative_slope = negative_slope
+        shape_str = "x".join(str(s) for s in shape)
+        slope_str = "default" if negative_slope is None else f"slope{negative_slope}"
+        self.name = f"leaky_relu_{slope_str}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["LeakyReLUTest"]:
+        return [
+            cls(shape=(2, 3, 4), negative_slope=0.01),
+            cls(shape=(2, 3, 4), negative_slope=None),
+            cls(shape=(4, 8), negative_slope=0.1),
+            cls(shape=(10,), negative_slope=0.2),
+            cls(shape=(10,), negative_slope=1.5),
+            cls(shape=(2, 8, 16), negative_slope=0.01),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return LeakyReLUModel(self.negative_slope)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        numel = 1
+        for size in self.shape:
+            numel *= size
+        x = torch.linspace(-4.0, 4.0, steps=numel).reshape(self.shape)
+        return (x,)
+
+
 class GELUModel(nn.Module):
     """Simple model using GELU activation."""
 
@@ -2704,6 +2758,7 @@ class RingBufferKVCacheModel(nn.Module):
         max_context_length: int,
         n_heads: int,
         head_dim: int,
+        max_write_len: Optional[int] = None,
     ):
         super().__init__()
         from executorch.backends.mlx.llm.cache import RingBufferKVCache
@@ -2713,6 +2768,7 @@ class RingBufferKVCacheModel(nn.Module):
             max_context_length=max_context_length,
             n_heads=n_heads,
             head_dim=head_dim,
+            max_write_len=max_write_len,
         )
 
     def forward(
@@ -2749,18 +2805,31 @@ class RingBufferKVCacheTest(OpTestCase):
         head_dim: int = 64,
         max_context_length: int = 64,
         seq_step: int = 4,
+        max_write_len: Optional[int] = None,
     ):
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
         self.head_dim = head_dim
         self.max_context_length = max_context_length
         self.seq_step = seq_step
+        self.max_write_len = max_write_len
 
     @classmethod
     def get_test_configs(cls) -> List["RingBufferKVCacheTest"]:
         return [
             cls(),
             cls(n_heads=8, head_dim=32, max_context_length=32, seq_step=2),
+            # Reduced buffer (max_write_len < window) with a wrapping write:
+            # window=8, max_write_len=4 -> buffer_size=11. The test write of 4
+            # tokens at start_pos=8 wraps the ring (slots 8,9,10 then 0),
+            # exercising the tighter buffer
+            cls(
+                n_heads=8,
+                head_dim=32,
+                max_context_length=8,
+                seq_step=2,
+                max_write_len=4,
+            ),
         ]
 
     def create_model(self) -> nn.Module:
@@ -2769,6 +2838,7 @@ class RingBufferKVCacheTest(OpTestCase):
             max_context_length=self.max_context_length,
             n_heads=self.n_heads,
             head_dim=self.head_dim,
+            max_write_len=self.max_write_len,
         )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
@@ -2793,7 +2863,13 @@ class RingBufferKVCacheTest(OpTestCase):
         return (input_pos, k_val, v_val)
 
     def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
-        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        # A single write can't exceed max_write_len (defaults to the window).
+        seq_max = (
+            self.max_write_len
+            if self.max_write_len is not None
+            else self.max_context_length
+        )
+        seq_dim = Dim("seq_step", min=1, max=seq_max)
         return {
             "input_pos": None,
             "k_val": {2: seq_dim},
