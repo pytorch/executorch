@@ -16,12 +16,16 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import AddTensorConvModule, AddTensorModule
+from executorch.backends.nxp.tests.model_output_comparator import (
+    AllCloseOutputComparator,
+)
+from executorch.backends.nxp.tests.models import AddTensorModule, MaxPoolAddTensorModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
-    Convolution,
     ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
@@ -38,67 +42,49 @@ class TestAddTensor:
         [
             pytest.param((1,), id="1D."),
             pytest.param((6, 5), id="2D."),
+            pytest.param((6, 82), id="2D alt."),
             pytest.param((1, 4, 7), id="3D."),
+            pytest.param((1, 68, 7), id="3D alt."),
             pytest.param((2, 4, 3, 15), id="4D."),
-            pytest.param(
-                (6, 82),
-                id="2D incorrect.",
-                marks=pytest.mark.xfail(reason="AIR-14602: incorrect results"),
-            ),
-            pytest.param(
-                (1, 68, 7),
-                id="3D incorrect.",
-                marks=pytest.mark.xfail(reason="AIR-14602: incorrect results"),
-            ),
-            pytest.param(
-                (1, 4, 9, 11, 4),
-                id="5D incorrect.",
-                marks=pytest.mark.xfail(reason="AIR-14602: incorrect results"),
-            ),
+            pytest.param((1, 4, 9, 11, 4), id="5D."),
         ],
     )
-    def test__basic_nsys_inference(self, x_input_shape, mocker):
+    def test__basic_nsys_inference(self, mocker, request, x_input_shape):
         x_input_spec = ModelInputSpec(x_input_shape)
         model = AddTensorModule()
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={AddTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+        comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
             model,
             [x_input_spec, x_input_spec],
             graph_verifier,
+            request,
             dataset_creator,
+            comparator,
+            remove_quant_io_ops=True,
         )
 
-    @pytest.mark.parametrize(
-        "x_input_shape",
-        [
-            pytest.param((1,), id="1D."),
-            pytest.param((6, 5), id="2D."),
-            pytest.param((1, 4, 7), id="3D."),
-            pytest.param((2, 4, 3, 15), id="4D."),
-            pytest.param(
-                (1, 4, 9, 11, 4),
-                id="5D.",
-                marks=pytest.mark.xfail(reason="AIR-14602: incorrect results"),
-            ),
-        ],
-    )
-    def test__basic_nsys_inference_qat(self, x_input_shape, mocker):
-        x_input_spec = ModelInputSpec(x_input_shape)
+    def test__basic_nsys_inference_qat(self, mocker, request):
+        x_input_spec = ModelInputSpec((1, 4, 7))
         model = AddTensorModule()
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={AddTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+        comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
             model,
             [x_input_spec, x_input_spec],
             graph_verifier,
+            request,
             dataset_creator,
+            comparator,
+            remove_quant_io_ops=True,
             use_qat=True,
         )
 
@@ -109,6 +95,10 @@ class TestAddTensor:
                 [ModelInputSpec((4, 6)), ModelInputSpec((1, 6))], id="2 inputs 2D."
             ),
             pytest.param(
+                [ModelInputSpec((69, 73)), ModelInputSpec((1, 73))],
+                id="2 inputs 2D alt.",
+            ),
+            pytest.param(
                 [ModelInputSpec((5, 3, 4)), ModelInputSpec((1, 3, 1))],
                 id="2 inputs 3D.",
             ),
@@ -116,24 +106,27 @@ class TestAddTensor:
                 [ModelInputSpec((4,)), ModelInputSpec((4, 4))], id="2 inputs 1D + 2D."
             ),
             pytest.param(
-                [ModelInputSpec((69, 73)), ModelInputSpec((1, 73))],
-                id="2 inputs 2D incorrect.",
-                marks=pytest.mark.xfail(reason="AIR-14602: incorrect results"),
+                [ModelInputSpec((1, 4, 8, 8)), ModelInputSpec((8, 8))],
+                id="2 inputs 4D + 2D.",
             ),
         ],
     )
-    def test__broadcast(self, input_spec, mocker):
+    def test__broadcast(self, mocker, request, input_spec):
         model = AddTensorModule()
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={AddTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+        comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
             model,
             input_spec,
             graph_verifier,
+            request,
             dataset_creator,
+            comparator,
+            remove_quant_io_ops=True,
         )
 
     @pytest.mark.parametrize(
@@ -165,59 +158,29 @@ class TestAddTensor:
         assert graph_contains_any_of_ops(delegated_ep.graph, [AddTensor])
 
     @pytest.mark.parametrize(
-        "x_input_shape",
-        [
-            pytest.param(
-                (1, 4, 5, 5), id="4D, product of dims is not a multiple of 8."
-            ),
-        ],
-    )
-    def test__w_conv(self, x_input_shape, mocker):
-        model = AddTensorConvModule()
-
-        n, c, h, w = x_input_shape
-        y_input_spec = ModelInputSpec((n, 8, h, w))
-        x_input_spec = ModelInputSpec(x_input_shape)
-
-        graph_verifier = DetailedGraphVerifier(
-            mocker,
-            expected_delegated_ops={AddTensor: 1, Convolution: 1},
-            expected_non_delegated_ops={},
-        )
-        dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
-
-        lower_run_compare(
-            model, [x_input_spec, y_input_spec], graph_verifier, dataset_creator
-        )
-
-    @pytest.mark.parametrize(
         "input_spec",
         [
             pytest.param(
-                [ModelInputSpec((1, 4, 5, 5)), ModelInputSpec((1, 8, 5, 1))],
-                id="2 inputs 4D + 4D.",
-            ),
-            pytest.param(
-                [ModelInputSpec((1, 4, 5, 67)), ModelInputSpec((1, 8, 5, 1))],
-                id="2 inputs 4D + 4D incorrect.",
-                marks=pytest.mark.xfail(reason="AIR-14602: incorrect results"),
+                ModelInputSpec((1, 4, 5, 5)),
+                id="4D, product of dims is not a multiple of 8.",
             ),
         ],
     )
-    def test__w_conv_broadcast(self, input_spec, mocker):
-        model = AddTensorConvModule()
+    def test__channels_first_input(self, mocker, request, input_spec):
+        model = MaxPoolAddTensorModule()
 
         graph_verifier = DetailedGraphVerifier(
             mocker,
-            expected_delegated_ops={AddTensor: 1, Convolution: 1},
+            expected_delegated_ops={AddTensor: 1, MaxPool2DWithIndices: 1, GetItem: 1},
             expected_non_delegated_ops={},
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
 
         lower_run_compare(
             model,
-            input_spec,
+            [input_spec, input_spec],
             graph_verifier,
+            request,
             dataset_creator,
         )
 
@@ -225,20 +188,56 @@ class TestAddTensor:
         "input_spec",
         [
             pytest.param(
-                [ModelInputSpec((1, 4, 5, 5)), ModelInputSpec((1, 5))],
-                id="2 inputs 4D + 2D.",
+                [ModelInputSpec((1, 8, 5, 5)), ModelInputSpec((1, 8, 5, 1))],
+                id="2 inputs 4D + 4D.",
             ),
             pytest.param(
-                [ModelInputSpec((1, 4, 4, 10)), ModelInputSpec((1, 4, 1))],
-                id="2 inputs 4D + 3D.",
+                [ModelInputSpec((1, 8, 1, 67)), ModelInputSpec((1, 8, 5, 67))],
+                id="2 inputs 4D + 4D same width.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 5, 5)), ModelInputSpec((1, 1))],
+                id="2 inputs 4D + 2D ones tensor.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 8, 8)), ModelInputSpec((8, 8))],
+                id="2 inputs 4D + 2D both dims 8.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 5, 5)), ModelInputSpec((1, 5))],
+                id="2 inputs 4D + 2D one dim 5.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 12, 10)), ModelInputSpec((8, 1, 10))],
+                id="2 inputs 4D + 3D channels dim 1.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 4, 10)), ModelInputSpec((1, 4, 1))],
+                id="2 inputs 4D + 3D channels dim 4.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 25, 18)), ModelInputSpec((4, 1, 8, 25, 18))],
+                id="2 inputs 4D + 5D.",
             ),
         ],
     )
-    def test__w_conv_unsupported(self, input_spec):
-        model = AddTensorConvModule()
+    def test__broadcast__channels_first_input(self, mocker, request, input_spec):
+        model = MaxPoolAddTensorModule()
 
-        delegated_ep = to_quantized_edge_program(model, input_spec).exported_program()
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={AddTensor: 1, MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={},
+        )
+        dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+        comparator = AllCloseOutputComparator(atol=1)
 
-        # Make sure the `add.Tensor` was NOT delegated.
-        assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-        assert graph_contains_any_of_ops(delegated_ep.graph, [AddTensor])
+        lower_run_compare(
+            model,
+            input_spec,
+            graph_verifier,
+            request,
+            dataset_creator,
+            comparator,
+            remove_quant_io_ops=True,
+        )

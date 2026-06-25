@@ -292,7 +292,7 @@ def test_conv_transpose2d_tosa_FP_fp8(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_tosa_ref_model=False,  # torch.conv_transpose2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
         tosa_extensions=[tosa_extension],
     )
     pipeline.count_tosa_ops({"TRANSPOSE_CONV2D": 1, "CAST": 1})

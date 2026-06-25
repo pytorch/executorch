@@ -14,9 +14,8 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from functools import wraps
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional
 
-import torch
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
@@ -34,12 +33,17 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     StaticLLMQuantRecipe,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch.utils.data import DataLoader
 from transformers import AutoConfig
 
 
 class Mode(Enum):
+    # AR-N graph compiled and deployed for runtime.
     PREFILL = 1
+    # AR-1 graph compiled and deployed for runtime.
     DECODE = 2
+    # Full AR sequence mode; used for quantization, never deployed.
+    # After convert_pt2e, its scale/zp are propagated to DECODE and PREFILL via _encoding_override.
     CALIBRATE = 3
 
 
@@ -103,6 +107,7 @@ def process_model_args(
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
+    # TODO: support multi_batch for CALIBRATION MODE
     model_args.max_batch_size = 1
     model_args.max_seq_len = control_args.max_seq_len
     model_args.max_context_len = control_args.max_context_len
@@ -162,9 +167,9 @@ class Processor:
 class Request:
     @dataclass
     class CalibrationData:
-        datasets: List[Tuple[torch.Tensor]] = None
-        intermediate_outputs: List[Tuple[torch.Tensor]] = None
-        qdq_intermediate_outputs: List[Tuple[torch.Tensor]] = None
+        datasets: Optional[DataLoader] = None
+        intermediate_outputs: Optional[DataLoader] = None
+        qdq_intermediate_outputs: Optional[DataLoader] = None
 
     @dataclass
     class Data:

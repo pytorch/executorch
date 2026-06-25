@@ -48,6 +48,8 @@ class RewriteConvPass(ArmPass):
     (CONV2D/DEPTHWISE/TRANSPOSE/CONV3D).
     """
 
+    _FP8_DTYPES = (torch.float8_e4m3fn, torch.float8_e5m2)
+
     def __init__(self, exported_program: torch.export.ExportedProgram, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
@@ -95,23 +97,25 @@ class RewriteConvPass(ArmPass):
 
         if isinstance(mod_remainder, torch.SymInt):
             shape_env = get_context_shape_env()
-            exact_values = evaluate_symbolic_expr_values(
-                mod_remainder.node.expr, shape_env
-            )
+            exact_values = evaluate_symbolic_expr_values(mod_remainder, shape_env)
             if exact_values is not None:
                 mod_remainder_upper = max(exact_values)
+                if len(exact_values) == 1:
+                    mod_remainder = int(next(iter(exact_values)))
+                elif mod_remainder_upper == 0:
+                    mod_remainder = 0
+                else:
+                    return pad - mod_remainder
             else:
-                value_ranges = shape_env.bound_sympy(mod_remainder.node.expr)
-                mod_remainder_upper = int(value_ranges.upper)
-            if mod_remainder_upper == 0:
-                mod_remainder = 0
-        else:
-            mod_remainder_upper = mod_remainder
-
-        if mod_remainder_upper > pad:
+                # SizeAdjustInputPass already trims symbolic remainder classes
+                # that would force negative padding. Keep the symbolic
+                # expression here instead of asking ShapeEnv to normalize it.
+                return pad - mod_remainder
+        if mod_remainder > pad:
             raise RuntimeError(
-                "This case should be handled by the SizeAdjustInputPass, is it enabled?\n"
+                "This case should be handled by SizeAdjustInputPass, is it enabled?\n"
             )
+
         return pad - mod_remainder
 
     def _is_depthwise_conv2d(self, node: torch.fx.Node) -> bool:
@@ -146,11 +150,15 @@ class RewriteConvPass(ArmPass):
         graph_module: torch.fx.GraphModule,
         node: torch.fx.Node,
         weight_node: torch.fx.Node,
+        input_fake_tensor: torch.Tensor,
     ) -> torch.fx.Node:
         output_channels = get_first_fake_tensor(node).shape[1]
-        # add a node containing zeros if quantized, use int32, otherwise use float32
+        # Add a zero bias with the dtype TOSA expects: int32 for
+        # quantized conv, fp16 for FP8 conv, and the output dtype otherwise.
         if self._is_quantized_conv(node):
             bias_data = torch.zeros(size=(output_channels,), dtype=torch.int32)
+        elif input_fake_tensor.dtype in self._FP8_DTYPES:
+            bias_data = torch.zeros(size=(output_channels,), dtype=torch.float16)
         else:
             output_dtype = node.meta["val"].dtype
             bias_data = torch.zeros(size=(output_channels,), dtype=output_dtype)
@@ -173,6 +181,32 @@ class RewriteConvPass(ArmPass):
             self._mark_bias_as_int48_if_needed(node, bias_node)
         node.update_arg(2, bias_node)
         return bias_node
+
+    def _rewrite_fp8_bias(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        bias_node: torch.fx.Node,
+    ) -> torch.fx.Node:
+        bias_tensor = get_param_tensor(  # type: ignore[arg-type]
+            self.exported_program, bias_node
+        )
+        if bias_tensor is None:
+            raise RuntimeError(
+                f"Bias node {bias_node.name} is not a parameter or buffer"
+            )
+
+        kind = get_constant_placeholder_kind(self.exported_program, bias_node)
+        persistent_buffer = is_persistent_buffer(self.exported_program, bias_node)
+        with graph_module.graph.inserting_after(bias_node):
+            return create_constant_placeholder(
+                self.exported_program,
+                graph=graph_module.graph,
+                name=f"{node.name}_bias_fp16",
+                kind=kind,
+                data=bias_tensor.to(torch.float16),
+                persistent_buffer=persistent_buffer,
+            )
 
     def _rewrite_weight(
         self,
@@ -449,9 +483,12 @@ class RewriteConvPass(ArmPass):
 
             has_bias = bias is not None
             if not has_bias:
-                bias = self._add_bias(graph_module, node, weight)
+                bias = self._add_bias(graph_module, node, weight, input_fake_tensor)
             elif isinstance(bias, torch.fx.Node):
-                self._mark_bias_as_int48_if_needed(node, bias)
+                if input_fake_tensor.dtype in self._FP8_DTYPES:
+                    bias = self._rewrite_fp8_bias(graph_module, node, bias)
+                else:
+                    self._mark_bias_as_int48_if_needed(node, bias)
 
             conv_args: tuple[Any, ...]
             input_tensor_for_tosa_fake: torch.Tensor = input_fake_tensor

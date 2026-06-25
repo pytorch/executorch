@@ -80,8 +80,10 @@ fallback_test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_dialect_avg_pool2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_avg_pool2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     ops_after = dict(test_case.model.ops_after_transforms)
     if test_case.model.pool.count_include_pad:
         ops_after["executorch_exir_dialects_edge__ops_cortex_m_pad_default"] = 1
@@ -91,11 +93,8 @@ def test_dialect_avg_pool2d(test_case):
         qtol=1,
     )
 
-    import cmsis_nn  # type: ignore[import-not-found, import-untyped]
+    from executorch.backends.cortex_m.library import cmsis_nn
 
-    from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-
-    target_config = CortexMTargetConfig(cpu=CortexM.M55)
     module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
     pool_target = exir_ops.edge.cortex_m.quantized_avg_pool2d.default
     [pool_node] = [
@@ -110,7 +109,7 @@ def test_dialect_avg_pool2d(test_case):
     input_shape = input_node.meta["val"].shape
     output_shape = pool_node.meta["val"].shape
     expected_size = cmsis_nn.avgpool_buffer_size(
-        target_config.backend,
+        cortex_m_target.backend,
         cmsis_nn.DataType.A8W8,
         dim_dst_width=int(output_shape[3]),
         ch_src=int(input_shape[1]),
@@ -139,6 +138,8 @@ def test_dialect_avg_pool2d_fallback(test_case):
 
 
 @parametrize("test_case", test_cases)
-def test_implementation_avg_pool2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_avg_pool2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)

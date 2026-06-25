@@ -15,6 +15,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -24,6 +25,10 @@ namespace executorch::backends::webgpu {
 // header
 
 namespace {
+
+// Op name the AOT exporter emits for a prepacked constant (must match the
+// serialized schema); compared in the prepack pre-scan below.
+constexpr const char* kPrepackOpName = "et_vk.prepack.default";
 
 size_t vk_datatype_size(vkgraph::VkDataType dtype) {
   switch (dtype) {
@@ -44,6 +49,19 @@ size_t vk_datatype_size(vkgraph::VkDataType dtype) {
   }
 }
 
+bool vk_datatype_is_int(vkgraph::VkDataType dtype) {
+  switch (dtype) {
+    case vkgraph::VkDataType::BOOL:
+    case vkgraph::VkDataType::UINT8:
+    case vkgraph::VkDataType::INT8:
+    case vkgraph::VkDataType::INT32:
+    case vkgraph::VkDataType::INT64:
+      return true;
+    default:
+      return false;
+  }
+}
+
 } // namespace
 
 WebGPUGraph::WebGPUGraph() = default;
@@ -57,6 +75,86 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
   scratch_buffers_.push_back(buffer);
   return buffer;
+}
+
+void WebGPUGraph::update_symints_from_inputs(
+    const std::vector<InputData>& inputs) {
+  for (const auto& src : symint_sources_) {
+    int pos = -1;
+    for (size_t i = 0; i < input_ids_.size(); i++) {
+      if (input_ids_[i] == src.input_tensor_id) {
+        pos = static_cast<int>(i);
+        break;
+      }
+    }
+    if (pos < 0 || pos >= static_cast<int>(inputs.size())) {
+      throw std::runtime_error(
+          "select_as_symint: source tensor is not a graph input");
+    }
+    const auto& dims = tensors_[src.input_tensor_id].dims;
+    int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
+    if (dim < 0 || dim >= static_cast<int>(dims.size())) {
+      throw std::runtime_error("select_as_symint: dim out of range");
+    }
+    int index = src.index;
+    if (index < 0) {
+      index += static_cast<int>(dims[dim]);
+    }
+    if (index < 0 || index >= static_cast<int>(dims[dim])) {
+      throw std::runtime_error("select_as_symint: index out of range");
+    }
+    int64_t numel = 1;
+    for (int64_t d : dims) {
+      numel *= d;
+    }
+    if (numel <= 0) {
+      throw std::runtime_error("select_as_symint: empty input tensor");
+    }
+    int64_t stride = 1;
+    for (size_t i = static_cast<size_t>(dim) + 1; i < dims.size(); i++) {
+      stride *= dims[i];
+    }
+    // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
+    const int64_t offset = static_cast<int64_t>(index) * stride;
+    // elem_size back-derived from build-time numel (sources are static-shaped).
+    const void* host = inputs[pos].data;
+    const size_t elem_size = inputs[pos].nbytes / static_cast<size_t>(numel);
+    int32_t val;
+    if (elem_size == sizeof(int64_t)) {
+      val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
+    } else if (elem_size == sizeof(int32_t)) {
+      val = static_cast<const int32_t*>(host)[offset];
+    } else {
+      throw std::runtime_error(
+          "select_as_symint: unsupported input element size");
+    }
+    set_symint(src.symint_id, val);
+  }
+}
+
+void WebGPUGraph::set_symint(int id, int32_t val) {
+  auto it = symints_.find(id);
+  if (it == symints_.end()) {
+    throw std::runtime_error("WebGPUGraph::set_symint: id is not a SymInt");
+  }
+  if (it->second.value != val) {
+    it->second.value = val;
+    wgpuQueueWriteBuffer(
+        queue_, it->second.buffer, 0, &it->second.value, sizeof(int32_t));
+    dirty_symints_.insert(id);
+  }
+}
+
+void WebGPUGraph::propagate_resize() {
+  if (dirty_symints_.empty()) {
+    return;
+  }
+  for (auto& hook : resize_hooks_) {
+    if (dirty_symints_.count(hook.symint_id) != 0) {
+      hook.fn(*this);
+    }
+  }
+  dirty_symints_.clear();
 }
 
 WebGPUGraph::~WebGPUGraph() {
@@ -74,6 +172,16 @@ WebGPUGraph::~WebGPUGraph() {
   for (auto& buf : scratch_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& buf : owned_uniform_buffers_) {
+    if (buf) {
+      wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& kv : symints_) {
+    if (kv.second.buffer) {
+      wgpuBufferRelease(kv.second.buffer);
     }
   }
   for (auto& buf : output_staging_buffers_) {
@@ -126,6 +234,10 @@ void WebGPUGraph::build(
 
   const auto* graph = vkgraph::GetVkGraph(flatbuffer_data);
 
+  // .pte byte sources for prepack-time constant materialization (build-only).
+  constant_data_ = constant_data;
+  named_data_map_ = named_data_map;
+
   // Phase 1: Create all values
   const auto* values = graph->values();
   const int num_vals = values ? values->size() : 0;
@@ -135,6 +247,42 @@ void WebGPUGraph::build(
   ints_.resize(num_vals, 0);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
+  value_lists_.resize(num_vals);
+
+  // Pre-scan the op chain: a constant may be DEFERRED (no eager GPU buffer; the
+  // prepack node materializes it once) only if it is a prepack source AND never
+  // a direct arg of a non-prepack op. ValueList args are expanded so a constant
+  // reached through a list still counts as a direct use.
+  std::unordered_set<int> prepack_src_ids;
+  std::unordered_set<int> direct_use_ids;
+  const auto* chain_prescan = graph->chain();
+  if (chain_prescan) {
+    for (unsigned ci = 0; ci < chain_prescan->size(); ci++) {
+      const auto* oc = chain_prescan->Get(ci);
+      const bool is_prepack = oc->name()->str() == kPrepackOpName;
+      const auto* a = oc->args();
+      if (!a) {
+        continue;
+      }
+      for (unsigned j = 0; j < a->size(); j++) {
+        int id = static_cast<int>(a->Get(j));
+        if (is_prepack && j == 0) {
+          prepack_src_ids.insert(id);
+        } else if (!is_prepack) {
+          direct_use_ids.insert(id);
+          const auto* v = values ? values->Get(id) : nullptr;
+          if (v && v->value_type() == vkgraph::GraphTypes::ValueList) {
+            const auto* items = v->value_as_ValueList()->items();
+            if (items) {
+              for (unsigned k = 0; k < items->size(); k++) {
+                direct_use_ids.insert(static_cast<int>(items->Get(k)));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   for (int i = 0; i < num_vals; i++) {
     const auto* val = values->Get(i);
@@ -157,56 +305,57 @@ void WebGPUGraph::build(
             numel *= dims->Get(j);
           }
         }
-        tensor.nbytes = numel * vk_datatype_size(vk_tensor->datatype());
+        tensor.elem_size = vk_datatype_size(vk_tensor->datatype());
+        tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
+        tensor.nbytes = numel * tensor.elem_size;
 
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
 
-        // Constants always get dedicated buffers regardless of mem_obj_id
+        // Constants are dedicated. Every constant is recorded as a
+        // ConstantSource and materialized via materialize_constant (one
+        // CPU->GPU write); a constant consumed ONLY via prepack is deferred
+        // (no eager buffer -- its prepack node performs that one write).
         if (constant_id >= 0 || mem_obj_id < 0) {
           tensor_mem_obj_ids_[i] = -1;
-          WGPUBufferDescriptor buf_desc = {};
-          buf_desc.size = std::max(tensor.nbytes, size_t(4));
-          buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
-              WGPUBufferUsage_CopySrc;
-          buf_desc.mappedAtCreation = false;
-          tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
 
-          if (constant_id >= 0 && constant_data && tensor.nbytes > 0) {
+          if (constant_id >= 0) {
             const auto* constants = graph->constants();
-            if (constants &&
-                constant_id < static_cast<int>(constants->size())) {
-              const auto* vk_bytes = constants->Get(constant_id);
-              if (vk_bytes->offset() != UINT64_MAX) {
-                const uint8_t* src = constant_data + vk_bytes->offset();
-                wgpuQueueWriteBuffer(
-                    queue_, tensor.buffer, 0, src, tensor.nbytes);
-              } else if (
-                  vk_bytes->named_key() != nullptr &&
-                  named_data_map != nullptr) {
-                // Constant stored in the PTE named-data map.
-                auto buf =
-                    named_data_map->get_data(vk_bytes->named_key()->c_str());
-                if (!buf.ok()) {
-                  throw std::runtime_error(
-                      std::string("WebGPU: named constant '") +
-                      vk_bytes->named_key()->c_str() +
-                      "' not found in NamedDataMap");
-                }
-                if (buf->size() < tensor.nbytes) {
-                  throw std::runtime_error(
-                      std::string("WebGPU: named constant '") +
-                      vk_bytes->named_key()->c_str() + "' undersized: have " +
-                      std::to_string(buf->size()) + " bytes, need " +
-                      std::to_string(tensor.nbytes));
-                }
-                wgpuQueueWriteBuffer(
-                    queue_, tensor.buffer, 0, buf->data(), tensor.nbytes);
-                buf->Free();
-              } else {
-                throw std::runtime_error(
-                    "WebGPU: constant has no inline offset and no named-data key");
-              }
+            if (!constants ||
+                constant_id >= static_cast<int>(constants->size())) {
+              throw std::runtime_error(
+                  "WebGPU: constant_id set but the constants table is missing "
+                  "or the id is out of range");
+            }
+            const auto* vk_bytes = constants->Get(constant_id);
+            ConstantSource cs;
+            cs.nbytes = tensor.nbytes;
+            if (vk_bytes->offset() != UINT64_MAX) {
+              cs.inline_offset = vk_bytes->offset();
+            } else if (vk_bytes->named_key() != nullptr) {
+              cs.named_key = vk_bytes->named_key()->str();
+            } else {
+              throw std::runtime_error(
+                  "WebGPU: constant has no inline offset and no named-data key");
+            }
+            constant_sources_[i] = std::move(cs);
+          }
+
+          // Defer constants consumed solely via prepack: skip the eager buffer.
+          const bool defer = constant_id >= 0 &&
+              prepack_src_ids.count(i) != 0 && direct_use_ids.count(i) == 0;
+          if (!defer) {
+            WGPUBufferDescriptor buf_desc = {};
+            buf_desc.size = std::max(tensor.nbytes, size_t(4));
+            buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+                WGPUBufferUsage_CopySrc;
+            buf_desc.mappedAtCreation = false;
+            tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+
+            // Same single CPU->GPU write the prepack node uses (no
+            // duplication).
+            if (constant_id >= 0) {
+              materialize_constant(i, tensor.buffer);
             }
           }
         } else {
@@ -234,6 +383,37 @@ void WebGPUGraph::build(
       case vkgraph::GraphTypes::Bool: {
         value_types_[i] = ValueType::Bool;
         bools_[i] = val->value_as_Bool()->bool_val();
+        break;
+      }
+      case vkgraph::GraphTypes::SymInt: {
+        // Live scalar: small Uniform buffer the CPU rewrites per execute.
+        value_types_[i] = ValueType::SymInt;
+        SymIntSlot slot;
+        slot.value = static_cast<int32_t>(val->value_as_SymInt()->value());
+        // 16B matches the backend uniform-struct alignment; int32 in first 4.
+        constexpr size_t kSymIntUniformBytes = 16;
+        WGPUBufferDescriptor d = {};
+        d.size = kSymIntUniformBytes;
+        d.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+        d.mappedAtCreation = true;
+        slot.buffer = wgpuDeviceCreateBuffer(device_, &d);
+        void* mapped =
+            wgpuBufferGetMappedRange(slot.buffer, 0, kSymIntUniformBytes);
+        std::memset(mapped, 0, kSymIntUniformBytes);
+        std::memcpy(mapped, &slot.value, sizeof(int32_t));
+        wgpuBufferUnmap(slot.buffer);
+        symints_[i] = slot;
+        add_uniform_buffer_bytes(kSymIntUniformBytes);
+        break;
+      }
+      case vkgraph::GraphTypes::ValueList: {
+        value_types_[i] = ValueType::ValueList;
+        const auto* items = val->value_as_ValueList()->items();
+        if (items) {
+          for (unsigned j = 0; j < items->size(); j++) {
+            value_lists_[i].push_back(static_cast<int>(items->Get(j)));
+          }
+        }
         break;
       }
       default:
@@ -312,6 +492,47 @@ void WebGPUGraph::build(
       webgpu_operator_registry().get_op_fn(op_name)(*this, args);
     }
   }
+
+  // Prepack nodes (Phase 3) materialized their constants directly into the
+  // consumer buffers via materialize_constant; no separate copy pass needed.
+  // The .pte bytes are freed right after build() returns (WebGPUBackend
+  // processed->Free()), so clear the build-only source pointers.
+  constant_data_ = nullptr;
+  named_data_map_ = nullptr;
+}
+
+void WebGPUGraph::materialize_constant(int const_value_id, WGPUBuffer dst) {
+  auto it = constant_sources_.find(const_value_id);
+  if (it == constant_sources_.end()) {
+    throw std::runtime_error(
+        "WebGPU: no source recorded for constant id " +
+        std::to_string(const_value_id));
+  }
+  const ConstantSource& cs = it->second;
+  if (cs.nbytes == 0) {
+    return;
+  }
+  if (cs.inline_offset != UINT64_MAX) {
+    if (constant_data_ == nullptr) {
+      throw std::runtime_error("WebGPU: inline constant data is null");
+    }
+    wgpuQueueWriteBuffer(
+        queue_, dst, 0, constant_data_ + cs.inline_offset, cs.nbytes);
+  } else if (!cs.named_key.empty() && named_data_map_ != nullptr) {
+    auto buf = named_data_map_->get_data(cs.named_key.c_str());
+    if (!buf.ok()) {
+      throw std::runtime_error(
+          "WebGPU: named constant '" + cs.named_key + "' not found");
+    }
+    if (buf->size() < cs.nbytes) {
+      throw std::runtime_error(
+          "WebGPU: named constant '" + cs.named_key + "' undersized");
+    }
+    wgpuQueueWriteBuffer(queue_, dst, 0, buf->data(), cs.nbytes);
+    buf->Free();
+  } else {
+    throw std::runtime_error("WebGPU: constant has no source");
+  }
 }
 
 WGPUShaderModule WebGPUGraph::get_or_create_shader(
@@ -372,31 +593,101 @@ WGPUBindGroupLayout WebGPUGraph::get_or_create_bgl(
   return bgl;
 }
 
-void WebGPUGraph::copy_inputs(
-    const std::vector<std::pair<const void*, size_t>>& inputs) {
+void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
   for (size_t i = 0; i < inputs.size() && i < input_ids_.size(); i++) {
-    if (inputs[i].second == 0) {
+    const InputData& in = inputs[i];
+    if (in.nbytes == 0) {
       continue;
     }
     int tid = input_ids_[i];
     const auto& tensor = tensors_[tid];
-    wgpuQueueWriteBuffer(
-        queue_, tensor.buffer, 0, inputs[i].first, inputs[i].second);
+
+    // Fast path: host and GPU element types match byte-for-byte.
+    if (in.nbytes == tensor.nbytes) {
+      wgpuQueueWriteBuffer(queue_, tensor.buffer, 0, in.data, tensor.nbytes);
+      continue;
+    }
+
+    // Narrow int64 host indices into the int32 buffer (mirrors Vulkan).
+    const bool buffer_is_int32 = tensor.is_int && tensor.elem_size == 4;
+    if (in.host_is_int64 && buffer_is_int32 && in.nbytes == tensor.nbytes * 2) {
+      const size_t numel = tensor.nbytes / 4;
+      const int64_t* src = static_cast<const int64_t*>(in.data);
+      std::vector<int32_t> narrowed(numel);
+      for (size_t e = 0; e < numel; e++) {
+#ifndef NDEBUG
+        // Index tensors (tokens/positions) are far below int32 range in
+        // practice; assert in debug that the narrowing is lossless.
+        if (static_cast<int32_t>(src[e]) != src[e]) {
+          throw std::runtime_error("WebGPU: int64 index overflows int32");
+        }
+#endif
+        narrowed[e] = static_cast<int32_t>(src[e]);
+      }
+      wgpuQueueWriteBuffer(
+          queue_, tensor.buffer, 0, narrowed.data(), tensor.nbytes);
+      continue;
+    }
+
+    throw std::runtime_error(
+        "WebGPU: unsupported input copy for input " + std::to_string(i) +
+        " (host " + std::to_string(in.nbytes) + " bytes" +
+        (in.host_is_int64 ? " int64" : "") + " vs buffer " +
+        std::to_string(tensor.nbytes) + " bytes)");
   }
 }
+
+namespace {
+// Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
+// WEBGPU_TIMESTAMP_QUERY env var enables per-pass GPU timestamp queries.
+bool should_timestamp_query() {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  static const bool enabled = std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
+  return enabled;
+#else
+  return false;
+#endif
+}
+} // namespace
 
 void WebGPUGraph::execute() {
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
 
   if (chunk == 0 || n <= chunk) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    // Bench: timestamp-query pool, null unless env-gated + feature present.
+    WebGPUQueryPool* qp = nullptr;
+    if (should_timestamp_query() && n > 0) {
+      if (auto* ctx = get_default_webgpu_context()) {
+        if (ctx->timestamp_supported) {
+          if (!ctx->querypool || ctx->querypool->capacity() < n) {
+            ctx->querypool = std::make_unique<WebGPUQueryPool>();
+            ctx->querypool->initialize(device_, static_cast<uint32_t>(n));
+          }
+          qp = ctx->querypool.get();
+          qp->reset(static_cast<uint32_t>(n));
+        }
+      }
+    }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
     WGPUCommandEncoderDescriptor enc_desc = {};
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     // One pass per dispatch: enforces storage RAW ordering across deps.
-    for (const auto& dispatch : dispatches_) {
+    for (size_t i = 0; i < n; i++) {
+      const auto& dispatch = dispatches_[i];
       WGPUComputePassDescriptor pass_desc = {};
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+      // tw must outlive BeginComputePass (the descriptor points at it).
+      WGPUPassTimestampWrites tw = {};
+      if (qp) {
+        tw = qp->writes_for(static_cast<uint32_t>(i));
+        pass_desc.timestampWrites = &tw;
+      }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
       wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
@@ -406,6 +697,15 @@ void WebGPUGraph::execute() {
           pass, dispatch.workgroup_count_x, 1, 1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+      if (qp) {
+        qp->record(
+            static_cast<uint32_t>(i),
+            dispatch.kernel_name,
+            {dispatch.workgroup_count_x, 1, 1},
+            {1, 1, 1});
+      }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
     }
 
     for (const auto& copy : output_copies_) {
@@ -413,13 +713,33 @@ void WebGPUGraph::execute() {
           encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
     }
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    if (qp) {
+      qp->resolve(encoder);
+    }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
     WGPUCommandBufferDescriptor cmd_desc = {};
     WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
     wgpuQueueSubmit(queue_, 1, &cmd);
 
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    if (qp) {
+      qp->extract_results(instance_);
+      qp->print_results();
+    }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
     return;
+  }
+
+  // GPU timestamp queries assume one submit; chunked execute is multi-submit.
+  if (should_timestamp_query()) {
+    throw std::runtime_error(
+        "WebGPU: WEBGPU_TIMESTAMP_QUERY is incompatible with chunked execute "
+        "(multi-submit); disable chunking to use GPU timestamp queries");
   }
 
   const size_t first_chunk = execute_config_.initial_chunk_size > 0
@@ -535,10 +855,11 @@ WebGPUMemoryStats WebGPUGraph::memory_stats() const {
   for (size_t i = 0; i < value_types_.size(); i++) {
     if (value_types_[i] == ValueType::Tensor && tensors_[i].nbytes > 0) {
       stats.num_tensors++;
-      // Shared tensors are tracked via shared_buffer_sizes_
+      // Shared tensors are tracked via shared_buffer_sizes_; a deferred
+      // prepack-routed constant has no buffer (no GPU memory) -> not counted.
       bool is_shared =
           i < tensor_mem_obj_ids_.size() && tensor_mem_obj_ids_[i] >= 0;
-      if (!is_shared) {
+      if (!is_shared && tensors_[i].buffer != nullptr) {
         stats.unshared_tensor_buffer_bytes += tensors_[i].nbytes;
       }
     }

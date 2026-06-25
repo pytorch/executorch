@@ -35,7 +35,7 @@ We offer the following modes to execute the model:
 
 - Hybrid Mode: Hybrid mode leverages the strengths of both AR-N model and KV cache modes to optimize token generation speed. Initially, it uses AR-N model to efficiently generate the prompt's key-value (KV) cache. Then, the mode switches to KV cache mode, which excels at generating subsequent tokens.
   - AR-N model: The auto-regression (AR) length determines the number of tokens to consume and the number of logits to produce. Use it to process the prompt and generate the key-value (kv) cache, which serves as a prompt processor in hybrid mode.
-  - Prompt processing with AR-N model: 
+  - Prompt processing with AR-N model:
   <figure>
     <img src="assets/PromptProcessingWithARN.png" alt="Prompt Processing With AR-N Model">
     <figcaption>Prompt processing is done using a for-loop. An N-token block is taken, and the KV cache is updated for that block. This process is repeated until all tokens are consumed, with the last block potentially requiring padding. For flexibility, the AR-N model can handle any input length less than the maximum sequence length. For TTFT, the input length (or number of blocks) will vary depending on the actual input length, rather than always being the same.
@@ -46,7 +46,7 @@ We offer the following modes to execute the model:
 
 ## Hardware Support
 
-We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, **Samsung Galaxy S25**, and **OnePlus 12**.  
+We’ve validated this flow on the **Samsung Galaxy S23**, **Samsung Galaxy S24**, **Samsung Galaxy S25**, and **OnePlus 12**.
 Support on other hardware depends on the **HTP architecture (HtpArch)** and the feature set available on that version.
 
 ### HTP Minimum Version Requirements
@@ -65,7 +65,7 @@ For older HTP versions, you may need to adjust the quantization strategy. Recomm
 
 ### Memory Limit Errors (4 GB HTP Limit)
 
-If you encounter errors like the following, it typically means the model’s requested memory exceeds the **4 GB per-context limit** on HTP.  
+If you encounter errors like the following, it typically means the model’s requested memory exceeds the **4 GB per-context limit** on HTP.
 To resolve this, try **increasing the sharding number** (`num_sharding`) to reduce per-shard memory usage:
 
 ```
@@ -117,7 +117,7 @@ All example scripts below use hybrid mode, which is optimized for on-device perf
 
 #### LLAMA2
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint stories110M.pt --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --decoder_model stories110m --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "Once upon a time"
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint stories110M.pt --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --decoder_model stories110m --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "Once upon a time"
 ```
 
 #### LLAMA3.2 1B Instruct
@@ -130,12 +130,12 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
-```
+
 
 #### Codegen2
 Default example using kv mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model codegen2_1b --model_mode kv --max_seq_len 1024 --prompt "def hello_world():" 
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model codegen2_1b --model_mode kv --max_seq_len 1024 --prompt "def hello_world():" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/text.json
 ```
 
 #### Gemma 2B
@@ -210,7 +210,17 @@ Default example using hybrid mode.
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smollm3-3b --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
-## Multimodal Support
+#### Using custom calibration samples for LLMs
+
+Instead of `--calib_tasks`, you can supply your own conversation JSON files via `--calib_samples`. The samples are fed into the quantization calibration pass to collect activation observer statistics — they do not affect the inference prompt. This is useful when you want to calibrate on domain-specific or instruct-format data rather than a generic lm_eval task.
+
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smollm2_135m --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/text.json
+```
+
+You can also provide both `--calib_tasks` and `--calib_samples` at the same time; the pipeline concatenates both data sources for calibration.
+
+
 
 ### Overview
 
@@ -268,7 +278,7 @@ pip install soundfile
 
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model granite_speech_3_3-2b --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "can you transcribe the speech into a written format?" --audio_path "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true"
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model granite_speech_3_3-2b --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "can you transcribe the speech into a written format?" --audio_path "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/audio.json
 ```
 
 ### Specifying Custom Audio
@@ -281,9 +291,6 @@ You can specify a custom audio file for ALM models using the `--audio_path` flag
 - **Local file paths**: Absolute or relative paths to `.wav` files on your system
   - Example: `"/path/to/your/audio.wav"`
 
-**Default behavior:**
-If `--audio_path` is not specified, the system will automatically use the default audio file defined in the model's configuration file (`encoder/encoder_config.py`).
-
 #### Audio Preprocessing
 
 The audio encoder configuration is defined in `encoder/encoder_config.py`:
@@ -294,7 +301,6 @@ The audio encoder configuration is defined in `encoder/encoder_config.py`:
 class GraniteSpeechEncoder(AudioModalityConfig):
     encoder_class = GraniteSpeechCTCEncoderWrapper
     audio_seq_len = 171
-    audio_url = "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true"  # Default audio (content: "After his nap, ...")
     quant_recipe = GraniteSpeechEncoderQuantRecipe
 ```
 
@@ -311,7 +317,7 @@ The audio is automatically:
 If you have already compiled a ALM model, you can run inference with pre-generated PTE files:
 
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model granite_speech_3_3-2b --model_mode hybrid  --prefill_ar_len 128 --max_seq_len 1024 --prompt "can you transcribe the speech into a written format?" --audio_path "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model granite_speech_3_3-2b --model_mode hybrid  --prefill_ar_len 128 --max_seq_len 1024 --prompt "can you transcribe the speech into a written format?" --audio_path "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
 ### ALM Processing Details
@@ -351,13 +357,13 @@ Vision-Language Models (VLMs) combine computer vision and natural language proce
 #### SmolVLM 500M
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode hybrid --prefill_ar_len 16 --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode hybrid --prefill_ar_len 16 --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/vision.json
 ```
 
 #### InternVL 1B
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model internvl3_1b --model_mode hybrid --prefill_ar_len 32 --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "http://images.cocodataset.org/val2017/000000039769.jpg"
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model internvl3_1b --model_mode hybrid --prefill_ar_len 32 --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "http://images.cocodataset.org/val2017/000000039769.jpg" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/vision.json
 ```
 
 ### Specifying Custom Image
@@ -369,9 +375,6 @@ Take a example image of Statue-of-Liberty in New York Bay
   - Example: `https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg`
 - **Local file paths**: Absolute or relative paths to image files on your system
   - Example: [`./examples/qualcomm/oss_scripts/llama/assets/samples/images/Statue-of-Liberty-Island-New-York-Bay.png`](assets/samples/images/Statue-of-Liberty-Island-New-York-Bay.png)
-
-**Default behavior:**
-If `--image_path` is not specified, the system will automatically use the default image URL defined in the model's configuration file (`encoder/encoder_config.py`).
 
 #### Image Preprocessing
 
@@ -385,7 +388,6 @@ class SmolVLMEncoder(VisionModalityConfig):
     img_seq_len = 64
     img_resized_h = 512
     img_resized_w = 512
-    img_url = "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"  # Default image
     quant_recipe = SmolVLMEncoderQuantRecipe
 ```
 
@@ -401,7 +403,7 @@ The image is automatically:
 If you have already compiled a VLM model, you can run inference with pre-generated PTE files:
 
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode kv --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode kv --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
 ### Multi-Turn Conversation with VLM
@@ -427,7 +429,7 @@ PROMPT2="Answer the question: What's the main object in first image?"
 PROMPT3="<image>Caption this image."
 
 # Execute the multi-turn conversation
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode kv --max_seq_len 2048 --prompt "$PROMPT1" "$PROMPT2" "$PROMPT3" --image_path "$IMAGE1_URL" "$IMAGE2_URL" "$IMAGE3_URL"
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smolvlm_500m_instruct --model_mode kv --max_seq_len 2048 --prompt "$PROMPT1" "$PROMPT2" "$PROMPT3" --image_path "$IMAGE1_URL" "$IMAGE2_URL" "$IMAGE3_URL" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/vision.json
 ```
 
 **How it works:**
@@ -451,18 +453,21 @@ The VLM inference pipeline consists of:
 3. **Embedding Fusion Phase**
    - Visual and text embeddings are concatenated according to the model's template
    - Special tokens (e.g., `<image>`, `<|fake_token_around_image|>`, `<fake_token_around_image>`) mark modality boundaries (see [tokenizer.py](tokenizer.py))
-   
+
    ```python
-   # Special tokens for Vision-Language Model
-   VLM_SPECIAL_TOKENS = {
-       "smolvlm_500m_instruct": {
-           "image_token": "<image>",
-           "global_img": "<global-img>",
-           "fake_wrap_start": "<fake_token_around_image>",
-           "fake_wrap_end": "<fake_token_around_image>",
-       },
-       ...
-   }
+   # Token fields on each encoder config subclass (encoder/encoder_config.py)
+   @dataclass(init=False, frozen=True)
+   class SmolVLMEncoder(VisionModalityConfig):
+       img_token = "<image>"
+       fake_wrap_start = "<fake_token_around_image>"
+       fake_wrap_end = "<fake_token_around_image>"
+       global_img_token = "<global-img>"
+
+   @dataclass(init=False, frozen=True)
+   class InternVL3Encoder(VisionModalityConfig):
+       img_token = "<IMG_CONTEXT>"
+       fake_wrap_start = "<img>"
+       fake_wrap_end = "</img>"
    ```
    - Final fused sequence: `[batch, img_seq_len + text_seq_len, hidden_dim]`
 
@@ -509,13 +514,13 @@ We use Smart Mask mechanisms for updating the key-value (KV) cache.
 #### Compile Only
 If you would like to compile the model only, we have provided the flag `--compile_only`. Taking LLAMA3.2 as an example:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --compile_only
 ```
 
 #### Pre Generated PTE
 On the other hand, if you already have a pre-compiled .pte model, you can perform inference by providing the flag `--pre_gen_pte` and specifying the folder that contains the .pte model. Taking LLAMA3.2 as an example:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
 #### Lookahead Decoding Mode
@@ -528,7 +533,7 @@ You can choose the lookahead mode to enhance decoding speed. To use this mode, y
 For more details, please refer to the paper ["Break the Sequential Dependency of LLM Inference Using Lookahead Decoding"](https://arxiv.org/abs/2402.02057)
 
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode lookahead --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --ngram 3 --window 2 --gcap 2
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode lookahead --prefill_ar_len 32 --max_seq_len 128 --prompt "I would like to learn python, could you teach me with a simple example?" --ngram 3 --window 2 --gcap 2
 ```
 
 #### Tasks Evaluation
@@ -545,23 +550,66 @@ From the example script above, 1 wikitext sample is used to evaluate all 3 phase
 Example:
 ```bash
 # 1st run to compile with --calib_limit 1
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --calib_tasks wikitext --calib_limit 1 --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --calib_tasks wikitext --calib_limit 1 -a ${FOLDER_TO_PRE_GEN_PTE} --compile_only
 ```
 ```bash
 # 2nd run to perform QNN device execution with --eval_limit 3
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --eval_tasks wikitext --eval_limit 3 --pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN} --quant_attrs_path ${PATH_TO_ARTIFACT_IN_1ST_RUN}/kv_llama_qnn_quant_attrs.json
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --eval_tasks wikitext --eval_limit 3 --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
-#### Tasks quantization calibration
-If `--calib_tasks ${TASK}` is not provided, the program will use `--prompt ${PROMPT}` as the dataset for quantization calibration.
-`--calib_tasks` and `--eval_tasks` are independent flags. `--calib_tasks` controls which tasks are used for quantization calibration, while `--eval_tasks` controls which tasks are used for perplexity evaluation. They can be set to different tasks or limits as needed.
 
 #### SQNR Evalution
 To evaluate QNN's output logits against the golden logits from `nn.Module`, users can provide the flag `--sqnr_eval`. Please note that SQNR evaluation will only compare the logits of the user's prompt and will not compare the new tokens generated by the model.
 Example:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods sqnr_eval
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods sqnr_eval
 ```
+
+
+
+#### Quantization
+
+The calibration data is independent from the runtime evaluation set, and only affects quantization quality, not the inference output.
+
+Calibration data is required for compilation. There are two ways to supply it:
+
+1. **`--calib_tasks`** — calibrate on one or more lm_eval tasks (tune with `--calib_limit` and `--calib_num_fewshot`). LLM-only.
+2. **`--calib_samples`** — calibrate on custom conversation samples provided as JSON files (see format below). Required for multimodal models (VLM/ALM).
+
+For LLMs, provide at least one of the two; for multimodal models, `--calib_samples` is mandatory.
+
+Calibration and runtime evaluation use separate flag sets and can target different tasks or limits as needed:
+
+| Purpose | Flags |
+|---|---|
+| Calibration data (lm_eval tasks) | `--calib_tasks`, `--calib_limit`, `--calib_num_fewshot` |
+| Calibration data (custom samples) | `--calib_samples` (JSON files, HuggingFace message format) |
+
+##### Custom calibration samples (`--calib_samples`)
+
+`--calib_samples` accepts one or more JSON files. Each file is a flat list of sample objects. Each sample has a `messages` field following the HuggingFace chat template, and an optional `files` field for media inputs (local paths or URLs):
+
+```json
+[
+  {
+    "files": ["path/or/url/to/files"],
+    "messages": [
+      {"role": "user",    "content": "..." },
+      {"role": "assistant", "content": "..."}
+    ]
+  }
+]
+```
+
+`files` is only required for multimodal models (VLM: image paths/URLs, ALM: audio paths/URLs). For LLM-only models, `files` can be omitted. `content` can be a plain string or a list of HuggingFace content blocks (e.g. `[{"type": "image"}, {"type": "text", "text": "..."}]` for vision inputs).
+
+Ready-to-use examples for each model type are provided under `assets/samples/`:
+
+| Model type | Example file |
+|---|---|
+| LLM | [assets/samples/text.json](assets/samples/text.json) |
+| ALM (audio) | [assets/samples/audio.json](assets/samples/audio.json) |
+| VLM (vision) | [assets/samples/vision.json](assets/samples/vision.json) |
 
 #### Quantization Guidance
 
@@ -596,7 +644,7 @@ This feature supports fluent multi-turn conversations and manages long-context s
 1. **`--max_seq_len`**: Maximum sequence length the model can generate
 2. **`--max_context_len`**: Maximum length of the model's memory/cache, including both prompt tokens and generated tokens
 3. **`<sink_size>`**: Always include `sink_size` initial tokens as attention sinks in the kv cache.
-4. **`<batch_eviction_size>`**: How many tokens to evict from the cache at once when the cache is full. 
+4. **`<batch_eviction_size>`**: How many tokens to evict from the cache at once when the cache is full.
 
 Example:
 ```bash
@@ -609,14 +657,14 @@ After running this, the `attention_sink_evictor.pte` file will be generated in t
 For multi-turn conversations or scenarios with long context using attention sink, you can set max_seq_len higher than the max_context_len used during compilation:
 ```bash
 # Run llama with attention sink in multi-turn conversation scenario
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,64 
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,64
 ```
 
 If you want to modify `sink_size` or `batch_eviction_size`, or if you have a pre-compiled llm pte file and wish to use the attention sink feature, you can recompile the `attention_sink_evictor.pte` with different attention sink config.
 
 ```bash
 # Compile attention sink evictor pte file with sink_size = 4 and batch_eviction_size = 128
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,128 
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --prompt "I would like to learn python, could you teach me with a simple example?" "Could you give more difficult example in python?" "Could you add a GUI for this game?" "Could you tell me more about tkinter?" "Is possible to deploy on website?" ---pre_gen_pte ${PATH_TO_ARTIFACT_IN_1ST_RUN}  --use_attention_sink 4,128
 ```
 
 Please make sure to use the same `--max_context_len`, `--prefill_ar_len`, and `--model_mode`, etc., as those used in the LLM to ensure the kv cache shape is correct.

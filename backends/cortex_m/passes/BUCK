@@ -1,6 +1,7 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,7 +14,6 @@ fbcode_target(_kind = runtime.python_library,
     name="replace_quant_nodes_pass",
     srcs=[
         "replace_quant_nodes_pass.py",
-        "quantized_op_fusion_pass.py",
     ],
     deps=[
         "//caffe2:torch",
@@ -41,6 +41,7 @@ fbcode_target(_kind = runtime.python_library,
     deps=[
         "//caffe2:torch",
         "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/cortex_m:cmsis_nn",
         "//executorch/backends/cortex_m:target_config",
         "//executorch/backends/cortex_m/ops:ops",
         "//executorch/backends/cortex_m/passes:passes_utils",

@@ -58,7 +58,11 @@ __host__ __forceinline__ int32_t log2_pow2_i8(int32_t v) {
 // blocks, NATURAL order — qs[k] holds the quantized value for element k).
 // ---------------------------------------------------------------------------
 
-struct Q8BlockNat {
+// alignas(16) pads sizeof(Q8BlockNat) 36->48 so each block (and its two 16-byte
+// qs halves) is 16-byte aligned. This lets the matvec load 16 int8 activations
+// with one vectorized uint4 load instead of four scalar int32 loads, cutting
+// activation load instructions ~4x.
+struct alignas(16) Q8BlockNat {
   int8_t qs[Q8_NAT_BLOCK_SIZE];
   float d; // scale
 };
@@ -135,6 +139,17 @@ __global__ void __launch_bounds__(MV8_THREADS) int8_w8a8_matvec_kernel(
     int32_t k_base = i * 16;
     uint32_t words[4] = {packed16.x, packed16.y, packed16.z, packed16.w};
 
+    // One uint4 (16 int8 weights) maps to exactly one 16-byte half of a Q8
+    // activation block (16 activations): block i>>1, byte offset 0 (i even) or
+    // 16 (i odd). Load those 16 int8 activations with a single vectorized uint4
+    // load (+ one scale load) instead of four scalar int32 loads + four scale
+    // reloads. av.{x,y,z,w} == qs[off+0:4],[4:8],[8:12],[12:16] == a_word for
+    // w=0..3 -> bit-identical to the scalar path.
+    const Q8BlockNat* qb = &q8_row[i >> 1];
+    uint4 av = *reinterpret_cast<const uint4*>(qb->qs + ((i & 1) ? 16 : 0));
+    float a_scale = qb->d;
+    const uint32_t a_words[4] = {av.x, av.y, av.z, av.w};
+
 #pragma unroll
     for (int32_t w = 0; w < 4; w++) {
       int32_t k_word = k_base + w * 4; // 4 int8 weights start here
@@ -147,15 +162,10 @@ __global__ void __launch_bounds__(MV8_THREADS) int8_w8a8_matvec_kernel(
       }
 
       int32_t w_word = static_cast<int32_t>(words[w]);
-
-      int32_t q8_block_idx = k_word / Q8_NAT_BLOCK_SIZE;
-      int32_t q8_offset = k_word % Q8_NAT_BLOCK_SIZE;
-      const Q8BlockNat* qb = &q8_row[q8_block_idx];
-      int32_t a_word = *reinterpret_cast<const int32_t*>(qb->qs + q8_offset);
+      int32_t a_word = static_cast<int32_t>(a_words[w]);
 
       int32_t dp = __dp4a(w_word, a_word, 0);
       int32_t a_sum = __dp4a(0x01010101, a_word, 0);
-      float a_scale = qb->d;
 
       sum += ws * a_scale *
           (static_cast<float>(dp) - wz * static_cast<float>(a_sum));

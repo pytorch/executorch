@@ -30,9 +30,18 @@ set(WEBGPU_SRCS
     runtime/WebGPUGraph.cpp
     runtime/WebGPUDelegateHeader.cpp
     runtime/WebGPUDevice.cpp
+    runtime/WebGPUQueryPool.cpp
     runtime/ops/OperatorRegistry.cpp
     runtime/ops/add/BinaryOp.cpp
     runtime/ops/rms_norm/RmsNorm.cpp
+    runtime/ops/update_cache/UpdateCache.cpp
+    runtime/ops/sdpa/Sdpa.cpp
+    runtime/ops/select_as_symint/SelectAsSymint.cpp
+    runtime/ops/quantized_linear/QuantizedLinear.cpp
+    runtime/ops/mul/BinaryOp.cpp
+    runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
+    runtime/ops/rope/RotaryEmbedding.cpp
+    runtime/ops/prepack/Prepack.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
@@ -74,6 +83,17 @@ endif()
 
 target_compile_options(webgpu_backend PRIVATE -fexceptions)
 
+# Opt-in GPU timestamp profiling (WebGPUQueryPool); OFF so production builds
+# request no TimestampQuery device feature. Mirrors Vulkan's compile-flag gate.
+option(EXECUTORCH_BUILD_WEBGPU_PROFILING
+       "Enable WebGPU GPU timestamp-query profiling" OFF
+)
+if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+  target_compile_definitions(
+    webgpu_backend PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+  )
+endif()
+
 # Link with --whole-archive for static registration of backend + ops
 executorch_target_link_options_shared_lib(webgpu_backend)
 
@@ -112,16 +132,57 @@ function(add_webgpu_native_test test_name test_src)
     target_link_libraries(${test_name} PRIVATE dl m pthread)
   endif()
   target_compile_options(${test_name} PRIVATE -fexceptions)
+  if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+    target_compile_definitions(
+      ${test_name} PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+    )
+  endif()
   set_property(TARGET ${test_name} PROPERTY CXX_STANDARD 17)
 endfunction()
 
 if(EXECUTORCH_BUILD_WEBGPU_TEST)
   add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
-  add_webgpu_native_test(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
   add_webgpu_native_test(
     webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
   )
   add_webgpu_native_test(
     webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
   )
+  add_webgpu_native_test(
+    webgpu_update_cache_test test/native/test_update_cache.cpp
+  )
+
+  # Manifest-driven op-test framework: a generic gtest driver (webgpu_op_test) +
+  # its device-free util unit test. GTest needs -DEXECUTORCH_BUILD_TESTS=ON.
+  if(NOT TARGET GTest::gtest)
+    find_package(GTest QUIET)
+  endif()
+  if(TARGET GTest::gtest)
+    # Reuse add_webgpu_native_test for the backend link + frameworks + flags;
+    # add only driver_util, GTest, and the header-only nlohmann/json include.
+    add_webgpu_native_test(webgpu_op_test test/op_tests/op_test_driver.cpp)
+    target_sources(webgpu_op_test PRIVATE test/op_tests/driver_util.cpp)
+    target_link_libraries(webgpu_op_test PRIVATE GTest::gtest)
+    target_include_directories(
+      webgpu_op_test
+      PRIVATE "${EXECUTORCH_ROOT}/third-party/json/single_include"
+    )
+
+    # Device-free util unit test: no backend/Dawn link (pure manifest/tolerance
+    # helpers), so it does NOT use the native-test helper.
+    add_executable(
+      webgpu_op_test_util_test test/op_tests/test_driver_util.cpp
+                               test/op_tests/driver_util.cpp
+    )
+    target_include_directories(
+      webgpu_op_test_util_test
+      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+              "${EXECUTORCH_ROOT}/third-party/json/single_include"
+    )
+    target_link_libraries(
+      webgpu_op_test_util_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+    target_compile_options(webgpu_op_test_util_test PRIVATE -fexceptions)
+    set_property(TARGET webgpu_op_test_util_test PROPERTY CXX_STANDARD 17)
+  endif()
 endif()

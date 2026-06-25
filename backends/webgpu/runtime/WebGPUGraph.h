@@ -11,8 +11,10 @@
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <executorch/runtime/core/named_data_map.h>
@@ -23,17 +25,37 @@ struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
   std::vector<int64_t> dims;
   size_t nbytes = 0;
+  // Serialized (GPU-side) element type, used to narrow wider host inputs.
+  size_t elem_size = 0;
+  bool is_int = false;
+};
+
+// Host-side view of one graph input, passed to copy_inputs.
+struct InputData {
+  const void* data = nullptr;
+  size_t nbytes = 0;
+  bool host_is_int64 = false;
 };
 
 struct WebGPUDispatch {
   WGPUComputePipeline pipeline = nullptr;
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
+  std::string kernel_name; // bench label
 };
 
 struct OutputCopy {
   WGPUBuffer src_buffer = nullptr;
   WGPUBuffer staging_buffer = nullptr;
+  size_t nbytes = 0;
+};
+
+// CPU-side record for a prepack-routed constant; mirrors Vulkan's TensorRef
+// (sizes + a data reference, not a live GPU tensor). The prepack node is the
+// sole materialization, so the constant needs no eager GPU buffer.
+struct ConstantSource {
+  uint64_t inline_offset = UINT64_MAX; // offset into constant_data_; else key
+  std::string named_key; // non-empty => fetch from named_data_map_
   size_t nbytes = 0;
 };
 
@@ -72,7 +94,7 @@ class WebGPUGraph {
       const executorch::runtime::NamedDataMap* named_data_map = nullptr);
 
   // Copy input tensor data from host pointers into GPU buffers.
-  void copy_inputs(const std::vector<std::pair<const void*, size_t>>& inputs);
+  void copy_inputs(const std::vector<InputData>& inputs);
 
   // Execute all recorded dispatches.
   void execute();
@@ -103,6 +125,58 @@ class WebGPUGraph {
   int64_t get_int(int id) const {
     return ints_[id];
   }
+  bool get_bool(int id) const {
+    return bools_[id];
+  }
+  // Member value ids of a serialized ValueList (op multi-output list).
+  const std::vector<int>& get_value_list(int id) const {
+    return value_lists_[id];
+  }
+
+  // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
+  // set_symint writes the buffer + marks dirty only if the value changed.
+  void set_symint(int id, int32_t val);
+  // read_symint throws (fail-loud) if id is not a SymInt.
+  int32_t read_symint(int id) const {
+    return symints_.at(id).value;
+  }
+  // symint_buffer throws (fail-loud) if id is not a SymInt.
+  WGPUBuffer symint_buffer(int id) const {
+    return symints_.at(id).buffer;
+  }
+
+  // Records that a SymInt's value is read from input_tensor[index] along dim.
+  struct SymIntSource {
+    int symint_id;
+    int input_tensor_id;
+    int dim;
+    int index;
+  };
+  void
+  add_symint_source(int symint_id, int input_tensor_id, int dim, int index) {
+    symint_sources_.push_back({symint_id, input_tensor_id, dim, index});
+  }
+  const std::vector<SymIntSource>& symint_sources() const {
+    return symint_sources_;
+  }
+
+  // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
+  void update_symints_from_inputs(const std::vector<InputData>& inputs);
+
+  // Per-SymInt resize hook; mirrors Vulkan DynamicDispatchNode::trigger_resize.
+  void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
+    resize_hooks_.push_back({symint_id, std::move(fn)});
+  }
+  // Run hooks for changed SymInts then clear; call before execute().
+  void propagate_resize();
+
+  // Mutable dispatch access for resize hooks (to rewrite workgroup_count_x).
+  WebGPUDispatch& dispatch_at(size_t i) {
+    return dispatches_[i];
+  }
+  size_t num_dispatches() const {
+    return dispatches_.size();
+  }
 
   WGPUDevice device() const {
     return device_;
@@ -115,8 +189,18 @@ class WebGPUGraph {
     dispatches_.push_back(dispatch);
   }
 
+  // Materialize a recorded prepack-routed constant into dst via one CPU->GPU
+  // transfer. Build-time only (the .pte bytes are freed after build()).
+  // Mirrors Vulkan prepack_standard.
+  void materialize_constant(int const_value_id, WGPUBuffer dst);
+
   void add_uniform_buffer_bytes(size_t bytes) {
     uniform_buffer_bytes_ += bytes;
+  }
+
+  // Keep a uniform alive for the graph's lifetime; released in the dtor.
+  void own_uniform_buffer(WGPUBuffer buffer) {
+    owned_uniform_buffers_.push_back(buffer);
   }
 
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
@@ -149,7 +233,16 @@ class WebGPUGraph {
     return static_cast<int>(value_types_.size());
   }
 
-  enum class ValueType { Tensor, Int, Double, Bool, Null, String };
+  enum class ValueType {
+    Tensor,
+    Int,
+    Double,
+    Bool,
+    Null,
+    String,
+    SymInt,
+    ValueList
+  };
 
   ValueType get_value_type(int id) const {
     return value_types_[id];
@@ -167,6 +260,23 @@ class WebGPUGraph {
   std::vector<int64_t> ints_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
+  std::vector<std::vector<int>> value_lists_;
+
+  // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
+  struct SymIntSlot {
+    WGPUBuffer buffer = nullptr;
+    int32_t value = 0;
+  };
+  std::unordered_map<int, SymIntSlot> symints_;
+  std::vector<SymIntSource> symint_sources_;
+
+  // Resize hooks + the set of SymInts changed since the last propagate_resize.
+  struct ResizeHook {
+    int symint_id;
+    std::function<void(WebGPUGraph&)> fn;
+  };
+  std::vector<ResizeHook> resize_hooks_;
+  std::unordered_set<int> dirty_symints_;
 
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;
@@ -179,6 +289,9 @@ class WebGPUGraph {
   // Long-lived scratch storage buffers for fused ops (e.g. SDPA temporaries).
   std::vector<WGPUBuffer> scratch_buffers_;
 
+  // Uniform buffers owned for the graph's lifetime; released in the dtor.
+  std::vector<WGPUBuffer> owned_uniform_buffers_;
+
   // Staging buffers for reading back outputs (MapRead | CopyDst).
   std::vector<WGPUBuffer> output_staging_buffers_;
 
@@ -186,6 +299,13 @@ class WebGPUGraph {
   std::vector<OutputCopy> output_copies_;
 
   std::vector<WebGPUDispatch> dispatches_;
+
+  // Prepack-routed constant sources (offset/named-key + size); the prepack node
+  // materializes these once. constant_data_/named_data_map_ point at the .pte
+  // bytes and are valid only during build().
+  const uint8_t* constant_data_ = nullptr;
+  const executorch::runtime::NamedDataMap* named_data_map_ = nullptr;
+  std::unordered_map<int, ConstantSource> constant_sources_;
 
   ExecuteConfig execute_config_;
 

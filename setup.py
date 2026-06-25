@@ -134,6 +134,7 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_PYBIND=OFF",
         "-DEXECUTORCH_BUILD_QNN=OFF",
         "-DEXECUTORCH_BUILD_TESTS=OFF",
+        "-DEXECUTORCH_BUILD_VULKAN=OFF",
         "-DEXECUTORCH_BUILD_XNNPACK=OFF",
     ]
 
@@ -978,6 +979,9 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
                 cmake_build_args += ["--target", "_llm_runner"]
 
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
+                cmake_build_args += ["--target", "vulkan_backend"]
+
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
@@ -1136,8 +1140,12 @@ setup(
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
                 ),
                 BuiltExtension(
-                    src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-                    src="PyQnnManagerAdaptor.*",
+                    src_dir="backends/qualcomm/%BUILD_TYPE%/",
+                    src=(
+                        "PyQnnManagerAdaptor*.pyd"
+                        if _is_windows()
+                        else "PyQnnManagerAdaptor.*"
+                    ),
                     modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
                 ),
