@@ -26,6 +26,7 @@ Convolution = exir_ops.edge.aten.convolution.default
 DequantizePerChannel = exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
 DequantizePerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
+Exp = exir_ops.edge.aten.exp.default
 GetItem = operator.getitem
 HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
