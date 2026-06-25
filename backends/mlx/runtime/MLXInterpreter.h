@@ -1695,6 +1695,26 @@ exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, argmax(x, n.axis, n.keepdims, s));
 }
 
+inline void exec_random_bits(
+    const RandomBitsNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  // random::bits supports width (bytes/element) in {1, 2, 4} ->
+  // uint8/uint16/uint32.
+  if (n.width != 1 && n.width != 2 && n.width != 4) {
+    throw std::runtime_error("random_bits: width must be 1, 2, or 4");
+  }
+  auto shape = to_shape(n.shape, st);
+  // uint32 (4 bytes, the widest supported) is a safe upper bound for the guard.
+  check_allocation_bounded(shape, uint32, "random_bits");
+  std::optional<array> key = std::nullopt;
+  if (n.seed.has_value()) {
+    key = random::key(
+        static_cast<uint64_t>(st.const_value_ref<int32_t>(n.seed.value())));
+  }
+  st.set_tensor(n.out, random::bits(shape, n.width, key, s));
+}
+
 inline void
 exec_argmin(const ArgminNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -2056,6 +2076,9 @@ class Interpreter {
         break;
       case OpCode::ARGMAX:
         ops::exec_argmax(std::get<ArgmaxNode>(instr.node), st, s);
+        break;
+      case OpCode::RANDOM_BITS:
+        ops::exec_random_bits(std::get<RandomBitsNode>(instr.node), st, s);
         break;
       case OpCode::SLICE_UPDATE:
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);

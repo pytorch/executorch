@@ -66,7 +66,11 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build test runners"
-        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_mutable_state_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        echo "::endgroup::"
+
+        echo "::group::Run mutable-state (multi-session) unit test"
+        ./cmake-out/backends/mlx/test/mlx_mutable_state_test
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
@@ -80,6 +84,7 @@ jobs:
           backends/mlx/test/test_partitioner.py \
           backends/mlx/test/test_serialization_dedup.py \
           backends/mlx/test/test_slot_recycling.py \
+          backends/mlx/test/test_sample.py \
           examples/models/gemma4_31b/quant/tests/test_pack_mlx.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
