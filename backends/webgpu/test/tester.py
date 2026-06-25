@@ -24,6 +24,7 @@ WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.aten.mul.Tensor,
     exir_ops.edge.aten.view_copy.default,
     exir_ops.edge.aten.select_copy.int,
+    exir_ops.edge.aten.sigmoid.default,
 ]
 
 
