@@ -37,7 +37,7 @@ def test_lowered_program_and_tflite_output_match__conv2d__no_bias(mocker):
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     tflite_model = Model.GetRootAs(tflite_flatbuffers_model)
     sub_graph = tflite_model.Subgraphs(0)
@@ -84,7 +84,7 @@ def test_conv_fc__lowered_program_and_tflite_output_match(mocker):
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     # Capture generated model
-    tflite_flatbuffers_model, _ = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # No Transpose ops in produced TFLite model
     tflite_subgraph = Model.GetRootAs(tflite_flatbuffers_model).Subgraphs(0)
@@ -148,7 +148,7 @@ def test_delegating_format_related_transpose_operators__supported_case(mocker):
     )
 
     # Capture the converted IR model.
-    tflite_flatbuffers_model, _ = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Make sure the `Transpose` ops ARE in the IR model.
     tflite_subgraph = Model.GetRootAs(tflite_flatbuffers_model).Subgraphs(0)
