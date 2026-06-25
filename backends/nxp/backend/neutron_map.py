@@ -345,16 +345,16 @@ class NeutronMap:
         tflite_to_neutron_dict = {}
         for tf_idx, tf_node in enumerate(self.tflite_nodes):
             subgraph_idxs = []
+            location_shift = 0
             for subgraph in self.neutron_subgraphs:
-                if (
-                    subgraph.num in self.neutron_graphs
-                    or subgraph.location in subgraph_idxs
-                ):
+                if subgraph.num in self.neutron_graphs:
                     continue
                 for neutron_node in subgraph.nodes:
                     if self._nodes_match_by_io(tf_node, neutron_node):
-                        subgraph_idxs.append(subgraph.location)
+                        for kernel in range(subgraph.kernels):
+                            subgraph_idxs.append(subgraph.location + location_shift + kernel)
                         break
+                location_shift += max(subgraph.kernels - 1, 0)
             # Filter subgraph_idxs to avoid mapping multiple parallel single-input nodes that consume the
             # same input tensor into the same TFLite node.
             subgraph_idxs = self._filter_single_input_nodes(tf_node.name, subgraph_idxs)
