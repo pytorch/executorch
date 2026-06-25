@@ -49,6 +49,14 @@ class Acos(torch.nn.Module):
         return torch.acos(x)
 
 
+class Acosh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.acosh(x)
+
+
 class AcosMultiNode(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -142,6 +150,16 @@ class AddConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return 10 + x
+
+
+class AddMM(torch.nn.Module):
+    def __init__(self, alpha=1, beta=1):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, bias, input, mat2):
+        return torch.addmm(bias, input, mat2, alpha=self.alpha, beta=self.beta)
 
 
 class Any(torch.nn.Module):
@@ -247,6 +265,14 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class Asinh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.asinh(x)
+
+
 class Asin(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -277,6 +303,14 @@ class Atan2MultiNode(torch.nn.Module):
 
     def forward(self, x1, y1, x2, y2):
         return torch.atan2(x1, y1), torch.atan2(x2, y2)
+
+
+class Atanh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.atanh(x)
 
 
 class AvgPool1D(torch.nn.Module):
@@ -406,6 +440,14 @@ class CDist(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.cdist(x, y, p=2)
+
+
+class CDistForward(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.ops.aten._cdist_forward.default(x, y, 2.0, None)
 
 
 class Ceil(torch.nn.Module):
@@ -981,6 +1023,14 @@ class Cos(torch.nn.Module):
         return torch.cos(x)
 
 
+class Cosh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cosh(x)
+
+
 class CumSum(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1011,6 +1061,25 @@ class DivConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return x / 10
+
+
+class DivMode(torch.nn.Module):
+    def __init__(self, rounding_mode=None):
+        super().__init__()
+        self.rounding_mode = rounding_mode
+
+    def forward(self, x, y):
+        return torch.div(x, y, rounding_mode=self.rounding_mode)
+
+
+class DivScalarMode(torch.nn.Module):
+    def __init__(self, scalar=2.0, rounding_mode=None):
+        super().__init__()
+        self.scalar = scalar
+        self.rounding_mode = rounding_mode
+
+    def forward(self, x):
+        return torch.div(x, self.scalar, rounding_mode=self.rounding_mode)
 
 
 class DrawGraphModel(torch.nn.Module):
@@ -1468,9 +1537,14 @@ class LargeTensorLinear(torch.nn.Module):
 
 
 class LayerNorm(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, elementwise_affine=True, bias=True):
         super().__init__()
-        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6, bias=bias)
+        self.layer_norm = torch.nn.LayerNorm(
+            [768],
+            eps=1e-6,
+            elementwise_affine=elementwise_affine,
+            bias=bias,
+        )
         self.linear = torch.nn.Linear(768, 196)
 
     def forward(self, x):
@@ -2258,6 +2332,14 @@ class Sin(torch.nn.Module):
         return torch.sin(x)
 
 
+class Sinh(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sinh(x)
+
+
 class SimpleModel(torch.nn.Module):
     def __init__(self, kernel_size=3):
         super().__init__()
@@ -2302,6 +2384,77 @@ class SimpleModel(torch.nn.Module):
         z4 = self.linear(z3)
         z5 = self.hardtanh(z4)
         return z5
+
+
+class SkipBackToBack(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        a = torch.relu(x)
+        b = torch.add(a, a)
+        c = torch.mul(b, b)
+        d = torch.add(c, c)
+        return torch.relu(d)
+
+
+class SkipNodeFirstOrLast(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.relu(x) + torch.sqrt(x)
+
+
+class SkipIntNode(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        a = torch.add(x, y)
+        b = torch.mul(a, a)
+        c = torch.add(b, y)
+        return c
+
+
+class SkipMultiInput(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        x = torch.relu(x)
+        y = torch.relu(y)
+        z = torch.cat([x, y], dim=-1)
+        return torch.relu(z)
+
+
+class SkipMultiOutput(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = torch.relu(x)
+        c1, c2 = torch.split(x, [2, 2], dim=-1)
+        return torch.relu(c1) + torch.relu(c2)
+
+
+class SkipSplitToConcat(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y, z, w):
+        x = torch.relu(x)
+        s1, s2, s3 = torch.split(x, [2, 2, 2], dim=-1)
+        y = torch.relu(y)
+        z = torch.relu(z)
+        w = torch.relu(w)
+        c = torch.cat([s3, y, z, w], dim=-1)
+        out_main = torch.relu(c)
+        out_other = torch.relu(s1) + torch.relu(s2)
+        return out_main, out_other
 
 
 class SliceCopy(torch.nn.Module):
@@ -2606,6 +2759,30 @@ class Unsqueeze(torch.nn.Module):
 
     def forward(self, x):
         return x.unsqueeze(0)
+
+
+class VarCorrection(torch.nn.Module):
+    def __init__(self, dim=None, correction=1, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.correction = correction
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.var(
+            x, dim=self.dim, correction=self.correction, keepdim=self.keepdim
+        )
+
+
+class VarDim(torch.nn.Module):
+    def __init__(self, dim=None, unbiased=True, keepdim=False):
+        super().__init__()
+        self.dim = dim
+        self.unbiased = unbiased
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.var(x, dim=self.dim, unbiased=self.unbiased, keepdim=self.keepdim)
 
 
 class View(torch.nn.Module):

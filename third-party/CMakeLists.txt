@@ -22,6 +22,20 @@ endif()
 # MARK: - flatbuffers
 
 if(WIN32)
+  # On Windows with the Visual Studio generator, unsetting CMAKE_TOOLCHAIN_FILE is
+  # not sufficient to force a host (AMD64) build when cross-compiling for ARM64.
+  # The VS generator propagates the parent's platform (-A ARM64) to child
+  # ExternalProjects automatically.  CMAKE_GENERATOR_PLATFORM overrides it, but
+  # CMake requires CMAKE_GENERATOR to be set explicitly alongside it.  We pass
+  # the parent's generator string verbatim so the child uses the same VS version
+  # but targets x64 (the host) and produces a runnable flatc.exe / flatcc.exe.
+  if(CMAKE_CROSSCOMPILING AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "ARM64|arm64|aarch64")
+    set(_flatbuffers_ep_additional_args
+        CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+        CMAKE_GENERATOR_PLATFORM x64)
+  else()
+    set(_flatbuffers_ep_additional_args)
+  endif()
   set(_executorch_external_project_additional_args)
 else()
   # Always use Make to avoid needing to codesign flatc if the project is using
@@ -29,6 +43,7 @@ else()
   set(_executorch_external_project_additional_args CMAKE_GENERATOR
                                                    "Unix Makefiles"
   )
+  set(_flatbuffers_ep_additional_args)
 endif()
 
 # We use ExternalProject to build flatc from source to force it target the host.
@@ -55,11 +70,12 @@ ExternalProject_Add(
     -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
                    ${_executorch_external_project_additional_args}
+                   ${_flatbuffers_ep_additional_args}
 )
 ExternalProject_Get_Property(flatbuffers_ep INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
 add_dependencies(flatc flatbuffers_ep)
-if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+if(CMAKE_HOST_WIN32)
   # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces
   # Release config, but from CMake's perspective the build type is always Debug.
   set_target_properties(
@@ -111,12 +127,13 @@ ExternalProject_Add(
     ${_flatcc_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
                    ${_executorch_external_project_additional_args}
+                   ${_flatbuffers_ep_additional_args}
 )
 file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_ep)
-if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+if(CMAKE_HOST_WIN32)
   set_target_properties(
     flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc.exe
   )

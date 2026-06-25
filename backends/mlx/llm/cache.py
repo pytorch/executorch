@@ -228,7 +228,12 @@ class RingBufferKVCache(nn.Module):
     the attention function creates the mask lazily by accessing the cache
     via a closure. This avoids tracing issues with torch.export.
 
-    Layout: BHSD [batch_size, num_heads, window_size, head_dim]
+    Layout: BHSD [batch_size, num_heads, window_size + max_write_len - 1, head_dim]
+
+    ``max_write_len`` bounds the largest single ``update`` write and sets the
+    buffer slack beyond the window (buffer_size = window_size + max_write_len -
+    1). It defaults to the full context length, i.e. ``2 * window_size - 1``; pass the chunk size when doing
+    chunked prefill to shrink it further.
 
     Example:
         >>> cache = RingBufferKVCache(
@@ -250,6 +255,7 @@ class RingBufferKVCache(nn.Module):
         n_heads: int,
         head_dim: int,
         dtype: torch.dtype = torch.float32,
+        max_write_len: int | None = None,
     ):
         super().__init__()
         assert (
@@ -258,13 +264,23 @@ class RingBufferKVCache(nn.Module):
         self.max_batch_size = max_batch_size
         self.max_context_length = max_context_length
         self.window_size = max_context_length
-        self.buffer_size = 2 * max_context_length
+        # Slack beyond the window so a multi-token write never overwrites data
+        # that earlier queries in the same batch still need. After a write of
+        # seq_len tokens, the in-window positions that must coexist span a
+        # contiguous range of seq_len + window_size - 1 positions, so the ring
+        # needs buffer_size >= window_size + max_write_len - 1. Defaults to the
+        # full window; with chunked prefill, pass the chunk size to shrink it.
+        self.max_write_len = (
+            max_write_len if max_write_len is not None else max_context_length
+        )
+        assert (
+            self.max_write_len <= self.window_size
+        ), f"max_write_len={self.max_write_len} must be <= window_size={self.window_size}"
+        self.buffer_size = self.window_size + self.max_write_len - 1
         self.n_heads = n_heads
         self.head_dim = head_dim
 
-        # Cache buffers [B, H, 2*window_size, D]
-        # 2× buffer ensures multi-token writes never overwrite data that
-        # earlier queries in the same batch still need (matches ET behavior).
+        # Cache buffers [B, H, window_size + max_write_len - 1, D]
         cache_shape = (max_batch_size, n_heads, self.buffer_size, head_dim)
         self.register_buffer(
             "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
@@ -292,7 +308,7 @@ class RingBufferKVCache(nn.Module):
             seq_len = k_val.size(2)
             torch._check(seq_len == v_val.size(2))
             torch._check(start_pos >= 0)
-            torch._check(seq_len <= self.window_size)
+            torch._check(seq_len <= self.max_write_len)
         else:
             start_pos = input_pos
 
