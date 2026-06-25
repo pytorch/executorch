@@ -25,6 +25,11 @@ from __future__ import annotations
 
 import types
 
+# Importing this module registers ``torch.ops.triton.sdpa`` /
+# ``torch.ops.triton.sdpa_decode_splitk`` (the length-aware bf16 attention ops
+# used by the non-TurboQuant full-attention path below).
+import executorch.backends.cuda.triton.kernels.sdpa  # noqa: F401
+
 # Importing this module registers ``torch.ops.triton.tq4_sdpa``.
 import executorch.backends.cuda.triton.kernels.tq4_sdpa  # noqa: F401
 
@@ -105,6 +110,79 @@ def _turboquant_attention_forward(
         self.scaling,
         kv_len,
         True,  # mask_is_causal: Gemma full-attention mask is standard causal
+    )
+
+    y = y.transpose(1, 2).contiguous().view(B, T, self.n_heads * self.head_dim)
+    return self.o_proj(y)
+
+
+def _lenaware_attention_forward(
+    self,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    attn_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Drop-in ``Gemma4Attention.forward`` for full-attention layers on the
+    non-TurboQuant CUDA path that bounds SDPA to the valid context length.
+
+    Identical to the default forward (plain bf16 KV cache) except the final
+    ``F.scaled_dot_product_attention`` is replaced with
+    ``torch.ops.triton.sdpa(..., kv_len=...)``. Passing ``kv_len`` bounds the
+    attention KV loop to the actual filled context instead of the full
+    pre-allocated buffer (``max_seq_len`` for global layers), making decode
+    O(context) instead of O(max_seq_len) — and routes L_q==1 decode through the
+    length-aware split-K flash-decoding kernel. Sliding-window layers are not
+    patched (they already use a bounded ring buffer).
+    """
+    B, T, _ = x.shape
+
+    q = self.q_proj(x).view(B, T, self.n_heads, self.head_dim)
+    raw_k = self.k_proj(x).view(B, T, self.n_kv_heads, self.head_dim)
+    if self.k_eq_v:
+        raw_v = raw_k
+    else:
+        raw_v = self.v_proj(x).view(B, T, self.n_kv_heads, self.head_dim)
+
+    q = self.q_norm(q)
+    k = self.k_norm(raw_k)
+    v = self.v_norm(raw_v)
+
+    # (B, H, T, D) for SDPA / KV cache.
+    q = q.transpose(1, 2)
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+
+    # RoPE: same code path as default forward.
+    freqs = torch.outer(input_pos.float(), self.inv_freq)
+    emb = torch.cat((freqs, freqs), dim=-1)
+    cos = torch.cos(emb)
+    sin = torch.sin(emb)
+    q, k = apply_rotary_emb(q, k, cos, sin)
+
+    # Update cache and read back the full (pre-allocated) K/V buffers.
+    k, v = self.kv_cache.update(input_pos, k, v)
+
+    # Number of valid (filled) KV positions = input_pos[0] + T. Passing this to
+    # sdpa bounds its KV loop to the actual context instead of the full
+    # pre-allocated buffer (max_seq_len for global layers), making attention
+    # O(context) instead of O(max_seq_len). Kept as a GPU scalar (no ``.item()``)
+    # so the bound is captured correctly by the decode CUDA graph. Decode: T=1 ->
+    # input_pos+1; prefill chunk: T -> chunk_end.
+    kv_len = input_pos[0] + input_pos.shape[0]
+
+    # ``scale=self.scaling`` (= 1.0 for Gemma 4) — Gemma's QK-norm has absorbed
+    # the 1/sqrt(d) factor into trained weights. ``enable_gqa=True`` lets the
+    # kernel handle the head ratio without materializing expanded K/V.
+    y = torch.ops.triton.sdpa(
+        q,
+        k,
+        v,
+        attn_mask,
+        0.0,  # dropout_p
+        False,  # is_causal: attn_mask already encodes causal masking
+        self.scaling,
+        True,  # enable_gqa
+        kv_len,
     )
 
     y = y.transpose(1, 2).contiguous().view(B, T, self.n_heads * self.head_dim)
@@ -233,6 +311,22 @@ def cuda_source_transformations(
     _fuse_gate_up_proj(model)
 
     if not use_turboquant:
+        # Non-TurboQuant path: keep the bf16 KV cache but bound full-attention
+        # SDPA to the valid context length via a runtime kv_len scalar (routes
+        # through torch.ops.triton.sdpa, which dispatches L_q==1 decode to the
+        # length-aware split-K flash-decoding kernel). Sliding-window layers
+        # already use a bounded ring buffer, so they are left untouched.
+        n_bounded = 0
+        for layer in model.layers:
+            attn = layer.self_attn
+            if attn.is_sliding:
+                continue
+            attn.forward = types.MethodType(_lenaware_attention_forward, attn)
+            n_bounded += 1
+        print(
+            f"[gemma4_31b cuda] length-aware SDPA: bounded {n_bounded} "
+            f"full-attention layers to runtime kv_len (O(context) attention)"
+        )
         return
 
     config = model.config
