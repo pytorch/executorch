@@ -106,6 +106,26 @@ class RingKVCache(nn.Module):
 # Config
 
 
+def validate_eagle_tap_layers(layers: list, num_hidden_layers: int) -> None:
+    """Validate EAGLE-3 tap indices (HF/vLLM convention; 0 = embedding output).
+
+    Indices must be non-bool ints, unique, ascending, and in
+    ``[0, num_hidden_layers]``. Order defines the fc concatenation order.
+    """
+    if not layers:
+        return
+    if any(isinstance(t, bool) or not isinstance(t, int) for t in layers):
+        raise ValueError(f"eagle_tap_layers must be non-bool ints, got {layers}")
+    if len(set(layers)) != len(layers):
+        raise ValueError(f"eagle_tap_layers has duplicates: {layers}")
+    if any(t < 0 or t > num_hidden_layers for t in layers):
+        raise ValueError(
+            f"eagle_tap_layers {layers} out of range [0, {num_hidden_layers}]"
+        )
+    if list(layers) != sorted(layers):
+        raise ValueError(f"eagle_tap_layers must be ascending (fc order): {layers}")
+
+
 @dataclass
 class Gemma4_31BConfig:
     # Embedding / shape
@@ -148,6 +168,11 @@ class Gemma4_31BConfig:
     # Runtime
     max_seq_len: int = 4096
 
+    # EAGLE-3 auxiliary hidden-state taps. Indices use the HF/vLLM convention:
+    # 0 = embedding output, k = output after decoder layer k-1. Empty disables
+    # tap collection.
+    eagle_tap_layers: list = field(default_factory=list)
+
     def __post_init__(self):
         if not self.layer_types:
             # Default hybrid pattern: 5 sliding then 1 full, repeated.
@@ -160,6 +185,7 @@ class Gemma4_31BConfig:
                 f"layer_types length {len(self.layer_types)} != "
                 f"num_hidden_layers {self.num_hidden_layers}"
             )
+        validate_eagle_tap_layers(self.eagle_tap_layers, self.num_hidden_layers)
 
     @staticmethod
     def from_hf_config(config_path: str) -> "Gemma4_31BConfig":
@@ -470,6 +496,48 @@ class Gemma4_31B(nn.Module):
 
         return sliding_mask, full_mask
 
+    def _decode(
+        self,
+        tokens: torch.LongTensor,
+        input_pos: torch.LongTensor,
+        collect_taps: bool,
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Embed -> decoder layers -> final norm.
+
+        Returns the normed hidden states and, when ``collect_taps`` is set, the
+        concatenated tap features for ``config.eagle_tap_layers`` (in ascending
+        index order) as ``(B, T, len(tap_layers) * hidden_size)``; else None.
+
+        Tap indices follow the HF/vLLM hidden-state convention: index 0 is the
+        embedding output (before any decoder layer) and index k is the output
+        *after* decoder layer k-1.
+        """
+        x = self.embed_tokens(tokens) * self.embed_normalizer
+
+        tap_layers = self.config.eagle_tap_layers
+        if collect_taps:
+            # Revalidate dynamic tap configuration before membership checks.
+            validate_eagle_tap_layers(tap_layers, len(self.layers))
+        taps = []
+        if collect_taps and 0 in tap_layers:
+            taps.append(x)  # index 0 == embedding output
+
+        sliding_mask, full_mask = self._build_masks(input_pos)
+        for i, layer in enumerate(self.layers):
+            x = layer(x, input_pos, sliding_mask, full_mask)
+            if collect_taps and (i + 1) in tap_layers:
+                taps.append(x)  # output of layer i == hidden-state index i+1
+
+        if collect_taps and len(taps) != len(tap_layers):
+            raise ValueError(
+                f"collected {len(taps)} taps but eagle_tap_layers requests "
+                f"{len(tap_layers)} ({tap_layers}); check the index convention"
+            )
+
+        x = self.norm(x)
+        taps_out = torch.cat(taps, dim=-1) if taps else None
+        return x, taps_out
+
     def forward(
         self,
         tokens: torch.LongTensor,
@@ -486,17 +554,40 @@ class Gemma4_31B(nn.Module):
         Returns:
             (B, 1) sampled token IDs as int64.
         """
-        x = self.embed_tokens(tokens) * self.embed_normalizer
-
-        sliding_mask, full_mask = self._build_masks(input_pos)
-        for layer in self.layers:
-            x = layer(x, input_pos, sliding_mask, full_mask)
-
-        x = self.norm(x)
+        x, _ = self._decode(tokens, input_pos, collect_taps=False)
         last = self.lm_head(x[:, -1, :]).float()
         cap = self.logit_softcap.float()
         last = torch.tanh(last / cap) * cap
         return sample(last, temperature)
+
+    def set_eagle_tap_layers(self, layers: list) -> None:
+        """Set and validate EAGLE-3 tap layers."""
+        validate_eagle_tap_layers(layers, self.config.num_hidden_layers)
+        self.config.eagle_tap_layers = list(layers)
+
+    def forward_logits_taps(
+        self,
+        tokens: torch.LongTensor,
+        input_pos: torch.LongTensor,
+        last_logits_only: bool = True,
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Return soft-capped logits and EAGLE-3 tap features.
+
+        Defaults to final-position logits. Set ``last_logits_only=False`` to
+        materialize per-position float32 logits over the full vocabulary.
+
+        Returns:
+            logits: (B, 1, vocab_size) soft-capped float32, or (B, T, vocab_size)
+                    when ``last_logits_only=False``.
+            taps:   (B, T, len(eagle_tap_layers) * hidden_size) or None.
+        """
+        x, taps = self._decode(tokens, input_pos, collect_taps=True)
+        if last_logits_only:
+            x = x[:, -1:, :]
+        logits = self.lm_head(x).float()
+        cap = self.logit_softcap.float()
+        logits = torch.tanh(logits / cap) * cap
+        return logits, taps
 
     # ---------------- checkpoint loading ----------------
 
