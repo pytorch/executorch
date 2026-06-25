@@ -183,9 +183,9 @@ class Qwen35MoESession : public LLMSession {
       ::tokenizers::Tokenizer* tokenizer,
       std::unordered_map<std::string, int64_t> metadata,
       std::unordered_set<uint64_t> eos_ids
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
       ,
-      ::executorch::backends::cuda::MutableStateContextOwner* mutable_state,
+      MutableStateContextOwner* mutable_state,
       int session_token
 #endif
       )
@@ -195,7 +195,7 @@ class Qwen35MoESession : public LLMSession {
         tokenizer_(tokenizer),
         metadata_(std::move(metadata)),
         eos_ids_(std::move(eos_ids))
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
         ,
         mutable_state_(mutable_state),
         session_token_(session_token)
@@ -212,9 +212,8 @@ class Qwen35MoESession : public LLMSession {
   }
 
   ~Qwen35MoESession() override {
-#ifdef EXECUTORCH_BUILD_CUDA
-    if (mutable_state_ != nullptr &&
-        session_token_ != ::executorch::backends::cuda::kNoMutableSession) {
+#ifdef QWEN_HAS_MUTABLE_STATE
+    if (mutable_state_ != nullptr && session_token_ != kNoMutableSession) {
       mutable_state_->destroy_session(session_token_);
     }
 #endif
@@ -425,8 +424,8 @@ class Qwen35MoESession : public LLMSession {
       float temperature,
       bool sync_after) {
     std::lock_guard<std::mutex> guard(*exec_mutex_);
-#ifdef EXECUTORCH_BUILD_CUDA
-    Result<std::vector<EValue>> res = mutable_state_ != nullptr
+#ifdef QWEN_HAS_MUTABLE_STATE
+    auto res = mutable_state_ != nullptr
         ? mutable_state_->with_active_session(
               session_token_,
               [&]() { return module_->execute(method, inputs); })
@@ -465,10 +464,11 @@ class Qwen35MoESession : public LLMSession {
   int64_t decode_pos_data_[1] = {0};
   TensorPtr decode_tokens_;
   TensorPtr decode_pos_;
+#ifdef QWEN_HAS_MUTABLE_STATE
+  MutableStateContextOwner* mutable_state_ = nullptr;
+  int session_token_ = kNoMutableSession;
+#endif
 #ifdef EXECUTORCH_BUILD_CUDA
-  ::executorch::backends::cuda::MutableStateContextOwner* mutable_state_ =
-      nullptr;
-  int session_token_ = ::executorch::backends::cuda::kNoMutableSession;
   float temp_val_ = 1e-6f;
   TensorPtr temp_tensor_;
 #endif
@@ -529,17 +529,17 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
         "not stop at end of turn");
   }
 
+#ifdef QWEN_HAS_MUTABLE_STATE
+  std::unique_ptr<MutableStateContextOwner> mutable_state;
+#endif
 #ifdef EXECUTORCH_BUILD_CUDA
-  std::unique_ptr<::executorch::backends::cuda::MutableStateContextOwner>
-      mutable_state;
   if (config.enable_cuda_graph) {
     ET_LOG(
         Info,
         "Qwen35MoEEngine: CUDA graph requested; per-session rebinding disabled "
         "and serving capacity clamped to 1 session.");
   } else {
-    auto candidate = std::make_unique<
-        ::executorch::backends::cuda::MutableStateContextOwner>();
+    auto candidate = std::make_unique<MutableStateContextOwner>();
     if (Error e = register_mutable_fqns(meta_module.get(), *candidate);
         e == Error::Ok) {
       mutable_state = std::move(candidate);
@@ -550,9 +550,13 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
           "serving capacity clamped to 1 session.");
     }
   }
+#elif defined(EXECUTORCH_BUILD_MLX)
+  // MLX owns mutable buffers directly and selects per-session storage at
+  // execute time; no FQN registration or coverage check is required.
+  mutable_state = std::make_unique<MutableStateContextOwner>();
 #endif
 
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   auto module_res = mutable_state != nullptr
       ? mutable_state->with_load_scope(
             [&]() { return build_qwen_module(config); })
@@ -566,16 +570,14 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
   std::unique_ptr<Module> shared_module = std::move(module_res.get());
 
   bool rebind_available = false;
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   rebind_available = mutable_state != nullptr && mutable_state->available();
-  if (rebind_available) {
-    if (mutable_state->validate_coverage() != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Qwen35MoEEngine: mutable-buffer coverage check failed; disabling "
-          "multi-session (capacity clamped to 1).");
-      rebind_available = false;
-    }
+  if (rebind_available && mutable_state->validate_coverage() != Error::Ok) {
+    ET_LOG(
+        Error,
+        "Qwen35MoEEngine: mutable-buffer coverage check failed; disabling "
+        "multi-session (capacity clamped to 1).");
+    rebind_available = false;
   }
   if (!rebind_available) {
     ET_LOG(
@@ -592,7 +594,7 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
       std::move(eos_ids),
       std::move(shared_module),
       rebind_available
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
       ,
       std::move(mutable_state)
 #endif
@@ -621,7 +623,7 @@ Result<std::unique_ptr<LLMSession>> Qwen35MoEEngine::create_session() {
   }
 
   int token = -1; // kNoMutableSession: single-session / no rebind
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   if (rebind_available_) {
     auto t = mutable_state_->create_session();
     if (t.error() != Error::Ok) {
@@ -638,7 +640,7 @@ Result<std::unique_ptr<LLMSession>> Qwen35MoEEngine::create_session() {
       tokenizer_.get(),
       metadata_,
       eos_ids_
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
       ,
       mutable_state_.get(),
       token
@@ -648,7 +650,7 @@ Result<std::unique_ptr<LLMSession>> Qwen35MoEEngine::create_session() {
 
 LLMServingCapacity Qwen35MoEEngine::serving_capacity() const {
   LLMServingCapacity cap; // default: 1 session, 0 bytes (unknown)
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   if (rebind_available_) {
     cap.max_physical_sessions_without_weight_duplication =
         config_.max_sessions > 1 ? config_.max_sessions : 1;
