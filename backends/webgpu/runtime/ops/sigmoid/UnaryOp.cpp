@@ -13,54 +13,68 @@
 
 #include <webgpu/webgpu.h>
 
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 namespace executorch::backends::webgpu {
 
 namespace {
 
 // Uniform buffer layout matching the WGSL Params struct; 16-byte aligned.
-struct SigmoidParams {
+struct UnaryParams {
   uint32_t num_elements;
   uint32_t _pad[3];
 };
 
-void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  // aten.sigmoid.default args: [in, out]
-  const int in_id = args.at(0);
-  const int out_id = args.at(1);
-
+// Generic elementwise unary op; mirrors Vulkan add_unary_op_node (UnaryOp.cpp).
+void add_unary_op(
+    WebGPUGraph& graph,
+    int in_id,
+    int out_id,
+    const char* wgsl_source,
+    uint32_t wg_size_x,
+    const char* op_name) {
   WGPUDevice device = graph.device();
 
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
+  if (in_tensor.buffer == nullptr || out_tensor.buffer == nullptr) {
+    throw std::runtime_error(std::string(op_name) + ": null buffer binding");
+  }
 
   // 4-byte (fp32) alignment guard on both operands; also the dtype guard.
   if (in_tensor.nbytes % sizeof(float) != 0 ||
       out_tensor.nbytes % sizeof(float) != 0) {
-    throw std::runtime_error("sigmoid: operand not 4-byte aligned");
+    throw std::runtime_error(
+        std::string(op_name) + ": operand not 4-byte aligned");
+  }
+  if (in_tensor.nbytes != out_tensor.nbytes) {
+    throw std::runtime_error(
+        std::string(op_name) + ": input/output size mismatch");
   }
 
   uint32_t num_elements =
       static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
 
-  uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kSigmoidWorkgroupSizeX);
-  uint32_t workgroup_count = utils::compute_1d_workgroup_count(
-      device, num_elements, wg_size, "sigmoid");
+  uint32_t wg_size = utils::clamp_workgroup_size(device, wg_size_x);
+  uint32_t workgroup_count =
+      utils::compute_1d_workgroup_count(device, num_elements, wg_size, op_name);
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  SigmoidParams params = {};
+  UnaryParams params = {};
   params.num_elements = num_elements;
 
   WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(SigmoidParams));
-  graph.add_uniform_buffer_bytes(sizeof(SigmoidParams));
+      utils::make_uniform(device, &params, sizeof(UnaryParams));
+  graph.add_uniform_buffer_bytes(sizeof(UnaryParams));
 
   WGPUShaderSourceWGSL wgsl_desc = {};
   wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kSigmoidWGSL, WGPU_STRLEN};
+  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
 
   WGPUShaderModuleDescriptor shader_desc = {};
   shader_desc.nextInChain = &wgsl_desc.chain;
@@ -113,7 +127,7 @@ void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   bg_entries[2].binding = 2;
   bg_entries[2].buffer = uniform_buffer;
-  bg_entries[2].size = sizeof(SigmoidParams);
+  bg_entries[2].size = sizeof(UnaryParams);
 
   WGPUBindGroupDescriptor bg_desc = {};
   bg_desc.layout = bgl;
@@ -129,6 +143,17 @@ void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   wgpuPipelineLayoutRelease(pipeline_layout);
   // Drop our ref; the bind group keeps the uniform buffer alive until release.
   wgpuBufferRelease(uniform_buffer);
+}
+
+void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // aten.sigmoid.default args: [in, out]
+  add_unary_op(
+      graph,
+      args.at(0),
+      args.at(1),
+      kSigmoidWGSL,
+      kSigmoidWorkgroupSizeX,
+      "sigmoid");
 }
 
 } // namespace

@@ -53,6 +53,11 @@ class WorkerStats:
     reused_prompt_tokens: int = 0
     prefilled_prompt_tokens: int = 0
     session_reset_reason: Optional[str] = None
+    prefill_ms: float = 0.0
+    decode_ms: float = 0.0
+    total_ms: float = 0.0
+    prefill_tok_s: float = 0.0
+    decode_tok_s: float = 0.0
     # The exact (non-terminal) token ids generated this turn. The control plane
     # stores these per session and splices them back as an `ids` prompt segment
     # next turn, so a prior assistant span is an exact token extension instead of
@@ -167,6 +172,11 @@ class WorkerClient:
                     reused_prompt_tokens=msg.get("reused_prompt_tokens", 0),
                     prefilled_prompt_tokens=msg.get("prefilled_prompt_tokens", 0),
                     session_reset_reason=reason,
+                    prefill_ms=msg.get("prefill_ms", 0.0),
+                    decode_ms=msg.get("decode_ms", 0.0),
+                    total_ms=msg.get("total_ms", 0.0),
+                    prefill_tok_s=msg.get("prefill_tok_s", 0.0),
+                    decode_tok_s=msg.get("decode_tok_s", 0.0),
                     generated_token_ids=msg.get("generated_token_ids", []),
                 )
             )
