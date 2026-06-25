@@ -11,6 +11,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     binary_elementwise,
     cast_to_block_scaled,
     conv2d,
+    conv2d_block_scaled,
     conv3d,
     custom,
     data_layout_ops,
