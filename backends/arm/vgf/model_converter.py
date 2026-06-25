@@ -35,9 +35,11 @@ class ModelConverterEnvironmentCheck:
 
     @property
     def ok(self) -> bool:
+        """Return True when the check did not fail."""
         return self.status != STATUS_FAIL
 
     def to_dict(self) -> dict[str, str | None]:
+        """Return the check as a JSON-serializable dictionary."""
         return {
             "name": self.name,
             "status": self.status,
@@ -107,7 +109,6 @@ def resolve_model_converter_executable(binary: str) -> Path | None:
     agree on what a usable converter executable means.
 
     """
-
     path = Path(binary)
     if path.is_absolute() or path.parent != Path("."):
         if _safe_is_file(path) and os.access(path, os.X_OK):
@@ -122,7 +123,6 @@ def resolve_model_converter_executable(binary: str) -> Path | None:
 
 def require_model_converter_executable() -> Path:
     """Return a usable converter executable path or raise a helpful error."""
-
     binary = require_model_converter_binary()
     executable = resolve_model_converter_executable(binary)
     if executable is None:
@@ -145,7 +145,6 @@ def _command_output(result: subprocess.CompletedProcess[str]) -> str:
 
 def check_model_converter_environment() -> ModelConverterEnvironmentCheck:
     """Check the model-converter dependency used by VGF compilation."""
-
     binary = find_model_converter_binary()
     if binary is None:
         return ModelConverterEnvironmentCheck(
@@ -205,7 +204,6 @@ def check_model_converter_environment() -> ModelConverterEnvironmentCheck:
 
 def check_model_converter_lib_dir_environment() -> ModelConverterEnvironmentCheck:
     """Check MODEL_CONVERTER_LIB_DIR used by model_converter_env()."""
-
     lib_dir = os.environ.get("MODEL_CONVERTER_LIB_DIR")
     if not lib_dir:
         return ModelConverterEnvironmentCheck(

@@ -106,6 +106,12 @@ def build_grid_sampler_2d_payload(
         interpolation_mode (int): PyTorch grid_sample interpolation mode.
         padding_mode (int): PyTorch grid_sample padding mode.
         align_corners (bool): Whether grid_sample aligns tensor corners.
+        input_shape (tuple[int, ...] | None): Input tensor shape, used to
+            select sampler-backed shader metadata when supported.
+        input_dtype (Any | None): Input tensor dtype, used to select sampler
+            Vulkan formats when supported.
+        output_dtype (Any | None): Output tensor dtype. Defaults to
+            input_dtype when omitted.
 
     Returns:
         dict[str, Any]: Custom shader metadata payload.

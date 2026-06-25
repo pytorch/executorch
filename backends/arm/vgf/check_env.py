@@ -209,7 +209,6 @@ def _format_check(check: VgfEnvironmentCheck) -> str:
 
 def _as_environment_check(check: Any) -> VgfEnvironmentCheck:
     """Convert a module-owned preflight result into the CLI report type."""
-
     return VgfEnvironmentCheck(
         check.name,
         check.status,
