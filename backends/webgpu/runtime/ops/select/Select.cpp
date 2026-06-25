@@ -45,6 +45,9 @@ void select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUDevice device = graph.device();
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
+  if (in_tensor.buffer == nullptr || out_tensor.buffer == nullptr) {
+    throw std::runtime_error("select: null buffer binding");
+  }
 
   const int in_ndim = static_cast<int>(in_tensor.dims.size());
   int64_t dim = read_scalar(graph, args.at(1), "dim");
