@@ -42,6 +42,20 @@ class CloneAtIoBoundary(torch.nn.Module):
         return torch.clone(x)
 
 
+class CatWithHighRangeBranch(torch.nn.Module):
+    def forward(self, img0: torch.Tensor, img1: torch.Tensor) -> torch.Tensor:
+        image = torch.cat([img0, img1], dim=1)
+        high_range = image * 20.0
+        merged = torch.cat([image, high_range], dim=1)
+        return torch.clone(merged)
+
+
+def _get_observer_scale(prepared, observer_node_name: str) -> float:
+    observer = prepared.get_submodule(observer_node_name)
+    scale, _ = observer.calculate_qparams()
+    return float(scale)
+
+
 def test_uint8_io_quantization_config_tosa_INT_applies_to_io():
     model = SimpleMLP().eval()
     test_data = (torch.rand(1, 4),)
@@ -94,3 +108,29 @@ def test_io_boundary_shared_cluster_is_quantized():
     assert (
         clone_node.meta[Q_ANNOTATION_KEY].output_qspec is not None
     ), "clone node has no output_qspec — IO-boundary cluster stayed in float"
+
+
+def test_cat_does_not_bridge_shared_qspec_clusters():
+    """Regression: cat must not merge image IO and high-range activations into
+    one fallback shared-qspec observer clique.
+    """
+    model = CatWithHighRangeBranch().eval()
+    test_data = (torch.rand(1, 3, 8, 8), torch.rand(1, 3, 8, 8))
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+INT")
+
+    tosa_quantizer = TOSAQuantizer(compile_spec, use_composable_quantizer=True)
+    tosa_quantizer.set_global(get_symmetric_quantization_config())
+    tosa_quantizer.set_io(get_uint8_io_quantization_config())
+
+    exported = torch.export.export(model, test_data, strict=True)
+    prepared = prepare_pt2e(exported.module(), tosa_quantizer)
+    prepared(*test_data)
+
+    graph_nodes = {node.name: node for node in prepared.graph.nodes}
+    img0_observer = next(iter(graph_nodes["img0"].users))
+    img1_observer = next(iter(graph_nodes["img1"].users))
+    final_cat_observer = next(iter(graph_nodes["cat_1"].users))
+
+    assert _get_observer_scale(prepared, img0_observer.target) < 0.01
+    assert _get_observer_scale(prepared, img1_observer.target) < 0.01
+    assert _get_observer_scale(prepared, final_cat_observer.target) > 0.05

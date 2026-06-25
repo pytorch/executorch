@@ -476,6 +476,13 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.higher_order.while_loop,
         torch.ops.higher_order.cond,
     ]
+    _UINT8_IO_BRIDGE_OPS: set[Callable[..., object]] = {
+        torch.ops.aten.cat.default,
+        torch.ops.aten.concatenate.default,
+        torch.ops.aten.stack.default,
+        torch.ops.aten.pixel_shuffle.default,
+        torch.ops.aten.slice.Tensor,
+    }
 
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
@@ -564,6 +571,32 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
 
         """
         return node.op in ("placeholder", "output") and self._is_annotated(node)
+
+    def _qspec_contains_uint8(self, qspec: Any) -> bool:
+        if isinstance(qspec, list):
+            return any(self._qspec_contains_uint8(element) for element in qspec)
+        return getattr(qspec, "dtype", None) == torch.uint8
+
+    def _is_uint8_quantized_io_boundary(self, node: Node) -> bool:
+        if node.op not in ("placeholder", "output") or not self._is_annotated(node):
+            return False
+
+        annotation = node.meta.get(Q_ANNOTATION_KEY)
+        if annotation is None:
+            return False
+
+        if self._qspec_contains_uint8(annotation.output_qspec):
+            return True
+
+        return any(
+            self._qspec_contains_uint8(qspec)
+            for qspec in annotation.input_qspec_map.values()
+        )
+
+    def _model_has_uint8_io(self, model: torch.fx.GraphModule) -> bool:
+        return any(
+            self._is_uint8_quantized_io_boundary(node) for node in model.graph.nodes
+        )
 
     def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any], bool]:
         shared_nodes = set()
@@ -701,9 +734,20 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         return
 
     def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
-        for node in model.graph.nodes:
-            if node.target in self.targets and not self._is_annotated(node):
-                self._annotate_shared_cluster(node)
+        targets = self.targets
+        if self._model_has_uint8_io(model):
+            targets = [
+                target for target in targets if target not in self._UINT8_IO_BRIDGE_OPS
+            ]
+
+        original_targets = self.targets
+        self.targets = targets
+        try:
+            for node in model.graph.nodes:
+                if node.target in self.targets and not self._is_annotated(node):
+                    self._annotate_shared_cluster(node)
+        finally:
+            self.targets = original_targets
 
     def validate(self, model: torch.fx.GraphModule) -> bool:  # type: ignore[override]
         return True
