@@ -111,6 +111,7 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
 )
+from .fold_scalar_mul_into_conv_pass import FoldScalarMulIntoConvPass  # noqa
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
 from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
 from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
