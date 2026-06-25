@@ -50,6 +50,11 @@ from executorch.backends.webgpu.test.ops.test_sigmoid import (
     SigmoidModule,
 )
 
+from executorch.backends.webgpu.test.ops.test_slice import (
+    CONFIGS as _SLICE_CONFIGS,
+    SliceModule,
+)
+
 from executorch.backends.webgpu.test.ops.test_squeeze import (
     CONFIGS as _SQUEEZE_CONFIGS,
     SqueezeModule,
@@ -220,3 +225,8 @@ def _unsqueeze_suite() -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # reshape copies values; fp64 bit-identical
     )
+
+
+@register_op_test("slice")
+def _slice_suite() -> WebGPUTestSuite:
+    return _fn_config_suite(SliceModule, _SLICE_CONFIGS)
