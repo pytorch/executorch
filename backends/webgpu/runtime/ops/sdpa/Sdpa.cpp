@@ -339,6 +339,11 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (k.dims[kn - 1] != D || v.dims[v.dims.size() - 1] != D) {
     throw std::runtime_error("WebGPU sdpa: k/v head_dim must match q");
   }
+  // QK/AV read D as vec4 (no SDPA_PAD_D); head_dim must be a multiple of 4.
+  if (D % 4 != 0) {
+    throw std::runtime_error(
+        "WebGPU sdpa: head_dim (D) must be a multiple of 4");
+  }
   if (v.dims[v.dims.size() - 2] != Hkv) {
     throw std::runtime_error("WebGPU sdpa: v num_heads must match k");
   }
