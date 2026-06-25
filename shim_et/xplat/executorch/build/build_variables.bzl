@@ -480,6 +480,8 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNWorkspaceManager.cpp",
     "runtime/XnnpackBackendOptions.cpp",
     "runtime/profiling/XNNProfiler.cpp",
+    "runtime/core/tensor.cpp",
+    "runtime/core/quant_params.cpp",
 ]
 
 XNNPACK_BACKEND_SRCS = ["backends/xnnpack/" + x for x in XNNPACK_BACKEND_BUCK_SRCS]
