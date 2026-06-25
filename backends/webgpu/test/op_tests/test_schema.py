@@ -42,7 +42,7 @@ def test_add_mul_sigmoid_rms_norm_registered():
     from executorch.backends.webgpu.test.op_tests import cases  # registers
 
     assert {"add", "mul", "sigmoid", "rms_norm"} <= set(op_test_registry)
-    assert len(op_test_registry["add"].cases) >= 3  # regular/self/scalar/chained
+    assert len(op_test_registry["add"].cases) >= 3  # regular/self/chained
     assert len(op_test_registry["mul"].cases) >= 6  # regular/broadcast/self/chained
     assert len(op_test_registry["sigmoid"].cases) >= 4  # regular/range/chained
     # Exact parity, no hardcoded literal (real _CASES == 15; import so it can't drift):

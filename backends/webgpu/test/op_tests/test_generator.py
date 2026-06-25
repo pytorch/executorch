@@ -59,11 +59,16 @@ def test_generate_case_writes_artifacts(tmp_path):
 def test_generate_mul_broadcast_case_writes_artifacts(tmp_path):
     suite, case = _mul_broadcast_case()
     entry = g.generate_case("mul", suite, case, str(tmp_path))
+    expected_input_shapes = [
+        list(spec.shape if hasattr(spec, "shape") else spec) for spec in case.inputs
+    ]
+    expected_golden_shape = list(
+        torch.broadcast_shapes(*(tuple(shape) for shape in expected_input_shapes))
+    )
     assert (tmp_path / entry["pte"]).exists()
     assert len(entry["inputs"]) == 2
-    assert entry["inputs"][0]["shape"] == [37, 41]
-    assert entry["inputs"][1]["shape"] == [37, 1]
-    assert entry["golden"]["shape"] == [37, 41]
+    assert [ie["shape"] for ie in entry["inputs"]] == expected_input_shapes
+    assert entry["golden"]["shape"] == expected_golden_shape
     assert (tmp_path / entry["golden"]["path"]).exists()
 
 
