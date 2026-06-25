@@ -15,8 +15,9 @@ Three methods are lowered together so they share mutable state:
                      with T=1) -> proposed target ids + recurrent feature.
 
 prefill and target_verify share the target's KV cache; draft_decode uses the
-draft's KV cache. ``share_mutable_buffers`` deduplicates each by FQN, so a single
-allocation backs each cache across the methods that touch it.
+draft's KV cache. ``emit_mutable_buffer_names`` tags each mutable buffer with its
+FQN so the CUDA backend's device memory planning backs each cache with a single
+allocation shared across the methods that touch it.
 
 A standalone single-token target ``decode`` is intentionally not exported. Under
 the shifted (vLLM-EAGLE) runner scheme the draft pairs target hidden_state_t with
@@ -120,7 +121,7 @@ def _export_cuda(
 
     # Register Int4Tensor dispatch -> executorch_cuda::int4_plain_mm for the
     # target. main() sets MATVEC_MAX_M (and restores it) around this call.
-    import executorch.backends.cuda.int4_dispatch as int4_dispatch
+    import executorch.backends.cuda.quantize_op_dispatch.int4_dispatch as int4_dispatch
 
     target_config = spec.target.config
     hidden = spec.draft.config.hidden_size
@@ -233,7 +234,6 @@ def _export_cuda(
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                share_mutable_buffers=True,
             ),
             emit_mutable_buffer_names=True,
         ),
@@ -342,13 +342,26 @@ def main() -> None:
             f"--chain {args.chain} (verify window {verify_len}) exceeds the "
             f"target's per-forward limit {min(args.max_seq_len - 1, max_forward)}"
         )
+<<<<<<< HEAD
     # Route the static chain_len+1 verify forward to the small-M INT4 GEMM by
     # raising the dispatch threshold for this export only; restore it so the
     # process-global default (4) is unchanged for any later use.
-    import executorch.backends.cuda.int4_dispatch as int4_dispatch
+=======
+    # Route the verify forward (dynamic T in [2, _MATVEC_MAX_M]) to the small-M
+    # custom ops by raising the dispatch thresholds for this export only; restore
+    # them so the process-global defaults (4) are unchanged for any later use.
+    # Both INT4 and INT8 must be raised: the target's tied lm_head runs in INT8
+    # (the embedding is quantized to int8), so the all-position verify logits hit
+    # the INT8 dispatch with M = verify_len. If only INT4 were raised, the INT8
+    # branch would straddle M=4 and force a data-dependent guard on verify_len.
+>>>>>>> b3dd6ec802 (fixup! Add the EAGLE-3 speculator CUDA export)
+    import executorch.backends.cuda.quantize_op_dispatch.int4_dispatch as int4_dispatch
+    import executorch.backends.cuda.quantize_op_dispatch.int8_dispatch as int8_dispatch
 
-    saved_threshold = int4_dispatch.MATVEC_MAX_M
+    saved_int4 = int4_dispatch.MATVEC_MAX_M
+    saved_int8 = int8_dispatch.MATVEC_MAX_M
     int4_dispatch.MATVEC_MAX_M = _MATVEC_MAX_M
+    int8_dispatch.MATVEC_MAX_M = _MATVEC_MAX_M
     try:
         _export_cuda(
             spec,
@@ -358,7 +371,8 @@ def main() -> None:
             prefill_min=spec_t.min_forward_len,
         )
     finally:
-        int4_dispatch.MATVEC_MAX_M = saved_threshold
+        int4_dispatch.MATVEC_MAX_M = saved_int4
+        int8_dispatch.MATVEC_MAX_M = saved_int8
 
 
 if __name__ == "__main__":

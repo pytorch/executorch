@@ -57,9 +57,9 @@ class AdaptiveAvgPool2D(NodeVisitor):
 
         height = (output_height - 1) * stride_height + filter_height - input_height
         width = (output_width - 1) * stride_width + filter_width - input_width
-        if height % 2 != 0 or width % 2 != 0:
+        if any(x != 0 for x in (height, width)):
             warnings.warn(
-                "[QNN Delegate Op Builder]: Height or Width is not divisble by 2 with no remainder, fall back op",
+                "[QNN Delegate Op Builder]: Height or Width is not suitable, fall back op",
                 stacklevel=1,
             )
             return
