@@ -76,4 +76,16 @@ make_uniform(WGPUDevice device, const void* data, size_t size) {
   return buf;
 }
 
+// Clamp a 1D workgroup count to the device limit, for grid-stride kernels that
+// loop over any excess work (vs compute_1d_workgroup_count, which throws).
+inline uint32_t clamp_workgroup_count(WGPUDevice device, uint32_t desired) {
+  WGPULimits limits = {};
+  uint32_t max_count =
+      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+          limits.maxComputeWorkgroupsPerDimension > 0
+      ? limits.maxComputeWorkgroupsPerDimension
+      : 65535u; // WebGPU spec-default floor
+  return std::min(desired, max_count);
+}
+
 } // namespace executorch::backends::webgpu::utils
