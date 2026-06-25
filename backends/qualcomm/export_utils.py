@@ -14,8 +14,8 @@ import random
 import subprocess
 import sys
 import tempfile
+import types
 from dataclasses import dataclass, fields
-from pathlib import Path
 from typing import Callable, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -148,7 +148,6 @@ class QnnConfig:
                     f"Target soc_model({self.soc_model}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
                     f"Current QNN SDK version: {get_sdk_build_id()}"
                 )
-
         if self.seed:
             torch.manual_seed(self.seed)
             np.random.seed(self.seed)
@@ -261,10 +260,6 @@ class SimpleADB:
         self.workspace = workspace
         self.device_id = qnn_config.device
         self.host_id = qnn_config.host
-        if len(self.pte_path) > 0:
-            self.working_dir = Path(self.pte_path[0]).parent.absolute()
-        else:
-            self.working_dir = Path.cwd()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.dump_intermediate_outputs = qnn_config.dump_intermediate_outputs
@@ -281,6 +276,10 @@ class SimpleADB:
         self.skip_push = qnn_config.skip_push
         self.backend_library_paths = {}
 
+        if self.direct_build_folder and self.dump_intermediate_outputs:
+            raise ValueError(
+                "Per-tensor dumping is currently not supported in direct mode."
+            )
         if self.direct_build_folder:
             direct_general_artifacts = [
                 f"{self.build_path}/examples/qualcomm/direct_executor_runner/libqnn_executorch_stub.so",
@@ -357,7 +356,7 @@ class SimpleADB:
             output_callback(result)
         else:
             result = subprocess.run(
-                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.__stdout__
             )
         if result.returncode != 0:
             raise RuntimeError(f"adb command failed: {cmds}")
@@ -442,9 +441,8 @@ class SimpleADB:
                         f"--input_list_path {self.input_list_filename}",
                         f"--etdump_path {self.etdump_path}",
                         "--shared_buffer" if self.shared_buffer else "",
-                        f"--debug_output_path {self.debug_output_path}",
                         (
-                            "--dump_intermediate_outputs"
+                            f"--debug_output_path {self.debug_output_path} --dump_intermediate_outputs"
                             if self.dump_intermediate_outputs
                             else ""
                         ),
@@ -470,6 +468,7 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
+
         self._adb(
             ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
         )
@@ -486,9 +485,9 @@ class SimpleADB:
         if callback:
             callback()
 
-    def pull_debug_output(self, etdump_path, debug_ouput_path, callback=None):
+    def pull_debug_output(self, etdump_path, debug_buffer_path, callback=None):
         self._adb(["pull", self.etdump_path, etdump_path])
-        self._adb(["pull", self.debug_output_path, debug_ouput_path])
+        self._adb(["pull", self.debug_output_path, debug_buffer_path])
         if callback:
             callback()
 
@@ -704,9 +703,18 @@ def get_dsp_id(backend):
     return dsp_id_map[backend]
 
 
-def setup_common_args_and_variables():
-    parser = argparse.ArgumentParser()
+def setup_common_args_and_variables(parser=None):
+    if parser is None:
+        # regular path
+        parser = argparse.ArgumentParser()
+    else:
+        # pytest path
+        parser.add_argument = types.MethodType(
+            lambda self, *opts, **attrs: self.addoption(*opts, **attrs),
+            parser,
+        )
 
+    # !prevent using short option for namespace collision
     parser.add_argument(
         "--config_file",
         help="To reduce the effort of providing a lot of command-line arguments, users can choose to save all arguments to a .json file and pass it in. Please refer to executorch/examples/qualcomm/executor_runner/sample_config.json for sample.",
@@ -715,16 +723,13 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-m",
         "--soc_model",
-        "--model",  # Deprecate this flag in future.
         help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
         type=str,
         default=None,
     )
 
     parser.add_argument(
-        "-b",
         "--build_folder",
         help="path to cmake binary directory for target platform, e.g., /path/to/build-android",
         type=str,
@@ -732,7 +737,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-H",
         "--host",
         help="hostname where android device is connected.",
         default=None,
@@ -761,7 +765,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-S",
         "--skip_delegate_node_ids",
         help="If specified, skip delegation for the specified node based on node ids. Node ids should be separated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
         default=None,
@@ -769,7 +772,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-f",
         "--skip_delegate_node_ops",
         help="If specified, skip delegation for the specified op. Node ops should be separated by comma. e.g., aten.add.Tensor,aten.relu.default",
         default=None,
@@ -777,7 +779,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-c",
         "--compile_only",
         help="If specified, only compile the model.",
         action="store_true",
@@ -785,7 +786,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-s",
         "--device",
         help="serial number for android device communicated via ADB.",
         type=str,
@@ -800,7 +800,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-z",
         "--shared_buffer",
         help="Enables usage of shared buffer(zero-copy mechanism) between application and backend for graph I/O.",
         action="store_true",
@@ -814,7 +813,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-D",
         "--dump_intermediate_outputs",
         help="If specified, enable dump intermediate outputs",
         action="store_true",
@@ -830,7 +828,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-x",
         "--enable_x86_64",
         help="Enable unittest to be executed on x86_64 platform",
         action="store_true",
@@ -850,7 +847,6 @@ def setup_common_args_and_variables():
     )
 
     parser.add_argument(
-        "-t",
         "--target",
         help="Target platform for deployment",
         choices=[

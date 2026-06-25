@@ -49,40 +49,49 @@ class QDQDequantizeConverterBase(NodeConverter, ABC):
     def convert(self, node: Node):
         self.assert_convertible(node)
 
-        from_tensor = self.builder.tensor_for_name(node.name)
-        to_tensor = self.builder.tensor_for_name(node.args[0].name)
+        input_tensor = self.builder.tensor_for_name(
+            node.args[0].name
+        )  # Quantized input.
+        output_tensor = self.builder.tensor_for_name(node.name)  # Float output.
 
         scale = self.get_scale(node)
         zero_point = self.get_zero_point(node)
         quantized_dimension = 0
         if isinstance(self, QDQPerChannelDequantizeConverter):
-            quantized_dimension = self.get_quantization_dimension(from_tensor, node)
+            quantized_dimension = self.get_quantization_dimension(input_tensor, node)
 
-        if self.context.parameters_mapping.get(node.args[0].name, None) is None:
-            # Convert dequantize as identity op (Transpose that will be removed) because
-            # input tensor is input of the model and don't have static data. If we do redirection
-            # here we will change input name of the model.
+        consumes_model_input = (
+            node.args[0].name in self.context.edge_program_signature.user_inputs
+        )
+        if consumes_model_input:
+            # We cannot just skip the operator. Skipping would require changing the input's name, and as the input is
+            #  also a model input, the name cannot be changed.
+            # Instead, we convert it into an identity (Transpose that will be removed), and we make the output tensor
+            #  quantized just like the input.
             t_op = self._create_tflite_op_with_io_tensors(node)
 
             set_quantization_parameters_to_tensor(
-                to_tensor, scale, zero_point, quantized_dimension
+                input_tensor, scale, zero_point, quantized_dimension
             )
             set_quantization_parameters_to_tensor(
-                from_tensor, scale, zero_point, quantized_dimension
+                output_tensor, scale, zero_point, quantized_dimension
             )
-            from_tensor.type = to_tensor.type
+            output_tensor.type = input_tensor.type
 
             self.builder.turn_operator_to_identity(t_op)
             self.builder.append_operators([t_op])
         else:
-            # Dequantize consumes tensor with static data -> convert as a tensor
+            # Dequantize consumes an internal tensor, so we can just make it so that any operators which used the float
+            #  output of the dequantize will now use its quantized input. We do this by redirecting the output to the
+            #  input.
+
             set_quantization_parameters_to_tensor(
-                to_tensor, scale, zero_point, quantized_dimension
+                input_tensor, scale, zero_point, quantized_dimension
             )
 
-            # Change type so we pass check tensor similarity check when redirecting
-            from_tensor.type = to_tensor.type
-            self.builder.redirect_tensor(from_tensor, to_tensor)
+            # Change the type so we pass the tensor similarity check when redirecting.
+            output_tensor.type = input_tensor.type
+            self.builder.redirect_tensor(output_tensor, input_tensor)
 
 
 class QDQPerTensorDequantizeConverter(QDQDequantizeConverterBase):
