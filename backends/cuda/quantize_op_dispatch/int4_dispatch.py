@@ -20,8 +20,18 @@ At .pte runtime, the captured graph is executed by the AOTI-generated .so:
     dequant + cuBLAS matmul kernels.
 
 Dispatch strategy (determines what gets captured in the export graph):
-  Decode (M<=4): Custom op ``executorch_cuda::int4_plain_mm``
-  Prefill (M>4): Inline dequant + F.linear (standard PyTorch ops)
+  Small M (M<=MATVEC_MAX_M): Custom op ``executorch_cuda::int4_plain_mm``
+  Large M (M>MATVEC_MAX_M):  Inline dequant + F.linear (standard PyTorch ops)
+
+The custom op is memory-bound and beats dequant+cuBLAS for small M (M==1 matvec;
+2<=M<=8 weight-stationary GEMM). ``MATVEC_MAX_M`` defaults to 4 (decode only).
+An export may raise it up to the shim's GEMM limit (``GEMM_MAX_M`` = 8 in
+``int4_plain_mm.cuh``), but then its *dynamic* shapes must not straddle the
+threshold: a dynamic linear whose M range crosses MATVEC_MAX_M makes
+torch.export's branch guard ambiguous, so a long-prefill export must declare
+``min > MATVEC_MAX_M``. Raising the global default would break exports whose
+dynamic prefill range starts below the threshold, so callers set it locally
+instead.
 
 Importing the parent ``quantize_op_dispatch`` package registers this dispatch
 override (along with the INT8 one) before using nn.Linear with
@@ -39,6 +49,16 @@ from torch.library import impl
 # ---------------------------------------------------------------------------
 # Custom op for decode (M=1): dp4a matvec in C shim, dequant+F.linear in eager
 # ---------------------------------------------------------------------------
+
+# Largest M the C++ shim's GEMM kernel handles (GEMM_MAX_M in int4_plain_mm.cuh).
+# MATVEC_MAX_M must not exceed it, else export captures a shape the shim rejects
+# at runtime; the dispatch asserts this below.
+SHIM_GEMM_MAX_M = 8
+
+# Max M routed to the custom INT4 op; above this, dequant+cuBLAS wins. Defaults
+# to 4 (decode); an export may raise it (<= SHIM_GEMM_MAX_M) for small-M GEMM,
+# subject to the dynamic-shape constraint documented above.
+MATVEC_MAX_M = 4
 
 _lib.define(
     "int4_plain_mm(Tensor self, Tensor qdata, Tensor scale, Tensor zero, int group_size) -> Tensor"
@@ -109,7 +129,11 @@ def _(func, types, args, kwargs):
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
-    if M <= 4:
+    if M <= MATVEC_MAX_M:
+        assert MATVEC_MAX_M <= SHIM_GEMM_MAX_M, (
+            f"MATVEC_MAX_M={MATVEC_MAX_M} exceeds the shim's GEMM_MAX_M="
+            f"{SHIM_GEMM_MAX_M} (int4_plain_mm.cuh)"
+        )
         # scale/zero are already in the coalesced [N, n_groups] layout the
         # decode kernel reads directly (baked into the weight constant at pack
         # time). Passing them straight through keeps the export graph free of

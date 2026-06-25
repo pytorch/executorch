@@ -199,6 +199,109 @@ __global__ void __launch_bounds__(MV_THREADS)
 }
 
 // ---------------------------------------------------------------------------
+// W4A8 dp4a GEMM kernel — weight-stationary for small M (2..M_MAX)
+//
+// The matvec above launches one block-row per M (grid.y = M) and re-reads the
+// packed weights for every activation row, so its weight traffic scales with M.
+// For speculative verification (M = chain_len+1, a handful of rows) that makes a
+// verify cost ~M decodes. This kernel instead loads each weight chunk once and
+// accumulates it into all M output rows (grid.y = 1), so weight traffic is 1x
+// regardless of M — turning a verify back into ~one decode. Activations (tiny
+// INT8) are the only thing read per row.
+// ---------------------------------------------------------------------------
+
+template <int32_t M_MAX>
+__global__ void __launch_bounds__(MV_THREADS)
+    int4_w4a8_gemm_kernel(
+        const uint8_t* __restrict__ qdata,
+        const __nv_bfloat16* __restrict__ w_scale_t, // [N, n_groups]
+        const __nv_bfloat16* __restrict__ w_zero_t, // [N, n_groups]
+        const Q8Block* __restrict__ q8,
+        __nv_bfloat16* __restrict__ out,
+        int32_t N,
+        int32_t K,
+        int32_t gs_shift,
+        int32_t n_groups,
+        int32_t M) {
+  const int32_t n = blockIdx.x * MV_NWARPS + threadIdx.y;
+  if (n >= N)
+    return;
+
+  const int32_t K_half = K / 2;
+  const int32_t lane_id = threadIdx.x;
+  const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE;
+
+  const uint8_t* qrow = qdata + static_cast<int64_t>(n) * K_half;
+  const __nv_bfloat16* scale_row =
+      w_scale_t + static_cast<int64_t>(n) * n_groups;
+  const __nv_bfloat16* zero_row =
+      w_zero_t + static_cast<int64_t>(n) * n_groups;
+
+  const uint4* qrow16 = reinterpret_cast<const uint4*>(qrow);
+  const int32_t K_half_16 = K_half / 16;
+
+  float sum[M_MAX];
+#pragma unroll
+  for (int32_t mm = 0; mm < M_MAX; mm++)
+    sum[mm] = 0.0f;
+
+  int32_t prev_g = -1;
+  float ws = 0.0f, wz = 0.0f;
+
+  for (int32_t i = lane_id; i < K_half_16; i += MV_WARP_SIZE) {
+    uint4 packed16 = __ldg(&qrow16[i]);
+    int32_t k_base = i * 32;
+    uint32_t words[4] = {packed16.x, packed16.y, packed16.z, packed16.w};
+
+#pragma unroll
+    for (int32_t w = 0; w < 4; w++) {
+      uint32_t packed = words[w];
+      int32_t k_word = k_base + w * 8;
+      int32_t g = k_word >> gs_shift;
+
+      if (g != prev_g) {
+        ws = __bfloat162float(__ldg(&scale_row[g]));
+        wz = __bfloat162float(__ldg(&zero_row[g]));
+        prev_g = g;
+      }
+
+      // Weight nibbles loaded once and reused across all M activation rows.
+      int32_t vi_lo = packed & 0x0F0F0F0F;
+      int32_t vi_hi = (packed >> 4) & 0x0F0F0F0F;
+
+      int32_t q8_block_idx = k_word / Q8_BLOCK_SIZE;
+      int32_t q8_half_offset = (k_word % Q8_BLOCK_SIZE) / 2;
+
+      for (int32_t mm = 0; mm < M; mm++) {
+        const Q8Block* qb =
+            &q8[static_cast<int64_t>(mm) * n_q8_blocks + q8_block_idx];
+        int32_t a_even =
+            *reinterpret_cast<const int32_t*>(qb->qs_even + q8_half_offset);
+        int32_t a_odd =
+            *reinterpret_cast<const int32_t*>(qb->qs_odd + q8_half_offset);
+
+        int32_t dp = __dp4a(vi_lo, a_even, 0);
+        dp = __dp4a(vi_hi, a_odd, dp);
+
+        int32_t a_sum8 = __dp4a(0x01010101, a_even, 0);
+        a_sum8 = __dp4a(0x01010101, a_odd, a_sum8);
+
+        sum[mm] += ws * qb->d *
+            (static_cast<float>(dp) - wz * static_cast<float>(a_sum8));
+      }
+    }
+  }
+
+  for (int32_t mm = 0; mm < M; mm++) {
+    float s = sum[mm];
+    for (int offset = MV_WARP_SIZE / 2; offset > 0; offset >>= 1)
+      s += __shfl_xor_sync(0xffffffff, s, offset);
+    if (lane_id == 0)
+      out[static_cast<int64_t>(mm) * N + n] = __float2bfloat16(s);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Persistent Q8 buffer (lazy init, not thread-safe — single-stream only).
 // Freed at process exit via a static guard so leak detectors stay quiet; the
 // CUDA runtime would otherwise reclaim it on teardown anyway.
@@ -292,18 +395,37 @@ void _int4_plain_mm_cuda(
   quantize_activations_q8_kernel<<<q8_grid, q8_block, 0, stream>>>(
       reinterpret_cast<const __nv_bfloat16*>(A.data_ptr()), q8_buf, K);
 
-  // dp4a matvec
-  dim3 grid((N + MV_NWARPS - 1) / MV_NWARPS, M);
+  // M==1 (decode): per-row matvec. M>1 (e.g. speculative verify): weight-
+  // stationary GEMM that reads each weight once and accumulates into all M rows.
+  // Must be >= the Python dispatch's MATVEC_MAX_M (int4_dispatch.py): the export
+  // captures int4_plain_mm for M<=MATVEC_MAX_M, and those M reach this kernel.
+  constexpr int32_t GEMM_MAX_M = 8;
   dim3 block(MV_WARP_SIZE, MV_NWARPS);
-
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
-  int4_w4a8_matvec_coalesced_kernel<<<grid, block, 0, stream>>>(
-      reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
-      reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
-      reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
-      q8_buf,
-      reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
-      N, K, gs_shift, n_groups);
+  dim3 grid((N + MV_NWARPS - 1) / MV_NWARPS, 1);
+
+  if (M == 1) {
+    int4_w4a8_matvec_coalesced_kernel<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
+        reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
+        reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N, K, gs_shift, n_groups);
+  } else {
+    ET_CHECK_MSG(
+        M <= GEMM_MAX_M,
+        "int4_plain_mm GEMM kernel supports M<=%d, got M=%d",
+        GEMM_MAX_M,
+        M);
+    int4_w4a8_gemm_kernel<GEMM_MAX_M><<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
+        reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
+        reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N, K, gs_shift, n_groups, M);
+  }
 }
 
 } // namespace executorch::backends::cuda
