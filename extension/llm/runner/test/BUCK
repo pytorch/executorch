@@ -10,32 +10,21 @@ oncall("executorch")
 # targets.bzl. This file can contain fbcode-only targets.
 
 load(":targets.bzl", "define_common_targets")
-
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 non_fbcode_target(_kind = define_common_targets,)
 
-# !!!! fbcode/executorch/extension/llm/runner/test/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
-
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-# Any targets that should be shared between fbcode and xplat must be defined in
-# targets.bzl. This file can contain fbcode-only targets.
-
-load(":targets.bzl", "define_common_targets")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-
 fbcode_target(_kind = define_common_targets,)
 
+# fbcode-only test that requires access to fbcode//executorch/test/models
 fbcode_target(_kind = runtime.cxx_test,
     name = "test_text_decoder_runner",
     srcs = ["test_text_decoder_runner.cpp"],
     deps = [
-        "//executorch/extension/llm/runner:runner_lib",
         "//executorch/extension/llm/runner/io_manager:io_manager",
+        "//executorch/extension/llm/runner:text_decoder_runner",
+        "//executorch/extension/module:module",
+        "//executorch/extension/tensor:tensor",
         "//executorch/kernels/portable:generated_lib",
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ],
@@ -43,5 +32,5 @@ fbcode_target(_kind = runtime.cxx_test,
         "KVCACHE_CACHE_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheCachePos.pte])",
         "KVCACHE_INPUT_POS": "$(location fbcode//executorch/test/models:exported_programs[ModuleKVCacheInputPos.pte])",
         "NO_KVCACHE": "$(location fbcode//executorch/test/models:exported_programs[ModuleNoKVCache.pte])",
-    }
+    },
 )
