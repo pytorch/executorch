@@ -34,7 +34,7 @@ class TestConstantPadND:
     """
 
     # noinspection PyMethodMayBeStatic
-    def assert_delegated(self, model, input_shape, mocker, use_qat=False):
+    def assert_delegated(self, model, input_shape, mocker, request, use_qat=False):
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={ConstantPadND: 1},
@@ -45,15 +45,16 @@ class TestConstantPadND:
             model,
             input_shape,
             graph_verifier,
+            request,
             use_qat=use_qat,
         )
 
     def assert_delegated_and_output_shape_equals(
-        self, model, input_shape, expected_output_shape, mocker
+        self, model, input_shape, expected_output_shape, mocker, request
     ):
         model_builder_spy = mocker.spy(ModelBuilder, "finish")
 
-        self.assert_delegated(model, input_shape, mocker)
+        self.assert_delegated(model, input_shape, mocker, request)
 
         neutron_ir_subgraph = model_builder_spy.call_args[0][0].get_sub_graph()
         assert neutron_ir_subgraph.outputs.tmp_outputs[0].shape.vector == list(
@@ -74,12 +75,14 @@ class TestConstantPadND:
             pytest.param((1, 2, 3, 4, 5), tuple(range(4)), id="5D, padding W, D"),
         ],
     )
-    def test__basic_nsys_inference(self, mocker, input_shape, paddings, use_qat):
+    def test__basic_nsys_inference(
+        self, mocker, request, input_shape, paddings, use_qat
+    ):
         # These test cases are also supported by the old flow.
         model = ConstantPadNDModule(paddings)
-        self.assert_delegated(model, input_shape, mocker, use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat)
 
-    def test__channels_padding(self, mocker):
+    def test__channels_padding(self, mocker, request):
         input_shape = (2, 4, 6)
         # These paddings will be applied to the last dimension, which is the channels as the input is formatless.
         paddings = (1, 1)
@@ -87,25 +90,25 @@ class TestConstantPadND:
         model = ConstantPadNDModule(paddings)
 
         self.assert_delegated_and_output_shape_equals(
-            model, input_shape, expected_output_shape, mocker
+            model, input_shape, expected_output_shape, mocker, request
         )
 
-    def test__batch_padding(self, mocker):
+    def test__batch_padding(self, mocker, request):
         input_shape = (2, 4, 6)
         paddings = (0, 0, 0, 0, 1, 1)  # Padding applied to the batch dimension.
         expected_output_shape = (4, 4, 6)  # Padded batch.
         model = ConstantPadNDModule(paddings)
 
         self.assert_delegated_and_output_shape_equals(
-            model, input_shape, expected_output_shape, mocker
+            model, input_shape, expected_output_shape, mocker, request
         )
 
     @pytest.mark.parametrize("constant", [0.0, -13.37])
-    def test__specific_constant(self, mocker, constant):
+    def test__specific_constant(self, mocker, request, constant):
         input_shape = (2, 4, 6)
         paddings = (1, 1)
         model = ConstantPadNDModule(paddings, constant)
-        self.assert_delegated(model, input_shape, mocker)
+        self.assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
         "input_shape, paddings",
@@ -115,7 +118,7 @@ class TestConstantPadND:
             pytest.param((1, 2, 6, 8), (0, 1, 2, 3, 1, 1), id="4D, padding H, W"),
         ],
     )
-    def test__channels_first(self, mocker, input_shape, paddings):
+    def test__channels_first(self, mocker, request, input_shape, paddings):
         model = ConstantPadNDConvModule(paddings)
         graph_verifier = DetailedGraphVerifier(
             mocker,
@@ -123,4 +126,4 @@ class TestConstantPadND:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shape, graph_verifier)
+        lower_run_compare(model, input_shape, graph_verifier, request)

@@ -194,7 +194,15 @@ void reset_state_for_feature_name(NSString *feature_name, MLState *state) {
         return nil;
     }
 
-    MLModel *mlModel = [MLModel modelWithContentsOfURL:asset.contentURL
+    NSURL *contentURL = asset.contentURL;
+    if (contentURL == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "asset.contentURL is nil");
+        return nil;
+    }
+
+    MLModel *mlModel = [MLModel modelWithContentsOfURL:contentURL
                                          configuration:configuration
                                                  error:error];
     if (!mlModel) {
