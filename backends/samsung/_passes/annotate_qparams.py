@@ -186,6 +186,7 @@ class AnnotateQparamsPass(ExportPass):
                 # Currently, don't add quant info for d_qd node here.
                 continue
             elif source_node.target == operator.getitem:
+                source_node.meta["quantize_attrs"] = quant_attrs
                 source_node = source_node.args[0]
 
             source_node.meta["quantize_attrs"] = quant_attrs

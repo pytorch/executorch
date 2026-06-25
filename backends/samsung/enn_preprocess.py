@@ -23,9 +23,6 @@ from executorch.backends.samsung._passes.fuse_activation import FuseActivationPa
 from executorch.backends.samsung._passes.insert_qdq import InsertQDQPass
 from executorch.backends.samsung._passes.remove_useless_ops import RemoveUselessOpPass
 from executorch.backends.samsung._passes.replace_scalar_ops import ReplaceOpsWithScalar
-from executorch.backends.samsung._passes.transform_quantized_mask import (
-    TransformQuantizedMaskPass,
-)
 from executorch.backends.samsung.builders.node_visitor import get_node_visitors
 from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
@@ -72,7 +69,6 @@ class EnnBackend(BackendDetails):
                 FuseActivationPass(),
                 FoldQDQPass(),
                 ConstantPropPass(edge_program),
-                TransformQuantizedMaskPass(edge_program),
                 Conv1dToConv2d(edge_program),
                 FuseBatchNormWithConvPass(edge_program),
                 AddmmToLinearTransform(),

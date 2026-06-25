@@ -67,12 +67,11 @@ def _is_annotated(nodes: List[Node]):
 
 
 def _is_fake_tensor(node: Node):
-    if (
-        isinstance(node, Node)
-        and "val" in node.meta
-        and isinstance(node.meta["val"], FakeTensor)
-    ):
-        return True
+    if isinstance(node, Node) and "val" in node.meta:
+        if isinstance(node.meta["val"], (list, tuple)):
+            return all(isinstance(val, FakeTensor) for val in node.meta["val"])
+        else:
+            return isinstance(node.meta["val"], FakeTensor)
     return False
 
 
@@ -80,7 +79,12 @@ def _is_float_tensor(node: Node):
     # checking if the node is quantized.
     if not _is_fake_tensor(node):
         return False
-    return node.meta["val"].dtype in [torch.float32, torch.float16]
+    if isinstance(node.meta["val"], (list, tuple)):
+        return all(
+            val.dtype in [torch.float32, torch.float16] for val in node.meta["val"]
+        )
+    else:
+        return node.meta["val"].dtype in [torch.float32, torch.float16]
 
 
 def _mark_nodes_as_annotated(nodes: List[Node]):
@@ -849,6 +853,13 @@ def annotate_const(node: Node, quant_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return
 
+    # If zeros_like+masked_fill_ is the input of model, the executorch will generate
+    # multiple QDQ in a single graph.
+    if node.target == torch.ops.aten.zeros_like.default:
+        for user in node.users:
+            if user.target == torch.ops.aten.masked_fill_.Scalar:
+                return
+
     node.meta["quantization_annotation"] = QuantizationAnnotation(
         input_qspec_map={},
         output_qspec=quant_config.output_activation,
@@ -867,5 +878,34 @@ def annotate_getitem(node: Node, quant_config: QuantizationConfig) -> None:
         out_act_quantization_spec = SharedQuantizationSpec(node.args[0])
         node.meta["quantization_annotation"] = QuantizationAnnotation(
             output_qspec=out_act_quantization_spec,
+            _annotated=True,
+        )
+
+
+@register_annotator(
+    [
+        torch.ops.aten.split_with_sizes.default,
+        torch.ops.aten.split.Tensor,
+    ]
+)
+def annotate_split(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]) or not _is_float_tensor(node):
+        return
+
+    input_qspec_map = {}
+    input_act = node.args[0]
+    assert isinstance(input_act, Node)
+    input_qspec_map[input_act] = quantization_config.input_activation
+    share_qparams_with_input_node_qspec = SharedQuantizationSpec((input_act, node))
+
+    node.meta["quantization_annotation"] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=share_qparams_with_input_node_qspec,
+        _annotated=True,
+    )
+
+    for user in node.users:
+        user.meta["quantization_annotation"] = QuantizationAnnotation(
+            output_qspec=share_qparams_with_input_node_qspec,
             _annotated=True,
         )
