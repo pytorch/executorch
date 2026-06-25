@@ -14,22 +14,25 @@ class SamplingHead(nn.Module):
     """
     Wraps a model that returns logits and samples a token id on-device.
 
-        forward(*model_args, temperature, seed=None, top_p=1.0, **model_kwargs)
-            -> token_id
+        forward(*model_args, temperature, top_k=None, top_p=1.0, seed=None,
+                **model_kwargs) -> token_id
 
       temperature: scalar float tensor, e.g. torch.tensor(0.8). Must be >= 0;
                    temperature=0 is greedy (returns argmax, no division).
-      seed:        scalar int tensor (seeded) or None (unseeded export)
+      top_k:       not implemented yet (reserved); must be None.
       top_p:       scalar float tensor in (0, 1] for nucleus sampling. top_p=1.0
                    (the default) keeps every token, i.e. no filtering. Pass it
                    as a runtime input to tune per request.
+      seed:        scalar int tensor (seeded) or None (unseeded export)
     """
 
     def __init__(self, model: nn.Module):
         super().__init__()
         self.model = model
 
-    def forward(self, *args, temperature, seed=None, top_p=1.0, **kwargs):
+    def forward(self, *args, temperature, top_k=None, top_p=1.0, seed=None, **kwargs):
+        if top_k is not None:
+            raise NotImplementedError("top_k sampling is not implemented")
         logits = self.model(*args, **kwargs)  # [B, S, vocab]
         last = logits[:, -1, :]  # [B, vocab]
         if not isinstance(top_p, torch.Tensor):

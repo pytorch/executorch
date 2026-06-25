@@ -7705,36 +7705,38 @@ class SampleTopPTest(OpTestCase):
 @register_test
 class SampleGreedyTest(OpTestCase):
     """Greedy argmax(logits) is bit-exact host/device, so verify the token with the
-    normal compare. Covers temperature=0, tiny temperature, and bf16 logits."""
+    normal compare. Covers temperature=0, tiny temperature, bf16 logits, and a
+    batch (per-row argmax -> [B] on device)."""
 
     name = "sample_greedy"
 
-    def __init__(self, temperature: float = 0.0, dtype: torch.dtype = torch.float32):
+    def __init__(
+        self,
+        temperature: float = 0.0,
+        dtype: torch.dtype = torch.float32,
+        batch: int = 1,
+        tag: str = "",
+    ):
         self.temperature = temperature
         self.dtype = dtype
-        if dtype == torch.bfloat16:
-            self.name = "sample_greedy_bf16"
-        elif temperature < 0:
-            self.name = "sample_greedy_neg"
-        elif temperature == 0.0:
-            self.name = "sample_greedy"
-        else:
-            self.name = "sample_greedy_eps"
+        self.batch = batch
+        self.name = f"sample_greedy_{tag}" if tag else "sample_greedy"
 
     @classmethod
     def get_test_configs(cls) -> List["SampleGreedyTest"]:
         return [
             cls(temperature=0.0),
-            cls(temperature=1e-4),
-            cls(temperature=-1.0),  # negative -> greedy on both paths (consistent)
-            cls(temperature=1e-4, dtype=torch.bfloat16),
+            cls(temperature=1e-4, tag="eps"),
+            cls(temperature=-1.0, tag="neg"),  # negative -> greedy on both paths
+            cls(temperature=1e-4, dtype=torch.bfloat16, tag="bf16"),
+            cls(temperature=0.0, batch=4, tag="batch"),  # per-row argmax over a batch
         ]
 
     def create_model(self) -> nn.Module:
         return SeededSampleModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        logits = torch.randn(1, 4, 1024, dtype=self.dtype)
+        logits = torch.randn(self.batch, 4, 1024, dtype=self.dtype)
         if self.dtype == torch.bfloat16:
             logits[0, -1, 512] = 50.0  # dominant -> unambiguous bf16 argmax
         return (

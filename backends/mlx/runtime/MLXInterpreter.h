@@ -1699,7 +1699,8 @@ inline void exec_random_bits(
     const RandomBitsNode& n,
     ExecutionState& st,
     StreamOrDevice s) {
-  // random::bits supports width (bytes/element) in {1, 2, 4} -> uint8/uint16/uint32.
+  // random::bits supports width (bytes/element) in {1, 2, 4} ->
+  // uint8/uint16/uint32.
   if (n.width != 1 && n.width != 2 && n.width != 4) {
     throw std::runtime_error("random_bits: width must be 1, 2, or 4");
   }
