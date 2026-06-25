@@ -11,7 +11,10 @@ from functools import partial
 
 import torch
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
-    _is_convertible_to_relu,
+    ClampConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
+    HardTanhConverter,
 )
 from executorch.backends.nxp.quantizer.utils import (
     get_bias_qparams,
@@ -438,7 +441,7 @@ class ClampPattern(QuantizationPattern):
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
 
-        if not _is_convertible_to_relu(node):
+        if not ClampConverter._is_convertible_to_relu(node):
             return SharedSpecPattern.get_shared_spec_anchors(gm, fused_partition)
         else:
             return SingleInputBasicPattern.get_single_input_anchors(gm, fused_partition)
@@ -709,6 +712,15 @@ class DropoutPattern(SharedSpecPattern):
         return [torch.ops.aten.dropout.default]
 
 
+class ExpPattern(SharedSpecPattern):
+    """
+    Quantizer for Exp operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.exp.default]
+
+
 class FlattenPattern(SharedSpecPattern):
     """
     Quantizer for Flatten operator.
@@ -726,32 +738,27 @@ class HardTanhPattern(SingleInputBasicPattern):
     def partition_types(self):
         return [torch.ops.aten.hardtanh.default]
 
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        if not HardTanhConverter._is_convertible_to_relu(node):
+            return SharedSpecPattern.get_shared_spec_anchors(gm, fused_partition)
+        else:
+            return SingleInputBasicPattern.get_single_input_anchors(gm, fused_partition)
+
     def replacement_op(self):
         raise AssertionError()
 
 
-class HardTanhInPlacePattern(SingleInputBasicPattern):
+class HardTanhInPlacePattern(HardTanhPattern):
     """
     Quantizer for HardTanh operator with param inplace=True.
     """
 
     def partition_types(self):
         return [torch.ops.aten.hardtanh_.default]
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors | None:
-        node = fused_partition[0].nodes[-1]
-
-        return PartitionAnchors(
-            inputs=[(node, NodeArgsIdx(0))],
-            weights=[],
-            biases=[],
-            output=[(node,)],
-        )
-
-    def replacement_op(self):
-        raise AssertionError()
 
 
 class LeakyReluPattern(SingleInputBasicPattern):
@@ -834,6 +841,13 @@ class LinearPattern(QuantizationPattern):
             biases=bias,
             output=output,
         )
+
+
+class LogPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.log.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.log.default]
 
 
 class MaxPool1DPattern(SharedSpecPattern):

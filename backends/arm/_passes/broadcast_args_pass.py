@@ -39,6 +39,7 @@ class BroadcastArgsPass(ArmPass):
         tosa_spec = get_context_spec()
         if not tosa_spec.is_U55_subset:
             return PassResult(graph_module, False)
+        modified = False
         for node in graph_module.graph.nodes:
             if node.op != "call_function" or node.target not in self.targeted_ops:
                 continue
@@ -67,7 +68,8 @@ class BroadcastArgsPass(ArmPass):
                             inherit_qparams=False,
                         )
                         node.replace_input_with(arg, repeat)
+                    modified = True
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

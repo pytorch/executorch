@@ -1,4 +1,3 @@
-
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
@@ -9,27 +8,27 @@
 
 set -ex
 
-# shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Double check if the NDK version is set
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/utils.sh"
+
+# Double check if Zephyr setup is enabled.
 [ -n "${ZEPHYR_SDK}" ]
 
-install_prerequiresites() {
+install_prerequisites() {
     rm /var/lib/dpkg/info/libc-bin.*
     apt-get clean
     apt-get -y update
     apt-get install -y libc-bin
     apt-get -y update
     apt-get clean
-    apt-get install --no-install-recommends -y dos2unix
     apt-get install --no-install-recommends -y ca-certificates
     apt-get install -y --reinstall libc-bin
     apt-get install --no-install-recommends -y file
     apt-get install --no-install-recommends -y locales
     apt-get install --no-install-recommends -y git
     apt-get install --no-install-recommends -y build-essential
-    apt-get install --no-install-recommends -y cmake
     apt-get install --no-install-recommends -y ninja-build gperf
     apt-get install --no-install-recommends -y device-tree-compiler
     apt-get install --no-install-recommends -y wget
@@ -49,16 +48,14 @@ install_prerequiresites() {
     apt install -y python3.12 python3.12-dev python3.12-venv python3-pip
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 
-    # Upgrade cmake ot 3.24
-    apt update
-    apt install cmake
-    apt install software-properties-common lsb-release
+    # Upgrade cmake to 3.24 or newer.
+    apt install -y software-properties-common lsb-release
     apt update
     test -f /usr/share/doc/kitware-archive-keyring/copyright || \
         wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-    "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/kitware.list > /dev/null
+    echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/kitware.list > /dev/null
     apt update
-    apt install cmake
+    apt install -y cmake
 
     # Install additional required software for Zephyr
     apt install --no-install-recommends -y ccache \
@@ -77,19 +74,19 @@ install_prerequiresites() {
     apt-get clean -y
     apt-get autoremove --purge -y
     rm -rf /var/lib/apt/lists/*
-    wget https://apt.kitware.com/kitware-archive.sh && \
-        chmod +x kitware-archive.sh && \
-        ./kitware-archive.sh && \
-        rm -f kitware-archive.sh
     pip_install --no-cache-dir west
     pip_install pyelftools
 
-    # Zephyr SDK
-    wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64.tar.xz
-    tar -xf zephyr-sdk-0.17.4_linux-x86_64.tar.xz
-    rm -f zephyr-sdk-0.17.4_linux-x86_64.tar.xz*
-    # Save setup to later and this get symlinked in to another folder in the test in trunk.yml
-    #./zephyr-sdk-0.17.4/setup.sh -c -t arm-zephyr-eabi
+    # Cache the Zephyr SDK release assets in the image. CI still runs
+    # `west sdk install` in its workspace, but the local proxy fallback can serve
+    # these files without downloading them on every job.
+    local zephyr_sdk_version
+    zephyr_sdk_version="$(python3 "${SCRIPT_DIR}/zephyr_sdk_release_proxy.py" --print-version)"
+    local zephyr_sdk_cache_dir="${ZEPHYR_SDK_RELEASE_PROXY_CACHE_DIR:-/opt/zephyr-sdk-cache/v${zephyr_sdk_version}}"
+    python3 "${SCRIPT_DIR}/zephyr_sdk_release_proxy.py" \
+        --version "${zephyr_sdk_version}" \
+        --cache-dir "${zephyr_sdk_cache_dir}" \
+        --populate-cache
 }
 
-install_prerequiresites
+install_prerequisites
