@@ -7,7 +7,7 @@
 from typing import Callable, Sequence
 
 import torch
-
+from executorch.backends.samsung._passes.replace_inf_values import ReplaceInfValues
 from executorch.backends.transforms.decompose_einsum import DecomposeEinsum
 from executorch.backends.transforms.decompose_glu import DecomposeGlu
 from executorch.backends.transforms.decompose_sdpa import (
@@ -41,6 +41,7 @@ class EnnQuantizer(Quantizer):
                 DecomposeScaledDotProductAttention(),
                 DecomposeGlu(),
                 DecomposeEinsum(),
+                ReplaceInfValues(),
             ]
         )
         pass_result = annotation_passes(model)
