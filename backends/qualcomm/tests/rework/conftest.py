@@ -18,6 +18,7 @@ import xml.etree.ElementTree as et
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, List, Tuple
 
@@ -53,6 +54,7 @@ TOTAL_TEST_COUNT = "total_test_count"
 # et framework messages
 EXCEPTION_EXIR_PROGRAM = "exir/program"
 EXCEPTION_FROM_PASSES = "backends/qualcomm/_passes"
+EXCEPTION_FROM_PREPROCESS = "backends/qualcomm/qnn_preprocess"
 
 
 def check_exception(msg):
@@ -60,6 +62,15 @@ def check_exception(msg):
         return msg in traceback.format_exc()
 
     return partial(_check, msg)
+
+
+# extend this for backend agnostic tests
+def default_property():
+    @dataclass
+    class Property:
+        soc_model: str = "SM8750"
+
+    return Property()
 
 
 class Metrics(ABC):

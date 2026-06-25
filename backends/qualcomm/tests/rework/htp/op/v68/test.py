@@ -121,6 +121,24 @@ def test_add(request, kwargs):
     Add.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        pytest.raises(AssertionError, match=EXPECT_NOT_FULLY_DELEGATED),
+        Tolerance(rtol=1e-1),
+    ]
+)
+@with_htp_context
+def test_addmm(request, kwargs):
+    AddMM.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_alias(request, kwargs):
+    Alias.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_amax(request, kwargs):
@@ -464,6 +482,10 @@ def test_conv2d_transpose(request, kwargs):
             },
             id="16a4w_lpbq",
         ),
+        pytest.param(
+            {"act": "fp16", "param": 8, "pcq": True, "expected": Tolerance()},
+            id="fp16a8w_pcq",
+        ),
     ],
 )
 @with_htp_context
@@ -525,6 +547,12 @@ def test_cumsum(request, kwargs):
 @with_htp_context
 def test_div(request, kwargs):
     Div.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_div_with_rounding_mode(request, kwargs):
+    DivWithRoundingMode.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype(
@@ -593,6 +621,12 @@ def test_expand_as(request, kwargs):
 @with_htp_context
 def test_expm1(request, kwargs):
     ExpM1.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_fill(request, kwargs):
+    Fill.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
@@ -856,6 +890,14 @@ def test_linear_block_quant(request, kwargs):
         pytest.param(
             {"act": 16, "param": 8, "pcq": True, "expected": Tolerance()},
             id="16a8w_pcq",
+        ),
+        pytest.param(
+            {"act": "fp16", "param": 8, "pcq": True, "expected": Tolerance()},
+            id="fp16a8w_pcq",
+        ),
+        pytest.param(
+            {"act": 16, "param": 2, "pcq": True, "expected": CosineSimilarity(0.9)},
+            id="16a2w_pcq",
         ),
         pytest.param(
             {
@@ -1179,8 +1221,20 @@ def test_sdpa(request, kwargs):
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
+def test_scatter_src(request, kwargs):
+    ScatterSrc.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
 def test_select_copy(request, kwargs):
     SelectCopy.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_select_scatter(request, kwargs):
+    SelectScatter.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
@@ -1253,6 +1307,12 @@ def test_sum_int_list(request, kwargs):
 @with_htp_context
 def test_swapaxes(request, kwargs):
     SwapAxes.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_tan(request, kwargs):
+    Tan.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
@@ -1355,3 +1415,9 @@ def test_view_5d_flatten_last_two_dims(request, kwargs):
 @with_htp_context
 def test_where(request, kwargs):
     Where.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
+def test_var(request, kwargs):
+    Var.test(request, kwargs)  # noqa: F405
