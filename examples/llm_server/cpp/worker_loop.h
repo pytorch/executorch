@@ -45,6 +45,8 @@
 //                "reused_prompt_tokens": int, "prefilled_prompt_tokens": int,
 //                "session_reset_reason": str
 //                (new|exact_prefix|mismatch|dirty|equal),
+//                "prefill_ms": float, "decode_ms": float, "total_ms": float,
+//                "prefill_tok_s": float, "decode_tok_s": float,
 //                "generated_token_ids"?: [int,...]}  // omitted if stop-trimmed
 //     open/close/reset: {"opened"|"closed"|"reset": true, "session_id": str}
 //     error:    {"error": str, "code"?: str}  // capacity_exhausted |
@@ -59,6 +61,7 @@
 #include <pytorch/tokenizers/tokenizer.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <iterator>
@@ -108,6 +111,7 @@ inline void worker_handle_request(
     const std::unordered_map<std::string, int64_t>& metadata,
     const nlohmann::json& req,
     const std::vector<uint64_t>& prompt_prefix_ids = {}) {
+  const auto request_start = std::chrono::steady_clock::now();
   LLMSession& session = *st.session;
   int64_t max_new = req.value("max_new_tokens", static_cast<int64_t>(-1));
   const float temperature = req.value("temperature", 0.0f);
@@ -203,6 +207,7 @@ inline void worker_handle_request(
 
   SamplingConfig sampling;
   sampling.temperature = temperature;
+  const auto prefill_start = std::chrono::steady_clock::now();
   if (session.prefill_tokens(to_prefill, &sampling) !=
       ::executorch::runtime::Error::Ok) {
     st.dirty = true; // state may be partially mutated; force a reset next time
@@ -212,6 +217,7 @@ inline void worker_handle_request(
   // suffix, or the whole prompt). Keep the invariant
   // resident.size()==position().
   st.resident_token_ids = ids;
+  const auto decode_start = std::chrono::steady_clock::now();
 
   std::string buf; // bytes not yet forming a complete UTF-8 prefix
   std::string pending; // complete-UTF-8 text held back for stop-string matching
@@ -299,6 +305,25 @@ inline void worker_handle_request(
         st.resident_token_ids.end() - num_generated,
         st.resident_token_ids.end());
   }
+  const auto request_end = std::chrono::steady_clock::now();
+  const double prefill_ms =
+      std::chrono::duration<double, std::milli>(decode_start - prefill_start)
+          .count();
+  const double decode_ms =
+      std::chrono::duration<double, std::milli>(request_end - decode_start)
+          .count();
+  const double total_ms =
+      std::chrono::duration<double, std::milli>(request_end - request_start)
+          .count();
+  done["prefill_ms"] = prefill_ms;
+  done["decode_ms"] = decode_ms;
+  done["total_ms"] = total_ms;
+  done["prefill_tok_s"] = prefill_ms > 0.0
+      ? (static_cast<double>(prefilled) * 1000.0 / prefill_ms)
+      : 0.0;
+  done["decode_tok_s"] = decode_ms > 0.0
+      ? (static_cast<double>(num_generated) * 1000.0 / decode_ms)
+      : 0.0;
   worker_emit(done);
 }
 

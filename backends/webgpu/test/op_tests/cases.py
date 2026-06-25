@@ -73,7 +73,7 @@ from executorch.backends.webgpu.test.ops.test_view_copy import (
     ViewModule,
 )
 
-# rms_norm coverage is exactly the 14 cases the native test covered.
+# rms_norm coverage is exactly the 15 cases the native test covered.
 RMS_NORM_CASES = _CASES
 
 
