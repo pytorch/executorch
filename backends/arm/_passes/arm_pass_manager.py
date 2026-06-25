@@ -112,6 +112,7 @@ from executorch.backends.arm._passes import (
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
+    FuseIdenticalInputTransformsPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
     InsertConstShapesPass,
@@ -500,6 +501,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
                 # Ticket: MLETORCH-1539
+                FuseIdenticalInputTransformsPass(),
                 DecomposeLinearPass(),
                 InsertRescaleInt32Pass(),
                 FuseConsecutiveRescalesPass(),
@@ -618,7 +620,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseTosaOps(),
+                RemovePermutesAroundElementwiseTosaOps(exported_program),
                 CanonicalizeViewCopyPermutePass(),
                 FuseCascadedTransposeOrPermuteOps(),
                 RewriteHighRankSingletonPermutePass(),
