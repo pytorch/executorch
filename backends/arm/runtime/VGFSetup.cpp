@@ -486,6 +486,38 @@ static bool is_tensor_like_descriptor_type(VkDescriptorType descriptor_type) {
       descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 }
 
+static VkResult submit_and_wait_with_fence(
+    VkDevice device,
+    VkQueue queue,
+    const VkSubmitInfo* submit_info) {
+  VkFence fence = VK_NULL_HANDLE;
+
+  const VkFenceCreateInfo fence_info = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+      .pNext = nullptr,
+      .flags = 0,
+  };
+
+  VkResult result = vkCreateFence(device, &fence_info, nullptr, &fence);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Failed to create Vulkan fence, error %d", result);
+    return result;
+  }
+
+  result = vkQueueSubmit(queue, 1, submit_info, fence);
+  if (result != VK_SUCCESS) {
+    ET_LOG(Error, "Vulkan queue submit failed, error %d", result);
+    vkDestroyFence(device, fence, nullptr);
+    return result;
+  }
+
+  result = vkWaitForFences(
+      device, 1, &fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+
+  vkDestroyFence(device, fence, nullptr);
+  return result;
+}
+
 static void record_image_layout_transition(
     VkCommandBuffer command_buffer,
     VkImage image,
@@ -744,6 +776,73 @@ static bool find_memory_index(
       memory_requirements.memoryRequirements.memoryTypeBits,
       aims,
       memory_type_out);
+}
+
+bool VgfRepr::map_persistent_io_memory() {
+  unmap_persistent_io_memory();
+
+  for (auto& io : IOs) {
+    if (io.memory == VK_NULL_HANDLE) {
+      ET_LOG(Error, "Cannot persistently map null Vulkan IO memory");
+      unmap_persistent_io_memory();
+      return false;
+    }
+
+    void* persistent_memory = nullptr;
+
+    // IO resources may alias the same VkDeviceMemory. Vulkan memory must not be
+    // mapped more than once at the same time, so map each unique memory once
+    // and share the returned pointer across aliased IO entries.
+    // Make sure that memory is HOST_VISIBLE and HOST_COHERENT.
+    bool found_existing_mapping = false;
+    auto mapped_memory_it = std::find_if(
+        persistent_mapped_memories.begin(),
+        persistent_mapped_memories.end(),
+        [&](const auto& mapped_memory) {
+          return mapped_memory.memory == io.memory;
+        });
+
+    if (mapped_memory_it != persistent_mapped_memories.end()) {
+      persistent_memory = mapped_memory_it->data;
+      found_existing_mapping = true;
+    }
+
+    if (!found_existing_mapping) {
+      VkResult result = vkMapMemory(
+          vk_device, io.memory, 0, VK_WHOLE_SIZE, 0, &persistent_memory);
+      if (result != VK_SUCCESS) {
+        ET_LOG(
+            Error,
+            "Failed to persistently map Vulkan IO memory, error %d",
+            result);
+        unmap_persistent_io_memory();
+        return false;
+      }
+
+      persistent_mapped_memories.push_back(PersistentMappedMemory{
+          .memory = io.memory,
+          .data = persistent_memory,
+      });
+    }
+
+    io.persistent_memory = persistent_memory;
+  }
+
+  return true;
+}
+
+void VgfRepr::unmap_persistent_io_memory() {
+  for (const auto& mapped_memory : persistent_mapped_memories) {
+    if (mapped_memory.memory != VK_NULL_HANDLE &&
+        mapped_memory.data != nullptr) {
+      vkUnmapMemory(vk_device, mapped_memory.memory);
+    }
+  }
+  persistent_mapped_memories.clear();
+
+  for (auto& io : IOs) {
+    io.persistent_memory = nullptr;
+  }
 }
 
 VkResult allocate_memory(
@@ -1278,10 +1377,11 @@ VkResult transition_image_layout(
       .signalSemaphoreCount = 0,
       .pSignalSemaphores = nullptr,
   };
-  result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-  if (result == VK_SUCCESS) {
-    result = vkQueueWaitIdle(queue);
-  }
+
+  // creates a temporary one-time command buffer, submits it once, waits, and
+  // frees it immediately.
+  result = submit_and_wait_with_fence(device, queue, &submit_info);
+
   vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
   return result;
 }
@@ -1806,6 +1906,7 @@ bool VgfRepr::process_vgf(
                  VK_NULL_HANDLE,
                  tensor_memory,
                  {0, 0, 0},
+                 nullptr,
                  owns_memory,
                  true,
                  is_in});
@@ -1898,6 +1999,7 @@ bool VgfRepr::process_vgf(
                  VK_NULL_HANDLE,
                  buffer_memory,
                  {0, 0, 0},
+                 nullptr,
                  owns_memory,
                  true,
                  is_in});
@@ -2084,6 +2186,7 @@ bool VgfRepr::process_vgf(
                  image_memory,
                  staging_memory,
                  image_extent,
+                 nullptr,
                  true,
                  owns_image_memory,
                  is_in});
@@ -3078,17 +3181,31 @@ bool VgfRepr::process_vgf(
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_ALLOCATE_COMMAND_BUFFER");
 
-    // Allocate command buffer
     VkCommandBufferAllocateInfo buffer_allocate_info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = nullptr,
         .commandPool = vk_command_pool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1};
+
     result = vkAllocateCommandBuffers(
         vk_device, &buffer_allocate_info, &vk_execute_cmd);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "Failed to allocate command buffers");
+      return false;
+    }
+
+    const VkFenceCreateInfo fence_info{
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+
+    result = vkCreateFence(vk_device, &fence_info, nullptr, &vk_execute_fence);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "Failed to create VGF execute fence, error %d", result);
+      vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+      vk_execute_cmd = VK_NULL_HANDLE;
       return false;
     }
   }
@@ -3386,37 +3503,66 @@ bool VgfRepr::process_vgf(
     vkEndCommandBuffer(vk_execute_cmd);
   }
 
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_MAP_IO_MEMORY");
+
+    if (!map_persistent_io_memory()) {
+      ET_LOG(Error, "Failed to persistently map VGF IO memory");
+      return false;
+    }
+  }
+
   return true;
 }
 
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
   ET_LOG(Info, "Executing vgf");
 
-  VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submit.commandBufferCount = 1;
-  submit.pCommandBuffers = &vk_execute_cmd;
+  VkSubmitInfo submit{
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = nullptr,
+      .waitSemaphoreCount = 0,
+      .pWaitSemaphores = nullptr,
+      .pWaitDstStageMask = nullptr,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &vk_execute_cmd,
+      .signalSemaphoreCount = 0,
+      .pSignalSemaphores = nullptr,
+  };
 
   VkResult result;
 
   {
-    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_SUBMIT");
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_SUBMIT_AND_WAIT_FENCE");
 
-    result = vkQueueSubmit(vk_queue, 1, &submit, VK_NULL_HANDLE);
+    if (vk_execute_fence == VK_NULL_HANDLE) {
+      ET_LOG(Error, "VGF execute fence is not initialized");
+      return false;
+    }
+
+    result = vkResetFences(vk_device, 1, &vk_execute_fence);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "VGF/VkFence reset failed, error %d", result);
+      return false;
+    }
+
+    result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    if (result != VK_SUCCESS) {
+      ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
+      return false;
+    }
+
+    result = vkWaitForFences(
+        vk_device,
+        1,
+        &vk_execute_fence,
+        VK_TRUE,
+        std::numeric_limits<uint64_t>::max());
   }
 
   if (result != VK_SUCCESS) {
-    ET_LOG(Error, "VGF/VkCommandBuffer command submission failed");
-    return false;
-  }
-
-  {
-    VGF_PROFILE_SCOPE(event_tracer, "VGF_QUEUE_WAIT_IDLE");
-
-    result = vkQueueWaitIdle(vk_queue);
-  }
-
-  if (result != VK_SUCCESS) {
-    ET_LOG(Error, "VGF/VkQueue wait idle failed");
+    ET_LOG(
+        Error, "VGF/VkCommandBuffer command submission or fence wait failed");
     return false;
   }
 
@@ -3426,9 +3572,16 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
 }
 
 void VgfRepr::free_vgf() {
+  unmap_persistent_io_memory();
+
   if (vk_timestamp_query_pool != VK_NULL_HANDLE) {
     vkDestroyQueryPool(vk_device, vk_timestamp_query_pool, nullptr);
     vk_timestamp_query_pool = VK_NULL_HANDLE;
+  }
+
+  if (vk_execute_fence != VK_NULL_HANDLE) {
+    vkDestroyFence(vk_device, vk_execute_fence, nullptr);
+    vk_execute_fence = VK_NULL_HANDLE;
   }
 
   vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);

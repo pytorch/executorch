@@ -7,10 +7,106 @@
 from typing import Callable, Dict, List
 
 import torch
+from executorch.backends.qualcomm.builders.node_visitor import q_ops
 from executorch.backends.qualcomm.builders.utils import get_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_DTYPE, QCOM_ENCODING
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DTYPE,
+    QCOM_ENCODING,
+    QCOM_QUANT_ATTRS,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
+
+
+def _create_q_or_dq_node(
+    graph_module: torch.fx.GraphModule,
+    node: torch.fx.node,
+    target: torch.fx.node.Target,
+    quant_attrs: Dict = None,
+    pop_quant_attrs: bool = True,
+) -> torch.fx.node:
+    # pop_quant_attrs: Most cases it makes sense to pop quant attributes from source node.
+    # e.g., input(quant_attrs) -> q -> node -> ...
+    # In this case, pop input quant attr makes sense so node_visitor does not interpret input as quantized input.
+    # However, LPAI with partition case needs to keep the node as quantized. Check lpai_partition_fallback_support.py for more info.
+
+    def create_args(target: torch.fx.node.Target, quant_attrs: Dict):
+        ret = []
+
+        arg_schemas = list(target._schema.arguments)[1:]
+        for arg_schema in arg_schemas:
+            name = arg_schema.name
+            # TODO: Due to the new parameter "out_dtype" in the dequantize node,
+            # it could not be found in the quant_attrs of other nodes,
+            # and it will cause a key error. For now, the output type
+            # of our dequantize node is only float. (by default in pytorch)
+            if name == "out_dtype":
+                continue
+            value = quant_attrs[name]
+            if isinstance(arg_schema.type, torch.Tensor) and (
+                isinstance(value, int) or isinstance(value, float)
+            ):
+                value = torch.tensor(value)
+            ret.append(value)
+        return ret
+
+    # check if there has a specified quant_attrs
+    # if not, use the existent info. from current node
+    if quant_attrs is None:
+        quant_attrs = node.meta.get(QCOM_QUANT_ATTRS)
+
+    inserted_node = graph_module.graph.create_node(
+        "call_function",
+        target,
+        (node, *create_args(target, quant_attrs)),
+    )
+    meta_val = node.meta["val"]
+    if target in q_ops:
+        inserted_node.meta[QCOM_QUANT_ATTRS] = (
+            node.meta.pop(QCOM_QUANT_ATTRS)
+            if pop_quant_attrs
+            else node.meta.get(QCOM_QUANT_ATTRS)
+        )
+        meta_val = meta_val.to(quant_attrs["dtype"])
+
+    inserted_node.meta["val"] = meta_val
+    return inserted_node
+
+
+def insert_quant_node(
+    graph_module: torch.fx.GraphModule,
+    input_node: torch.fx.node,
+    output_node: torch.fx.node,
+    target: torch.fx.node.Target,
+    quant_attrs: Dict = None,
+    pop_quant_attrs: bool = True,
+) -> torch.fx.Node:
+    with graph_module.graph.inserting_after(input_node):
+        inserted_node = _create_q_or_dq_node(
+            graph_module=graph_module,
+            node=input_node,
+            target=target,
+            quant_attrs=quant_attrs,
+            pop_quant_attrs=pop_quant_attrs,
+        )
+        # If we found mix quantization pattern and reuse the existing q_node, we skip adding a new q node.
+        if output_node.target not in q_ops:
+            output_node.replace_input_with(input_node, inserted_node)
+    return inserted_node
+
+
+def insert_dequant_node(
+    graph_module: torch.fx.GraphModule,
+    input_node: torch.fx.node,
+    output_node: torch.fx.node,
+    target: torch.fx.node.Target,
+) -> None:
+    with graph_module.graph.inserting_after(input_node):
+        inserted_node = _create_q_or_dq_node(
+            graph_module=graph_module, node=input_node, target=target
+        )
+        output_node.replace_input_with(input_node, inserted_node)
+    return inserted_node
 
 
 def copy_meta(meta: Dict, callback=None):
@@ -247,7 +343,7 @@ def append_qdq(
     return dq_node
 
 
-def get_const_node(
+def create_const_node(
     graph: torch.fx.Graph,
     graph_module: torch.fx.GraphModule,
     attr_name: str,
