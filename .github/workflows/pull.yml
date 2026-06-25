@@ -856,7 +856,7 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
-      runner: linux.2xlarge
+      runner: linux.8xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
