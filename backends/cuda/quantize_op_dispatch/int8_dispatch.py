@@ -18,8 +18,13 @@ At .pte runtime, the captured graph is executed by the AOTI-generated .so:
     dequant + cuBLAS matmul kernels.
 
 Dispatch strategy (determines what gets captured in the export graph):
-  Decode (M<=4): Custom op ``executorch_cuda::int8_plain_mm``
-  Prefill (M>4): Inline dequant + F.linear (standard PyTorch ops)
+  Small M (M<=MATVEC_MAX_M): Custom op ``executorch_cuda::int8_plain_mm``
+  Large M (M>MATVEC_MAX_M):  Inline dequant + F.linear (standard PyTorch ops)
+
+``MATVEC_MAX_M`` defaults to 4 (decode). The W8A8 dp4a matvec launches one
+block-row per M, so it handles any small M; an export may raise the threshold
+locally (e.g. EAGLE-3 verify at M=chain_len+1) so a dynamic M window does not
+straddle it and force a data-dependent branch.
 
 Keeping INT8 on the same fused dp4a path lets mixed-precision recipes (e.g.
 INT8 edge-layer v_proj/down_proj + INT4 elsewhere) keep ALL decode linears on a
@@ -49,8 +54,13 @@ from torchao.quantization.quantize_.workflows.intx.intx_unpacked_to_int8_tensor 
 )
 
 # ---------------------------------------------------------------------------
-# Custom op for INT8 decode (M<=4): W8A8 dp4a matvec in C shim.
+# Custom op for INT8 small-M (M<=MATVEC_MAX_M): W8A8 dp4a matvec in C shim.
 # ---------------------------------------------------------------------------
+
+# Max M routed to the custom INT8 op; above this, dequant+cuBLAS wins. Defaults
+# to 4 (decode); an export may raise it for a small dynamic M window (e.g. the
+# EAGLE-3 verify window) so the range stays on one dispatch branch.
+MATVEC_MAX_M = 4
 
 _lib.define(
     "int8_plain_mm(Tensor self, Tensor qdata, Tensor scale, Tensor zero, int group_size) -> Tensor"
@@ -121,7 +131,7 @@ def _(func, types, args, kwargs):
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
-    if M <= 4:
+    if M <= MATVEC_MAX_M:
         out = torch.ops.executorch_cuda.int8_plain_mm(x_2d, qdata, scale, zero, gs)
     else:
         out = _dequant_matmul_int8(x_2d, qdata, scale, zero, gs)

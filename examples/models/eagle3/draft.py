@@ -49,7 +49,11 @@ class Eagle3Config:
 
 
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:
-    x1, x2 = x.chunk(2, dim=-1)
+    # Slice rather than chunk: chunk lowers to aten::split_copy, which the AOTI
+    # CUDA backend has no fallback kernel for.
+    half = x.shape[-1] // 2
+    x1 = x[..., :half]
+    x2 = x[..., half:]
     return torch.cat((-x2, x1), dim=-1)
 
 
