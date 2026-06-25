@@ -83,7 +83,10 @@ class Eagle3Speculator(nn.Module):
         return token, self.draft.fuse(taps)
 
     def target_verify(
-        self, tokens: torch.Tensor, input_pos: torch.Tensor
+        self,
+        tokens: torch.Tensor,
+        input_pos: torch.Tensor,
+        kv_window: torch.Tensor = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Verify candidate tokens. Extends the target KV cache.
 
@@ -101,7 +104,7 @@ class Eagle3Speculator(nn.Module):
             feature:    (1, T, hidden) fused draft feature for every position.
         """
         logits, taps = self.target.forward_logits_taps(
-            tokens, input_pos, last_logits_only=False
+            tokens, input_pos, last_logits_only=False, kv_window=kv_window
         )
         return logits.argmax(dim=-1), self.draft.fuse(taps)
 
