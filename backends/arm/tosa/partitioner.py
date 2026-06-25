@@ -309,7 +309,9 @@ class TOSAPartitioner(Partitioner):
             elif detag_first_fp_node and not is_q_node and not is_dq_node:
                 # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
                 for input in node.all_input_nodes:
-                    if is_partitioned(input, tag):
+                    if is_partitioned(input, tag) or isinstance(
+                        input.meta["val"], torch.SymInt
+                    ):
                         continue
                     if get_first_fake_tensor(input).dtype.is_floating_point:
                         reporter.report_reject(
@@ -356,7 +358,13 @@ class TOSAPartitioner(Partitioner):
                 if dtype is None:
                     try:
                         dtype = get_first_fake_tensor(node).dtype
-                    except (AttributeError, KeyError, RuntimeError, ValueError):
+                    except (
+                        AttributeError,
+                        KeyError,
+                        RuntimeError,
+                        ValueError,
+                        TypeError,
+                    ):
                         dtype = None
             if dtype is None:
                 continue

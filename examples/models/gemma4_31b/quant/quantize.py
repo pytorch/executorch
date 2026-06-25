@@ -272,6 +272,25 @@ def dequantize_weight(
         zero = weight.zero_point.float().repeat_interleave(gs, dim=-1)
         return ((weight.qdata.float() - zero) * scale).to(dtype)
 
+    # ExportableGGUFTensor (native GGUF Q4_K/Q6_K) carries its own gguf-package
+    # dequant. The tied CUDA token embedding keeps the raw GGUF tensor and is
+    # dequantized to bf16 here for the gather. Imported lazily to avoid a hard
+    # extension/llm dependency.
+    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+
+    if isinstance(weight, ExportableGGUFTensor):
+        return weight.dequantize(dtype)
+
+    # CudaDp4aPlanarInt6Tensor (GGUF Q6_K on CUDA) carries its own dequant
+    # (symmetric, ql/qh split bit-planes). Imported lazily to avoid a hard
+    # backends/cuda dependency.
+    from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+        CudaDp4aPlanarInt6Tensor,
+    )
+
+    if isinstance(weight, CudaDp4aPlanarInt6Tensor):
+        return weight.dequantize(dtype)
+
     raise TypeError(f"Cannot dequantize {type(weight).__name__}")
 
 

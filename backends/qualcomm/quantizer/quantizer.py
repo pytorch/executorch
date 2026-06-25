@@ -3,9 +3,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import itertools
+import operator
 from dataclasses import dataclass
 from enum import IntEnum, unique
-from functools import partial
+from functools import partial, reduce
+from operator import attrgetter
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 # To support quantize op lowering in AOT
@@ -38,9 +41,11 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ANNOTATION_KEY
 from torch._ops import OpOverload
 
 from torch.fx import GraphModule
+from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -393,6 +398,93 @@ class QnnQuantizer(Quantizer):
     def recipe(self):
         return self._recipe
 
+    def _get_quant_range(self, node):
+        if quant_info := node.meta.get(QCOM_QUANT_ANNOTATION_KEY, None):
+            try:
+                dtype_info = torch.iinfo(
+                    reduce(getattr, ["output_qspec", "dtype"], quant_info)
+                )
+            except:
+                return
+
+            quant_range = (
+                dtype_info.max
+                if quant_info.output_qspec.quant_max is None
+                else quant_info.output_qspec.quant_max
+            ) - (
+                dtype_info.min
+                if quant_info.output_qspec.quant_min is None
+                else quant_info.output_qspec.quant_min
+            )
+            return quant_range
+
+    def _get_candidates_with_infinity_args(self, graph_module: GraphModule):
+        binary_op_sources = [
+            operator.add,
+            operator.sub,
+            operator.mul,
+            operator.truediv,
+            torch.add,
+            torch.sub,
+            torch.mul,
+            torch.div,
+            "add",
+            "sub",
+            "mul",
+            "truediv",
+        ]
+        src_partitions = get_source_partitions(graph_module.graph, binary_op_sources)
+        src_partitions = list(itertools.chain(*src_partitions.values()))
+        return {sp.nodes[0].target for sp in src_partitions} | {
+            torch.ops.aten.masked_fill.Scalar,
+            torch.ops.aten.masked_fill.Tensor,
+            torch.ops.aten.scalar_tensor.default,
+        }
+
+    def _replace_inf(self, graph_module: GraphModule) -> GraphModule:
+        candidates = self._get_candidates_with_infinity_args(graph_module)
+        for node in graph_module.graph.nodes:
+            if all(
+                [
+                    node.op == "call_function",
+                    node.target in candidates,
+                    quant_range := self._get_quant_range(node),
+                ]
+            ):
+                arg_list = list(node.args)
+                for index, arg in enumerate(arg_list):
+                    if isinstance(arg, (int, float)):
+                        if arg >= torch.finfo(torch.float16).max:
+                            arg_list[index] = quant_range
+                        elif arg <= torch.finfo(torch.float16).min:
+                            arg_list[index] = -quant_range
+
+                node.args = tuple(arg_list)
+            elif node.op == "get_attr":
+                constant_tensor = attrgetter(node.target)(graph_module)
+                if (
+                    torch.is_tensor(constant_tensor)
+                    and constant_tensor.is_floating_point()
+                ):
+                    # Anything smaller than float16.min, which covers float32.min and float(-inf)
+                    min_value = torch.finfo(torch.float16).min
+                    # Anything larger than float16.max, which covers float32.max and float(inf)
+                    max_value = torch.finfo(torch.float16).max
+
+                    quant_min, quant_max = float("inf"), float("-inf")
+                    for source_node in node.users:
+                        if quant_range := self._get_quant_range(source_node):
+                            quant_min = min(quant_min, -quant_range)
+                            quant_max = max(quant_max, quant_range)
+
+                    if quant_min != float("inf") and quant_max != float("-inf"):
+                        # Inplace update
+                        with torch.no_grad():
+                            constant_tensor[constant_tensor <= min_value] = quant_min
+                            constant_tensor[constant_tensor >= max_value] = quant_max
+
+        graph_module.recompile()
+
     def annotate(self, model: GraphModule) -> GraphModule:
         """
         Annotates GraphModule during prepare_pt2e.
@@ -411,6 +503,10 @@ class QnnQuantizer(Quantizer):
         else:
             self._annotate(model)
             self._annotate_custom_annotation(model)
+
+        # This is the only place we have sufficient information for min-max ranges.
+        # This has to be done before calibration since this affects scale/offset.
+        self._replace_inf(model)
 
         return model
 

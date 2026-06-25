@@ -523,7 +523,36 @@ test_data_FP_fp16 = {
     "fp16_3x3": conv2d_fp16_3x3,
     "fp16_1x1": conv2d_fp16_1x1,
 }
-
+test_data_FP_fp8 = {
+    "fp8e4m3": lambda: (
+        Conv2d(
+            height=8,
+            width=8,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "fp8e5m2": lambda: (
+        Conv2d(
+            height=8,
+            width=8,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -575,6 +604,21 @@ def test_convolution_2d_tosa_FP(test_data):
         atol=3e-3,
         rtol=3e-3,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP_fp8)
+def test_convolution_2d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"CONV2D": 1, "CAST": 1})
     pipeline.run()
 
 
