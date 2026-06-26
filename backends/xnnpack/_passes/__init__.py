@@ -19,6 +19,7 @@ from executorch.backends.xnnpack._passes.conv1d_unsqueeze_pass import (
     Conv1dUnsqueezePass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack._passes.convert_to_rope import ConvertToRopePass
 from executorch.backends.xnnpack._passes.convert_to_sdpa import ConvertToSDPAPass
 from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
     ConvertToUpsampleBilinear2d,
@@ -75,6 +76,7 @@ class XNNPACKPassManager:
                 ConvertToLinearPass,
                 PropagateCustomMetaPass,
                 ConvertToSDPAPass,
+                ConvertToRopePass,
                 ConstPropPass,
                 FuseBatchNormPass,
                 DecomposeBatchNorm,

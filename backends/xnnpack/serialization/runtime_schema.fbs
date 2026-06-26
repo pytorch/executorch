@@ -159,6 +159,24 @@ union XNodeUnion {
   XNNSin: _XNNNode1x1,
   XNNCopy: _XNNNode1x1,
   XNNCos: _XNNNode1x1,
+  XNNRope,
+  XNNStaticExpandDims,
+}
+
+table XNNRope {
+  max_tokens: uint;
+  input_id: uint;
+  weights_id: uint;
+  output_id: uint;
+  flags: uint;
+}
+
+table XNNStaticExpandDims {
+  num_new_axes: uint;
+  new_axes: [uint];
+  input_id: uint;
+  output_id: uint;
+  flags: uint;
 }
 
 union XValueUnion {
