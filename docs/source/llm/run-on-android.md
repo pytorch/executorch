@@ -266,7 +266,7 @@ val buffer = ByteBuffer.allocateDirect(3 * 336 * 336).apply {
 module.prefillImages(buffer, 336, 336, 3)
 ```
 
-Pre-normalized float pixel data is also supported, both as a `float[]` and as a direct `ByteBuffer` in native byte order:
+Pre-normalized float pixel data is also supported, both as a `float[]` and as a direct `ByteBuffer` in native byte order. The two paths intentionally hit different methods: the `float[]` overload is `prefillImages`, while the `ByteBuffer` path is `prefillNormalizedImage` (the names reflect the underlying JNI bindings and are not interchangeable).
 
 Java:
 ```java
