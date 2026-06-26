@@ -20,6 +20,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 # Edge ops the WebGPU runtime implements; restricts the Vulkan partitioner.
 WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.aten.add.Tensor,
+    exir_ops.edge.aten.mul.Tensor,
+    exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.et_vk.rms_norm.default,
 ]
 

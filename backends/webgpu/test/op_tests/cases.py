@@ -16,6 +16,7 @@ import torch
 from executorch.backends.webgpu.test.op_tests.test_suite import (
     Case,
     InputSpec,
+    M,
     M1,
     M2,
     register_op_test,
@@ -30,11 +31,24 @@ from executorch.backends.webgpu.test.ops.add.test_add import (
     AddModule,
     AddSelfModule,
 )
+from executorch.backends.webgpu.test.ops.mul.test_mul import (
+    _mul_offset_range,
+    _mul_range,
+    MulChainedModule,
+    MulModule,
+    MulSelfModule,
+)
 from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _CASES,
     _linspace_weight,
     _ramp,
     RmsNormModule,
+)
+from executorch.backends.webgpu.test.ops.sigmoid.test_sigmoid import (
+    _sigmoid_range,
+    _sigmoid_wide_range,
+    SigmoidChainedModule,
+    SigmoidModule,
 )
 
 # rms_norm coverage is exactly the 15 cases the native test covered.
@@ -46,6 +60,21 @@ def _add_factory(variant: str = "regular") -> torch.nn.Module:
         "regular": AddModule,
         "self": AddSelfModule,
         "chained": AddChainedModule,
+    }[variant]()
+
+
+def _sigmoid_factory(variant: str = "regular") -> torch.nn.Module:
+    return {
+        "regular": SigmoidModule,
+        "chained": SigmoidChainedModule,
+    }[variant]()
+
+
+def _mul_factory(variant: str = "regular") -> torch.nn.Module:
+    return {
+        "regular": MulModule,
+        "self": MulSelfModule,
+        "chained": MulChainedModule,
     }[variant]()
 
 
@@ -78,6 +107,110 @@ def _add_suite() -> WebGPUTestSuite:
                 name="chained",
                 construct={"variant": "chained"},
                 inputs=((M1, M2), (M1, M2)),
+            ),
+        ],
+    )
+
+
+@register_op_test("mul")
+def _mul_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=_mul_factory,
+        cases=[
+            Case(
+                name="regular_2d",
+                construct={"variant": "regular"},
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_mul_range),
+                    InputSpec(shape=(M1, M2), gen=_mul_offset_range),
+                ),
+            ),
+            Case(
+                name="regular_3d",
+                construct={"variant": "regular"},
+                inputs=(
+                    InputSpec(shape=(S, S1, S2), gen=_mul_range),
+                    InputSpec(shape=(S, S1, S2), gen=_mul_offset_range),
+                ),
+            ),
+            Case(
+                name="regular_4d",
+                construct={"variant": "regular"},
+                inputs=(
+                    InputSpec(shape=(XS, S, S1, S2), gen=_mul_range),
+                    InputSpec(shape=(XS, S, S1, S2), gen=_mul_offset_range),
+                ),
+            ),
+            Case(
+                name="broadcast_last_dim",
+                construct={"variant": "regular"},
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_mul_range),
+                    InputSpec(shape=(M1, 1), gen=_mul_offset_range),
+                ),
+            ),
+            Case(
+                name="broadcast_first_dim",
+                construct={"variant": "regular"},
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_mul_range),
+                    InputSpec(shape=(1, M2), gen=_mul_offset_range),
+                ),
+            ),
+            Case(
+                name="broadcast_4d_mixed",
+                construct={"variant": "regular"},
+                inputs=(
+                    InputSpec(shape=(XS, S, S1, S2), gen=_mul_range),
+                    InputSpec(shape=(1, S, 1, S2), gen=_mul_offset_range),
+                ),
+            ),
+            Case(
+                name="self",
+                construct={"variant": "self"},
+                inputs=(InputSpec(shape=(M1, M2), gen=_mul_range),),
+            ),
+            Case(
+                name="chained",
+                construct={"variant": "chained"},
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_mul_range),
+                    InputSpec(shape=(M1, M2), gen=_mul_offset_range),
+                ),
+            ),
+        ],
+    )
+
+
+@register_op_test("sigmoid")
+def _sigmoid_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=_sigmoid_factory,
+        cases=[
+            Case(
+                name="regular_1d",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(M,), gen=_sigmoid_range),),
+            ),
+            Case(
+                name="regular_2d",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(M1, M2), gen=_sigmoid_range),),
+            ),
+            Case(
+                name="regular_4d",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(XS, S, S1, S2), gen=_sigmoid_range),),
+            ),
+            Case(
+                name="wide_range",
+                construct={"variant": "regular"},
+                inputs=(InputSpec(shape=(M1, M2), gen=_sigmoid_wide_range),),
+            ),
+            Case(
+                name="chained",
+                construct={"variant": "chained"},
+                inputs=(InputSpec(shape=(M1, M2), gen=_sigmoid_range),),
             ),
         ],
     )

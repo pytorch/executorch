@@ -19,6 +19,12 @@ def _add_regular_case():
     return suite, case
 
 
+def _mul_broadcast_case():
+    suite = op_test_registry["mul"]
+    case = next(c for c in suite.cases if c.name == "broadcast_last_dim")
+    return suite, case
+
+
 def test_export_case_has_delegate():
     suite, case = _add_regular_case()
     _module, _inputs, prog = g.export_case(suite, case)
@@ -50,6 +56,22 @@ def test_generate_case_writes_artifacts(tmp_path):
     assert entry["golden"]["output_index"] == 0
 
 
+def test_generate_mul_broadcast_case_writes_artifacts(tmp_path):
+    suite, case = _mul_broadcast_case()
+    entry = g.generate_case("mul", suite, case, str(tmp_path))
+    expected_input_shapes = [
+        list(spec.shape if hasattr(spec, "shape") else spec) for spec in case.inputs
+    ]
+    expected_golden_shape = list(
+        torch.broadcast_shapes(*(tuple(shape) for shape in expected_input_shapes))
+    )
+    assert (tmp_path / entry["pte"]).exists()
+    assert len(entry["inputs"]) == 2
+    assert [ie["shape"] for ie in entry["inputs"]] == expected_input_shapes
+    assert entry["golden"]["shape"] == expected_golden_shape
+    assert (tmp_path / entry["golden"]["path"]).exists()
+
+
 def test_generate_manifest(tmp_path):
     g.generate(str(tmp_path), ops=["add"])
     manifest = tmp_path / "manifest.json"
@@ -77,7 +99,7 @@ def test_generate_manifest(tmp_path):
 def test_every_case_delegates():
     # Contract: every registered case must lower to a VulkanBackend delegate. An op that
     # silently CPU-falls-back would otherwise produce a misleading golden-equals-golden pass.
-    for op in ("add", "rms_norm"):
+    for op in ("add", "mul", "sigmoid", "rms_norm"):
         suite = op_test_registry[op]
         for case in suite.cases:
             _module, _inputs, prog = g.export_case(suite, case)

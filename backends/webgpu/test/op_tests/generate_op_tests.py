@@ -8,7 +8,7 @@
 
 Per case: export the module to `<id>.pte`, write its inputs + torch golden as raw
 little-endian fp32, and emit `manifest.json` for the C++ gtest driver to consume.
-Run: `python -m ...generate_op_tests --output <dir> [--ops add,rms_norm]`.
+Run: `python -m ...generate_op_tests --output <dir> [--ops add,mul,sigmoid,rms_norm]`.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from executorch.backends.webgpu.test.op_tests.test_suite import (
     op_test_registry,
     WebGPUTestSuite,
 )
+from executorch.backends.webgpu.test.tester import WEBGPU_SUPPORTED_OPS
 from executorch.exir import to_edge_transform_and_lower
 
 
@@ -58,7 +59,8 @@ def export_case(suite: WebGPUTestSuite, case) -> tuple[torch.nn.Module, tuple, o
     inputs = tuple(_materialize(s) for s in case.inputs)
     ep = torch.export.export(module, inputs)
     prog = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
+        ep,
+        partitioner=[VulkanPartitioner(operator_allowlist=WEBGPU_SUPPORTED_OPS)],
     ).to_executorch()
     return module, inputs, prog
 
