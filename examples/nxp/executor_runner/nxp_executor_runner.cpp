@@ -39,6 +39,7 @@ static uint8_t __attribute__((
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -73,7 +74,7 @@ void processInputs(std::vector<std::string>& inputsData, std::string& inputs) {
   }
 }
 
-bool isDirectory(std::string path) {
+bool isDirectory(const std::string& path) {
   struct stat sb;
   if (stat(path.c_str(), &sb) == -1) {
     fprintf(stderr, "Unable to determine stats of a path!\n");
@@ -84,11 +85,11 @@ bool isDirectory(std::string path) {
 
 void setInputs(
     torch::executor::Method& method,
-    std::vector<std::string>& inputFiles) {
+    const std::vector<std::string>& inputFiles) {
   if (method.inputs_size() != inputFiles.size()) {
     fprintf(
         stderr,
-        "Mismatch: method has %ld inputs, whereas the loaded data contains %ld entries!\n",
+        "Mismatch: method has %zu inputs, whereas the loaded data contains %zu entries!\n",
         method.inputs_size(),
         inputFiles.size());
     exit(-1);
@@ -102,6 +103,8 @@ void setInputs(
   for (size_t i = 0; i < values.size(); i++) {
     fprintf(stderr, "Loading file %s\n", inputFiles[i].c_str());
     FILE* datasetFile = fopen(inputFiles[i].c_str(), "r");
+    assert(datasetFile);
+
     fseek(datasetFile, 0, SEEK_END);
     size_t inputSize = ftell(datasetFile);
     fseek(datasetFile, 0, SEEK_SET);
@@ -114,7 +117,8 @@ void setInputs(
          torch::executor::ScalarType::Float)) {
       // Input is in bytes, convert to floats
       printf("Converting inputs to floats...\n");
-      uint8_t* ptr = (uint8_t*)malloc(inputSize);
+      uint8_t* ptr = static_cast<uint8_t*>(malloc(inputSize));
+      assert(ptr);
       fread(ptr, 1, inputSize, datasetFile);
       for (size_t j = 0; j < inputSize; j++) {
         values[i].toTensor().mutable_data_ptr<float>()[j] = ptr[j];
@@ -124,7 +128,7 @@ void setInputs(
       // Input mismatch
       fprintf(
           stderr,
-          "Mismatch in the %ld-th input tensor: expected %ld elements x %ld bytes each, loaded %ld bytes!\n",
+          "Mismatch in the %zu-th input tensor: expected %zd elements x %zd bytes each, loaded %zu bytes!\n",
           i,
           values[i].toTensor().numel(),
           values[i].toTensor().element_size(),
@@ -159,6 +163,7 @@ void saveOutputs(
         std::to_string(i).insert(0, precision, '0') + ".bin";
     printf("Saving file %s\n", fileName.c_str());
     FILE* datasetFile = fopen(fileName.c_str(), "w");
+    assert(datasetFile);
     fwrite(
         values[i].toTensor().data_ptr(),
         1,
@@ -171,7 +176,7 @@ void saveOutputs(
 template <typename T>
 void printClassificationOutput(
     const torch::executor::EValue& value,
-    std::string& outputPath,
+    const std::string& outputPath,
     const std::string& runPathPrefix) {
   T maxVal = value.toTensor().mutable_data_ptr<T>()[0];
   size_t maxIdx = 0;
@@ -188,9 +193,10 @@ void printClassificationOutput(
     mkdir(outputPath.c_str(), 0700);
   }
   FILE* results = fopen(resultsFile.c_str(), "a+");
+  assert(results);
   // Print classification results and save to results.txt.
   std::cout << "Top1 class " << runPathPrefix << " = " << maxIdx << std::endl;
-  fprintf(results, "%s %d ", runPathPrefix.c_str(), maxIdx);
+  fprintf(results, "%s %zu ", runPathPrefix.c_str(), maxIdx);
   std::cout << "Confidence = " << static_cast<float_t>(maxVal) << std::endl;
   fprintf(results, "%f ", static_cast<float_t>(maxVal));
   fprintf(results, "\n");
@@ -199,7 +205,7 @@ void printClassificationOutput(
 
 void printOutput(
     torch::executor::Method& method,
-    std::string& outputPath,
+    const std::string& outputPath,
     const std::string& runPathPrefix = ".") {
   // The single tensor is considered to be a classification result.
   if (method.outputs_size() == 1) {
@@ -239,7 +245,7 @@ void printOutput(
         fprintf(
             stderr,
             "Unsupported tensor data type: %d\n",
-            values[0].toTensor().scalar_type());
+            static_cast<int>(values[0].toTensor().scalar_type()));
         exit(-1);
     }
   }
@@ -247,7 +253,7 @@ void printOutput(
 
 int main(int argc, char* argv[]) {
   DIR* datasetDir = nullptr;
-  struct dirent* dataset = nullptr;
+  struct dirent const* dataset = nullptr;
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -371,7 +377,7 @@ int main(int argc, char* argv[]) {
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
-    printf("Setting up planned buffer %lu, size %lu...\n", id, buffer_size);
+    printf("Setting up planned buffer %zu, size %zu...\n", id, buffer_size);
 
     planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
     planned_spans.push_back({planned_buffers.back().get(), buffer_size});
@@ -473,7 +479,7 @@ int main(int argc, char* argv[]) {
             inputDir = inputDir.substr(pos + 1);
 
           // Save outputs in binary files.
-          saveOutputs(method.get(), FLAGS_output, inputDir.c_str());
+          saveOutputs(method.get(), FLAGS_output, inputDir);
           inputsData.clear();
         }
       } else {
