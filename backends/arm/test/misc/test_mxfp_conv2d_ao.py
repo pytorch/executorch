@@ -159,6 +159,61 @@ def test_mxfp_conv2d_quantize_supports_fp4_weights() -> None:
     )
 
 
+def test_mxfp_conv2d_preserves_bfloat16_output_dtype() -> None:
+    model = Conv2dModule().eval().to(torch.bfloat16)
+    to_mxfp(
+        model,
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+    )
+
+    output = model(torch.randn(1, IN_CHANNELS, 8, 8, dtype=torch.bfloat16))
+
+    assert isinstance(model.conv, MXFPConv2dOp)
+    assert model.conv.output_dtype == torch.bfloat16
+    assert output.dtype == torch.bfloat16
+
+
+def test_mxfp_conv2d_op_output_dtype_constructor_arg() -> None:
+    model = Conv2dModule().eval()
+    config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+    to_mxfp(
+        model,
+        config,
+    )
+    assert isinstance(model.conv, MXFPConv2dOp)
+
+    fp32_conv = MXFPConv2dOp(
+        model.conv.weight_qdata,
+        model.conv.weight_scale,
+        model.conv.bias,
+        model.conv.stride,
+        model.conv.padding,
+        model.conv.dilation,
+        model.conv.groups,
+        config.weight_dtype,
+        config.block_size,
+    )
+    bf16_conv = MXFPConv2dOp(
+        model.conv.weight_qdata,
+        model.conv.weight_scale,
+        model.conv.bias,
+        model.conv.stride,
+        model.conv.padding,
+        model.conv.dilation,
+        model.conv.groups,
+        config.weight_dtype,
+        config.block_size,
+        output_dtype=torch.bfloat16,
+    )
+
+    test_input = torch.randn(1, IN_CHANNELS, 8, 8)
+
+    assert fp32_conv.output_dtype == torch.float32
+    assert fp32_conv(test_input).dtype == torch.float32
+    assert bf16_conv.output_dtype == torch.bfloat16
+    assert bf16_conv(test_input).dtype == torch.bfloat16
+
+
 def _test_mxfp_conv2d_export_preserves_custom_op(config: MXFPOpConfig) -> None:
     model = Conv2dModule().eval()
     to_mxfp(model, config)
@@ -196,6 +251,33 @@ def test_mxfp6_e3m2_conv2d_export_preserves_custom_op() -> None:
     _test_mxfp_conv2d_export_preserves_custom_op(
         MXFPOpConfig(weight_dtype=DTYPE_FP6_E3M2)
     )
+
+
+def test_mxfp_conv2d_export_preserves_inferred_bfloat16_output_dtype() -> None:
+    model = Conv2dModule().eval().to(torch.bfloat16)
+    to_mxfp(
+        model,
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+    )
+
+    exported = export(
+        model,
+        (torch.randn(1, IN_CHANNELS, 8, 8, dtype=torch.bfloat16),),
+        strict=False,
+    )
+
+    cast_nodes = [
+        node
+        for node in exported.graph_module.graph.nodes
+        if node.op == "call_function" and node.target == torch.ops.aten.to.dtype
+    ]
+
+    assert len(cast_nodes) == 1
+    assert cast_nodes[0].args[1] == torch.bfloat16
+    assert cast_nodes[0].meta["val"].dtype == torch.bfloat16
+    cast_input = cast_nodes[0].args[0]
+    assert isinstance(cast_input, torch.fx.Node)
+    assert cast_input.target == torch.ops.tosa_mxfp.conv2d.default
 
 
 def test_mxfp_conv2d_cpu_impl_matches_ref() -> None:
