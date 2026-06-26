@@ -10,8 +10,11 @@ op during export.
 
 """
 
+from typing import cast
+
 import torch
 import torch.nn.functional as F
+
 from executorch.backends.arm.ao_ext.mxfp import (
     _cast_to_block_scaled_cpu_ref,
     mxfp_dtype_to_str,
@@ -30,6 +33,12 @@ MXFP_TOSA_LIB.define(
     "str weight_payload_dtype=''"
     ") -> Tensor"
 )
+
+
+_SUPPORTED_OUTPUT_DTYPES: set[torch.dtype] = {
+    torch.float32,
+    torch.bfloat16,
+}
 
 
 def _get_mx_elem_dtype(
@@ -208,10 +217,12 @@ class MXFPConv2dOp(torch.nn.Module):
         groups: int,
         weight_dtype: MXFPDType,
         block_size: int,
+        output_dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__()
         self.weight_dtype = mxfp_dtype_to_str(weight_dtype)
         self.block_size = block_size
+        self.output_dtype = output_dtype
 
         self.register_buffer("weight_qdata", weight_qdata, persistent=True)
         self.register_buffer("weight_scale", weight_scale, persistent=True)
@@ -233,7 +244,7 @@ class MXFPConv2dOp(torch.nn.Module):
         self.groups = groups
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.ops.tosa_mxfp.conv2d.default(
+        output = torch.ops.tosa_mxfp.conv2d.default(
             x,
             self.weight_qdata,
             self.weight_scale,
@@ -245,6 +256,27 @@ class MXFPConv2dOp(torch.nn.Module):
             self.block_size,
             self.weight_dtype,
         )
+        if self.output_dtype != torch.float32:
+            output = output.to(self.output_dtype)
+        return output
+
+    def extra_repr(self) -> str:
+        weight_qdata = cast(torch.Tensor, self.weight_qdata)
+        weight_shape = weight_qdata.shape
+        in_channels = _get_num_input_channels(weight_qdata, self.weight_dtype)
+        repr_parts = [
+            f"in_channels={in_channels}",
+            f"out_channels={weight_shape[0]}",
+            f"kernel_size={(weight_shape[1], weight_shape[2])}",
+            f"stride={self.stride}",
+            f"padding={self.padding}",
+            f"dilation={self.dilation}",
+            f"groups={self.groups}",
+            f"bias={self.bias is not None}",
+            f"weight_dtype={self.weight_dtype}",
+            f"block_size={self.block_size}",
+        ]
+        return ", ".join(repr_parts)
 
 
 def transform_conv2d_to_mxfp(
@@ -276,6 +308,9 @@ def transform_conv2d_to_mxfp(
     )
 
     bias = module.bias.detach().to(torch.float32) if module.bias is not None else None
+    output_dtype = weight_ohwi.dtype
+    if output_dtype not in _SUPPORTED_OUTPUT_DTYPES:
+        raise ValueError(f"Unsupported output_dtype: {output_dtype}")
     return MXFPConv2dOp(
         weight_qdata,
         weight_scale,
@@ -286,4 +321,5 @@ def transform_conv2d_to_mxfp(
         module.groups,
         config.weight_dtype,
         config.block_size,
+        output_dtype,
     )
