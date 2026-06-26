@@ -14,7 +14,6 @@
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 #include <vector>
 
@@ -69,6 +68,11 @@ void index_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& index_tensor = graph.get_tensor(index_id);
   const auto& out_tensor = graph.get_tensor(out_id);
 
+  if (self_tensor.buffer == nullptr || index_tensor.buffer == nullptr ||
+      out_tensor.buffer == nullptr) {
+    throw std::runtime_error("index: null buffer binding");
+  }
+
   const size_t out_numel = out_tensor.nbytes / sizeof(float);
   if (out_tensor.nbytes != out_numel * sizeof(float) ||
       self_tensor.nbytes % sizeof(float) != 0) {
@@ -96,16 +100,8 @@ void index_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   IndexParams params = {};
   params.numel = num_elements;
 
-  WGPUBufferDescriptor uniform_desc = {};
-  uniform_desc.size = sizeof(IndexParams);
-  uniform_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  uniform_desc.mappedAtCreation = true;
-  WGPUBuffer uniform_buffer = wgpuDeviceCreateBuffer(device, &uniform_desc);
-  std::memcpy(
-      wgpuBufferGetMappedRange(uniform_buffer, 0, sizeof(IndexParams)),
-      &params,
-      sizeof(IndexParams));
-  wgpuBufferUnmap(uniform_buffer);
+  WGPUBuffer uniform_buffer =
+      utils::make_uniform(device, &params, sizeof(IndexParams));
   graph.add_uniform_buffer_bytes(sizeof(IndexParams));
 
   WGPUShaderSourceWGSL wgsl_desc = {};

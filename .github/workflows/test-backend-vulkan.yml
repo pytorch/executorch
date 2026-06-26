@@ -17,6 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Default coverage: builds + runs on SwiftShader (software Vulkan) on CPU
+  # runners. Runs on every PR and nightly.
   test-vulkan:
     uses: ./.github/workflows/_test_backend.yml
     with:
@@ -28,3 +30,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
+
+  # Real-GPU (NVIDIA) and Windows MSVC coverage live in vulkan.yml, which gates
+  # those scarce/expensive runners behind path filtering.

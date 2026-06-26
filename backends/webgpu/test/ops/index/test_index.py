@@ -70,20 +70,23 @@ def _op_delegated(edge, op_substr: str) -> bool:
 class TestIndex(unittest.TestCase):
     def test_export_delegates(self) -> None:
         for name, (n, iv) in CONFIGS.items():
-            edge = _lower(*_inputs(n, iv))
-            et = edge.to_executorch()
-            self.assertTrue(
-                _delegated(et), f"Expected a VulkanBackend delegate (index {name})"
-            )
-            self.assertTrue(
-                _op_delegated(edge, "index.Tensor"),
-                f"index.Tensor not delegated (fell back to CPU) for {name}",
-            )
+            with self.subTest(name=name):
+                edge = _lower(*_inputs(n, iv))
+                et = edge.to_executorch()
+                self.assertTrue(
+                    _delegated(et),
+                    f"Expected a VulkanBackend delegate (index {name})",
+                )
+                self.assertTrue(
+                    _op_delegated(edge, "index.Tensor"),
+                    f"index.Tensor not delegated (fell back to CPU) for {name}",
+                )
 
     def test_golden_matches_eager(self) -> None:
-        for _, (n, iv) in CONFIGS.items():
-            x, idx = _inputs(n, iv)
-            torch.testing.assert_close(IndexModule()(x, idx), x[idx])
+        for name, (n, iv) in CONFIGS.items():
+            with self.subTest(name=name):
+                x, idx = _inputs(n, iv)
+                torch.testing.assert_close(IndexModule()(x, idx), x[idx])
 
 
 def export_all_index_models(out_dir: str) -> None:
