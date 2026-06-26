@@ -37,6 +37,16 @@ DEFINE_string(
     "",
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
+DEFINE_double(
+    top_p,
+    1.0,
+    "Nucleus sampling top_p in (0, 1]; 1.0 = off. Requires a model exported "
+    "with --sample (MLX on-device sampling).");
+DEFINE_int64(
+    seed,
+    0,
+    "Base RNG seed for on-device sampling; the runner increments it per token. "
+    "Requires a model exported with --sample.");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_int32(
     warmup,
@@ -149,6 +159,8 @@ int main(int argc, char** argv) {
   // printed only on the first iteration (coherence check).
   llm::SamplingConfig sampling;
   sampling.temperature = static_cast<float>(FLAGS_temperature);
+  sampling.top_p = static_cast<float>(FLAGS_top_p);
+  sampling.seed = static_cast<uint64_t>(FLAGS_seed);
   const int total_iters = FLAGS_warmup + std::max(1, FLAGS_num_iters);
   std::vector<double> prefill_tps_samples;
   std::vector<double> decode_tps_samples;

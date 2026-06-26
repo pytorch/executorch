@@ -37,7 +37,26 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
 
-def run_inference(
+def _sampling_scalars(temperature: float, top_p: float, seed: int):
+    """0-dim scalar inputs for a --sample model's forward(tokens, pos, T, p, s)."""
+    return [
+        torch.tensor(float(temperature), dtype=torch.float32),
+        torch.tensor(float(top_p), dtype=torch.float32),
+        torch.tensor(int(seed), dtype=torch.int64),
+    ]
+
+
+def _next_token(outputs, use_sampling: bool, temperature: float) -> int:
+    """A --sample model returns the token id directly; else sample from logits."""
+    if use_sampling:
+        return int(outputs[0].reshape(-1)[0].item())
+    logits = outputs[0][0, -1, :]
+    if temperature > 0:
+        return int(torch.multinomial(torch.softmax(logits / temperature, dim=-1), 1))
+    return int(torch.argmax(logits))
+
+
+def run_inference(  # noqa: C901
     pte_path: str,
     tokenizer_id: str = None,
     prompt: str = None,
@@ -45,6 +64,8 @@ def run_inference(
     max_new_tokens: int = 10,
     vocab_size: int = 248320,
     temperature: float = 0.0,
+    top_p: float = 1.0,
+    seed: int = 0,
 ) -> None:
     """Run inference on the exported Qwen 3.5 MoE model."""
     logger.info(f"Loading model from {pte_path}...")
@@ -62,6 +83,28 @@ def run_inference(
         vocab_size = model_vocab_size
     except Exception:
         logger.info(f"No vocab size in metadata, using default: {vocab_size}")
+
+    # On-device sampling models (export.py --sample) take temperature/top_p/seed
+    # runtime inputs and return a token id directly instead of logits.
+    use_sampling = False
+    try:
+        meta_method = program.load_method("use_sampling")
+        result = meta_method.execute([])
+        use_sampling = bool(
+            result[0] if isinstance(result[0], int) else result[0].item()
+        )
+    except Exception:
+        pass
+    if not use_sampling and (top_p != 1.0 or seed != 0):
+        raise ValueError(
+            "top_p/seed require a model exported with --sample; this .pte only "
+            "supports --temperature (host-side sampling)."
+        )
+    if use_sampling:
+        logger.info(
+            f"On-device sampling: temperature={temperature}, top_p={top_p}, "
+            f"base seed={seed} (incremented per token)"
+        )
 
     # Tokenize or generate random tokens
     tokenizer = None
@@ -101,28 +144,27 @@ def run_inference(
     logger.info("Running warmup...")
     warmup_tokens = torch.zeros((1, 1), dtype=torch.long)
     warmup_pos = torch.tensor([0], dtype=torch.long)
-    forward.execute([warmup_tokens, warmup_pos])
+    warmup_inputs = [warmup_tokens, warmup_pos]
+    if use_sampling:
+        warmup_inputs += _sampling_scalars(temperature, top_p, 0)
+    forward.execute(warmup_inputs)
 
     # --- Prefill ---
     logger.info(f"Running prefill ({prompt_len} tokens)...")
     start_time = time.time()
 
     input_pos = torch.arange(prompt_len, dtype=torch.long)
-    outputs = forward.execute([input_ids, input_pos])
-    logits = outputs[0]
+    prefill_inputs = [input_ids, input_pos]
+    if use_sampling:
+        prefill_inputs += _sampling_scalars(temperature, top_p, seed)
+    outputs = forward.execute(prefill_inputs)
+    next_token = _next_token(outputs, use_sampling, temperature)
 
     prefill_time = time.time() - start_time
     logger.info(
         f"Prefill: {prefill_time:.3f}s " f"({prompt_len / prefill_time:.1f} tokens/sec)"
     )
 
-    # First generated token
-    next_token_logits = logits[0, -1, :]
-    if temperature > 0:
-        probs = torch.softmax(next_token_logits / temperature, dim=-1)
-        next_token = torch.multinomial(probs, 1).item()
-    else:
-        next_token = torch.argmax(next_token_logits).item()
     generated_tokens = [next_token]
 
     # --- Decode ---
@@ -140,17 +182,17 @@ def run_inference(
         t1 = time.time()
         t_prep += t1 - t0
 
-        outputs = forward.execute([token_input, input_pos])
-        logits = outputs[0]
+        decode_inputs = [token_input, input_pos]
+        if use_sampling:
+            # token k draws with base seed + k (k == len(generated_tokens)).
+            decode_inputs += _sampling_scalars(
+                temperature, top_p, seed + len(generated_tokens)
+            )
+        outputs = forward.execute(decode_inputs)
         t2 = time.time()
         t_execute += t2 - t1
 
-        next_token_logits = logits[0, -1, :]
-        if temperature > 0:
-            probs = torch.softmax(next_token_logits / temperature, dim=-1)
-            next_token = torch.multinomial(probs, 1).item()
-        else:
-            next_token = torch.argmax(next_token_logits).item()
+        next_token = _next_token(outputs, use_sampling, temperature)
         generated_tokens.append(next_token)
         t3 = time.time()
         t_post += t3 - t2
@@ -236,6 +278,20 @@ def main():
         default=0.0,
         help="Sampling temperature (0.0 = greedy)",
     )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=1.0,
+        help="Nucleus sampling top_p in (0, 1]; 1.0 = off. Only used by a model "
+        "exported with --sample.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Base RNG seed for on-device sampling; incremented per token. Only "
+        "used by a model exported with --sample.",
+    )
 
     args = parser.parse_args()
 
@@ -250,6 +306,8 @@ def main():
         max_new_tokens=args.max_new_tokens,
         vocab_size=args.vocab_size,
         temperature=args.temperature,
+        top_p=args.top_p,
+        seed=args.seed,
     )
 
 
