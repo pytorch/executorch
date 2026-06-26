@@ -341,7 +341,7 @@ class BMMPattern(QuantizationPattern):
         input_quantization_spec = QuantizationSpec(
             dtype=torch.int8,
             observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
-            quant_min=-128,
+            quant_min=-127,
             quant_max=127,
             qscheme=torch.per_tensor_symmetric,  # Neutron requires the inputs to have zero point = 0.
         )
