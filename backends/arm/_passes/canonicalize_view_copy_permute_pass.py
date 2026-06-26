@@ -8,7 +8,9 @@ from __future__ import annotations
 from typing import cast, Sequence, Set, Type
 
 import torch
+
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
 from executorch.backends.arm._passes.dim_maps import (
     _dim_equals,
     _is_permutation,
@@ -18,7 +20,6 @@ from executorch.backends.arm._passes.dim_maps import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
-
 from torch.fx import GraphModule, Node
 from torch.fx.node import Target
 from torch.fx.passes.infra.pass_base import PassResult
@@ -360,38 +361,11 @@ class CanonicalizeViewCopyPermutePass(ArmPass):
     ) -> None:
         node.target = target
         node.args = (input_node, list(arg))
-        self._refresh_meta(node)
+        refresh_permute_view_meta(node)
 
     def _permute_dims(self, node: Node) -> list[int]:
         assert node.target == self._PERMUTE_TARGET, "Expected permute node"
         return list(cast(Sequence[int], node.args[1]))
-
-    @classmethod
-    def _refresh_meta(cls, node: Node) -> None:
-        input_node = node.args[0]
-        assert isinstance(input_node, Node)
-        input_val = input_node.meta.get("val")
-        if input_val is None or node.target not in cls._TARGETS:
-            return
-
-        # Compute new meta shapes to preserve SymInts.
-        if isinstance(input_val, torch.Tensor):
-            if node.target == cls._VIEW_TARGET:
-                node.meta["val"] = input_val.new_empty(
-                    tuple(cast(Sequence[_Dim], node.args[1]))
-                )
-                return
-
-            if node.target == cls._PERMUTE_TARGET:
-                dims = _normalize_dims(
-                    cast(Sequence[int], node.args[1]), len(input_val.shape)
-                )
-                node.meta["val"] = input_val.new_empty(
-                    tuple(input_val.shape[dim] for dim in dims)
-                )
-                return
-
-        node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
 
     @staticmethod
     def _shape(node: Node) -> list[_Dim]:

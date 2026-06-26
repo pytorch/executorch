@@ -24,17 +24,33 @@ if(NOT EXECUTORCH_ROOT)
   message("WARNING: EXECUTORCH_ROOT is not set! A failure is likely imminent.")
 endif()
 
-find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
+# find_program already searches the PATH environment variable and appends the
+# platform executable suffix (.exe on Windows). Add the Vulkan SDK bin dir as a
+# hint so glslc is found on Windows even when only VULKAN_SDK is set.
+find_program(GLSLC_PATH glslc HINTS $ENV{VULKAN_SDK}/bin $ENV{VULKAN_SDK}/Bin)
 
 if(NOT GLSLC_PATH AND EXECUTORCH_BUILD_VULKAN)
-  message(
-    FATAL_ERROR
-      "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
-      "Please install the Vulkan SDK 1.4.341.1 or newer from "
-      "https://vulkan.lunarg.com/sdk/home and ensure that the glslc binary is in your PATH. "
-      "Note that the glslc distributed with the Android NDK is not compatible since it "
-      "does not support the GL_EXT_integer_dot_product extension. "
-  )
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    # In a wheel/pybind build, degrade gracefully so the wheel can still be
+    # produced without the Vulkan backend rather than failing the whole build.
+    message(
+      STATUS
+        "glslc not found; the Vulkan backend will not be included in the wheel."
+    )
+    set(EXECUTORCH_BUILD_VULKAN
+        OFF
+        CACHE BOOL "" FORCE
+    )
+  else()
+    message(
+      FATAL_ERROR
+        "glslc from the Vulkan SDK must be installed to build the Vulkan backend. "
+        "Please install the Vulkan SDK 1.4.341.1 or newer from "
+        "https://vulkan.lunarg.com/sdk/home and ensure that the glslc binary is in your PATH. "
+        "Note that the glslc distributed with the Android NDK is not compatible since it "
+        "does not support the GL_EXT_integer_dot_product extension. "
+    )
+  endif()
 endif()
 
 # Required to enable linking with --whole-archive

@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -139,20 +140,27 @@ class XNNWeightsCache {
   Error delete_packed_data(const std::vector<std::string>& packed_names);
 
   /**
-   * Set the path for the file-backed packed weight storage.
-   * When set, reserve_space() allocates from a MAP_SHARED file instead
-   * of heap, and finalize_for_runtime() calls msync to make pages clean.
+   * Set the file-backed storage path. When set, reserve_space()
+   * allocates from a MAP_SHARED file instead of heap, and
+   * finalize_for_runtime() msyncs pages.
    *
-   * The path MUST be unique per XNNWeightsCache instance — sharing it
-   * across instances (or processes) would mean O_TRUNC corrupts the other
-   * holder's mappings (SIGBUS on access). initialize_for_runtime() takes
-   * an advisory exclusive flock on the file; if the lock fails the mmap
-   * path is disabled for this instance and allocations fall back to heap.
+   * Call once, before any other method, and never again. Two
+   * instances sharing the same path will corrupt each other on
+   * O_TRUNC (SIGBUS); the manager prevents this by per-path dedup.
    */
   void set_packed_cache_path(const std::string& path);
 
   /** Save packed weight index so subsequent loads skip packing. */
   Error save_packed_index();
+
+  /**
+   * Per-instance mutex. The cache has no internal synchronization;
+   * callers must hold this around every method call and every
+   * XNNPACK callback that touches the cache during xnn_create_runtime.
+   */
+  std::mutex& mutex() noexcept {
+    return instance_mutex_;
+  }
 
  private:
   static constexpr uint32_t kCacheMagic = 0x58505743; // "XPWC"
@@ -214,6 +222,10 @@ class XNNWeightsCache {
   // For file-backed packed allocations, maps the returned ptr to its index
   // in mmap_regions_, so delete_packed_data() can munmap when ref_count==0.
   std::unordered_map<void*, size_t> file_ptr_to_region_index_;
+
+  // See mutex() for the locking contract — caller-owned, no internal
+  // use within this class.
+  std::mutex instance_mutex_;
 
   // Function pointers to override XNNPACK's default xnn_weights_cache_provider
   // functions.

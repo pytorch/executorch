@@ -155,8 +155,7 @@ def reject_partition(
 
 
 def _validate_partition(nodes: set[torch.fx.Node]) -> bool:
-    """Check whether a set of nodes can be extracted as a subgraph without
-    cycles.
+    """Check whether a set of nodes can be extracted.
 
     Perform a BFS from the external users of partition nodes. If any node
     reached by BFS is itself inside the partition, then extracting the
@@ -260,9 +259,7 @@ class TOSAPartitioner(Partitioner):
         self.intermediate_path = compile_spec._get_intermediate_path()
 
     def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
-        """Register a custom op to be considered supported by this
-        partitioner.
-        """
+        """Register a custom op to be considered supported."""
         self._custom_partition_ops.add(op)
 
     def _detag_boundary_nodes(
@@ -284,9 +281,10 @@ class TOSAPartitioner(Partitioner):
             tag: The delegation tag assigned to the partition.
             reporter: A reporter to log rejected nodes.
             module: The GraphModule containing the partition.
+            detag_first_fp_node: Whether to de-tag the first floating-point
+                node in a partition.
 
         """
-
         # De-tag outermost q-nodes upwards and dq-nodes downwards.
         # De-tag if at least one input/output is not part of the partition.
         for node in module.graph.nodes:
@@ -322,9 +320,7 @@ class TOSAPartitioner(Partitioner):
                         break
 
     def _preserve_io_quantization_enabled(self) -> bool:
-        """Return True if IO quantization should be preserved from compile
-        specs.
-        """
+        """Return True if compile specs preserve IO quantization."""
         for spec in self.delegation_spec.compile_specs:
             if spec.key != "preserve_io_quantization":
                 continue
@@ -622,9 +618,10 @@ class TOSAPartitioner(Partitioner):
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Filter function applied to ops in 'ops_to_not_decompose'. Returns
-            True if the op should not be decomposed. If this function returns
-            True, the partitioner *must* accept the node, or the lowering fails.
+            """Return True if an op should not be decomposed.
+
+            If this function returns True, the partitioner *must* accept the
+            node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.
