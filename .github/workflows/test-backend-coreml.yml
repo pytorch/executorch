@@ -16,6 +16,11 @@ concurrency:
   group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
+# Restrict the default GITHUB_TOKEN to read-only; jobs that need more
+# (e.g. OIDC for AWS/S3) opt in explicitly at the job level below.
+permissions:
+  contents: read
+
 jobs:
   # Emits PR diff file list; non-PR events emit '*' so the per-job
   # `if:` short-circuits via `event_name != 'pull_request'`. This
@@ -35,6 +40,15 @@ jobs:
 
   test-coreml:
     needs: [changed-files, run-decision]
+    # OIDC token needed so the ephemeral macOS runner (macos-*-xlarge) can
+    # assume the AWS role for S3 access — both the test-report artifact
+    # upload in macos_job.yml and the cached-wheel upload in
+    # setup-macos.sh. Self-hosted *-stable runners have an instance role
+    # and don't need this, but ephemeral runners get creds only via OIDC.
+    # Granted on the caller job and inherited by _test_backend.yml's jobs.
+    permissions:
+      id-token: write
+      contents: read
     # PRs: path-gated. Pushes to main/release: sampled (every 4th commit)
     # via run-decision. schedule (nightly) / workflow_dispatch / ciflow
     # tags: always full.
@@ -59,4 +73,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       run-macos: true
-      runner-macos: macos-14-xlarge
+      runner-macos: macos-15-xlarge
