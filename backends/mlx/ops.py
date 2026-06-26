@@ -3601,16 +3601,17 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 scalar_type=torch_dtype_to_scalar_type(torch.float32),
             )
         )
-        # scaled is read twice (softmax below and the final where), so keep it
-        # in its own buffer; reuse logits_f in place for the divide.
-        _, scaled = P.make_tmp_slot()
+        # logits_f is single-use; divide in place. The result (scaled) is read
+        # twice (softmax below and the final where), so this buffer must live
+        # until then.
         P.emit(
             DivideNode(
                 a=P.slot_to_tid(logits_f),
                 b=P.slot_to_tid(temperature),
-                out=P.slot_to_tid(scaled),
+                out=P.slot_to_tid(logits_f),
             )
         )
+        scaled = logits_f
 
         # top-p nucleus mask; SortNode is ascending-only, so sort -probs for descending.
         # probs is read twice (neg_p below and the drop comparison), keep separate.
