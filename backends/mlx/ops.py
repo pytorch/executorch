@@ -3138,34 +3138,34 @@ def _native_batch_norm_legit_no_training_handler(P: MLXProgramBuilder, n: Node) 
         )
     )
 
-    # Step 3: inv_std = rsqrt(var_eps)
-    _, tmp_inv_std = P.make_tmp_slot()
-    P.emit(RsqrtNode(x=P.slot_to_tid(tmp_var_eps), out=P.slot_to_tid(tmp_inv_std)))
+    # Step 3: inv_std = rsqrt(var_eps), written in place so MLX can donate the
+    # var_eps buffer (unary, same shape/dtype).
+    P.emit(RsqrtNode(x=P.slot_to_tid(tmp_var_eps), out=P.slot_to_tid(tmp_var_eps)))
+    tmp_inv_std = tmp_var_eps
 
-    # Step 4: x_normalized = x_centered * inv_std
-    _, tmp_normalized = P.make_tmp_slot()
+    # Step 4: x_normalized = x_centered * inv_std, written in place into the
+    # full-size x_centered buffer (the donatable operand; inv_std broadcasts).
     P.emit(
         MultiplyNode(
             a=P.slot_to_tid(tmp_centered),
             b=P.slot_to_tid(tmp_inv_std),
-            out=P.slot_to_tid(tmp_normalized),
+            out=P.slot_to_tid(tmp_centered),
         )
     )
+    tmp_normalized = tmp_centered
 
     # Step 5: x_scaled = x_normalized * weight (skip if weight is None, i.e. affine=False)
     if weight is not None:
         weight_reshaped = reshape_for_broadcast(weight, "weight")
-        _, tmp_scaled = P.make_tmp_slot()
+        # In place into the full-size x_normalized buffer (weight broadcasts).
         P.emit(
             MultiplyNode(
                 a=P.slot_to_tid(tmp_normalized),
                 b=P.slot_to_tid(weight_reshaped),
-                out=P.slot_to_tid(tmp_scaled),
+                out=P.slot_to_tid(tmp_normalized),
             )
         )
-        current_result = tmp_scaled
-    else:
-        current_result = tmp_normalized
+    current_result = tmp_normalized
 
     # Step 6: out = current_result + bias (skip if bias is None, i.e. affine=False)
     if bias is not None:
@@ -3558,47 +3558,39 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             seed_field = P.slot_to_vid(seed_val)
 
         # uniform u in [0, 1): bits/uint32_max, clamped just below 1 (random.cpp:95)
-        _, bits = P.make_tmp_slot()
+        _, u = P.make_tmp_slot()
         P.emit(
-            RandomBitsNode(
-                out=P.slot_to_tid(bits), shape=shape, width=4, seed=seed_field
-            )
+            RandomBitsNode(out=P.slot_to_tid(u), shape=shape, width=4, seed=seed_field)
         )
-        _, bits_f = P.make_tmp_slot()
+        # u32 -> f32 in place (same itemsize, donatable), then divide/clamp in place.
         P.emit(
             AsTypeNode(
-                x=P.slot_to_tid(bits),
-                out=P.slot_to_tid(bits_f),
+                x=P.slot_to_tid(u),
+                out=P.slot_to_tid(u),
                 scalar_type=torch_dtype_to_scalar_type(torch.float32),
             )
         )
         umax = emit_lifted_constant(P, 4294967295.0, torch.float32)
-        _, div0 = P.make_tmp_slot()
         P.emit(
-            DivideNode(
-                a=P.slot_to_tid(bits_f), b=P.slot_to_tid(umax), out=P.slot_to_tid(div0)
-            )
+            DivideNode(a=P.slot_to_tid(u), b=P.slot_to_tid(umax), out=P.slot_to_tid(u))
         )
         prev1 = emit_lifted_constant(
             P,
             float(torch.nextafter(torch.tensor(1.0), torch.tensor(0.0))),
             torch.float32,
         )
-        _, clamp = P.make_tmp_slot()
         P.emit(
             MinimumNode(
-                a=P.slot_to_tid(div0), b=P.slot_to_tid(prev1), out=P.slot_to_tid(clamp)
+                a=P.slot_to_tid(u), b=P.slot_to_tid(prev1), out=P.slot_to_tid(u)
             )
         )
         # gumbel g = -log(-log(u)); whole chain stays fp32 (bf16 mis-ranks ties; clamp->1.0->+inf).
-        _, l1 = P.make_tmp_slot()
-        P.emit(LogNode(x=P.slot_to_tid(clamp), out=P.slot_to_tid(l1)))
-        _, g1 = P.make_tmp_slot()
-        P.emit(NegNode(x=P.slot_to_tid(l1), out=P.slot_to_tid(g1)))
-        _, l2 = P.make_tmp_slot()
-        P.emit(LogNode(x=P.slot_to_tid(g1), out=P.slot_to_tid(l2)))
+        # All links are single-use unary ops, so reuse one buffer in place.
         _, g = P.make_tmp_slot()
-        P.emit(NegNode(x=P.slot_to_tid(l2), out=P.slot_to_tid(g)))
+        P.emit(LogNode(x=P.slot_to_tid(u), out=P.slot_to_tid(g)))
+        P.emit(NegNode(x=P.slot_to_tid(g), out=P.slot_to_tid(g)))
+        P.emit(LogNode(x=P.slot_to_tid(g), out=P.slot_to_tid(g)))
+        P.emit(NegNode(x=P.slot_to_tid(g), out=P.slot_to_tid(g)))
 
         # sample: argmax(logits / temperature + g) over the vocab axis, in float32
         _, logits_f = P.make_tmp_slot()
@@ -3609,6 +3601,8 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 scalar_type=torch_dtype_to_scalar_type(torch.float32),
             )
         )
+        # scaled is read twice (softmax below and the final where), so keep it
+        # in its own buffer; reuse logits_f in place for the divide.
         _, scaled = P.make_tmp_slot()
         P.emit(
             DivideNode(
@@ -3619,24 +3613,29 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
         # top-p nucleus mask; SortNode is ascending-only, so sort -probs for descending.
+        # probs is read twice (neg_p below and the drop comparison), keep separate.
         _, probs = P.make_tmp_slot()
         P.emit(SoftmaxNode(x=P.slot_to_tid(scaled), out=P.slot_to_tid(probs), axis=-1))
-        _, neg_p = P.make_tmp_slot()
-        P.emit(NegNode(x=P.slot_to_tid(probs), out=P.slot_to_tid(neg_p)))
-        _, sorted_neg = P.make_tmp_slot()
-        P.emit(SortNode(x=P.slot_to_tid(neg_p), out=P.slot_to_tid(sorted_neg), axis=-1))
+        # neg_p -> sort -> neg are single-use; thread one buffer.
         _, sorted_p = P.make_tmp_slot()
-        P.emit(NegNode(x=P.slot_to_tid(sorted_neg), out=P.slot_to_tid(sorted_p)))
+        P.emit(NegNode(x=P.slot_to_tid(probs), out=P.slot_to_tid(sorted_p)))
+        P.emit(
+            SortNode(x=P.slot_to_tid(sorted_p), out=P.slot_to_tid(sorted_p), axis=-1)
+        )
+        # sorted_p is read three times below (cumsum, prefix subtract, kept where),
+        # so stop reusing it here.
+        P.emit(NegNode(x=P.slot_to_tid(sorted_p), out=P.slot_to_tid(sorted_p)))
         _, cum = P.make_tmp_slot()
         P.emit(CumsumNode(x=P.slot_to_tid(sorted_p), out=P.slot_to_tid(cum), axis=-1))
-        _, prefix = P.make_tmp_slot()
+        # prefix = cum - sorted_p; cum is single-use, reuse it in place.
         P.emit(
             SubtractNode(
                 a=P.slot_to_tid(cum),
                 b=P.slot_to_tid(sorted_p),
-                out=P.slot_to_tid(prefix),
+                out=P.slot_to_tid(cum),
             )
         )
+        prefix = cum
         # remove sorted tokens whose prefix mass already exceeds top_p (top-1: 0)
         _, remove = P.make_tmp_slot()
         P.emit(
@@ -3675,6 +3674,7 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             )
         )
         neg_inf = emit_lifted_constant(P, float("-inf"), torch.float32)
+        # masked = where(drop, -inf, scaled); then add gumbel noise in place.
         _, masked = P.make_tmp_slot()
         P.emit(
             WhereNode(
@@ -3684,16 +3684,14 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 out=P.slot_to_tid(masked),
             )
         )
-
-        _, noisy = P.make_tmp_slot()
         P.emit(
             AddNode(
-                a=P.slot_to_tid(masked), b=P.slot_to_tid(g), out=P.slot_to_tid(noisy)
+                a=P.slot_to_tid(masked), b=P.slot_to_tid(g), out=P.slot_to_tid(masked)
             )
         )
         P.emit(
             ArgmaxNode(
-                x=P.slot_to_tid(noisy), out=P.slot_to_tid(out), axis=-1, keepdims=False
+                x=P.slot_to_tid(masked), out=P.slot_to_tid(out), axis=-1, keepdims=False
             )
         )
 
