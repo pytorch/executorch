@@ -46,7 +46,7 @@ namespace runtime {
  * @endcode
  */
 template <typename T>
-class Result final {
+class ET_NODISCARD Result final {
  public:
   /// `value_type` member for generic programming.
   typedef T value_type;
