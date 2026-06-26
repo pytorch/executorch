@@ -12,6 +12,9 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
+#if defined(WEBGPU_SDPA_FD)
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
+#endif
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -427,9 +430,6 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<uint64_t>(S) *
       static_cast<uint64_t>(dynamic_pos ? Cmax : context_len);
   const uint64_t aw_bytes = aw_cap_floats * sizeof(float);
-  // Prefill scratch scales as Hq·S·Cmax; can be large for long-context prefill.
-  WGPUBuffer attn_weights = graph.create_scratch_buffer(aw_bytes);
-  WGPUBuffer attn_weights_softmax = graph.create_scratch_buffer(aw_bytes);
 
   // Dynamic input_pos: the resize hook rewrites these per step.
   WGPUBuffer uc_k_buf = nullptr, uc_v_buf = nullptr, qk_buf = nullptr,
@@ -472,6 +472,20 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       uc_wg,
       dynamic_pos,
       "update_cache(V)");
+
+#ifdef WEBGPU_SDPA_FD
+  // FlashDecoding decode (S==1, static pos). Shapes FD can't handle (head dim
+  // > kSdpaFdMaxHeadDim) fall through to the materialized path below.
+  if (S == 1 && !dynamic_pos && D <= kSdpaFdMaxHeadDim) {
+    sdpa_fd_decode_dispatch(
+        graph, q, k_cache, v_cache, out, Hq, Hkv, D, context_len, g, scale);
+    return;
+  }
+#endif
+
+  // QK/softmax scratch — allocated only on the non-FD path (Hq*S*Cmax prefill).
+  WGPUBuffer attn_weights = graph.create_scratch_buffer(aw_bytes);
+  WGPUBuffer attn_weights_softmax = graph.create_scratch_buffer(aw_bytes);
 
   // --- Dispatch 3: QK -> attn_weights. One thread per TM x TN tile.
   {

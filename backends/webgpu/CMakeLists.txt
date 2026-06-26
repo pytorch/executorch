@@ -94,6 +94,20 @@ if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
   )
 endif()
 
+# Split-KV FlashDecoding decode path (sdpa_fd_decode). Default ON: selected at
+# runtime for decode (S==1) shapes it supports (head dim <= kSdpaFdMaxHeadDim);
+# other shapes use the materialized SDPA path. Set OFF as a kill-switch to drop
+# all FlashDecoding code from the build.
+option(EXECUTORCH_BUILD_WEBGPU_SDPA_FD
+       "Enable split-KV FlashDecoding SDPA decode path" ON
+)
+if(EXECUTORCH_BUILD_WEBGPU_SDPA_FD)
+  target_sources(
+    webgpu_backend PRIVATE runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
+  )
+  target_compile_definitions(webgpu_backend PRIVATE WEBGPU_SDPA_FD)
+endif()
+
 # Link with --whole-archive for static registration of backend + ops
 executorch_target_link_options_shared_lib(webgpu_backend)
 
