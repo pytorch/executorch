@@ -437,11 +437,3 @@ class NodeConverter(ABC):
             input_tensor.meta["val"].shape == output_shape
             for input_tensor in node.all_input_nodes
         )
-
-    @staticmethod
-    def _node_inputs_ranks_not_equal(node) -> bool:
-        first_input_shape = node.all_input_nodes[0].meta["val"].shape
-        return not all(
-            len(input_node.meta["val"].shape) == len(first_input_shape)
-            for input_node in node.all_input_nodes[1:]
-        )

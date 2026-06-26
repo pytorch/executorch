@@ -30,7 +30,7 @@ layout(std430) buffer;
 #include "common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_scales", DTYPE, "texture3d")}
-${layout_declare_tensor(B, "w", "t_zps", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "w", "t_zps", "int8", "texture3d")}
 ${layout_declare_tensor(B, "r", "t_input", DTYPE, STORAGE, is_scalar_array=False)}
 
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
@@ -196,7 +196,7 @@ void main() {
 
   if (worker_id == 0) {
     imageStore(t_scales, ivec3(output_y4, 0, 0), scales_out);
-    imageStore(t_zps, ivec3(output_y4, 0, 0), VEC4_T(zps_out));
+    imageStore(t_zps, ivec3(output_y4, 0, 0), zps_out);
   }
 
 }

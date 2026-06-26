@@ -6,12 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Binary comparison ops require that the output is boolean and not the same as
-// input. IS_COMPARISON_OP is set explicitly per shader variant in the .yaml.
+// Binary comparison ops write a bool/uint8 output dtype, which differs from
+// the input dtype. IS_COMPARISON_OP is set explicitly per shader variant in the
+// .yaml.
 
 #version 450 core
 
 ${define_required_extensions(STORAGE, DTYPE)}
+${define_explicit_type_extensions(SCALAR_VALUE_TYPE)}
 $if IS_COMPARISON_OP:
   ${define_required_extensions(STORAGE, "uint8")}
 
@@ -21,6 +23,7 @@ $if IS_COMPARISON_OP:
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 #define T ${texel_load_component_type(DTYPE, STORAGE)}
+#define SCALAR_T ${buffer_scalar_type(SCALAR_VALUE_TYPE)}
 $if IS_COMPARISON_OP:
   #define VEC4_OUT_T ${texel_load_type("uint8", STORAGE)}
 $else:
@@ -45,7 +48,7 @@ ${layout_declare_ubo(B, "TextureMetadata", "outp")}
 ${layout_declare_ubo(B, "TextureMetadata", "inp")}
 
 layout(push_constant) uniform restrict Block {
-  float scalar_value;
+  SCALAR_T scalar_value;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
