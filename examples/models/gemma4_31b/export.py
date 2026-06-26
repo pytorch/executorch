@@ -189,12 +189,11 @@ def _export_cuda(
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
     mutable_buffer_metadata = _mutable_buffer_metadata(model)
 
-    if use_turboquant:
-        from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
-            cuda_source_transformations,
-        )
+    from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
+        cuda_source_transformations,
+    )
 
-        cuda_source_transformations(model, use_turboquant=True)
+    cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     # Int4Tensor weights are used directly — no format conversion.
     # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).

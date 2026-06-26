@@ -9,7 +9,11 @@ from typing import cast, Sequence, TypeVar
 import sympy  # type: ignore[import-untyped]
 import torch
 
-from executorch.backends.arm._passes.dim_maps import PermuteMap, ViewMap
+from executorch.backends.arm._passes.dim_maps import (
+    normalize_view_shape,
+    PermuteMap,
+    ViewMap,
+)
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 
@@ -366,6 +370,53 @@ def test_dim_map_preserves_symbolic_dimensions_as_prime_factors() -> None:
     assert view_map.map_dim(0) == [0]
     assert view_map.map_dim(1) == [1, 2]
     assert view_map.map_dim_inverse(0) == [0]
+
+
+def test_normalize_view_shape_infers_concrete_dim_from_symints() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+
+    normalized_shape = normalize_view_shape([batch, 6], [batch, -1])
+
+    assert normalized_shape[0] is batch
+    assert normalized_shape[1] == 6
+    assert isinstance(normalized_shape[1], int)
+
+
+def test_normalize_view_shape_preserves_symbolic_inferred_dim() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+
+    normalized_shape = normalize_view_shape([2, batch], [-1])
+
+    assert isinstance(normalized_shape[0], torch.SymInt)
+    assert normalized_shape[0] is not batch
+    assert sympy.simplify(normalized_shape[0].node.expr - 2 * batch.node.expr) == 0
+
+
+def test_view_map_simplifies_constant_symint_dims() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+    constant = batch * 6 // batch
+
+    view_map = ViewMap.from_shapes([batch, constant], [batch, 2, 3])
+
+    assert view_map.source_shape[1] == 6
+    assert isinstance(view_map.source_shape[1], int)
+    assert view_map.is_valid_map
+    assert view_map.map_dim(1) == [1, 2]
+
+
+def test_view_map_from_shapes_normalizes_symbolic_view_shape() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+
+    view_map = ViewMap.from_shapes([batch, 6], [batch, -1])
+
+    assert view_map.target_shape[0] is batch
+    assert view_map.target_shape[1] == 6
+    assert isinstance(view_map.target_shape[1], int)
+    assert view_map.is_valid_map
 
 
 def test_dim_map_permute_view_swap_preserves_symbolic_view_shape_dims() -> None:

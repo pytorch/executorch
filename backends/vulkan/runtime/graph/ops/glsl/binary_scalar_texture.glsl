@@ -12,8 +12,12 @@
 
 #version 450 core
 
+$PROMOTED_DTYPE = get_higher_precision_dtype(DTYPE, SCALAR_VALUE_TYPE)
+
 ${define_required_extensions(STORAGE, DTYPE)}
+${define_required_extensions(STORAGE, PROMOTED_DTYPE)}
 ${define_explicit_type_extensions(SCALAR_VALUE_TYPE)}
+${define_explicit_type_extensions(PROMOTED_DTYPE)}
 $if IS_COMPARISON_OP:
   ${define_required_extensions(STORAGE, "uint8")}
 
@@ -24,6 +28,8 @@ $if IS_COMPARISON_OP:
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 #define T ${texel_load_component_type(DTYPE, STORAGE)}
 #define SCALAR_T ${buffer_scalar_type(SCALAR_VALUE_TYPE)}
+#define COMPUTE_VEC4_T ${texel_load_type(PROMOTED_DTYPE, STORAGE)}
+#define COMPUTE_T ${texel_load_component_type(PROMOTED_DTYPE, STORAGE)}
 $if IS_COMPARISON_OP:
   #define VEC4_OUT_T ${texel_load_type("uint8", STORAGE)}
 $else:
@@ -64,7 +70,8 @@ void main() {
   }
 
   VEC4_T in_texel = texelFetch(t_in, pos, 0);
-  VEC4_OUT_T out_texel = VEC4_OUT_T(op(in_texel, VEC4_T(scalar_value)));
+  VEC4_OUT_T out_texel = VEC4_OUT_T(
+      op(COMPUTE_VEC4_T(in_texel), COMPUTE_VEC4_T(scalar_value)));
 
   imageStore(t_out, pos, out_texel);
 }

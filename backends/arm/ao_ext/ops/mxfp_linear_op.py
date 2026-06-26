@@ -10,8 +10,11 @@ op during export.
 
 """
 
+from typing import cast
+
 import torch
 import torch.nn.functional as F
+
 from executorch.backends.arm.ao_ext.mxfp import (
     _cast_to_block_scaled_cpu_ref,
     mxfp_dtype_to_str,
@@ -178,6 +181,19 @@ class MXFPLinearOp(torch.nn.Module):
         if self.output_dtype != torch.float32:
             output = output.to(self.output_dtype)
         return output
+
+    def extra_repr(self) -> str:
+        weight_qdata = cast(torch.Tensor, self.weight_qdata)
+        weight_shape = weight_qdata.shape
+        in_features = _get_num_input_features(weight_qdata, self.weight_dtype)
+        repr_parts = [
+            f"in_features={in_features}",
+            f"out_features={weight_shape[1]}",
+            f"bias={self.bias is not None}",
+            f"weight_dtype={self.weight_dtype}",
+            f"block_size={self.block_size}",
+        ]
+        return ", ".join(repr_parts)
 
 
 def transform_linear_to_mxfp(
