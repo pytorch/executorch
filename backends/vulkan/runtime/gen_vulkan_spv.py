@@ -1123,6 +1123,7 @@ class SPVGenerator:
             # Construct name of SPIR-V file to be compiled
             spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
 
+            cached_spv_out_path = None
             if cache_dir is not None:
                 # Construct the file names of cached SPIR-V file to check if they exist
                 # in the cache.
@@ -1160,7 +1161,9 @@ class SPVGenerator:
                             subprocess.run(cmd_no_opt, check=True, capture_output=True)
                         except subprocess.CalledProcessError as e_no_opt:
                             # Delete any existing cached SPIR-V file if it exists
-                            if os.path.exists(cached_spv_out_path):
+                            if cached_spv_out_path is not None and os.path.exists(
+                                cached_spv_out_path
+                            ):
                                 os.remove(cached_spv_out_path)
 
                             raise RuntimeError(
@@ -1169,7 +1172,9 @@ class SPVGenerator:
 
                     else:
                         # Delete any existing cached SPIR-V file if it exists
-                        if os.path.exists(cached_spv_out_path):
+                        if cached_spv_out_path is not None and os.path.exists(
+                            cached_spv_out_path
+                        ):
                             os.remove(cached_spv_out_path)
 
                         raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
