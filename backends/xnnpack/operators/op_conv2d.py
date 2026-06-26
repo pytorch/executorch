@@ -149,10 +149,17 @@ class Conv2d(NodeVisitor):
         check_or_raise(
             len(stride) == 2, "XNNPACK currently only supports 2D convolution"
         )
-        kwargs["padding_top"] = padding[0]
-        kwargs["padding_right"] = padding[1]
-        kwargs["padding_bottom"] = padding[0]
-        kwargs["padding_left"] = padding[1]
+        folded_padding = node.meta.get("xnnpack_input_padding")
+        if folded_padding is not None:
+            kwargs["padding_top"] = folded_padding[0]
+            kwargs["padding_right"] = folded_padding[1]
+            kwargs["padding_bottom"] = folded_padding[2]
+            kwargs["padding_left"] = folded_padding[3]
+        else:
+            kwargs["padding_top"] = padding[0]
+            kwargs["padding_right"] = padding[1]
+            kwargs["padding_bottom"] = padding[0]
+            kwargs["padding_left"] = padding[1]
         kwargs["kernel_height"] = kernel_shape[2]
         kwargs["kernel_width"] = kernel_shape[3]
         kwargs["subsampling_height"] = stride[0]

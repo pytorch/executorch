@@ -310,6 +310,41 @@ class TestConv2d(unittest.TestCase):
                 quant_config=get_symmetric_quantization_config(is_per_channel=True),
             )
 
+    def test_qs8_conv2d_even_kernel_same_padding(self) -> None:
+        # An even-kernel 'same'-padding conv decomposes into
+        # dequant -> constant_pad_nd -> convolution. FoldConvPadPass folds the pad
+        # into the conv's native asymmetric padding so both fully delegate. _test
+        # asserts no aten.convolution survives and a single delegate call; add an
+        # explicit check that the constant_pad_nd is gone too.
+        for has_bias in (True, False):
+            m = Conv2d(
+                in_channels=2,
+                out_channels=4,
+                kernel_size=(4, 4),
+                stride=(1, 1),
+                padding="same",
+                bias=has_bias,
+            )
+            tester = Tester(m.eval(), m.get_inputs())
+            tester.quantize(
+                Quantize(quantization_config=get_symmetric_quantization_config())
+            )
+            (
+                tester.export()
+                .check_count({"torch.ops.aten.conv2d": 1})
+                .to_edge_transform_and_lower()
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                        "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                    ]
+                )
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(qtol=2)
+            )
+
     def test_fp32_conv2d_seq(self) -> None:
         for transpose in (True, False):
             self._test(Conv2dSeq(transpose=transpose), conv_count=2)
