@@ -618,7 +618,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseTosaOps(),
+                RemovePermutesAroundElementwiseTosaOps(exported_program),
                 CanonicalizeViewCopyPermutePass(),
                 FuseCascadedTransposeOrPermuteOps(),
                 RewriteHighRankSingletonPermutePass(),

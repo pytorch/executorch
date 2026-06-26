@@ -719,6 +719,7 @@ struct SdpaConfig {
   int input_pos; // prior tokens already in the cache (decode)
   float denom; // ramp divisor (mirrors Python); small -> large logits
   bool required = false; // CI (SDPA dir set): absent .pte = FAIL, not skip
+  bool expect_reject = false; // load MUST fail (e.g. D%4 guard), no golden
 };
 
 static const SdpaConfig kSdpaConfigs[] = {
@@ -738,6 +739,17 @@ static const SdpaConfig kSdpaConfigs[] = {
     // pos 127).
     {"llama1b_prefill", 32, 8, 64, 128, 512, 0, 16.0f},
     {"llama1b_decode", 32, 8, 64, 1, 512, 127, 16.0f},
+    // D=6 is not a multiple of 4: the head_dim%4 guard must reject it at load.
+    {"reject_d6",
+     4,
+     4,
+     6,
+     4,
+     16,
+     0,
+     16.0f,
+     /*required=*/false,
+     /*expect_reject=*/true},
 };
 
 // Ramp denominator; mirror of test_sdpa.py::_RAMP_DENOM (keep in sync).
@@ -791,6 +803,15 @@ static bool test_sdpa_config(
 
   Module module(model_path);
   auto err = module.load_forward();
+  if (cfg.expect_reject) {
+    // D not a multiple of 4 must be rejected at load by the head_dim guard.
+    if (err != Error::Ok) {
+      printf("PASS: %s rejected at load (error %d)\n", cfg.name, (int)err);
+      return true;
+    }
+    printf("FAIL: %s loaded OK; head_dim%%4 guard did not fire\n", cfg.name);
+    return false;
+  }
   if (err != Error::Ok) {
     printf("FAIL: could not load forward method (error %d)\n", (int)err);
     return false;
