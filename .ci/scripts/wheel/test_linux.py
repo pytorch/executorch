@@ -31,6 +31,13 @@ if __name__ == "__main__":
         ), f"OpenvinoBackend not found in registered backends: {registered}"
         print("✓ OpenvinoBackend is registered")
 
+        # Vulkan backend is optional: only present when the wheel was built with
+        # EXECUTORCH_BUILD_VULKAN=1 and the Vulkan SDK (glslc) was available.
+        if "VulkanBackend" in registered:
+            print("✓ VulkanBackend is registered")
+        else:
+            print("⚠ VulkanBackend not registered (expected for the default wheel)")
+
     test_base.run_tests(
         model_tests=[
             test_base.ModelTest(
