@@ -418,6 +418,27 @@ class QnnQuantizer(Quantizer):
             )
             return quant_range
 
+    def _get_input_quant_range(self, user_node, input_node):
+        """Return the quant range of the spec assigned to `input_node` in
+        `user_node.meta[quantization_annotation].input_qspec_map`. Falls back
+        to None if no concrete spec is registered for this input — needed
+        when the user's output_qspec is a SharedQuantizationSpec that hides
+        the dtype/qmin/qmax."""
+        quant_info = user_node.meta.get(QCOM_QUANT_ANNOTATION_KEY, None)
+        if quant_info is None:
+            return
+        qspec = getattr(quant_info, "input_qspec_map", {}).get(input_node)
+        if qspec is None:
+            return
+        try:
+            dtype_info = torch.iinfo(qspec.dtype)
+        except:
+            return
+        return (
+            (dtype_info.max if qspec.quant_max is None else qspec.quant_max)
+            - (dtype_info.min if qspec.quant_min is None else qspec.quant_min)
+        )
+
     def _get_candidates_with_infinity_args(self, graph_module: GraphModule):
         binary_op_sources = [
             operator.add,
@@ -473,7 +494,10 @@ class QnnQuantizer(Quantizer):
 
                     quant_min, quant_max = float("inf"), float("-inf")
                     for source_node in node.users:
-                        if quant_range := self._get_quant_range(source_node):
+                        if quant_range := self._get_input_quant_range(source_node, node):
+                            quant_min = min(quant_min, -quant_range)
+                            quant_max = max(quant_max, quant_range)
+                        elif quant_range := self._get_quant_range(source_node):
                             quant_min = min(quant_min, -quant_range)
                             quant_max = max(quant_max, quant_range)
 
