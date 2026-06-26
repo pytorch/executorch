@@ -86,6 +86,9 @@ openvino = [
   "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
 ]
 
+[project.optional-dependencies]
+dns-aid = ["dns-aid>=0.14.0"]
+
 [project.urls]
 # The keys are arbitrary but will be visible on PyPI.
 Homepage = "https://pytorch.org/executorch/"
