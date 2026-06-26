@@ -81,6 +81,27 @@ class _OpQuantProperties:
         self.quant_output: Optional[_QuantProperty] = None
 
 
+def _conv_linear_quant_inputs(
+    input_act_qspec: QuantizationSpecBase | None,
+    weight_qspec: QuantizationSpecBase | None,
+    bias_qspec: QuantizationSpecBase | None,
+) -> List[_QuantProperty]:
+    """Build conv/linear input quant properties, tolerating partial quant.
+
+    Activation-only PTQ recipes leave ``weight_qspec`` (and the bias derived
+    from it) None; omit those QuantProperties so weight/bias stay fp32 instead of
+    asserting a non-None weight spec. Weight-only and full configs keep the
+    weight (and bias) quantized exactly as before.
+    """
+    quant_inputs: List[_QuantProperty] = [_QuantProperty(0, input_act_qspec)]
+    if weight_qspec is not None:
+        quant_inputs.append(_QuantProperty(1, weight_qspec, mark_annotated=True))
+        quant_inputs.append(
+            _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True)
+        )
+    return quant_inputs
+
+
 class _QParams(NamedTuple):
     scale: float
     zero_point: int
@@ -726,12 +747,9 @@ def get_quant_properties(  # noqa: C901
         filter_fn=any_or_hardtanh_min_zero,
     ):
         if node.target in _conv_ops:
-            conv_weight_qspec = ensure_type(QuantizationSpec, weight_qspec)  # For MyPy
-            quant_properties.quant_inputs = [
-                _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, conv_weight_qspec, mark_annotated=True),
-                _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
-            ]
+            quant_properties.quant_inputs = _conv_linear_quant_inputs(
+                input_act_qspec, weight_qspec, bias_qspec
+            )
         elif node.target in (
             torch.ops.aten.relu.default,
             torch.ops.aten.relu_.default,
@@ -748,12 +766,9 @@ def get_quant_properties(  # noqa: C901
         ],
     ):
         if node.target in _conv_ops:
-            conv_weight_qspec = ensure_type(QuantizationSpec, weight_qspec)  # For MyPy
-            quant_properties.quant_inputs = [
-                _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, conv_weight_qspec, mark_annotated=True),
-                _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
-            ]
+            quant_properties.quant_inputs = _conv_linear_quant_inputs(
+                input_act_qspec, weight_qspec, bias_qspec
+            )
         elif node.target in {torch.ops.aten.batch_norm.default}:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif not is_symmetric and _match_pattern(
@@ -776,28 +791,18 @@ def get_quant_properties(  # noqa: C901
             *_conv_ops,
             torch.ops.aten.linear.default,
         ):
-            conv_or_linear_weight_qspec = ensure_type(
-                QuantizationSpec, weight_qspec
-            )  # For MyPy
-            quant_properties.quant_inputs = [
-                _QuantProperty(0, input_act_qspec),
-                _QuantProperty(1, conv_or_linear_weight_qspec, mark_annotated=True),
-                _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
-            ]
+            quant_properties.quant_inputs = _conv_linear_quant_inputs(
+                input_act_qspec, weight_qspec, bias_qspec
+            )
         else:
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
         *_conv_ops,
         torch.ops.aten.linear.default,
     ):
-        conv_or_linear_weight_qspec = ensure_type(
-            QuantizationSpec, weight_qspec
-        )  # For MyPy
-        quant_properties.quant_inputs = [
-            _QuantProperty(0, input_act_qspec),
-            _QuantProperty(1, conv_or_linear_weight_qspec, mark_annotated=True),
-            _QuantProperty(2, bias_qspec, optional=True, mark_annotated=True),
-        ]
+        quant_properties.quant_inputs = _conv_linear_quant_inputs(
+            input_act_qspec, weight_qspec, bias_qspec
+        )
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
         torch.ops.aten.add.Tensor,
