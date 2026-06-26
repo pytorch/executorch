@@ -364,7 +364,6 @@ def inference(
         # Generate the eval wrapper
         ppl_evaluator = TaskEval(
             args=args,
-            decoder_model_config=decoder_model_config,
             pte_paths=pte_paths,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,

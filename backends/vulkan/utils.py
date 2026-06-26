@@ -588,6 +588,10 @@ def node_has_target(node: Any, target: str):
 ImageExtents = Tuple[int, int, int]
 
 DEFAULT_TEXTURE_LIMITS = (16384, 16384, 2048)
+# Conservative 3D texture limit compatible with most desktop/laptop GPUs. The
+# Vulkan spec only guarantees maxImageDimension3D >= 2048, whereas mobile GPUs
+# commonly support 16384. Used when the small_texture_limits option is set.
+SMALL_TEXTURE_LIMITS = (2048, 2048, 2048)
 DEFAULT_BUFFER_LIMIT = 128 * (1024 * 1024)
 
 all_storage_types: Set[VkStorageType] = {
