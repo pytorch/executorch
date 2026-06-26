@@ -416,7 +416,12 @@ class QnnQuantizer(Quantizer):
                 if quant_info.output_qspec.quant_min is None
                 else quant_info.output_qspec.quant_min
             )
-            return quant_range
+            # Cap the inf stand-in so it does not dominate the tensor's
+            # dynamic range.  For >8-bit activations the full range (e.g.
+            # 65535 for uint16) would blow up the attention-mask quant scale
+            # and wreck accuracy; 255 keeps a reasonable scale for
+            # Llama-style attention masks.
+            return min(quant_range, 255)
 
     def _get_candidates_with_infinity_args(self, graph_module: GraphModule):
         binary_op_sources = [
