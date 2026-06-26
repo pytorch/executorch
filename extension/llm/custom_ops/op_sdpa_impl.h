@@ -805,9 +805,6 @@ void cpu_flash_attention(
       is_reduced_type ? reinterpret_cast<scalar_t*>(buf_reduced) : nullptr;
 
   auto compute_lambda = [&](int64_t begin, int64_t end) {
-    // Blocks are parallelized over the threadpool; keep each block's gemms
-    // single-threaded so an OpenMP-threaded BLAS doesn't nest a second layer.
-    ::executorch::cpublas::SingleThreadedGemmGuard gemm_guard;
     int64_t i = 0, j = 0, k = 0;
     data_index_init(begin, i, batchSize, j, num_head, k, qSlice);
     int ompIdx = torch::executor::get_thread_num();
