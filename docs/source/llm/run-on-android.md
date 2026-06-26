@@ -10,7 +10,7 @@ To add the `executorch-android` library to your app, see [Using ExecuTorch on An
 
 ## Runtime API
 
-Once the `executorch-android` AAR is on your classpath, you can import the LLM runner classes from the `org.pytorch.executorch.extension.llm` package. The runner is callable from both Java and Kotlin; the rest of this guide shows both side by side.
+Once the `executorch-android` AAR is on your classpath, you can import the LLM runner classes from the `org.pytorch.executorch.extension.llm` package. The runner is callable from both Java and Kotlin; the rest of this guide includes both Java and Kotlin examples for each snippet.
 
 ### Importing
 
