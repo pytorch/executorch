@@ -1219,6 +1219,12 @@ def test_softmax(request, kwargs):
     Softmax.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_activation_dtype([Tolerance(), Tolerance(), pytest.raises(AssertionError)])
+@with_htp_context
+def test_scatter_value(request, kwargs):
+    ScatterValue.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_split(request, kwargs):
