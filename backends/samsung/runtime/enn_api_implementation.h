@@ -37,6 +37,7 @@ class EnnApi {
       const char* va,
       const uint32_t size,
       EnnModelId* model_id);
+  EnnReturn (*EnnOpenModelFromFd)(int _fd, EnnModelId* model_id);
   EnnReturn (*EnnSetFastIpc)(void);
   EnnReturn (*EnnUnsetFastIpc)(void);
   EnnReturn (*EnnExecuteModelFastIpc)(
@@ -67,6 +68,13 @@ class EnnApi {
       NumberOfBuffersInfo* buffers_info);
   EnnReturn (
       *EnnReleaseBuffers)(EnnBufferPtr* buffers, const int32_t numOfBuffers);
+  EnnReturn (*EnnCreateBuffer)(
+      const uint32_t req_size,
+      const uint32_t ion_flag,
+      EnnBufferPtr* out);
+  EnnReturn (*EnnReleaseBuffer)(EnnBufferPtr buf);
+  EnnReturn (
+      *EnnGetFileDescriptorFromEnnBuffer)(EnnBufferPtr buffer, int32_t* fd);
 
  private:
   static std::mutex instance_mutex_;
@@ -75,7 +83,7 @@ class EnnApi {
   void* libenn_public_api_ = nullptr;
   static std::atomic<int> ref_count_;
 
-  EnnApi() = default;
+  EnnApi();
   bool getInitialize() const;
   Error loadApiLib();
   Error unloadApiLib();
@@ -120,6 +128,14 @@ typedef EnnReturn (*EnnGetBuffersInfo_fn)(
     NumberOfBuffersInfo* buffers_info);
 typedef EnnReturn (
     *EnnReleaseBuffers_fn)(EnnBufferPtr* buffers, const int32_t numOfBuffers);
+typedef EnnReturn (*EnnCreateBuffer_fn)(
+    const uint32_t req_size,
+    const uint32_t ion_flag,
+    EnnBufferPtr* out);
+typedef EnnReturn (*EnnReleaseBuffer_fn)(EnnBufferPtr buf);
+typedef EnnReturn (
+    *EnnGetFileDescriptorFromEnnBuffer_fn)(EnnBufferPtr buffer, int32_t* fd);
+typedef EnnReturn (*EnnOpenModelFromFd_fn)(int _fd, EnnModelId* model_id);
 
 } // namespace enn
 } // namespace executor

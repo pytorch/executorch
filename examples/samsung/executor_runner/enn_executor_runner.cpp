@@ -118,27 +118,17 @@ void saveOutput(const exec_aten::Tensor& tensor, int32_t output_index) {
   fout.close();
 }
 
-struct EnnApiDeinit {
-  void operator()(EnnApi* ptr) const {
-    if (ptr == nullptr) {
-      return;
-    }
+void exynos_npu_init() {
+  EnnApi::getEnnApiInstance()->EnnInitialize();
+}
 
-    auto ret = ptr->EnnDeinitialize();
-    ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn Deinitialize failed.");
-  }
-};
-
-std::unique_ptr<EnnApi, EnnApiDeinit> exynos_npu_init() {
-  EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
-  auto ret = enn_api_inst->EnnInitialize();
-  ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn initialize failed.");
-  return std::unique_ptr<EnnApi, EnnApiDeinit>(enn_api_inst);
+void exynos_npu_deinit() {
+  EnnApi::getEnnApiInstance()->EnnDeinitialize();
 }
 
 int main(int argc, char** argv) {
   auto before_init = std::chrono::high_resolution_clock::now();
-  std::unique_ptr<EnnApi, EnnApiDeinit> instance = exynos_npu_init();
+  exynos_npu_init();
   auto after_init = std::chrono::high_resolution_clock::now();
   double interval_init = std::chrono::duration_cast<std::chrono::microseconds>(
                              after_init - before_init)
@@ -379,6 +369,8 @@ int main(int argc, char** argv) {
     // Save the results to given directory in order.
     saveOutput(output_tensor, output_index);
   }
+
+  exynos_npu_deinit();
 
   return 0;
 }
