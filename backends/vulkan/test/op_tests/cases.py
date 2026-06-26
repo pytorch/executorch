@@ -2247,6 +2247,6 @@ def get_eq_scalar_inputs():
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite.dtypes = ["at::kInt"]
+    test_suite.dtypes = ["at::kInt", "at::kFloat"]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
