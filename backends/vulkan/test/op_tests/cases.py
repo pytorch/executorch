@@ -2233,6 +2233,10 @@ def get_eq_scalar_inputs():
             ((S, S1, S2), 50),
             ((M1, M2), 700),
             ((S1, S2), 20),
+            # Int tensor (dtype below) vs non-integer float scalar exercises the
+            # mixed int32/float shader variant: comparing in the promoted float
+            # type yields all-false (no integer equals 3.5).
+            ((M1,), 3.5),
         ]
     )
     test_suite.storage_types = [

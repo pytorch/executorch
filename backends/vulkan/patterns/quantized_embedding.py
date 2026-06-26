@@ -73,6 +73,21 @@ class QuantizedEmbeddingMatch(PatternMatch):
             self.scales_node = scales_node
             self.all_nodes.extend(arg_chain)
 
+        # The weight placeholder stores values PACKED as uint8 [vocab,
+        # embed_dim / 2], so embed_dim is twice the inner dim. The op
+        # implementation requires that embed dim % 32 == 0 due to load/store
+        # granularity for the weight tensor; enforce that check now.
+        weight_val = (
+            self.weight_node.meta.get("val", None)
+            if isinstance(self.weight_node, torch.fx.Node)
+            else None
+        )
+        if not isinstance(weight_val, torch.Tensor) or weight_val.ndim != 2:
+            return
+        embed_dim = int(weight_val.shape[-1]) * 2  # packed, 2 values per byte
+        if embed_dim % 32 != 0:
+            return
+
         self.match_found = True
 
 
