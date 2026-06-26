@@ -57,9 +57,11 @@ class VgfEnvironmentCheck:
 
     @property
     def ok(self) -> bool:
+        """Return True when the check did not fail."""
         return self.status != STATUS_FAIL
 
     def to_dict(self) -> dict[str, str | None]:
+        """Return the check as a JSON-serializable dictionary."""
         return {
             "name": self.name,
             "status": self.status,
@@ -77,13 +79,16 @@ class VgfEnvironmentReport:
 
     @property
     def ok(self) -> bool:
+        """Return True when all checks passed or warned."""
         return all(check.ok for check in self.checks)
 
     @property
     def failures(self) -> list[VgfEnvironmentCheck]:
+        """Return checks with failure status."""
         return [check for check in self.checks if check.status == STATUS_FAIL]
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the report as a JSON-serializable dictionary."""
         return {
             "mode": self.mode,
             "ok": self.ok,
@@ -91,6 +96,7 @@ class VgfEnvironmentReport:
         }
 
     def raise_for_errors(self) -> None:
+        """Raise RuntimeError when any check failed."""
         if self.ok:
             return
 
@@ -100,6 +106,7 @@ class VgfEnvironmentReport:
         )
 
     def format(self) -> str:
+        """Format the report for human-readable output."""
         title = f"VGF environment preflight ({self.mode}): " + (
             "OK" if self.ok else "FAILED"
         )
@@ -113,7 +120,6 @@ def check_vgf_aot_environment() -> VgfEnvironmentReport:
     and source-build checks.
 
     """
-
     return VgfEnvironmentReport(
         mode="aot",
         checks=[
@@ -126,15 +132,11 @@ def check_vgf_aot_environment() -> VgfEnvironmentReport:
 
 def is_vgf_aot_available() -> bool:
     """Return True when VGF AoT/export prerequisites are available."""
-
     return check_vgf_aot_environment().ok
 
 
 def check_vgf_runtime_environment() -> VgfEnvironmentReport:
-    """Check whether the installed/runtime pybinding exposes VGF runtime
-    support.
-    """
-
+    """Check whether the pybinding exposes VGF runtime support."""
     return VgfEnvironmentReport(
         mode="runtime",
         checks=[
@@ -145,7 +147,6 @@ def check_vgf_runtime_environment() -> VgfEnvironmentReport:
 
 def is_vgf_runtime_available() -> bool:
     """Return True when VGF runtime support is available."""
-
     return check_vgf_runtime_environment().ok
 
 
@@ -155,7 +156,6 @@ def check_vgf_host_emulator_environment() -> VgfEnvironmentReport:
     This checks runtime backend registration plus Vulkan/VKML environment setup.
 
     """
-
     checks = [
         *_checks_from(check_vgf_runtime_environment()),
         _check_vulkan_sdk(),
@@ -168,7 +168,6 @@ def check_vgf_source_build_environment(
     build_dir: str | os.PathLike[str] | None = None,
 ) -> VgfEnvironmentReport:
     """Check source-build diagnostics for the VGF runtime backend."""
-
     return VgfEnvironmentReport(
         mode="source-build",
         checks=[
@@ -192,7 +191,6 @@ def check_environment(
     or require_runtime_build get the source-build diagnostic check.
 
     """
-
     if build_dir is not None or require_runtime_build:
         return check_vgf_source_build_environment(build_dir=build_dir)
     return check_vgf_aot_environment()
@@ -211,7 +209,6 @@ def _format_check(check: VgfEnvironmentCheck) -> str:
 
 def _as_environment_check(check: Any) -> VgfEnvironmentCheck:
     """Convert a module-owned preflight result into the CLI report type."""
-
     return VgfEnvironmentCheck(
         check.name,
         check.status,
@@ -619,6 +616,16 @@ def _select_report(args: argparse.Namespace) -> VgfEnvironmentReport:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the VGF environment preflight command.
+
+    Args:
+        argv (Sequence[str] | None): Command-line arguments to parse, or None
+            to parse arguments from sys.argv.
+
+    Returns:
+        int: Zero when selected checks are OK, otherwise one.
+
+    """
     parser = argparse.ArgumentParser(
         description="Preflight the Arm VGF backend environment."
     )

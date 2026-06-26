@@ -175,7 +175,7 @@ def define_libs(is_fbcode=False):
         "//executorch/extension/threadpool:threadpool",
     ]
 
-    for libblas_name, mkl_dep, mkl_omp_define in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp", ["-DET_CPUBLAS_MKL_OMP"]), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl", [])]:
+    for libblas_name, mkl_dep in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp"), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl")]:
         # Merge platform-specific kwargs
         platform_kwargs = get_apple_framework_deps_kwargs(is_fbcode)
         if not is_fbcode:
@@ -217,10 +217,7 @@ def define_libs(is_fbcode=False):
             }),
             header_namespace = "executorch/kernels/optimized",
             visibility = ["PUBLIC"],
-            preprocessor_flags = get_preprocessor_flags() + select({
-                ":linux-x86_64": mkl_omp_define,
-                "DEFAULT": [],
-            }),
+            preprocessor_flags = get_preprocessor_flags(),
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",

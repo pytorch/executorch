@@ -145,7 +145,7 @@ def ADD(input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
 
 @register_fake_tosa_op(
     "ARITHMETIC_RIGHT_SHIFT(Tensor input1, Tensor input2, *, bool round=False) -> Tensor",
-    INT_SPECS,
+    TosaSpecification.all_versions_and_profiles(),
 )
 def ARITHMETIC_RIGHT_SHIFT(
     input1: torch.Tensor,
@@ -153,7 +153,7 @@ def ARITHMETIC_RIGHT_SHIFT(
     *,
     round: bool = False,
 ) -> torch.Tensor:
-    _validate_int_dtype(input1.dtype, "ARITHMETIC_RIGHT_SHIFT")
+    _validate_any_profile_int_dtype(input1.dtype, "ARITHMETIC_RIGHT_SHIFT")
     return _binary_meta(input1, input2, "ARITHMETIC_RIGHT_SHIFT")
 
 
