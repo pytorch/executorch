@@ -1099,8 +1099,8 @@ setup(
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
                 ),
                 BuiltExtension(
-                    src="cmsis_nn.*",
-                    src_dir="backends/cortex_m/cmsis_nn-build",
+                    src="cmsis_nn.cp*" if _is_windows() else "cmsis_nn.*",
+                    src_dir="backends/cortex_m/cmsis_nn-build/%BUILD_TYPE%/",
                     modpath="executorch.backends.cortex_m.library._cmsis_nn.cmsis_nn",
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS",
