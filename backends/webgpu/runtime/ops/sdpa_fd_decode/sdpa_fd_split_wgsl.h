@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_fd_split.wgsl - DO NOT EDIT.
-// wgsl-sha256: f8a392ab021e4f1453abc2dc615254985d8045bfa187fc6a1d8fab722276ec17
+// wgsl-sha256: 44bee2691f85839b638a51971a8966bcf8efbb72b8acc44a4c3e991f31cc8fcb
 inline constexpr const char* kSdpaFdSplitWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_part_o: array<f32>;
 @group(0) @binding(1) var<storage, read_write> t_part_ml: array<f32>;
@@ -22,7 +22,7 @@ inline constexpr const char* kSdpaFdSplitWGSL = R"(
 @group(0) @binding(4) var<storage, read> t_v_cache: array<f32>;
 
 struct Params {
-  Hq: u32,
+  _pad0: u32,
   Hkv: u32,
   D: u32,
   context_len: u32,

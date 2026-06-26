@@ -23,32 +23,12 @@ extern "C" void zgemm_(char *transa, char *transb, int *m, int *n, int *k, void 
 #endif // ET_BUILD_FOR_APPLE
 #endif // ET_BUILD_WITH_BLAS
 
-#ifdef ET_CPUBLAS_MKL_OMP
-// MKL's thread-local thread-count setter. The C name aliases the Fortran
-// by-reference entry point in this MKL build, so the argument is int*. Only
-// referenced when linked against OpenMP MKL, so the strong ref always resolves.
-extern "C" int mkl_set_num_threads_local(int* nt);
-#endif // ET_CPUBLAS_MKL_OMP
-
 namespace executorch {
 namespace cpublas {
 
 using executorch::aten::BFloat16;
 using executorch::aten::complex;
 using executorch::aten::Half;
-
-SingleThreadedGemmGuard::SingleThreadedGemmGuard() : prev_num_threads_(0) {
-#ifdef ET_CPUBLAS_MKL_OMP
-  int one = 1;
-  prev_num_threads_ = mkl_set_num_threads_local(&one);
-#endif // ET_CPUBLAS_MKL_OMP
-}
-
-SingleThreadedGemmGuard::~SingleThreadedGemmGuard() {
-#ifdef ET_CPUBLAS_MKL_OMP
-  mkl_set_num_threads_local(&prev_num_threads_);
-#endif // ET_CPUBLAS_MKL_OMP
-}
 
 #ifdef ET_BUILD_WITH_BLAS
 #ifdef ET_BUILD_FOR_APPLE

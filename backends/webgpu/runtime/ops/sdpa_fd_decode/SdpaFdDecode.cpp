@@ -35,7 +35,7 @@ static_assert(
     "kSdpaFdMaxHeadDim must match WG_SIZE * MAX_D_PER_LANE");
 
 struct FdSplitParams {
-  uint32_t Hq;
+  uint32_t _pad0; // 16B-alignment pad (head index derived from workgroup_id)
   uint32_t Hkv;
   uint32_t D;
   uint32_t context_len;
@@ -205,7 +205,6 @@ void sdpa_fd_decode_dispatch(
 
   // Pass 1: split (Hq*num_splits WGs) -> writes part_o, part_ml.
   FdSplitParams sp = {};
-  sp.Hq = static_cast<uint32_t>(Hq);
   sp.Hkv = static_cast<uint32_t>(Hkv);
   sp.D = static_cast<uint32_t>(D);
   sp.context_len = static_cast<uint32_t>(context_len);
@@ -220,9 +219,18 @@ void sdpa_fd_decode_dispatch(
       {q.buffer, q.nbytes},
       {k_cache.buffer, k_cache.nbytes},
       {v_cache.buffer, v_cache.nbytes}};
+  // Compute the thread product in 64-bit + guard before the u32 cast, mirroring
+  // the Sdpa.cpp aw_floats > UINT32_MAX guards.
+  const uint64_t split_threads = static_cast<uint64_t>(Hq) *
+      static_cast<uint64_t>(num_splits) *
+      static_cast<uint64_t>(kSdpaFdSplitWorkgroupSizeX);
+  if (split_threads > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU sdpa FlashDecoding: split thread count exceeds uint32 max");
+  }
   const uint32_t wgc_split = utils::compute_1d_workgroup_count(
       graph.device(),
-      static_cast<uint32_t>(Hq) * num_splits * kSdpaFdSplitWorkgroupSizeX,
+      static_cast<uint32_t>(split_threads),
       kSdpaFdSplitWorkgroupSizeX,
       "fd_split");
   build_dispatch(

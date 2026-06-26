@@ -5,7 +5,7 @@
 @group(0) @binding(4) var<storage, read> t_v_cache: array<f32>;
 
 struct Params {
-  Hq: u32,
+  _pad0: u32,
   Hkv: u32,
   D: u32,
   context_len: u32,
