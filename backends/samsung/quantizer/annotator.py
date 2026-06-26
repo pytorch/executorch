@@ -55,11 +55,7 @@ def annotate(graph: Graph, quant_config: QuantizationConfig) -> None:
 
 
 def _is_annotated(nodes: List[Node]):
-    """
-    Given a list of nodes (that represents an operator pattern),
-    return True if any of the node
-    is annotated, otherwise return False
-    """
+    # Checking if nodes are annotated.
     annotated = False
     for node in nodes:
         annotated = annotated or (
@@ -80,10 +76,7 @@ def _is_fake_tensor(node: Node):
 
 
 def _is_float_tensor(node: Node):
-    """Check if the node's tensor is a float tensor,
-    so that we can skip quantization for the node
-    since observers only works with float Tensors
-    """
+    # checking if the node is quantized.
     if not _is_fake_tensor(node):
         return False
     return node.meta["val"].dtype in [torch.float32, torch.float16]
@@ -272,18 +265,7 @@ def annotate_2in1out_with_SharedQuant(
     # skipping quantization if 1st input is not float.
     if _is_annotated([node]) or not _is_float_tensor(input0):
         return
-    if (
-        isinstance(input0, Node)
-        and isinstance(input1, float)
-        and not _get_quantization_annotation(input0)
-    ):
-        return
-    if (
-        isinstance(input0, float)
-        and isinstance(input1, Node)
-        and not _get_quantization_annotation(input1)
-    ):
-        return
+
     if isinstance(input0, Node) and isinstance(input1, Node):
         shared_qspec = SharedQuantizationSpec((input0, node))
         input_qspec_map[input0] = quant_config.input_activation
@@ -322,7 +304,6 @@ def annotate_2in1out_with_SharedQuant(
 def annotate_add_ops_with_SharedQuant(
     node: Node, quant_config: QuantizationConfig
 ) -> None:
-
     input_qspec_map = {}
     input0 = node.args[0]
     input1 = node.args[1]
@@ -578,26 +559,10 @@ def annotate_index(node: Node, quant_config: QuantizationConfig) -> None:
 )
 def annotate_index_put(node: Node, quant_config: QuantizationConfig) -> None:
     input_qspec_map = {}
-    input = node.args[0]  # from KVCache in LLAMA
     value = node.args[2]  # from linear projection layer
-    assert isinstance(input, Node)
-    assert isinstance(value, Node)
 
-    if _is_annotated([node]) or not _is_float_tensor(input):
-        return
-
-    # get QuantAnnot from input path
-    shared_quant_node = _get_quantization_annotation(input)
-    if shared_quant_node:
-        shared_qspec = SharedQuantizationSpec((shared_quant_node, node))
-        input_qspec_map[input] = shared_qspec
-        input_qspec_map[value] = shared_qspec
-        output_qspec = shared_qspec
-    else:
-        # if no QuantAnnot in input path, asign the default QuantAnnot from quant_config.
-        input_qspec_map[input] = quant_config.input_activation
-        input_qspec_map[value] = SharedQuantizationSpec((input, node))
-        output_qspec = SharedQuantizationSpec((input, node))
+    input_qspec_map[value] = quant_config.input_activation
+    output_qspec = SharedQuantizationSpec((value, node))
 
     node.meta["quantization_annotation"] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
@@ -686,10 +651,11 @@ def annotate_embedding(node: Node, quant_config: QuantizationConfig) -> None:
         return
 
     input_qspec_map[weight] = quant_config.input_activation
+    shared_qspec = SharedQuantizationSpec((weight, node))
 
     node.meta["quantization_annotation"] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=quant_config.output_activation,
+        output_qspec=shared_qspec,
         _annotated=True,
     )
 
@@ -822,50 +788,48 @@ def annotate_batch_norm(node: Node, quant_config: QuantizationConfig) -> None:
 # CASE 11: Sigmoid
 @register_annotator([torch.ops.aten.sigmoid, torch.ops.aten.sigmoid.default])
 def annotate_sigmoid(node: Node, quant_config: QuantizationConfig) -> None:
-    if _is_annotated([node]):
+    input_act = node.args[0]
+    # skipping quantization if 1st input is not float.
+    if _is_annotated([node]) or not _is_float_tensor(input_act):
         return
 
+    input_act_qspec = quant_config.input_activation
     input_qspec_map = {}
-    input_act = node.args[0]
-    input_qspec_map[input_act] = quant_config.input_activation
+    if _is_float_tensor(input_act):
+        input_qspec_map[input_act] = input_act_qspec
 
-    assert isinstance(input_act, Node)
+    # bias observer setting
     out_qconf = quant_config.output_activation
+    if out_qconf.quant_max is not None and out_qconf.quant_min is not None:
+        quant_max = out_qconf.quant_max
+        quant_min = out_qconf.quant_min
+    else:
+        quant_max = torch.iinfo(out_qconf.dtype).max
+        quant_min = torch.iinfo(out_qconf.dtype).min
 
-    q_max = (
-        torch.iinfo(out_qconf.dtype).max
-        if out_qconf.quant_max is None
-        else out_qconf.quant_max
-    )
-    q_min = (
-        torch.iinfo(out_qconf.dtype).min
-        if out_qconf.quant_min is None
-        else out_qconf.quant_min
-    )
+    quant_scale = 1 / (quant_max - quant_min + 1)
 
-    scale = 1 / (q_max - q_min + 1)
-
-    bias_obs_ctr = FixedQParamsObserver.with_args(
-        scale=scale,
+    bias_observer_setting = FixedQParamsObserver.with_args(
+        scale=quant_scale,
         zero_point=0,
         dtype=quant_config.output_activation.dtype,
         qscheme=torch.torch.per_tensor_affine,
-        quant_max=q_max,
-        quant_min=q_min,
+        quant_max=quant_max,
+        quant_min=quant_min,
     )
 
-    # make sigmoid map to the range between 0~1
-    out_act_quantization_spec = QuantizationSpec(
+    # output spec with bias oberver
+    output_act_qspec = QuantizationSpec(
         dtype=quant_config.output_activation.dtype,
-        quant_max=q_max,
-        quant_min=q_min,
-        observer_or_fake_quant_ctr=bias_obs_ctr,
+        quant_max=quant_max,
+        quant_min=quant_min,
+        observer_or_fake_quant_ctr=bias_observer_setting,
         qscheme=torch.torch.per_tensor_affine,
     )
 
     if _is_float_tensor(node):
         node.meta["quantization_annotation"] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=out_act_quantization_spec,
+            output_qspec=output_act_qspec,
             _annotated=True,
         )

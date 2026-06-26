@@ -90,7 +90,11 @@ class EnnGraph:
             )
             tensor.AddQuantizeParam(q_dtype, scales, zero_points)
 
-            if need_quantize and data is not None:
+            if (
+                need_quantize
+                and data is not None
+                and data.dtype in (torch.float16, torch.float32, np.float32, np.float16)
+            ):
                 if isinstance(data, np.ndarray):
                     data = torch.tensor(data)
                 data = quantize_tensor(

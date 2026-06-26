@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-LITECORE_VERSION="v1.0"
+LITECORE_VERSION="v1.1.0"
 LITECORE_FILE_NAME="ai-litecore-ubuntu2204-${LITECORE_VERSION}.tar.gz"
 DEVICEFARM_CLI_VERSION="beta-v1.1.0"
 DEVICEFARM_FILE_NAME="devicefarmcli-${DEVICEFARM_CLI_VERSION}.zip"
