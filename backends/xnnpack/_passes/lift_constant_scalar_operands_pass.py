@@ -50,7 +50,6 @@ class LiftConstantScalarOperandsPass(ExportPass):
             if scalar_to_tensor_ops is not None
             else self.default_scalar_to_tensor_ops
         )
-        self._modified = False
 
     def _create_constant_node(
         self,
@@ -65,6 +64,8 @@ class LiftConstantScalarOperandsPass(ExportPass):
         input_value = input_node.meta["val"]
         tensor = torch.tensor(value, dtype=input_value.dtype, device=input_value.device)
         name = self._get_new_attr_name(graph_module)
+        # Keep constants as module attributes so the portable path can emit them
+        # without introducing aten.full, while XNNPACK can still read them as params.
         graph_module.register_buffer(name, tensor)
 
         fake_mode = node.meta["val"].fake_mode
@@ -110,7 +111,7 @@ class LiftConstantScalarOperandsPass(ExportPass):
         return False
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        self._modified = False
+        modified = False
 
         for node in list(graph_module.graph.nodes):
             if (
@@ -140,12 +141,10 @@ class LiftConstantScalarOperandsPass(ExportPass):
             tensor_arg = self._create_constant_node(graph_module, node, node.args[1])
             node.args = (node.args[0], tensor_arg)
             node.target = self.scalar_to_tensor_ops[node.target]
-            self._modified = True
+            modified = True
 
         graph_module.graph.eliminate_dead_code()
         graph_module.graph.lint()
         graph_module.recompile()
 
-        modified = self._modified
-        self._modified = False
         return PassResult(graph_module, modified)

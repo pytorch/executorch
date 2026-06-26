@@ -16,6 +16,7 @@ from executorch.backends.xnnpack.partition.graphs import sdpa
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_manager import ExportedProgramPassManager
 
 
 class TestLiftConstantScalarOperandsPass(unittest.TestCase):
@@ -30,12 +31,17 @@ class TestLiftConstantScalarOperandsPass(unittest.TestCase):
         def forward(self, x):
             return torch.ops.aten.add.Scalar(x, 0.5)
 
-    def _to_edge_graph(self, module):
-        edge = to_edge(
+    def _to_edge_program_manager(self, module):
+        return to_edge(
             torch.export.export(module, (torch.randn(2, 3),), strict=True),
             compile_config=get_xnnpack_edge_compile_config(skip_dim_order=True),
         )
-        return edge.transform([LiftConstantScalarOperandsPass()]).exported_program()
+
+    def _to_edge_graph(self, module):
+        edge = self._to_edge_program_manager(module)
+        return ExportedProgramPassManager([LiftConstantScalarOperandsPass()])(
+            edge.exported_program()
+        ).exported_program
 
     def test_lifts_mul_scalar_operand(self):
         graph = self._to_edge_graph(self.MulScalar()).graph_module.graph
@@ -47,6 +53,13 @@ class TestLiftConstantScalarOperandsPass(unittest.TestCase):
             any(node.target == exir_ops.edge.aten.mul.Tensor for node in graph.nodes)
         )
         self.assertTrue(any(node.op == "get_attr" for node in graph.nodes))
+
+    def test_lifted_mul_scalar_can_emit_without_delegation(self):
+        edge = self._to_edge_program_manager(self.MulScalar()).transform(
+            (LiftConstantScalarOperandsPass(),)
+        )
+
+        self.assertIsNotNone(edge.to_executorch())
 
     def test_keeps_unmapped_scalar_op(self):
         graph = self._to_edge_graph(self.AddScalar()).graph_module.graph

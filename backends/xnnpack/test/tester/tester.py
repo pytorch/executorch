@@ -26,6 +26,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.pass_manager import PassType as ExirPassType
 from torch._export.pass_base import PassType
 from torch.export import ExportedProgram
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -78,7 +79,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         self,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
-        transform_passes: Optional[List[PassType]] = None,
+        transform_passes: Optional[List[ExirPassType]] = None,
     ):
         super().__init__(
             default_partitioner_cls=XnnpackPartitioner,
@@ -152,25 +153,34 @@ class Tester(TesterBase):
 
     def to_edge_transform_and_lower(
         self,
-        to_edge_and_lower_stage: Optional[BaseStages.ToEdgeTransformAndLower] = None,
+        to_edge_and_transform_stage: Optional[
+            BaseStages.ToEdgeTransformAndLower
+        ] = None,
         generate_etrecord: bool = False,
         *,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
-        transform_passes: Optional[List[PassType]] = None,
+        transform_passes: Optional[List[ExirPassType]] = None,
     ):
-        if to_edge_and_lower_stage is None:
-            to_edge_and_lower_stage = ToEdgeTransformAndLower(
+        if to_edge_and_transform_stage is None:
+            to_edge_and_transform_stage = ToEdgeTransformAndLower(
                 partitioners=partitioners,
                 edge_compile_config=edge_compile_config,
                 transform_passes=transform_passes,
             )
         else:
             if partitioners is not None:
-                to_edge_and_lower_stage.partitioners = partitioners
+                to_edge_and_transform_stage.partitioners = partitioners
             if edge_compile_config is not None:
-                to_edge_and_lower_stage.edge_compile_conf = edge_compile_config
+                to_edge_and_transform_stage.edge_compile_conf = edge_compile_config
+            if transform_passes is not None:
+                if not isinstance(to_edge_and_transform_stage, ToEdgeTransformAndLower):
+                    raise ValueError(
+                        "transform_passes requires the XNNPACK "
+                        "ToEdgeTransformAndLower stage."
+                    )
+                to_edge_and_transform_stage.transform_passes = transform_passes
         return super().to_edge_transform_and_lower(
-            to_edge_and_lower_stage,
+            to_edge_and_transform_stage,
             generate_etrecord=generate_etrecord,
         )
