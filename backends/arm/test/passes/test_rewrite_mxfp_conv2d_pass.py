@@ -59,10 +59,15 @@ def _nodes_from_target(
 def _rewrite_conv2d_module(
     config: MXFPOpConfig,
     bias: bool = True,
+    model_dtype: torch.dtype = torch.float32,
 ) -> tuple[torch.fx.GraphModule, list[torch.fx.Node], list[torch.fx.Node]]:
-    model = _Conv2dModule(bias=bias).eval()
+    model = _Conv2dModule(bias=bias).eval().to(model_dtype)
     to_mxfp(model, config, filter_fn=_is_conv2d)
-    exported = export(model, (torch.randn(1, 32, 10, 12),), strict=False)
+    exported = export(
+        model,
+        (torch.randn(1, 32, 10, 12, dtype=model_dtype),),
+        strict=False,
+    )
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.1+FP+mxfp")
 
     with TosaLoweringContext(tosa_spec):
@@ -111,6 +116,19 @@ def test_rewrite_mxfp_conv2d_restores_output_shape() -> None:
 
     assert tuple(conv_node.meta["val"].shape) == (1, 5, 6, 8)
     assert tuple(output_node.meta["val"].shape) == (1, 8, 5, 6)
+
+
+def test_rewrite_mxfp_conv2d_preserves_inferred_bfloat16_output_cast() -> None:
+    graph_module, _, conv_nodes = _rewrite_conv2d_module(
+        MXFPOpConfig(),
+        model_dtype=torch.bfloat16,
+    )
+
+    output_node = graph_module.graph.output_node()
+
+    assert len(conv_nodes) == 1
+    assert conv_nodes[0].meta["val"].dtype == torch.float32
+    assert output_node.meta["val"][0].dtype == torch.bfloat16
 
 
 def test_rewrite_mxfp4_conv2d_marks_payloads() -> None:
