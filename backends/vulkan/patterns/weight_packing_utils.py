@@ -13,7 +13,6 @@ import torch.nn.functional as F
 def pack_4bit_weight_tensor(
     weight_tensor: torch.Tensor,
     *,
-    even_value_high_nibble: bool = False,
     inner_dim_padding: Optional[int] = 8,
 ) -> torch.Tensor:
     """Pack signed 4-bit values stored in int8 into uint8 byte pairs.
@@ -21,11 +20,8 @@ def pack_4bit_weight_tensor(
     The input tensor stores one quantized value per byte in the range [-8, 7].
     The returned tensor stores two 4-bit values per byte along the innermost dim.
 
-    By default this preserves the legacy linear q4gsw packing convention:
+    This preserves the legacy linear q4gsw packing convention:
       packed_byte = (odd_val + 8) << 4 | (even_val + 8)
-
-    Set `even_value_high_nibble=True` for the embedding q4gsw convention:
-      packed_byte = (even_val + 8) << 4 | (odd_val + 8)
     """
     min_val, max_val = weight_tensor.min().item(), weight_tensor.max().item()
     assert (
@@ -52,6 +48,4 @@ def pack_4bit_weight_tensor(
     shifted_weight_tensor = weight_tensor.to(dtype=torch.uint8) + 8
     even_values = shifted_weight_tensor[:, ::2]
     odd_values = shifted_weight_tensor[:, 1::2]
-    if even_value_high_nibble:
-        return even_values << 4 | odd_values
     return odd_values << 4 | even_values

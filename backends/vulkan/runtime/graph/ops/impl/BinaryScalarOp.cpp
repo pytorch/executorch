@@ -24,22 +24,13 @@ namespace vkcompute {
 
 namespace {
 
-/*
- * Currently, only a few shader variants are generated for "compatible" tensor
- * dtype / scalar dtype pairs. In particular float/half tensor + float scalar,
- * and int32 tensor + int32 scalar. This function coerces the scalar dtype so
- * that a "higher precision" tensor dtype (i.e. float, half) can be used with a
- * "lower precision" scalar dtype (i.e. int32) with the current generated shader
- * variants. "Lower precision" tensor dtype (i.e. int32) + "higher precision"
- * scalar dtype (i.e. float/half) are currently not supported because the shader
- * currently casts the scalar to the tensor dtype before computation. Though
- * these combinations are not expected to be needed, if they are required in the
- * future, update the shaders with more robust dtype handling.
- */
 vkapi::ScalarType resolve_scalar_extract_dtype(
     ComputeGraph& graph,
     const ValueRef scalar,
     const vkapi::ScalarType tensor_dtype) {
+  // For float tensors, ensure that the scalar argument is extracted as a float
+  // to avoid having to generate additional shader variants for float/half
+  // tensor + int scalar.
   if (tensor_dtype == vkapi::kFloat || tensor_dtype == vkapi::kHalf) {
     return vkapi::kFloat;
   }

@@ -350,13 +350,10 @@ def make_linear_q4gsw_op(
         ep, match.weight_scales_node, "4 bit linear scales"
     ):
         weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
-        # Align to multiple of 8 to ensure that data loads from the weight scales
-        # tensor do not go out of bounds. Each thread computes 8 output channels.
         utils.align_width_and_update_state_dict(
             ep,
             match.weight_scales_node,
             weight_scales_tensor,
-            align_to=8,
             force_update=True,
         )
 
@@ -414,7 +411,6 @@ def make_linear_dq8ca_q4gsw_op(
             ep,
             match.weight_scales_node,
             weight_scales_tensor,
-            align_to=1,
             force_update=True,
         )
 
