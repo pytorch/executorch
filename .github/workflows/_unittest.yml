@@ -72,7 +72,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}"
+          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}" -cpuOnly true
           if (\$LASTEXITCODE -ne 0) {
               Write-Host "Setup failed. Exit code: \$LASTEXITCODE."
               exit \$LASTEXITCODE
