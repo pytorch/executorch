@@ -162,11 +162,19 @@ int main(int argc, char** argv) {
   llm::SamplingConfig sampling;
   sampling.temperature = static_cast<float>(FLAGS_temperature);
   sampling.top_p = static_cast<float>(FLAGS_top_p);
-  const uint64_t base_seed = FLAGS_seed < 0
-      ? static_cast<uint64_t>(std::random_device{}())
-      : static_cast<uint64_t>(FLAGS_seed);
+  // Only a --sample model uses the seed; randomize an unset seed for those and
+  // leave non-sample models at 0 so they don't trip the top_p/seed guard.
+  const auto& md = engine->metadata();
+  const auto us_it = md.find("use_sampling");
+  const bool model_samples = us_it != md.end() && us_it->second != 0;
+  uint64_t base_seed = FLAGS_seed < 0 ? 0 : static_cast<uint64_t>(FLAGS_seed);
+  if (model_samples && FLAGS_seed < 0) {
+    base_seed = static_cast<uint64_t>(std::random_device{}());
+  }
   sampling.seed = base_seed;
-  ET_LOG(Info, "Sampling base seed: %" PRIu64, base_seed);
+  if (model_samples) {
+    ET_LOG(Info, "Sampling base seed: %" PRIu64, base_seed);
+  }
   const int total_iters = FLAGS_warmup + std::max(1, FLAGS_num_iters);
   std::vector<double> prefill_tps_samples;
   std::vector<double> decode_tps_samples;
