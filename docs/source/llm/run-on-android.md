@@ -245,7 +245,9 @@ module.prefillImages(pixels, /*width=*/336, /*height=*/336, /*channels=*/3);
 // As direct ByteBuffer (preferred for large images)
 byte[] rawBytes = ...;  // length == channels * height * width
 ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 336 * 336);
-buffer.put(rawBytes).rewind();
+buffer.put(rawBytes);
+// Rewind so the JNI side reads from position 0.
+buffer.rewind();
 module.prefillImages(buffer, 336, 336, 3);
 ```
 
