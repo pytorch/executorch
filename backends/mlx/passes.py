@@ -20,7 +20,12 @@ from executorch.backends.mlx.pattern_utils import (
     walk_back,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import (
+    ExportedProgramPassBase,
+    ExportedProgramPassResult,
+    ExportPass,
+    PassResult,
+)
 from executorch.exir.passes.cse_pass import CSEPass
 from torch.fx import GraphModule, Node
 
@@ -37,7 +42,90 @@ def get_default_passes() -> List[ExportPass]:
         CollapseDtypeConversionPass(),
         RemoveNoOpsPass(),
         CSEPass(),
+        # Must run last: rewrites the settled/deduped graph's functional
+        # elementwise chains into in-place ops so the MLX builder can donate
+        # buffers (out == in).
+        MLXReinplacePass(),
     ]
+
+
+class MLXReinplacePass(ExportedProgramPassBase):
+    """Reinplace MLX-handled elementwise ops to enable MLX buffer donation.
+
+    Rewrites functional unary/binary chains (e.g. ``exp(log(exp(x)))``,
+    ``h + ffn(h)``) into their in-place edge forms via ExecuTorch's
+    ``reinplace_pass``, restricted to an explicit, MLX-owned op set. Every op in
+    that set has a corresponding in-place MLX handler (see
+    ``REINPLACEABLE_UNARY_BASE_NAMES`` / ``REINPLACEABLE_BINARY_BASE_OVERLOADS``
+    in ops.py) that binds the output slot to the dead input slot (out == in).
+
+    Binary ops are safe to include because ``reinplace_pass`` only reinplaces
+    when the mutated argument already holds the output's shape and dtype (no
+    broadcast growth / dtype change).
+
+    We deliberately do NOT use ``DEFAULT_INPLACEABLE_OPS``: passing an explicit
+    ``ops_to_inplace`` fully replaces the default, so ``index_put`` is never
+    reinplaced and MLX's existing KV-cache / index_copy functional patterns are
+    untouched. A fresh set is built per call so ``reinplace_pass`` cannot mutate
+    shared state.
+
+    Runs as an EP-aware pass (it needs ``graph_signature`` to protect mutable
+    inputs/buffers); the pass infra hands ``ExportedProgramPassBase`` instances
+    the full ExportedProgram.
+    """
+
+    def call(self, exported_program) -> ExportedProgramPassResult:
+        # Imported lazily to avoid a module-load cycle with ops.py (which
+        # registers handlers on import).
+        from executorch.backends.mlx.ops import (
+            REINPLACEABLE_BINARY_BASE_OVERLOADS,
+            REINPLACEABLE_EXTRA_BASE_OVERLOADS,
+            REINPLACEABLE_UNARY_BASE_NAMES,
+        )
+        from executorch.exir.passes.reinplace import reinplace_pass
+
+        # Explicit, MLX-owned op set (every op has an in-place MLX handler).
+        # Binary ops are safe to pass to reinplace_pass because it guards that
+        # the mutated arg is full-size + dtype-matching (no broadcast growth).
+        ops_to_inplace = {
+            getattr(exir_ops.edge.aten, base).default
+            for base in REINPLACEABLE_UNARY_BASE_NAMES
+        }
+        ops_to_inplace |= {
+            getattr(getattr(exir_ops.edge.aten, base), overload)
+            for base, overload in (
+                REINPLACEABLE_BINARY_BASE_OVERLOADS + REINPLACEABLE_EXTRA_BASE_OVERLOADS
+            )
+        }
+        if ops_to_inplace:
+            reinplace_pass(exported_program, ops_to_inplace=ops_to_inplace)
+            self._resync_output_specs(exported_program)
+        return ExportedProgramPassResult(exported_program, True)
+
+    @staticmethod
+    def _resync_output_specs(exported_program) -> None:
+        """Re-sync graph-signature output names after reinplace.
+
+        ``reinplace_pass`` rewrites an output-producing node (e.g. the final
+        ``exp`` -> ``exp_``) via ``replace_all_uses_with`` + erase, but does not
+        update ``graph_signature.output_specs``. Output order is preserved, so we
+        positionally re-sync each spec's argument name to the current output node
+        arg; otherwise ``ExportedProgram.validate()`` (run by the pass manager)
+        raises a SpecViolationError.
+        """
+        out_node = next(
+            n for n in reversed(exported_program.graph.nodes) if n.op == "output"
+        )
+        out_args = out_node.args[0]
+        if not isinstance(out_args, (tuple, list)):
+            out_args = (out_args,)
+        for spec, arg in zip(exported_program.graph_signature.output_specs, out_args):
+            if (
+                isinstance(arg, torch.fx.Node)
+                and getattr(spec.arg, "name", None) is not None
+                and spec.arg.name != arg.name
+            ):
+                spec.arg.name = arg.name
 
 
 @dataclass
