@@ -28,6 +28,7 @@ WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.slice_copy.Tensor,
+    exir_ops.edge.aten.permute_copy.default,
 ]
 
 
