@@ -16,11 +16,6 @@ concurrency:
   group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
-# Restrict the default GITHUB_TOKEN to read-only; jobs that need more
-# (e.g. OIDC for AWS/S3) opt in explicitly at the job level below.
-permissions:
-  contents: read
-
 jobs:
   # Emits PR diff file list; non-PR events emit '*' so the per-job
   # `if:` short-circuits via `event_name != 'pull_request'`. This
@@ -30,39 +25,16 @@ jobs:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
 
-  # Emits is-full-run='true' for workflow_dispatch / ciflow tag /
-  # sampled-push commits (every 4th main/release commit by depth).
-  # Returns 'false' for pull_request events — PR jobs use the
-  # changed-files path filter below for gating instead.
-  run-decision:
-    name: CI run decision
-    uses: ./.github/workflows/_ci-run-decision.yml
-
   test-coreml:
-    needs: [changed-files, run-decision]
-    # OIDC token needed so the ephemeral macOS runner (macos-*-xlarge) can
-    # assume the AWS role for S3 access — both the test-report artifact
-    # upload in macos_job.yml and the cached-wheel upload in
-    # setup-macos.sh. Self-hosted *-stable runners have an instance role
-    # and don't need this, but ephemeral runners get creds only via OIDC.
-    # Granted on the caller job and inherited by _test_backend.yml's jobs.
-    permissions:
-      id-token: write
-      contents: read
-    # PRs: path-gated. Pushes to main/release: sampled (every 4th commit)
-    # via run-decision. schedule (nightly) / workflow_dispatch / ciflow
-    # tags: always full.
+    needs: changed-files
     if: |
-      github.event_name == 'schedule' ||
-      (github.event_name == 'pull_request' && (
-        contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
-        contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-coreml.yml') ||
-        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
-      )) ||
-      (github.event_name != 'pull_request' && needs.run-decision.outputs.is-full-run == 'true')
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-coreml.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
     uses: ./.github/workflows/_test_backend.yml
     with:
       backend: coreml
@@ -70,7 +42,9 @@ jobs:
         ${{ github.event_name == 'pull_request'
             && '["coreml"]'
             || '["coreml", "coreml_static_int8"]' }}
+      # Run coreml_static_int8 for the operators suite only; skip it for
+      # the models suite (still covered by the coreml flow).
+      matrix-exclude: '[{"flow": "coreml_static_int8", "suite": "models"}]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       run-macos: true
-      runner-macos: macos-15-xlarge
