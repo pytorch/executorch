@@ -40,6 +40,10 @@ from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
 )
+from executorch.backends.webgpu.test.ops.test_permute import (
+    CONFIGS as _PERMUTE_CONFIGS,
+    PermuteModule,
+)
 from executorch.backends.webgpu.test.ops.test_select import (
     CONFIGS as _SELECT_CONFIGS,
     SelectModule,
@@ -48,6 +52,11 @@ from executorch.backends.webgpu.test.ops.test_sigmoid import (
     _det_input as _sigmoid_det_input,
     N as _SIGMOID_N,
     SigmoidModule,
+)
+
+from executorch.backends.webgpu.test.ops.test_slice import (
+    CONFIGS as _SLICE_CONFIGS,
+    SliceModule,
 )
 
 from executorch.backends.webgpu.test.ops.test_squeeze import (
@@ -219,4 +228,22 @@ def _unsqueeze_suite() -> WebGPUTestSuite:
             for n, (shape, dim) in _UNSQUEEZE_CONFIGS.items()
         ],
         golden_dtype="float32",  # reshape copies values; fp64 bit-identical
+    )
+
+
+@register_op_test("slice")
+def _slice_suite() -> WebGPUTestSuite:
+    return _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+
+
+@register_op_test("permute")
+def _permute_suite() -> WebGPUTestSuite:
+    # CONFIGS: name -> (shape, perm-tuple).
+    return WebGPUTestSuite(
+        module_factory=lambda perm: PermuteModule(perm),
+        cases=[
+            Case(name=n, construct={"perm": perm}, inputs=(shape,))
+            for n, (shape, perm) in _PERMUTE_CONFIGS.items()
+        ],
+        golden_dtype="float32",  # permutation reorders values; fp64 bit-identical
     )
