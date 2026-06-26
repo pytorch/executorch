@@ -476,6 +476,13 @@ def reinplace_pass(  # noqa: C901
                 all_safe = False
                 break
         if all_safe:
+            # We intentionally skip `seen_nodes.update(node.all_input_nodes)`
+            # here even though the in-place op reads its non-mutated operands:
+            # the rewrite inserts the in-place node before `node`, and the live
+            # `reversed` walk visits it next. Its in-place overload isn't in
+            # `resolved`, so it falls into the generic branch above, which
+            # records all its operands (including the non-mutated ones).
+            #
             # Mark the mutated args as used so a different consumer of the same
             # value (earlier in topo order, visited later in this reverse walk)
             # is not also reinplaced — that would read a value this op already

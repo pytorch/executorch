@@ -112,6 +112,14 @@ class MLXReinplacePass(ExportedProgramPassBase):
         positionally re-sync each spec's argument name to the current output node
         arg; otherwise ``ExportedProgram.validate()`` (run by the pass manager)
         raises a SpecViolationError.
+
+        This positional pairing is only valid because reinplace does a 1:1
+        ``replace_all_uses_with`` + erase and never drops, adds, or reorders
+        outputs. We assert ``len(output_specs) == len(out_args)`` so that a
+        future change violating that invariant fails loudly here instead of
+        silently mis-pairing names (``zip`` would otherwise truncate). Specs
+        whose ``arg`` is not a named tensor (e.g. ``ConstantArgument``) carry no
+        ``name`` and are skipped by the ``getattr`` guard below.
         """
         out_node = next(
             n for n in reversed(exported_program.graph.nodes) if n.op == "output"
@@ -119,7 +127,14 @@ class MLXReinplacePass(ExportedProgramPassBase):
         out_args = out_node.args[0]
         if not isinstance(out_args, (tuple, list)):
             out_args = (out_args,)
-        for spec, arg in zip(exported_program.graph_signature.output_specs, out_args):
+        output_specs = exported_program.graph_signature.output_specs
+        assert len(output_specs) == len(out_args), (
+            "reinplace changed graph output count: "
+            f"{len(output_specs)} output_specs vs {len(out_args)} output args. "
+            "Positional output-spec re-sync assumes a 1:1, order-preserving "
+            "rewrite."
+        )
+        for spec, arg in zip(output_specs, out_args):
             if (
                 isinstance(arg, torch.fx.Node)
                 and getattr(spec.arg, "name", None) is not None

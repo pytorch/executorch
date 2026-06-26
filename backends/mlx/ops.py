@@ -610,7 +610,12 @@ def _make_inplace_passthrough_handler(functional_handler):
 
     The mutated ``self`` is always positional arg 0 for these ops, and every
     op emitted before the output writer only *reads* ``self``, so the in-place
-    write (last) is safe.
+    write (last) is safe. This "all reads of ``self`` happen before the final
+    write to out == self" ordering is a contract on each delegated functional
+    handler; the assertion below catches the easy-to-spot violation where a
+    handler stops using ``n``'s slot as its output, but a handler that reads
+    ``self`` *after* writing out would still silently corrupt — keep that
+    invariant in mind when editing clamp/pow/gelu/relu/leaky_relu/hardtanh.
     """
 
     def handler(P: MLXProgramBuilder, n: Node) -> Slot:
@@ -619,7 +624,16 @@ def _make_inplace_passthrough_handler(functional_handler):
         alias = _inplace_alias_slot(P, n, self_slot)
         if alias is not None:
             P.set_slot(n, alias)
-        return functional_handler(P, n)
+        result = functional_handler(P, n)
+        # When we pre-bind out == self, the delegated handler must treat that
+        # slot as its output (write it last). Confirm it actually returned the
+        # aliased slot; otherwise the in-place aliasing silently did nothing.
+        assert alias is None or result is alias, (
+            f"{getattr(functional_handler, '__name__', functional_handler)} did "
+            f"not use the aliased out==self slot as its output for {n}; in-place "
+            f"passthrough requires the delegated handler to write n's slot."
+        )
+        return result
 
     handler.__name__ = "_inplace_passthrough_handler"
     handler.__doc__ = "In-place passthrough (aliases out==self, delegates)."
