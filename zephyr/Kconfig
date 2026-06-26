@@ -49,4 +49,12 @@ config EXECUTORCH_BUILD_PORTABLE_OPS
 	  operator building to include only needed operators, but the
 	  underlying kernel implementations will still be available.
 
+config EXECUTORCH_BUILD_NORDIC_AXON
+	bool "Build Nordic AXON NPU delegate"
+	depends on NRF_AXON
+	help
+	  Enable the AXON NPU delegate backend for Nordic nRF54LM20B.
+	  Requires the Nordic sdk-edge-ai to be available in the build
+	  environment.
+
 endif # EXECUTORCH

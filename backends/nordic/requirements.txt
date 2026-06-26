@@ -1,0 +1,13 @@
+# Python dependencies for the Nordic AXON backend.
+# Install with: pip install -r backends/nordic/requirements.txt
+
+# Backend core
+cffi>=1.15
+numpy>=2.0
+pyyaml
+
+# TOSA flatbuffer support (for model compilation)
+tosa-tools
+
+# Quantization (used by AxonQuantizer and tests)
+torchao

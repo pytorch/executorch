@@ -1,0 +1,51 @@
+# Copyright (c) 2026 iote.ai
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# @noautodeps
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "axon",
+    srcs = glob(["axon/*.py"]),
+    deps = [
+        "//executorch/backends/arm:tosa",
+        "//executorch/exir:lib",
+    ],
+    visibility = ["//executorch/..."],
+)
+
+runtime.python_library(
+    name = "operator_support",
+    srcs = glob(["operator_support/*.py"]),
+    deps = [
+        ":axon",
+        "//executorch/exir:lib",
+    ],
+    visibility = ["//executorch/..."],
+)
+
+runtime.python_library(
+    name = "axon_compiler",
+    srcs = [
+        "axon_compiler.py",
+        "axon_binary.py",
+        "tosa_reader.py",
+    ],
+    deps = [
+        ":axon",
+    ],
+    visibility = ["//executorch/..."],
+)
+
+runtime.python_test(
+    name = "test_tosa_lowering",
+    srcs = ["test/test_tosa_lowering.py"],
+    deps = [
+        ":axon",
+        ":axon_compiler",
+        ":operator_support",
+    ],
+)

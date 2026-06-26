@@ -1,0 +1,15 @@
+# Copyright (c) 2026 iote.ai
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Python project for hello_axon model export.
+# See setup_export_env.sh for one-shot environment setup.
+
+[project]
+name = "hello-axon"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "cffi>=1.15",
+    "numpy>=2.0",
+    "pyyaml",
+]

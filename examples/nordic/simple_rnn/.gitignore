@@ -1,0 +1,21 @@
+# Python venv (created by setup_export_env.sh)
+.venv/
+
+# Build artifacts
+build/
+
+# Generated model header (created by export_model.py)
+src/model_pte.h
+
+# Generated AXON headers (created by export_model.py)
+src/generated/axon_subgraph_*.h
+src/generated/axon_subgraphs_table.h
+
+# uv lock file
+uv.lock
+
+# Generated export wrapper
+run_export.sh
+
+__pycache__/
+*.pyc
