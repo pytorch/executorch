@@ -50,6 +50,15 @@ if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     echo "Enabling symlinks on Windows"
     git config core.symlinks true
     git checkout -f HEAD
+
+    # Windows wheels are CPU-only (build-wheels-windows.yml sets
+    # with-cuda: disabled), but the Windows CI image ships a CUDA toolkit on
+    # PATH, which makes setup.py auto-enable EXECUTORCH_BUILD_CUDA. That bakes a
+    # CUDA _portable_lib into the CPU wheel, which then fails its DLL load in the
+    # smoke test ("DLL load failed while importing _portable_lib"). Force a
+    # CPU-only build.
+    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
+    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi
 
 # Manually install build requirements because `python setup.py bdist_wheel` does
