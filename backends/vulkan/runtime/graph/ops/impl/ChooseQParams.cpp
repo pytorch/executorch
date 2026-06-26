@@ -78,13 +78,6 @@ utils::uvec3 pick_choose_qparams_per_row_local_wg_size(
   return {workers_per_output, outputs_per_wg, 1u};
 }
 
-// The per-token zero-point tensor is fp32-typed (matching torchao's serialized
-// asymmetric per-token zero_point_dtype=fp32), even though its values are
-// integer-valued in [-128, 127]. The shaders read it as a float texel and
-// convert to int for the integer dequant-correction. Declaring the shader
-// binding fp32 to match the tensor's allocation avoids the
-// float-image-read-through-an-integer-binding format mismatch that corrupted
-// negative zero-points on Mali.
 void add_choose_qparams_per_row_node(
     ComputeGraph& graph,
     const ValueRef& input,
