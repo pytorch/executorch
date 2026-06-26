@@ -87,6 +87,21 @@ def broadcastable(shape_1: Sequence[int], shape_2: Sequence[int]) -> bool:
     )
 
 
+def transpose_dims_to_permute_order(ndim: int, dim0: int, dim1: int) -> List[int]:
+    """
+    Convert transpose(dim0, dim1) to an equivalent permute order list.
+    E.g., transpose(0, 1) on a 3D tensor gives [1, 0, 2].
+    """
+    # Normalize negative dims
+    if dim0 < 0:
+        dim0 += ndim
+    if dim1 < 0:
+        dim1 += ndim
+    order = list(range(ndim))
+    order[dim0], order[dim1] = order[dim1], order[dim0]
+    return order
+
+
 def get_transposed_dims(
     node: torch.fx.Node, dims: Optional[List[int]] = None
 ) -> List[int]:
