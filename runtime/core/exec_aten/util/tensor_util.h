@@ -1141,6 +1141,13 @@ bool extract_scalar_tensor(executorch::aten::Tensor tensor, BOOL_T* out_val) {
 /// These APIs should not be used outside of Executor.cpp.
 namespace internal {
 /**
+ * Validate that t_src matches the model's expected dim order.
+ */
+ET_NODISCARD Error check_tensor_data_layout(
+    const executorch::aten::Tensor& t_src,
+    executorch::runtime::Span<const uint8_t> expected_dim_order);
+
+/**
  * Share t_src's data_ptr with t_dst.
  */
 ET_NODISCARD Error share_tensor_data(

@@ -54,6 +54,20 @@ class PybindingsTest(unittest.TestCase):
         self.load_prog_fn = runtime._load_program_from_buffer
         self.runtime = runtime
 
+    def _make_non_dense_strided_input(self) -> torch.Tensor:
+        strided_input = torch.arange(1 * 2 * 3 * 8, dtype=torch.float32).reshape(
+            1, 2, 3, 8
+        )[..., ::2]
+        self.assertEqual(tuple(strided_input.shape), (1, 2, 3, 4))
+        self.assertFalse(strided_input.is_contiguous())
+        self.assertFalse(strided_input.is_contiguous(memory_format=torch.channels_last))
+        return strided_input
+
+    def _create_program_with_inputs(
+        self, eager_module: torch.nn.Module, inputs: tuple[torch.Tensor, ...]
+    ):
+        return to_edge(export(eager_module, inputs, strict=True)).to_executorch()
+
     def test_e2e(self):
         exported_program, inputs = create_program(ModuleAdd())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -203,6 +217,37 @@ class PybindingsTest(unittest.TestCase):
 
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
+
+    def test_non_contiguous_input_dim_order_mismatch(self) -> None:
+        """Contiguous tensor passed to a channels-last model raises on dim order mismatch."""
+        model = ModuleChannelsLast()
+        exported_program, inputs = create_program(model)
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        # Model expects channels-last; passing contiguous triggers mismatch.
+        contiguous_input = inputs[0].contiguous()
+        self.assertRaises(RuntimeError, executorch_module, contiguous_input)
+
+    def test_channels_last_input_dim_order_mismatch(self) -> None:
+        """Channels-last tensor passed to a contiguous model raises on dim order mismatch."""
+        model = ModuleChannelsLast()
+        inputs = (torch.ones(1, 2, 3, 4),)
+        exported_program = self._create_program_with_inputs(model, inputs)
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        channels_last_input = inputs[0].to(memory_format=torch.channels_last)
+        self.assertRaises(RuntimeError, executorch_module, channels_last_input)
+
+    def test_strided_input_dim_order_error(self) -> None:
+        model = ModuleChannelsLast()
+        exported_program = self._create_program_with_inputs(
+            model, (torch.ones(1, 2, 3, 4),)
+        )
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        self.assertRaises(
+            RuntimeError, executorch_module, self._make_non_dense_strided_input()
+        )
 
     def test_method_meta(self) -> None:
         exported_program, inputs = create_program(ModuleAdd())
@@ -465,6 +510,40 @@ class PybindingsTest(unittest.TestCase):
 
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
+
+    def test_method_non_contiguous_input_dim_order_mismatch(self) -> None:
+        """Contiguous tensor passed to a channels-last method raises on dim order mismatch."""
+        model = ModuleChannelsLast()
+        exported_program, inputs = create_program(model)
+        executorch_program = self.load_prog_fn(exported_program.buffer)
+        executorch_method = executorch_program.load_method("forward")
+
+        # Model expects channels-last; passing contiguous triggers mismatch.
+        contiguous_input = inputs[0].contiguous()
+        self.assertRaises(RuntimeError, executorch_method, contiguous_input)
+
+    def test_method_channels_last_input_dim_order_mismatch(self) -> None:
+        """Channels-last tensor passed to a contiguous method raises on dim order mismatch."""
+        model = ModuleChannelsLast()
+        inputs = (torch.ones(1, 2, 3, 4),)
+        exported_program = self._create_program_with_inputs(model, inputs)
+        executorch_program = self.load_prog_fn(exported_program.buffer)
+        executorch_method = executorch_program.load_method("forward")
+
+        channels_last_input = inputs[0].to(memory_format=torch.channels_last)
+        self.assertRaises(RuntimeError, executorch_method, channels_last_input)
+
+    def test_method_strided_input_dim_order_error(self) -> None:
+        model = ModuleChannelsLast()
+        exported_program = self._create_program_with_inputs(
+            model, (torch.ones(1, 2, 3, 4),)
+        )
+        executorch_program = self.load_prog_fn(exported_program.buffer)
+        executorch_method = executorch_program.load_method("forward")
+
+        self.assertRaises(
+            RuntimeError, executorch_method, self._make_non_dense_strided_input()
+        )
 
     def test_method_bad_name(self) -> None:
         exported_program, inputs = create_program(ModuleAdd())
