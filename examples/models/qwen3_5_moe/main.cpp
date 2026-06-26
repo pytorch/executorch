@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <fstream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -44,9 +45,10 @@ DEFINE_double(
     "with --sample (MLX on-device sampling).");
 DEFINE_int64(
     seed,
-    0,
+    -1,
     "Base RNG seed for on-device sampling; the runner increments it per token. "
-    "Requires a model exported with --sample.");
+    "-1 (default) draws a random seed each run; set a value for reproducible "
+    "output. Requires a model exported with --sample.");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_int32(
     warmup,
@@ -160,7 +162,11 @@ int main(int argc, char** argv) {
   llm::SamplingConfig sampling;
   sampling.temperature = static_cast<float>(FLAGS_temperature);
   sampling.top_p = static_cast<float>(FLAGS_top_p);
-  sampling.seed = static_cast<uint64_t>(FLAGS_seed);
+  const uint64_t base_seed = FLAGS_seed < 0
+      ? static_cast<uint64_t>(std::random_device{}())
+      : static_cast<uint64_t>(FLAGS_seed);
+  sampling.seed = base_seed;
+  ET_LOG(Info, "Sampling base seed: %" PRIu64, base_seed);
   const int total_iters = FLAGS_warmup + std::max(1, FLAGS_num_iters);
   std::vector<double> prefill_tps_samples;
   std::vector<double> decode_tps_samples;

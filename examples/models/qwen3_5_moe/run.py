@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import logging
+import random
 import time
 
 import torch
@@ -65,7 +66,7 @@ def run_inference(  # noqa: C901
     vocab_size: int = 248320,
     temperature: float = 0.0,
     top_p: float = 1.0,
-    seed: int = 0,
+    seed: int = -1,
 ) -> None:
     """Run inference on the exported Qwen 3.5 MoE model."""
     logger.info(f"Loading model from {pte_path}...")
@@ -87,20 +88,19 @@ def run_inference(  # noqa: C901
     # On-device sampling models (export.py --sample) take temperature/top_p/seed
     # runtime inputs and return a token id directly instead of logits.
     use_sampling = False
-    try:
-        meta_method = program.load_method("use_sampling")
-        result = meta_method.execute([])
+    if "use_sampling" in program.method_names:
+        result = program.load_method("use_sampling").execute([])
         use_sampling = bool(
             result[0] if isinstance(result[0], int) else result[0].item()
         )
-    except Exception:
-        pass
-    if not use_sampling and (top_p != 1.0 or seed != 0):
+    if not use_sampling and (top_p != 1.0 or seed >= 0):
         raise ValueError(
             "top_p/seed require a model exported with --sample; this .pte only "
             "supports --temperature (host-side sampling)."
         )
     if use_sampling:
+        if seed < 0:
+            seed = random.randrange(2**32)
         logger.info(
             f"On-device sampling: temperature={temperature}, top_p={top_p}, "
             f"base seed={seed} (incremented per token)"
@@ -184,7 +184,6 @@ def run_inference(  # noqa: C901
 
         decode_inputs = [token_input, input_pos]
         if use_sampling:
-            # token k draws with base seed + k (k == len(generated_tokens)).
             decode_inputs += _sampling_scalars(
                 temperature, top_p, seed + len(generated_tokens)
             )
@@ -288,9 +287,10 @@ def main():
     parser.add_argument(
         "--seed",
         type=int,
-        default=0,
-        help="Base RNG seed for on-device sampling; incremented per token. Only "
-        "used by a model exported with --sample.",
+        default=-1,
+        help="Base RNG seed for on-device sampling; incremented per token. -1 "
+        "(default) draws a random seed each run; set a value for reproducible "
+        "output. Only used by a model exported with --sample.",
     )
 
     args = parser.parse_args()

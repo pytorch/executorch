@@ -270,6 +270,10 @@ class Qwen35MoESession : public LLMSession {
       }
       first_token_temp = initial_sampling->temperature;
       if (use_sampling_) {
+        if (!valid_top_p(initial_sampling->top_p)) {
+          ET_LOG(Error, "prefill_tokens: top_p must be in (0, 1]");
+          return Error::InvalidArgument;
+        }
         top_p_ = initial_sampling->top_p;
         seed_ = initial_sampling->seed; // base seed for the kept (token 0) draw
       }
@@ -387,6 +391,10 @@ class Qwen35MoESession : public LLMSession {
         "decode_one requires a pending token; call prefill_tokens() first");
     temperature_ = sampling.temperature;
     if (use_sampling_) {
+      if (!valid_top_p(sampling.top_p)) {
+        ET_LOG(Error, "decode_one: top_p must be in (0, 1]");
+        return Error::InvalidArgument;
+      }
       top_p_ = sampling.top_p;
     }
 
@@ -476,6 +484,10 @@ class Qwen35MoESession : public LLMSession {
  private:
   static bool valid_temperature(float temperature) {
     return temperature == -1.0f || (temperature >= 0.0f && temperature <= 1.0f);
+  }
+
+  static bool valid_top_p(float top_p) {
+    return top_p > 0.0f && top_p <= 1.0f;
   }
 
 #ifdef EXECUTORCH_BUILD_CUDA
