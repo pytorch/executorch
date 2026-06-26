@@ -13,6 +13,7 @@ from executorch.backends.samsung._passes.annotate_qparams import AnnotateQparams
 from executorch.backends.samsung._passes.annotate_scalar_parameters import (
     AnnotateScalarParametersPass,
 )
+from executorch.backends.samsung._passes.compose_rms_norm import RecomposeRmsNorm
 from executorch.backends.samsung._passes.conv1d_to_conv2d import Conv1dToConv2d
 from executorch.backends.samsung._passes.customized_constant_prop import (
     ConstantPropPass,
@@ -69,6 +70,7 @@ class EnnBackend(BackendDetails):
                 RemoveGetItemPass(),
                 InsertQDQPass(edge_program),
                 AnnotateScalarParametersPass(edge_program),
+                RecomposeRmsNorm(),
             ]
         )
         pass_result = enn_preprocess_passes(edge_program.graph_module)
