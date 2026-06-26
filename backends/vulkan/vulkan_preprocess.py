@@ -6,7 +6,6 @@
 
 # pyre-strict
 
-import copy
 from functools import partial
 from typing import Any, Callable, Dict, final, List
 
@@ -114,6 +113,12 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
         if spec.key == "force_fp16":
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
 
+        if spec.key == "small_texture_limits":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
+        if spec.key == "skip_memory_planning":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
         # Unhandled options are ignored
 
     return options
@@ -130,16 +135,15 @@ class VulkanBackend(BackendDetails):
     ) -> PreprocessResult:
         compile_options = parse_compile_spec(module_compile_spec)
 
-        default_texture_limits = copy.deepcopy(utils.DEFAULT_TEXTURE_LIMITS)
         # 2048 is the typical limit value for 3D textures, but mobile GPUs often support
         # 16384. Since the Vulkan delegate primarily targets mobile GPUs at the moment,
-        # 16394 is the default texture limit used. This option is provided as a
-        # convenient way to switch to using a limit of 2048 for image textures which
-        # will be compatible with most GPUs.
+        # 16384 is the default texture limit used. The small_texture_limits option is
+        # provided as a convenient way to switch to a limit of 2048 for image textures,
+        # which will be compatible with most desktop/laptop GPUs.
         if compile_options.get("small_texture_limits", False):
-            default_texture_limits[0] = 2048
-            default_texture_limits[1] = 2048
-            default_texture_limits[2] = 2048
+            default_texture_limits = utils.SMALL_TEXTURE_LIMITS
+        else:
+            default_texture_limits = utils.DEFAULT_TEXTURE_LIMITS
 
         limits_x = compile_options.get("texture_limits_x", default_texture_limits[0])
         limits_y = compile_options.get("texture_limits_y", default_texture_limits[1])

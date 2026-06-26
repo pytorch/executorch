@@ -10,20 +10,21 @@ from executorch.backends.arm.operators.simple_node_visitor import (
     SimpleNodeVisitor,
     SimpleNodeVisitorConfig,
 )
+from executorch.backends.arm.tosa import TosaSpecification
+
+FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
 
 
 @register_node_visitor
-class EqualVisitor(SimpleNodeVisitor):
-    target = "aten.eq.Tensor"
+class PowVisitor(SimpleNodeVisitor):
+    target = "tosa.POW.default"
+    tosa_specs = FP_SPECS
 
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.EQUAL,
-            attr_method="EqualAttribute",
+            tosa_op=ts.Op.POW,
+            attr_method="PowAttribute",
             num_inputs=2,
-            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
-            output_dtypes=[ts.DType.BOOL],
-            same_dtype_with_output=False,
-            dtype_check_inputs_only=True,
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
         )

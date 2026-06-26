@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 
 namespace executorch::backends::webgpu {
 
@@ -171,19 +172,23 @@ void sdpa_fd_decode_dispatch(
   // keep the check (lane-owns-D reach) so a future caller can't silently overrun.
   if (D > kSdpaFdMaxHeadDim) {
     throw std::runtime_error(
-        "WebGPU sdpa FlashDecoding: head dim must be <= 128");
+        "WebGPU sdpa FlashDecoding: head dim must be <= " +
+        std::to_string(kSdpaFdMaxHeadDim));
   }
   if (D % 4 != 0) {
     throw std::runtime_error(
         "WebGPU sdpa FlashDecoding: head dim must be a multiple of 4");
   }
+  // context_len 0 -> split_len 0 -> empty KV loop -> silent zero output; the
+  // Sdpa.cpp gate guarantees ctx >= 1, but fail loud if called directly.
+  if (context_len <= 0) {
+    throw std::runtime_error(
+        "WebGPU sdpa FlashDecoding: context_len must be positive");
+  }
 
   // Split factor: one split per kSdpaFdSplitTile KV rows, capped.
   uint32_t num_splits = static_cast<uint32_t>(
       (context_len + kSdpaFdSplitTile - 1) / kSdpaFdSplitTile);
-  if (num_splits < 1u) {
-    num_splits = 1u;
-  }
   if (num_splits > kSdpaFdMaxSplits) {
     num_splits = kSdpaFdMaxSplits;
   }
