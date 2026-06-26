@@ -43,6 +43,7 @@ set(WEBGPU_SRCS
     runtime/ops/rope/RotaryEmbedding.cpp
     runtime/ops/prepack/Prepack.cpp
     runtime/ops/view_copy/ViewCopy.cpp
+    runtime/ops/select/Select.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
