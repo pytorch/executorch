@@ -12,8 +12,12 @@
 
 #version 450 core
 
+$PROMOTED_DTYPE = get_higher_precision_dtype(DTYPE, SCALAR_VALUE_TYPE)
+
 ${define_required_extensions(STORAGE, DTYPE)}
+${define_required_extensions(STORAGE, PROMOTED_DTYPE)}
 ${define_explicit_type_extensions(SCALAR_VALUE_TYPE)}
+${define_explicit_type_extensions(PROMOTED_DTYPE)}
 $if IS_COMPARISON_OP:
   ${define_required_extensions(STORAGE, "uint8")}
 
@@ -23,6 +27,7 @@ $if IS_COMPARISON_OP:
 
 #define T ${buffer_scalar_type(DTYPE)}
 #define SCALAR_T ${buffer_scalar_type(SCALAR_VALUE_TYPE)}
+#define COMPUTE_T ${buffer_scalar_type(PROMOTED_DTYPE)}
 $if IS_COMPARISON_OP:
   #define OUT_T ${buffer_scalar_type("uint8")}
 $else:
@@ -61,5 +66,6 @@ void main() {
     return;
   }
 
-  t_out[out_bufi] = OUT_T(op(t_in[out_bufi], T(scalar_value)));
+  t_out[out_bufi] =
+      OUT_T(op(COMPUTE_T(t_in[out_bufi]), COMPUTE_T(scalar_value)));
 }

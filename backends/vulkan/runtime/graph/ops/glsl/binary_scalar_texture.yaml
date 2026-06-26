@@ -18,6 +18,7 @@ binary_scalar_texture:
        - parameter_values: [half, float]
        - parameter_values: [float, float]
        - parameter_values: [int32, int32]
+       - parameter_values: [int32, float]
   shader_variants:
     - NAME: pow_scalar_texture3d
     - NAME: eq_scalar_texture3d
