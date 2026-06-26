@@ -24,6 +24,7 @@ Backends:
 """
 
 import argparse
+import json
 import os
 
 import torch
@@ -135,6 +136,11 @@ def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
 # Export + lower
 
 
+def _mutable_buffer_metadata(model: nn.Module) -> str:
+    mutable = [name for name, _ in model.named_buffers() if ".kv_cache." in name]
+    return json.dumps({"version": 1, "mutable_buffers": mutable})
+
+
 def export_and_lower(
     model: Gemma4_31B,
     config: Gemma4_31BConfig,
@@ -181,13 +187,13 @@ def _export_cuda(
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
+    mutable_buffer_metadata = _mutable_buffer_metadata(model)
 
-    if use_turboquant:
-        from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
-            cuda_source_transformations,
-        )
+    from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
+        cuda_source_transformations,
+    )
 
-        cuda_source_transformations(model, use_turboquant=True)
+    cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     # Int4Tensor weights are used directly — no format conversion.
     # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).
@@ -255,6 +261,8 @@ def _export_cuda(
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
+            "get_min_prefill_chunk": 5,
+            "get_mutable_buffer_metadata": mutable_buffer_metadata,
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
