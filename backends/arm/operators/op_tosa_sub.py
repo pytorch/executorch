@@ -13,14 +13,14 @@ from executorch.backends.arm.operators.simple_node_visitor import (
 
 
 @register_node_visitor
-class AddVisitor(SimpleNodeVisitor):
-    target = "aten.add.Tensor"
+class SubVisitor(SimpleNodeVisitor):
+    target = "tosa.SUB.default"
 
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.ADD,
-            attr_method="AddAttribute",
+            tosa_op=ts.Op.SUB,
+            attr_method="SubAttribute",
             num_inputs=2,
             input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
         )

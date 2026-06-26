@@ -111,15 +111,27 @@ class SplitGroupConvolution(PassBase):
         # Compute the output shapes for the `convolution`, and assign the `val` meta.
         with FakeTensorMode() as mode:
             input_shapes = [
-                input_.meta["val"].shape if hasattr(input_, "meta") else input_.shape
+                (
+                    input_.meta["val"].shape
+                    if hasattr(input_, "meta")
+                    else input_.shape if input_ is not None else None
+                )
                 for input_ in args[:3]
             ]
             input_dtypes = [
-                input_.meta["val"].dtype if hasattr(input_, "meta") else input_.dtype
+                (
+                    input_.meta["val"].dtype
+                    if hasattr(input_, "meta")
+                    else input_.dtype if input_ is not None else None
+                )
                 for input_ in args[:3]
             ]
             fake_inputs = [
-                FakeTensor.from_tensor(torch.empty(shape, dtype=dtype), mode)
+                (
+                    FakeTensor.from_tensor(torch.empty(shape, dtype=dtype), mode)
+                    if shape is not None and dtype is not None
+                    else None
+                )
                 for shape, dtype in zip(input_shapes, input_dtypes)
             ]
             output = conv_target(*fake_inputs, *args[3:])
@@ -211,8 +223,11 @@ class SplitGroupConvolution(PassBase):
 
             w_data = self._get_tensor_constant_from_node(w)
             b_data = self._get_tensor_constant_from_node(b)
-            if w_data is None or b_data is None:
-                continue  # Only the standard case with static weights and bias is supported.
+
+            with_bias = b is not None
+            # Only the standard case with static weights and static bias (or bias=False) is supported.
+            if w_data is None or (b_data is None and with_bias):
+                continue
 
             # Create a `split` node to split the main input.
             # Split across dimension `1` (channels), `groups` slices of size `input_split_size`.
@@ -227,10 +242,9 @@ class SplitGroupConvolution(PassBase):
                 for i in range(groups)
             ]
 
-            # Split the weights and bias, across dimension `0`, slices of size `weight_split_size`.
+            # Split the weights across dimension `0`, slices of size `weight_split_size`.
             weight_split_size = w.meta["val"].shape[0] // groups
             split_weights_data = torch.split(w_data, weight_split_size, 0)
-            split_bias_data = torch.split(b_data, weight_split_size, 0)
 
             # Turn the weights and biases into parameter nodes containing the data.
             # Use a different name for every parameter. The function internally ensures the name's uniqueness, but
@@ -241,12 +255,17 @@ class SplitGroupConvolution(PassBase):
                 )
                 for i, weight_data in enumerate(split_weights_data)
             ]
-            split_bias_nodes = [
-                self._create_parameter_node_for_data(
-                    bias_data, b.name + f"_{i}_", split_node
-                )
-                for i, bias_data in enumerate(split_bias_data)
-            ]
+
+            if with_bias:
+                split_bias_data = torch.split(b_data, weight_split_size, 0)
+                split_bias_nodes = [
+                    self._create_parameter_node_for_data(
+                        bias_data, b.name + f"_{i}_", split_node
+                    )
+                    for i, bias_data in enumerate(split_bias_data)
+                ]
+            else:
+                split_bias_nodes = [None] * len(split_weight_nodes)
 
             # Create the `conv` nodes.
             with self.module.graph.inserting_after(
