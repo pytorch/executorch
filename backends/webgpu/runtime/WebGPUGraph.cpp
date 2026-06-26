@@ -679,6 +679,16 @@ void WebGPUGraph::execute() {
     // One pass per dispatch: enforces storage RAW ordering across deps.
     for (size_t i = 0; i < n; i++) {
       const auto& dispatch = dispatches_[i];
+      if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder,
+            dispatch.copy_src,
+            0,
+            dispatch.copy_dst,
+            0,
+            dispatch.copy_nbytes);
+        continue;
+      }
       WGPUComputePassDescriptor pass_desc = {};
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
       // tw must outlive BeginComputePass (the descriptor points at it).
@@ -757,6 +767,16 @@ void WebGPUGraph::execute() {
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     for (size_t i = start; i < end; i++) {
+      if (dispatches_[i].kind == WebGPUDispatch::Kind::Copy) {
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder,
+            dispatches_[i].copy_src,
+            0,
+            dispatches_[i].copy_dst,
+            0,
+            dispatches_[i].copy_nbytes);
+        continue;
+      }
       WGPUComputePassDescriptor pass_desc = {};
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
