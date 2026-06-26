@@ -129,16 +129,18 @@ class ModelBuilder:
         If it fails (e.g. due to an invalid graph), a warning is logged and the original operator order is preserved.
         """
 
+        operators = self.get_operators()
+
         # Map tensors to operators that produce them.
         tensor_to_producer_op = {}
-        for producer_op in self.get_operators():
+        for producer_op in operators:
             for output in producer_op.tmp_outputs:
                 tensor_to_producer_op[output] = producer_op
 
         # Map operators to operators that consume their outputs.
         op_to_child_op = defaultdict(list)
-        num_unresolved_input_dependencies = {op: 0 for op in self.get_operators()}
-        for child_op in self.get_operators():
+        num_unresolved_input_dependencies = {op: 0 for op in operators}
+        for child_op in operators:
             for input_ in child_op.tmp_inputs:
                 parent_op = tensor_to_producer_op.get(input_)
                 if parent_op is not None:
@@ -163,14 +165,14 @@ class ModelBuilder:
                     #  insert it into the graph.
                     queue.append(child_op)
 
-        if len(sorted_ops) != self.get_operators().len():
+        if len(sorted_ops) != operators.len():
             logging.warning(
                 "NXP backend: ModelBuilder.sort_operators_topologically() failed. Please report this."
             )
 
         else:
             # The topological sort was successful.
-            self.get_operators().vector = sorted_ops
+            operators.vector = sorted_ops
 
     def create_zeros_tensor(
         self, dims: List[int], name: str, dtype: np.dtype, can_reuse: bool = False
