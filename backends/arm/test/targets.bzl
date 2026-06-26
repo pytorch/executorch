@@ -96,7 +96,7 @@ def define_arm_tests():
             typing = False,
             skip_on_mode_mac = True,
             env = {} if runtime.is_oss else ({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.8.0:model-converter-bin)",
+                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",

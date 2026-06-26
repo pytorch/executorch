@@ -4,7 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
+
+from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
@@ -26,14 +27,6 @@ class MulTensorConverter(NodeConverter):
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if not NodeConverter.at_least_one_input_shape_matches_the_output_shape(node):
-            return False
-
-        # If one input is in channel first and ranks of input tensors are not equal, we need to add Transposes
-        # Transpose is currently not supported for new flow
-        if any(
-            input_node.meta[NXP_NODE_FORMAT].is_channels_first()
-            for input_node in node.all_input_nodes
-        ) and NodeConverter._node_inputs_ranks_not_equal(node):
             return False
 
         supported_types = [torch.int8, torch.uint8]
@@ -64,4 +57,7 @@ class MulTensorConverter(NodeConverter):
         t_op = self._create_tflite_op_with_io_tensors(node)
         t_op.builtin_options = mul_options.Mul()
 
-        self.builder.append_operators([t_op])
+        ops = OpsList(middle_op=t_op)
+        # Create additional ops in case of shape broadcasting
+        ops.add_pre(self.builder.ensure_correct_broadcasting(t_op, t_op.tmp_outputs[0]))
+        self.builder.append_operators(ops.flatten())

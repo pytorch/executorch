@@ -295,7 +295,7 @@ def test_bitwise_and_rejects_int64_without_extension() -> None:
         pytest.param(
             exir_ops.backend.tosa.ARITHMETIC_RIGHT_SHIFT.default,
             "TOSA-1.1+FP",
-            False,
+            True,
             id="arithmetic_right_shift_fp",
         ),
         pytest.param(
@@ -324,7 +324,7 @@ def test_bitwise_and_rejects_int64_without_extension() -> None:
         ),
     ],
 )
-def test_tosa_integer_shift_and_bitwise_ops_registered_for_int_profile_only(
+def test_tosa_integer_shift_and_bitwise_ops_profile_registration(
     op,
     spec: str,
     expected: bool,
