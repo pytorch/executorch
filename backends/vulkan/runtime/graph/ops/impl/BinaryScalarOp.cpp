@@ -24,11 +24,25 @@ namespace vkcompute {
 
 namespace {
 
-vkapi::ScalarType scalar_value_dtype(
+/*
+ * Currently, only a few shader variants are generated for "compatible" tensor
+ * dtype / scalar dtype pairs. In particular float/half tensor + float scalar,
+ * and int32 tensor + int32 scalar. This function coerces the scalar dtype so
+ * that a "higher precision" tensor dtype (i.e. float, half) can be used with a
+ * "lower precision" scalar dtype (i.e. int32) with the current generated shader
+ * variants. "Lower precision" tensor dtype (i.e. int32) + "higher precision"
+ * scalar dtype (i.e. float/half) are currently not supported because the shader
+ * currently casts the scalar to the tensor dtype before computation. Though
+ * these combinations are not expected to be needed, if they are required in the
+ * future, update the shaders with more robust dtype handling.
+ */
+vkapi::ScalarType resolve_scalar_extract_dtype(
     ComputeGraph& graph,
-    const ValueRef scalar) {
-  // Use a 32-bit integer push constant for bool scalars. Push constants in this
-  // file otherwise use 32-bit lanes, and T(scalar_value) preserves bool as 0/1.
+    const ValueRef scalar,
+    const vkapi::ScalarType tensor_dtype) {
+  if (tensor_dtype == vkapi::kFloat || tensor_dtype == vkapi::kHalf) {
+    return vkapi::kFloat;
+  }
   if (graph.val_is_bool(scalar) || graph.val_is_symint(scalar)) {
     return vkapi::kInt;
   }
@@ -73,7 +87,9 @@ void add_binary_scalar_op_node(
     const std::string& op_name) {
   ValueRef arg = prepack_standard_like(graph, in, out, true);
 
-  const vkapi::ScalarType scalar_dtype = scalar_value_dtype(graph, scalar);
+  const vkapi::ScalarType tensor_dtype = graph.dtype_of(in);
+  const vkapi::ScalarType scalar_dtype =
+      resolve_scalar_extract_dtype(graph, scalar, tensor_dtype);
   std::vector<PushConstantDataInfo> push_constants;
   if (scalar_dtype == vkapi::kInt) {
     const int32_t scalar_val = extract_int32_scalar(graph, scalar);
@@ -85,19 +101,10 @@ void add_binary_scalar_op_node(
     VK_THROW("Unsupported tensor-scalar op scalar dtype: ", scalar_dtype);
   }
 
-  // Pick shader -- note that currently, only a few shader variants are
-  // generated for "compatible" tensor dtype / scalar dtype pairs. In particular
-  // float/half tensor + float scalar, and int32 tensor + int32 scalar. This
-  // decision is to prevent combinations like int tensor + float scalar, which
-  // would currently produce wrong values with the way the shader is currently
-  // written. The current combinations should be sufficient for practical
-  // applications, but in the future if "mixed precision" combinations are
-  // needed, then the shaders would need to be updated with more robust dtype
-  // handling.
   std::string kernel_name = op_name + "_scalar";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_dtype_suffix(kernel_name, graph.dtype_of(in));
+  add_dtype_suffix(kernel_name, tensor_dtype);
   add_dtype_suffix(kernel_name, scalar_dtype);
 
   vkapi::ParamsBindList param_ubos = {graph.meta_ubo(out), graph.meta_ubo(in)};
