@@ -127,6 +127,14 @@ test_model() {
       return
   fi
 
+  if [[ "${MODEL_NAME}" == "yolo26" ]]; then
+      # Install yolo26 requirements (ultralytics). torch/torchvision are already
+      # installed and satisfy ultralytics, so only-if-needed leaves them as-is.
+      # No pytorch extra-index-url: it is unused here and would broaden pip's
+      # version resolution across all deps.
+      "${PYTHON_EXECUTABLE}" -m pip install --upgrade-strategy only-if-needed -r examples/models/yolo26/requirements.txt
+  fi
+
   # Export a basic .pte and run the model.
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
