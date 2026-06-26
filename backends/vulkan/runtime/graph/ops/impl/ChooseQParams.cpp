@@ -41,10 +41,12 @@ vkapi::ShaderInfo pick_choose_qparams_per_row_shader(
   (void)resize_args;
 
   const ValueRef input = args.at(1).refs.at(0);
+  const ValueRef input_zps = args.at(0).refs.at(1);
 
   std::string kernel_name = "choose_qparams_per_row";
   add_storage_type_suffix(kernel_name, graph->storage_type_of(input));
   add_dtype_suffix(kernel_name, graph->dtype_of(input));
+  add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zps));
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
@@ -78,13 +80,6 @@ utils::uvec3 pick_choose_qparams_per_row_local_wg_size(
   return {workers_per_output, outputs_per_wg, 1u};
 }
 
-// The per-token zero-point tensor is fp32-typed (matching torchao's serialized
-// asymmetric per-token zero_point_dtype=fp32), even though its values are
-// integer-valued in [-128, 127]. The shaders read it as a float texel and
-// convert to int for the integer dequant-correction. Declaring the shader
-// binding fp32 to match the tensor's allocation avoids the
-// float-image-read-through-an-integer-binding format mismatch that corrupted
-// negative zero-points on Mali.
 void add_choose_qparams_per_row_node(
     ComputeGraph& graph,
     const ValueRef& input,

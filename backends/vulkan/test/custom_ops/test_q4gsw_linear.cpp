@@ -97,7 +97,7 @@ TestCase create_test_case_from_config(
 
   ValueSpec input_zero_point(
       {1, config.M}, // Per-input channel tensor
-      vkapi::kFloat,
+      vkapi::kChar,
       storage_type,
       utils::kWidthPacked,
       DataGenType::RANDINT);
@@ -428,7 +428,7 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   auto& input_scale_data =
       input_scale_spec.get_float_data(); // Per-input channel tensor
   auto& input_zero_point_data =
-      input_zeros_spec.get_float_data(); // Per-input channel tensor
+      input_zeros_spec.get_int8_data(); // Per-input channel tensor
 
   auto& weight_data = weight_spec.get_uint8_data();
   auto& weight_sums_data = weight_sums_spec.get_int32_data();
@@ -462,8 +462,8 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
 
         // Use per-input channel scale and zero point - index by batch dimension
         float input_scale = input_scale_data[b]; // {1, M} -> index by batch
-        int8_t input_zero_point = static_cast<int8_t>(
-            input_zero_point_data[b]); // {1, M} -> index by batch
+        int8_t input_zero_point =
+            input_zero_point_data[b]; // {1, M} -> index by batch
 
         float quant_input_f =
             std::round(input_data[input_idx] / input_scale) + input_zero_point;

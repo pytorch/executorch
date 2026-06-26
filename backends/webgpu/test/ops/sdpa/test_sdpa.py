@@ -59,6 +59,8 @@ CONFIGS = [
     # Llama 3.2 1B shape: realistic prefill (S=128 at pos 0) + decode (S=1 at pos 127).
     SdpaConfig("llama1b_prefill", 32, 8, 64, 128, 512, 0),
     SdpaConfig("llama1b_decode", 32, 8, 64, 1, 512, 127),
+    # D=6 is not a multiple of 4: the WebGPU head_dim%4 guard must reject it at load.
+    SdpaConfig("reject_d6", 4, 4, 6, 4, 16, 0),
 ]
 
 

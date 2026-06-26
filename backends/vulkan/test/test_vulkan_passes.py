@@ -151,10 +151,14 @@ class TestVulkanPasses(unittest.TestCase):
             if get_target_canonical_name(n) == "embedding_q4gsw.default"
         )
         self.assertEqual(fused_node.args[2], group_size)
-        self.assertFalse(fused_node.args[4])
+        # The weight is always packed in the LINEAR-weight q4gsw layout so a tied
+        # embedding/LM-head weight is supported, so is_linear_weight is True.
+        self.assertTrue(fused_node.args[4])
 
-        # The weight placeholder should have been repacked from unpacked int8
-        # [vocab, embed_dim] to packed uint8 [vocab, embed_dim / 2].
+        # The weight placeholder is repacked from unpacked int8 [vocab, embed_dim]
+        # to linear-convention 4-bit packed uint8. embed_dim % 32 == 0 means
+        # embed_dim / 2 is a multiple of 16, so the linear packing's mult-of-8
+        # inner-dim padding is inert and the packed inner dim stays embed_dim / 2.
         weight_node = fused_node.args[0]
         self.assertEqual(weight_node.meta["val"].dtype, torch.uint8)
         self.assertEqual(
@@ -174,9 +178,64 @@ class TestVulkanPasses(unittest.TestCase):
             scales_tensor,
             group_size,
             sample_inputs[0],
-            False,
+            True,
         )
         self.assertTrue(torch.allclose(fused_out, eager_ref, atol=1e-3, rtol=1e-3))
+
+    def test_torchao_quantized_embedding_rejects_bad_embed_dim(self):
+        """A torchao 4-bit quantized embedding whose embed_dim is not a multiple
+        of 32 must NOT fuse: the runtime shader asserts embed_dim % 32 == 0
+        (VK_CHECK in EmbeddingQ4gsw.cpp), so the matcher's input-validation guard
+        rejects it and the op falls back to CPU rather than producing an op the
+        runtime would abort on. embed_dim=48 is divisible by group_size=16 (so the
+        group-size, zero_point, and qmin/qmax guards all pass) but 48 % 32 != 0.
+        """
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: registers et_vk ops
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        vocab_size = 64
+        embed_dim = 48  # not a multiple of 32
+        group_size = 16
+
+        class EmbModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.emb = torch.nn.Embedding(vocab_size, embed_dim)
+
+            def forward(self, x):
+                return self.emb(x)
+
+        model = EmbModule()
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4, granularity=PerGroup(group_size)
+            ),
+            filter_fn=lambda mod, fqn: isinstance(mod, torch.nn.Embedding),
+        )
+        unwrap_tensor_subclass(model)
+
+        sample_inputs = (torch.tensor([0, 1, 2, 3, 4], dtype=torch.int64),)
+
+        program = torch.export.export(model, sample_inputs, strict=True)
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        fuse_pass.call(ep.graph_module)
+
+        gm = ep.graph_module
+
+        # The guard rejected the match: no fused op, and the original
+        # aten.embedding lookup remains for the CPU fallback path.
+        self.assertEqual(op_node_count(gm, "embedding_q4gsw.default"), 0)
+        self.assertEqual(op_node_count(gm, "embedding.default"), 1)
 
     def test_fuse_torchao_quantized_embedding_shared_weight(self):
         """A single torchao-quantized embedding weight shared by multiple
@@ -250,8 +309,15 @@ class TestVulkanPasses(unittest.TestCase):
         # Both fused nodes must reference the same (single) repacked weight.
         self.assertEqual(fused_nodes[0].args[0], fused_nodes[1].args[0])
 
-        # The shared weight must be repacked exactly once: packed uint8
-        # [vocab, embed_dim / 2]. A double-pack would yield [vocab, embed_dim / 4].
+        # Both fused nodes use the linear-weight q4gsw layout (is_linear_weight).
+        self.assertTrue(fused_nodes[0].args[4])
+        self.assertTrue(fused_nodes[1].args[4])
+
+        # The shared weight must be repacked exactly once: linear-convention
+        # 4-bit packed uint8. Since embed_dim % 32 == 0, embed_dim / 2 is a
+        # multiple of 16 so the linear packing's inner-dim padding is inert and
+        # the packed inner dim is embed_dim / 2. A double-pack would yield
+        # [vocab, embed_dim / 4].
         weight_node = fused_nodes[0].args[0]
         packed_weight = get_param_tensor(ep, weight_node)
         self.assertEqual(packed_weight.dtype, torch.uint8)
@@ -260,10 +326,10 @@ class TestVulkanPasses(unittest.TestCase):
         # End-to-end numerical check against the eager reference.
         scales_tensor = get_param_tensor(ep, fused_nodes[0].args[1])
         emb_x = torch.ops.et_vk.embedding_q4gsw.default(
-            packed_weight, scales_tensor, group_size, sample_inputs[0], False
+            packed_weight, scales_tensor, group_size, sample_inputs[0], True
         )
         emb_y = torch.ops.et_vk.embedding_q4gsw.default(
-            packed_weight, scales_tensor, group_size, sample_inputs[1], False
+            packed_weight, scales_tensor, group_size, sample_inputs[1], True
         )
         self.assertTrue(torch.allclose(emb_x + emb_y, eager_ref, atol=1e-3, rtol=1e-3))
 

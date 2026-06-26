@@ -14,6 +14,9 @@ from executorch.backends.vulkan.patterns.pattern_registry import (
     register_pattern_detector,
     register_pattern_replacement,
 )
+from executorch.backends.vulkan.patterns.weight_packing_utils import (
+    pack_4bit_weight_tensor,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -73,47 +76,6 @@ class QuantizedEmbeddingMatch(PatternMatch):
         self.match_found = True
 
 
-def _detect_tied_linear_weight(
-    ep: ExportedProgram,
-    weight_node: torch.fx.Node,
-    weight_tensor: torch.Tensor,
-) -> bool:
-    """Check if this embedding weight is tied to a linear weight.
-
-    The embedding weight is packed uint8 [vocab_size, embed_dim/2]. The linear
-    output weight may be stored as unpacked int8 [vocab_size, embed_dim]. If we
-    find a placeholder whose int8 values match our unpacked embedding values,
-    the weights are tied and we should use the linear packing to enable dedup.
-    """
-    vocab_size = weight_tensor.shape[0]
-    embed_dim = weight_tensor.shape[1] * 2
-
-    # Unpack embedding weight using embedding convention (high nibble first)
-    emb_high = (weight_tensor >> 4).to(torch.int8) - 8
-    emb_low = (weight_tensor & 0xF).to(torch.int8) - 8
-    emb_unpacked = torch.stack([emb_high, emb_low], dim=-1).reshape(
-        vocab_size, embed_dim
-    )
-
-    for node in ep.graph_module.graph.nodes:
-        if node.op != "placeholder" or node == weight_node:
-            continue
-
-        try:
-            candidate = get_param_tensor(ep, node)
-        except RuntimeError:
-            continue
-        if candidate is None:
-            continue
-        if candidate.shape != (vocab_size, embed_dim) or candidate.dtype != torch.int8:
-            continue
-
-        if torch.equal(emb_unpacked, candidate):
-            return True
-
-    return False
-
-
 @register_pattern_detector("quantized_embedding")
 def find_quantized_embedding_patterns(
     node: torch.fx.Node,
@@ -139,23 +101,25 @@ def replace_quantized_embedding_patterns(
     scales_tensor = get_param_tensor(ep, match.scales_node)
     assert scales_tensor is not None
 
-    is_linear_weight = _detect_tied_linear_weight(ep, match.weight_node, weight_tensor)
-
-    if is_linear_weight:
+    # The quantized_decomposed.embedding_4bit op (which is being replaced)
+    # already stores weights as packed uint8 [vocab, embed_dim / 2] (low nibble = odd,
+    # high nibble = even). However, in the Vulkan runtime 4-bit linear layers
+    # expect the reverse nibble packing (low nibble = even, high nibble = odd).
+    # In LLMs, where quantized embeddings are most frequently used, the embedding
+    # layer will share weights with the final LM head linear layer. For simplicity,
+    # always repack the weight tensor in the format expected by 4 bit linear layers;
+    # the runtime shader supports both the original and repacked packing formats
+    # for weights.
+    if utils.register_param_mutation(ep, match.weight_node, "4 bit linear weight"):
         # Repack using linear convention (low nibble = even, high nibble = odd)
         vocab_size = weight_tensor.shape[0]
         high = (weight_tensor >> 4).to(torch.int8) - 8
         low = (weight_tensor & 0xF).to(torch.int8) - 8
         unpacked = torch.stack([high, low], dim=-1).reshape(vocab_size, -1)
-        repacked = unpacked.to(torch.uint8) + 8
-        weight_tensor = repacked[:, 1::2] << 4 | repacked[:, ::2]
-        # Update the state dict with repacked tensor
-        original_weight = get_param_tensor(ep, match.weight_node)
-        if original_weight is not None:
-            for key, value in ep.state_dict.items():
-                if value.data_ptr() == original_weight.data_ptr():
-                    ep.state_dict[key] = weight_tensor
-                    break
+        weight_tensor = pack_4bit_weight_tensor(unpacked)
+        utils.align_width_and_update_state_dict(
+            ep, match.weight_node, weight_tensor, align_to=1, force_update=True
+        )
 
     # Compute group_size from weight and scales shapes
     embed_dim = weight_tensor.shape[1] * 2  # packed, 2 values per byte
@@ -171,7 +135,7 @@ def replace_quantized_embedding_patterns(
                 match.scales_node,
                 group_size,
                 match.indices_node,
-                is_linear_weight,
+                True,  # is_linear_weight
             ),
         )
 
@@ -190,7 +154,7 @@ class TorchAOQuantizedEmbeddingMatch(PatternMatch):
     which the runtime shader assumes via a fixed subtract-8 offset.
     """
 
-    def __init__(self, node: torch.fx.Node) -> None:
+    def __init__(self, node: torch.fx.Node) -> None:  # noqa: C901
         self.anchor_node = node
         self.match_found = False
         self.all_nodes = [node]
@@ -210,12 +174,20 @@ class TorchAOQuantizedEmbeddingMatch(PatternMatch):
         # (input, block_size, scale, zero_point, input_dtype, quant_min,
         #  quant_max, ...)
         block_size = dequant_node.args[1]
+        input_dtype = dequant_node.args[4] if len(dequant_node.args) > 4 else None
         quant_min = dequant_node.args[5] if len(dequant_node.args) > 5 else None
         quant_max = dequant_node.args[6] if len(dequant_node.args) > 6 else None
 
         # The shader hardcodes the 4-bit signed offset (subtract 8), which
         # corresponds to quant_min=-8, quant_max=7, zero_point=0.
         if quant_min != -8 or quant_max != 7:
+            return
+
+        # Key off the dequant node's declared input_dtype, not the weight
+        # placeholder's live meta: a sibling match sharing the same (tied) weight
+        # may have repacked that placeholder in place (flipping it to packed
+        # uint8 [vocab, embed_dim / 2]), which would spuriously reject us here.
+        if input_dtype != torch.int8:
             return
 
         # block_size must be per-row groupwise: [1, group_size]
@@ -225,11 +197,11 @@ class TorchAOQuantizedEmbeddingMatch(PatternMatch):
             return
         self.group_size = int(block_size[1])
 
-        # Trace weight (args[0]), scales (args[2]) and zero_point (args[3]) to
-        # their placeholders. The symmetric (zero_point == 0) requirement is
-        # verified on the real tensor in the replacement function, where the
-        # ExportedProgram is available; checking the fake meta tensor here would
-        # trigger a data-dependent guard error.
+        # Trace weight (args[0]) and scales (args[2]) to their placeholders. A
+        # placeholder-backed zero_point's symmetric (zero_point == 0)
+        # requirement is verified on the real tensor in the replacement
+        # function, where the ExportedProgram is available; checking the fake
+        # meta tensor here would trigger a data-dependent guard error.
         weight_node, arg_chain = utils.trace_args_until_placeholder(
             dequant_node.args[0]
         )
@@ -237,6 +209,21 @@ class TorchAOQuantizedEmbeddingMatch(PatternMatch):
             return
         self.weight_node = weight_node
         self.all_nodes.extend(arg_chain)
+
+        # Read embed_dim from the dequant node's float output meta, not the
+        # weight placeholder's meta: a tied weight may have been repacked in
+        # place by a sibling match (halving its inner dim), but this output meta
+        # is stable. Runtime shader requires embed_dim % 32 == 0 and the groups
+        # to tile the row exactly; reject otherwise rather than emit an op the
+        # runtime would abort on.
+        dequant_val = dequant_node.meta.get("val", None)
+        if not isinstance(dequant_val, torch.Tensor) or dequant_val.ndim != 2:
+            return
+        embed_dim = int(dequant_val.shape[-1])
+        if self.group_size <= 0 or embed_dim % self.group_size != 0:
+            return
+        if embed_dim % 32 != 0:
+            return
 
         scales_node, arg_chain = utils.trace_args_until_placeholder(
             dequant_node.args[2]
@@ -246,10 +233,28 @@ class TorchAOQuantizedEmbeddingMatch(PatternMatch):
         self.scales_node = scales_node
         self.all_nodes.extend(arg_chain)
 
-        self.zero_point_node, arg_chain = utils.trace_args_until_placeholder(
-            dequant_node.args[3]
-        )
-        self.all_nodes.extend(arg_chain)
+        # zero_point (args[3]) must be provably zero, since the shader hardcodes
+        # a subtract-8 offset that assumes symmetric quantization. Reject the
+        # match otherwise so the op falls back cleanly rather than miscomputing.
+        zero_point = dequant_node.args[3]
+        self.zero_point_node = None
+        if zero_point is None:
+            # Symmetric quant; zero_point == 0 is implied.
+            pass
+        elif isinstance(zero_point, torch.fx.Node):
+            zero_point_node, arg_chain = utils.trace_args_until_placeholder(zero_point)
+            if zero_point_node is None:
+                # Untraceable to a placeholder; cannot verify it is zero.
+                return
+            self.zero_point_node = zero_point_node
+            self.all_nodes.extend(arg_chain)
+        else:
+            # Inline scalar / list / tuple; verify the literal value(s) are zero.
+            values = (
+                zero_point if isinstance(zero_point, (list, tuple)) else [zero_point]
+            )
+            if any(v != 0 for v in values):
+                return
 
         self.match_found = True
 
@@ -273,53 +278,36 @@ def replace_torchao_quantized_embedding_patterns(
     graph_module: torch.fx.GraphModule,
     match: TorchAOQuantizedEmbeddingMatch,
 ):
-    # The weight repack mutates the state dict entry in place, so it must run
-    # exactly once per backing storage; a second repack of the already-packed
-    # weight would corrupt it. The repack
-    # (align_width_and_update_state_dict -> update_program_state_dict) locates
-    # the entry to overwrite by the param/buffer FQN that backs the placeholder,
-    # so the idempotency guard keys on that same FQN (via
-    # utils.register_param_mutation). This dedups not only one placeholder
-    # shared by multiple call sites, but also distinct placeholder nodes that
-    # resolve to the same state dict storage (whose per-node meta would otherwise
-    # diverge). Distinct weights (distinct FQNs) still each pack once. The guard
-    # also raises if the same weight is later re-mutated with a different tag
-    # (i.e. an incompatible packing format), surfacing corruption loudly.
-    if utils.register_param_mutation(ep, match.weight_node, "embedding_q4gsw"):
+    # Always repack with the packing expected by 4 bit linear layers for
+    # simplicity. See replace_quantized_embedding_patterns() for more details
+    if utils.register_param_mutation(ep, match.weight_node, "4 bit linear weight"):
         weight_tensor = get_param_tensor(ep, match.weight_node)
         assert weight_tensor is not None
 
         # The shader applies a fixed signed-4-bit offset (subtract 8), which
-        # assumes symmetric quantization (zero_point == 0). Verify on the real
-        # tensor.
+        # assumes symmetric quantization (zero_point == 0). The None / inline
+        # literal cases were already proven zero in the matcher; a placeholder
+        # was committed to during matching, so its backing tensor must be
+        # fetchable and verifiable here.
         if match.zero_point_node is not None:
             zero_point_tensor = get_param_tensor(ep, match.zero_point_node)
-            if zero_point_tensor is not None:
-                assert torch.all(
-                    zero_point_tensor == 0
-                ), "embedding_q4gsw requires symmetric quantization (zero_point == 0)"
+            if zero_point_tensor is None:
+                raise RuntimeError(
+                    "embedding_q4gsw: zero_point traced to placeholder "
+                    f"{match.zero_point_node.name!r} but its backing tensor "
+                    "could not be fetched to verify symmetric quantization "
+                    "(zero_point == 0)."
+                )
+            assert torch.all(
+                zero_point_tensor == 0
+            ), "embedding_q4gsw requires symmetric quantization (zero_point == 0)"
 
-        # Repack the unpacked int8 weight [vocab, embed_dim] (values in [-8, 7])
-        # into the flat 4-bit packed format [vocab, embed_dim / 2] that the
-        # non-linear embedding_q4gsw path expects. Packing convention (must
-        # match the runtime shader and embedding_q4gsw_impl):
-        #   packed_byte = (even_val + 8) << 4 | (odd_val + 8)
-        # i.e. the even-index value goes in the high nibble, odd-index in the
-        # low.
-        unpacked_u8 = weight_tensor.to(torch.uint8) + 8
-        packed_weight = (unpacked_u8[:, ::2] << 4 | unpacked_u8[:, 1::2]).to(
-            torch.uint8
-        )
+        packed_weight = pack_4bit_weight_tensor(weight_tensor)
 
-        # Update the weight placeholder's state dict entry and fake-tensor meta
-        # to the repacked tensor. align_to=1 with force_update just forces the
-        # update; the packed width (embed_dim / 2) is already a multiple of 4.
         utils.align_width_and_update_state_dict(
             ep, match.weight_node, packed_weight, align_to=1, force_update=True
         )
 
-    # Scales are symmetric per-group with layout [vocab, num_groups], matching
-    # the scale layout embedding_q4gsw expects (no transpose).
     group_size = match.group_size
 
     with graph_module.graph.inserting_before(match.anchor_node):
@@ -331,7 +319,7 @@ def replace_torchao_quantized_embedding_patterns(
                 match.scales_node,
                 group_size,
                 match.indices_node,
-                False,
+                True,  # is_linear_weight
             ),
         )
 
