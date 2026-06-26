@@ -91,7 +91,21 @@ def _dim_expr(dim: _Dim) -> sympy.Basic:
     return sympy.Integer(dim) if isinstance(dim, int) else dim.node.expr
 
 
+def _simplify_dim(dim: _Dim) -> _Dim:
+    if isinstance(dim, int):
+        return dim
+
+    maybe_int = dim.node.maybe_as_int()
+    return maybe_int if maybe_int is not None else dim
+
+
+def _simplify_shape(shape: Iterable[_Dim]) -> list[_Dim]:
+    return [_simplify_dim(dim) for dim in shape]
+
+
 def _dim_equals(lhs: _Dim, rhs: _Dim) -> bool:
+    lhs = _simplify_dim(lhs)
+    rhs = _simplify_dim(rhs)
     if isinstance(lhs, int) and isinstance(rhs, int):
         return lhs == rhs
     return sympy.simplify(_dim_expr(lhs) - _dim_expr(rhs)) == 0
@@ -113,6 +127,7 @@ def _factor_int(dim: int) -> list[_FactorKey] | None:
 
 
 def _factor_dim(dim: _Dim) -> list[_FactorKey] | None:
+    dim = _simplify_dim(dim)
     if _dim_equals(dim, 1):
         return []
     if isinstance(dim, int):
@@ -143,12 +158,37 @@ def _dedupe(items: Iterable[int]) -> list[int]:
 def numel(shape: Iterable[_Dim]) -> _Dim:
     numel: _Dim = 1
     for dim in shape:
-        numel *= dim
+        numel = _simplify_dim(numel * _simplify_dim(dim))
     return numel
 
 
 def same_numel(first_shape: Iterable[_Dim], second_shape: Iterable[_Dim]) -> bool:
     return _dim_equals(numel(first_shape), numel(second_shape))
+
+
+def normalize_view_shape(
+    source_shape: Sequence[_Dim], target_shape: Sequence[_Dim]
+) -> list[_Dim]:
+    """Normalize a view shape with <=1 unknown dim, indicated by -1."""
+    source_shape = _simplify_shape(source_shape)
+    normalized_shape = _simplify_shape(target_shape)
+    inferred_dims = [
+        index for index, dim in enumerate(normalized_shape) if _dim_equals(dim, -1)
+    ]
+    if not inferred_dims:
+        return normalized_shape
+
+    assert len(inferred_dims) == 1, f"Invalid view shape {target_shape}"
+    inferred_dim = inferred_dims[0]
+    known_shape = [
+        dim for index, dim in enumerate(normalized_shape) if index != inferred_dim
+    ]
+    source_numel = numel(source_shape)
+    known_numel = numel(known_shape)
+    normalized_shape[inferred_dim] = _simplify_dim(
+        source_numel if _dim_equals(known_numel, 1) else source_numel // known_numel
+    )
+    return normalized_shape
 
 
 class _UnionFind:
@@ -210,8 +250,10 @@ class ViewMap:
         input_val = input_node.meta["val"]
         assert isinstance(input_val, torch.Tensor)
 
-        self.source_shape = cast(list[_Dim], list(input_val.shape))
-        self.target_shape = list(cast(Sequence[_Dim], view_node.args[1]))
+        self.source_shape = _simplify_shape(cast(Sequence[_Dim], input_val.shape))
+        self.target_shape = normalize_view_shape(
+            self.source_shape, cast(Sequence[_Dim], view_node.args[1])
+        )
         self._groups = self._build_groups(self.source_shape, self.target_shape)
 
     @classmethod
@@ -220,8 +262,10 @@ class ViewMap:
     ) -> ViewMap:
         """Build a view map directly from source and target shapes."""
         view_map = cls.__new__(cls)
-        view_map.source_shape = list(source_shape)
-        view_map.target_shape = list(target_shape)
+        view_map.source_shape = _simplify_shape(source_shape)
+        view_map.target_shape = normalize_view_shape(
+            view_map.source_shape, target_shape
+        )
         view_map._groups = cls._build_groups(
             view_map.source_shape, view_map.target_shape
         )

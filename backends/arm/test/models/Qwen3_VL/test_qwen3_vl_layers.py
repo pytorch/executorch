@@ -9,10 +9,12 @@ from dataclasses import dataclass, field
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.ao_ext import MXFPOpConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.Qwen3_VL.qwen3_vl_test_config import (
     get_qwen3_vl_2b_instruct_checkpoint_config,
 )
+from executorch.backends.arm.test.ops.mxfp.common import MXFPTosaPipelineFP
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     VgfPipeline,
@@ -34,6 +36,7 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
 )
 
 input_t = Tuple[torch.Tensor | int, ...]
+aten_op_mxfp_linear = "torch.ops.tosa_mxfp.linear.default"
 
 
 def _make_qwen3_vl_2b_instruct_layer_config():
@@ -110,6 +113,10 @@ def _to_bfloat16(
         )
         for x in inputs
     )
+
+
+def _is_linear(module: torch.nn.Module, _fqn: str) -> bool:
+    return isinstance(module, torch.nn.Linear)
 
 
 class Qwen3VLVisionMLPModel(Qwen3VLTestModule):
@@ -468,6 +475,19 @@ TOSA_BF16_TEST_CASES: dict[str, Qwen3VLTestCase] = {
 }
 
 
+TOSA_MXFP8_TEST_CASES: dict[str, Qwen3VLTestCase] = {
+    "text_attention": Qwen3VLTestCase(
+        model_cls=TextAttentionModel,
+    ),
+    "text_mlp": Qwen3VLTestCase(
+        model_cls=TextMLPModel,
+    ),
+    "text_decoder_layer": Qwen3VLTestCase(
+        model_cls=TextDecoderLayerModel,
+    ),
+}
+
+
 @common.parametrize(
     "test_case",
     TOSA_FP_TEST_CASES,
@@ -512,6 +532,55 @@ def test_qwen3_vl_tosa_FP_bf16(test_case: Qwen3VLTestCase):
             tosa_extensions=["bf16"],
             atol=1e-2,
             rtol=1e-2,
+        )
+        pipeline.run()
+
+
+@common.parametrize(
+    "test_case",
+    TOSA_MXFP8_TEST_CASES,
+)
+def test_qwen3_vl_tosa_mxfp8_fp32(test_case: Qwen3VLTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+
+    with torch.no_grad():
+        pipeline = MXFPTosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=aten_op_mxfp_linear,
+            exir_op=[],
+            filter_fn=_is_linear,
+            frobenius_threshold=0.05,
+            cosine_threshold=0.995,
+            mxfp_config=mxfp_config,
+            tosa_version="1.1",
+            tosa_extensions=["mxfp"],
+        )
+        pipeline.run()
+
+
+@common.parametrize(
+    "test_case",
+    TOSA_MXFP8_TEST_CASES,
+)
+def test_qwen3_vl_tosa_mxfp8_bf16(test_case: Qwen3VLTestCase):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+    model, inputs = _to_bfloat16(model, inputs)
+    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+
+    with torch.no_grad():
+        pipeline = MXFPTosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=aten_op_mxfp_linear,
+            exir_op=[],
+            filter_fn=_is_linear,
+            frobenius_threshold=0.05,
+            cosine_threshold=0.995,
+            mxfp_config=mxfp_config,
+            tosa_version="1.1",
+            tosa_extensions=["bf16", "mxfp"],
         )
         pipeline.run()
 
