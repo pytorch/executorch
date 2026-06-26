@@ -189,11 +189,13 @@ class NodeConverter(ABC):
         """
 
         return (
-            cls._is_supported_in_IR(node, parameters_mapping, custom_delegation_options)
+            cls._node_format_is_supported(node)
+            and cls._is_supported_in_IR(
+                node, parameters_mapping, custom_delegation_options
+            )
             and cls._is_supported_on_target(
                 node, neutron_target_spec, parameters_mapping, custom_delegation_options
             )
-            and cls._node_format_is_supported(node)
         )
 
     @classmethod
@@ -282,22 +284,16 @@ class NodeConverter(ABC):
         """Assert that the call `is_supported()` returns `True`. Otherwise, raise an exception and print an
         error message.
         """
-        supported_in_ir = self._is_supported_in_IR(
-            node,
-            self.context.parameters_mapping,
-            self.context.custom_delegation_options,
-        )
 
-        supported_on_target = self._is_supported_on_target(
+        is_supported = self.is_supported(
             node,
             self.neutron_target_spec,
             self.context.parameters_mapping,
             self.context.custom_delegation_options,
         )
-
-        assert supported_in_ir and supported_on_target, (
-            f"Node `{node}` was selected for delegation to Neutron, but it is not convertible to the intermediate "
-            "representation. There is an error in the Neutron partitioner. Please report this."
+        assert is_supported, (
+            f"NXP backend: Node `{node}` was selected for delegation to Neutron, but it is not convertible to the "
+            "intermediate representation. There is an error in the Neutron partitioner. Please report this."
         )
 
     @property

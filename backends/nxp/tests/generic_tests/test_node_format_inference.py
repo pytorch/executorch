@@ -99,11 +99,15 @@ def test_unhandled_channels_first_node(caplog):
     old_channels_first_ops = NodeFormatInference.ops_with_channels_first_nodes
     NodeFormatInference.ops_with_channels_first_nodes = {}
 
-    with caplog.at_level(
-        logging.WARNING,
-        logger="executorch.backends.nxp.backend.ir.converter.node_converter",
-    ):
-        ep = to_quantized_edge_program(model, input_shape).exported_program()
+    try:
+        with caplog.at_level(
+            logging.WARNING,
+            logger="executorch.backends.nxp.backend.ir.converter.node_converter",
+        ):
+            ep = to_quantized_edge_program(model, input_shape).exported_program()
+    finally:
+        # Restore the original channels first ops configuration.
+        NodeFormatInference.ops_with_channels_first_nodes = old_channels_first_ops
 
     # Make sure the `MaxPool` wasn't delegated.
     assert graph_contains_any_of_ops(ep.graph, [MaxPool2DWithIndices])
@@ -115,6 +119,3 @@ def test_unhandled_channels_first_node(caplog):
         "inferred format does not satisfy this requirement" in message
         for message in caplog.messages
     )
-
-    # Restore the original channels first ops configuration.
-    NodeFormatInference.ops_with_channels_first_nodes = old_channels_first_ops
