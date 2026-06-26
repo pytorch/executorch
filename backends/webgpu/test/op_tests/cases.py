@@ -36,6 +36,10 @@ from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _ramp,
     RmsNormModule,
 )
+from executorch.backends.webgpu.test.ops.test_mul import (
+    CONFIGS as _MUL_CONFIGS,
+    MulModule,
+)
 
 # rms_norm coverage is exactly the 15 cases the native test covered.
 RMS_NORM_CASES = _CASES
@@ -106,3 +110,14 @@ def _rms_norm_suite() -> WebGPUTestSuite:
             )
         )
     return WebGPUTestSuite(module_factory=_rms_norm_factory, cases=cases)
+
+
+@register_op_test("mul")
+def _mul_suite() -> WebGPUTestSuite:
+    # Full numeric coverage incl. broadcast (binary_mul.wgsl over a TensorMeta UBO); fp64 golden.
+    return WebGPUTestSuite(
+        module_factory=lambda: MulModule(),
+        cases=[
+            Case(name=name, inputs=(sa, sb)) for name, (sa, sb) in _MUL_CONFIGS.items()
+        ],
+    )
