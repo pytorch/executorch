@@ -36,6 +36,33 @@ from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
     _ramp,
     RmsNormModule,
 )
+from executorch.backends.webgpu.test.ops.test_mul import (
+    CONFIGS as _MUL_CONFIGS,
+    MulModule,
+)
+from executorch.backends.webgpu.test.ops.test_select import (
+    CONFIGS as _SELECT_CONFIGS,
+    SelectModule,
+)
+from executorch.backends.webgpu.test.ops.test_sigmoid import (
+    _det_input as _sigmoid_det_input,
+    N as _SIGMOID_N,
+    SigmoidModule,
+)
+
+from executorch.backends.webgpu.test.ops.test_squeeze import (
+    CONFIGS as _SQUEEZE_CONFIGS,
+    SqueezeModule,
+)
+
+from executorch.backends.webgpu.test.ops.test_unsqueeze import (
+    CONFIGS as _UNSQUEEZE_CONFIGS,
+    UnsqueezeModule,
+)
+from executorch.backends.webgpu.test.ops.test_view_copy import (
+    CONFIGS as _VIEW_CONFIGS,
+    ViewModule,
+)
 
 # rms_norm coverage is exactly the 15 cases the native test covered.
 RMS_NORM_CASES = _CASES
@@ -106,3 +133,90 @@ def _rms_norm_suite() -> WebGPUTestSuite:
             )
         )
     return WebGPUTestSuite(module_factory=_rms_norm_factory, cases=cases)
+
+
+@register_op_test("mul")
+def _mul_suite() -> WebGPUTestSuite:
+    # Full numeric coverage incl. broadcast (binary_mul.wgsl over a TensorMeta UBO); fp64 golden.
+    return WebGPUTestSuite(
+        module_factory=lambda: MulModule(),
+        cases=[
+            Case(name=name, inputs=(sa, sb)) for name, (sa, sb) in _MUL_CONFIGS.items()
+        ],
+    )
+
+
+def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
+    """Builder for ops whose per-case spec is a (shape, fn) pair (view/select/slice).
+    The fn is a `construct` kwarg baked into the .pte module, never a serialized input.
+    """
+    return WebGPUTestSuite(
+        module_factory=lambda fn: module_cls(fn),
+        cases=[
+            Case(name=n, construct={"fn": fn}, inputs=(shape,))
+            for n, (shape, fn) in configs.items()
+        ],
+        golden_dtype="float32",  # gather/copy: fp64 bit-identical, skip dual-oracle
+    )
+
+
+@register_op_test("view_copy")
+def _view_copy_suite() -> WebGPUTestSuite:
+    return _fn_config_suite(ViewModule, _VIEW_CONFIGS)
+
+
+@register_op_test("select")
+def _select_suite() -> WebGPUTestSuite:
+    return _fn_config_suite(SelectModule, _SELECT_CONFIGS)
+
+
+def _sigmoid_full_range(_shape) -> torch.Tensor:
+    # Reuses the monolith's saturation-tail input (linspace(-12, 12)).
+    return _sigmoid_det_input()
+
+
+@register_op_test("sigmoid")
+def _sigmoid_suite() -> WebGPUTestSuite:
+    # sigmoid has no CONFIGS table; cover unary shapes directly (tol 1e-4).
+    return WebGPUTestSuite(
+        module_factory=lambda: SigmoidModule(),
+        cases=[
+            Case(name="vec", inputs=((M1,),)),
+            Case(name="mat", inputs=((M1, M2),)),
+            Case(name="rank3", inputs=((S1, M1, M2),)),
+            Case(name="rank4", inputs=((S1, S2, S2, M2),)),
+            # Saturation tails sigmoid(+-12) (~6e-6 / 0.999994) that randn shapes miss.
+            Case(
+                name="saturation",
+                inputs=(InputSpec(shape=(_SIGMOID_N,), gen=_sigmoid_full_range),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-4,
+    )
+
+
+@register_op_test("squeeze")
+def _squeeze_suite() -> WebGPUTestSuite:
+    # CONFIGS: name -> (shape, dim) where dim is an int or a tuple.
+    return WebGPUTestSuite(
+        module_factory=lambda dim: SqueezeModule(dim),
+        cases=[
+            Case(name=n, construct={"dim": dim}, inputs=(shape,))
+            for n, (shape, dim) in _SQUEEZE_CONFIGS.items()
+        ],
+        golden_dtype="float32",  # reshape copies values; fp64 bit-identical
+    )
+
+
+@register_op_test("unsqueeze")
+def _unsqueeze_suite() -> WebGPUTestSuite:
+    # CONFIGS: name -> (shape, dim).
+    return WebGPUTestSuite(
+        module_factory=lambda dim: UnsqueezeModule(dim),
+        cases=[
+            Case(name=n, construct={"dim": dim}, inputs=(shape,))
+            for n, (shape, dim) in _UNSQUEEZE_CONFIGS.items()
+        ],
+        golden_dtype="float32",  # reshape copies values; fp64 bit-identical
+    )

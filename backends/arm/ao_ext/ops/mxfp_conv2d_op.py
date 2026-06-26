@@ -10,8 +10,11 @@ op during export.
 
 """
 
+from typing import cast
+
 import torch
 import torch.nn.functional as F
+
 from executorch.backends.arm.ao_ext.mxfp import (
     _cast_to_block_scaled_cpu_ref,
     mxfp_dtype_to_str,
@@ -256,6 +259,24 @@ class MXFPConv2dOp(torch.nn.Module):
         if self.output_dtype != torch.float32:
             output = output.to(self.output_dtype)
         return output
+
+    def extra_repr(self) -> str:
+        weight_qdata = cast(torch.Tensor, self.weight_qdata)
+        weight_shape = weight_qdata.shape
+        in_channels = _get_num_input_channels(weight_qdata, self.weight_dtype)
+        repr_parts = [
+            f"in_channels={in_channels}",
+            f"out_channels={weight_shape[0]}",
+            f"kernel_size={(weight_shape[1], weight_shape[2])}",
+            f"stride={self.stride}",
+            f"padding={self.padding}",
+            f"dilation={self.dilation}",
+            f"groups={self.groups}",
+            f"bias={self.bias is not None}",
+            f"weight_dtype={self.weight_dtype}",
+            f"block_size={self.block_size}",
+        ]
+        return ", ".join(repr_parts)
 
 
 def transform_conv2d_to_mxfp(
