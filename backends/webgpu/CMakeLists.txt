@@ -50,6 +50,7 @@ set(WEBGPU_SRCS
     runtime/ops/slice/Slice.cpp
     runtime/ops/permute/Permute.cpp
     runtime/ops/cat/Cat.cpp
+    runtime/ops/index/Index.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
