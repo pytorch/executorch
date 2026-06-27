@@ -45,6 +45,8 @@ DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 DISPATCH_ORDER_OK=1
 UPDATE_CACHE_DIR="/tmp/update_cache"
 UPDATE_CACHE_OK=1
+INDEX_DIR="/tmp/index"
+INDEX_OK=1
 EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
 EMBEDDING_INDICES="/tmp/webgpu_embedding_q4gsw_indices.bin"
 EMBEDDING_GOLDEN="/tmp/webgpu_embedding_q4gsw_golden.bin"
@@ -104,6 +106,11 @@ export_update_cache_replay('${UPDATE_CACHE_DIR}')
 export_update_cache_negative('${UPDATE_CACHE_DIR}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
 
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.index.test_index import export_all_index_models
+export_all_index_models('${INDEX_DIR}')
+" || { echo "WARN: index export failed; skipping index native test"; INDEX_OK=0; }
+
 # Non-fatal: a failed sdpa export makes the required 4k/8k configs hard-fail in
 # webgpu_native_test below (precise per-config error), so don't exit/mask here.
 $PYTHON_EXECUTABLE -c "
@@ -136,7 +143,7 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 # ── Build + run every native test target that exists in this tree ────────────
-TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test)
+TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_index_test)
 BIN_DIR="${BUILD_DIR}/backends/webgpu"
 
 # Which targets are defined depends on which diffs are landed (native_test +
@@ -200,6 +207,9 @@ if [[ "${UPDATE_CACHE_OK}" == "1" && -x "${BIN_DIR}/webgpu_update_cache_test" ]]
 fi
 if [[ "${DISPATCH_ORDER_OK}" == "1" && -x "${BIN_DIR}/webgpu_dispatch_order_test" ]]; then
   "${BIN_DIR}/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
+fi
+if [[ "${INDEX_OK}" == "1" && -x "${BIN_DIR}/webgpu_index_test" ]]; then
+  "${BIN_DIR}/webgpu_index_test" "${INDEX_DIR}"
 fi
 [[ -x "${BIN_DIR}/webgpu_scratch_buffer_test" ]] && "${BIN_DIR}/webgpu_scratch_buffer_test"
 
