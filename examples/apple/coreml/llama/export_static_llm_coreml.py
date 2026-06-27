@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import json
+from typing import Optional
 
 import coremltools as ct
 import torch
@@ -168,6 +169,28 @@ def load_model(
         print(f"Unexpected keys: {unexpected}")
 
     return model, args
+
+
+def _resolve_cache_len(
+    max_context_len: int, input_len: int, sliding_window: Optional[int] = None
+) -> int:
+    """Pick the per-layer KV cache length given context / input / window settings.
+
+    Without sliding-window attention the cache must hold every token that can
+    attend to the current step, i.e. ``max_context_len - input_len``.  When the
+    model is trained with sliding-window attention we instead cap the cache at
+    ``sliding_window`` so longer contexts do not enlarge per-layer attention
+    compute or KV cache memory.
+    """
+    cache_len = max_context_len - input_len
+    if sliding_window is not None:
+        if sliding_window <= 0:
+            raise ValueError(
+                f"sliding_window must be positive, got {sliding_window}"
+            )
+        if sliding_window < cache_len:
+            cache_len = sliding_window
+    return cache_len
 
 
 def _create_example_inputs(
@@ -411,6 +434,18 @@ def main():
         help="Input sequence length per forward pass",
     )
     parser.add_argument(
+        "--sliding_window",
+        type=int,
+        default=None,
+        help=(
+            "Sliding window attention size.  When set, every layer uses a KV cache "
+            "of this many tokens instead of (max_context_len - input_len), which "
+            "lets the model serve longer contexts without growing per-layer attention "
+            "compute or KV cache memory.  Required for Mistral / Gemma3 / Gemma4 / "
+            "Llama4-style models that train with sliding-window attention."
+        ),
+    )
+    parser.add_argument(
         "--dtype",
         type=str,
         choices=["fp16", "fp32"],
@@ -481,11 +516,15 @@ def main():
     print(f"\tLinear quantize: {args.linear_quantize}")
     print(f"\tDtype: {args.dtype}")
 
-    cache_len = args.max_context_len - args.input_len
+    cache_len = _resolve_cache_len(
+        args.max_context_len, args.input_len, args.sliding_window
+    )
     print("\nGeneration configuration:")
     print(f"\tMax context length: {args.max_context_len}")
     print(f"\tInput length: {args.input_len}")
     print(f"\tCache length: {cache_len}")
+    if args.sliding_window is not None:
+        print(f"\tSliding window: {args.sliding_window}")
 
     print("\nLinear splitting:")
     print(f"\tTarget split size: {args.target_split_size}")
@@ -513,9 +552,9 @@ def main():
         # the same cache buffer at runtime without any copying.
         decode_input_len = 1
         prefill_input_len = args.input_len  # default 32
-        shared_cache_len = (
-            args.max_context_len - decode_input_len
-        )  # Use decode's cache size for both
+        shared_cache_len = _resolve_cache_len(
+            args.max_context_len, decode_input_len, args.sliding_window
+        )
 
         print(f"\nShared cache length for prefill/decode: {shared_cache_len}")
 
@@ -643,7 +682,11 @@ def main():
         # Single method mode: fixed seqlen with generate_full_logits=True for lookahead
         print(f"\nCreating example inputs (seqlen={args.input_len})...")
         example_inputs, example_cache_len = _create_example_inputs(
-            model_args, args.input_len, args.max_context_len, float_dtype
+            model_args,
+            args.input_len,
+            args.max_context_len,
+            float_dtype,
+            cache_len=cache_len,
         )
 
         # Test eager execution
