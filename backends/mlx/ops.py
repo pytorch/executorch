@@ -24,6 +24,7 @@ from executorch.backends.mlx.builder.op_helpers import (
     emit_lifted_constant,
     emit_quantized_biases,
     emit_shape,
+    emit_sub_int,
     parse_dequant_node,
     to_mlx_qparams,
     torch_dtype_to_scalar_type,
@@ -3528,10 +3529,11 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     skipping the sampling chain (so 0 is exact, not the small-epsilon approx).
     """
     args = P.args(n)
-    require_args(args, 3, 4, "mlx.sample")
+    require_args(args, 3, 5, "mlx.sample")
     require_kwargs(P.kwargs(n), set(), "mlx.sample")
     logits, temperature, top_p = args[0], args[1], args[2]
     seed = args[3] if len(args) > 3 and args[3] is not None else None
+    top_k = args[4] if len(args) > 4 and args[4] is not None else None
 
     temp_dt = n.args[1].meta["val"].dtype
     out = P.make_or_get_slot(n)
@@ -3674,6 +3676,46 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 out=P.slot_to_tid(drop),
             )
         )
+        if top_k is not None:
+            _, top_k_val = P.make_tmp_value_slot()
+            P.emit(ItemIntNode(x=P.slot_to_tid(top_k), out=P.slot_to_vid(top_k_val)))
+            top_k_iov = P.to_int_or_vid(top_k_val)
+            top_k_index = emit_sub_int(P, top_k_iov, IntOrVid.from_literal(1))
+            _, top_k_thresh = P.make_tmp_slot()
+            P.emit(
+                TakeNode(
+                    x=P.slot_to_tid(sorted_p),
+                    index=(
+                        IntOrVidOrTid.from_vid(top_k_index.vid)
+                        if top_k_index.is_vid
+                        else IntOrVidOrTid.from_literal(top_k_index.literal)
+                    ),
+                    out=P.slot_to_tid(top_k_thresh),
+                    axis=-1,
+                )
+            )
+            P.emit(
+                ExpandDimsNode(
+                    x=P.slot_to_tid(top_k_thresh),
+                    out=P.slot_to_tid(top_k_thresh),
+                    axis=-1,
+                )
+            )
+            _, drop_k = P.make_tmp_slot()
+            P.emit(
+                LessNode(
+                    a=P.slot_to_tid(probs),
+                    b=P.slot_to_tid(top_k_thresh),
+                    out=P.slot_to_tid(drop_k),
+                )
+            )
+            P.emit(
+                LogicalOrNode(
+                    a=P.slot_to_tid(drop),
+                    b=P.slot_to_tid(drop_k),
+                    out=P.slot_to_tid(drop),
+                )
+            )
         neg_inf = emit_lifted_constant(P, float("-inf"), torch.float32)
         # masked = where(drop, -inf, scaled); then add gumbel noise in place.
         _, masked = P.make_tmp_slot()

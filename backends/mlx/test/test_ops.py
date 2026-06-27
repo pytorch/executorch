@@ -7676,6 +7676,17 @@ class TopPSampleModel(nn.Module):
         return self.head(logits, temperature=temperature, seed=seed, top_p=top_p)
 
 
+class TopKSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_k as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_k):
+        return self.head(logits, temperature=temperature, seed=seed, top_k=top_k)
+
+
 @register_test
 class SampleSeededTest(OpTestCase):
     """Seeded sample lowers to one MLX segment; seed threads in via ItemIntNode."""
@@ -7753,6 +7764,39 @@ class SampleTopPTest(OpTestCase):
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
             torch.tensor(0.9),
+        )
+
+
+@register_test
+class SampleTopKTest(OpTestCase):
+    """Top-k sample emits the extra threshold and combined mask nodes."""
+
+    name = "sample_top_k"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,
+        "SortNode": 1,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,
+        "ExpandDimsNode": 1,
+        "LogicalOrNode": 1,
+        "WhereNode": 2,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopKSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 4, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(2, dtype=torch.int64),
         )
 
 

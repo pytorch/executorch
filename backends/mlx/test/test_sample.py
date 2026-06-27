@@ -63,6 +63,17 @@ class TopPSampleModel(nn.Module):
         return self.head(logits, temperature=temperature, seed=seed, top_p=top_p)
 
 
+class TopKSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_k as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_k):
+        return self.head(logits, temperature=temperature, seed=seed, top_k=top_k)
+
+
 def _ref_gumbel_max(logits: torch.Tensor, temperature: float, seed: int):
     """Independent Gumbel-max reference using the same torch RNG as the op."""
     gen = torch.Generator().manual_seed(seed)
@@ -76,11 +87,18 @@ def _tv_distance(p: torch.Tensor, q: torch.Tensor) -> float:
     return 0.5 * torch.abs(p - q).sum().item()
 
 
-def _sample(logits, temperature, seed: Optional[int], top_p: float = 1.0):
+def _sample(
+    logits,
+    temperature,
+    seed: Optional[int],
+    top_p: float = 1.0,
+    top_k: Optional[int] = None,
+):
     t = torch.tensor(float(temperature))
     s = None if seed is None else torch.tensor(int(seed), dtype=torch.int64)
     p = torch.tensor(float(top_p))  # 1.0 = off
-    return torch.ops.mlx.sample(logits, t, p, s)
+    k = None if top_k is None else torch.tensor(int(top_k), dtype=torch.int64)
+    return torch.ops.mlx.sample(logits, t, p, s, k)
 
 
 class TestSampleOp(unittest.TestCase):
@@ -141,6 +159,25 @@ class TestSampleOp(unittest.TestCase):
         base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
         tokens = _sample(base.expand(20000, 4), 1.0, seed=0, top_p=1.0)
         self.assertTrue((tokens == 3).any())
+
+    def test_top_k_restricts_to_top_k(self):
+        # probs [0.5, 0.3, 0.15, 0.05]; top_k=2 keeps {0,1}.
+        base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
+        tokens = _sample(base.expand(5000, 4), 1.0, seed=0, top_k=2)
+        self.assertTrue(torch.isin(tokens, torch.tensor([0, 1])).all())
+        self.assertEqual(set(tokens.tolist()), {0, 1})
+
+    def test_top_k_none_keeps_all(self):
+        # top_k=None -> no filtering; the tail token (index 3) is reachable.
+        base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
+        tokens = _sample(base.expand(20000, 4), 1.0, seed=0, top_k=None)
+        self.assertTrue((tokens == 3).any())
+
+    def test_top_k_and_top_p_compose(self):
+        # top_p=0.7 keeps {0,1}; top_k=1 intersects that to {0}.
+        base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
+        tokens = _sample(base.expand(5000, 4), 1.0, seed=0, top_p=0.7, top_k=1)
+        self.assertEqual(set(tokens.tolist()), {0})
 
 
 class TestSampleExport(unittest.TestCase):
@@ -217,6 +254,24 @@ class TestSampleEndToEnd(unittest.TestCase):
         self.assertTrue(run_cpp_test_runner(pte, in_bin, out_bin))
         (token,) = load_tensors_from_bin(out_bin)
         self.assertIn(int(token), {0, 1, 2})  # tail token (index 3) excluded
+
+    def test_top_k_end_to_end(self):
+        # On-device top-k: probs [0.5,0.3,0.15,0.05], top_k=2 -> token in {0,1}.
+        logits = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05])).view(1, 1, 4)
+        inputs = (
+            logits,
+            torch.tensor(1.0),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(2, dtype=torch.int64),
+        )
+        tmp = Path(self._tmp)
+        pte, in_bin, out_bin = tmp / "topk.pte", tmp / "in.bin", tmp / "out.bin"
+        export_model_to_pte(TopKSampleModel(), inputs, pte)
+        save_tensors_to_bin(list(inputs), in_bin)
+
+        self.assertTrue(run_cpp_test_runner(pte, in_bin, out_bin))
+        (token,) = load_tensors_from_bin(out_bin)
+        self.assertIn(int(token), {0, 1})  # tail tokens excluded
 
 
 if __name__ == "__main__":

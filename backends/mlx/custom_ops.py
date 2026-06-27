@@ -399,9 +399,11 @@ def sample(
     temperature: Tensor,
     top_p: Tensor,
     seed: Optional[Tensor] = None,
+    top_k: Optional[Tensor] = None,
 ) -> Tensor:
     """
-    Gumbel-max sampling from softmax(logits / temperature), with top-p (nucleus).
+    Gumbel-max sampling from softmax(logits / temperature), with top-p (nucleus)
+    and optional top-k filtering.
     logits:      [B, vocab]
     temperature: scalar float tensor    (runtime input). temperature <= 0 is
                  greedy: return argmax(logits) directly (matches the device,
@@ -411,6 +413,8 @@ def sample(
     seed:        scalar int tensor or None
                  - tensor -> deterministic, keyed RNG (random::key(seed))
                  - None   -> MLX global KeySequence (non-deterministic)
+    top_k:       optional scalar int tensor. None keeps every token; otherwise
+                 sampling is restricted to the k most likely tokens.
     -> token_id: [B] int64
 
     Host/CPU reference used for export (shape/meta) and distributional checks
@@ -424,6 +428,10 @@ def sample(
     scaled = logits.float() / temperature
     probs = torch.softmax(scaled, dim=-1)
     s_probs, _ = torch.sort(probs, dim=-1, descending=True)
+    if top_k is not None:
+        k = int(top_k.item())
+        kth = s_probs[..., k - 1 : k]
+        scaled = torch.where(probs >= kth, scaled, scaled.new_tensor(float("-inf")))
     cum = torch.cumsum(s_probs, dim=-1)
     keep = (cum - s_probs) <= top_p
     thresh = torch.where(keep, s_probs, s_probs.new_tensor(float("inf"))).amin(
@@ -440,5 +448,5 @@ def sample(
 
 
 @torch.library.register_fake("mlx::sample")
-def sample_fake(logits, temperature, top_p, seed=None):
+def sample_fake(logits, temperature, top_p, seed=None, top_k=None):
     return logits.new_empty(logits.shape[:-1], dtype=torch.long)
