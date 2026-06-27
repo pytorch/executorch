@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,9 +24,11 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationConfig,
 )
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.pass_manager import PassType as ExirPassType
 from torch._export.pass_base import PassType
+from torch.export import ExportedProgram
 from torchao.quantization.pt2e.quantizer import Quantizer
 
 
@@ -77,12 +79,28 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         self,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
+        transform_passes: Optional[List[ExirPassType]] = None,
     ):
         super().__init__(
             default_partitioner_cls=XnnpackPartitioner,
             partitioners=partitioners,
             edge_compile_config=edge_compile_config
             or get_xnnpack_edge_compile_config(),
+        )
+        self.transform_passes = transform_passes
+
+    def run(
+        self,
+        artifact: ExportedProgram,
+        inputs=None,
+        generate_etrecord: bool = False,
+    ) -> None:
+        self.edge_dialect_program = to_edge_transform_and_lower(
+            artifact,
+            transform_passes=self.transform_passes,
+            compile_config=self.edge_compile_conf,
+            partitioner=self.partitioners,
+            generate_etrecord=generate_etrecord,
         )
 
 
@@ -131,4 +149,38 @@ class Tester(TesterBase):
             example_inputs=example_inputs,
             dynamic_shapes=dynamic_shapes,
             **kwargs,
+        )
+
+    def to_edge_transform_and_lower(
+        self,
+        to_edge_and_transform_stage: Optional[
+            BaseStages.ToEdgeTransformAndLower
+        ] = None,
+        generate_etrecord: bool = False,
+        *,
+        partitioners: Optional[List[Partitioner]] = None,
+        edge_compile_config: Optional[EdgeCompileConfig] = None,
+        transform_passes: Optional[List[ExirPassType]] = None,
+    ):
+        if to_edge_and_transform_stage is None:
+            to_edge_and_transform_stage = ToEdgeTransformAndLower(
+                partitioners=partitioners,
+                edge_compile_config=edge_compile_config,
+                transform_passes=transform_passes,
+            )
+        else:
+            if partitioners is not None:
+                to_edge_and_transform_stage.partitioners = partitioners
+            if edge_compile_config is not None:
+                to_edge_and_transform_stage.edge_compile_conf = edge_compile_config
+            if transform_passes is not None:
+                if not isinstance(to_edge_and_transform_stage, ToEdgeTransformAndLower):
+                    raise ValueError(
+                        "transform_passes requires the XNNPACK "
+                        "ToEdgeTransformAndLower stage."
+                    )
+                to_edge_and_transform_stage.transform_passes = transform_passes
+        return super().to_edge_transform_and_lower(
+            to_edge_and_transform_stage,
+            generate_etrecord=generate_etrecord,
         )
