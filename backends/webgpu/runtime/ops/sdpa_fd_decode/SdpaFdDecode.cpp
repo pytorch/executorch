@@ -17,7 +17,6 @@
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -58,21 +57,6 @@ struct BufferBinding {
   WGPUBuffer buffer;
   uint64_t size;
 };
-
-WGPUBuffer
-make_uniform_buffer(WebGPUGraph& graph, const void* data, size_t size) {
-  WGPUDevice device = graph.device();
-  WGPUBufferDescriptor desc = {};
-  desc.size = size;
-  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  desc.mappedAtCreation = true;
-  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device, &desc);
-  void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
-  std::memcpy(mapped, data, size);
-  wgpuBufferUnmap(buffer);
-  graph.add_uniform_buffer_bytes(size);
-  return buffer;
-}
 
 // Mirrors Sdpa.cpp build_dispatch; n_rw leading bindings are read_write.
 void build_dispatch(
@@ -169,7 +153,8 @@ void sdpa_fd_decode_dispatch(
     int64_t g,
     float scale) {
   // Defensive contract guard: the Sdpa.cpp gate only routes D <= this here, but
-  // keep the check (lane-owns-D reach) so a future caller can't silently overrun.
+  // keep the check (lane-owns-D reach) so a future caller can't silently
+  // overrun.
   if (D > kSdpaFdMaxHeadDim) {
     throw std::runtime_error(
         "WebGPU sdpa FlashDecoding: head dim must be <= " +
@@ -212,7 +197,7 @@ void sdpa_fd_decode_dispatch(
   sp.num_splits = num_splits;
   sp.split_len = split_len;
   sp.scale = scale;
-  WGPUBuffer ub_split = make_uniform_buffer(graph, &sp, sizeof(sp));
+  WGPUBuffer ub_split = graph.make_uniform_buffer(&sp, sizeof(sp));
   BufferBinding split_bindings[5] = {
       {part_o, po_floats * sizeof(float)},
       {part_ml, pml_floats * sizeof(float)},
@@ -248,7 +233,7 @@ void sdpa_fd_decode_dispatch(
   FdReduceParams rp = {};
   rp.D = static_cast<uint32_t>(D);
   rp.num_splits = num_splits;
-  WGPUBuffer ub_reduce = make_uniform_buffer(graph, &rp, sizeof(rp));
+  WGPUBuffer ub_reduce = graph.make_uniform_buffer(&rp, sizeof(rp));
   BufferBinding reduce_bindings[3] = {
       {out.buffer, out.nbytes},
       {part_o, po_floats * sizeof(float)},

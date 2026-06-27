@@ -77,6 +77,19 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   return buffer;
 }
 
+WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
+  WGPUBufferDescriptor desc = {};
+  desc.size = size;
+  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  desc.mappedAtCreation = true;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &desc);
+  void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
+  std::memcpy(mapped, data, size);
+  wgpuBufferUnmap(buffer);
+  uniform_buffer_bytes_ += size;
+  return buffer;
+}
+
 void WebGPUGraph::update_symints_from_inputs(
     const std::vector<InputData>& inputs) {
   for (const auto& src : symint_sources_) {
@@ -245,6 +258,7 @@ void WebGPUGraph::build(
   tensors_.resize(num_vals);
   tensor_mem_obj_ids_.resize(num_vals, -1);
   ints_.resize(num_vals, 0);
+  int_lists_.resize(num_vals);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
   value_lists_.resize(num_vals);
@@ -373,6 +387,14 @@ void WebGPUGraph::build(
       case vkgraph::GraphTypes::Int: {
         value_types_[i] = ValueType::Int;
         ints_[i] = val->value_as_Int()->int_val();
+        break;
+      }
+      case vkgraph::GraphTypes::IntList: {
+        value_types_[i] = ValueType::IntList;
+        const auto* items = val->value_as_IntList()->items();
+        if (items) {
+          int_lists_[i].assign(items->cbegin(), items->cend());
+        }
         break;
       }
       case vkgraph::GraphTypes::Double: {
