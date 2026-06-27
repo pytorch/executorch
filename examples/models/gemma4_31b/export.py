@@ -147,12 +147,15 @@ def export_and_lower(
     output_dir: str,
     backend: str = "cuda",
     use_turboquant: bool = False,
+    sample: bool = False,
 ) -> None:
     """Export and lower the model to ExecuTorch for the given backend."""
     if backend == "cuda":
         _export_cuda(model, config, output_dir, use_turboquant=use_turboquant)
     elif backend == "mlx":
-        _export_mlx(model, config, output_dir, use_turboquant=use_turboquant)
+        _export_mlx(
+            model, config, output_dir, use_turboquant=use_turboquant, sample=sample
+        )
     else:
         raise ValueError(
             f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
@@ -306,11 +309,30 @@ def _export_cuda(
     print("Done.")
 
 
+class _MLXSampleWrapper(nn.Module):
+    """Wrap the model so ``forward`` returns a sampled token id.
+
+    The MLX source transforms make ``forward`` return last-token logits
+    ``(B, vocab)``, so sample directly. Temperature, top_p, and seed are runtime
+    scalar inputs so the same .pte serves any sampling request; the runner
+    increments the seed per token.
+    """
+
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, tokens, input_pos, temperature, top_p, seed):
+        logits = self.model(tokens, input_pos)
+        return torch.ops.mlx.sample(logits, temperature, top_p, seed)
+
+
 def _export_mlx(
     model: Gemma4_31B,
     config: Gemma4_31BConfig,
     output_dir: str,
     use_turboquant: bool = False,
+    sample: bool = False,
 ) -> None:
     """Export to .pte via torch.export + MLX backend.
 
@@ -358,15 +380,28 @@ def _export_mlx(
 
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
+    example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
+    example_input_pos = torch.tensor([0, 1], dtype=torch.long)
+    if sample:
+        model = _MLXSampleWrapper(model)
+        example_args = (
+            example_tokens,
+            example_input_pos,
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(0, dtype=torch.int64),
+        )
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim}, None, None, None)
+    else:
+        example_args = (example_tokens, example_input_pos)
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+
     print(f"Exporting (T in [1, {max_prefill}])...")
     with torch.no_grad():
         exported = export(
             model,
-            (
-                torch.tensor([[0, 1]], dtype=torch.long),
-                torch.tensor([0, 1], dtype=torch.long),
-            ),
-            dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
+            example_args,
+            dynamic_shapes=dynamic_shapes,
             strict=True,
         )
 
@@ -390,6 +425,7 @@ def _export_mlx(
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
+            "use_sampling": sample,
         },
     )
 
@@ -474,10 +510,20 @@ def main() -> None:
         "sliding layers keep their default cache. Supported on both "
         "--backend mlx and --backend cuda.",
     )
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="MLX only: sample the next token on-device (Gumbel-max with "
+        "temperature/top_p/seed runtime inputs) instead of returning logits "
+        "for host-side sampling.",
+    )
     args = parser.parse_args()
 
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
+
+    if args.sample and args.backend != "mlx":
+        parser.error("--sample is only supported with --backend mlx")
 
     if args.prequantized:
         model, config = load_prequantized_model(
@@ -505,6 +551,7 @@ def main() -> None:
         args.output_dir,
         backend=args.backend,
         use_turboquant=args.turboquant,
+        sample=args.sample,
     )
 
 
