@@ -173,6 +173,15 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
     return len(users) > 0
 
 
+def _floating_profile_negative_checks(
+    tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter
+) -> list[OperatorSupportBase]:
+    checks: list[OperatorSupportBase] = [CheckMixedFloatingInputs(reporter)]
+    if not tosa_spec.support_integer():
+        checks.append(CheckInt32ComparisonInputs(reporter))
+    return checks
+
+
 def is_quantized(node: torch.fx.Node) -> bool:
     """Checks if the node is quantized.
 
@@ -341,7 +350,7 @@ def _negative_checks(
     checks.extend(_wrapped_additional_checks(additional_checks, reporter))
 
     if tosa_spec.support_float():
-        checks.append(CheckMixedFloatingInputs(reporter))
+        checks.extend(_floating_profile_negative_checks(tosa_spec, reporter))
     else:
         checks.append(CheckArmQuantized(reporter))
         checks.append(CheckProperQuantization(reporter))
@@ -991,6 +1000,47 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
                 " Did you call model.to(dtype=...) or cast properly?",
             )
             return False
+
+        return True
+
+
+class CheckInt32ComparisonInputs(OperatorSupportBase):
+    """Reject int32 comparisons under the FP profile."""
+
+    target_ops = {
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.gt.Scalar,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.lt.Scalar,
+    }
+
+    def __init__(self, reporter: WhyNoPartitionReporter) -> None:
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.target not in self.target_ops:
+            return True
+
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
+            if get_first_fake_tensor(input_node).dtype == torch.int32:
+                self.reporter.report_reject(
+                    node,
+                    "FP profile does not support int32 comparison inputs.",
+                )
+                return False
 
         return True
 

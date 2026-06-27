@@ -245,6 +245,7 @@ void WebGPUGraph::build(
   tensors_.resize(num_vals);
   tensor_mem_obj_ids_.resize(num_vals, -1);
   ints_.resize(num_vals, 0);
+  int_lists_.resize(num_vals);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
   value_lists_.resize(num_vals);
@@ -373,6 +374,14 @@ void WebGPUGraph::build(
       case vkgraph::GraphTypes::Int: {
         value_types_[i] = ValueType::Int;
         ints_[i] = val->value_as_Int()->int_val();
+        break;
+      }
+      case vkgraph::GraphTypes::IntList: {
+        value_types_[i] = ValueType::IntList;
+        const auto* items = val->value_as_IntList()->items();
+        if (items) {
+          int_lists_[i].assign(items->cbegin(), items->cend());
+        }
         break;
       }
       case vkgraph::GraphTypes::Double: {
@@ -679,6 +688,16 @@ void WebGPUGraph::execute() {
     // One pass per dispatch: enforces storage RAW ordering across deps.
     for (size_t i = 0; i < n; i++) {
       const auto& dispatch = dispatches_[i];
+      if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder,
+            dispatch.copy_src,
+            0,
+            dispatch.copy_dst,
+            0,
+            dispatch.copy_nbytes);
+        continue;
+      }
       WGPUComputePassDescriptor pass_desc = {};
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
       // tw must outlive BeginComputePass (the descriptor points at it).
@@ -757,6 +776,16 @@ void WebGPUGraph::execute() {
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     for (size_t i = start; i < end; i++) {
+      if (dispatches_[i].kind == WebGPUDispatch::Kind::Copy) {
+        wgpuCommandEncoderCopyBufferToBuffer(
+            encoder,
+            dispatches_[i].copy_src,
+            0,
+            dispatches_[i].copy_dst,
+            0,
+            dispatches_[i].copy_nbytes);
+        continue;
+      }
       WGPUComputePassDescriptor pass_desc = {};
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
