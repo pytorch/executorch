@@ -72,6 +72,11 @@ void index_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       out_tensor.buffer == nullptr) {
     throw std::runtime_error("index: null buffer binding");
   }
+  // 1D-self gather: the kernel flat-indexes self by a scalar; fail loud on a
+  // higher-rank self (mirrors Vulkan index_tensor_buffer's 1D-self contract).
+  if (self_tensor.dims.size() != 1) {
+    throw std::runtime_error("index: only 1D self is supported");
+  }
 
   const size_t out_numel = out_tensor.nbytes / sizeof(float);
   if (out_tensor.nbytes != out_numel * sizeof(float) ||
