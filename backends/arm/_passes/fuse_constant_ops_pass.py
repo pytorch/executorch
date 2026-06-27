@@ -28,7 +28,7 @@ from executorch.backends.transforms.utils import (
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.export.graph_signature import InputKind
+from torch.export.graph_signature import ExportGraphSignature, InputKind
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,35 @@ class FuseConstantArgsPass(ArmPass):
     def __init__(self, exported_program: ExportedProgram, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+
+    def _delete_placeholder_input(self, node: torch.fx.Node) -> None:
+        if len(node.users) != 0:
+            raise RuntimeError(
+                f"Cannot delete input node {node.name} since it has users in the graph."
+            )
+
+        input_specs = [
+            spec
+            for spec in self.exported_program.graph_signature.input_specs
+            if spec.arg.name != node.name
+        ]
+        self.exported_program._graph_signature = ExportGraphSignature(
+            input_specs, self.exported_program.graph_signature.output_specs
+        )
+        node.graph.erase_node(node)
+
+    def _delete_constant_placeholder(self, node: torch.fx.Node) -> None:
+        graph_signature = self.exported_program.graph_signature
+        if node.name in graph_signature.inputs_to_parameters:
+            target = graph_signature.inputs_to_parameters[node.name]
+            if target not in self.exported_program.state_dict:
+                # Tied parameters can share a state_dict entry across placeholders;
+                # another dead placeholder may have already removed the tensor, so
+                # only remove this placeholder from the graph signature.
+                self._delete_placeholder_input(node)
+                return
+
+        delete_constant_placeholder(self.exported_program, node)
 
     @staticmethod
     def _is_tosa_dialect_op(target) -> bool:
@@ -214,7 +243,7 @@ class FuseConstantArgsPass(ArmPass):
             graph_module.graph.eliminate_dead_code()
             for input_node in input_nodes_to_maybe_delete:
                 if len(input_node.users) == 0:
-                    delete_constant_placeholder(self.exported_program, input_node)
+                    self._delete_constant_placeholder(input_node)
 
             graph_module = super().call(graph_module).graph_module
 

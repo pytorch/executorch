@@ -28,7 +28,11 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 @dataclass(init=False)
 class ArmCompileSpec(ABC):
+    """Base compile specification for Arm backend targets."""
+
     class DebugMode(Enum):
+        """Debug artifact formats emitted during Arm lowering."""
+
         JSON = 1
         TOSA = 2
 
@@ -272,8 +276,10 @@ class ArmCompileSpec(ABC):
         return self
 
     def _warn_if_redundant_preserve_io_quantization(self) -> None:
-        """Warn when preserve_io_quantization has no effect for INT-only
-        specs.
+        """Warn when preserve_io_quantization has no effect.
+
+        INT-only specs already preserve IO quantization naturally.
+
         """
         if (
             self.preserve_io_quantization
@@ -287,8 +293,7 @@ class ArmCompileSpec(ABC):
             )
 
     def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
-        """Returns configuration that controls how the Arm pass pipeline should
-        behave.
+        """Return the configuration for the Arm pass pipeline.
 
         Subclasses may override to tweak defaults for specific targets.
 
@@ -298,8 +303,7 @@ class ArmCompileSpec(ABC):
         return self._pipeline_config
 
     def set_pass_pipeline_config(self, config: ArmPassPipelineConfig) -> None:
-        """Sets the configuration that controls how the Arm pass pipeline should
-        behave. Subclasses may override to tweak defaults for specific targets.
+        """Set the configuration for the Arm pass pipeline.
 
         Args:
             config: The custom ArmPassPipelineConfig to set.
@@ -317,18 +321,16 @@ class ArmCompileSpec(ABC):
         return config
 
     def _get_intermediate_path(self) -> str | None:
-        """Gets the path used for dumping intermediate results such as tosa and
-        pte.
+        """Get the path used for dumping intermediate results.
 
         Returns:
-            Path where intermediate results are saved.
+            Path where TOSA and PTE intermediate results are saved.
 
         """
         return self.path_for_intermediates
 
     def dump_intermediate_artifacts_to(self, output_path: str | None):
-        """Sets a path for dumping intermediate results during such as tosa and
-        pte.
+        """Set a path for dumping TOSA and PTE intermediate results.
 
         Args:
             output_path: Path to dump intermediate results to.

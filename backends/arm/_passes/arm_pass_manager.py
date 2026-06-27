@@ -15,6 +15,7 @@ from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
+    CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -29,7 +30,6 @@ from executorch.backends.arm._passes import (
     ConvertInt64OutputOpsToInt32Pass,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
-    ConvertPermuteSingletonToViewPass,
     ConvertSplitToSlicePass,
     ConvertSqueezesToViewPass,
     ConvertToClampPass,
@@ -104,6 +104,7 @@ from executorch.backends.arm._passes import (
     DecorateFp32toInt32CastingPass,
     DeduplicateGetAttrPass,
     EnsureUniqueOutputNodesPass,
+    ExirToTosaPass,
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
     FuseConsecutiveConcatShapesPass,
@@ -111,11 +112,13 @@ from executorch.backends.arm._passes import (
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
+    FuseIdenticalInputTransformsPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
     InsertConstShapesPass,
     InsertControlFlowRescalesPass,
     InsertDataLayoutCastsPass,
+    InsertDynamicPaddingPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
@@ -145,11 +148,14 @@ from executorch.backends.arm._passes import (
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewriteMaxPool2dPass,
+    RewriteMXFPConv2dPass,
+    RewriteMXFPLinearPass,
     RewritePadPass,
     RewriteSlicePass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
+    SymbolicToTosaShapesPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
@@ -163,9 +169,6 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
     FuseCascadedTransposeOrPermuteOps,
-)
-from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
-    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
 )
 
 from executorch.exir import ExportedProgram
@@ -498,6 +501,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
                 # Ticket: MLETORCH-1539
+                FuseIdenticalInputTransformsPass(),
                 DecomposeLinearPass(),
                 InsertRescaleInt32Pass(),
                 FuseConsecutiveRescalesPass(),
@@ -611,13 +615,14 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMaxPool2dPass(),
                 DecomposeAdaptiveMaxPool2dPass(),
                 RewriteConvPass(exported_program),
+                RewriteMXFPConv2dPass(exported_program),
+                RewriteMXFPLinearPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseTosaOps(),
-                PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(),
+                RemovePermutesAroundElementwiseTosaOps(exported_program),
+                CanonicalizeViewCopyPermutePass(),
                 FuseCascadedTransposeOrPermuteOps(),
-                ConvertPermuteSingletonToViewPass(),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
@@ -630,6 +635,9 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                ExirToTosaPass(exported_program),
+                SymbolicToTosaShapesPass(),
+                InsertDynamicPaddingPass(),
                 FuseConsecutiveConcatShapesPass(),
                 EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
@@ -677,7 +685,6 @@ class ArmPassManager(ExportedProgramPassManager):
                     InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
                     DecomposeEmbeddingPass(tfa_pass=True),
                     DecomposeScaledDotProductAttentionPass(tfa_pass=True),
-                    DecomposeRoundPass(tfa_pass=True),
                     DecomposeLogitPass(tfa_pass=True),
                     PromoteBoolOperandsPass(tfa_pass=True),
                     DecomposeSignPass(tfa_pass=True),

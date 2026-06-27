@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import abc
+import logging
 import os
 from abc import abstractmethod
 from pathlib import Path
@@ -15,6 +16,7 @@ import polars as pl
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
+from executorch.backends.nxp.tests.utils import archive_test_dir, store_txt_input_tensor
 
 
 class BaseOutputComparator(abc.ABC):
@@ -35,6 +37,11 @@ class BaseOutputComparator(abc.ABC):
         :param npu_results_dir: Path to directory with NPU (delegated) results.
         :param output_tensor_spec: List of output tensor specifications.
         """
+        if logging.root.isEnabledFor(logging.DEBUG):
+            diff_cpu_npu_results_dir = os.path.join(
+                os.path.dirname(cpu_results_dir), "diff_cpu_npu_results"
+            )
+
         sample_dirs = [
             os.path.join(cpu_results_dir, file) for file in os.listdir(cpu_results_dir)
         ]
@@ -65,7 +72,28 @@ class BaseOutputComparator(abc.ABC):
                 )
                 npu_output_tensors.append((output_tensor_name, npu_tensor))
 
-            self.compare_sample(sample_dir, cpu_output_tensors, npu_output_tensors)
+                if logging.root.isEnabledFor(logging.DEBUG):
+                    # Store diff results if logging level is enabled
+                    diff_cpu_npu_tensor = np.abs(cpu_tensor - npu_tensor)
+                    os.makedirs(
+                        os.path.join(diff_cpu_npu_results_dir, sample_dir),
+                        exist_ok=True,
+                    )
+                    diff_cpu_npu_tensor_path = os.path.join(
+                        diff_cpu_npu_results_dir, sample_dir, output_tensor_name
+                    )
+                    diff_cpu_npu_tensor.tofile(diff_cpu_npu_tensor_path)
+
+                    # Store text tensor results
+                    store_txt_input_tensor(cpu_tensor_path, tensor_spec)
+                    store_txt_input_tensor(npu_tensor_path, tensor_spec)
+                    store_txt_input_tensor(diff_cpu_npu_tensor_path, tensor_spec)
+
+        # We need to archive the test_dir before comparison, as comparison can cause AssertionError exception
+        test_dir = os.path.dirname(cpu_results_dir)
+        if logging.root.isEnabledFor(logging.DEBUG):
+            archive_test_dir(test_dir)
+        self.compare_sample(sample_dir, cpu_output_tensors, npu_output_tensors)
 
     @abstractmethod
     def compare_sample(
@@ -92,12 +120,12 @@ class AllCloseOutputComparator(BaseOutputComparator):
                 cpu_tensor
             ), "Output tensor contains only zeros. This is suspicious."
             all_close = np.allclose(cpu_tensor, npu_tensor, atol=self.atol)
+            max_diff = None
             if not all_close:
                 max_diff = np.abs(cpu_tensor - npu_tensor).max()
-                print(
-                    f"NPU output doesn't match reference. Maximum absolute difference: {max_diff}"
-                )
-            assert all_close
+            assert (
+                all_close
+            ), f"NPU output doesn't match reference. Maximum absolute difference: {max_diff}"
 
 
 def _default_postprocess_fn(outputs: np.ndarray, _: str):

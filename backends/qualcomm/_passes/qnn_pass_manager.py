@@ -20,16 +20,19 @@ from executorch.backends.qualcomm._passes import (
     ConvertMhaToSha,
     ConvertSquareToPow,
     DecomposeAcos,
+    DecomposeAddmm,
     DecomposeAny,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
+    DecomposeDivMode,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeFill,
     DecomposeFloorDivide,
     DecomposeGlu,
+    DecomposeHyperbolicVariants,
     DecomposeLinalgVectorNorm,
     DecomposeLogVariants,
     DecomposeMaxPool3d,
@@ -60,11 +63,9 @@ from executorch.backends.qualcomm._passes import (
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,
-    ReduceDynamicRange,
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceInfValues,
     ResolveDebugHandle,
     TagQuantIO,
 )
@@ -123,11 +124,14 @@ class QnnPassManager(PassManager):
             (AnnotateUnbind, True),
             (ConvertBmmToMatmul, False),
             (DecomposeAcos, True),
+            (DecomposeAddmm, True),
             (DecomposeAny, True),
             (DecomposeAtan2, True),
             (DecomposeColIm, True),
             (DecomposeCDist, True),
+            (DecomposeDivMode, True),
             (DecomposeFill, True),
+            (DecomposeHyperbolicVariants, True),
             (DecomposeLogVariants, True),
             (DecomposeMaxPool3d, True),
             (DecomposeMinMaxDim, True),
@@ -156,14 +160,15 @@ class QnnPassManager(PassManager):
         """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
         return [
             RemoveRedundancy,
-            ReduceDynamicRange,
             RecomposePixelUnshuffle,
             RecomposeRmsNorm,
             ReplaceArangeArgs,
             DecomposeAcos,
+            DecomposeAddmm,
             DecomposeAtan2,
             DecomposeBinaryAlpha,
             DecomposeCDist,
+            DecomposeDivMode,
             DecomposeMaxPool3d,
             DecomposePad,
             DecomposeScaledDotProductAttention,
@@ -179,11 +184,11 @@ class QnnPassManager(PassManager):
             DecomposeExpM1,
             DecomposeFill,
             DecomposeGlu,
+            DecomposeHyperbolicVariants,
             DecomposeRemainder,
             DecomposeSelectScatter,
             DecomposeLinalgVectorNorm,
             DecomposeLogVariants,
-            ReplaceInfValues,
             LiftConstantScalarOperands,
             InsertReshapeForReduceOps,
         ]
@@ -246,7 +251,7 @@ class QnnPassManager(PassManager):
 
     @classmethod
     def get_passes_dependency_for_capture_program(cls):
-        """Return ordering constraints between capture-program passes.
+        """Return ordering constraints between edge-program passes.
 
         This is a classmethod that can be invoked without instantiating the
         pass manager, e.g. ``QnnHtpPassManager.get_passes_dependency_for_capture_program()``.
@@ -276,11 +281,14 @@ class QnnPassManager(PassManager):
             AnnotateUnbind: [RemoveRedundancy],
             ConvertBmmToMatmul: [RecomposePixelUnshuffle],
             DecomposeAcos: [RemoveRedundancy],
+            DecomposeAddmm: [RemoveRedundancy],
             DecomposeAny: [RemoveRedundancy],
             DecomposeAtan2: [RemoveRedundancy],
             DecomposeColIm: [FoldQDQ],
             DecomposeCDist: [RemoveRedundancy],
+            DecomposeDivMode: [RemoveRedundancy],
             DecomposeFill: [RemoveRedundancy],
+            DecomposeHyperbolicVariants: [RemoveRedundancy],
             DecomposeLinalgVectorNorm: [RemoveRedundancy],
             DecomposeLogVariants: [RemoveRedundancy],
             DecomposeMaxPool3d: [RemoveRedundancy],
@@ -348,6 +356,9 @@ class QnnPassManager(PassManager):
         exported_program: ExportedProgram,
         passes_job: OrderedDict = None,
         dep_table: Dict = None,
+        compiler_specs=None,
+        skip_node_id_set: set = None,
+        skip_node_op_set: set = None,
     ):
         # TODO: remove this workaround when target could be correctly detected
         from executorch.backends.qualcomm.builders import node_visitor
@@ -381,11 +392,20 @@ class QnnPassManager(PassManager):
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
+            if "compiler_specs" in kwargs:
+                kwargs["compiler_specs"] = compiler_specs
+            if "skip_node_id_set" in kwargs:
+                kwargs["skip_node_id_set"] = skip_node_id_set
+            if "skip_node_op_set" in kwargs:
+                kwargs["skip_node_op_set"] = skip_node_op_set
             self.add_pass(p(**kwargs))
+        self._validate_edge_passes()
+        return self.passes
+
+    def _validate_edge_passes(self) -> None:
         assert isinstance(
             self.passes[-1], ResolveDebugHandle
         ), "Please ensure ResolveDebugHandle is the last executed edge pass."
-        return self.passes
 
     def _instantiate_passes(self, pass_classes, **available_kwargs):
         """Instantiate pass classes, injecting only kwargs each __init__ accepts."""
@@ -439,7 +459,9 @@ class QnnPassManager(PassManager):
         return exported_program
 
     def transform_for_preprocess_pipeline(
-        self, exported_program: ExportedProgram, use_mha2sha=False
+        self,
+        exported_program: ExportedProgram,
+        use_mha2sha=False,
     ):
         self._instantiate_passes(
             self.get_preprocess_passes(use_mha2sha),

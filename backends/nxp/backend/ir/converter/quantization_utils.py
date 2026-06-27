@@ -1,4 +1,4 @@
-# Copyright 2023-2025 NXP
+# Copyright 2023-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -135,11 +135,12 @@ def set_quantization_parameters_to_tensor(
 def quantize_int8(
     data: np.ndarray, scale: List[float], zero_point: List[int]
 ) -> np.ndarray:
+    # noinspection PyTypeChecker
     return quantize(data, zero_point=zero_point, scale=scale)
 
 
 def quantize(
-    value: np.ndarray | int,
+    value: np.ndarray | float,
     zero_point: List[int] | int,
     scale: List[float] | float,
     quant_min: int = -128,
