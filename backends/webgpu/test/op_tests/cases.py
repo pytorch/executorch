@@ -25,16 +25,10 @@ from executorch.backends.webgpu.test.op_tests.test_suite import (
     WebGPUTestSuite,
     XS,
 )
-from executorch.backends.webgpu.test.ops.add.test_add import (
+from executorch.backends.webgpu.test.ops.test_add import (
     AddChainedModule,
     AddModule,
     AddSelfModule,
-)
-from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
-    _CASES,
-    _linspace_weight,
-    _ramp,
-    RmsNormModule,
 )
 from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
@@ -47,6 +41,12 @@ from executorch.backends.webgpu.test.ops.test_mul import (
 from executorch.backends.webgpu.test.ops.test_permute import (
     CONFIGS as _PERMUTE_CONFIGS,
     PermuteModule,
+)
+from executorch.backends.webgpu.test.ops.test_rms_norm import (
+    _CASES,
+    _linspace_weight,
+    _ramp,
+    RmsNormModule,
 )
 from executorch.backends.webgpu.test.ops.test_select import (
     CONFIGS as _SELECT_CONFIGS,
@@ -92,7 +92,7 @@ def _add_factory(variant: str = "regular") -> torch.nn.Module:
 @register_op_test("add")
 def _add_suite() -> WebGPUTestSuite:
     # Same-shape numeric coverage only: broadcast adds stay export-smoke in
-    # ops/add/test_add.py because the kernel can't broadcast.
+    # ops/test_add.py because the kernel can't broadcast.
     return WebGPUTestSuite(
         module_factory=_add_factory,
         cases=[
