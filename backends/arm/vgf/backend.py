@@ -75,9 +75,11 @@ class VgfRuntimeEnvironmentCheck:
 
     @property
     def ok(self) -> bool:
+        """Return True when the check did not fail."""
         return self.status != STATUS_FAIL
 
     def to_dict(self) -> dict[str, str | None]:
+        """Return the check as a JSON-serializable dictionary."""
         return {
             "name": self.name,
             "status": self.status,
@@ -94,7 +96,6 @@ def _load_runtime() -> Any:
 
 def check_vgf_runtime_backend_environment() -> VgfRuntimeEnvironmentCheck:
     """Check whether the installed runtime exposes the VGF backend."""
-
     try:
         runtime = _load_runtime()
     except Exception as exc:
