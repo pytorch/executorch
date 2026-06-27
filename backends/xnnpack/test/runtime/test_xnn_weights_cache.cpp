@@ -1064,4 +1064,127 @@ TEST_F(XNNWeightsCacheTest, ConcurrentOptionsAndSave_NoCrash_FileStable) {
   ::unlink(cache_path.c_str());
 }
 
+// Test seam: XNNWeightsCache befriends this type (see XNNWeightsCache.h) so
+// the test can drive the private fresh-write path and inspect the
+// offset->pointer table directly.
+namespace executorch {
+namespace backends {
+namespace xnnpack {
+namespace delegate {
+class XNNWeightsCacheTestPeer {
+ public:
+  static void reset_for_fresh_write(XNNWeightsCache& c) {
+    c.reset_for_fresh_write();
+  }
+  static void* offset_to_addr(XNNWeightsCache& c, size_t offset) {
+    return XNNWeightsCache::offset_to_addr(&c, offset);
+  }
+  static size_t offset_of(XNNWeightsCache& c, const std::string& name) {
+    return c.name_to_packed_data_metadata_.at(name).offset;
+  }
+};
+} // namespace delegate
+} // namespace xnnpack
+} // namespace backends
+} // namespace executorch
+
+using executorch::backends::xnnpack::delegate::XNNWeightsCacheTestPeer;
+
+TEST_F(XNNWeightsCacheTest, OffsetToAddr_AfterResetForFreshWrite_NotDangling) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_dangling_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  std::vector<size_t> batches{1, 2, 3};
+  size_t input_channels = 3;
+  size_t output_channels = 4;
+  size_t num_batches = 1 * 2 * 3;
+  size_t padding = 32;
+  std::vector<float> input(num_batches * input_channels + padding, 1.0f);
+  std::vector<float> output(num_batches * output_channels, 0.0f);
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(cache_path);
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  BuildAndRunGraphWithWeightsCache(
+      cache,
+      batches,
+      input_channels,
+      output_channels,
+      input.data(),
+      output.data());
+  ASSERT_EQ(cache.get_packed_data_names().size(), 1u);
+
+  size_t offset = XNNWeightsCacheTestPeer::offset_of(cache, "weightbias");
+  void* before = XNNWeightsCacheTestPeer::offset_to_addr(cache, offset);
+  ASSERT_NE(before, nullptr);
+  // The pointer is into a live MAP_SHARED region and is readable now.
+  ASSERT_NO_FATAL_FAILURE({
+    volatile char c = *static_cast<volatile char*>(before);
+    (void)c;
+  });
+
+  // Fresh-write reset: munmaps the region backing `before`.
+  XNNWeightsCacheTestPeer::reset_for_fresh_write(cache);
+
+  // The slot must no longer reference the unmapped region. A nullptr return is
+  // safe (look_up_or_insert treats it as a miss); a non-null return would be a
+  // dangling pointer into munmapped memory.
+  void* after = XNNWeightsCacheTestPeer::offset_to_addr(cache, offset);
+  EXPECT_EQ(after, nullptr)
+      << "offset_to_addr returned a dangling pointer into a region that "
+         "reset_for_fresh_write() already munmapped";
+
+  ::unlink(cache_path.c_str());
+}
+
+TEST_F(XNNWeightsCacheTest, LoadPackedCache_RejectsMidTrailerTruncation) {
+  std::string cache_path = std::string("/tmp/xnn_weights_cache_midtrunc_") +
+      std::to_string(::getpid()) + ".packed_cache";
+  ::unlink(cache_path.c_str());
+
+  // Layout (little-endian, matching XNNWeightsCache's on-disk format):
+  //   [0, 16)   16 bytes of packed-data region (entry 0's bytes live here)
+  //   [16, 41)  entry 0: name_len(4)=1, name(1)="w",
+  //             file_offset(8)=0, data_size(8)=8, seed(4)=0x12345678
+  //   [41, 43)  2 trailing bytes  <- < 4 bytes, so the load loop bails here
+  //   [43, 63)  footer: index_start(8)=16, entry_count(4)=2,
+  //             magic(4)="XPWC", version(4)=2
+  // The footer is fully valid and claims 2 entries, but only 1 is present.
+  {
+    std::ofstream f(cache_path, std::ios::binary);
+    std::vector<char> data_region(16, 0);
+    f.write(data_region.data(), data_region.size());
+
+    // entry 0
+    write_le_u32(f, 1); // name_len
+    f.put('w'); // name
+    write_le_u64(f, 0); // file_offset
+    write_le_u64(f, 8); // data_size (<= index_start - file_offset)
+    write_le_u32(f, 0x12345678u); // seed
+
+    // 2 trailing bytes: leaves < 4 bytes before the footer.
+    f.put('\0');
+    f.put('\0');
+
+    // footer
+    write_le_u64(f, 16); // index_start
+    write_le_u32(f, 2); // entry_count (claims 2, only 1 present)
+    write_le_u32(f, 0x58505743u); // kCacheMagic "XPWC"
+    write_le_u32(f, 2); // kCacheVersion
+  }
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(cache_path);
+  Error err =
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  ASSERT_EQ(err, Error::Ok);
+
+  EXPECT_EQ(cache.get_packed_data_names().size(), 0u)
+      << "mid-trailer-truncated cache (footer entry_count=2, only 1 entry "
+         "present) was wrongly accepted as a valid partial cache";
+
+  ::unlink(cache_path.c_str());
+}
+
 #endif
