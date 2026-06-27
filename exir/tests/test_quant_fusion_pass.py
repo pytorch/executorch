@@ -300,7 +300,6 @@ class TestQuantFusionPass(unittest.TestCase):
             m = _convert_to_reference_decomposed_fx(m)
             compile_config = EdgeCompileConfig(
                 _check_ir_validity=False,
-                _use_edge_ops=True,
             )
             m = to_edge(
                 export(m, example_inputs, strict=True), compile_config=compile_config
@@ -358,7 +357,6 @@ class TestQuantFusionPass(unittest.TestCase):
             m = _convert_to_reference_decomposed_fx(m)
             compile_config = EdgeCompileConfig(
                 _check_ir_validity=False,
-                _use_edge_ops=True,
             )
             m = to_edge(
                 export(m, example_inputs, strict=True), compile_config=compile_config
@@ -431,7 +429,6 @@ class TestQuantFusionPass(unittest.TestCase):
 
         compile_config = EdgeCompileConfig(
             _check_ir_validity=False,
-            _use_edge_ops=True,
         )
         m = to_edge(
             export(model, example_inputs, strict=True), compile_config=compile_config
