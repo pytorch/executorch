@@ -53,10 +53,17 @@ void view_copy_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_flat_copy(graph, args.at(0), args.at(args.size() - 1));
 }
 
+// clone = flat copy; survives Vulkan RemoveRedundantOpsTransform in Llama 1B.
+void clone_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // args: [self, memory_format?, out]; out = last value-id.
+  add_flat_copy(graph, args.at(0), args.at(args.size() - 1));
+}
+
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.view_copy.default, view_copy_impl);
+  WEBGPU_REGISTER_OP(aten.clone.default, clone_impl);
 }
 
 } // namespace executorch::backends::webgpu
