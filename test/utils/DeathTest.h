@@ -33,12 +33,11 @@
 #define ET_EXPECT_DEATH(_statement, _matcher) ((void)0)
 #define ET_EXPECT_DEATH_NO_PAL_INIT(_statement, _matcher) ((void)0)
 
-#elif defined(_WIN32) || !ET_LOG_ENABLED
+#elif !ET_LOG_ENABLED
 
 /**
- * On Windows, death test stderr matching is unreliable.
  * When logging is disabled, ET_CHECK_MSG doesn't output error messages.
- * In both cases, we ignore the matcher and only verify that the statement
+ * In this case, we ignore the matcher and only verify that the statement
  * causes the process to terminate.
  */
 #define ET_EXPECT_DEATH(_statement, _matcher) \
