@@ -14,6 +14,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <vector>
 
@@ -164,15 +165,50 @@ void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  const size_t dispatch_idx =
+      graph.add_dispatch({pipeline, bind_group, workgroup_count});
+
+  // Dynamic shapes: rebuild all 3 broadcast TensorMeta UBOs + dispatch.
+  WGPUBuffer o_buf = out_meta_buf, a_buf = in1_meta_buf, b_buf = in2_meta_buf;
+  auto mul_resize =
+      [in1_id, in2_id, out_id, wg_size, dispatch_idx, o_buf, a_buf, b_buf](
+          WebGPUGraph& g) {
+        const auto& a = g.cur_dims(in1_id);
+        const auto& b = g.cur_dims(in2_id);
+        const size_t r = std::max(a.size(), b.size());
+        std::vector<int64_t> out_d(r, 1);
+        for (size_t i = 0; i < r; i++) {
+          const int64_t av = (i + a.size() < r) ? 1 : a[i - (r - a.size())];
+          const int64_t bv = (i + b.size() < r) ? 1 : b[i - (r - b.size())];
+          out_d[i] = av > bv ? av : bv;
+        }
+        g.set_cur_dims(out_id, out_d);
+        const uint32_t out_ndim = static_cast<uint32_t>(r);
+        WebGPUTensor ta, tb, to;
+        ta.dims = a;
+        tb.dims = b;
+        to.dims = out_d;
+        TensorMeta om, am, bm;
+        fill_tensor_meta_broadcast(to, out_ndim, &om);
+        fill_tensor_meta_broadcast(ta, out_ndim, &am);
+        fill_tensor_meta_broadcast(tb, out_ndim, &bm);
+        wgpuQueueWriteBuffer(g.queue(), o_buf, 0, &om, sizeof(om));
+        wgpuQueueWriteBuffer(g.queue(), a_buf, 0, &am, sizeof(am));
+        wgpuQueueWriteBuffer(g.queue(), b_buf, 0, &bm, sizeof(bm));
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(
+                g.device(), om.numel, wg_size, "mul(resize)");
+      };
+  graph.add_tensor_resize_hook(in1_id, mul_resize);
+  graph.add_tensor_resize_hook(in2_id, mul_resize);
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // Drop our refs; the bind group keeps the uniforms alive until release.
-  wgpuBufferRelease(out_meta_buf);
-  wgpuBufferRelease(in1_meta_buf);
-  wgpuBufferRelease(in2_meta_buf);
+  // Graph owns them so a resize hook can rewrite them; freed in the dtor.
+  graph.own_uniform_buffer(out_meta_buf);
+  graph.own_uniform_buffer(in1_meta_buf);
+  graph.own_uniform_buffer(in2_meta_buf);
 }
 
 } // namespace
