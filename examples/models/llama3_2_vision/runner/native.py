@@ -26,7 +26,10 @@ from executorch.extension.pybindings.portable_lib import (
 from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
 # Note: import this after portable_lib
-from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
+try:
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
+except Exception:
+    pass  # Not needed for pybindings inference.
 from executorch.kernels import quantized  # noqa
 
 

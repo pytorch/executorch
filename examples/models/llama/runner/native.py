@@ -23,7 +23,10 @@ from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 from executorch.examples.models.llama.runner.generation import LlamaRunner
 
 # Note: import this after portable_lib
-from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
+try:
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa # usort: skip
+except Exception:
+    pass  # Not needed for pybindings inference.
 from executorch.kernels import quantized  # noqa
 
 
