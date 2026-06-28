@@ -77,6 +77,19 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   return buffer;
 }
 
+WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
+  WGPUBufferDescriptor desc = {};
+  desc.size = size;
+  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  desc.mappedAtCreation = true;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &desc);
+  void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
+  std::memcpy(mapped, data, size);
+  wgpuBufferUnmap(buffer);
+  uniform_buffer_bytes_ += size;
+  return buffer;
+}
+
 void WebGPUGraph::update_symints_from_inputs(
     const std::vector<InputData>& inputs) {
   for (const auto& src : symint_sources_) {
