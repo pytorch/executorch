@@ -7,6 +7,10 @@
 from dataclasses import dataclass
 from enum import IntEnum, unique
 
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.operator.convert import parse_qualified_opname, unwrap_op_overload
+from torch._ops import OpOverload
+
 QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 # Below constants should be same as those in QNN headers.
@@ -55,6 +59,32 @@ class OpConcat:
 class OpContextLoader:
     namespace: str = "qaisw"
     meta_ctx_bin: str = "qnn_context_binary"
+
+
+ContextLoaderTarget = EdgeOpOverload | OpOverload
+
+
+def is_context_loader_target(
+    target: ContextLoaderTarget,
+    op_name: str | None = None,
+) -> bool:
+    namespace, name = parse_qualified_opname(
+        str(unwrap_op_overload(target)._schema.name)
+    )
+    if namespace != OpContextLoader.namespace:
+        return False
+    if op_name is None:
+        return True
+    return name == op_name
+
+
+def is_context_loader_node(node: object, op_name: str | None = None) -> bool:
+    if getattr(node, "op", None) != "call_function":
+        return False
+    target = getattr(node, "target", None)
+    if not isinstance(target, (EdgeOpOverload, OpOverload)):
+        return False
+    return is_context_loader_target(target, op_name)
 
 
 @dataclass(init=False, frozen=True)

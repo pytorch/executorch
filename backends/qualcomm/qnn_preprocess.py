@@ -13,7 +13,10 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
-from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.qnn_constants import (
+    is_context_loader_node,
+    OpContextLoader,
+)
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
@@ -89,16 +92,12 @@ class QnnBackend(BackendDetails):
                         f"For {node}, {node.op}:{node.target.__name__} "
                         "is not supported in Qnn Delegate"
                     )
-                    try:
-                        context_loader_target = eval(
-                            f"torch.ops.{OpContextLoader.namespace}.{node.target.__name__}",
-                            globals().update(torch.__dict__),
-                        )
-                        assert node.target == context_loader_target, err_msg
-                        # if graph has context binary loader node, return directly
+                    if (
+                        is_context_loader_node(node)
+                        and OpContextLoader.meta_ctx_bin in node.meta
+                    ):
                         return node.meta[OpContextLoader.meta_ctx_bin]
-                    except:
-                        raise RuntimeError(err_msg)
+                    raise RuntimeError(err_msg)
 
             elif node.op in [
                 "get_attr",
