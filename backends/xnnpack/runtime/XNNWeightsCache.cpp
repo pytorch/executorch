@@ -123,6 +123,11 @@ void XNNWeightsCache::reset_for_fresh_write() {
     if (is_heap_backed) {
       ++it;
     } else {
+      // Null the dangling slot before dropping the entry: the region it
+      // pointed into was just munmapped above.
+      if (it->second.offset < packed_data_ptrs_.size()) {
+        packed_data_ptrs_[it->second.offset] = nullptr;
+      }
       it = name_to_packed_data_metadata_.erase(it);
     }
   }
@@ -736,6 +741,28 @@ bool XNNWeightsCache::load_packed_cache() {
     meta.from_load = true;
     meta.seed = seed;
     name_to_packed_data_metadata_[name] = meta;
+  }
+
+  // The loop above stops as soon as fewer than 4 bytes remain, even if it
+  // has consumed fewer than entry_count entries. A truncated index that
+  // leaves <4 trailing bytes would otherwise be accepted as a partial cache,
+  // and the next save_packed_index would rewrite a trailer covering only that
+  // subset — permanently dropping the missing entries. Require that exactly
+  // entry_count entries were read and that the cursor consumed the whole
+  // index region; otherwise roll back like the in-loop corruption branches.
+  if (name_to_packed_data_metadata_.size() != entry_count || cursor != end) {
+    ET_LOG(
+        Error,
+        "load_packed_cache: index truncated (read %zu of %u entries, %zd trailing bytes); aborting load",
+        name_to_packed_data_metadata_.size(),
+        entry_count,
+        static_cast<ssize_t>(end - cursor));
+    munmap(map, file_size);
+    mmap_regions_.pop_back();
+    name_to_packed_data_metadata_.clear();
+    packed_data_ptrs_.clear();
+    ptr_to_file_offset_.clear();
+    return false;
   }
 
   // Start writing new packs AFTER the existing trailer (not at the
