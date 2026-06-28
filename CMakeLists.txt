@@ -110,7 +110,7 @@ include(ExternalProject)
 include(GNUInstallDirs)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 20)
 endif()
 announce_configured_options(CMAKE_CXX_STANDARD)
 
@@ -233,6 +233,8 @@ endif()
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)
   set(CMAKE_CXX_FLAGS_RELEASE "/Gy /Gw ${CMAKE_CXX_FLAGS_RELEASE}")
+  # C++20 headers pull in <windows.h>; suppress its min/max macros.
+  add_compile_definitions(NOMINMAX)
 else()
   set(CMAKE_CXX_FLAGS_RELEASE
       "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
