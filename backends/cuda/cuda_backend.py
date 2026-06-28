@@ -469,12 +469,12 @@ class CudaBackend(AotiBackend, BackendDetails):
                 torch.ops.executorch_cuda.int4_plain_mm.default: [
                     "AOTITorchError aoti_torch_cuda_int4_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                    "AtenTensorHandle, AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],
                 torch.ops.executorch_cuda.int6_plain_mm.default: [
                     "AOTITorchError aoti_torch_cuda_int6_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                    "AtenTensorHandle, AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],
                 torch.ops.executorch_cuda.int8_plain_mm.default: [
                     "AOTITorchError aoti_torch_cuda_int8_plain_mm("
