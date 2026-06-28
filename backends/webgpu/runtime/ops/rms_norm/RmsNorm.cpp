@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
@@ -187,14 +188,38 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   static_assert(
       kRmsNormVec4WorkgroupSizeX == 64,
       "must match @workgroup_size and WG_SIZE in rms_norm_vec4.wgsl");
-  graph.add_dispatch({pipeline, bind_group, num_rows});
+  const size_t dispatch_idx =
+      graph.add_dispatch({pipeline, bind_group, num_rows});
+
+  // Dynamic shapes: recompute num_rows + rewrite the UBO for the live input.
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, row_width, epsilon, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        const uint64_t numel = utils::numel_of(d);
+        const uint32_t rows =
+            static_cast<uint32_t>(numel / static_cast<uint64_t>(row_width));
+        if (rows == 0 || rows > 65535u) {
+          throw std::runtime_error(
+              "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
+        }
+        RmsNormParams p = {};
+        p.num_rows = rows;
+        p.row_width = row_width;
+        p.epsilon = epsilon;
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x = rows;
+        g.set_cur_dims(out_id, d);
+      });
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // Drop our ref; the bind group keeps the uniform buffer alive until release.
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace
