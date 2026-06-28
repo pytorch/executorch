@@ -49,6 +49,8 @@ set(WEBGPU_SRCS
     runtime/ops/unsqueeze/Unsqueeze.cpp
     runtime/ops/slice/Slice.cpp
     runtime/ops/permute/Permute.cpp
+    runtime/ops/cat/Cat.cpp
+    runtime/ops/index/Index.cpp
     runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
 )
 
@@ -193,4 +195,5 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     target_compile_options(webgpu_op_test_util_test PRIVATE -fexceptions)
     set_property(TARGET webgpu_op_test_util_test PROPERTY CXX_STANDARD 17)
   endif()
+  add_webgpu_native_test(webgpu_index_test test/native/test_index.cpp)
 endif()
