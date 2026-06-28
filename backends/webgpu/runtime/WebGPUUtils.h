@@ -15,6 +15,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu::utils {
 
@@ -22,6 +23,15 @@ namespace executorch::backends::webgpu::utils {
 template <typename T>
 inline T div_up(T a, T b) {
   return (a + b - 1) / b;
+}
+
+// Product of dims (live element count); used by dynamic-resize hooks.
+inline uint64_t numel_of(const std::vector<int64_t>& dims) {
+  uint64_t n = 1;
+  for (int64_t v : dims) {
+    n *= static_cast<uint64_t>(v);
+  }
+  return n;
 }
 
 // Clamp workgroup size to device limit (SwiftShader caps at 128).

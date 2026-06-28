@@ -58,10 +58,9 @@ void select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("select: dim out of range");
   }
   const int64_t in_size = in_tensor.dims[dim];
-  int64_t index = read_scalar(graph, args.at(2), "index");
-  if (index < 0) {
-    index += in_size;
-  }
+  // Keep the RAW index: -1 normalizes against the LIVE dim (the resize hook).
+  const int64_t raw_index = read_scalar(graph, args.at(2), "index");
+  int64_t index = raw_index < 0 ? raw_index + in_size : raw_index;
   if (index < 0 || index >= in_size) {
     throw std::runtime_error("select: index out of range");
   }
@@ -164,15 +163,58 @@ void select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  const size_t dispatch_idx =
+      graph.add_dispatch({pipeline, bind_group, workgroup_count});
+
+  // Dynamic shapes: out = in minus `dim`; re-resolve index, meta, dispatch.
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id,
+       out_id,
+       dim,
+       raw_index,
+       out_meta_buf,
+       in_meta_buf,
+       params_buf,
+       wg_size,
+       dispatch_idx](WebGPUGraph& g) {
+        const auto& ind = g.cur_dims(in_id);
+        const int64_t live_in_size = ind[dim];
+        int64_t idx = raw_index < 0 ? raw_index + live_in_size : raw_index;
+        if (idx < 0 || idx >= live_in_size) {
+          throw std::runtime_error("select(resize): index out of range");
+        }
+        std::vector<int64_t> od;
+        for (size_t k = 0; k < ind.size(); k++) {
+          if (static_cast<int>(k) != dim) {
+            od.push_back(ind[k]);
+          }
+        }
+        g.set_cur_dims(out_id, od);
+        WebGPUTensor to, ti;
+        to.dims = od;
+        ti.dims = ind;
+        TensorMeta om, im;
+        fill_tensor_meta(to, &om);
+        fill_tensor_meta(ti, &im);
+        wgpuQueueWriteBuffer(g.queue(), out_meta_buf, 0, &om, sizeof(om));
+        wgpuQueueWriteBuffer(g.queue(), in_meta_buf, 0, &im, sizeof(im));
+        SelectParams p = {};
+        p.dim = static_cast<uint32_t>(dim);
+        p.index = static_cast<uint32_t>(idx);
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(
+                g.device(), om.numel, wg_size, "select(resize)");
+      });
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // Drop our refs; the bind group keeps the uniforms alive until release.
-  wgpuBufferRelease(out_meta_buf);
-  wgpuBufferRelease(in_meta_buf);
-  wgpuBufferRelease(params_buf);
+  // Graph owns them so the resize hook can rewrite them; freed in the dtor.
+  graph.own_uniform_buffer(out_meta_buf);
+  graph.own_uniform_buffer(in_meta_buf);
+  graph.own_uniform_buffer(params_buf);
 }
 
 } // namespace
