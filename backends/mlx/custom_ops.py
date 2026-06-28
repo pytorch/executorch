@@ -397,24 +397,24 @@ def gather_qmm_fake(
 def sample(
     logits: Tensor,
     temperature: Tensor,
+    top_k: Tensor,
     top_p: Tensor,
     seed: Optional[Tensor] = None,
-    top_k: Optional[Tensor] = None,
 ) -> Tensor:
     """
-    Gumbel-max sampling from softmax(logits / temperature), with top-p (nucleus)
-    and optional top-k filtering.
+    Gumbel-max sampling from softmax(logits / temperature), with top-k and
+    top-p (nucleus) filtering.
     logits:      [B, vocab]
     temperature: scalar float tensor    (runtime input). temperature <= 0 is
                  greedy: return argmax(logits) directly (matches the device,
                  which branches on temperature > 0).
+    top_k:       scalar int tensor. It is clipped to the vocab size; using the
+                 max int default keeps every token.
     top_p:       scalar float tensor in (0, 1]. top_p=1.0 keeps every
                  token, i.e. it is off.
     seed:        scalar int tensor or None
                  - tensor -> deterministic, keyed RNG (random::key(seed))
                  - None   -> MLX global KeySequence (non-deterministic)
-    top_k:       optional scalar int tensor. None keeps every token; otherwise
-                 sampling is restricted to the k most likely tokens.
     -> token_id: [B] int64
 
     Host/CPU reference used for export (shape/meta) and distributional checks
@@ -426,12 +426,16 @@ def sample(
         return torch.argmax(logits, dim=-1)
     # whole chain in fp32 to match the lowered graph (bf16 sums mis-rank ties).
     scaled = logits.float() / temperature
+
+    k = min(int(top_k.item()), scaled.shape[-1])
+    s_scaled, _ = torch.sort(scaled, dim=-1, descending=True)
+    kth = s_scaled[..., k - 1 : k]
+    scaled = torch.where(scaled >= kth, scaled, scaled.new_tensor(float("-inf")))
+
+    # Apply top-p after top-k so the probabilities are renormalized over the
+    # top-k subset.
     probs = torch.softmax(scaled, dim=-1)
     s_probs, _ = torch.sort(probs, dim=-1, descending=True)
-    if top_k is not None:
-        k = int(top_k.item())
-        kth = s_probs[..., k - 1 : k]
-        scaled = torch.where(probs >= kth, scaled, scaled.new_tensor(float("-inf")))
     cum = torch.cumsum(s_probs, dim=-1)
     keep = (cum - s_probs) <= top_p
     thresh = torch.where(keep, s_probs, s_probs.new_tensor(float("inf"))).amin(
@@ -448,5 +452,5 @@ def sample(
 
 
 @torch.library.register_fake("mlx::sample")
-def sample_fake(logits, temperature, top_p, seed=None, top_k=None):
+def sample_fake(logits, temperature, top_k, top_p, seed=None):
     return logits.new_empty(logits.shape[:-1], dtype=torch.long)

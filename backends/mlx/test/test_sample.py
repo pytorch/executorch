@@ -97,8 +97,11 @@ def _sample(
     t = torch.tensor(float(temperature))
     s = None if seed is None else torch.tensor(int(seed), dtype=torch.int64)
     p = torch.tensor(float(top_p))  # 1.0 = off
-    k = None if top_k is None else torch.tensor(int(top_k), dtype=torch.int64)
-    return torch.ops.mlx.sample(logits, t, p, s, k)
+    k = torch.tensor(
+        torch.iinfo(torch.int64).max if top_k is None else int(top_k),
+        dtype=torch.int64,
+    )
+    return torch.ops.mlx.sample(logits, t, k, p, s)
 
 
 class TestSampleOp(unittest.TestCase):
@@ -161,23 +164,31 @@ class TestSampleOp(unittest.TestCase):
         self.assertTrue((tokens == 3).any())
 
     def test_top_k_restricts_to_top_k(self):
-        # probs [0.5, 0.3, 0.15, 0.05]; top_k=2 keeps {0,1}.
-        base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
+        # Non-sorted probs [0.15, 0.5, 0.05, 0.3]; top_k=2 keeps {1,3}.
+        base = torch.log(torch.tensor([0.15, 0.5, 0.05, 0.3]))
         tokens = _sample(base.expand(5000, 4), 1.0, seed=0, top_k=2)
-        self.assertTrue(torch.isin(tokens, torch.tensor([0, 1])).all())
-        self.assertEqual(set(tokens.tolist()), {0, 1})
+        self.assertTrue(torch.isin(tokens, torch.tensor([1, 3])).all())
+        self.assertEqual(set(tokens.tolist()), {1, 3})
 
-    def test_top_k_none_keeps_all(self):
+    def test_top_k_default_keeps_all(self):
         # top_k=None -> no filtering; the tail token (index 3) is reachable.
         base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
         tokens = _sample(base.expand(20000, 4), 1.0, seed=0, top_k=None)
         self.assertTrue((tokens == 3).any())
 
-    def test_top_k_and_top_p_compose(self):
-        # top_p=0.7 keeps {0,1}; top_k=1 intersects that to {0}.
+    def test_top_k_clips_to_vocab_size(self):
+        # top_k > vocab is clipped to vocab size, so every token is reachable.
         base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
-        tokens = _sample(base.expand(5000, 4), 1.0, seed=0, top_p=0.7, top_k=1)
-        self.assertEqual(set(tokens.tolist()), {0})
+        tokens = _sample(base.expand(20000, 4), 1.0, seed=0, top_k=999)
+        self.assertEqual(set(tokens.tolist()), {0, 1, 2, 3})
+
+    def test_top_k_and_top_p_compose(self):
+        # top_k is applied before top_p, so top_p sees renormalized top-k probs.
+        # top_k=3 -> [0.526, 0.316, 0.158]; top_p=0.83 keeps {0,1}.
+        base = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05]))
+        tokens = _sample(base.expand(5000, 4), 1.0, seed=0, top_p=0.83, top_k=3)
+        self.assertTrue(torch.isin(tokens, torch.tensor([0, 1])).all())
+        self.assertEqual(set(tokens.tolist()), {0, 1})
 
 
 class TestSampleExport(unittest.TestCase):

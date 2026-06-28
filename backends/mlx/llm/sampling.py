@@ -20,7 +20,8 @@ class SamplingHead(nn.Module):
       temperature: scalar float tensor, e.g. torch.tensor(0.8). Must be >= 0;
                    temperature=0 is greedy (returns argmax, no division).
       top_k:       scalar int tensor or int; keeps only the k most likely tokens.
-                   None disables top-k filtering.
+                   None uses the max int default, which is clipped to the vocab
+                   size and keeps every token.
       top_p:       scalar float tensor in (0, 1] for nucleus sampling. top_p=1.0
                    (the default) keeps every token, i.e. no filtering. Pass it
                    as a runtime input to tune per request.
@@ -36,6 +37,8 @@ class SamplingHead(nn.Module):
         last = logits[:, -1, :]  # [B, vocab]
         if not isinstance(top_p, torch.Tensor):
             top_p = torch.tensor(float(top_p))
-        if top_k is not None and not isinstance(top_k, torch.Tensor):
+        if top_k is None:
+            top_k = torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64)
+        elif not isinstance(top_k, torch.Tensor):
             top_k = torch.tensor(int(top_k), dtype=torch.int64)
-        return torch.ops.mlx.sample(last, temperature, top_p, seed, top_k)
+        return torch.ops.mlx.sample(last, temperature, top_k, top_p, seed)
