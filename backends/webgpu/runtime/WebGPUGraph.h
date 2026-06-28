@@ -228,6 +228,10 @@ class WebGPUGraph {
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
 
+  // Create a mapped-at-creation uniform buffer from `size` bytes and track it
+  // in the memory stats. Shared helper for ops needing a uniform Params buffer.
+  WGPUBuffer make_uniform_buffer(const void* data, size_t size);
+
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
       const char* wgsl_source);
