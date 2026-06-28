@@ -71,13 +71,6 @@ def get_args():
         help="Extra cmake flags to pass the when building the executor_runner",
     )
     parser.add_argument(
-        "--specify_ethosu_scratch",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Use PTE scratch size to set Ethos-U temp allocator pool size",
-    )
-    parser.add_argument(
         "--extra_runtime_flags",
         required=False,
         default="",
@@ -185,21 +178,7 @@ def build_ethosu_runtime(
     memory_mode: str,
     extra_flags: str,
     elf_build_path: str,
-    specify_ethosu_scratch: bool,
 ):
-    if specify_ethosu_scratch:
-        from executorch.backends.arm.scripts.get_ethosu_scratch_from_pte import (
-            get_scratch_from_pte,
-        )
-
-        scratch_size = get_scratch_from_pte(pte_file)
-        if scratch_size is not None:
-            extra_flags = (
-                f"{extra_flags} "
-                f"-DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE={scratch_size}"
-            )
-        else:
-            raise RuntimeError(f"Failed to derive Ethos-U scratch size from {pte_file}")
 
     elf_build_path = os.path.join(elf_build_path, "cmake-out")
     run_external_cmd(
@@ -349,7 +328,6 @@ if __name__ == "__main__":
                 args.memory_mode,
                 args.extra_flags,
                 elf_build_path,
-                args.specify_ethosu_scratch,
             )
             end_time = time.perf_counter()
             print(

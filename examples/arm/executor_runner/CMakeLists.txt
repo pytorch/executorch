@@ -177,21 +177,32 @@ message(STATUS "SYSTEM_CONFIG is ${SYSTEM_CONFIG}")
 message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
 message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 
-# By default, use 2MB of temporary scratch buffer. For Dedicated_Sram, use 64MB
-# for the temporary scratch buffer and 384KB for the fast scratch buffer (the
-# cache, applicable only for Ethos-U65 and Ethos-U85). Allow -D overrides.
-if(MEMORY_MODE MATCHES "Dedicated_Sram")
-  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
-  endif()
-  if(NOT DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
-  endif()
-else()
-  if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+  if(SYSTEM_CONFIG MATCHES "U55")
+    # The Corstone-300 has 2MB of SRAM, provide the Ethos-U with the full 2MB
+    # for the temp_allocation_pool array.
     set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x200000)
+  elseif(SYSTEM_CONFIG MATCHES "U85")
+    if(MEMORY_MODE MATCHES "Dedicated_Sram")
+      # 32MB of scratch buffer for Dedicated_Sram memory mode.
+      set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x2000000)
+      # For Dedicated_Sram, set the
+      # ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE to 384KB unless
+      # specified otherwise.
+      if(NOT DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
+        set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+      endif()
+
+    elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
+      # For Shared_Sram and Sram only, use scratch buffer of 4MB - 64KB The
+      # Corstone-320 provides 4MB of SRAM and we subtract 64KB because we have a
+      # few objects placed at the start of the SRAM, before the
+      # temp_allocation_pool array.
+      set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x3F0000)
+    endif()
   endif()
 endif()
+
 message(
   STATUS
     "ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE = ${ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}"
@@ -293,9 +304,24 @@ set(LINK_FILE_OUT
     "${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}"
 )
 
+if(MEMORY_MODE MATCHES "Dedicated_Sram")
+  set(ETHOSU_MODEL 1)
+  set(ETHOSU_ARENA 1)
+elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
+  set(ETHOSU_ARENA 0)
+  # On silicon, for Sram_Only, the model is assumed to be in the SRAM but that
+  # limits the number of models we can test for Sram_Only. For testing coverage
+  # and consistency, we place the model in the external memory for Sram_Only.
+  set(ETHOSU_MODEL 1)
+else()
+  message(FATAL_ERROR "Unsupported MEMORY_MODE ${MEMORY_MODE}")
+endif()
+
 execute_process(
-  COMMAND ${CMAKE_C_COMPILER} ${COMPILER_PREPROCESSOR_OPTIONS} -o
-          ${LINK_FILE_OUT} ${LINK_FILE_IN}
+  COMMAND
+    ${CMAKE_C_COMPILER} ${COMPILER_PREPROCESSOR_OPTIONS}
+    -DETHOSU_ARENA=${ETHOSU_ARENA} -DETHOSU_MODEL=${ETHOSU_MODEL} -o
+    ${LINK_FILE_OUT} ${LINK_FILE_IN}
 )
 target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
 
