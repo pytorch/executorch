@@ -48,6 +48,7 @@ struct WebGPUDispatch {
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
   std::string kernel_name; // bench label
+  uint32_t workgroup_count_y = 1; // 2D fold (>65535); 1 = unchanged 1D path
   // DMA copy command; default Compute keeps existing positional inits valid.
   enum class Kind { Compute, Copy };
   Kind kind = Kind::Compute;

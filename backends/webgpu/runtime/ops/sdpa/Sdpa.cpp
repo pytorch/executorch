@@ -159,6 +159,7 @@ void build_dispatch(
     WGPUBuffer uniform_buffer,
     uint64_t uniform_size,
     uint32_t workgroup_count_x,
+    uint32_t workgroup_count_y,
     uint32_t wg_size,
     bool retain_uniform = false,
     const char* kernel_name = "") {
@@ -232,7 +233,12 @@ void build_dispatch(
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count_x, kernel_name});
+  graph.add_dispatch(
+      {pipeline,
+       bind_group,
+       workgroup_count_x,
+       kernel_name,
+       workgroup_count_y});
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
@@ -273,6 +279,7 @@ static WGPUBuffer record_update_cache_dispatch(
       ubuf,
       sizeof(uc),
       wgc,
+      1,
       uc_wg,
       retain_uniform,
       "update_cache");
@@ -485,7 +492,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     }
     const int64_t qk_tiles = Hq * utils::div_up(S, kSdpaTileM) *
         utils::div_up(context_len, kSdpaTileN);
-    const uint32_t wgc = utils::compute_1d_workgroup_count(
+    const utils::WgCount wgc = utils::compute_2d_workgroup_count(
         device, static_cast<uint32_t>(qk_tiles), qk_wg, "QK");
     AttnWeightsParams p = make_attn_weights_params(
         S, Hq, Hkv, D, context_len, input_pos, g, scale);
@@ -501,7 +508,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         3,
         ubuf,
         sizeof(p),
-        wgc,
+        wgc.x,
+        wgc.y,
         qk_wg,
         true,
         "sdpa_compute_attn_weights");
@@ -512,7 +520,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // Dispatch 4: softmax, one workgroup per (h,s) row of width context_len.
   {
     // One workgroup per (h,s) row; wg_size 1 keeps the device dispatch check.
-    const uint32_t wgc = utils::compute_1d_workgroup_count(
+    const utils::WgCount wgc = utils::compute_2d_workgroup_count(
         device, static_cast<uint32_t>(Hq * S), 1, "softmax");
     SoftmaxParams p = make_softmax_params(Hq, S, context_len);
     WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
@@ -525,7 +533,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         2,
         ubuf,
         sizeof(p),
-        wgc,
+        wgc.x,
+        wgc.y,
         0,
         true,
         "sdpa_softmax");
@@ -537,7 +546,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   {
     const int64_t av_tiles =
         Hq * utils::div_up(S, kSdpaTileM) * utils::div_up(D, kSdpaTileN);
-    const uint32_t wgc = utils::compute_1d_workgroup_count(
+    const utils::WgCount wgc = utils::compute_2d_workgroup_count(
         device, static_cast<uint32_t>(av_tiles), av_wg, "AV");
     ComputeOutParams p = make_compute_out_params(S, Hq, Hkv, D, context_len, g);
     WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
@@ -552,7 +561,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         3,
         ubuf,
         sizeof(p),
-        wgc,
+        wgc.x,
+        wgc.y,
         av_wg,
         true,
         "sdpa_compute_out");
@@ -629,25 +639,28 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     wgpuQueueWriteBuffer(gr.queue(), qk_buf, 0, &qp, sizeof(qp));
     const int64_t qk_tiles =
         Hq * utils::div_up(s, kSdpaTileM) * utils::div_up(ctx, kSdpaTileN);
-    gr.dispatch_at(qk_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(
-            gr.device(), static_cast<uint32_t>(qk_tiles), qk_wg, "QK(resize)");
+    const utils::WgCount qk_wgc = utils::compute_2d_workgroup_count(
+        gr.device(), static_cast<uint32_t>(qk_tiles), qk_wg, "QK(resize)");
+    gr.dispatch_at(qk_idx).workgroup_count_x = qk_wgc.x;
+    gr.dispatch_at(qk_idx).workgroup_count_y = qk_wgc.y;
 
     // softmax: one workgroup per (h,s) row.
     SoftmaxParams sp = make_softmax_params(Hq, s, ctx);
     wgpuQueueWriteBuffer(gr.queue(), softmax_buf, 0, &sp, sizeof(sp));
-    gr.dispatch_at(softmax_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(
-            gr.device(), static_cast<uint32_t>(Hq * s), 1, "softmax(resize)");
+    const utils::WgCount sm_wgc = utils::compute_2d_workgroup_count(
+        gr.device(), static_cast<uint32_t>(Hq * s), 1, "softmax(resize)");
+    gr.dispatch_at(softmax_idx).workgroup_count_x = sm_wgc.x;
+    gr.dispatch_at(softmax_idx).workgroup_count_y = sm_wgc.y;
 
     // AV: one thread per TM x TN tile; grid = Hq*ceil(S/TM)*ceil(D/TN).
     ComputeOutParams op = make_compute_out_params(s, Hq, Hkv, D, ctx, g);
     wgpuQueueWriteBuffer(gr.queue(), av_buf, 0, &op, sizeof(op));
     const int64_t av_tiles =
         Hq * utils::div_up(s, kSdpaTileM) * utils::div_up(D, kSdpaTileN);
-    gr.dispatch_at(av_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(
-            gr.device(), static_cast<uint32_t>(av_tiles), av_wg, "AV(resize)");
+    const utils::WgCount av_wgc = utils::compute_2d_workgroup_count(
+        gr.device(), static_cast<uint32_t>(av_tiles), av_wg, "AV(resize)");
+    gr.dispatch_at(av_idx).workgroup_count_x = av_wgc.x;
+    gr.dispatch_at(av_idx).workgroup_count_y = av_wgc.y;
 
     // Output attn has the same shape as q: [.., S, Hq, D].
     gr.set_cur_dims(out_id, gr.cur_dims(q_id));

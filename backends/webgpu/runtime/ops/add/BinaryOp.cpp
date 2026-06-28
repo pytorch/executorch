@@ -53,8 +53,8 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   uint32_t wg_size =
       utils::clamp_workgroup_size(device, kBinaryAddWorkgroupSizeX);
-  uint32_t workgroup_count =
-      utils::compute_1d_workgroup_count(device, num_elements, wg_size, "add");
+  utils::WgCount workgroup_count =
+      utils::compute_2d_workgroup_count(device, num_elements, wg_size, "add");
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -158,7 +158,8 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count.x, "", workgroup_count.y});
   const size_t dispatch_idx = graph.num_dispatches() - 1;
 
   // Dynamic shapes: recompute numel/dispatch; out follows the larger operand.
@@ -180,9 +181,10 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     p.num_elements = static_cast<uint32_t>(numel);
     p.alpha = alpha;
     wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-    g.dispatch_at(dispatch_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(
-            g.device(), static_cast<uint32_t>(numel), wg_size, "add(resize)");
+    const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+        g.device(), static_cast<uint32_t>(numel), wg_size, "add(resize)");
+    g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+    g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
   };
   graph.add_tensor_resize_hook(in1_id, add_resize);
   graph.add_tensor_resize_hook(in2_id, add_resize);
