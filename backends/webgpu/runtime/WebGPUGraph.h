@@ -23,8 +23,14 @@ namespace executorch::backends::webgpu {
 
 struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
+  // Max (allocation) dims/nbytes: the serialized upper-bound shape. The GPU
+  // buffer is sized from these and never reallocated (Vulkan allocate-at-max).
   std::vector<int64_t> dims;
   size_t nbytes = 0;
+  // Live dims/nbytes for dynamic shapes; always <= the max. == max on a static
+  // graph, so dynamic-resize logic keyed off these is inert there.
+  std::vector<int64_t> cur_dims;
+  size_t cur_nbytes = 0;
   // Serialized (GPU-side) element type, used to narrow wider host inputs.
   size_t elem_size = 0;
   bool is_int = false;
@@ -42,6 +48,7 @@ struct WebGPUDispatch {
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
   std::string kernel_name; // bench label
+  uint32_t workgroup_count_y = 1; // 2D fold (>65535); 1 = unchanged 1D path
   // DMA copy command; default Compute keeps existing positional inits valid.
   enum class Kind { Compute, Copy };
   Kind kind = Kind::Compute;
@@ -171,6 +178,17 @@ class WebGPUGraph {
     return symint_sources_;
   }
 
+  // Records that a SymInt is a tensor's live dim size (sym_size.int), read from
+  // cur_dims at execute; distinct from SymIntSource (a scalar data element).
+  struct SymIntDimSource {
+    int symint_id;
+    int tensor_id;
+    int dim;
+  };
+  void add_symint_dim_source(int symint_id, int tensor_id, int dim) {
+    symint_dim_sources_.push_back({symint_id, tensor_id, dim});
+  }
+
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
   void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
@@ -178,7 +196,25 @@ class WebGPUGraph {
   void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
     resize_hooks_.push_back({symint_id, std::move(fn)});
   }
-  // Run hooks for changed SymInts then clear; call before execute().
+
+  // Set a graph input's live dims (<= max) + dirty it; static path stays inert.
+  void resize_input(int value_id, const std::vector<int64_t>& new_dims);
+  // Set a tensor's live dims (an op resize hook calls this for its output to
+  // cascade to consumers); validates the new dims fit the max, never reallocs.
+  void set_cur_dims(int value_id, const std::vector<int64_t>& new_dims);
+  const std::vector<int64_t>& cur_dims(int value_id) const {
+    return tensors_[value_id].cur_dims;
+  }
+
+  // Per-tensor resize hook; mirrors Vulkan ExecuteNode::resize_fn. Runs in
+  // propagate_resize when trigger_tensor_id is dirty.
+  void add_tensor_resize_hook(
+      int trigger_tensor_id,
+      std::function<void(WebGPUGraph&)> fn) {
+    tensor_resize_hooks_.push_back({trigger_tensor_id, std::move(fn)});
+  }
+
+  // Run hooks for changed SymInts and tensors, then clear; call before execute.
   void propagate_resize();
 
   // Mutable dispatch access for resize hooks (to rewrite workgroup_count_x).
@@ -196,8 +232,10 @@ class WebGPUGraph {
     return queue_;
   }
 
-  void add_dispatch(WebGPUDispatch dispatch) {
+  // Returns the new dispatch's index (resize hooks rewrite it via dispatch_at).
+  size_t add_dispatch(WebGPUDispatch dispatch) {
     dispatches_.push_back(dispatch);
+    return dispatches_.size() - 1;
   }
 
   // Record an in-graph-order buffer-to-buffer DMA (e.g. a flat copy).
@@ -293,6 +331,7 @@ class WebGPUGraph {
   };
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
+  std::vector<SymIntDimSource> symint_dim_sources_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
   struct ResizeHook {
@@ -301,6 +340,15 @@ class WebGPUGraph {
   };
   std::vector<ResizeHook> resize_hooks_;
   std::unordered_set<int> dirty_symints_;
+
+  // Tensor-shape resize hooks + the set of tensors changed since the last
+  // propagate_resize (mirrors the SymInt pair above, for dynamic shapes).
+  struct TensorResizeHook {
+    int trigger_tensor_id;
+    std::function<void(WebGPUGraph&)> fn;
+  };
+  std::vector<TensorResizeHook> tensor_resize_hooks_;
+  std::unordered_set<int> dirty_tensors_;
 
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;

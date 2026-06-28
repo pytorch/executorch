@@ -91,7 +91,8 @@ void WebGPUGraph::update_symints_from_inputs(
       throw std::runtime_error(
           "select_as_symint: source tensor is not a graph input");
     }
-    const auto& dims = tensors_[src.input_tensor_id].dims;
+    // Live cur_dims: the source may be a dynamic-shape input.
+    const auto& dims = tensors_[src.input_tensor_id].cur_dims;
     int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
     if (dim < 0 || dim >= static_cast<int>(dims.size())) {
       throw std::runtime_error("select_as_symint: dim out of range");
@@ -116,9 +117,9 @@ void WebGPUGraph::update_symints_from_inputs(
     }
     // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
     const int64_t offset = static_cast<int64_t>(index) * stride;
-    // elem_size back-derived from build-time numel (sources are static-shaped).
     const void* host = inputs[pos].data;
-    const size_t elem_size = inputs[pos].nbytes / static_cast<size_t>(numel);
+    // Stored elem_size (live nbytes/numel mis-derives for a dynamic source).
+    const size_t elem_size = tensors_[src.input_tensor_id].elem_size;
     int32_t val;
     if (elem_size == sizeof(int64_t)) {
       val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
@@ -129,6 +130,15 @@ void WebGPUGraph::update_symints_from_inputs(
           "select_as_symint: unsupported input element size");
     }
     set_symint(src.symint_id, val);
+  }
+  // sym_size.int: SymInt = a tensor's live dim (cur_dims); usually unused.
+  for (const auto& s : symint_dim_sources_) {
+    const auto& d = tensors_[s.tensor_id].cur_dims;
+    int dim = s.dim < 0 ? s.dim + static_cast<int>(d.size()) : s.dim;
+    if (dim < 0 || dim >= static_cast<int>(d.size())) {
+      throw std::runtime_error("sym_size: dim out of range");
+    }
+    set_symint(s.symint_id, static_cast<int32_t>(d[dim]));
   }
 }
 
@@ -145,8 +155,37 @@ void WebGPUGraph::set_symint(int id, int32_t val) {
   }
 }
 
+void WebGPUGraph::set_cur_dims(
+    int value_id,
+    const std::vector<int64_t>& new_dims) {
+  auto& t = tensors_[value_id];
+  if (new_dims.size() != t.dims.size()) {
+    throw std::runtime_error("WebGPU resize: tensor rank changed");
+  }
+  size_t numel = 1;
+  for (size_t d = 0; d < new_dims.size(); d++) {
+    if (new_dims[d] < 0 || new_dims[d] > t.dims[d]) {
+      throw std::runtime_error(
+          "WebGPU resize: new dim exceeds the max (serialized) allocation");
+    }
+    numel *= static_cast<size_t>(new_dims[d]);
+  }
+  const size_t new_nbytes = numel * t.elem_size;
+  if (t.cur_dims != new_dims) {
+    t.cur_dims = new_dims;
+    t.cur_nbytes = new_nbytes;
+    dirty_tensors_.insert(value_id);
+  }
+}
+
+void WebGPUGraph::resize_input(
+    int value_id,
+    const std::vector<int64_t>& new_dims) {
+  set_cur_dims(value_id, new_dims);
+}
+
 void WebGPUGraph::propagate_resize() {
-  if (dirty_symints_.empty()) {
+  if (dirty_symints_.empty() && dirty_tensors_.empty()) {
     return;
   }
   for (auto& hook : resize_hooks_) {
@@ -155,6 +194,21 @@ void WebGPUGraph::propagate_resize() {
     }
   }
   dirty_symints_.clear();
+  // Tensor hooks: bounded fixpoint. A hook may dirty its output (cascading to a
+  // consumer); each pass handles the currently-dirty set. A forward DAG
+  // converges in <= depth passes (set_cur_dims re-dirties only on a change).
+  for (size_t pass = 0;
+       !dirty_tensors_.empty() && pass <= tensor_resize_hooks_.size();
+       pass++) {
+    std::unordered_set<int> processing;
+    processing.swap(dirty_tensors_);
+    for (auto& hook : tensor_resize_hooks_) {
+      if (processing.count(hook.trigger_tensor_id) != 0) {
+        hook.fn(*this);
+      }
+    }
+  }
+  dirty_tensors_.clear();
 }
 
 WebGPUGraph::~WebGPUGraph() {
@@ -309,6 +363,10 @@ void WebGPUGraph::build(
         tensor.elem_size = vk_datatype_size(vk_tensor->datatype());
         tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
         tensor.nbytes = numel * tensor.elem_size;
+        // Live dims start == max (serialized upper bound); resize_input shrinks
+        // them per call. Static graphs keep cur == max forever.
+        tensor.cur_dims = tensor.dims;
+        tensor.cur_nbytes = tensor.nbytes;
 
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
@@ -611,17 +669,20 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
     }
     int tid = input_ids_[i];
     const auto& tensor = tensors_[tid];
+    // Upload only the live (cur) bytes, not the max allocation; cur_nbytes ==
+    // nbytes on a static graph, so this is byte-identical there.
+    const size_t live_nbytes = tensor.cur_nbytes;
 
     // Fast path: host and GPU element types match byte-for-byte.
-    if (in.nbytes == tensor.nbytes) {
-      wgpuQueueWriteBuffer(queue_, tensor.buffer, 0, in.data, tensor.nbytes);
+    if (in.nbytes == live_nbytes) {
+      wgpuQueueWriteBuffer(queue_, tensor.buffer, 0, in.data, live_nbytes);
       continue;
     }
 
     // Narrow int64 host indices into the int32 buffer (mirrors Vulkan).
     const bool buffer_is_int32 = tensor.is_int && tensor.elem_size == 4;
-    if (in.host_is_int64 && buffer_is_int32 && in.nbytes == tensor.nbytes * 2) {
-      const size_t numel = tensor.nbytes / 4;
+    if (in.host_is_int64 && buffer_is_int32 && in.nbytes == live_nbytes * 2) {
+      const size_t numel = live_nbytes / 4;
       const int64_t* src = static_cast<const int64_t*>(in.data);
       std::vector<int32_t> narrowed(numel);
       for (size_t e = 0; e < numel; e++) {
@@ -635,7 +696,7 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
         narrowed[e] = static_cast<int32_t>(src[e]);
       }
       wgpuQueueWriteBuffer(
-          queue_, tensor.buffer, 0, narrowed.data(), tensor.nbytes);
+          queue_, tensor.buffer, 0, narrowed.data(), live_nbytes);
       continue;
     }
 
@@ -643,7 +704,7 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
         "WebGPU: unsupported input copy for input " + std::to_string(i) +
         " (host " + std::to_string(in.nbytes) + " bytes" +
         (in.host_is_int64 ? " int64" : "") + " vs buffer " +
-        std::to_string(tensor.nbytes) + " bytes)");
+        std::to_string(live_nbytes) + " bytes)");
   }
 }
 
@@ -714,7 +775,7 @@ void WebGPUGraph::execute() {
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatch.bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatch.workgroup_count_x, 1, 1);
+          pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -722,7 +783,7 @@ void WebGPUGraph::execute() {
         qp->record(
             static_cast<uint32_t>(i),
             dispatch.kernel_name,
-            {dispatch.workgroup_count_x, 1, 1},
+            {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
             {1, 1, 1});
       }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -794,7 +855,10 @@ void WebGPUGraph::execute() {
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatches_[i].bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatches_[i].workgroup_count_x, 1, 1);
+          pass,
+          dispatches_[i].workgroup_count_x,
+          dispatches_[i].workgroup_count_y,
+          1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
     }
