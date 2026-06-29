@@ -3528,10 +3528,10 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     skipping the sampling chain (so 0 is exact, not the small-epsilon approx).
     """
     args = P.args(n)
-    require_args(args, 3, 4, "mlx.sample")
+    require_args(args, 4, 5, "mlx.sample")
     require_kwargs(P.kwargs(n), set(), "mlx.sample")
-    logits, temperature, top_p = args[0], args[1], args[2]
-    seed = args[3] if len(args) > 3 and args[3] is not None else None
+    logits, temperature, top_k, top_p = args[0], args[1], args[2], args[3]
+    seed = args[4] if len(args) > 4 and args[4] is not None else None
 
     temp_dt = n.args[1].meta["val"].dtype
     out = P.make_or_get_slot(n)
@@ -3612,8 +3612,82 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             )
         )
         scaled = logits_f
+        neg_inf = emit_lifted_constant(P, float("-inf"), torch.float32)
 
-        # top-p nucleus mask; SortNode is ascending-only, so sort -probs for descending.
+        # Top-k first, on scaled logits. Clip k to vocab size so the default
+        # max-int sentinel selects every token.
+        vocab_size = int(n.args[0].meta["val"].shape[-1])
+        vocab = emit_lifted_constant(P, vocab_size, torch.int64)
+        _, clipped_top_k = P.make_tmp_slot()
+        P.emit(
+            MinimumNode(
+                a=P.slot_to_tid(top_k),
+                b=P.slot_to_tid(vocab),
+                out=P.slot_to_tid(clipped_top_k),
+            )
+        )
+        _, top_k_val = P.make_tmp_value_slot()
+        P.emit(
+            ItemIntNode(x=P.slot_to_tid(clipped_top_k), out=P.slot_to_vid(top_k_val))
+        )
+        _, top_k_index = P.make_tmp_value_slot()
+        P.emit(
+            SubtractIntNode(
+                a=P.to_int_or_vid(top_k_val),
+                b=IntOrVid.from_literal(1),
+                out=P.slot_to_vid(top_k_index),
+            )
+        )
+
+        _, sorted_scaled = P.make_tmp_slot()
+        P.emit(NegNode(x=P.slot_to_tid(scaled), out=P.slot_to_tid(sorted_scaled)))
+        P.emit(
+            SortNode(
+                x=P.slot_to_tid(sorted_scaled),
+                out=P.slot_to_tid(sorted_scaled),
+                axis=-1,
+            )
+        )
+        P.emit(
+            NegNode(x=P.slot_to_tid(sorted_scaled), out=P.slot_to_tid(sorted_scaled))
+        )
+        _, top_k_thresh = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(sorted_scaled),
+                index=P.to_int_or_vid_or_tid(top_k_index),
+                out=P.slot_to_tid(top_k_thresh),
+                axis=-1,
+            )
+        )
+        P.emit(
+            ExpandDimsNode(
+                x=P.slot_to_tid(top_k_thresh),
+                out=P.slot_to_tid(top_k_thresh),
+                axis=-1,
+            )
+        )
+        _, drop_k = P.make_tmp_slot()
+        P.emit(
+            LessNode(
+                a=P.slot_to_tid(scaled),
+                b=P.slot_to_tid(top_k_thresh),
+                out=P.slot_to_tid(drop_k),
+            )
+        )
+        _, top_k_scaled = P.make_tmp_slot()
+        P.emit(
+            WhereNode(
+                condition=P.slot_to_tid(drop_k),
+                x=P.slot_to_tid(neg_inf),
+                y=P.slot_to_tid(scaled),
+                out=P.slot_to_tid(top_k_scaled),
+            )
+        )
+        scaled = top_k_scaled
+
+        # Top-p nucleus mask on probabilities renormalized over the top-k set.
+        # SortNode is ascending-only, so sort -probs for descending.
         # probs is read twice (neg_p below and the drop comparison), keep separate.
         _, probs = P.make_tmp_slot()
         P.emit(SoftmaxNode(x=P.slot_to_tid(scaled), out=P.slot_to_tid(probs), axis=-1))
@@ -3674,7 +3748,6 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 out=P.slot_to_tid(drop),
             )
         )
-        neg_inf = emit_lifted_constant(P, float("-inf"), torch.float32)
         # masked = where(drop, -inf, scaled); then add gumbel noise in place.
         _, masked = P.make_tmp_slot()
         P.emit(
