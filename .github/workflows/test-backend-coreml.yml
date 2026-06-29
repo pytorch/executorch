@@ -42,6 +42,9 @@ jobs:
         ${{ github.event_name == 'pull_request'
             && '["coreml"]'
             || '["coreml", "coreml_static_int8"]' }}
+      # Run coreml_static_int8 for the operators suite only; skip it for
+      # the models suite (still covered by the coreml flow).
+      matrix-exclude: '[{"flow": "coreml_static_int8", "suite": "models"}]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       run-macos: true
