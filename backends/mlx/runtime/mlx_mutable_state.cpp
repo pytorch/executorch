@@ -254,6 +254,10 @@ void mutable_state_note_handle(
   handle_ctx()[handle] = tl_loading_ctx;
 }
 
+bool mutable_state_load_scope_active() {
+  return tl_loading_ctx != kInvalidMutableContext;
+}
+
 void mutable_state_forget_handle(const void* handle) {
   std::lock_guard<std::mutex> g(registry_mutex());
   auto hit = handle_ctx().find(handle);

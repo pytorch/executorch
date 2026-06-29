@@ -279,6 +279,19 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           spec.ok()) {
         skip_mutable_buffer_init = spec.get();
       }
+      // skip_mutable_buffer_init is only safe under a multi-session owner: the
+      // per-session manager allocates the buffers and execute() rebinds to
+      // them. Without an active load scope no handle is registered, no
+      // per-session buffers are ever created, and execute() would run against
+      // empty buffers. Reject the misuse loudly here instead of failing later.
+      if (skip_mutable_buffer_init && !mutable_state_load_scope_active()) {
+        ET_LOG(
+            Error,
+            "skip_mutable_buffer_init set without an active multi-session load "
+            "scope; mutable buffers would never be allocated");
+        throw std::runtime_error(
+            "skip_mutable_buffer_init requires an active multi-session owner");
+      }
       if (skip_mutable_buffer_init &&
           init_chain_references_mutable_buffer(handle->program)) {
         ET_LOG(
