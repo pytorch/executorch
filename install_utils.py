@@ -85,11 +85,12 @@ def is_vulkan_available() -> bool:
         ]
     for glslc in candidates:
         try:
-            subprocess.run(
-                [glslc, "--version"], capture_output=True, text=True, check=True
-            )
+            # Only the exit status matters, so skip text=True; keep the except
+            # tight to avoid masking things like UnicodeDecodeError.
+            subprocess.run([glslc, "--version"], capture_output=True, check=True)
             return True
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            # glslc missing or not runnable -> unavailable; try the next candidate.
             continue
     return False
 

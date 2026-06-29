@@ -889,20 +889,26 @@ class CustomBuild(build):
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
 
-        # Auto-enable the Vulkan backend when its only build-time dependency,
-        # the glslc shader compiler, is available (mirrors the CUDA detection
-        # above). Unlike CUDA, the backend also needs third-party submodules
-        # that are not in the default checkout set, so gate on their presence
-        # too: an incidental glslc must not turn a working source build into a
-        # hard CMake failure. An explicit -DEXECUTORCH_BUILD_VULKAN=ON still
-        # flows through and surfaces the backend's own missing-submodule error.
+        # Unlike CUDA, Vulkan also needs its third-party submodules, which
+        # aren't in the default checkout, along with glslc. A partial checkout
+        # no-ops here rather than failing in CMake.
         vulkan_third_party = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            "backends/vulkan/third-party/volk/volk.c",
+            "backends",
+            "vulkan",
+            "third-party",
+        )
+        vulkan_submodules_present = all(
+            os.path.exists(os.path.join(vulkan_third_party, *parts))
+            for parts in (
+                ("volk", "volk.c"),
+                ("Vulkan-Headers", "include", "vulkan", "vulkan.h"),
+                ("VulkanMemoryAllocator", "include", "vk_mem_alloc.h"),
+            )
         )
         if (
             not minimal_build
-            and os.path.exists(vulkan_third_party)
+            and vulkan_submodules_present
             and install_utils.is_vulkan_available()
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args, "EXECUTORCH_BUILD_VULKAN", default=True

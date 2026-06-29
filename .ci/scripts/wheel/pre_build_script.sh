@@ -123,8 +123,7 @@ if [[ "${EXECUTORCH_BUILD_VULKAN:-0}" != "0" \
     echo "glslc installed: $(command -v glslc)"
   fi
 else
-  # Mirror the CUDA guard above for Vulkan. This forces the default wheel
-  # to exclude Vulkan.
+  # This is the Vulkan equivalent of the Windows CUDA force-off above (#20527).
   export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_VULKAN=OFF"
   echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi
