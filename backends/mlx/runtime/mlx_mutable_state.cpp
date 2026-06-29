@@ -136,15 +136,52 @@ int64_t mutable_state_bytes_per_session(MutableStateContext ctx) {
     return 0;
   }
   int64_t total = 0;
+  // Per-session mutable buffers are allocated from program metadata
+  // (mutable_buffer_map + tensor_meta), independent of whether the handle kept
+  // a default copy. Compute the estimate from metadata so it stays correct even
+  // when default mutable-buffer init was skipped (skip_mutable_buffer_init).
   for (const auto& kv : it->second.handles) {
-    const MutableBufferData* bufs = kv.second.default_buffers;
-    if (bufs == nullptr) {
+    const MLXProgram* program = kv.second.program;
+    if (program == nullptr) {
       continue;
     }
-    for (const auto& t : bufs->tensors) {
-      if (t.has_value()) {
-        total += static_cast<int64_t>(t->nbytes());
+    for (const auto& slot : program->mutable_buffer_map) {
+      if (slot.slot_type != SlotType::TensorSlot ||
+          slot.idx >= program->tensor_meta.size() ||
+          !program->tensor_meta[slot.idx].has_value()) {
+        continue;
       }
+      const auto& meta = *program->tensor_meta[slot.idx];
+      // Sum sizes from metadata, clamping each tensor to kMaxAllocationBytes so
+      // malformed (oversized) shapes in an untrusted program can't overflow the
+      // accumulator. Real allocations are independently bounded by
+      // check_allocation_bounded at load_mutable_buffers.
+      uint64_t bytes = static_cast<uint64_t>(
+          ::mlx::core::size_of(resolve_dtype(meta.scalar_type)));
+      bool dynamic = false;
+      for (const auto& dim : meta.shape) {
+        if (dim.value < 0) {
+          dynamic = true;
+          break;
+        }
+        const uint64_t d = static_cast<uint64_t>(dim.value);
+        if (d == 0) {
+          bytes = 0;
+          break;
+        }
+        if (bytes > kMaxAllocationBytes / d) {
+          bytes = kMaxAllocationBytes; // clamp; avoids overflow
+        } else {
+          bytes *= d;
+        }
+      }
+      if (dynamic) {
+        continue;
+      }
+      if (bytes > kMaxAllocationBytes) {
+        bytes = kMaxAllocationBytes;
+      }
+      total += static_cast<int64_t>(bytes);
     }
   }
   return total;

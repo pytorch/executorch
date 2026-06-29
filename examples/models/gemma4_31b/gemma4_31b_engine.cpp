@@ -135,9 +135,39 @@ Result<std::unique_ptr<Module>> build_gemma_module(
   }
 #endif
 
-  ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kPrefillMethod));
+  const executorch::runtime::LoadBackendOptionsMap* load_options = nullptr;
+#ifdef EXECUTORCH_BUILD_MLX
+  // Per-model MLX runtime specs, delivered to MLXBackend::init(). Must outlive
+  // the load_method calls below (they read it during init).
+  executorch::runtime::BackendOptions<2> mlx_opts;
+  executorch::runtime::LoadBackendOptionsMap mlx_options_map;
+  // Release MLX's cached buffer pool every N forward calls to bound memory
+  // growth during long sessions.
+  constexpr int kMLXClearCacheInterval = 256;
+  ET_CHECK_OK_OR_RETURN_ERROR(mlx_opts.set_option(
+      ::executorch::backends::mlx::kClearCacheIntervalKey,
+      kMLXClearCacheInterval));
+  ET_LOG(
+      Info,
+      "Gemma4_31BEngine: MLX clear_cache_interval=%d",
+      kMLXClearCacheInterval);
+  // In multi-session, mlx_mutable_state.h allocates per-session mutable
+  // buffers, so the handle's default copy is dead weight — skip allocating it.
+  if (config.max_sessions > 1) {
+    ET_CHECK_OK_OR_RETURN_ERROR(mlx_opts.set_option(
+        ::executorch::backends::mlx::kSkipMutableBufferInitKey, true));
+    ET_LOG(Info, "Gemma4_31BEngine: MLX skip_mutable_buffer_init=true");
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(mlx_options_map.set_options(
+      ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()));
+  load_options = &mlx_options_map;
+#endif
+
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      module->load_method(kPrefillMethod, nullptr, nullptr, load_options));
   if (std::string(kDecodeMethod) != std::string(kPrefillMethod)) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kDecodeMethod));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        module->load_method(kDecodeMethod, nullptr, nullptr, load_options));
   }
   return module;
 }
