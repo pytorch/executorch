@@ -62,6 +62,18 @@ bool vk_datatype_is_int(vkgraph::VkDataType dtype) {
   }
 }
 
+// Normalize a possibly-negative dim against rank; throws (fail-loud) if OOR.
+int normalize_dim(int dim, int rank, const char* op) {
+  if (dim < 0) {
+    dim += rank;
+  }
+  if (dim < 0 || dim >= rank) {
+    throw std::runtime_error(
+        std::string("WebGPU ") + op + ": dim out of range");
+  }
+  return dim;
+}
+
 } // namespace
 
 WebGPUGraph::WebGPUGraph() = default;
@@ -74,6 +86,19 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   buf_desc.mappedAtCreation = false;
   WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
   scratch_buffers_.push_back(buffer);
+  return buffer;
+}
+
+WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
+  WGPUBufferDescriptor desc = {};
+  desc.size = size;
+  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  desc.mappedAtCreation = true;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &desc);
+  void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
+  std::memcpy(mapped, data, size);
+  wgpuBufferUnmap(buffer);
+  uniform_buffer_bytes_ += size;
   return buffer;
 }
 
@@ -93,10 +118,8 @@ void WebGPUGraph::update_symints_from_inputs(
     }
     // Live cur_dims: the source may be a dynamic-shape input.
     const auto& dims = tensors_[src.input_tensor_id].cur_dims;
-    int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
-    if (dim < 0 || dim >= static_cast<int>(dims.size())) {
-      throw std::runtime_error("select_as_symint: dim out of range");
-    }
+    int dim = normalize_dim(
+        src.dim, static_cast<int>(dims.size()), "select_as_symint");
     int index = src.index;
     if (index < 0) {
       index += static_cast<int>(dims[dim]);
@@ -131,13 +154,12 @@ void WebGPUGraph::update_symints_from_inputs(
     }
     set_symint(src.symint_id, val);
   }
-  // sym_size.int: SymInt = a tensor's live dim (cur_dims); usually unused.
+  // sym_size.int: SymInt = a tensor's live dim (cur_dims). Usually unused (ops
+  // read cur_dims directly); for an intermediate source cur_dims is the build
+  // max here (hooks run later in propagate_resize), which is fine while unused.
   for (const auto& s : symint_dim_sources_) {
     const auto& d = tensors_[s.tensor_id].cur_dims;
-    int dim = s.dim < 0 ? s.dim + static_cast<int>(d.size()) : s.dim;
-    if (dim < 0 || dim >= static_cast<int>(d.size())) {
-      throw std::runtime_error("sym_size: dim out of range");
-    }
+    int dim = normalize_dim(s.dim, static_cast<int>(d.size()), "sym_size");
     set_symint(s.symint_id, static_cast<int32_t>(d[dim]));
   }
 }
@@ -164,7 +186,10 @@ void WebGPUGraph::set_cur_dims(
   }
   size_t numel = 1;
   for (size_t d = 0; d < new_dims.size(); d++) {
-    if (new_dims[d] < 0 || new_dims[d] > t.dims[d]) {
+    if (new_dims[d] <= 0) {
+      throw std::runtime_error("WebGPU resize: new dim must be positive");
+    }
+    if (new_dims[d] > t.dims[d]) {
       throw std::runtime_error(
           "WebGPU resize: new dim exceeds the max (serialized) allocation");
     }
@@ -188,6 +213,7 @@ void WebGPUGraph::propagate_resize() {
   if (dirty_symints_.empty() && dirty_tensors_.empty()) {
     return;
   }
+  // Hooks fire in registration (topological) order: operands update first.
   for (auto& hook : resize_hooks_) {
     if (dirty_symints_.count(hook.symint_id) != 0) {
       hook.fn(*this);
@@ -208,7 +234,15 @@ void WebGPUGraph::propagate_resize() {
       }
     }
   }
-  dirty_tensors_.clear();
+  if (!dirty_tensors_.empty()) {
+    throw std::runtime_error(
+        "WebGPU resize: tensor resize hooks did not converge");
+  }
+  // Tensor hooks must not set_symint (dirty_symints_ already drained above).
+  if (!dirty_symints_.empty()) {
+    throw std::runtime_error(
+        "WebGPU resize: a tensor resize hook set a SymInt; not supported");
+  }
 }
 
 WebGPUGraph::~WebGPUGraph() {
