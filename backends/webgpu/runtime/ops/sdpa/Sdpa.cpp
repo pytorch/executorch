@@ -12,19 +12,23 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 #include <string>
 
 namespace executorch::backends::webgpu {
 
 namespace {
+
+// Register-tile dims; MUST match TM/TN in the reg WGSL kernels.
+constexpr int64_t kSdpaTileM = 4;
+constexpr int64_t kSdpaTileN = 4;
 
 // Uniform param structs (all 16-byte aligned, matching the WGSL Params).
 struct UpdateCacheParams {
@@ -124,22 +128,6 @@ static ComputeOutParams make_compute_out_params(
   return p;
 }
 
-// Create a uniform buffer initialized with the given bytes.
-WGPUBuffer
-make_uniform_buffer(WebGPUGraph& graph, const void* data, size_t size) {
-  WGPUDevice device = graph.device();
-  WGPUBufferDescriptor desc = {};
-  desc.size = size;
-  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  desc.mappedAtCreation = true;
-  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device, &desc);
-  void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
-  std::memcpy(mapped, data, size);
-  wgpuBufferUnmap(buffer);
-  graph.add_uniform_buffer_bytes(size);
-  return buffer;
-}
-
 // A buffer + its byte size, for binding.
 struct BufferBinding {
   WGPUBuffer buffer;
@@ -156,7 +144,8 @@ void build_dispatch(
     uint64_t uniform_size,
     uint32_t workgroup_count_x,
     uint32_t wg_size,
-    bool retain_uniform = false) {
+    bool retain_uniform = false,
+    const char* kernel_name = "") {
   WGPUDevice device = graph.device();
 
   WGPUShaderSourceWGSL wgsl_desc = {};
@@ -227,7 +216,7 @@ void build_dispatch(
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count_x});
+  graph.add_dispatch({pipeline, bind_group, workgroup_count_x, kernel_name});
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
@@ -257,7 +246,7 @@ static WGPUBuffer record_update_cache_dispatch(
       device, static_cast<uint32_t>(kv_numel), uc_wg, label);
   UpdateCacheParams uc =
       make_update_cache_params(kv_numel, kv_dst_offset, cache_numel);
-  WGPUBuffer ubuf = make_uniform_buffer(graph, &uc, sizeof(uc));
+  WGPUBuffer ubuf = graph.make_uniform_buffer(&uc, sizeof(uc));
   BufferBinding bindings[2] = {
       {cache.buffer, cache.nbytes}, {src.buffer, src.nbytes}};
   build_dispatch(
@@ -269,7 +258,8 @@ static WGPUBuffer record_update_cache_dispatch(
       sizeof(uc),
       wgc,
       uc_wg,
-      dynamic_pos);
+      dynamic_pos,
+      "update_cache");
   return ubuf;
 }
 
@@ -334,6 +324,11 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // k/v projected shapes must match q/k; mirrors Vulkan update_cache -1/-2.
   if (k.dims[kn - 1] != D || v.dims[v.dims.size() - 1] != D) {
     throw std::runtime_error("WebGPU sdpa: k/v head_dim must match q");
+  }
+  // QK/AV read D as vec4 (no SDPA_PAD_D); head_dim must be a multiple of 4.
+  if (D % 4 != 0) {
+    throw std::runtime_error(
+        "WebGPU sdpa: head_dim (D) must be a multiple of 4");
   }
   if (v.dims[v.dims.size() - 2] != Hkv) {
     throw std::runtime_error("WebGPU sdpa: v num_heads must match k");
@@ -418,9 +413,6 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<uint64_t>(S) *
       static_cast<uint64_t>(dynamic_pos ? Cmax : context_len);
   const uint64_t aw_bytes = aw_cap_floats * sizeof(float);
-  // Prefill scratch scales as Hq·S·Cmax; can be large for long-context prefill.
-  WGPUBuffer attn_weights = graph.create_scratch_buffer(aw_bytes);
-  WGPUBuffer attn_weights_softmax = graph.create_scratch_buffer(aw_bytes);
 
   // Dynamic input_pos: the resize hook rewrites these per step.
   WGPUBuffer uc_k_buf = nullptr, uc_v_buf = nullptr, qk_buf = nullptr,
@@ -464,17 +456,31 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       dynamic_pos,
       "update_cache(V)");
 
-  // --- Dispatch 3: QK -> attn_weights. One thread per (h,s,c) element.
+  // FlashDecoding decode (S==1, static pos). Shapes FD can't handle (head dim
+  // > kSdpaFdMaxHeadDim) fall through to the materialized path below.
+  if (S == 1 && !dynamic_pos && D <= kSdpaFdMaxHeadDim) {
+    sdpa_fd_decode_dispatch(
+        graph, q, k_cache, v_cache, out, Hq, Hkv, D, context_len, g, scale);
+    return;
+  }
+
+  // QK/softmax scratch — allocated only on the non-FD path (Hq*S*Cmax prefill).
+  WGPUBuffer attn_weights = graph.create_scratch_buffer(aw_bytes);
+  WGPUBuffer attn_weights_softmax = graph.create_scratch_buffer(aw_bytes);
+
+  // --- Dispatch 3: QK -> attn_weights. One thread per TM x TN tile.
   {
     if (aw_floats > UINT32_MAX) {
       throw std::runtime_error(
           "WebGPU sdpa: Hq*S*context_len exceeds uint32 max");
     }
+    const int64_t qk_tiles = Hq * utils::div_up(S, kSdpaTileM) *
+        utils::div_up(context_len, kSdpaTileN);
     const uint32_t wgc = utils::compute_1d_workgroup_count(
-        device, static_cast<uint32_t>(aw_floats), qk_wg, "QK");
+        device, static_cast<uint32_t>(qk_tiles), qk_wg, "QK");
     AttnWeightsParams p = make_attn_weights_params(
         S, Hq, Hkv, D, context_len, input_pos, g, scale);
-    WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
+    WGPUBuffer ubuf = graph.make_uniform_buffer(&p, sizeof(p));
     BufferBinding bindings[3] = {
         {attn_weights, aw_bytes},
         {q.buffer, q.nbytes},
@@ -488,7 +494,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc,
         qk_wg,
-        dynamic_pos);
+        dynamic_pos,
+        "sdpa_compute_attn_weights");
     qk_buf = ubuf;
     qk_idx = graph.num_dispatches() - 1;
   }
@@ -499,7 +506,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     const uint32_t wgc = utils::compute_1d_workgroup_count(
         device, static_cast<uint32_t>(Hq * S), 1, "softmax");
     SoftmaxParams p = make_softmax_params(Hq, S, context_len);
-    WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
+    WGPUBuffer ubuf = graph.make_uniform_buffer(&p, sizeof(p));
     BufferBinding bindings[2] = {
         {attn_weights_softmax, aw_bytes}, {attn_weights, aw_bytes}};
     build_dispatch(
@@ -511,18 +518,19 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc,
         0,
-        dynamic_pos);
+        dynamic_pos,
+        "sdpa_softmax");
     softmax_buf = ubuf;
   }
 
-  // --- Dispatch 5: AV -> out. One thread per (s,h,d) output element.
+  // --- Dispatch 5: AV -> out. One thread per TM x TN tile.
   {
-    const uint64_t out_floats = static_cast<uint64_t>(S) *
-        static_cast<uint64_t>(Hq) * static_cast<uint64_t>(D);
+    const int64_t av_tiles =
+        Hq * utils::div_up(S, kSdpaTileM) * utils::div_up(D, kSdpaTileN);
     const uint32_t wgc = utils::compute_1d_workgroup_count(
-        device, static_cast<uint32_t>(out_floats), av_wg, "AV");
+        device, static_cast<uint32_t>(av_tiles), av_wg, "AV");
     ComputeOutParams p = make_compute_out_params(S, Hq, Hkv, D, context_len, g);
-    WGPUBuffer ubuf = make_uniform_buffer(graph, &p, sizeof(p));
+    WGPUBuffer ubuf = graph.make_uniform_buffer(&p, sizeof(p));
     BufferBinding bindings[3] = {
         {out.buffer, out.nbytes},
         {attn_weights_softmax, aw_bytes},
@@ -536,7 +544,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc,
         av_wg,
-        dynamic_pos);
+        dynamic_pos,
+        "sdpa_compute_out");
     av_buf = ubuf;
   }
 
@@ -591,9 +600,11 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           AttnWeightsParams qp =
               make_attn_weights_params(S, Hq, Hkv, D, ctx, pos, g, scale);
           wgpuQueueWriteBuffer(gr.queue(), qk_buf, 0, &qp, sizeof(qp));
+          const int64_t qk_tiles = Hq * utils::div_up(S, kSdpaTileM) *
+              utils::div_up(ctx, kSdpaTileN);
           const uint32_t qk_wgc = utils::compute_1d_workgroup_count(
               gr.device(),
-              static_cast<uint32_t>(aw_floats),
+              static_cast<uint32_t>(qk_tiles),
               qk_wg,
               "QK(resize)");
           gr.dispatch_at(qk_idx).workgroup_count_x = qk_wgc;

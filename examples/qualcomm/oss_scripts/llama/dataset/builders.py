@@ -98,6 +98,7 @@ class DecoderDatasetBuilder:
         self,
         tasks: Union[str, List[str]],
         limit: int,
+        num_fewshot: Optional[int] = None,
     ) -> LLMDataset:
         sequences = collect_lm_eval_tokens(
             tokenizer=self._tokenizer_wrapper.tokenizer,
@@ -105,6 +106,7 @@ class DecoderDatasetBuilder:
             vocab_size=self._tokenizer_wrapper.vocab_size,
             tasks=tasks,
             tasks_limit=limit,
+            num_fewshot=num_fewshot,
         )
         return LLMDataset(sequences)
 
@@ -244,7 +246,7 @@ class DatasetBuilder:
                     # build from lm tasks
                     (
                         self._text_decoder_dataset_builder.from_lm_eval(
-                            cfg.calib_tasks, cfg.calib_limit
+                            cfg.calib_tasks, cfg.calib_limit, cfg.calib_num_fewshot
                         )
                         if cfg.calib_tasks is not None
                         else None

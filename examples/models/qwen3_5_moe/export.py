@@ -733,6 +733,25 @@ def _strip_sampler_from_forward(model):
     model.forward = types.MethodType(_clean_forward, model)
 
 
+class _MLXSampleWrapper(nn.Module):
+    """Wrap the logits-producing model so ``forward`` returns a sampled token.
+
+    Temperature, top_p, and seed are runtime scalar inputs so the same .pte
+    serves any sampling request; the runner increments the seed per token.
+    """
+
+    def __init__(self, model: nn.Module):
+        super().__init__()
+        from executorch.backends.mlx.llm.sampling import SamplingHead
+
+        self.head = SamplingHead(model)
+
+    def forward(self, tokens, input_pos, temperature, top_p, seed):
+        return self.head(
+            tokens, input_pos, temperature=temperature, top_p=top_p, seed=seed
+        )
+
+
 def _export_mlx(model, config, args):
     """Export model to .pte via torch.export + MLX backend."""
     import gc
@@ -749,16 +768,33 @@ def _export_mlx(model, config, args):
 
     _strip_sampler_from_forward(model)
 
+    sample = getattr(args, "sample", False)
+
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
     seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
-    dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+
+    if sample:
+        # forward(tokens, input_pos, temperature, top_p, seed) -> token id.
+        # Scalars are static (None in dynamic_shapes); only the seq dim is dynamic.
+        model = _MLXSampleWrapper(model)
+        example_args = (
+            example_tokens,
+            example_input_pos,
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(0, dtype=torch.int64),
+        )
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim}, None, None, None)
+    else:
+        example_args = (example_tokens, example_input_pos)
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
 
     print("Exporting with torch.export...")
     with torch.no_grad():
         exported = export(
             model,
-            (example_tokens, example_input_pos),
+            example_args,
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
@@ -781,6 +817,7 @@ def _export_mlx(model, config, args):
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
+        "use_sampling": sample,
     }
     et_prog = to_edge_transform_and_lower(
         exported,
@@ -1183,6 +1220,13 @@ def main():  # noqa: C901
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
     parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="MLX only: sample the next token on-device (Gumbel-max with "
+        "temperature/top_p/seed runtime inputs) instead of returning logits "
+        "for host-side sampling.",
+    )
+    parser.add_argument(
         "--moe-activation-dtype",
         choices=["bf16", "int8"],
         default="bf16",
@@ -1229,6 +1273,9 @@ def main():  # noqa: C901
             parser.error("--prequantized is not supported with --backend mlx")
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend mlx")
+
+    if args.sample and args.backend != "mlx":
+        parser.error("--sample is only supported with --backend mlx")
 
     if args.backend == "metal":
         if args.turboquant:
