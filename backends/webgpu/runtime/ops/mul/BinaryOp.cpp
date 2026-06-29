@@ -180,6 +180,10 @@ void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         for (size_t i = 0; i < r; i++) {
           const int64_t av = (i + a.size() < r) ? 1 : a[i - (r - a.size())];
           const int64_t bv = (i + b.size() < r) ? 1 : b[i - (r - b.size())];
+          if (av != bv && av != 1 && bv != 1) {
+            throw std::runtime_error(
+                "mul(resize): operands are not broadcast-compatible");
+          }
           out_d[i] = av > bv ? av : bv;
         }
         g.set_cur_dims(out_id, out_d);

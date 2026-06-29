@@ -91,8 +91,6 @@ def _q4k_matvec_source(has_bias: bool) -> str:
 
         for (short row = 0; row < N_R0; ++row) {{
             const int r = first_row + row;
-            if (r >= N) {{ break; }}
-
             device const block_q4_K * blk = xrows + (uint)r * nb + ib;
             device const uint16_t * sc = (device const uint16_t *)blk->scales + iq;
             device const uint16_t * q1 = (device const uint16_t *)blk->qs + 16 * iq + 4 * ir;
@@ -285,7 +283,9 @@ def _q4k_matmul_source(has_bias: bool) -> str:
 
 
 # Number of simdgroups per threadgroup for the mat-vec kernel.
-_Q4K_MV_NSG = 4
+# Matches llama.cpp N_SG_Q4_K=2; nsg=4 launched half as many (fatter) threadgroups,
+# hurting occupancy / wave-quantization tail on the bandwidth-bound decode matvec.
+_Q4K_MV_NSG = 2
 # Tile sizes for the mat-mat kernel (from llama.cpp kernel_mul_mm).
 _Q4K_MM_NR0 = 64  # weight/output rows (N dim) per threadgroup
 _Q4K_MM_NR1 = 32  # activation rows (M dim) per threadgroup
