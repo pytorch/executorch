@@ -175,6 +175,10 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.atanh.default,),
         (torch.ops.aten.einsum.default,),
         (torch.ops.aten.grid_sampler.default,),
+        (torch.ops.aten.linspace.default,),
+        (torch.ops.aten.eye.default,),
+        (torch.ops.aten.zeros.default,),
+        (torch.ops.aten.ones.default,),
     ]
 )
 TOSA_QUANTIZER_SUPPORT_DICT: dict[tuple[OpOverload, ...], type[PatternCheck] | None] = {

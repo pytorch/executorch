@@ -623,42 +623,6 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         self.report_accept([root_node])
         return True
 
-    def _should_skip_while_shared_qspec(self, node: Node) -> bool:
-        return node.target == torch.ops.higher_order.while_loop and bool(
-            node.meta.get("additional_inputs")
-        )
-
-    def _annotate_while_with_additional_inputs(
-        self,
-        root_node: Node,
-        adjacent_qspecs: list[Any],
-    ) -> bool:
-        if not self._should_skip_while_shared_qspec(root_node):
-            return False
-        if len(adjacent_qspecs) == 0:
-            self.report_reject(
-                [root_node],
-                "Couldn't find any adjacent quantization spec to annotate while_loop.",
-            )
-            return True
-
-        input_qspec = adjacent_qspecs[0]
-        input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
-            n: input_qspec for n in self._get_input_nodes_with_float_output(root_node)
-        }
-        output_qspec: Optional[QuantizationSpec] = None
-        if len(self._get_user_nodes_with_float_input(root_node)) > 0:
-            output_qspec = input_qspec
-
-        _mark_node_as_quantized(
-            root_node,
-            input_qspec_map,
-            output_qspec,
-            is_quantized=True,
-        )
-        self.report_accept([root_node])
-        return True
-
     def _annotate_shared_cluster(self, root_node: Node) -> None:
         if (
             len(self._get_input_nodes_with_float_output(root_node)) == 0
