@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.aten_to_tosa_activation_functions import (
 from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
     rewrite_argmax,
     rewrite_binary_operator,
+    rewrite_rfft2,
 )
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
@@ -43,11 +44,22 @@ def register_dialect_substitutions(
     return decorator
 
 
-@ExirToTosaPass.register_dialect_substitution(exir_ops.edge.aten.argmax.default)
+@register_dialect_substitutions(
+    exir_ops.edge.aten.argmax.default,
+)
 def _get_tensor_operators_replacement(
     node: Node, pass_: AtenToDialectPass
-) -> DialectNodeSpec:
+) -> DialectNodeSpec | None:
     return rewrite_argmax(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.fft_rfft2.default,
+)
+def _get_fft_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_rfft2(node, pass_)
 
 
 @register_dialect_substitutions(

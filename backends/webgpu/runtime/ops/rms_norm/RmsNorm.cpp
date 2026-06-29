@@ -201,7 +201,10 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         const uint64_t numel = utils::numel_of(d);
         const uint32_t rows =
             static_cast<uint32_t>(numel / static_cast<uint64_t>(row_width));
-        if (rows == 0 || rows > 65535u) {
+        if (rows == 0) {
+          throw std::runtime_error("WebGPU rms_norm: zero rows");
+        }
+        if (rows > 65535u) {
           throw std::runtime_error(
               "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
         }
