@@ -34,9 +34,15 @@ struct RotaryParams {
 };
 static_assert(sizeof(RotaryParams) == 32, "RotaryParams must be 32 bytes");
 
+// A rope dispatch: its param-uniform (rewritten on resize) and its index in the
+// graph's dispatch list (so a resize hook can update the workgroup count).
+struct RopeDispatch {
+  WGPUBuffer uniform;
+  size_t dispatch_index;
+};
+
 // Rotate one (x->out) with the shared shader; freqs shared between xq and xk.
-// Returns the param-uniform handle so a resize hook can rewrite seq/num_pairs.
-WGPUBuffer add_rope_dispatch(
+RopeDispatch add_rope_dispatch(
     WebGPUGraph& graph,
     WGPUDevice device,
     WGPUComputePipeline pipeline,
@@ -95,12 +101,12 @@ WGPUBuffer add_rope_dispatch(
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch(
+  const size_t dispatch_index = graph.add_dispatch(
       {pipeline, bind_group, workgroup_count, "apply_rotary_emb"});
 
   // Graph owns it so a resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
-  return uniform_buffer;
+  return {uniform_buffer, dispatch_index};
 }
 
 // args: [xq, xk, freqs_cos, freqs_sin, out_list(ValueList[xq_out, xk_out])].
@@ -242,7 +248,7 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUComputePipeline pipeline_k =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
-  WGPUBuffer q_ubuf = add_rope_dispatch(
+  RopeDispatch q_disp = add_rope_dispatch(
       graph,
       device,
       pipeline_q,
@@ -255,8 +261,7 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       seq,
       head_dim,
       xq_wgc);
-  const size_t q_idx = graph.num_dispatches() - 1;
-  WGPUBuffer k_ubuf = add_rope_dispatch(
+  RopeDispatch k_disp = add_rope_dispatch(
       graph,
       device,
       pipeline_k,
@@ -269,7 +274,10 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       seq,
       head_dim,
       xk_wgc);
-  const size_t k_idx = graph.num_dispatches() - 1;
+  WGPUBuffer q_ubuf = q_disp.uniform;
+  WGPUBuffer k_ubuf = k_disp.uniform;
+  const size_t q_idx = q_disp.dispatch_index;
+  const size_t k_idx = k_disp.dispatch_index;
 
   // Dynamic shapes: recompute S/num_pairs + both dispatches; out follows xq/xk.
   const int xq_out_id = out_list[0];
@@ -294,6 +302,12 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         const uint32_t s = static_cast<uint32_t>(qd[qd.size() - 3]);
         const uint64_t qn = utils::numel_of(qd);
         const uint64_t kn = utils::numel_of(kd);
+        // pk = pq (seq=s); require k's seq == s, not silently q's.
+        if (static_cast<uint32_t>(kd[kd.size() - 3]) != s) {
+          throw std::runtime_error(
+              "apply_rotary_emb(resize): q and k seq lengths differ");
+        }
+        // freqs stay max-allocated; shader indexes by position (S = prefix).
         RotaryParams pq = {};
         pq.n_heads = n_heads_q;
         pq.seq = s;

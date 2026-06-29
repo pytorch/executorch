@@ -29,6 +29,9 @@ inline T div_up(T a, T b) {
 inline uint64_t numel_of(const std::vector<int64_t>& dims) {
   uint64_t n = 1;
   for (int64_t v : dims) {
+    if (v < 0) {
+      throw std::runtime_error("numel_of: negative dimension");
+    }
     n *= static_cast<uint64_t>(v);
   }
   return n;

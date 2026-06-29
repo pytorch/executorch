@@ -73,7 +73,8 @@ int64_t norm_clamp(int64_t idx, int64_t size) {
 }
 
 void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  // args: [self, dim, start, end, step, out]; end unread (out shape is AOT).
+  // args: [self, dim, start, end, step, out]. start/end may be dynamic SymInts;
+  // a resize hook recomputes the live extent on `dim` (out[dim] / cur_dims).
   const int in_id = args.at(0);
   const int start_id = args.at(2);
   const int end_id = args.at(3);
@@ -221,7 +222,8 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         norm_clamp(read_index(g, end_id, live_in_size), live_in_size);
     const int64_t len = end > start ? (end - start + step - 1) / step : 0;
 
-    std::vector<int64_t> od = g.cur_dims(out_id);
+    // Out dims = live input dims (mirror Vulkan resize_slice_copy_node).
+    std::vector<int64_t> od = in_dims;
     od[dim] = len;
     g.set_cur_dims(out_id, od);
 

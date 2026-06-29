@@ -18,6 +18,7 @@
 //   D  static_rms (no dynamic dim)             -> golden (static path
 //   unchanged) F  dyn_rms_chain (rms(rms(x))) at 3 S      -> golden (resize
 //   CASCADE, DD-4)
+//   G rms+residual  H rms*x  I dyn_linear  J sdpa_dyn  K emb_dyn  L rope_dyn
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
@@ -46,6 +47,9 @@ std::vector<float> read_bin(const std::string& path) {
     return {};
   }
   const std::streamsize n = f.tellg();
+  if (n < 0) {
+    return {};
+  }
   f.seekg(0);
   std::vector<float> v(static_cast<size_t>(n) / sizeof(float));
   f.read(reinterpret_cast<char*>(v.data()), n);
@@ -70,6 +74,10 @@ run_s(Module& m, const std::string& dir, const std::string& prefix, int s) {
       read_bin(dir + "/" + prefix + ".S" + std::to_string(s) + ".input.bin");
   if (input.empty()) {
     printf("  MISSING input %s.S%d\n", prefix.c_str(), s);
+    return {};
+  }
+  if (input.size() != static_cast<size_t>(s) * kHidden) {
+    printf("  WRONG input size %s.S%d\n", prefix.c_str(), s);
     return {};
   }
   auto t = make_tensor_ptr({1, 1, s, kHidden}, std::move(input));
@@ -250,9 +258,19 @@ void check_embedding(const std::string& dir, int n, bool& ok) {
     return;
   }
   const std::streamsize nb = f.tellg();
+  if (nb < 0) {
+    printf("  MISSING emb_dyn.S%d\n", n);
+    ok = false;
+    return;
+  }
   f.seekg(0);
   std::vector<int64_t> idx(static_cast<size_t>(nb) / sizeof(int64_t));
   f.read(reinterpret_cast<char*>(idx.data()), nb);
+  if (idx.size() != static_cast<size_t>(n)) {
+    printf("  WRONG emb_dyn idx size S%d\n", n);
+    ok = false;
+    return;
+  }
   auto golden = read_bin(b + "golden.bin");
   auto t = make_tensor_ptr({n}, std::move(idx)); // int64 (Long) host input
   auto r = m.forward({EValue(t)});

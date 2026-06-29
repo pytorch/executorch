@@ -139,6 +139,20 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         torch.float8_e5m2: [torch.bfloat16],
     }
 
+    @staticmethod
+    def _is_quantized_identity_cast(node: torch.fx.Node) -> bool:
+        for user in node.users:
+            if (
+                not user.target
+                == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+            ):
+                return False
+            scale = user.args[1]
+            zp = user.args[2]
+            if scale != 1.0 or zp != 0.0:
+                return False
+        return True
+
     def is_node_tosa_supported(  # noqa: C901
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
@@ -228,6 +242,11 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             )
             return False
         if output_val.dtype not in supported_dtypes[input_dtype]:
+            if (
+                tosa_spec.support_integer()
+                and ToCopySupported._is_quantized_identity_cast(node)
+            ):
+                return True
             self.reporter.report_reject(
                 node,
                 (

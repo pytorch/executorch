@@ -238,8 +238,8 @@ class WebGPUGraph {
     return dispatches_.size() - 1;
   }
 
-  // Record an in-graph-order buffer-to-buffer DMA (e.g. a flat copy).
-  void add_buffer_copy(WGPUBuffer src, WGPUBuffer dst, size_t nbytes) {
+  // In-graph buffer-to-buffer DMA (e.g. flat copy); returns the dispatch index.
+  size_t add_buffer_copy(WGPUBuffer src, WGPUBuffer dst, size_t nbytes) {
     WebGPUDispatch d;
     d.kind = WebGPUDispatch::Kind::Copy;
     d.copy_src = src;
@@ -247,6 +247,7 @@ class WebGPUGraph {
     d.copy_nbytes = nbytes;
     d.kernel_name = "flat_copy";
     dispatches_.push_back(d);
+    return dispatches_.size() - 1;
   }
 
   // Materialize a recorded prepack-routed constant into dst via one CPU->GPU
@@ -265,6 +266,10 @@ class WebGPUGraph {
 
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
+
+  // Create a mapped-at-creation uniform buffer from `size` bytes and track it
+  // in the memory stats. Shared helper for ops needing a uniform Params buffer.
+  WGPUBuffer make_uniform_buffer(const void* data, size_t size);
 
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
