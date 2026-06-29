@@ -40,11 +40,10 @@ void add_flat_copy(WebGPUGraph& graph, int in_id, int out_id) {
 
   // Aliased in/out already in place; CopyBufferToBuffer rejects src == dst.
   const bool aliased = in_tensor.buffer == out_tensor.buffer;
-  if (!aliased) {
-    graph.add_buffer_copy(
-        in_tensor.buffer, out_tensor.buffer, out_tensor.nbytes);
-  }
-  const size_t dispatch_idx = aliased ? 0 : graph.num_dispatches() - 1;
+  const size_t dispatch_idx = aliased
+      ? 0
+      : graph.add_buffer_copy(
+            in_tensor.buffer, out_tensor.buffer, out_tensor.nbytes);
 
   // Dynamic shapes: view preserves numel; copy_nbytes + out dims track live in.
   std::vector<int64_t> out_max = out_tensor.dims;
@@ -54,15 +53,27 @@ void add_flat_copy(WebGPUGraph& graph, int in_id, int out_id) {
         std::vector<int64_t> od = out_max;
         const uint64_t maxnumel = utils::numel_of(out_max);
         if (maxnumel != target) {
+          bool resolved = false;
+          // Assumes one dynamic dim; picks the leftmost numel-divisible.
           for (size_t d = 0; d < od.size(); d++) {
+            if (out_max[d] <= 0) {
+              continue;
+            }
             const uint64_t rest = maxnumel / static_cast<uint64_t>(out_max[d]);
             if (rest != 0 && target % rest == 0) {
               const uint64_t nd = target / rest;
               if (nd <= static_cast<uint64_t>(out_max[d])) {
                 od[d] = static_cast<int64_t>(nd);
+                resolved = true;
                 break;
               }
             }
+          }
+          // Fail loud: a silent miss would leave od at max while copy_nbytes
+          // shrinks to the live size, desyncing consumers from the real copy.
+          if (!resolved) {
+            throw std::runtime_error(
+                "view_copy(resize): could not resolve live output shape");
           }
         }
         g.set_cur_dims(out_id, od);
