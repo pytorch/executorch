@@ -326,6 +326,131 @@ class TestReinplacePass(unittest.TestCase):
         # kernels in the other tests in this file.
         edge.to_executorch()
 
+    def test_broadcasting_self_not_reinplaced(self) -> None:
+        """An op whose mutated arg (self) broadcasts up to a larger output
+        must NOT be reinplaced: the in-place form cannot grow self
+        (``add_(self[D], other[N, D])`` is invalid). Only the shape guard
+        prevents this — the arg is otherwise a dead, single-use temp.
+        """
+
+        class M(torch.nn.Module):
+            def forward(self, bias: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+                c = torch.relu(bias)  # intermediate temp, shape [D]
+                return (c + x) * 2.0  # c [D] broadcasts to [N, D]
+
+        model = M()
+        bias = torch.randn(4)
+        x = torch.randn(3, 4)
+        edge = to_edge(export(model, (bias, x), strict=True))
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.add.Tensor},
+        )
+        self.assertEqual(
+            len(_find_nodes(ep, "add_")),
+            0,
+            "broadcast-first add must stay functional",
+        )
+        ep.validate()
+        torch.testing.assert_close(ep.module()(bias, x), model(bias, x))
+
+    def test_dtype_changing_op_not_reinplaced(self) -> None:
+        """A comparison whose output dtype (bool) differs from its mutated
+        arg (float) must NOT be reinplaced: ``lt_`` cannot change self's
+        dtype. The shape/dtype guard blocks it."""
+
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                t = torch.exp(x)  # float temp
+                return (t < y).float()  # bool output, dtype != self
+
+        model = M()
+        x = torch.randn(3, 4)
+        y = torch.randn(3, 4)
+        edge = to_edge(export(model, (x, y), strict=True))
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.lt.Tensor},
+        )
+        self.assertEqual(
+            len(_find_nodes(ep, "lt_")),
+            0,
+            "dtype-changing comparison must stay functional",
+        )
+        ep.validate()
+
+    def test_multi_use_self_reinplaced_at_most_once(self) -> None:
+        """When a value is the mutated arg of two ops, reinplacing both
+        would let the earlier consumer read a value the later one already
+        overwrote in place. Only the last consumer (execution order) may be
+        reinplaced; numerics must be preserved."""
+
+        class M(torch.nn.Module):
+            def forward(
+                self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
+            ) -> torch.Tensor:
+                t = torch.exp(x)  # intermediate temp with TWO consumers
+                a = t + y
+                b = t + z
+                return a * b
+
+        model = M()
+        x, y, z = torch.randn(5), torch.randn(5), torch.randn(5)
+        edge = to_edge(export(model, (x, y, z), strict=True))
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.add.Tensor},
+        )
+        self.assertLessEqual(
+            len(_find_nodes(ep, "add_")),
+            1,
+            "a value with two consumers must be reinplaced at most once",
+        )
+        # Note: no ep.validate() here — reinplacing intentionally introduces a
+        # non-core-ATen in-place op (add_), which the strict edge verifier
+        # rejects (see test_ops_to_inplace_extends_with_add). Correctness is
+        # checked by running the rewritten graph instead.
+        torch.testing.assert_close(ep.module()(x, y, z), model(x, y, z))
+
+    def test_dynamic_shapes_no_guard_error(self) -> None:
+        """With dynamic (SymInt) dims the shape guard must not raise:
+        a same-symbol full-size op is reinplaced, while a broadcasting one
+        (static dim 1 vs a dynamic dim) is left functional."""
+
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor, row: torch.Tensor) -> torch.Tensor:
+                t = torch.exp(x)  # [B, D] dynamic B, single-use temp
+                s = t + x  # full-size, same symbol B -> reinplaceable
+                r = torch.relu(row)  # [1, D] temp
+                return r + s  # [1, D] + [B, D] -> self=r broadcasts -> skip
+
+        model = M()
+        x = torch.randn(3, 4)
+        row = torch.randn(1, 4)
+        dynamic_shapes = {"x": {0: torch.export.Dim("B")}, "row": None}
+        exported_program = export(
+            model, (x, row), dynamic_shapes=dynamic_shapes, strict=True
+        )
+        edge = to_edge(exported_program)
+
+        # Must not raise GuardOnDataDependentSymNode on the SymInt comparison.
+        ep = reinplace_pass(
+            edge.exported_program(),
+            ops_to_inplace={edge_ops.edge.aten.add.Tensor},
+        )
+        # The same-symbol full-size add is reinplaced...
+        self.assertGreaterEqual(
+            len(_find_nodes(ep, "add_")),
+            1,
+            "same-symbol full-size add should reinplace under dynamic shapes",
+        )
+        # ...while the broadcasting add stays functional.
+        self.assertGreaterEqual(
+            len(_find_nodes(ep, "aten.add.Tensor")),
+            1,
+            "broadcasting add must remain functional under dynamic shapes",
+        )
+
     def test_ops_to_inplace_empty_disables_all_rewrites(self) -> None:
         """Passing an empty ``ops_to_inplace`` set should disable every
         rewrite, even ops that are in ``DEFAULT_INPLACEABLE_OPS``.
