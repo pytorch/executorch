@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <stdexcept>
 
@@ -87,6 +88,12 @@ void sym_mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
 void sym_floordiv_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   register_sym_binary(graph, args, [](int32_t x, int32_t y) {
+    if (y == 0) {
+      throw std::runtime_error("sym floordiv: division by zero");
+    }
+    if (x == INT32_MIN && y == -1) {
+      throw std::runtime_error("sym floordiv: signed overflow (INT32_MIN / -1)");
+    }
     int32_t q = x / y;
     if ((x % y != 0) && ((x < 0) != (y < 0))) {
       q--; // round toward negative infinity (Python floor division)
