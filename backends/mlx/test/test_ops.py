@@ -27,6 +27,7 @@ See README.md in this directory for full documentation.
 import os
 from typing import Callable, Dict, List, Optional, Tuple
 
+import executorch.exir as exir
 import torch
 import torch.nn as nn
 
@@ -111,6 +112,62 @@ class AddTest(OpTestCase):
         else:
             y = torch.randn(self.shape)
             return (x, y)
+
+
+class ReinplaceChainModel(nn.Module):
+    """Elementwise chain the reinplace pass converts to in-place ops.
+
+    Mixes a pure unary op (exp), activations (sigmoid/relu/clamp/gelu), and
+    binary ops (add/mul/sub) so the chain exercises the unary, activation, and
+    binary in-place handlers. Every op after the first sigmoid consumes a
+    single-use temp, so all become in-place (sigmoid_/add_/relu_/mul_/clamp_/
+    exp_/gelu_/sub_) and run on one rolling buffer; the terminal neg writes the
+    graph output. Inputs are kept NaN/Inf-free: sigmoid -> bounded, clamp to
+    [-2, 2] before exp so exp stays in [e^-2, e^2].
+    """
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        s = torch.sigmoid(x)  # reads input -> fresh temp
+        s = s + y  # add_
+        s = torch.relu(s)  # relu_ (activation)
+        s = s * y  # mul_
+        s = torch.clamp(s, -2.0, 2.0)  # clamp_ (activation), bounds exp below
+        s = torch.exp(s)  # exp_ (pure unary)
+        s = torch.nn.functional.gelu(s)  # gelu_ (activation)
+        s = s - y  # sub_
+        return torch.neg(s)  # terminal output (not in-place)
+
+
+@register_test
+class ReinplaceChainTest(OpTestCase):
+    """On-device numeric check that reinplaced (out==in) ops are correct.
+
+    Lowers with get_default_passes() so the MLXReinplacePass + in-place handlers
+    (out == in buffer donation) run through the actual MLX runtime. The
+    build-level aliasing is unit-tested in test_passes.py; only on-device
+    execution catches a read-after-overwrite bug from buffer reuse.
+    """
+
+    name = "reinplace_chain"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def create_model(self) -> nn.Module:
+        return ReinplaceChainModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(2, 16, 64), torch.randn(2, 16, 64))
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # Reinplace introduces non-core-ATen in-place ops (add_, sigmoid_, ...),
+        # so disable the strict edge verifier — matching the production export
+        # path (which also runs get_default_passes with this config).
+        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
 
 class SubModel(nn.Module):
