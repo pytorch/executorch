@@ -15,8 +15,8 @@ from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.max_pool_2d_options import (
     MaxPool2D,
 )
-from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.reduce_min_options import (
-    ReduceMin,
+from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.reduce_max_options import (
+    ReduceMax,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.transpose_options import (
     Transpose,
@@ -31,7 +31,7 @@ from executorch.backends.nxp.tests.model_output_comparator import (
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
-    Amin,
+    Amax,
     ExecutorchDelegateCall,
     GetItem,
     MaxPool2DWithIndices,
@@ -45,7 +45,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class AminModule(torch.nn.Module):
+class AmaxModule(torch.nn.Module):
     def __init__(
         self, dim: int | torch.Size | list[int] | tuple[int, ...], keepdim: bool
     ):
@@ -54,16 +54,22 @@ class AminModule(torch.nn.Module):
         self.keepdim = keepdim
 
     def forward(self, x):
-        return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
+        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
 
 
-class AminAddModule(AminModule):
+class AmaxDefaultParamsModule(torch.nn.Module):
+    @staticmethod
+    def forward(x):
+        return torch.amax(x)
+
+
+class AmaxAddModule(AmaxModule):
     def forward(self, x):
         x = super().forward(x)
         return x + x
 
 
-class MaxPoolAminModule(torch.nn.Module):
+class MaxPoolAmaxModule(torch.nn.Module):
     @staticmethod
     def noop_max_pool_2d(x):
         """Call `torch.max_pool2d` that is a NoOp, but it enforces the ChannelsFirst format in the `NodeFormatInference`."""
@@ -77,13 +83,13 @@ class MaxPoolAminModule(torch.nn.Module):
 
     def forward(self, x):
         x = self.noop_max_pool_2d(x)
-        x = torch.amin(x, dim=self.dim, keepdim=self.keepdim)
+        x = torch.amax(x, dim=self.dim, keepdim=self.keepdim)
         return x
 
 
-class AminMaxPoolModule(MaxPoolAminModule):
+class AmaxMaxPoolModule(MaxPoolAmaxModule):
     def forward(self, x):
-        x = torch.amin(x, dim=self.dim, keepdim=self.keepdim)
+        x = torch.amax(x, dim=self.dim, keepdim=self.keepdim)
         x = self.noop_max_pool_2d(x)
         return x
 
@@ -97,7 +103,7 @@ def assert_delegated(
     expected_delegated_ops=None,
 ):
     if expected_delegated_ops is None:
-        expected_delegated_ops = {Amin: 1}
+        expected_delegated_ops = {Amax: 1}
 
     graph_verifier = DetailedGraphVerifier(
         mocker,
@@ -126,12 +132,12 @@ def assert_delegated(
 def assert_not_delegated(model, input_shape):
     delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
 
-    # Make sure the `amin` was NOT delegated.
+    # Make sure the `amax` was NOT delegated.
     assert not graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert graph_contains_any_of_ops(delegated_ep.graph, [Amin])
+    assert graph_contains_any_of_ops(delegated_ep.graph, [Amax])
 
 
-class TestAminConverter:
+class TestAmaxConverter:
     # noinspection PyMethodMayBeStatic
     @pytest.fixture(params=[True, False], ids=lambda keep_dim: f"keep_dim = {keep_dim}")
     def keep_dim(self, request):
@@ -139,7 +145,7 @@ class TestAminConverter:
 
     def test__basic_nsys_inference__qat(self, mocker, request, use_qat, keep_dim):
         input_shape = (23,)
-        model = AminModule(0, keep_dim)
+        model = AmaxModule(0, keep_dim)
         assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
@@ -155,7 +161,7 @@ class TestAminConverter:
         ],
     )
     def test__single_dims(self, mocker, request, input_shape, dim, keep_dim):
-        model = AminModule(dim, keep_dim)
+        model = AmaxModule(dim, keep_dim)
         assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
@@ -169,7 +175,20 @@ class TestAminConverter:
         ],
     )
     def test__tuple_dims(self, mocker, request, input_shape, dim, keep_dim):
-        model = AminModule(dim, keep_dim)
+        model = AmaxModule(dim, keep_dim)
+        assert_delegated(model, input_shape, mocker, request)
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            pytest.param((4, 2), id="2D."),
+            pytest.param((2, 3, 4), id="3D."),
+            pytest.param((1, 3, 3, 7), id="4D."),
+            pytest.param((3, 1, 4, 1, 5), id="5D."),
+        ],
+    )
+    def test__default_params(self, mocker, request, input_shape):
+        model = AmaxDefaultParamsModule()
         assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
@@ -181,7 +200,7 @@ class TestAminConverter:
     )
     def test__noop__only_node__not_delegated(self, input_shape, dim):
         keep_dim = True  # Reduction over a dimension of size `1` with `keep_dim=True` is a no-op.
-        model = AminModule(dim, keep_dim)
+        model = AmaxModule(dim, keep_dim)
         assert_not_delegated(model, input_shape)
 
     @pytest.mark.parametrize(
@@ -193,13 +212,13 @@ class TestAminConverter:
     )
     def test__noop__not_only_node__delegated(self, mocker, request, input_shape, dim):
         keep_dim = True  # Reduction over a dimension of size `1` with `keep_dim=True` is a no-op.
-        model = AminAddModule(dim, keep_dim)
+        model = AmaxAddModule(dim, keep_dim)
         assert_delegated(
             model,
             input_shape,
             mocker,
             request,
-            expected_delegated_ops={Amin: 1, AddTensor: 1},
+            expected_delegated_ops={Amax: 1, AddTensor: 1},
         )
 
     @pytest.mark.parametrize(
@@ -217,7 +236,7 @@ class TestAminConverter:
         # When `keep_dim=True` the node is a noop, and it's not delegated (see `test__noop__only_node__not_delegated`),
         # but with `keep_dim=False` it changes the shape so it's not a noop and is therefore delegated successfully.
         keep_dim = False
-        model = AminModule(dim, keep_dim)
+        model = AmaxModule(dim, keep_dim)
         assert_delegated(model, input_shape, mocker, request)
 
     def test__channels_first__keep_dim__true(self, mocker, request):
@@ -226,17 +245,17 @@ class TestAminConverter:
         #  and the final error is larger. We cannot with 100% certainty say that the error is only caused by the single
         #  bit errors and not related to the format. That's why only this 1 case with no errors is used.
         input_shape, dim = (1, 7, 3, 3), 1
-        model = MaxPoolAminModule(dim, True)
+        model = MaxPoolAmaxModule(dim, True)
         assert_delegated(
             model,
             input_shape,
             mocker,
             request,
-            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1, Amin: 1},
+            expected_delegated_ops={MaxPool2DWithIndices: 1, GetItem: 1, Amax: 1},
         )
 
     class TestKeepDimFalseFormatHandling:
-        """When `keep_dim = False`, the `amin` operator changes the rank, so the format have to be explicitly
+        """When `keep_dim = False`, the `amax` operator changes the rank, so the format have to be explicitly
         handled. The tests in this class focus on the related edge cases.
         """
 
@@ -271,10 +290,10 @@ class TestAminConverter:
             ids=lambda dim: f"dim={dim}",
         )
         def test__channels_first_input__reducing_channels(self, mocker, request, dim):
-            # If the channels dimension is reduced (removed), the `amin` output will always be equal in channels first
+            # If the channels dimension is reduced (removed), the `amax` output will always be equal in channels first
             #  and channels last, so no `Transpose` ops are added.
             input_shape = (1, 7, 3, 3)
-            model = MaxPoolAminModule(dim, False)
+            model = MaxPoolAmaxModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")
             assert_delegated(
@@ -285,7 +304,7 @@ class TestAminConverter:
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
-                    Amin: 1,
+                    Amax: 1,
                 },
             )
             self._assert_neutron_ir_model_has_ops(
@@ -293,7 +312,7 @@ class TestAminConverter:
                 expected_ops=[
                     Transpose,
                     MaxPool2D,
-                    ReduceMin,
+                    ReduceMax,
                 ],
             )
 
@@ -309,10 +328,10 @@ class TestAminConverter:
         def test__channels_first_input__reducing_all_spatial_dims(
             self, mocker, request, dim
         ):
-            # If the spatial dimensions are reduced (removed), the `amin` output will always be equal in channels
-            #  first and channels last, so no `Transpose` ops are added.
+            # If the spatial dimensions are reduced (removed), the `amax` output will always be equal in channels
+            #  first and channels last, so no `Transpose` ops before `ReduceMax` are added.
             input_shape = (1, 7, 3, 3)
-            model = MaxPoolAminModule(dim, False)
+            model = MaxPoolAmaxModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")
             assert_delegated(
@@ -323,7 +342,7 @@ class TestAminConverter:
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
-                    Amin: 1,
+                    Amax: 1,
                 },
             )
             self._assert_neutron_ir_model_has_ops(
@@ -331,7 +350,7 @@ class TestAminConverter:
                 expected_ops=[
                     Transpose,
                     MaxPool2D,
-                    ReduceMin,
+                    ReduceMax,
                 ],
             )
 
@@ -351,7 +370,7 @@ class TestAminConverter:
             #  first in Neutron IR.
 
             input_shape = (1, 7, 3, 3)
-            model = MaxPoolAminModule(dim, False)
+            model = MaxPoolAmaxModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")
             assert_delegated(
@@ -362,7 +381,7 @@ class TestAminConverter:
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
-                    Amin: 1,
+                    Amax: 1,
                 },
             )
 
@@ -372,7 +391,7 @@ class TestAminConverter:
                     Transpose,
                     MaxPool2D,
                     Transpose,  # The necessary `Transpose` operator.
-                    ReduceMin,
+                    ReduceMax,
                 ],
             )
 
@@ -387,7 +406,7 @@ class TestAminConverter:
         def test__channels_first_output(self, mocker, request, input_shape, dim):
             # If the following node requires channels input, a `Transpose` operator must be added to make the output
             # channels first in Neutron IR.
-            model = AminMaxPoolModule(dim, False)
+            model = AmaxMaxPoolModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")
             assert_delegated(
@@ -398,14 +417,14 @@ class TestAminConverter:
                 expected_delegated_ops={
                     MaxPool2DWithIndices: 1,
                     GetItem: 1,
-                    Amin: 1,
+                    Amax: 1,
                 },
             )
 
             self._assert_neutron_ir_model_has_ops(
                 model_builder_finish_spy,
                 expected_ops=[
-                    ReduceMin,
+                    ReduceMax,
                     Transpose,  # The necessary `Transpose` operator.
                     MaxPool2D,
                     Transpose,

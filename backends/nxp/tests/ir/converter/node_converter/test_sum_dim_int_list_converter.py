@@ -387,9 +387,10 @@ class TestSumDimIntListConverter:
                 pytest.param((2, 3, 4, 5, 6), [-3], id="dim=[-3], 5D->4D"),
                 pytest.param((1, 2, 3, 4, 5, 6), (1, -1), id="dim=(1, -1), 6D->4D"),
             ],
-            ids=lambda dim: f"dim={dim}",
         )
         def test__channels_first_output(self, mocker, request, input_shape, dim):
+            # If the following node requires channels input, a `Transpose` operator must be added to make the output
+            # channels first in Neutron IR.
             model = SumDimIntListMaxPoolModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")

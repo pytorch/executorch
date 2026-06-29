@@ -319,6 +319,15 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class AmaxPattern(SharedSpecPattern):
+    """
+    Quantizer for Amax operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amax.default]
+
+
 class AminPattern(SharedSpecPattern):
     """
     Quantizer for Amin operator.
