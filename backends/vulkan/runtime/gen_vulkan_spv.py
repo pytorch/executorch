@@ -255,6 +255,61 @@ def texel_load_component_type(dtype: str, storage_type: str) -> str:
         return texel_component_type(dtype)
 
 
+def get_higher_precision_dtype(dtype_a: str, dtype_b: str) -> str:
+    """Return the higher-precision of two dtypes, intended for picking the type
+    in which to perform a mixed-dtype computation (e.g. a tensor of one dtype
+    combined with a scalar of another). The result is the operand dtype that can
+    represent the other without loss for the value ranges these shaders handle.
+
+    Ranking rule (highest first):
+      - The float family ALWAYS outranks the int family. So any float dtype
+        beats any int dtype (e.g. int32 + float -> float), because integer
+        values in these shaders are small enough to be exactly representable in
+        the float compute type.
+      - Within the float family: double > float > half.
+      - Within the int family: rank by bit width
+        (int64/uint64 > int32/uint32 > int16/uint16 > int8/uint8/bool).
+      - Signed-vs-unsigned tie at the same bit width resolves to the SIGNED
+        dtype (matches PyTorch's same-width promotion preference and keeps the
+        compute type able to hold negative operands).
+
+    Dtype aliases are normalized first: int<->int32, uint<->uint32, and bool is
+    treated as the lowest-ranked 8-bit integer.
+    """
+    alias_map = {"int": "int32", "uint": "uint32"}
+    a = alias_map.get(dtype_a, dtype_a)
+    b = alias_map.get(dtype_b, dtype_b)
+
+    if a == b:
+        return a
+
+    # (family_rank, bit_width, signed_rank). Higher tuple wins. family_rank 1 for
+    # the float family ensures it always outranks the int family (family_rank 0).
+    # signed_rank breaks same-width int ties in favor of signed.
+    float_ranks = {"half": 16, "float": 32, "double": 64}
+    int_ranks = {
+        "bool": 8,
+        "uint8": 8,
+        "int8": 8,
+        "uint16": 16,
+        "int16": 16,
+        "uint32": 32,
+        "int32": 32,
+        "uint64": 64,
+        "int64": 64,
+    }
+
+    def rank(dtype: str) -> tuple:
+        if dtype in float_ranks:
+            return (1, float_ranks[dtype], 0)
+        if dtype in int_ranks:
+            signed_rank = 0 if dtype in ("bool",) or dtype.startswith("uint") else 1
+            return (0, int_ranks[dtype], signed_rank)
+        raise AssertionError(f"Cannot rank precision of dtype: {dtype}")
+
+    return a if rank(a) >= rank(b) else b
+
+
 def get_access_qualifier(access_type: Optional[str]) -> str:
     if access_type is None:
         return ""
@@ -497,6 +552,7 @@ UTILITY_FNS: Dict[str, Any] = {
     "texel_component_type": texel_component_type,
     "texel_load_type": texel_load_type,
     "texel_load_component_type": texel_load_component_type,
+    "get_higher_precision_dtype": get_higher_precision_dtype,
     "layout_declare_buffer": layout_declare_buffer,
     "layout_declare_image": layout_declare_image,
     "layout_declare_sampler": layout_declare_sampler,
