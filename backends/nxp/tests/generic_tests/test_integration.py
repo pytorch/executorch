@@ -19,7 +19,7 @@ def test_conv_fc_softmax__to_executorch_program(use_qat):
     model = ConvFCSoftmaxModule()
     input_shape = (1, 4, 5, 5)
 
-    exec_prog = to_quantized_executorch_program(model, input_shape, use_qat)
+    exec_prog = to_quantized_executorch_program(model, input_shape, use_qat=use_qat)
 
     program = exec_prog.exported_program()
     assert (

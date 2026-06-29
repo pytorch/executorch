@@ -2,6 +2,8 @@
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
 # across different CUDA versions (12.6, 13.0) using the command:
 #   ./install_executorch.sh
+# 
+# Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
 # installs the appropriate PyTorch wheel. No manual CUDA/PyTorch installation needed.

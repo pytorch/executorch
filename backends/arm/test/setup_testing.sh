@@ -26,7 +26,7 @@ ${build_executor_runner} --pte=semihosting --target=ethos-u85-128 --system_confi
 # test setup to make sure models that are not fully delegated can still be tested and run OK
 # To use this you can set use_portable_ops=True when creating ArmTester()
 
-portable_ops_list_u55="aten::permute_copy.out,aten::convolution.out,aten::relu.out,aten::_native_batch_norm_legit_no_training.out,aten::as_strided_copy.out,aten::mean.out,aten::squeeze_copy.dims,dim_order_ops::_clone_dim_order.out"
+portable_ops_list_u55="aten::permute_copy.out,aten::convolution.out,aten::relu.out,aten::_native_batch_norm_legit_no_training.out,aten::as_strided_copy.out,aten::mean.out,aten::squeeze_copy.dims,dim_order_ops::_clone_dim_order.out,dim_order_ops::_to_dim_order_copy.out"
 portable_ops_list_u65="${portable_ops_list_u55}"
 portable_ops_list_u85="aten::permute_copy.out,aten::convolution.out,aten::relu.out,aten::_native_batch_norm_legit_no_training.out,aten::as_strided_copy.out,aten::mean.out,aten::full_like.out,aten::bmm.out,aten::scalar_tensor.out,aten::index.Tensor_out,aten::where.self_out,dim_order_ops::_to_dim_order_copy.out"
 

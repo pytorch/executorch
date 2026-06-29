@@ -532,6 +532,7 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.selu.default,
     torch.ops.aten.celu.default,
     torch.ops.aten.floor.default,
+    torch.ops.aten.round.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
     torch.ops.aten.rsqrt.default,
@@ -629,6 +630,16 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
 _transpose_dimname = getattr(torch.ops.aten.transpose, "Dimname", None)
 if _transpose_dimname is not None:
     _one_to_one_shared_input_qspec.add(_transpose_dimname)
+
+for _op in (
+    getattr(torch.ops.aten.moveaxis, "int", None),
+    getattr(torch.ops.aten.moveaxis, "intlist", None),
+    getattr(torch.ops.aten.movedim, "int", None),
+    getattr(torch.ops.aten.movedim, "intlist", None),
+):
+    if _op is not None:
+        _one_to_one_shared_input_qspec.add(_op)
+
 
 _one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.alias.default,
@@ -945,6 +956,27 @@ def get_quant_properties(  # noqa: C901
         shared_qspec = SharedQuantizationSpec(input_node)
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+    elif node.target == torch.ops.aten.to.dtype:
+        # If we quantize a cast(fp32) with unit scale and same dtype as input, we can handle it as a no-op in the backend.
+        input_val = node.all_input_nodes[0].meta.get("val", None)
+        if input_val is None:
+            return None
+
+        if input_val.dtype not in (torch.int8, torch.int16, torch.int32):
+            return None
+
+        quant_properties.quant_output = _QuantProperty(
+            0,
+            FixedQParamsQuantizationSpec(
+                dtype=input_val.dtype,
+                scale=1.0,
+                zero_point=0,
+                quant_max=torch.iinfo(input_val.dtype).max,
+                quant_min=torch.iinfo(input_val.dtype).min,
+                qscheme=torch.per_tensor_symmetric,
+                is_dynamic=False,
+            ),
+        )
     elif node.target in (
         torch.ops.higher_order.cond,
         torch.ops.higher_order.while_loop,

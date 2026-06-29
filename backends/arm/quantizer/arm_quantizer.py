@@ -117,7 +117,6 @@ def get_cond_while_submodules_ao(
     only the ``while_loop`` cond function is processed explicitly there.
 
     """
-
     if not apply_quantization:
         return get_cond_while_submodules(graph_module)
 
@@ -156,6 +155,7 @@ def get_symmetric_quantization_config(
         act_qmax (int): Maximum activation quantization value.
         weight_qmin (int): Minimum weight quantization value.
         weight_qmax (int): Maximum weight quantization value.
+        eps (float): Minimum scale value used by observers.
 
     Returns:
         QuantizationConfig: Quantization settings for activations, weights, and
@@ -562,14 +562,17 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def tosa_spec(self):
+        """Return the TOSA specification used by the active quantizer."""
         return self.quantizer.tosa_spec
 
     @property
     def compile_spec(self):
+        """Return the compile specification used by the active quantizer."""
         return self.quantizer.compile_spec
 
     @property
     def global_config(self):
+        """Return the fallback quantization configuration."""
         return self.quantizer.global_config
 
     @global_config.setter
@@ -582,6 +585,7 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def io_config(self):
+        """Return the input and output quantization configuration."""
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             return self.quantizer.io_config
         else:
@@ -600,6 +604,7 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def module_type_config(self):
+        """Return quantization configuration overrides by module type."""
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             return self.quantizer.module_type_config
         else:
@@ -626,6 +631,7 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def module_name_config(self):
+        """Return quantization configuration overrides by module name."""
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             return getattr(self.quantizer, "module_name_config", {})
         else:
@@ -740,6 +746,7 @@ class TOSAQuantizer(Quantizer):
             quantization_config (Optional[QuantizationConfig]): Configuration
                 describing quantization settings for nodes matched by the provided
                 NodeFinder. ``None`` indicates no quantization.
+            node_finder (NodeFinder): Predicate used to select nodes.
 
         """
         if self.use_composable_quantizer:
@@ -805,14 +812,18 @@ class TOSAQuantizer(Quantizer):
         return self.quantizer.annotate(model)
 
     def validate(self, model: GraphModule) -> None:
-        """Validate the quantization results. Currently, this includes:
-            - Ensure tensor inputs to each operator live on the same device.
+        """Validate the quantization results.
+
+        Currently, this ensures tensor inputs to each operator live on the same
+        device.
 
         Args:
             model (GraphModule): GraphModule being validated.
+
         Raises:
             ValueError: If tensor inputs for any operator span more than one
                 device.
+
         """
         for node in model.graph.nodes:
             if node.op != "call_function":
@@ -857,8 +868,7 @@ class TOSAQuantizer(Quantizer):
         is_qat: bool = False,
         fold_quantize: bool = True,
     ):
-        """Quantizes a GraphModule in a way such that conditional submodules are
-        handled properly.
+        """Quantize a GraphModule with conditional submodule handling.
 
         Note: torchao's prepare_pt2e and convert_pt2e natively handle
         while_loop body_fn submodules, so we only manually process cond
@@ -871,8 +881,8 @@ class TOSAQuantizer(Quantizer):
                 model with submodules, at least one sample per code path is
                 needed.
             is_qat (bool): Whether to do quantization aware training or not.
-            fold_quantize (bool): Enables or disables constant folding when quantization
-                is completed.
+            fold_quantize (bool): Enables or disables constant folding when
+                quantization is completed.
 
         Returns:
             GraphModule: The quantized model.
@@ -997,7 +1007,6 @@ class _TOSAQuantizerV1(Quantizer):
         quantized models.
 
         """
-
         # First, set all nodes according to global config
         for node in model.graph.nodes:
             node.meta[DISALLOW_TFA_META_KEY] = self.global_config is None
@@ -1152,10 +1161,10 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 
     @property
     def quantizers(self) -> List[Quantizer]:
-        """Returns the configured quantizers in order of precedence, ensuring
-        the global config and shared_qspec_quantizer are applied last.
+        """Return the configured quantizers in order of precedence.
 
-        The returned list is a shallow copy; quantizer instances are shared.
+        The returned list is a shallow copy; quantizer instances are shared. The
+        global config and shared_qspec_quantizer are applied last.
 
         """
         quantizers = self._quantizers.copy()
@@ -1167,9 +1176,7 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 
     @quantizers.setter
     def quantizers(self, value: List[Quantizer]) -> None:
-        """Override of quantizers setter to allow for dynamic updating of
-        quantizers without accessing self._quantizers.
-        """
+        """Update quantizers without accessing self._quantizers directly."""
         self._quantizers = value
 
     def _remove_quantizers_by_node_finder_type(

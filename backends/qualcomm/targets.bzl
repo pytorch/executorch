@@ -1,6 +1,7 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
+    "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/third-party:third_party_libs.bzl", "qnn_third_party_dep")
@@ -69,7 +70,7 @@ def define_common_targets():
         },
         exported_external_deps = ["flatbuffers-api"],
         define_static_target = True,
-        platforms = [ANDROID],
+        platforms = [ANDROID, CXX],
     )
 
     runtime.cxx_library(
@@ -87,5 +88,32 @@ def define_common_targets():
         exported_deps = [
             ":schema",
         ],
-        platforms = [ANDROID],
+        platforms = [ANDROID, CXX],
+    )
+
+    # Host-side AOT variant of qnn_executorch_backend. Pulls in the QNN
+    # offline-compile libraries as a Buck resource (via :runtime, which
+    # itself depends on qnn_third_party_dep("qnn_offline_compile_libs")),
+    # so a host-side gtest or runner can dlopen the QNN libraries
+    # without a manual path setup.
+    #
+    # Mirrors qnn_executorch_backend's structure but swaps the on-device
+    # runtime_android_build dep for the host runtime which bundles the
+    # x86 simulator libraries as a Buck resource.
+    runtime.cxx_library(
+        name = "qnn_executorch_backend_aot",
+        srcs = [],
+        headers = [],
+        define_static_target = True,
+        visibility = ["PUBLIC"],
+        deps = [
+            qnn_third_party_dep("api"),
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/backends/qualcomm/runtime:runtime",
+        ],
+        exported_deps = [
+            ":schema",
+        ],
+        platforms = [ANDROID, CXX],
     )

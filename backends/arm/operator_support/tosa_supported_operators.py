@@ -14,9 +14,12 @@ import operator
 import typing
 from typing import final, Optional, Sequence, Type
 
+# Register Arm-specific torch.library ops and MXFP transforms at package
+# import time.
+import executorch.backends.arm.ao_ext  # noqa: F401
+
 import torch
 import torch.fx as fx
-
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     is_submodule_node,
@@ -84,7 +87,7 @@ class SupportedTOSAOperatorCheck(OperatorSupportBase):
 
     # Class attributes populated by subclasses
     tosa_specs: list[TosaSpecification] = TosaSpecification.all_versions_and_profiles()
-    targets: list[str] = []
+    targets: list[object] = []
 
     @final
     def is_node_supported(
@@ -170,6 +173,15 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
     return len(users) > 0
 
 
+def _floating_profile_negative_checks(
+    tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter
+) -> list[OperatorSupportBase]:
+    checks: list[OperatorSupportBase] = [CheckMixedFloatingInputs(reporter)]
+    if not tosa_spec.support_integer():
+        checks.append(CheckInt32ComparisonInputs(reporter))
+    return checks
+
+
 def is_quantized(node: torch.fx.Node) -> bool:
     """Checks if the node is quantized.
 
@@ -237,6 +249,129 @@ def get_registered_tosa_support_checks(
     return checks
 
 
+class MXOpsSupportList(OperatorSupportBase):
+    """Accept Arm MX custom ops when the active spec enables MX support."""
+
+    targets = (
+        exir_ops.edge.tosa_mxfp.conv2d.default,
+        exir_ops.edge.tosa_mxfp.linear.default,
+    )
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        return node.op == "call_function" and node.target in self.targets
+
+
+def _profile_support_check(
+    tosa_spec: TosaSpecification,
+) -> Optional[OperatorSupportBase]:
+    if tosa_spec.support_integer() and tosa_spec.support_float():
+        return TOSAProINTFPSupportList()
+    if tosa_spec.support_integer():
+        return TOSAProINTSupportList()
+    if tosa_spec.support_float():
+        return TOSAProFPSupportList()
+    return None
+
+
+def _registered_support_checks(
+    tosa_spec: TosaSpecification,
+    reporter: WhyNoPartitionReporter,
+) -> list[OperatorSupportBase]:
+    return [
+        check(tosa_spec, reporter)
+        for check in get_registered_tosa_support_checks(tosa_spec)
+    ]
+
+
+def _positive_checks(
+    tosa_spec: TosaSpecification,
+    exported_program: ExportedProgram,
+    reporter: WhyNoPartitionReporter,
+) -> list[OperatorSupportBase]:
+    checks: list[OperatorSupportBase] = [
+        ControlFlowSubmoduleSupported(exported_program, tosa_spec, reporter),
+        ControlFlowOpSupported(exported_program, tosa_spec, reporter),
+    ]
+
+    if profile_check := _profile_support_check(tosa_spec):
+        checks.append(profile_check)
+
+    if tosa_spec.support_extension("mxfp"):
+        checks.append(MXOpsSupportList())
+
+    # TODO: Refactor to use TOSAProSupportLists + negtive checks
+    checks.extend(_registered_support_checks(tosa_spec, reporter))
+
+    return checks
+
+
+def _disallowed_dtypes(tosa_spec: TosaSpecification) -> list[torch.dtype]:
+    dtypes = [torch.float64]
+    if not tosa_spec.support_extension("bf16"):
+        dtypes.append(torch.bfloat16)
+    if not (
+        tosa_spec.support_extension("fp8e4m3") or tosa_spec.support_extension("mxfp")
+    ):
+        dtypes.append(torch.float8_e4m3fn)
+    if not (
+        tosa_spec.support_extension("fp8e5m2") or tosa_spec.support_extension("mxfp")
+    ):
+        dtypes.append(torch.float8_e5m2)
+    if tosa_spec.is_U55_subset:
+        dtypes.append(torch.bool)
+    return dtypes
+
+
+def _wrapped_additional_checks(
+    additional_checks: Optional[Sequence[OperatorSupportBase]],
+    reporter: WhyNoPartitionReporter,
+) -> list[OperatorSupportBase]:
+    if not additional_checks:
+        return []
+    return [
+        reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
+        for check in additional_checks
+    ]
+
+
+def _negative_checks(
+    tosa_spec: TosaSpecification,
+    exported_program: ExportedProgram,
+    reporter: WhyNoPartitionReporter,
+    additional_checks: Optional[Sequence[OperatorSupportBase]],
+) -> list[OperatorSupportBase]:
+    checks: list[OperatorSupportBase] = [RankCheck(reporter, MAX_RANK)]
+
+    if not tosa_spec.support_extension("int64"):
+        checks.append(CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec))
+
+    checks.extend(_wrapped_additional_checks(additional_checks, reporter))
+
+    if tosa_spec.support_float():
+        checks.extend(_floating_profile_negative_checks(tosa_spec, reporter))
+    else:
+        checks.append(CheckArmQuantized(reporter))
+        checks.append(CheckProperQuantization(reporter))
+
+    checks.append(
+        CheckDtypeInputsAndOutputs(
+            exported_program, reporter, _disallowed_dtypes(tosa_spec), tosa_spec
+        )
+    )
+
+    if tosa_spec.is_U55_subset:
+        checks.append(EthosU55NotSupported(reporter))
+        checks.append(EthosU55DtypeSupport(reporter))
+        checks.append(EthosU55CastCheck(reporter))
+
+    if not tosa_spec.support_extension("shape"):
+        checks.append(SymbolicShapeSupportCheck(reporter))
+
+    return checks
+
+
 def tosa_support_factory(
     tosa_spec: TosaSpecification,
     exported_program: ExportedProgram,
@@ -259,60 +394,10 @@ def tosa_support_factory(
         OperatorSupportBase: Composite checker for the given spec.
 
     """
-    # Postive checks: Add nodes to partitioning
-    positive_checks: list[OperatorSupportBase] = [
-        ControlFlowSubmoduleSupported(exported_program, tosa_spec, reporter),
-        ControlFlowOpSupported(exported_program, tosa_spec, reporter),
-    ]
-
-    if tosa_spec.support_integer() and tosa_spec.support_float():
-        positive_checks.append(TOSAProINTFPSupportList())
-    elif tosa_spec.support_integer():
-        positive_checks.append(TOSAProINTSupportList())
-    elif tosa_spec.support_float():
-        positive_checks.append(TOSAProFPSupportList())
-    # TODO: Refactor to use TOSAProSupportLists + negtive checks
-    positive_checks += [
-        check(tosa_spec, reporter)
-        for check in get_registered_tosa_support_checks(tosa_spec)
-    ]
-
-    # Negative checks: Remove nodes from partitioning
-    negative_checks: list[OperatorSupportBase] = [
-        CheckInt64InputsAndOutputs(exported_program, reporter),
-        RankCheck(reporter, max_rank=MAX_RANK),
-        *[
-            reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
-            for check in (additional_checks if additional_checks else [])
-        ],
-    ]
-
-    if tosa_spec.support_float():
-        negative_checks.append(CheckMixedFloatingInputs(reporter))
-    else:
-        negative_checks.append(CheckArmQuantized(reporter))
-        negative_checks.append(CheckProperQuantization(reporter))
-
-    disallowed_dtypes = [torch.float64]
-    if not tosa_spec.support_extension("bf16"):
-        disallowed_dtypes.append(torch.bfloat16)
-    if not tosa_spec.support_extension("fp8e4m3"):
-        disallowed_dtypes.append(torch.float8_e4m3fn)
-    if not tosa_spec.support_extension("fp8e5m2"):
-        disallowed_dtypes.append(torch.float8_e5m2)
-    if tosa_spec.is_U55_subset:
-        disallowed_dtypes.append(torch.bool)
-    negative_checks.append(
-        CheckDtypeInputsAndOutputs(
-            exported_program, reporter, disallowed_dtypes, tosa_spec
-        )
+    positive_checks = _positive_checks(tosa_spec, exported_program, reporter)
+    negative_checks = _negative_checks(
+        tosa_spec, exported_program, reporter, additional_checks
     )
-    if tosa_spec.is_U55_subset:
-        negative_checks.append(EthosU55NotSupported(reporter))
-        negative_checks.append(EthosU55DtypeSupport(reporter))
-        negative_checks.append(EthosU55CastCheck(reporter))
-    if not tosa_spec.support_extension("shape"):
-        negative_checks.append(SymbolicShapeSupportCheck(reporter))
 
     return chain(
         reporter.wrap_check(
@@ -351,6 +436,40 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
 
         return False
 
+    def _partition_dynamic_upmsample_nearest2d(self, node: fx.Node) -> bool:
+        """Check if the node is an upsample_nearest2d with symbolic shapes.
+
+        Args:
+            node (fx.Node): FX node to check.
+
+        Returns:
+            bool: True if the node is an upsample_nearest2d with symbolic
+                shapes; otherwise, False.
+
+        """
+        if node.target != exir_ops.edge.aten.upsample_nearest2d.vec:
+            return False
+
+        try:
+            input_tensor = get_first_fake_tensor(node.all_input_nodes[0])
+            output_tensor = get_first_fake_tensor(node)
+        except Exception as exc:
+            self.reporter.report_reject(
+                node,
+                f"upsample_nearest2d symbolic shapes need tensor metadata: {exc}",
+            )
+            return False
+
+        input_size_xy = input_tensor.shape[2:4]
+        output_size_xy = output_tensor.shape[2:4]
+        if len(input_size_xy) != 2 or len(output_size_xy) != 2:
+            self.reporter.report_reject(
+                node, "upsample_nearest2d expects 2D spatial input/output."
+            )
+            return False
+
+        return True
+
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
@@ -377,14 +496,13 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
             self._has_symbolic_shape(input_node) for input_node in node.all_input_nodes
         ):
             if node.target == exir_ops.edge.aten.upsample_nearest2d.vec:
-                return True
-
-            self.reporter.report_reject(
-                node,
-                "Node has symbolic shape but the TOSA spec does not support "
-                "the shape extension.",
-            )
-            return False
+                return self._partition_dynamic_upmsample_nearest2d(node)
+            else:
+                self.reporter.report_reject(
+                    node,
+                    "Node has symbolic shape, has the TOSA spec shape extension support?",
+                )
+                return False
 
         return True
 
@@ -545,7 +663,10 @@ class CheckProperQuantization(OperatorSupportBase):
             self.reporter.report_reject(node, "One or more inputs were not quantized.")
             return False
 
-        all_q_users = all((output_node.target in Q_OPS) for output_node in node.users)
+        all_q_users = all(
+            output_node.target in (*Q_OPS, torch.ops.aten.sym_size.int)
+            for output_node in node.users
+        )
         output_dtype = get_first_fake_tensor(node).dtype
         output_quantized = (
             output_quantized or all_q_users or _is_integer_dtype(output_dtype)
@@ -571,7 +692,10 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     """
 
     def __init__(
-        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+        self,
+        exported_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+        tosa_spec: TosaSpecification,
     ):
         """Initialize the check with program context and reporter."""
         self.input_names = [
@@ -580,6 +704,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             if spec.kind == InputKind.USER_INPUT
         ]
         self.reporter = reporter
+        self.tosa_spec = tosa_spec
         self.int32_min = torch.iinfo(torch.int32).min
         self.int32_max = torch.iinfo(torch.int32).max
         super().__init__()
@@ -592,6 +717,138 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         min_val, max_val = int(torch.min(data)), int(torch.max(data))
         return min_val >= self.int32_min and max_val <= self.int32_max
 
+    def has_rejected_int64_output(
+        self, node: torch.fx.Node, tensor_list: Sequence[typing.Any]
+    ) -> bool:
+        if node.target in (
+            torch.ops.aten.argmax.default,
+            exir_ops.edge.aten.argmax.default,
+        ):
+            return not self._is_tosa_argmax_supported(node)
+        return any(
+            tensor.dtype == torch.int64
+            for tensor in tensor_list
+            if isinstance(tensor, FakeTensor)
+        )
+
+    def _is_tosa_argmax_dtype_supported(
+        self, node: torch.fx.Node, input_dtype: torch.dtype
+    ) -> bool:
+        if input_dtype == torch.int8:
+            if not self.tosa_spec.support_integer():
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires PRO-INT for int8 input."
+                )
+                return False
+        elif input_dtype == torch.int16:
+            if not (
+                self.tosa_spec.support_integer()
+                and self.tosa_spec.support_extension("int16")
+            ):
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires EXT-INT16 for int16 input."
+                )
+                return False
+        elif input_dtype in (torch.float16, torch.float32):
+            if not self.tosa_spec.support_float():
+                self.reporter.report_reject(
+                    node, f"TOSA ARGMAX requires PRO-FP for {input_dtype} input."
+                )
+                return False
+        elif input_dtype == torch.bfloat16:
+            if not (
+                self.tosa_spec.support_float()
+                and self.tosa_spec.support_extension("bf16")
+            ):
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires EXT-BF16 for bfloat16 input."
+                )
+                return False
+        else:
+            self.reporter.report_reject(
+                node, f"TOSA ARGMAX does not support {input_dtype} input."
+            )
+            return False
+        return True
+
+    def _is_tosa_argmax_supported(self, node: torch.fx.Node) -> bool:
+        dim = node.kwargs.get("dim", node.args[1] if len(node.args) > 1 else None)
+        if dim is None:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires an explicit reduction dimension."
+            )
+            return False
+        if not isinstance(dim, int):
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires a statically known reduction dimension."
+            )
+            return False
+
+        input_node = typing.cast(torch.fx.Node, node.args[0])
+        input_tensor = get_first_fake_tensor(input_node)
+        if not self._is_tosa_argmax_dtype_supported(node, input_tensor.dtype):
+            return False
+
+        input_rank = len(input_tensor.shape)
+        if input_rank == 0:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires an input with rank at least 1."
+            )
+            return False
+
+        axis = dim + input_rank if dim < 0 else dim
+        if axis < 0 or axis >= input_rank:
+            self.reporter.report_reject(
+                node,
+                f"TOSA ARGMAX axis must be in [0, {input_rank - 1}] but got {dim}.",
+            )
+            return False
+
+        keepdim = node.kwargs.get(
+            "keepdim", node.args[2] if len(node.args) > 2 else False
+        )
+        if keepdim:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX does not support keepdim=True."
+            )
+            return False
+
+        return True
+
+    def _check_int64_input_nodes(self, node: torch.fx.Node) -> bool:
+        """Check if all int64 input nodes are constant and will be
+        partitioned.
+        """
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
+            if isinstance(input_node.meta["val"], torch.SymInt):
+                continue
+            tensor_in = get_first_fake_tensor(input_node)
+            if tensor_in.dtype != torch.int64:
+                continue
+            # Constant placeholder
+            if (
+                input_node.op != "call_function"
+                and input_node.name not in self.input_names
+            ):
+                continue
+            # Constant operator
+            if input_node.op == "call_function":
+                if input_node.target in ComputeConstantOpsAOTPass.targeted_ops:
+                    # This is not perfect since the input_node can still be rejected by other checks but
+                    # this should cover the majority of cases.
+                    if self.is_node_supported({}, input_node):
+                        continue
+            self.reporter.report_reject(
+                node, f"Non-constant int64 input {input_node.name}"
+            )
+            return False
+
+        return True
+
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
@@ -601,7 +858,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         vals = node.meta["val"]
         tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]
 
-        any_int64 = any(tensor.dtype == torch.int64 for tensor in tensor_list)
+        any_int64 = self.has_rejected_int64_output(node, tensor_list)
         # Don't partition nodes with int64 output...
         if any_int64:
             # ... Except for constant ops that are directly cast to something non-int64.
@@ -635,35 +892,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 )
                 return False
 
-        # Ops with int64 inputs are only partitioned if input nodes are constant and will be partitioned.
-        # If it is not partitioned, the partition will get an int64 input and fail.
-        for input_node in (
-            input_node
-            for input_node in node.all_input_nodes
-            if input_node.op != "get_attr"
-        ):
-            tensor_in = get_first_fake_tensor(input_node)
-            if tensor_in.dtype != torch.int64:
-                continue
-            # Constant placeholder
-            if (
-                input_node.op != "call_function"
-                and input_node.name not in self.input_names
-            ):
-                continue
-            # Constant operator
-            if input_node.op == "call_function":
-                if input_node.target in ComputeConstantOpsAOTPass.targeted_ops:
-                    # This is not perfect since the input_node can still be rejected by other checks but
-                    # this should cover the majority of cases.
-                    if self.is_node_supported({}, input_node):
-                        continue
-            self.reporter.report_reject(
-                node, f"Non-constant int64 input {input_node.name}"
-            )
-            return False
-
-        return True
+        return self._check_int64_input_nodes(node)
 
 
 class CheckDtypeInputsAndOutputs(OperatorSupportBase):
@@ -695,6 +924,9 @@ class CheckDtypeInputsAndOutputs(OperatorSupportBase):
             for input_node in node.all_input_nodes
             if input_node.op != "get_attr"
         ):
+            if isinstance(input_node.meta["val"], torch.SymInt):
+                continue
+
             tensor = get_first_fake_tensor(input_node)
             if tensor.dtype in self.disallowed_dtypes:
                 self.reporter.report_reject(
@@ -746,12 +978,17 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
         ):
             return True
 
+        if node.target in MXOpsSupportList.targets:
+            return True
+
         floating_dtypes = set()
         for input_node in (
             input_node
             for input_node in node.all_input_nodes
             if input_node.op != "get_attr"
         ):
+            if isinstance(input_node.meta["val"], torch.SymInt):
+                continue
             dtype = get_first_fake_tensor(input_node).dtype
             if dtype.is_floating_point:
                 floating_dtypes.add(dtype)
@@ -763,6 +1000,47 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
                 " Did you call model.to(dtype=...) or cast properly?",
             )
             return False
+
+        return True
+
+
+class CheckInt32ComparisonInputs(OperatorSupportBase):
+    """Reject int32 comparisons under the FP profile."""
+
+    target_ops = {
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.gt.Scalar,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.lt.Scalar,
+    }
+
+    def __init__(self, reporter: WhyNoPartitionReporter) -> None:
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.target not in self.target_ops:
+            return True
+
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
+            if get_first_fake_tensor(input_node).dtype == torch.int32:
+                self.reporter.report_reject(
+                    node,
+                    "FP profile does not support int32 comparison inputs.",
+                )
+                return False
 
         return True
 
@@ -789,6 +1067,8 @@ class RankCheck(OperatorSupportBase):
         )
         # check if any input node has an unsupported rank
         for input_node in input_nodes:
+            if isinstance(input_node.meta["val"], torch.SymInt):
+                continue
             input_node_shape = get_first_fake_tensor(input_node).shape
             if len(input_node_shape) > self.max_rank:
                 self.reporter.report_reject(

@@ -628,13 +628,15 @@ class MulTensorModule(torch.nn.Module):
         return x * y
 
 
-class MulTensorConvModule(torch.nn.Module):
+class MaxPoolMulTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2dModule(padding=1, stride=1)
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
 
     def forward(self, x, y):
-        x = self.conv(x)
+        x = self.max_pool2d(x)
         return x * y
 
 
@@ -656,13 +658,15 @@ class AddTensorModule(torch.nn.Module):
         return x + y
 
 
-class AddTensorConvModule(torch.nn.Module):
+class MaxPoolAddTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2dModule(padding=1, stride=1)
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
 
     def forward(self, x, y):
-        x = self.conv(x)
+        x = self.max_pool2d(x)
         return x + y
 
 
@@ -684,13 +688,15 @@ class SubTensorModule(torch.nn.Module):
         return x - y
 
 
-class SubTensorConvModule(torch.nn.Module):
+class MaxPoolSubTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2dModule(padding=1, stride=1)
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
 
     def forward(self, x, y):
-        x = self.conv(x)
+        x = self.max_pool2d(x)
         return x - y
 
 
