@@ -397,6 +397,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             "//executorch/backends/test:graph_builder",
+            "//executorch/exir:lib",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
             ":fuse_cascaded_transpose_or_permute_ops",

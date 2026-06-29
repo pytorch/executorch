@@ -117,19 +117,20 @@ All example scripts below use hybrid mode, which is optimized for on-device perf
 
 #### LLAMA2
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint stories110M.pt --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --decoder_model stories110m --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "Once upon a time"
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint stories110M.pt --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --decoder_model stories110m --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "Once upon a time" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### LLAMA3.2 1B Instruct
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### LLAMA3.2 3B Instruct
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+```
 
 
 #### Codegen2
@@ -141,73 +142,73 @@ python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android
 #### Gemma 2B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma-2b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma-2b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### Gemma2 2B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma2-2b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma2-2b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### Gemma3 1B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma3-1b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma3-1b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### GLM 1.5B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model glm-1_5b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model glm-1_5b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### Granite3.3 2B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model granite_3_3-2b_instruct --prompt "I would like to learn python, could you teach me with a simple example?" --eval_methods tasks_eval --eval_tasks hellaswag --eval_limit 10 --calib_tasks hellaswag --calib_limit 10
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model granite_3_3-2b_instruct --prompt "I would like to learn python, could you teach me with a simple example?" --eval_methods tasks_eval --eval_tasks hellaswag --eval_limit 10 --calib_tasks hellaswag --calib_limit 10
 ```
 
 #### Phi4-mini-instruct
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model phi_4_mini --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model phi_4_mini --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### QWEN2.5 0.5B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model qwen2_5-0_5b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model qwen2_5-0_5b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### QWEN2.5 1.5B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --decoder_model qwen2_5-1_5b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --decoder_model qwen2_5-1_5b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### QWEN3 0.6B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model qwen3-0_6b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model qwen3-0_6b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### QWEN3 1.7B
 Default example using hybrid mode
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --temperature 0 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --decoder_model qwen3-1_7b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --decoder_model qwen3-1_7b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### SmolLM2
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smollm2_135m --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smollm2_135m --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### SmolLM3
 Default example using hybrid mode.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smollm3-3b --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smollm3-3b --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
 ```
 
 #### Using custom calibration samples for LLMs
@@ -215,12 +216,13 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 Instead of `--calib_tasks`, you can supply your own conversation JSON files via `--calib_samples`. The samples are fed into the quantization calibration pass to collect activation observer statistics — they do not affect the inference prompt. This is useful when you want to calibrate on domain-specific or instruct-format data rather than a generic lm_eval task.
 
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model smollm2_135m --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/text.json
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smollm2_135m --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/text.json
 ```
 
 You can also provide both `--calib_tasks` and `--calib_samples` at the same time; the pipeline concatenates both data sources for calibration.
 
 
+## Multimodal Support
 
 ### Overview
 
@@ -455,19 +457,16 @@ The VLM inference pipeline consists of:
    - Special tokens (e.g., `<image>`, `<|fake_token_around_image|>`, `<fake_token_around_image>`) mark modality boundaries (see [tokenizer.py](tokenizer.py))
 
    ```python
-   # Token fields on each encoder config subclass (encoder/encoder_config.py)
-   @dataclass(init=False, frozen=True)
-   class SmolVLMEncoder(VisionModalityConfig):
-       img_token = "<image>"
-       fake_wrap_start = "<fake_token_around_image>"
-       fake_wrap_end = "<fake_token_around_image>"
-       global_img_token = "<global-img>"
-
-   @dataclass(init=False, frozen=True)
-   class InternVL3Encoder(VisionModalityConfig):
-       img_token = "<IMG_CONTEXT>"
-       fake_wrap_start = "<img>"
-       fake_wrap_end = "</img>"
+   # Special tokens for Vision-Language Model
+   VLM_SPECIAL_TOKENS = {
+       "smolvlm_500m_instruct": {
+           "image_token": "<image>",
+           "global_img": "<global-img>",
+           "fake_wrap_start": "<fake_token_around_image>",
+           "fake_wrap_end": "<fake_token_around_image>",
+       },
+       ...
+   }
    ```
    - Final fused sequence: `[batch, img_seq_len + text_seq_len, hidden_dim]`
 
@@ -543,18 +542,18 @@ To evaluate the perplexity across all 3 phases, users should provide the `--eval
 
 For example, using the Qwen model and 1 wikitext sample as the evaluation task, users can assess all 3 phases perplexity score in a single run by including the appropriate configuration:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --calib_tasks wikitext --calib_limit 1 --eval_tasks wikitext --eval_limit 1 --verbose
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --calib_tasks wikitext --calib_limit 1 --eval_tasks wikitext --eval_limit 1 --verbose
 ```
 
 From the example script above, 1 wikitext sample is used to evaluate all 3 phases. However, there are cases where a user may want to use one sample for quantization calibration and multiple samples for perplexity evaluation. In this case, the process should be split into two runs. In the 1st run, the model is compiled using one sample. In the 2nd run, the user can provide a different configuration for QNN device execution.
 Example:
 ```bash
 # 1st run to compile with --calib_limit 1
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --calib_tasks wikitext --calib_limit 1 -a ${FOLDER_TO_PRE_GEN_PTE} --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --calib_tasks wikitext --calib_limit 1 --compile_only
 ```
 ```bash
 # 2nd run to perform QNN device execution with --eval_limit 3
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --eval_tasks wikitext --eval_limit 3 --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen2_5-0_5b --eval_methods tasks_eval --eval_tasks wikitext --eval_limit 3 --pre_gen_pte ${FOLDER_TO_PRE_GEN_PTE}
 ```
 
 
@@ -620,7 +619,7 @@ To automatically identify sensitive layers and generate a mixed-precision recipe
 
 Example:
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen3-1_7b --calib_tasks wikitext --calib_limit 1 --quant_recipe_suggestion --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --prompt "I would like to learn python, could you teach me with a simple example?" --temperature 0 --model_mode kv --max_seq_len 1024 --decoder_model qwen3-1_7b --calib_tasks wikitext --calib_limit 1 --quant_recipe_suggestion --compile_only
 ```
 
 After the run, pick one of the generated classes from `qwen3-1_7b_suggest_recipe.py` as your new recipe. For a full walkthrough, see [quantization_guidance.md](quantization_guidance.md).
@@ -649,7 +648,7 @@ This feature supports fluent multi-turn conversations and manages long-context s
 Example:
 ```bash
 # Compile llama pte file and attention sink evictor pte file with sink_size = 4 and batch_eviction_size = 64
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --max_context_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1 --use_attention_sink 4,64 --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-1b_instruct --model_mode hybrid --prefill_ar_len 128 --max_seq_len 4096 --max_context_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1 --use_attention_sink 4,64 --compile_only
 ```
 
 After running this, the `attention_sink_evictor.pte` file will be generated in the artifacts directory. This file is necessary for using the attention sink feature, as it handles removing the `eviction_batch_size` tokens from the kv cache, retaining the first `sink_size` tokens, and re-rotating the remaining tokens in the kv cache.

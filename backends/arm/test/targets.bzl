@@ -61,8 +61,6 @@ def define_arm_tests():
         "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
         "misc/tosa_dialect/test_tosa_resize.py",
-        "misc/test_public_api_manifest.py",
-        "misc/test_validate_public_api_manifest.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
@@ -81,6 +79,16 @@ def define_arm_tests():
         "deprecation/test_arm_compile_spec_deprecation.py",
     ]
 
+    # These import the top-level executorch.backends.arm package, whose
+    # __init__ eagerly imports torch. Pulling that into pytest collection fails
+    # in the packaged (non-OSS) build, so build them in OSS only; the public API
+    # surface is covered by a dedicated backward-compatibility CI job.
+    if runtime.is_oss:
+        test_files += [
+            "misc/test_public_api_manifest.py",
+            "misc/test_validate_public_api_manifest.py",
+        ]
+
     TESTS = {}
 
     for test_file in test_files:
@@ -96,7 +104,7 @@ def define_arm_tests():
             typing = False,
             skip_on_mode_mac = True,
             env = {} if runtime.is_oss else ({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.8.0:model-converter-bin)",
+                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
@@ -116,8 +124,6 @@ def define_arm_tests():
                 "//executorch/backends/arm/test:mxfp_test_common",
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
                 "//executorch/backends/arm:ao_ext",
-                "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
-                "//executorch/backends/arm:public_api",
                 "//executorch/backends/arm:ethosu",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
@@ -129,5 +135,11 @@ def define_arm_tests():
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
-            ],
+            ] + ([
+                # Needed only by the OSS-only public API manifest tests above.
+                # Depending on them everywhere drags the top-level package
+                # __init__ (and its torch import) into pytest collection.
+                "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
+                "//executorch/backends/arm:public_api",
+            ] if runtime.is_oss else []),
         )

@@ -42,6 +42,12 @@ struct WebGPUDispatch {
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
   std::string kernel_name; // bench label
+  // DMA copy command; default Compute keeps existing positional inits valid.
+  enum class Kind { Compute, Copy };
+  Kind kind = Kind::Compute;
+  WGPUBuffer copy_src = nullptr;
+  WGPUBuffer copy_dst = nullptr;
+  size_t copy_nbytes = 0;
 };
 
 struct OutputCopy {
@@ -125,12 +131,17 @@ class WebGPUGraph {
   int64_t get_int(int id) const {
     return ints_[id];
   }
-  bool get_bool(int id) const {
-    return bools_[id];
+  // Int values of a serialized IntList (e.g. permute dims). int64 (FlatBuffer
+  // [long]) to match the schema and the get_int convention.
+  const std::vector<int64_t>& get_int_list(int id) const {
+    return int_lists_[id];
   }
   // Member value ids of a serialized ValueList (op multi-output list).
   const std::vector<int>& get_value_list(int id) const {
     return value_lists_[id];
+  }
+  bool get_bool(int id) const {
+    return bools_[id];
   }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
@@ -189,6 +200,17 @@ class WebGPUGraph {
     dispatches_.push_back(dispatch);
   }
 
+  // Record an in-graph-order buffer-to-buffer DMA (e.g. a flat copy).
+  void add_buffer_copy(WGPUBuffer src, WGPUBuffer dst, size_t nbytes) {
+    WebGPUDispatch d;
+    d.kind = WebGPUDispatch::Kind::Copy;
+    d.copy_src = src;
+    d.copy_dst = dst;
+    d.copy_nbytes = nbytes;
+    d.kernel_name = "flat_copy";
+    dispatches_.push_back(d);
+  }
+
   // Materialize a recorded prepack-routed constant into dst via one CPU->GPU
   // transfer. Build-time only (the .pte bytes are freed after build()).
   // Mirrors Vulkan prepack_standard.
@@ -205,6 +227,10 @@ class WebGPUGraph {
 
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
+
+  // Create a mapped-at-creation uniform buffer from `size` bytes and track it
+  // in the memory stats. Shared helper for ops needing a uniform Params buffer.
+  WGPUBuffer make_uniform_buffer(const void* data, size_t size);
 
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
@@ -241,7 +267,8 @@ class WebGPUGraph {
     Null,
     String,
     SymInt,
-    ValueList
+    ValueList,
+    IntList
   };
 
   ValueType get_value_type(int id) const {
@@ -258,9 +285,10 @@ class WebGPUGraph {
   std::vector<ValueType> value_types_;
   std::vector<WebGPUTensor> tensors_;
   std::vector<int64_t> ints_;
+  std::vector<std::vector<int64_t>> int_lists_;
+  std::vector<std::vector<int>> value_lists_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
-  std::vector<std::vector<int>> value_lists_;
 
   // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
   struct SymIntSlot {
