@@ -51,6 +51,7 @@ set(WEBGPU_SRCS
     runtime/ops/permute/Permute.cpp
     runtime/ops/cat/Cat.cpp
     runtime/ops/index/Index.cpp
+    runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})

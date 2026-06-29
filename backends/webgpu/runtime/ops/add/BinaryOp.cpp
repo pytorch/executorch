@@ -175,6 +175,14 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     const uint64_t n1 = utils::numel_of(d1);
     const uint64_t n2 = utils::numel_of(d2);
     const uint64_t numel = n2 > n1 ? n2 : n1;
+    const uint64_t n_min = n2 > n1 ? n1 : n2;
+    // The flat add follows the larger operand and broadcasts the smaller; valid
+    // only when the smaller tiles evenly into it (rejects e.g. [4,1] vs [1,3],
+    // whose true [4,3] result this flat kernel cannot produce).
+    if (n_min == 0u || numel % n_min != 0u) {
+      throw std::runtime_error(
+          "add(resize): operands are not broadcast-compatible by numel");
+    }
     g.set_cur_dims(out_id, n2 > n1 ? d2 : d1);
     AddParams p = {};
     p.num_elements = static_cast<uint32_t>(numel);

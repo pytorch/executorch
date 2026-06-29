@@ -26,6 +26,20 @@ def rewrite_argmax(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec:
     )
 
 
+def rewrite_rfft2(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec | None:
+    fft_size = node.args[1] if len(node.args) > 1 else node.kwargs.get("s")
+    fft_dims = node.args[2] if len(node.args) > 2 else node.kwargs.get("dim", [-2, -1])
+    norm = node.args[3] if len(node.args) > 3 else node.kwargs.get("norm")
+    if fft_size is not None or fft_dims not in ([-2, -1], (-2, -1)) or norm is not None:
+        return None
+
+    return DialectNodeSpec(
+        exir_ops.backend.tosa.RFFT2D.default,
+        (node.args[0],),
+        {},
+    )
+
+
 def rewrite_binary_operator(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
