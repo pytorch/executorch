@@ -10,11 +10,11 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-install_miniconda() {
-  BASE_URL="https://repo.anaconda.com/miniconda"
-  CONDA_FILE="Miniconda3-py${PYTHON_VERSION//./}_${MINICONDA_VERSION}-Linux-x86_64.sh"
+install_miniforge() {
+  BASE_URL="https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}"
+  CONDA_FILE="Miniforge3-${MINIFORGE_VERSION}-Linux-x86_64.sh"
   if [[ $(uname -m) == "aarch64" ]]; then
-    CONDA_FILE="Miniconda3-py${PYTHON_VERSION//./}_${MINICONDA_VERSION}-Linux-aarch64.sh"
+    CONDA_FILE="Miniforge3-${MINIFORGE_VERSION}-Linux-aarch64.sh"
   fi
 
   mkdir -p /opt/conda
@@ -22,7 +22,7 @@ install_miniconda() {
 
   pushd /tmp
   wget -q "${BASE_URL}/${CONDA_FILE}"
-  # Install miniconda
+  # Install miniforge
   as_ci_user bash "${CONDA_FILE}" -b -f -p "/opt/conda"
   # Clean up the download file
   rm "${CONDA_FILE}"
@@ -68,7 +68,7 @@ fix_conda_ubuntu_libstdcxx() {
   fi
 }
 
-install_miniconda
+install_miniforge
 install_python
 install_pip_dependencies
 # Hack breaks the job on aarch64 but is still necessary everywhere

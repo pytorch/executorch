@@ -44,7 +44,7 @@ COPY ./common/install_docs_reqs.sh install_docs_reqs.sh
 RUN bash ./install_docs_reqs.sh && rm install_docs_reqs.sh
 
 # Install conda and other dependencies
-ARG MINICONDA_VERSION
+ARG MINIFORGE_VERSION
 ARG PYTHON_VERSION
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV PATH /opt/conda/envs/py_$PYTHON_VERSION/bin:/opt/conda/bin:$PATH
