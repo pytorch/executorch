@@ -206,6 +206,11 @@ ExternalProject_Add(
   # MLX's own install() does not emit libmlx.a where we consume it or the
   # metallib at all, so skip the install step and read both from the build tree.
   INSTALL_COMMAND ""
+  # ExternalProject stamps its build, so a bare MLX submodule bump (git
+  # submodule update) would not invalidate the stamp and we'd link a stale
+  # libmlx.a with no signal. BUILD_ALWAYS reruns the build step every configure;
+  # it is a fast no-op under Ninja when nothing changed.
+  BUILD_ALWAYS ON
   # Required so Ninja knows these are produced by the external build.
   BUILD_BYPRODUCTS ${_mlx_static_lib} ${_mlx_metallib}
 )
@@ -217,7 +222,9 @@ ExternalProject_Add(
 add_library(mlx STATIC IMPORTED GLOBAL)
 set_target_properties(mlx PROPERTIES IMPORTED_LOCATION ${_mlx_static_lib})
 # Headers come from the submodule source tree (always present), not the build
-# dir, so mlxdelegate compilation cannot race the external build.
+# dir, so mlxdelegate compilation cannot race the external build. Verified: MLX
+# emits no public headers into the build tree (version.h is checked in; the
+# version string is a compile-def on version.cpp), so the source dir suffices.
 target_include_directories(mlx INTERFACE ${MLX_SOURCE_DIR})
 find_library(METAL_FRAMEWORK Metal)
 find_library(FOUNDATION_FRAMEWORK Foundation)
@@ -227,7 +234,6 @@ set_target_properties(
   PROPERTIES INTERFACE_LINK_LIBRARIES
              "${METAL_FRAMEWORK};${FOUNDATION_FRAMEWORK};${QUARTZ_FRAMEWORK}"
 )
-add_dependencies(mlx mlx_external)
 
 # -----------------------------------------------------------------------------
 # MLX Backend library
@@ -255,9 +261,8 @@ add_library(mlxdelegate ${_mlx_backend__srcs})
 # Ensure schema is generated before compiling
 add_dependencies(mlxdelegate mlx_schema)
 
-# mlx is an imported target, so add_dependencies(mlx mlx_external) above does
-# not order the build. Depend on mlx_external directly so libmlx.a exists before
-# mlxdelegate links.
+# mlx is an imported target, so a dependency on it would not order the build.
+# Depend on mlx_external directly so libmlx.a exists before mlxdelegate links.
 add_dependencies(mlxdelegate mlx_external)
 
 # Add logging flag if enabled
