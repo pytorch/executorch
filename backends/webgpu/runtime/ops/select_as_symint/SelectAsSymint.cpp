@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <stdexcept>
 
@@ -53,6 +54,9 @@ void sym_size_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
   if (graph.get_value_type(dim_id) != WebGPUGraph::ValueType::Int) {
     throw std::runtime_error("sym_size.int: dim arg is not an Int");
+  }
+  if (graph.get_value_type(self_id) != WebGPUGraph::ValueType::Tensor) {
+    throw std::runtime_error("sym_size.int: self arg is not a Tensor");
   }
   graph.add_symint_dim_source(
       out_id, self_id, static_cast<int>(graph.get_int(dim_id)));
@@ -106,6 +110,12 @@ void sym_mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
 void sym_floordiv_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   register_sym_binary(graph, args, [](int32_t x, int32_t y) {
+    if (y == 0) {
+      throw std::runtime_error("sym floordiv: division by zero");
+    }
+    if (x == INT32_MIN && y == -1) {
+      throw std::runtime_error("sym floordiv: signed overflow (INT32_MIN / -1)");
+    }
     int32_t q = x / y;
     if ((x % y != 0) && ((x < 0) != (y < 0))) {
       q--; // round toward negative infinity (Python floor division)

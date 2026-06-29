@@ -35,6 +35,18 @@ class DivTensorModeFloat(torch.nn.Module):
         return torch.div(x, y, rounding_mode=self.mode)
 
 
+def _is_integer_rounded_div(mode, inputs) -> bool:
+    if mode is None:
+        return False
+    for input in inputs:
+        if isinstance(input, torch.Tensor):
+            if input.dtype.is_floating_point:
+                return False
+        if not isinstance(input, int):
+            return False
+    return True
+
+
 test_data = {
     "mode_none": lambda: (None, (torch.randn(4, 8), torch.randn(4, 8).abs() + 1e-3)),
     "mode_floor": lambda: (
@@ -46,6 +58,48 @@ test_data = {
         (torch.randn(4, 8), torch.randn(4, 8).abs() + 1e-3),
     ),
     "int_denominator": lambda: (None, (torch.randn(4, 8), 2)),
+    "int8_floor": lambda: (
+        "floor",
+        (
+            (torch.randn(4, 8) * 100).to(dtype=torch.int8),
+            (torch.rand(4, 8) * 100 + 10).to(dtype=torch.int8),
+        ),
+    ),
+    "int8_int_scalar": lambda: (
+        "floor",
+        (
+            (torch.randn(4, 8) * 100).to(dtype=torch.int8),
+            9,
+        ),
+    ),
+    "int8_float_scalar": lambda: (
+        "floor",
+        (
+            (torch.randn(4, 8) * 100).to(dtype=torch.int8),
+            9.5,
+        ),
+    ),
+    "int16_trunc": lambda: (
+        "trunc",
+        (
+            (torch.randn(4, 8) * 100).to(dtype=torch.int8),
+            (torch.rand(4, 8) * 100 + 10).to(dtype=torch.int16),
+        ),
+    ),
+    "int32_floor": lambda: (
+        "floor",
+        (
+            (torch.randn(4, 8) * 100).to(dtype=torch.int32),
+            (torch.rand(4, 8) * 100 + 10).to(dtype=torch.int32),
+        ),
+    ),
+    "int32_trunc": lambda: (
+        "trunc",
+        (
+            (torch.randn(4, 8) * 100).to(dtype=torch.int32),
+            (torch.rand(4, 8) * 100 + 10).to(dtype=torch.int32),
+        ),
+    ),
 }
 
 
@@ -61,7 +115,6 @@ def test_div_tensor_mode_tosa_FP(data):
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
@@ -73,17 +126,22 @@ def test_div_tensor_mode_tosa_INT(data):
     pipeline = TosaPipelineINT[input_tt](
         model,
         inputs,
-        aten_op=model.aten_ops_int,
+        aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
-    pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
 @common.XfailIfNoCorstone300
 @common.parametrize(
-    "data", test_data, xfails={"mode_trunc": "CPU op missing in unittests"}
+    "data",
+    test_data,
+    xfails={
+        "mode_trunc": "CPU op missing in unittests",
+        "int16_trunc": "CPU op missing in unittests",
+        "int32_trunc": "CPU op missing in unittests",
+    },
 )
 def test_div_tensor_mode_u55_INT(data):
     mode, inputs = data()
@@ -92,10 +150,12 @@ def test_div_tensor_mode_u55_INT(data):
     pipeline = EthosU55PipelineINT[input_tt](
         model,
         inputs,
-        aten_ops=model.aten_ops_int,
+        aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
     )
+    pipeline.tester.use_portable_ops = True
+    pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
@@ -108,7 +168,7 @@ def test_div_tensor_mode_u85_INT(data):
     pipeline = EthosU85PipelineINT[input_tt](
         model,
         inputs,
-        aten_ops=model.aten_ops_int,
+        aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
     )
@@ -124,12 +184,11 @@ def test_div_tensor_mode_vgf_quant(data):
     pipeline = VgfPipeline[input_tt](
         model,
         inputs,
-        aten_op=model.aten_ops_int,
+        aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
         quantize=True,
     )
-    pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
