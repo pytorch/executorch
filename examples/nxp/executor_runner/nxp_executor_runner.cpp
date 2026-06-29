@@ -36,10 +36,9 @@ static uint8_t __attribute__((
 #endif
 
 #include <dirent.h>
-#include <stdlib.h>
 #include <sys/stat.h>
 #include <algorithm>
-#include <cassert>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -74,16 +73,18 @@ void processInputs(std::vector<std::string>& inputsData, std::string& inputs) {
   }
 }
 
-bool isDirectory(const std::string& path) {
+bool _isDirectory(const std::string& path) {
   struct stat sb;
   if (stat(path.c_str(), &sb) == -1) {
     fprintf(stderr, "Unable to determine stats of a path!\n");
+    // To keep the main simple, exceptionally allow to call the exit in this
+    // function.
     exit(-1);
   }
   return S_ISDIR(sb.st_mode);
 }
 
-void setInputs(
+Error setInputs(
     torch::executor::Method& method,
     const std::vector<std::string>& inputFiles) {
   if (method.inputs_size() != inputFiles.size()) {
@@ -92,18 +93,25 @@ void setInputs(
         "Mismatch: method has %zu inputs, whereas the loaded data contains %zu entries!\n",
         method.inputs_size(),
         inputFiles.size());
-    exit(-1);
+    return Error::Internal;
   }
   std::vector<torch::executor::EValue> values(method.inputs_size());
   Error status = method.get_inputs(values.data(), values.size());
   if (status != Error::Ok) {
     fprintf(stderr, "Failed to get_inputs...\n");
-    exit(-1);
+    return status;
   }
+
   for (size_t i = 0; i < values.size(); i++) {
     fprintf(stderr, "Loading file %s\n", inputFiles[i].c_str());
     FILE* datasetFile = fopen(inputFiles[i].c_str(), "r");
-    assert(datasetFile);
+    if (!datasetFile) {
+      fprintf(
+          stderr,
+          "Failed to open file %s for reading.\n",
+          inputFiles[i].c_str());
+      return Error::AccessFailed;
+    }
 
     fseek(datasetFile, 0, SEEK_END);
     size_t inputSize = ftell(datasetFile);
@@ -117,8 +125,14 @@ void setInputs(
          torch::executor::ScalarType::Float)) {
       // Input is in bytes, convert to floats
       printf("Converting inputs to floats...\n");
+
       uint8_t* ptr = static_cast<uint8_t*>(malloc(inputSize));
-      assert(ptr);
+      if (!ptr) {
+        fprintf(stderr, "Memory allocation failed.\n");
+        fclose(datasetFile);
+        return Error::MemoryAllocationFailed;
+      }
+
       fread(ptr, 1, inputSize, datasetFile);
       for (size_t j = 0; j < inputSize; j++) {
         values[i].toTensor().mutable_data_ptr<float>()[j] = ptr[j];
@@ -134,13 +148,14 @@ void setInputs(
           values[i].toTensor().element_size(),
           inputSize);
       fclose(datasetFile);
-      exit(-1);
+      return Error::Internal;
     }
     fclose(datasetFile);
   }
+  return Error::Ok;
 }
 
-void saveOutputs(
+Error saveOutputs(
     torch::executor::Method& method,
     std::string& outputPath,
     const std::string& runPathPrefix = ".") {
@@ -151,19 +166,34 @@ void saveOutputs(
   if (stat((outputPath + "/" + runPathPrefix).c_str(), &st) == -1) {
     mkdir((outputPath + "/" + runPathPrefix).c_str(), 0700);
   }
+
+  if (stat((outputPath + "/" + runPathPrefix).c_str(), &st) == -1) {
+    fprintf(
+        stderr,
+        "Path %s/%s not exists and failed to create.\n",
+        outputPath.c_str(),
+        runPathPrefix.c_str());
+    return Error::AccessFailed;
+  }
+
   std::vector<torch::executor::EValue> values(method.outputs_size());
   Error status = method.get_outputs(values.data(), values.size());
   if (status != Error::Ok) {
     fprintf(stderr, "Failed to get_outputs...\n");
-    exit(-1);
+    return status;
   }
+
   for (size_t i = 0; i < values.size(); i++) {
     int precision = 4 - std::to_string(i).size();
     std::string fileName = outputPath + "/" + runPathPrefix + "/" +
         std::to_string(i).insert(0, precision, '0') + ".bin";
     printf("Saving file %s\n", fileName.c_str());
     FILE* datasetFile = fopen(fileName.c_str(), "w");
-    assert(datasetFile);
+    if (!datasetFile) {
+      fprintf(
+          stderr, "Failed to open file %s for writing.\n", fileName.c_str());
+      return Error::AccessFailed;
+    }
     fwrite(
         values[i].toTensor().data_ptr(),
         1,
@@ -171,10 +201,11 @@ void saveOutputs(
         datasetFile);
     fclose(datasetFile);
   }
+  return Error::Ok;
 }
 
 template <typename T>
-void printClassificationOutput(
+Error printClassificationOutput(
     const torch::executor::EValue& value,
     const std::string& outputPath,
     const std::string& runPathPrefix) {
@@ -193,7 +224,12 @@ void printClassificationOutput(
     mkdir(outputPath.c_str(), 0700);
   }
   FILE* results = fopen(resultsFile.c_str(), "a+");
-  assert(results);
+  if (!results) {
+    fprintf(
+        stderr, "Unable to open file %s for writing.\n", resultsFile.c_str());
+    return Error::AccessFailed;
+  }
+
   // Print classification results and save to results.txt.
   std::cout << "Top1 class " << runPathPrefix << " = " << maxIdx << std::endl;
   fprintf(results, "%s %zu ", runPathPrefix.c_str(), maxIdx);
@@ -201,9 +237,11 @@ void printClassificationOutput(
   fprintf(results, "%f ", static_cast<float_t>(maxVal));
   fprintf(results, "\n");
   fclose(results);
+
+  return Error::Ok;
 }
 
-void printOutput(
+Error printOutput(
     torch::executor::Method& method,
     const std::string& outputPath,
     const std::string& runPathPrefix = ".") {
@@ -217,38 +255,45 @@ void printOutput(
     }
     switch (values[0].toTensor().scalar_type()) {
       case torch::executor::ScalarType::Byte:
-        printClassificationOutput<uint8_t>(
+        status = printClassificationOutput<uint8_t>(
             values[0], outputPath, runPathPrefix);
         break;
       case torch::executor::ScalarType::Char:
-        printClassificationOutput<int8_t>(values[0], outputPath, runPathPrefix);
+        status = printClassificationOutput<int8_t>(
+            values[0], outputPath, runPathPrefix);
         break;
       case torch::executor::ScalarType::Short:
-        printClassificationOutput<int16_t>(
+        status = printClassificationOutput<int16_t>(
             values[0], outputPath, runPathPrefix);
         break;
       case torch::executor::ScalarType::Int:
-        printClassificationOutput<int32_t>(
+        status = printClassificationOutput<int32_t>(
             values[0], outputPath, runPathPrefix);
         break;
       case torch::executor::ScalarType::Long:
-        printClassificationOutput<int64_t>(
+        status = printClassificationOutput<int64_t>(
             values[0], outputPath, runPathPrefix);
         break;
       case torch::executor::ScalarType::Float:
-        printClassificationOutput<float>(values[0], outputPath, runPathPrefix);
+        status = printClassificationOutput<float>(
+            values[0], outputPath, runPathPrefix);
         break;
       case torch::executor::ScalarType::Double:
-        printClassificationOutput<double>(values[0], outputPath, runPathPrefix);
+        status = printClassificationOutput<double>(
+            values[0], outputPath, runPathPrefix);
         break;
       default:
         fprintf(
             stderr,
             "Unsupported tensor data type: %d\n",
             static_cast<int>(values[0].toTensor().scalar_type()));
-        exit(-1);
+        return Error::NotSupported;
+    }
+    if (status != Error::Ok) {
+      return status;
     }
   }
+  return Error::Ok;
 }
 
 int main(int argc, char* argv[]) {
@@ -259,22 +304,24 @@ int main(int argc, char* argv[]) {
 
   // Check that model name and inputs have been specified.
   if (FLAGS_model.empty()) {
-    std::cout << "Please specify path to model using the --model option.\n";
+    fprintf(stderr, "Please specify path to model using the --model option.\n");
     exit(-1);
   }
   if (FLAGS_dataset.empty() && FLAGS_inputs.empty()) {
-    std::cout << "Please specify path to dataset using the --dataset option or "
-                 "inputs using --inputs option\n";
+    fprintf(
+        stderr,
+        "Please specify path to dataset using the --dataset option or "
+        "inputs using --inputs option.\n");
     exit(-1);
   }
   if (!FLAGS_dataset.empty() && !FLAGS_inputs.empty()) {
-    std::cout << "Cannot specify both inputs list and dataset directory\n";
+    fprintf(stderr, "Cannot specify both inputs list and dataset directory.\n");
     exit(-1);
   }
   if (!FLAGS_dataset.empty()) {
     datasetDir = opendir(FLAGS_dataset.c_str());
     if (!datasetDir) {
-      std::cout << "Dataset path is not valid\n";
+      fprintf(stderr, "Dataset path is not valid.\n");
       exit(-1);
     }
   }
@@ -288,7 +335,7 @@ int main(int argc, char* argv[]) {
   } else if (getenv("NSYS_CONFIG_PATH")) {
     storeNsysConfigPath(getenv("NSYS_CONFIG_PATH"));
   } else {
-    std::cout << "ERROR: missing --nsys_config argument\n";
+    fprintf(stderr, "ERROR: missing --nsys_config argument.\n");
     exit(-1);
   }
 
@@ -297,7 +344,7 @@ int main(int argc, char* argv[]) {
   } else if (getenv("NSYS_FIRMWARE_PATH")) {
     storeFirmwarePath(getenv("NSYS_FIRMWARE_PATH"));
   } else {
-    std::cout << "ERROR: missing --firmware argument\n";
+    fprintf(stderr, "ERROR: missing --firmware argument.\n");
     exit(-1);
   }
 
@@ -306,7 +353,7 @@ int main(int argc, char* argv[]) {
   } else if (getenv("NSYS_PATH")) {
     storeNsysPath(getenv("NSYS_PATH"));
   } else {
-    std::cout << "ERROR: missing --nsys argument\n";
+    fprintf(stderr, "ERROR: missing --nsys argument.\n");
     exit(-1);
   }
 #endif
@@ -414,7 +461,10 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> inputsData;
         inputsData.push_back(FLAGS_dataset + dataset->d_name);
         // Set input and call inferrence.
-        setInputs(method.get(), inputsData);
+        status = setInputs(method.get(), inputsData);
+        if (status != Error::Ok) {
+          exit(-1);
+        }
 
         status = method->execute();
         if (status != Error::Ok) {
@@ -429,9 +479,16 @@ int main(int argc, char* argv[]) {
         }
 
         // Save outputs in binary files.
-        saveOutputs(method.get(), FLAGS_output, dataset->d_name);
+        status = saveOutputs(method.get(), FLAGS_output, dataset->d_name);
+        if (status != Error::Ok) {
+          exit(-1);
+        }
+
         // Print result with highest confidence.
-        printOutput(method.get(), FLAGS_output, dataset->d_name);
+        status = printOutput(method.get(), FLAGS_output, dataset->d_name);
+        if (status != Error::Ok) {
+          exit(-1);
+        }
       }
       closedir(datasetDir);
     } else if (!FLAGS_inputs.empty()) {
@@ -440,7 +497,8 @@ int main(int argc, char* argv[]) {
       // Validate and process inputs and separate into two lists.
       processInputs(inputPaths, FLAGS_inputs);
 
-      if (std::all_of(inputPaths.begin(), inputPaths.end(), isDirectory)) {
+      // Note: _isDirectory can call the exit() in case of failure.
+      if (std::all_of(inputPaths.begin(), inputPaths.end(), _isDirectory)) {
         // Inputs are in directories - use files in each directory as the
         // inputs.
         std::vector<std::string> inputsData;
@@ -457,7 +515,10 @@ int main(int argc, char* argv[]) {
           // Sort inputsData to ensure correct input ordering
           std::sort(inputsData.begin(), inputsData.end());
 
-          setInputs(method.get(), inputsData);
+          status = setInputs(method.get(), inputsData);
+          if (status != Error::Ok) {
+            exit(-1);
+          }
 
           status = method->execute();
           if (status != Error::Ok) {
@@ -479,12 +540,18 @@ int main(int argc, char* argv[]) {
             inputDir = inputDir.substr(pos + 1);
 
           // Save outputs in binary files.
-          saveOutputs(method.get(), FLAGS_output, inputDir);
+          status = saveOutputs(method.get(), FLAGS_output, inputDir);
+          if (status != Error::Ok) {
+            exit(-1);
+          }
           inputsData.clear();
         }
       } else {
         // Inputs are files.
-        setInputs(method.get(), inputPaths);
+        status = setInputs(method.get(), inputPaths);
+        if (status != Error::Ok) {
+          exit(-1);
+        }
 
         status = method->execute();
         if (status != Error::Ok) {
@@ -499,7 +566,10 @@ int main(int argc, char* argv[]) {
         }
 
         // Save outputs in binary files.
-        saveOutputs(method.get(), FLAGS_output);
+        status = saveOutputs(method.get(), FLAGS_output);
+        if (status != Error::Ok) {
+          exit(-1);
+        }
       }
     }
   } // Destruct the method object before destroying the Neutron Device.
