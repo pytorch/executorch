@@ -53,6 +53,10 @@ CONFIGS = [
     Q4gswConfig("kv_proj_4k", 4096, 2048, 512),
     Q4gswConfig("q_proj_8k", 8192, 2048, 2048, heavy=True),  # 67MB golden
     Q4gswConfig("kv_proj_8k", 8192, 2048, 512, heavy=True),
+    # Prefill shapes routing to the shmem GEMM (K>=4096 or N>=4096); M=128.
+    Q4gswConfig("gate_proj_pf", 128, 2048, 8192),  # gate/up prefill (shmem via N)
+    Q4gswConfig("down_proj_pf", 128, 8192, 2048),  # down prefill (shmem via K)
+    Q4gswConfig("shmem_edge", 130, 4096, 2056),  # partial 32-tile bounds
 ]
 
 

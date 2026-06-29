@@ -288,6 +288,9 @@ static const Q4gswConfig kQ4gswConfigs[] = {
     {"kv_proj_4k", 4096, 2048, 512, 1e-4f, 1e-3f, true, false},
     {"q_proj_8k", 8192, 2048, 2048, 1e-4f, 1e-3f, false, true},
     {"kv_proj_8k", 8192, 2048, 512, 1e-4f, 1e-3f, false, true},
+    {"gate_proj_pf", 128, 2048, 8192, 1e-4f, 1e-3f, true, false}, // shmem via N
+    {"down_proj_pf", 128, 8192, 2048, 1e-3f, 1e-2f, true, false}, // shmem via K
+    {"shmem_edge", 130, 4096, 2056, 1e-4f, 1e-3f, true, false}, // partial tiles
 };
 
 // /16 ramp over the flat index; mirrors test_quantized_linear.py _ramp_input.
