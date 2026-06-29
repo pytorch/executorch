@@ -204,6 +204,7 @@ supported_ops = {
     exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
+    exir_ops.edge.aten.amax.default: AmaxConverter,  # noqa F405
     exir_ops.edge.aten.amin.default: AminConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.bmm.default: BMMConverter,  # noqa F405

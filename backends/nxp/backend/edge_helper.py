@@ -10,6 +10,7 @@ import torch
 
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
+    Amax,
     Amin,
     Cat,
     Clone,
@@ -46,6 +47,7 @@ DEQUANTIZE_OPERATORS = [
 no_op_candidates = {
     AddTensor,
     Amin,
+    Amax,
     MulTensor,
     PermuteCopy,
     SubTensor,

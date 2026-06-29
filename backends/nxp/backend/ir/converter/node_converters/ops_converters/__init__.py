@@ -10,6 +10,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.addmm_converter import (
     AddMMConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.amax_converter import (
+    AmaxConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.amin_converter import (
     AminConverter,
 )
@@ -110,6 +113,7 @@ __all__ = [
     "AdaptiveAvgPool2dConverter",
     "AddMMConverter",
     "AddTensorConverter",
+    "AmaxConverter",
     "AminConverter",
     "AvgPool2dConverter",
     "BMMConverter",

@@ -16,6 +16,7 @@ from executorch.backends.nxp.backend.edge_helper import (
 from executorch.backends.nxp.backend.edge_program_converter import functions_converters
 from executorch.backends.nxp.tests.ops_aliases import (
     AdaptiveAvgPool2D,
+    Amax,
     Amin,
     AvgPool2D,
     Convolution,
@@ -59,6 +60,7 @@ class NodeFormatInference:
         ViewCopy,
         PermuteCopy,
         MeanDim,
+        Amax,
         Amin,
     }
 
@@ -136,7 +138,7 @@ class NodeFormatInference:
                     self._node_inputs[node][0], DataFormat.FORMATLESS
                 )
 
-            elif op_type in [MeanDim, Amin]:
+            elif op_type in [MeanDim, Amax, Amin]:
                 # The operator schema is:
                 #  <reduce_op>(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor
                 keep_dim = try_get_arg(node, 2) or False
