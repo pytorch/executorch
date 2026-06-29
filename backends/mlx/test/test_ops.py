@@ -7702,7 +7702,7 @@ class SampleSeededTest(OpTestCase):
         "SortNode": 2,  # top-k threshold + top-p nucleus chain
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 1,
+        "TakeNode": 2,  # last-token slice + top-k threshold gather
         "ExpandDimsNode": 1,
         "WhereNode": 3,
     }
@@ -7754,7 +7754,7 @@ class SampleTopPTest(OpTestCase):
         "SortNode": 2,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 1,
+        "TakeNode": 2,  # last-token slice + top-k threshold gather
         "ExpandDimsNode": 1,
         "WhereNode": 3,
     }
@@ -7786,7 +7786,7 @@ class SampleTopKTest(OpTestCase):
         "SortNode": 2,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 1,
+        "TakeNode": 2,  # last-token slice + top-k threshold gather
         "ExpandDimsNode": 1,
         "LogicalOrNode": 0,
         "WhereNode": 3,

@@ -3628,9 +3628,7 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
         _, top_k_val = P.make_tmp_value_slot()
         P.emit(
-            ItemIntNode(
-                x=P.slot_to_tid(clipped_top_k), out=P.slot_to_vid(top_k_val)
-            )
+            ItemIntNode(x=P.slot_to_tid(clipped_top_k), out=P.slot_to_vid(top_k_val))
         )
         _, top_k_index = P.make_tmp_value_slot()
         P.emit(
