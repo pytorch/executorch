@@ -36,6 +36,7 @@ MaxPool2D = exir_ops.edge.aten.max_pool2d.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
 MeanDim = exir_ops.edge.aten.mean.dim
 MulTensor = exir_ops.edge.aten.mul.Tensor
+Neg = exir_ops.edge.aten.neg.default
 PermuteCopy = exir_ops.edge.aten.permute_copy.default
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
 QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default

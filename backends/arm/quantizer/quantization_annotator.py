@@ -956,6 +956,27 @@ def get_quant_properties(  # noqa: C901
         shared_qspec = SharedQuantizationSpec(input_node)
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+    elif node.target == torch.ops.aten.to.dtype:
+        # If we quantize a cast(fp32) with unit scale and same dtype as input, we can handle it as a no-op in the backend.
+        input_val = node.all_input_nodes[0].meta.get("val", None)
+        if input_val is None:
+            return None
+
+        if input_val.dtype not in (torch.int8, torch.int16, torch.int32):
+            return None
+
+        quant_properties.quant_output = _QuantProperty(
+            0,
+            FixedQParamsQuantizationSpec(
+                dtype=input_val.dtype,
+                scale=1.0,
+                zero_point=0,
+                quant_max=torch.iinfo(input_val.dtype).max,
+                quant_min=torch.iinfo(input_val.dtype).min,
+                qscheme=torch.per_tensor_symmetric,
+                is_dynamic=False,
+            ),
+        )
     elif node.target in (
         torch.ops.higher_order.cond,
         torch.ops.higher_order.while_loop,
