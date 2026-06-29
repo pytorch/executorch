@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 # Stub modules that are transitively imported by arm_quantizer but never
 # exercised by these tests.
-for _mod in ("tosa_serializer", "tosa", "tosa.TosaGraph, tosa_reference_model"):
+for _mod in ("tosa_serializer", "tosa", "tosa.TosaGraph", "tosa_reference_model"):
     if _mod not in sys.modules:
         try:
             __import__(_mod)
