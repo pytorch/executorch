@@ -37,6 +37,19 @@ int64_t read_scalar(WebGPUGraph& graph, int id, const char* what) {
   throw std::runtime_error(std::string("select: dynamic/unsupported ") + what);
 }
 
+// Build a TensorMeta from live dims, write it to buf, return numel.
+uint32_t write_meta_from_dims(
+    WebGPUGraph& g,
+    WGPUBuffer buf,
+    const std::vector<int64_t>& dims) {
+  WebGPUTensor t;
+  t.dims = dims;
+  TensorMeta m;
+  fill_tensor_meta(t, &m);
+  wgpuQueueWriteBuffer(g.queue(), buf, 0, &m, sizeof(m));
+  return m.numel;
+}
+
 void select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // args: [self, dim, index, out]; output rank = in rank - 1.
   const int in_id = args.at(0);
@@ -179,6 +192,9 @@ void select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        wg_size,
        dispatch_idx](WebGPUGraph& g) {
         const auto& ind = g.cur_dims(in_id);
+        if (dim < 0 || dim >= static_cast<int>(ind.size())) {
+          throw std::runtime_error("select(resize): dim out of range");
+        }
         const int64_t live_in_size = ind[dim];
         int64_t idx = raw_index < 0 ? raw_index + live_in_size : raw_index;
         if (idx < 0 || idx >= live_in_size) {
@@ -191,21 +207,15 @@ void select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           }
         }
         g.set_cur_dims(out_id, od);
-        WebGPUTensor to, ti;
-        to.dims = od;
-        ti.dims = ind;
-        TensorMeta om, im;
-        fill_tensor_meta(to, &om);
-        fill_tensor_meta(ti, &im);
-        wgpuQueueWriteBuffer(g.queue(), out_meta_buf, 0, &om, sizeof(om));
-        wgpuQueueWriteBuffer(g.queue(), in_meta_buf, 0, &im, sizeof(im));
+        const uint32_t out_numel = write_meta_from_dims(g, out_meta_buf, od);
+        write_meta_from_dims(g, in_meta_buf, ind);
         SelectParams p = {};
         p.dim = static_cast<uint32_t>(dim);
         p.index = static_cast<uint32_t>(idx);
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         g.dispatch_at(dispatch_idx).workgroup_count_x =
             utils::compute_1d_workgroup_count(
-                g.device(), om.numel, wg_size, "select(resize)");
+                g.device(), out_numel, wg_size, "select(resize)");
       });
 
   wgpuShaderModuleRelease(shader);

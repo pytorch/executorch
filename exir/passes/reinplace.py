@@ -226,8 +226,59 @@ def _derive_mutated_args(inplace_op: Any) -> Tuple[int, ...]:
 # ---------------------------------------------------------------------------
 
 
+def _val_shape_dtype(node: torch.fx.Node):
+    """Return (shape, dtype) of ``node``'s fake value, or None if not a tensor."""
+    v = node.meta.get("val")
+    if isinstance(v, torch.Tensor):  # FakeTensor is a torch.Tensor subclass
+        return tuple(v.shape), v.dtype
+    return None
+
+
+def _is_inplace_shape_dtype_compatible(
+    arg_node: torch.fx.Node, consuming_node: torch.fx.Node
+) -> bool:
+    """True if writing ``consuming_node``'s output into ``arg_node`` is legal.
+
+    An in-place op writes its result into the mutated argument, so that argument
+    must already hold the output's shape and dtype. Reinplacing a broadcasting
+    argument (e.g. ``add_(self[D], other[N, D])`` whose output is ``[N, D]``) or
+    a dtype-changing one (e.g. ``lt_`` whose output is bool) is invalid.
+
+    Dynamic-shape safe: dimensions may be ``SymInt``s, so we compare each dim
+    with ``statically_known_true`` rather than ``==`` (which would call
+    ``bool(SymInt == SymInt)`` and can raise / add a guard for distinct
+    symbols). This is conservative — a dim that cannot be *proven* equal is
+    treated as incompatible (no reinplace), which is the safe default.
+
+    When fake-tensor metadata is unavailable for either node, fall back to
+    permissive (preserves prior behavior for shape/dtype-preserving ops like
+    ``index_put``).
+    """
+    from torch.fx.experimental.symbolic_shapes import statically_known_true
+
+    a = _val_shape_dtype(arg_node)
+    o = _val_shape_dtype(consuming_node)
+    if a is None or o is None:
+        return True
+    (a_shape, a_dtype) = a
+    (o_shape, o_dtype) = o
+    if a_dtype != o_dtype:
+        return False
+    if len(a_shape) != len(o_shape):
+        return False
+    for ad, od in zip(a_shape, o_shape):
+        if isinstance(ad, int) and isinstance(od, int):
+            if ad != od:
+                return False
+        elif not statically_known_true(ad == od):
+            # SymInt dim(s): only treat as equal when provably so (no guard).
+            return False
+    return True
+
+
 def _is_safe_to_reinplace(
     node: torch.fx.Node,
+    consuming_node: torch.fx.Node,
     later_nodes: Set[torch.fx.Node],
     inputs: Set[torch.fx.Node],
     mutable_inputs: Set[torch.fx.Node],
@@ -235,6 +286,11 @@ def _is_safe_to_reinplace(
     # This node is used later in the graph so we can't reinplace it
     # There is probably a faster way to do this but this works for now.
     if node in later_nodes:
+        return False
+    # The mutated argument must already hold the op's output shape/dtype;
+    # otherwise the in-place op would have to broadcast-grow or change dtype,
+    # which is invalid (e.g. add_(small, big), lt_(float, ...)).
+    if not _is_inplace_shape_dtype_compatible(node, consuming_node):
         return False
     # If its not an input then we can reinplace it
     if node not in inputs:
@@ -383,6 +439,7 @@ def reinplace_pass(  # noqa: C901
                     break
             if first_tensor_idx is not None and _is_safe_to_reinplace(
                 node.args[first_tensor_idx],  # pyre-ignore[6]
+                node,
                 seen_nodes,
                 inputs,
                 mutable_nodes,
@@ -413,10 +470,25 @@ def reinplace_pass(  # noqa: C901
                     f"Tensor(a!). A Tensor input in an FX graph "
                     f"must be a torch.fx.Node."
                 )
-            if not _is_safe_to_reinplace(arg_node, seen_nodes, inputs, mutable_nodes):
+            if not _is_safe_to_reinplace(
+                arg_node, node, seen_nodes, inputs, mutable_nodes
+            ):
                 all_safe = False
                 break
         if all_safe:
+            # We intentionally skip `seen_nodes.update(node.all_input_nodes)`
+            # here even though the in-place op reads its non-mutated operands:
+            # the rewrite inserts the in-place node before `node`, and the live
+            # `reversed` walk visits it next. Its in-place overload isn't in
+            # `resolved`, so it falls into the generic branch above, which
+            # records all its operands (including the non-mutated ones).
+            #
+            # Mark the mutated args as used so a different consumer of the same
+            # value (earlier in topo order, visited later in this reverse walk)
+            # is not also reinplaced — that would read a value this op already
+            # overwrote in place.
+            for arg_idx in mutated_args:
+                seen_nodes.add(node.args[arg_idx])
             with ep.graph.inserting_before(node):
                 # Forward both args and kwargs: the in-place overload
                 # is schema-matched to the functional one, so any

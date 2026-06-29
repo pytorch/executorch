@@ -46,6 +46,7 @@ from . import (  # noqa
     op_tosa_depthwise_conv2d,
     op_tosa_eq,
     op_tosa_erf,
+    op_tosa_fft,
     op_tosa_gather,
     op_tosa_ge,
     op_tosa_gt,
