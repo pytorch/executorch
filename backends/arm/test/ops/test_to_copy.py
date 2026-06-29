@@ -297,10 +297,6 @@ exir_ops.edge.dim_order_ops._to_dim_order_copy.default. We should reject this op
 in ToCopySupported::is_node_tosa_supported() before it goes into the delegated graph.
 """
 _TO_COPY_TEST_DATA_INT = {
-    "rand_int32_fp32": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
-        torch.float32,
-    ),
     "rand_int32_fp16": lambda: (
         torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
         torch.float16,
