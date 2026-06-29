@@ -684,7 +684,15 @@ Result<std::unique_ptr<Gemma4_31BEngine>> Gemma4_31BEngine::create(
     }
   }
 #elif defined(EXECUTORCH_BUILD_MLX)
-  mutable_state = std::make_unique<GemmaMutableStateContextOwner>();
+  // Only enable the per-session mutable-buffer path when actually serving more
+  // than one session. For a single session (the CLI runner) the rebind would
+  // allocate a second copy of the KV-cache buffers on top of the program's
+  // default buffers — doubling KV-cache memory and adding a one-time
+  // session-buffer allocation during the first prefill — for no isolation
+  // benefit. Leaving mutable_state null keeps the program's default buffers.
+  if (config.max_sessions > 1) {
+    mutable_state = std::make_unique<GemmaMutableStateContextOwner>();
+  }
 #endif
 
   auto module_res = mutable_state != nullptr
