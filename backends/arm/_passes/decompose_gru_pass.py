@@ -66,6 +66,9 @@ class DecomposeGruPass(ArmPass):
     ) -> Tuple[List[torch.fx.Node], torch.fx.Node]:
         """Build GRU cell computation for one direction.
 
+        Uses aten.linear (matching PyTorch's standard decomposition) instead
+        of raw mm to avoid ConvertMmToBmmPass issues with quantized tensors.
+
         Returns (timestep_outputs, h_final) where timestep_outputs are
         unsqueezed hidden states in forward time order.
 
