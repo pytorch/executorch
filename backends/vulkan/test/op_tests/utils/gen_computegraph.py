@@ -476,8 +476,8 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type()), "
             ret_str += f"{ref.src_cpp_name}.const_data_ptr()); \n"
         elif ref.src_cpp_type == AT_SCALAR:
-            # TODO(ssjia): generalize this to work with all scalar types
-            ret_str += f"add_scalar<double>({ref.src_cpp_name}.toDouble()); \n"
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"add_scalar_to_graph(*{self.graph}, {ref.src_cpp_name}); \n"
         elif ref.src_cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"add_scalar_list({ref.src_cpp_name}.vec()); \n"
         elif ref.src_cpp_type == BOOL:
