@@ -34,16 +34,15 @@ struct RotaryParams {
 };
 static_assert(sizeof(RotaryParams) == 32, "RotaryParams must be 32 bytes");
 
-uint64_t numel_of(const std::vector<int64_t>& dims) {
-  uint64_t n = 1;
-  for (int64_t d : dims) {
-    n *= static_cast<uint64_t>(d);
-  }
-  return n;
-}
+// A rope dispatch: its param-uniform (rewritten on resize) and its index in the
+// graph's dispatch list (so a resize hook can update the workgroup count).
+struct RopeDispatch {
+  WGPUBuffer uniform;
+  size_t dispatch_index;
+};
 
 // Rotate one (x->out) with the shared shader; freqs shared between xq and xk.
-void add_rope_dispatch(
+RopeDispatch add_rope_dispatch(
     WebGPUGraph& graph,
     WGPUDevice device,
     WGPUComputePipeline pipeline,
@@ -58,7 +57,8 @@ void add_rope_dispatch(
     uint32_t workgroup_count) {
   const uint32_t half_dim = head_dim / 2u;
   // out.dims == in.dims (asserted in impl), so this matches the caller's wgc.
-  const uint32_t num_pairs = static_cast<uint32_t>(numel_of(out.dims) / 2u);
+  const uint32_t num_pairs =
+      static_cast<uint32_t>(utils::numel_of(out.dims) / 2u);
 
   RotaryParams params = {};
   params.n_heads = n_heads;
@@ -101,10 +101,12 @@ void add_rope_dispatch(
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch(
+  const size_t dispatch_index = graph.add_dispatch(
       {pipeline, bind_group, workgroup_count, "apply_rotary_emb"});
 
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so a resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
+  return {uniform_buffer, dispatch_index};
 }
 
 // args: [xq, xk, freqs_cos, freqs_sin, out_list(ValueList[xq_out, xk_out])].
@@ -164,9 +166,9 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   // All tensors are fp32; output shapes equal their inputs.
-  const uint64_t xq_numel = numel_of(xq.dims);
-  const uint64_t xk_numel = numel_of(xk.dims);
-  const uint64_t freqs_numel = numel_of(freqs_cos.dims);
+  const uint64_t xq_numel = utils::numel_of(xq.dims);
+  const uint64_t xk_numel = utils::numel_of(xk.dims);
+  const uint64_t freqs_numel = utils::numel_of(freqs_cos.dims);
   if (freqs_numel != static_cast<uint64_t>(seq) * half_dim ||
       xq.nbytes != xq_numel * sizeof(float) ||
       xk.nbytes != xk_numel * sizeof(float) ||
@@ -246,7 +248,7 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUComputePipeline pipeline_k =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
-  add_rope_dispatch(
+  RopeDispatch q_disp = add_rope_dispatch(
       graph,
       device,
       pipeline_q,
@@ -259,7 +261,7 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       seq,
       head_dim,
       xq_wgc);
-  add_rope_dispatch(
+  RopeDispatch k_disp = add_rope_dispatch(
       graph,
       device,
       pipeline_k,
@@ -272,6 +274,71 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       seq,
       head_dim,
       xk_wgc);
+  WGPUBuffer q_ubuf = q_disp.uniform;
+  WGPUBuffer k_ubuf = k_disp.uniform;
+  const size_t q_idx = q_disp.dispatch_index;
+  const size_t k_idx = k_disp.dispatch_index;
+
+  // Dynamic shapes: recompute S/num_pairs + both dispatches; out follows xq/xk.
+  const int xq_out_id = out_list[0];
+  const int xk_out_id = out_list[1];
+  // xq_id trigger suffices: q and k co-resize on S; this updates both.
+  graph.add_tensor_resize_hook(
+      xq_id,
+      [xq_id,
+       xk_id,
+       xq_out_id,
+       xk_out_id,
+       n_heads_q,
+       n_heads_k,
+       head_dim,
+       half_dim,
+       wg_size,
+       q_idx,
+       k_idx,
+       q_ubuf,
+       k_ubuf](WebGPUGraph& g) {
+        const auto& qd = g.cur_dims(xq_id);
+        const auto& kd = g.cur_dims(xk_id);
+        if (qd.size() < 3 || kd.size() < 3) {
+          throw std::runtime_error(
+              "apply_rotary_emb(resize): q/k rank must be >= 3");
+        }
+        const uint32_t s = static_cast<uint32_t>(qd[qd.size() - 3]);
+        const uint64_t qn = utils::numel_of(qd);
+        const uint64_t kn = utils::numel_of(kd);
+        // pk = pq (seq=s); require k's seq == s, not silently q's.
+        if (static_cast<uint32_t>(kd[kd.size() - 3]) != s) {
+          throw std::runtime_error(
+              "apply_rotary_emb(resize): q and k seq lengths differ");
+        }
+        // freqs stay max-allocated; shader indexes by position (S = prefix).
+        RotaryParams pq = {};
+        pq.n_heads = n_heads_q;
+        pq.seq = s;
+        pq.head_dim = head_dim;
+        pq.half_dim = half_dim;
+        pq.num_pairs = static_cast<uint32_t>(qn / 2u);
+        RotaryParams pk = pq;
+        pk.n_heads = n_heads_k;
+        pk.num_pairs = static_cast<uint32_t>(kn / 2u);
+        wgpuQueueWriteBuffer(g.queue(), q_ubuf, 0, &pq, sizeof(pq));
+        wgpuQueueWriteBuffer(g.queue(), k_ubuf, 0, &pk, sizeof(pk));
+        g.dispatch_at(q_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(
+                g.device(),
+                static_cast<uint32_t>(qn / 2u),
+                wg_size,
+                "apply_rotary_emb(resize)");
+        g.dispatch_at(k_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(
+                g.device(),
+                static_cast<uint32_t>(kn / 2u),
+                wg_size,
+                "apply_rotary_emb(resize)");
+        g.set_cur_dims(xq_out_id, qd);
+        g.set_cur_dims(xk_out_id, kd);
+      });
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
