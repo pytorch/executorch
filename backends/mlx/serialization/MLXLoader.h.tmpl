@@ -119,25 +119,6 @@ struct Instruction {
 };
 
 // =============================================================================
-// for_each_tid - invokes cb(Tid) for every tensor id referenced by an
-// instruction's node (AUTO-GENERATED from schema.fbs).
-//
-// NOTE: nested chain-index fields (ScanNode::body_chain_idx,
-// IfNode::then_chain_idx/else_chain_idx) are NOT followed here; callers that
-// need transitive coverage must recurse into those chains themselves.
-// =============================================================================
-
-template <typename F>
-inline void for_each_tid(const Instruction& instr, F&& cb) {
-  switch (instr.op) {
-{{FOR_EACH_TID_CASES}}
-    default:
-      throw std::runtime_error(
-          std::string("for_each_tid: unhandled op ") + op_name(instr.op));
-  }
-}
-
-// =============================================================================
 // SlotVariant for I/O mapping
 // =============================================================================
 
@@ -212,65 +193,6 @@ struct MLXProgram {
     return output_map.size();
   }
 };
-
-// =============================================================================
-// init_chain_references_mutable_buffer - returns true if the program's init
-// chain references any mutable-buffer Tid, following nested SCAN/IF chains.
-//
-// Used to decide whether the handle's default mutable-buffer initialization can
-// be safely skipped (e.g. when buffers are managed per-session). If the init
-// chain reads/writes mutable buffers, skipping would be unsafe.
-// =============================================================================
-inline bool init_chain_references_mutable_buffer(const MLXProgram& program) {
-  if (program.init_chain_idx < 0 || program.num_mutable_buffer_tensors == 0) {
-    return false;
-  }
-  // Tid layout: Constant -> Input -> Output -> MutableBuffer -> Temp.
-  const uint32_t output_end = program.num_constant_tensors +
-      program.num_input_tensors + program.num_output_tensors;
-  const uint32_t mutable_buffer_end =
-      output_end + program.num_mutable_buffer_tensors;
-  auto is_mutable_buffer = [&](Tid t) {
-    return t.idx >= output_end && t.idx < mutable_buffer_end;
-  };
-
-  const size_t num_chains = program.instruction_chains.size();
-  std::vector<bool> visited(num_chains, false);
-  std::vector<uint32_t> worklist;
-  worklist.push_back(static_cast<uint32_t>(program.init_chain_idx));
-
-  while (!worklist.empty()) {
-    const uint32_t chain_idx = worklist.back();
-    worklist.pop_back();
-    if (chain_idx >= num_chains || visited[chain_idx]) {
-      continue;
-    }
-    visited[chain_idx] = true;
-    for (const auto& instr : program.instruction_chains[chain_idx]) {
-      bool hit = false;
-      for_each_tid(instr, [&](Tid t) {
-        if (is_mutable_buffer(t)) {
-          hit = true;
-        }
-      });
-      if (hit) {
-        return true;
-      }
-      // Follow nested chains (not covered by for_each_tid).
-      if (instr.op == OpCode::SCAN) {
-        const auto& n = std::get<ScanNode>(instr.node);
-        if (n.body_chain_idx >= 0) {
-          worklist.push_back(static_cast<uint32_t>(n.body_chain_idx));
-        }
-      } else if (instr.op == OpCode::IF) {
-        const auto& n = std::get<IfNode>(instr.node);
-        worklist.push_back(n.then_chain_idx);
-        worklist.push_back(n.else_chain_idx);
-      }
-    }
-  }
-  return false;
-}
 
 // =============================================================================
 // FlatBuffer loading functions
