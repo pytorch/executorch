@@ -50,7 +50,7 @@ HUGGING_FACE_REPO_IDS = {
     "qwen2_5-0_5b_instruct": "Qwen/Qwen2.5-0.5B-Instruct",
     "qwen3-0_6b": "Qwen/Qwen3-0.6B",
     "smollm2_135m": "HuggingFaceTB/SmolLM2-135M",
-    "gemma-2b" : "weqweasdas/RM-Gemma-2B",
+    "granite-3_3-2b": "ibm-granite/granite-3.3-2b-instruct",
 }
 
 
