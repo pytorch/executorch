@@ -6303,6 +6303,8 @@ class QuantizedLinearTest(OpTestCase):
             cls(group_size=128),
             cls(qdtype=torch.int2),
             cls(qdtype=torch.int8),
+            cls(qdtype=torch.int6),
+            cls(qdtype=torch.int6, group_size=128),
             # group_size=16: exercises the non-fused dequantize+matmul path
             # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
             cls(qdtype=torch.int8, group_size=16),
