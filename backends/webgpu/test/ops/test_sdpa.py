@@ -61,6 +61,9 @@ CONFIGS = [
     SdpaConfig("llama1b_decode", 32, 8, 64, 1, 512, 127),
     # D=6 is not a multiple of 4: the WebGPU head_dim%4 guard must reject it at load.
     SdpaConfig("reject_d6", 4, 4, 6, 4, 16, 0),
+    # 2D-dispatch cap (>65535 wg): S=512 folds QK; S=2048 folds QK+softmax+AV (cap+1).
+    SdpaConfig("llama1b_prefill_512", 32, 8, 64, 512, 512, 0),
+    SdpaConfig("llama1b_prefill_2048", 32, 8, 64, 2048, 2048, 0),
 ]
 
 
