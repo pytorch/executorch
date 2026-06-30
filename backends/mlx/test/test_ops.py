@@ -27,6 +27,7 @@ See README.md in this directory for full documentation.
 import os
 from typing import Callable, Dict, List, Optional, Tuple
 
+import executorch.exir as exir
 import torch
 import torch.nn as nn
 
@@ -111,6 +112,62 @@ class AddTest(OpTestCase):
         else:
             y = torch.randn(self.shape)
             return (x, y)
+
+
+class ReinplaceChainModel(nn.Module):
+    """Elementwise chain the reinplace pass converts to in-place ops.
+
+    Mixes a pure unary op (exp), activations (sigmoid/relu/clamp/gelu), and
+    binary ops (add/mul/sub) so the chain exercises the unary, activation, and
+    binary in-place handlers. Every op after the first sigmoid consumes a
+    single-use temp, so all become in-place (sigmoid_/add_/relu_/mul_/clamp_/
+    exp_/gelu_/sub_) and run on one rolling buffer; the terminal neg writes the
+    graph output. Inputs are kept NaN/Inf-free: sigmoid -> bounded, clamp to
+    [-2, 2] before exp so exp stays in [e^-2, e^2].
+    """
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        s = torch.sigmoid(x)  # reads input -> fresh temp
+        s = s + y  # add_
+        s = torch.relu(s)  # relu_ (activation)
+        s = s * y  # mul_
+        s = torch.clamp(s, -2.0, 2.0)  # clamp_ (activation), bounds exp below
+        s = torch.exp(s)  # exp_ (pure unary)
+        s = torch.nn.functional.gelu(s)  # gelu_ (activation)
+        s = s - y  # sub_
+        return torch.neg(s)  # terminal output (not in-place)
+
+
+@register_test
+class ReinplaceChainTest(OpTestCase):
+    """On-device numeric check that reinplaced (out==in) ops are correct.
+
+    Lowers with get_default_passes() so the MLXReinplacePass + in-place handlers
+    (out == in buffer donation) run through the actual MLX runtime. The
+    build-level aliasing is unit-tested in test_passes.py; only on-device
+    execution catches a read-after-overwrite bug from buffer reuse.
+    """
+
+    name = "reinplace_chain"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def create_model(self) -> nn.Module:
+        return ReinplaceChainModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(2, 16, 64), torch.randn(2, 16, 64))
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # Reinplace introduces non-core-ATen in-place ops (add_, sigmoid_, ...),
+        # so disable the strict edge verifier — matching the production export
+        # path (which also runs get_default_passes with this config).
+        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
 
 class SubModel(nn.Module):
@@ -7637,7 +7694,7 @@ class Int4QuantizedEmbeddingTest(OpTestCase):
 
 
 class _LogitsPassthrough(nn.Module):
-    """Stand-in for a model returning logits [B, S, vocab]."""
+    """Stand-in for a model returning logits [B, vocab]."""
 
     def forward(self, logits: torch.Tensor) -> torch.Tensor:
         return logits
@@ -7676,6 +7733,17 @@ class TopPSampleModel(nn.Module):
         return self.head(logits, temperature=temperature, seed=seed, top_p=top_p)
 
 
+class TopKSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_k as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_k):
+        return self.head(logits, temperature=temperature, seed=seed, top_k=top_k)
+
+
 @register_test
 class SampleSeededTest(OpTestCase):
     """Seeded sample lowers to one MLX segment; seed threads in via ItemIntNode."""
@@ -7686,12 +7754,14 @@ class SampleSeededTest(OpTestCase):
         "IfNode": 1,  # temperature==0 greedy branch
         "RandomBitsNode": 1,
         "ArgmaxNode": 2,  # sampling branch + greedy branch
-        "ItemIntNode": 2,  # seed + temperature>0 condition
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
         "SoftmaxNode": 1,  # top-p nucleus chain
-        "SortNode": 1,
+        "SortNode": 2,  # top-k threshold + top-p nucleus chain
         "CumsumNode": 1,
         "MinNode": 1,
-        "WhereNode": 2,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
     }
 
     def create_model(self) -> nn.Module:
@@ -7699,7 +7769,7 @@ class SampleSeededTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 4, 256),
+            torch.randn(1, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
         )
@@ -7715,7 +7785,7 @@ class SampleUnseededTest(OpTestCase):
         "IfNode": 1,
         "RandomBitsNode": 1,
         "ArgmaxNode": 2,
-        "ItemIntNode": 1,  # temperature>0 condition only (no seed)
+        "ItemIntNode": 2,  # top_k + temperature>0 condition only (no seed)
         "SoftmaxNode": 1,  # top-p nucleus chain (top_p defaults to 1.0)
     }
 
@@ -7723,7 +7793,7 @@ class SampleUnseededTest(OpTestCase):
         return UnseededSampleModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(1, 4, 256), torch.tensor(0.8))
+        return (torch.randn(1, 256), torch.tensor(0.8))
 
 
 @register_test
@@ -7736,12 +7806,14 @@ class SampleTopPTest(OpTestCase):
         "IfNode": 1,
         "RandomBitsNode": 1,
         "ArgmaxNode": 2,
-        "ItemIntNode": 2,
+        "ItemIntNode": 3,
         "SoftmaxNode": 1,
-        "SortNode": 1,
+        "SortNode": 2,
         "CumsumNode": 1,
         "MinNode": 1,
-        "WhereNode": 2,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
     }
 
     def create_model(self) -> nn.Module:
@@ -7749,10 +7821,43 @@ class SampleTopPTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 4, 256),
+            torch.randn(1, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
             torch.tensor(0.9),
+        )
+
+
+@register_test
+class SampleTopKTest(OpTestCase):
+    """Top-k sample emits the threshold before the top-p nucleus chain."""
+
+    name = "sample_top_k"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,
+        "SortNode": 2,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "LogicalOrNode": 0,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopKSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(2, dtype=torch.int64),
         )
 
 
@@ -7790,9 +7895,9 @@ class SampleGreedyTest(OpTestCase):
         return SeededSampleModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        logits = torch.randn(self.batch, 4, 1024, dtype=self.dtype)
+        logits = torch.randn(self.batch, 1024, dtype=self.dtype)
         if self.dtype == torch.bfloat16:
-            logits[0, -1, 512] = 50.0  # dominant -> unambiguous bf16 argmax
+            logits[0, 512] = 50.0  # dominant -> unambiguous bf16 argmax
         return (
             logits,
             torch.tensor(self.temperature),
