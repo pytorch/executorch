@@ -198,3 +198,10 @@ def define_common_targets(is_fbcode = False):
             ":test_utils",
         ]
     )
+    define_test_targets(
+        "conv2d_gemm_dynamic_test",
+        extra_deps = [
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "fbsource//xplat/third-party/XNNPACK:XNNPACK",
+        ]
+    )
