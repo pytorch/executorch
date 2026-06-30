@@ -32,6 +32,12 @@ namespace {
 // this budget regardless of resolution while preserving GEMM throughput (the
 // GEMM inner loop is unchanged; only the live row count is bounded). Tunable:
 // a larger budget means fewer tiles / dispatches per conv but more peak memory.
+//
+// This is a LOGICAL-size budget (oh_tile is derived from W_out * K_total *
+// elem bytes). The physical texture2d / texture3d allocation rounds the packed
+// dim up to whole texels (vec4) and adds image row / layer alignment, so actual
+// device memory for the scratch can modestly exceed this figure. Treat it as a
+// soft tuning knob, not a hard allocation ceiling.
 constexpr int64_t kIm2colScratchBudgetBytes = 16 * 1024 * 1024;
 
 //
@@ -152,10 +158,12 @@ vkapi::ShaderInfo pick_conv2d_gemm_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-// resize_args = { in, weight_data, stride, padding, dilation, oh_tile }
-// resize_args[5] carries the raw oh_tile VALUE (not a ValueRef handle): oh_tile
-// is a build-time constant, so packing the int directly into the slot avoids
-// materializing a graph Value for it. Read it with static_cast, never get_int.
+// resize_args = { in, weight_data, stride, padding, dilation, oh_tile,
+//                 oh_offset }
+// resize_args[5] / [6] carry the raw oh_tile / oh_offset VALUES (not ValueRef
+// handles): both are build-time constants, so packing the ints directly into
+// the slots avoids materializing graph Values for them. Read with static_cast,
+// never get_int.
 utils::uvec3 pick_conv2d_gemm_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -164,12 +172,24 @@ utils::uvec3 pick_conv2d_gemm_global_wg_size(
   (void)shader;
   const ValueRef out = args.at(0).refs.at(0);
   const uint32_t W = graph->size_at<uint32_t>(-1, out);
+  const uint32_t H_out = graph->size_at<uint32_t>(-2, out);
   const uint32_t C_out = graph->size_at<uint32_t>(-3, out);
-  const uint32_t oh_tile =
-      utils::safe_downcast<uint32_t>(static_cast<int32_t>(resize_args.at(5)));
-  // Every tile dispatches oh_tile output-height rows (oh_tile * W per-tile M);
-  // trailing threads past the real H_out no-op in the shader.
-  const uint32_t M_tile = oh_tile * W;
+  const int32_t oh_tile = static_cast<int32_t>(resize_args.at(5));
+  const int32_t oh_offset = static_cast<int32_t>(resize_args.at(6));
+  // Dead-tile skip: when a runtime down-resize shrinks H_out so this tile's
+  // first output row (oh_offset) is already past the live H_out, the whole tile
+  // is dead. Return a zero-sized global wg so DispatchNode::encode() emits zero
+  // workgroups for it (it explicitly skips any dispatch whose global wg has a 0
+  // component) — no GEMM work, no im2col read. trigger_resize() recomputes this
+  // and re-encodes the command buffer when the dispatch grid changes, so the
+  // skip tracks the dynamic shape. (The num_tiles count is still fixed at build
+  // time; this only zeroes the work of tiles that fall off the live region.)
+  if (oh_offset >= static_cast<int32_t>(H_out)) {
+    return {0u, 0u, 0u};
+  }
+  // Every live tile dispatches oh_tile output-height rows (oh_tile * W per-tile
+  // M); trailing threads past the real H_out no-op in the shader.
+  const uint32_t M_tile = static_cast<uint32_t>(oh_tile) * W;
   const uint32_t N4 = utils::div_up_4(C_out);
   // TILE_N4=1, TILE_M=4
   return {N4, utils::div_up(M_tile, 4u), 1};
@@ -187,9 +207,11 @@ utils::uvec3 pick_conv2d_gemm_global_wg_size(
 // the (now-refreshed) out_sizes UBO, so resizing `out` here is sufficient to
 // make every tile track the dynamic shape — no push-constant update is needed
 // (oh_offset / oh_tile are shape-independent). The global workgroup picker
-// reads oh_tile (resize_args[5]) to size each tile's dispatch.
+// reads oh_tile (resize_args[5]) and oh_offset (resize_args[6]) to size each
+// tile's dispatch and to zero-size dead trailing tiles after a down-resize.
 //
-// resize_args = { in, weight_data, stride, padding, dilation, oh_tile }
+// resize_args = { in, weight_data, stride, padding, dilation, oh_tile,
+//                 oh_offset }
 void resize_conv2d_gemm_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -255,14 +277,18 @@ void add_conv2d_gemm_node(
   const utils::ivec4 gemm_dims{K4_total, oh_offset, oh_tile, 0};
   const utils::vec4 clamp_vals{out_min_val, out_max_val, 0.0f, 0.0f};
 
-  // The last resize_args slot carries the raw oh_tile VALUE, not a ValueRef
-  // handle: oh_tile is a build-time constant, so packing the int directly
-  // avoids materializing a graph Value for it. The global-wg picker reads it
-  // back with static_cast (never get_int). ExecuteNode's resize dirty-tracker
-  // will treat this slot as a value index and may spuriously over-trigger the
-  // resize fn — deliberate and benign (the resize recomputes correctly
-  // regardless) and memory-safe (was_value_updated guards both out-of-range and
-  // in-range idx).
+  // The last two resize_args slots carry the raw oh_tile / oh_offset VALUES,
+  // not ValueRef handles: both are build-time constants, so packing the ints
+  // directly avoids materializing graph Values for them. The global-wg picker
+  // reads them back with static_cast (never get_int) — oh_tile to size the
+  // dispatch, oh_offset to zero-size a dead trailing tile after a down-resize.
+  // ExecuteNode's resize dirty-tracker treats these slots as value indices: if
+  // a packed int happens to collide with a real ValueList index,
+  // was_value_updated can RECURSE through toConstValueList() to walk that
+  // list's members, so the spurious over-trigger may be a deeper walk than a
+  // single lookup. Still memory-safe and read-only (was_value_updated guards
+  // out-of-range and in-range idx alike) and benign (the resize recomputes
+  // correctly regardless).
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_gemm_shader,
@@ -279,13 +305,15 @@ void add_conv2d_gemm_node(
       // Specialization constants
       // activation_type: 0=none, 1=relu, 2=clamp
       {clamp_out ? 2 : 0},
-      // Resize args (last slot = raw oh_tile value, see note above)
+      // Resize args (last two slots = raw oh_tile / oh_offset values, see note
+      // above)
       {in,
        weight_data,
        stride,
        padding,
        dilation,
-       static_cast<ValueRef>(oh_tile)},
+       static_cast<ValueRef>(oh_tile),
+       static_cast<ValueRef>(oh_offset)},
       // Resizing logic
       resize_conv2d_gemm_node));
 }
@@ -342,16 +370,50 @@ void conv2d_gemm_impl(
     dilation_w = utils::safe_downcast<int32_t>(dilation_list->at(1));
   }
 
-  const int64_t M = H_out * W_out;
   const int64_t K4_total = K_total / 4;
+
+  // Tile the im2col by output-height rows so the scratch is bounded to the
+  // fixed kIm2colScratchBudgetBytes byte budget regardless of resolution. One
+  // H-row of im2col is W_out * K_total * elem bytes; oh_tile is the most H-rows
+  // whose im2col fits the budget (>= 1), clamped to H_out. The full conv is
+  // then materialized in num_tiles = ceil(H_out / oh_tile) tiles. When oh_tile
+  // >= H_out this reduces to a single untiled dispatch pair. (Why a fixed
+  // num_tiles is safe under dynamic shapes is documented at the dispatch loop
+  // below.)
+  //
+  // Computed BEFORE storage selection because the chosen storage gates on the
+  // TILED scratch extent (oh_tile * W_out rows, oh_tile deep), not the full M /
+  // H_out. oh_tile depends only on W_out, K_total, and elem_size (the input
+  // dtype) — never on the storage type — so there is no circular dependency in
+  // ordering it first.
+  const int64_t elem_size =
+      utils::safe_downcast<int64_t>(vkapi::element_size(graph.dtype_of(in)));
+  const int64_t bytes_per_h_row = W_out * K_total * elem_size;
+  int64_t oh_tile = kIm2colScratchBudgetBytes / bytes_per_h_row;
+  oh_tile = std::max<int64_t>(oh_tile, 1);
+  oh_tile = std::min<int64_t>(oh_tile, H_out);
+  const int64_t num_tiles = utils::div_up(H_out, oh_tile);
+
+  // The per-tile scratch holds only oh_tile output-height rows, so its extents
+  // are M_tile = oh_tile * W_out (texture2d / buffer) or oh_tile-deep
+  // (texture3d), not the full M / H_out. With the budget capping oh_tile, the
+  // tiled extent rarely exceeds max_texture2d_dim, so texture2d is selected in
+  // the common case.
+
+  const int64_t M_tile = oh_tile * W_out;
+
+  // oh_tile reaches the resize fn / wg pickers as the raw int packed into the
+  // last resize_args slot (see add_conv2d_*_node) — no materialized graph
+  // Value. The scratch's W_out-dependent extent tracks dynamic shapes while
+  // oh_tile stays fixed (it is a build-time constant).
 
   // Pick im2col storage. When an explicit override is provided (test-only),
   // honor it and skip auto-selection. Otherwise run the production
   // auto-selection per device:
   //   - Mali: always buffer (texture sampling on Mali is comparatively slow).
-  //   - Others: prefer texture2d (M × K4_total). If that doesn't fit the
-  //     device's max texture2d dim, fall back to texture3d laid out as
-  //     (W_out, H_out, K4_total). Buffer is the last-resort fallback.
+  //   - Others: prefer texture2d (M_tile × K4_total). If the tiled extent
+  //     doesn't fit the device's max texture2d dim, fall back to texture3d laid
+  //     out as (W_out, oh_tile, K4_total). Buffer is the last-resort fallback.
   utils::StorageType im2col_storage;
   if (im2col_storage_override.has_value()) {
     im2col_storage = im2col_storage_override.value();
@@ -365,9 +427,9 @@ void conv2d_gemm_impl(
     const uint32_t max_2d = graph.context()->adapter_ptr()->max_texture2d_dim();
     const uint32_t max_3d = graph.context()->adapter_ptr()->max_texture3d_dim();
     const bool fits_2d = utils::safe_downcast<uint32_t>(K4_total) <= max_2d &&
-        utils::safe_downcast<uint32_t>(M) <= max_2d;
+        utils::safe_downcast<uint32_t>(M_tile) <= max_2d;
     const bool fits_3d = utils::safe_downcast<uint32_t>(W_out) <= max_3d &&
-        utils::safe_downcast<uint32_t>(H_out) <= max_3d &&
+        utils::safe_downcast<uint32_t>(oh_tile) <= max_3d &&
         utils::safe_downcast<uint32_t>(K4_total) <= max_3d;
     if (fits_2d) {
       im2col_storage = utils::kTexture2D;
@@ -377,27 +439,6 @@ void conv2d_gemm_impl(
       im2col_storage = utils::kBuffer;
     }
   }
-
-  // Tile the im2col by output-height rows so the scratch is bounded to the
-  // fixed kIm2colScratchBudgetBytes byte budget regardless of resolution. One
-  // H-row of im2col is W_out * K_total * elem bytes; oh_tile is the most H-rows
-  // whose im2col fits the budget (>= 1), clamped to H_out. The full conv is
-  // then materialized in num_tiles = ceil(H_out / oh_tile) tiles. When oh_tile
-  // >= H_out this reduces to a single untiled dispatch pair. (Why a fixed
-  // num_tiles is safe under dynamic shapes is documented at the dispatch loop
-  // below.)
-  const int64_t elem_size =
-      utils::safe_downcast<int64_t>(vkapi::element_size(graph.dtype_of(in)));
-  const int64_t bytes_per_h_row = W_out * K_total * elem_size;
-  int64_t oh_tile = kIm2colScratchBudgetBytes / bytes_per_h_row;
-  oh_tile = std::max<int64_t>(oh_tile, 1);
-  oh_tile = std::min<int64_t>(oh_tile, H_out);
-  const int64_t num_tiles = utils::div_up(H_out, oh_tile);
-
-  // oh_tile reaches the resize fn / wg pickers as the raw int packed into the
-  // last resize_args slot (see add_conv2d_*_node) — no materialized graph
-  // Value. The scratch's W_out-dependent extent tracks dynamic shapes while
-  // oh_tile stays fixed (it is a build-time constant).
 
   // Allocate ONE im2col scratch tensor sized for a single tile (oh_tile rows),
   // reused across all tiles. The im2col value is produced by each tile's im2col
@@ -466,7 +507,13 @@ void conv2d_gemm_impl(
   //   - num_tiles, from the build-time (max) H_out, always covers the runtime
   //     row count;
   //   - a smaller runtime H_out just leaves trailing tiles (oh_offset >= the
-  //     current H_out) no-op'ing via the shader's `oh < H_out` store guard;
+  //     current H_out) with no live output rows; the GEMM global-wg picker
+  //     zero-sizes the dispatch for such a tile (DispatchNode::encode() skips a
+  //     0-component global wg), so a dead trailing tile costs no GEMM work
+  //     after a down-resize. (Its im2col node still dispatches — a cheap
+  //     per-thread gather that writes zeros into the unused scratch rows; the
+  //     static node-count constraint means the im2col node cannot be removed,
+  //     only the dominant GEMM work is elided.)
   //   - the scratch, sized from the build-time (max) shape, is an upper bound,
   //     so memory stays capped with no reallocation on resize.
   // Load-bearing assumption: if a runtime shape ever EXCEEDED the build-time

@@ -21,6 +21,7 @@
 #include <limits>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -218,52 +219,64 @@ std::vector<float> conv2d_ref_xnnpack(
 
   EXPECT_EQ(xnn_initialize(/*allocator=*/nullptr), xnn_status_success);
 
+  // XNNPACK failures throw rather than return a zeroed result: a silent zero
+  // output would masquerade as a Vulkan-vs-reference mismatch downstream. The
+  // operator handle is deleted before throwing so it does not leak on the
+  // error path.
   xnn_operator_t op = nullptr;
   const float out_min = -std::numeric_limits<float>::infinity();
   const float out_max = std::numeric_limits<float>::infinity();
-  EXPECT_EQ(
-      xnn_create_convolution2d_nhwc_f32(
-          static_cast<uint32_t>(cfg.padding_h),
-          static_cast<uint32_t>(cfg.padding_w),
-          static_cast<uint32_t>(cfg.padding_h),
-          static_cast<uint32_t>(cfg.padding_w),
-          static_cast<uint32_t>(K_h),
-          static_cast<uint32_t>(K_w),
-          static_cast<uint32_t>(cfg.stride_h),
-          static_cast<uint32_t>(cfg.stride_w),
-          static_cast<uint32_t>(cfg.dilation_h),
-          static_cast<uint32_t>(cfg.dilation_w),
-          /*groups=*/1,
-          /*group_input_channels=*/static_cast<size_t>(C_in),
-          /*group_output_channels=*/static_cast<size_t>(C_out),
-          /*input_channel_stride=*/static_cast<size_t>(C_in),
-          /*output_channel_stride=*/static_cast<size_t>(C_out),
-          weight_ohwi.data(),
-          bias.empty() ? nullptr : bias.data(),
-          out_min,
-          out_max,
-          /*flags=*/0,
-          /*code_cache=*/nullptr,
-          /*weights_cache=*/nullptr,
-          &op),
-      xnn_status_success);
+  const xnn_status create_status = xnn_create_convolution2d_nhwc_f32(
+      static_cast<uint32_t>(cfg.padding_h),
+      static_cast<uint32_t>(cfg.padding_w),
+      static_cast<uint32_t>(cfg.padding_h),
+      static_cast<uint32_t>(cfg.padding_w),
+      static_cast<uint32_t>(K_h),
+      static_cast<uint32_t>(K_w),
+      static_cast<uint32_t>(cfg.stride_h),
+      static_cast<uint32_t>(cfg.stride_w),
+      static_cast<uint32_t>(cfg.dilation_h),
+      static_cast<uint32_t>(cfg.dilation_w),
+      /*groups=*/1,
+      /*group_input_channels=*/static_cast<size_t>(C_in),
+      /*group_output_channels=*/static_cast<size_t>(C_out),
+      /*input_channel_stride=*/static_cast<size_t>(C_in),
+      /*output_channel_stride=*/static_cast<size_t>(C_out),
+      weight_ohwi.data(),
+      bias.empty() ? nullptr : bias.data(),
+      out_min,
+      out_max,
+      /*flags=*/0,
+      /*code_cache=*/nullptr,
+      /*weights_cache=*/nullptr,
+      &op);
+  if (create_status != xnn_status_success || op == nullptr) {
+    xnn_delete_operator(op);
+    throw std::runtime_error(
+        "xnn_create_convolution2d_nhwc_f32 failed with status " +
+        std::to_string(static_cast<int>(create_status)));
+  }
 
   size_t workspace_size = 0;
   size_t workspace_alignment = 0;
   size_t out_h = 0;
   size_t out_w = 0;
-  EXPECT_EQ(
-      xnn_reshape_convolution2d_nhwc_f32(
-          op,
-          /*batch_size=*/1,
-          static_cast<size_t>(H_in),
-          static_cast<size_t>(W_in),
-          &workspace_size,
-          &workspace_alignment,
-          &out_h,
-          &out_w,
-          /*threadpool=*/nullptr),
-      xnn_status_success);
+  const xnn_status reshape_status = xnn_reshape_convolution2d_nhwc_f32(
+      op,
+      /*batch_size=*/1,
+      static_cast<size_t>(H_in),
+      static_cast<size_t>(W_in),
+      &workspace_size,
+      &workspace_alignment,
+      &out_h,
+      &out_w,
+      /*threadpool=*/nullptr);
+  if (reshape_status != xnn_status_success) {
+    xnn_delete_operator(op);
+    throw std::runtime_error(
+        "xnn_reshape_convolution2d_nhwc_f32 failed with status " +
+        std::to_string(static_cast<int>(reshape_status)));
+  }
 
   std::vector<float> output_nhwc(static_cast<size_t>(C_out * H_out * W_out));
   // XNN_ALLOCATION_ALIGNMENT-aligned workspace (a bare vector is only
@@ -277,11 +290,21 @@ std::vector<float> conv2d_ref_xnnpack(
     ws_ptr = reinterpret_cast<void*>(aligned);
   }
 
-  EXPECT_EQ(
-      xnn_setup_convolution2d_nhwc_f32(
-          op, ws_ptr, input_nhwc.data(), output_nhwc.data()),
-      xnn_status_success);
-  EXPECT_EQ(xnn_run_operator(op, /*threadpool=*/nullptr), xnn_status_success);
+  const xnn_status setup_status = xnn_setup_convolution2d_nhwc_f32(
+      op, ws_ptr, input_nhwc.data(), output_nhwc.data());
+  if (setup_status != xnn_status_success) {
+    xnn_delete_operator(op);
+    throw std::runtime_error(
+        "xnn_setup_convolution2d_nhwc_f32 failed with status " +
+        std::to_string(static_cast<int>(setup_status)));
+  }
+  const xnn_status run_status = xnn_run_operator(op, /*threadpool=*/nullptr);
+  if (run_status != xnn_status_success) {
+    xnn_delete_operator(op);
+    throw std::runtime_error(
+        "xnn_run_operator failed with status " +
+        std::to_string(static_cast<int>(run_status)));
+  }
   xnn_delete_operator(op);
 
   // NHWC -> NCHW output.

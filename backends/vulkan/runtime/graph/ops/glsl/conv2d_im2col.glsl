@@ -31,12 +31,15 @@
  *     tile-local row m_local.  Extents = (K_total/4, OH_TILE * W_out).
  *   - texture3d, channels-packed: texel at (ow, oh_local, k4) holds 4 K values
  *     for output spatial position (OH_OFFSET + oh_local, ow).  Extents =
- *     (W_out, OH_TILE, K4).  Used as a fallback when M would exceed
- *     max_texture2d_dim.
+ *     (W_out, OH_TILE, K4).  Used as a fallback when the per-tile 2D extent
+ *     (OH_TILE * W_out, K4) would exceed max_texture2d_dim.
  *   - buffer: vec4 at offset (m_local * K4 + k4), same K packing.
  *
- * The caller picks storage per device (Mali → buffer; others → texture2d
- * when its 2D extents fit, texture3d when its 3D extents fit, else buffer).
+ * The caller selects storage on the TILED scratch extent, not the full M.
+ * Per device: Mali → buffer; others → texture2d when the per-tile 2D extent
+ * (OH_TILE * W_out, K4) fits, texture3d when its 3D extents fit, else buffer.
+ * Because OH_TILE is capped by the scratch byte budget, the tiled extent rarely
+ * exceeds max_texture2d_dim, so texture2d is the common case.
  */
 
 #version 450 core

@@ -22,8 +22,10 @@
  *   - texture2d, width-packed: texel at (k4, r) holds 4 K values for tile-local
  *     row r.  IN_STORAGE=texture2d codegen.
  *   - texture3d, channels-packed: texel at (ow, oh_local, k4) holds 4 K values
- *     for tile-local row r = oh_local * W_out + ow.  Used when M would exceed
- *     max_texture2d_dim.  IN_STORAGE=texture3d codegen.
+ *     for tile-local row r = oh_local * W_out + ow.  Used when the per-tile 2D
+ *     extent (M_TILE = OH_TILE * W_out) would exceed max_texture2d_dim — rare,
+ *     since OH_TILE is capped by the scratch byte budget.  IN_STORAGE=texture3d
+ *     codegen.
  *   - buffer: vec4 at offset r*K4 + k4, same K packing.
  *     IN_STORAGE=buffer codegen.
  *
@@ -160,7 +162,11 @@ void load_input_tile_with_checks(
 // m_start is a tile-local row offset; the scratch read uses it directly, but
 // the output store maps it to the GLOBAL spatial position via oh_global =
 // OH_OFFSET + (m_local / W_out). Rows whose global oh lands past H_out (the
-// partial trailing tile, or a dynamic shape that shrinks H_out) are skipped.
+// partial trailing tile, or a dynamic shape that shrinks H_out) are skipped by
+// the `oh < H_out` guard. The companion `m_local < M_TILE` guard enforces the
+// tile's UPPER oh bound: since M_TILE = OH_TILE * W_out, m_local < M_TILE means
+// oh_local < OH_TILE, i.e. oh < OH_OFFSET + OH_TILE — so no row this dispatch
+// writes can leak into a neighboring tile's output-row range.
 void store_output_tile_with_checks(
     const FPOutTile out_tile,
     const int n4_start,
