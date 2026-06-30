@@ -16,11 +16,23 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <algorithm>
 #include <optional>
 
 namespace vkcompute {
 
 namespace {
+
+// Byte budget for the im2col scratch tensor. The full im2col matrix is
+// [M, K_total] = M * K_total * elem bytes (M = H_out * W_out); at high
+// resolution this reaches hundreds of MB (e.g. 144 MB FP32 for a
+// [1,64,256,256] 3x3 conv), a non-reclaimable device-local allocation resident
+// for the whole model lifetime — an OOM risk on memory-constrained mobile GPUs.
+// Materializing the im2col in tiles of output-height rows caps the scratch to
+// this budget regardless of resolution while preserving GEMM throughput (the
+// GEMM inner loop is unchanged; only the live row count is bounded). Tunable:
+// a larger budget means fewer tiles / dispatches per conv but more peak memory.
+constexpr int64_t kIm2colScratchBudgetBytes = 16 * 1024 * 1024;
 
 //
 // Weight handling
@@ -140,34 +152,44 @@ vkapi::ShaderInfo pick_conv2d_gemm_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
+// resize_args = { in, weight_data, stride, padding, dilation, oh_tile }
+// resize_args[5] carries the raw oh_tile VALUE (not a ValueRef handle): oh_tile
+// is a build-time constant, so packing the int directly into the slot avoids
+// materializing a graph Value for it. Read it with static_cast, never get_int.
 utils::uvec3 pick_conv2d_gemm_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
-  (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   const uint32_t W = graph->size_at<uint32_t>(-1, out);
-  const uint32_t H = graph->size_at<uint32_t>(-2, out);
   const uint32_t C_out = graph->size_at<uint32_t>(-3, out);
-  const uint32_t M = H * W;
+  const uint32_t oh_tile =
+      utils::safe_downcast<uint32_t>(static_cast<int32_t>(resize_args.at(5)));
+  // Every tile dispatches oh_tile output-height rows (oh_tile * W per-tile M);
+  // trailing threads past the real H_out no-op in the shader.
+  const uint32_t M_tile = oh_tile * W;
   const uint32_t N4 = utils::div_up_4(C_out);
   // TILE_N4=1, TILE_M=4
-  return {N4, utils::div_up(M, 4u), 1};
+  return {N4, utils::div_up(M_tile, 4u), 1};
 }
 
 // Recompute the conv output sizes from the current input shape and resize the
 // output tensor. This is the load-bearing resize for the im2col/GEMM path:
 // under dynamic shapes the graph is built for the upper-bound input, so on
 // trigger_resize() the output must be recomputed from the real input or it
-// stays frozen at the upper bound (producing garbage downstream).
+// stays frozen at the upper bound (producing garbage downstream). Every tile's
+// GEMM node shares this resize (each writes a different oh-row window of the
+// same full output tensor).
 //
-// The GEMM shader derives M = H_out * W_out and the spatial store coordinates
-// from the (now-refreshed) out_sizes UBO, so resizing `out` here is sufficient
-// to make the GEMM track the dynamic shape — no push-constant update is needed.
+// The GEMM shader derives W_out / H_out and the spatial store coordinates from
+// the (now-refreshed) out_sizes UBO, so resizing `out` here is sufficient to
+// make every tile track the dynamic shape — no push-constant update is needed
+// (oh_offset / oh_tile are shape-independent). The global workgroup picker
+// reads oh_tile (resize_args[5]) to size each tile's dispatch.
 //
-// resize_args = { in, weight_data, stride, padding, dilation }
+// resize_args = { in, weight_data, stride, padding, dilation, oh_tile }
 void resize_conv2d_gemm_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -220,15 +242,27 @@ void add_conv2d_gemm_node(
     const int32_t K_total,
     const bool clamp_out,
     const float out_min_val,
-    const float out_max_val) {
+    const float out_max_val,
+    const int32_t oh_offset,
+    const int32_t oh_tile) {
   const int32_t K4_total = K_total / 4;
 
-  // gemm_dims carries only the shape-independent K4_total. M is derived in the
-  // shader from the refreshed out_sizes UBO, so it is not baked here (a baked
-  // plain-data push constant cannot be updated on resize).
-  const utils::ivec4 gemm_dims{K4_total, 0, 0, 0};
+  // gemm_dims = (K4_total, oh_offset, oh_tile, _unused). All shape-independent:
+  // this tile reads scratch rows for oh_tile output-height rows and writes the
+  // output rows starting at oh_offset. W_out / H_out are derived in the shader
+  // from the refreshed out_sizes UBO (a baked plain-data push constant cannot
+  // be updated on resize, but oh_offset / oh_tile never change with shape).
+  const utils::ivec4 gemm_dims{K4_total, oh_offset, oh_tile, 0};
   const utils::vec4 clamp_vals{out_min_val, out_max_val, 0.0f, 0.0f};
 
+  // The last resize_args slot carries the raw oh_tile VALUE, not a ValueRef
+  // handle: oh_tile is a build-time constant, so packing the int directly
+  // avoids materializing a graph Value for it. The global-wg picker reads it
+  // back with static_cast (never get_int). ExecuteNode's resize dirty-tracker
+  // will treat this slot as a value index and may spuriously over-trigger the
+  // resize fn — deliberate and benign (the resize recomputes correctly
+  // regardless) and memory-safe (was_value_updated guards both out-of-range and
+  // in-range idx).
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv2d_gemm_shader,
@@ -245,8 +279,13 @@ void add_conv2d_gemm_node(
       // Specialization constants
       // activation_type: 0=none, 1=relu, 2=clamp
       {clamp_out ? 2 : 0},
-      // Resize args
-      {in, weight_data, stride, padding, dilation},
+      // Resize args (last slot = raw oh_tile value, see note above)
+      {in,
+       weight_data,
+       stride,
+       padding,
+       dilation,
+       static_cast<ValueRef>(oh_tile)},
       // Resizing logic
       resize_conv2d_gemm_node));
 }
@@ -339,29 +378,51 @@ void conv2d_gemm_impl(
     }
   }
 
-  // Allocate the im2col intermediate as a scoped scratch tensor. The im2col
-  // value is produced by the im2col node and consumed immediately by the GEMM
-  // node, both below, and is dead afterwards. Using a TmpTensor lets the memory
-  // planner alias one backing buffer across the (non-overlapping) im2col
-  // lifetimes of every conv2d layer, so peak memory tracks the largest single
-  // im2col rather than the sum of all of them. The TmpTensor must outlive
-  // add_conv2d_gemm_node (its last consumer), so it lives to the end of this
-  // function.
+  // Tile the im2col by output-height rows so the scratch is bounded to the
+  // fixed kIm2colScratchBudgetBytes byte budget regardless of resolution. One
+  // H-row of im2col is W_out * K_total * elem bytes; oh_tile is the most H-rows
+  // whose im2col fits the budget (>= 1), clamped to H_out. The full conv is
+  // then materialized in num_tiles = ceil(H_out / oh_tile) tiles. When oh_tile
+  // >= H_out this reduces to a single untiled dispatch pair. (Why a fixed
+  // num_tiles is safe under dynamic shapes is documented at the dispatch loop
+  // below.)
+  const int64_t elem_size =
+      utils::safe_downcast<int64_t>(vkapi::element_size(graph.dtype_of(in)));
+  const int64_t bytes_per_h_row = W_out * K_total * elem_size;
+  int64_t oh_tile = kIm2colScratchBudgetBytes / bytes_per_h_row;
+  oh_tile = std::max<int64_t>(oh_tile, 1);
+  oh_tile = std::min<int64_t>(oh_tile, H_out);
+  const int64_t num_tiles = utils::div_up(H_out, oh_tile);
+
+  // oh_tile reaches the resize fn / wg pickers as the raw int packed into the
+  // last resize_args slot (see add_conv2d_*_node) — no materialized graph
+  // Value. The scratch's W_out-dependent extent tracks dynamic shapes while
+  // oh_tile stays fixed (it is a build-time constant).
+
+  // Allocate ONE im2col scratch tensor sized for a single tile (oh_tile rows),
+  // reused across all tiles. The im2col value is produced by each tile's im2col
+  // node and consumed immediately by that tile's GEMM node; reusing the same
+  // TmpTensor across tiles serializes them via the backend's automatic
+  // read/write barriers (tile t's GEMM finishes reading before tile t+1's
+  // im2col overwrites). Using a TmpTensor also lets the memory planner alias
+  // one backing buffer across the non-overlapping im2col lifetimes of every
+  // conv2d layer, so peak memory tracks the largest single tile's scratch (<=
+  // budget) rather than the sum. The TmpTensor must outlive the last GEMM node,
+  // so it lives to the end of this function.
   //
-  // The 2D and buffer variants use a flat [M, K_total] kWidthPacked shape; the
-  // texture3d variant uses the natural [1, K_total, H_out, W_out]
-  // kChannelsPacked shape so K4 lays along Z. Hoist the per-storage differences
-  // into locals so the TmpTensor is constructed exactly once and never needs to
-  // be copied or moved.
+  // The 2D and buffer variants use a flat [oh_tile * W_out, K_total]
+  // kWidthPacked shape; the texture3d variant uses [1, K_total, oh_tile, W_out]
+  // kChannelsPacked so K4 lays along Z. Hoist the per-storage differences into
+  // locals so the TmpTensor is constructed exactly once and never copied/moved.
   std::vector<int64_t> im2col_sizes;
   utils::StorageType im2col_tmp_storage;
   utils::GPUMemoryLayout im2col_layout;
   if (im2col_storage == utils::kTexture3D) {
-    im2col_sizes = {1, K_total, H_out, W_out};
+    im2col_sizes = {1, K_total, oh_tile, W_out};
     im2col_tmp_storage = utils::kTexture3D;
     im2col_layout = utils::kChannelsPacked;
   } else {
-    im2col_sizes = {M, K_total};
+    im2col_sizes = {oh_tile * W_out, K_total};
     im2col_tmp_storage = im2col_storage;
     im2col_layout = utils::kWidthPacked;
   }
@@ -373,30 +434,11 @@ void conv2d_gemm_impl(
       im2col_layout);
   const ValueRef im2col_tensor = im2col_tmp.vref;
 
-  // Step 1: im2col
-  add_conv2d_im2col_node(
-      graph,
-      in,
-      im2col_tensor,
-      weight_data,
-      stride,
-      padding,
-      dilation,
-      utils::safe_downcast<int32_t>(K_h),
-      utils::safe_downcast<int32_t>(K_w),
-      stride_h,
-      stride_w,
-      padding_h,
-      padding_w,
-      dilation_h,
-      dilation_w,
-      utils::safe_downcast<int32_t>(Cin_padded));
-
-  // Step 2: prepack weight for the GEMM directly from the serialized
-  // [C_out, C_in, K_h, K_w] weight on the GPU. The serialized data is read
-  // as-is (never CPU-repacked); the prepack shader does the im2col K-axis
-  // reorder + 4x4 transpose into the layout conv2d_gemm.glsl loads via
-  // load_packed_weight_tile_with_checks.
+  // Prepack weight for the GEMM directly from the serialized
+  // [C_out, C_in, K_h, K_w] weight on the GPU (shared across all tiles). The
+  // serialized data is read as-is (never CPU-repacked); the prepack shader does
+  // the im2col K-axis reorder + 4x4 transpose into the layout conv2d_gemm.glsl
+  // loads via load_packed_weight_tile_with_checks.
   ValueRef packed_weight = prepack_conv2d_gemm_weight(graph, weight_data);
 
   // Bias prepack: matches the bias format conv2d_gemm expects. prepack_biases
@@ -412,22 +454,68 @@ void conv2d_gemm_impl(
 
   check_conv_args(graph, in, out);
 
-  // Step 3: GEMM
-  add_conv2d_gemm_node(
-      graph,
-      in,
-      weight_data,
-      stride,
-      padding,
-      dilation,
-      im2col_tensor,
-      packed_weight,
-      packed_bias,
-      out,
-      utils::safe_downcast<int32_t>(K_total),
-      clamp_out,
-      out_min_val,
-      out_max_val);
+  // Emit one (im2col -> GEMM) dispatch pair per tile, interleaved so each
+  // tile's GEMM reads the scratch its im2col just wrote before the next tile
+  // overwrites it.
+  //
+  // num_tiles (and oh_tile) are fixed here at graph-build time: the per-tile
+  // dispatch count must be static (DynamicDispatchNode does not add/remove
+  // nodes on resize). This is correct ONLY because ET-VK builds these tensors
+  // at the dynamic UPPER BOUND, so trigger_resize() can only shrink H_out/W_out
+  // (runtime <= build-time). Three consequences make the fixed tiling safe:
+  //   - num_tiles, from the build-time (max) H_out, always covers the runtime
+  //     row count;
+  //   - a smaller runtime H_out just leaves trailing tiles (oh_offset >= the
+  //     current H_out) no-op'ing via the shader's `oh < H_out` store guard;
+  //   - the scratch, sized from the build-time (max) shape, is an upper bound,
+  //     so memory stays capped with no reallocation on resize.
+  // Load-bearing assumption: if a runtime shape ever EXCEEDED the build-time
+  // bound, this fixed num_tiles would under-cover and silently drop the extra
+  // output rows. ET-VK's upper-bound build guarantees this cannot happen; a
+  // future change that breaks the upper-bound invariant would need a runtime
+  // tile-count guard here.
+  for (int64_t t = 0; t < num_tiles; ++t) {
+    const int32_t oh_offset = utils::safe_downcast<int32_t>(t * oh_tile);
+    const int32_t oh_tile_i32 = utils::safe_downcast<int32_t>(oh_tile);
+
+    add_conv2d_im2col_node(
+        graph,
+        in,
+        im2col_tensor,
+        weight_data,
+        stride,
+        padding,
+        dilation,
+        utils::safe_downcast<int32_t>(K_h),
+        utils::safe_downcast<int32_t>(K_w),
+        stride_h,
+        stride_w,
+        padding_h,
+        padding_w,
+        dilation_h,
+        dilation_w,
+        utils::safe_downcast<int32_t>(Cin_padded),
+        oh_offset,
+        oh_tile_i32);
+
+    add_conv2d_gemm_node(
+        graph,
+        in,
+        weight_data,
+        stride,
+        padding,
+        dilation,
+        im2col_tensor,
+        packed_weight,
+        packed_bias,
+        out,
+        utils::safe_downcast<int32_t>(K_total),
+        clamp_out,
+        out_min_val,
+        out_max_val,
+        oh_offset,
+        oh_tile_i32);
+  }
 }
 
 //
