@@ -291,6 +291,10 @@ class TestMlxPipeline(unittest.TestCase):
 
             token = sample(7)
             self.assertEqual(token.dtype, torch.int64)
+            # Same-seed reproducibility is checked against the host reference
+            # mlx.sample, which is not bit-identical to the on-device graph; on
+            # non-Mac CI the delegated op runs that CPU reference, so this asserts
+            # the reference's determinism, not the Metal delegate's.
             self.assertTrue(torch.equal(token, sample(7)))  # same seed reproducible
 
 

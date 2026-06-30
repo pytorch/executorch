@@ -102,6 +102,10 @@ Result<uint64_t> read_sampled_token(
   return Error::InvalidArgument;
 #else
   if (use_sampling) {
+    ET_CHECK_OR_RETURN_ERROR(
+        output.scalar_type() == executorch::aten::ScalarType::Long,
+        InvalidProgram,
+        "read_sampled_token: use_sampling set but forward output is not Long");
     return static_cast<uint64_t>(output.const_data_ptr<int64_t>()[0]);
   }
   return static_cast<uint64_t>(
