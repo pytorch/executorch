@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_compute_attn_weights.wgsl - DO NOT EDIT.
-// wgsl-sha256: 4eef09b234fd926cdc0daf18d03e39cf4fd57dfa4bc67724b4878b7dc68d1254
+// wgsl-sha256: ac1616d310a67aeb915ee7b4f650c981cc423c5251de2e7acf8775bacdfd8e56
 inline constexpr const char* kSdpaComputeAttnWeightsWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
 @group(0) @binding(1) var<storage, read> t_q: array<vec4<f32>>;
@@ -70,17 +70,21 @@ fn store_qk(s: u32, c: u32, h: u32, raw: f32) {
 }
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   let nrt = (params.S + TM - 1u) / TM;
   let nct = (params.context_len + TN - 1u) / TN;
   let tiles = nrt * nct;
   let total = tiles * params.Hq;
-  if (gid.x >= total) {
+  // 2D dispatch fold: recover the linear tile index across x/y.
+  let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
+  if (idx >= total) {
     return;
   }
 
-  let h = gid.x / tiles;
-  let rem = gid.x % tiles;
+  let h = idx / tiles;
+  let rem = idx % tiles;
   let row_tile = rem / nct;
   let col_tile = rem % nct;
   let kvh = h / params.g;

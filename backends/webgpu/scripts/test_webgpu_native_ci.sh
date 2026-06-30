@@ -143,7 +143,7 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 # ── Build + run every native test target that exists in this tree ────────────
-TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_index_test)
+TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_index_test webgpu_dispatch_2d_test)
 BIN_DIR="${BUILD_DIR}/backends/webgpu"
 
 # Which targets are defined depends on which diffs are landed (native_test +
@@ -212,6 +212,8 @@ if [[ "${INDEX_OK}" == "1" && -x "${BIN_DIR}/webgpu_index_test" ]]; then
   "${BIN_DIR}/webgpu_index_test" "${INDEX_DIR}"
 fi
 [[ -x "${BIN_DIR}/webgpu_scratch_buffer_test" ]] && "${BIN_DIR}/webgpu_scratch_buffer_test"
+# Device-free: pure 2D workgroup-count fold unit test (no .pte, no GPU).
+[[ -x "${BIN_DIR}/webgpu_dispatch_2d_test" ]] && "${BIN_DIR}/webgpu_dispatch_2d_test"
 
 echo "=== WebGPU native tests on Dawn: all run targets passed ==="
 

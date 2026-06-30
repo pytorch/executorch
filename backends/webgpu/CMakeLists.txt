@@ -161,6 +161,12 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
   add_webgpu_native_test(
     webgpu_update_cache_test test/native/test_update_cache.cpp
   )
+  add_webgpu_native_test(
+    webgpu_dynamic_shape_test test/native/test_dynamic_shape.cpp
+  )
+  add_webgpu_native_test(
+    webgpu_dispatch_2d_test test/native/test_dispatch_2d.cpp
+  )
 
   # Manifest-driven op-test framework: a generic gtest driver (webgpu_op_test) +
   # its device-free util unit test. GTest needs -DEXECUTORCH_BUILD_TESTS=ON.
