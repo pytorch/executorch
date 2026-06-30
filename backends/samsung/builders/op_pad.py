@@ -12,6 +12,7 @@ from executorch.backends.samsung.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
+from executorch.backends.samsung.utils.constants import QuantConstants
 from executorch.backends.transforms import get_shape
 
 
@@ -47,11 +48,20 @@ class PadVisitor(NodeVisitor):
         ]
 
         mode = "constant"
+        constant_value = 0
         if len(node.args) > 2:
             mode = node.args[2]
-        params = {"pads": padding, "mode": mode}
-        self._update_params_qdtype(node, params)
+        if mode == "constant":
+            quant_attrs = node.meta.get("quantize_attrs")
+            if quant_attrs is not None:
+                zero_points = EnnGraph._affine_meta_param(
+                    quant_attrs[QuantConstants.QUANT_KEY.zero_point]
+                )
+                if len(zero_points) == 1:
+                    constant_value = zero_points[0]
 
+        params = {"pads": padding, "mode": mode, "constant_value": constant_value}
+        self._update_params_qdtype(node, params)
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         enn_graph.define_op(node.name, "Pad", [input_id_1], [output_id], params)

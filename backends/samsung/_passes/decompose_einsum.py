@@ -1,4 +1,5 @@
 # Copyright (c) Qualcomm Innovation Center, Inc.
+# Copyright (c) Samsung Electronics Co. LTD
 # All rights reserved
 #
 # This source code is licensed under the BSD-style license found in the
