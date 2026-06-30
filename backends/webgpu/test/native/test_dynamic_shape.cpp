@@ -19,6 +19,7 @@
 //   unchanged) F  dyn_rms_chain (rms(rms(x))) at 3 S      -> golden (resize
 //   CASCADE, DD-4)
 //   G rms+residual  H rms*x  I dyn_linear  J sdpa_dyn  K emb_dyn  L rope_dyn
+//   M dyn_sigmoid  N dyn_select (select_copy(0,-1), dynamic S)
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
@@ -351,6 +352,47 @@ void check_rope(const std::string& dir, int s, bool& ok) {
   ok = ok && pass;
 }
 
+// Dynamic select_copy(0,-1): input [2,1,S,kHidden] -> output [1,S,kHidden]. The
+// negative index resolves against the (static) leading dim live; the dynamic S
+// flows to the output, so the resize hook recomputes its dispatch each S.
+constexpr int kSelLead = 2;
+void check_select(const std::string& dir, int s, bool& ok) {
+  Module m(dir + "/dyn_select.pte");
+  if (m.load_forward() != Error::Ok) {
+    printf("  FAIL load dyn_select.pte\n");
+    ok = false;
+    return;
+  }
+  auto input =
+      read_bin(dir + "/dyn_select.S" + std::to_string(s) + ".input.bin");
+  auto golden =
+      read_bin(dir + "/dyn_select.S" + std::to_string(s) + ".golden.bin");
+  if (input.empty() || golden.empty()) {
+    printf("  MISSING dyn_select.S%d\n", s);
+    ok = false;
+    return;
+  }
+  auto t = make_tensor_ptr({kSelLead, 1, s, kHidden}, std::move(input));
+  auto r = m.forward({EValue(t)});
+  if (!r.ok() || r.get().empty() || !r.get()[0].isTensor()) {
+    printf(
+        "  select S=%d forward FAILED (err=%d)\n",
+        s,
+        r.ok() ? 0 : (int)r.error());
+    ok = false;
+    return;
+  }
+  const auto& out = r.get()[0].toTensor();
+  const size_t numel = static_cast<size_t>(s) * kHidden;
+  std::vector<float> got(
+      out.const_data_ptr<float>(), out.const_data_ptr<float>() + numel);
+  float e = max_err(got, golden);
+  bool pass = out.numel() == static_cast<ssize_t>(numel) && e < 1e-3f;
+  printf(
+      "  dyn_select S=%-3d max_err=%e -> %s\n", s, e, pass ? "PASS" : "FAIL");
+  ok = ok && pass;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -470,6 +512,24 @@ int main(int argc, char** argv) {
   printf("\n--- L: dynamic apply_rotary_emb at several S ---\n");
   for (int s : {16, 8, 1}) {
     check_rope(dir, s, ok);
+  }
+
+  // Case M: dynamic sigmoid (elementwise) at several S.
+  printf("\n--- M: dynamic sigmoid at several S ---\n");
+  for (int s : {128, 32, 1}) {
+    Module m(dir + "/dyn_sigmoid.pte");
+    if (m.load_forward() != Error::Ok) {
+      printf("  FAIL load dyn_sigmoid.pte\n");
+      ok = false;
+      break;
+    }
+    check_s(m, dir, "dyn_sigmoid", s, ok);
+  }
+
+  // Case N: dynamic select_copy(0,-1) at several S.
+  printf("\n--- N: dynamic select_copy(0,-1) at several S ---\n");
+  for (int s : {128, 32, 1}) {
+    check_select(dir, s, ok);
   }
 
   set_default_webgpu_context(nullptr);
