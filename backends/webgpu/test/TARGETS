@@ -7,7 +7,20 @@ oncall("executorch")
 python_unittest(
     name = "test_add",
     srcs = [
-        "ops/add/test_add.py",
+        "ops/test_add.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
+    name = "test_index",
+    srcs = [
+        "ops/index/test_index.py",
     ],
     deps = [
         "//caffe2:torch",
