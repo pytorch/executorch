@@ -55,8 +55,10 @@ int64_t read_index(WebGPUGraph& graph, int id, int64_t dflt) {
       const int64_t v = graph.get_int(id);
       return v == INT64_MAX ? dflt : v;
     }
-    default:
+    case WebGPUGraph::ValueType::Null:
       return dflt;
+    default:
+      throw std::runtime_error("slice: dynamic/unsupported start/end index");
   }
 }
 
@@ -249,7 +251,7 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (is_symint(graph, start_id)) {
     graph.add_resize_hook(start_id, recompute);
   }
-  if (is_symint(graph, end_id)) {
+  if (is_symint(graph, end_id) && end_id != start_id) {
     graph.add_resize_hook(end_id, recompute);
   }
   graph.add_tensor_resize_hook(in_id, recompute);
