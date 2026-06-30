@@ -199,6 +199,10 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         const uint64_t numel = utils::numel_of(d);
+        if (numel % static_cast<uint64_t>(row_width) != 0) {
+          throw std::runtime_error(
+              "WebGPU rms_norm: numel not a multiple of row_width");
+        }
         const uint32_t rows =
             static_cast<uint32_t>(numel / static_cast<uint64_t>(row_width));
         if (rows == 0) {
