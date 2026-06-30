@@ -163,6 +163,47 @@ def test_upsample_nearest2d_matches_aten():
     assert torch.allclose(actual, expected, atol=1e-5)
 
 
+def test_max_pool2d_with_indices_matches_aten():
+    torch.manual_seed(0)
+    nchw = torch.randn(2, 3, 8, 8)
+    nhwc = _to_nhwc(nchw)
+
+    # Oracle: PyTorch's own channels-last max_pool (a separate code path from our
+    # permute wrapper), so this is an independent check rather than a round-trip.
+    ref_v, ref_i = torch.ops.aten.max_pool2d_with_indices(
+        nchw.to(memory_format=torch.channels_last),
+        [2, 2],
+        [2, 2],
+        [0, 0],
+        [1, 1],
+        False,
+    )
+    expected_v = ref_v.permute(0, 2, 3, 1)
+    expected_i = ref_i.permute(0, 2, 3, 1)
+
+    act_v, act_i = torch.ops.channels_last.max_pool2d_with_indices(
+        nhwc, [2, 2], [2, 2], [0, 0], [1, 1], False
+    )
+
+    assert act_v.shape == expected_v.shape
+    assert torch.allclose(act_v, expected_v, atol=1e-5)
+    # Indices are flat spatial positions (h*W+w), layout-agnostic in PyTorch.
+    assert torch.equal(act_i, expected_i)
+
+
+def test_grid_sampler_2d_matches_aten():
+    torch.manual_seed(0)
+    nchw = torch.randn(2, 3, 8, 8)
+    grid = torch.rand(2, 6, 6, 2) * 2 - 1
+    nhwc = _to_nhwc(nchw)
+
+    expected = _to_nhwc(torch.ops.aten.grid_sampler_2d(nchw, grid, 0, 0, False))
+    actual = torch.ops.channels_last.grid_sampler_2d(nhwc, grid, 0, 0, False)
+
+    assert actual.shape == expected.shape
+    assert torch.allclose(actual, expected, atol=1e-5)
+
+
 def test_convolution_lowers_to_edge_dialect():
     class M(torch.nn.Module):
         def forward(self, x, w, b):
