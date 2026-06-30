@@ -51,7 +51,7 @@ def _next_token(outputs, use_sampling: bool, temperature: float) -> int:
     """A --sample model returns the token id directly; else sample from logits."""
     if use_sampling:
         return int(outputs[0].reshape(-1)[0].item())
-    logits = outputs[0][0]
+    logits = outputs[0][0, -1, :]
     if temperature > 0:
         return int(torch.multinomial(torch.softmax(logits / temperature, dim=-1), 1))
     return int(torch.argmax(logits))

@@ -7694,7 +7694,7 @@ class Int4QuantizedEmbeddingTest(OpTestCase):
 
 
 class _LogitsPassthrough(nn.Module):
-    """Stand-in for a model returning logits [B, vocab]."""
+    """Stand-in for a model returning logits [B, S, vocab]."""
 
     def forward(self, logits: torch.Tensor) -> torch.Tensor:
         return logits
@@ -7759,7 +7759,7 @@ class SampleSeededTest(OpTestCase):
         "SortNode": 2,  # top-k threshold + top-p nucleus chain
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 1,  # top-k threshold gather
+        "TakeNode": 2,  # last-token slice + top-k threshold gather
         "ExpandDimsNode": 1,
         "WhereNode": 3,
     }
@@ -7769,7 +7769,7 @@ class SampleSeededTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 256),
+            torch.randn(1, 4, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
         )
@@ -7793,7 +7793,7 @@ class SampleUnseededTest(OpTestCase):
         return UnseededSampleModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(1, 256), torch.tensor(0.8))
+        return (torch.randn(1, 4, 256), torch.tensor(0.8))
 
 
 @register_test
@@ -7811,7 +7811,7 @@ class SampleTopPTest(OpTestCase):
         "SortNode": 2,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 1,  # top-k threshold gather
+        "TakeNode": 2,  # last-token slice + top-k threshold gather
         "ExpandDimsNode": 1,
         "WhereNode": 3,
     }
@@ -7821,7 +7821,7 @@ class SampleTopPTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 256),
+            torch.randn(1, 4, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
             torch.tensor(0.9),
@@ -7843,7 +7843,7 @@ class SampleTopKTest(OpTestCase):
         "SortNode": 2,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 1,  # top-k threshold gather
+        "TakeNode": 2,  # last-token slice + top-k threshold gather
         "ExpandDimsNode": 1,
         "LogicalOrNode": 0,
         "WhereNode": 3,
@@ -7854,7 +7854,7 @@ class SampleTopKTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 256),
+            torch.randn(1, 4, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
             torch.tensor(2, dtype=torch.int64),
@@ -7895,9 +7895,9 @@ class SampleGreedyTest(OpTestCase):
         return SeededSampleModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        logits = torch.randn(self.batch, 1024, dtype=self.dtype)
+        logits = torch.randn(self.batch, 4, 1024, dtype=self.dtype)
         if self.dtype == torch.bfloat16:
-            logits[0, 512] = 50.0  # dominant -> unambiguous bf16 argmax
+            logits[0, -1, 512] = 50.0  # dominant -> unambiguous bf16 argmax
         return (
             logits,
             torch.tensor(self.temperature),
