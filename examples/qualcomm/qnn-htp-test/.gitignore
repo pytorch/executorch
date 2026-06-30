@@ -1,0 +1,13 @@
+# Build artifacts
+.gradle/
+build/
+app/build/
+app/.cxx/
+
+# QNN native libraries — download from Maven, don't commit
+app/src/main/jniLibs/arm64-v8a/*.so
+
+# IDE
+.idea/
+*.iml
+local.properties
