@@ -49,6 +49,7 @@ class SelectVisitor(NodeVisitor):
             "shrink_axis_mask": pow(2, dim),
         }
 
+        self._update_params_qdtype(node, params)
         enn_graph.define_op(node.name, "STRIDEDSLICE", [input_id], [output_id], params)
 
         return True

@@ -9,6 +9,7 @@ from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import executorch.backends.test.harness.stages as BaseStages
 import torch
+from executorch.backends.samsung._passes.enn_pass_manager import EnnPassManager
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer.quantizer import EnnQuantizer, Precision
 from executorch.backends.samsung.serialization.compile_options import (
@@ -106,8 +107,9 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
     ) -> None:
         artifact_copy = copy.deepcopy(artifact)
+        ep = EnnPassManager().transform_for_export_pass(artifact_copy)
         self.edge_dialect_program = to_edge_transform_and_lower(
-            artifact_copy,
+            ep,
             transform_passes=self.transform_passes,
             partitioner=self.partitioners,
             compile_config=self.edge_compile_config,

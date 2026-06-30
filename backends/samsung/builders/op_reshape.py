@@ -13,7 +13,7 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 @register_node_visitor
 class ReshapeVisitor(NodeVisitor):
-    target = "aten.view_copy.default"
+    target = ["aten.view_copy.default", "aten.copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

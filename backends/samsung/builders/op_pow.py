@@ -32,6 +32,10 @@ class PowVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(node.name, "POW", [input_id_1, input_id_2], [output_id])
+        params = {}
+        self._update_params_qdtype(node, params)
+        enn_graph.define_op(
+            node.name, "POW", [input_id_1, input_id_2], [output_id], params
+        )
 
         return True

@@ -11,6 +11,12 @@ import executorch.backends.samsung.builders.node_visitor as node_visitor
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 
 import torch
+
+from executorch.backends.samsung._passes.customized_constant_prop import (
+    get_nodes_in_const_subgraph,
+)
+from executorch.backends.samsung._passes.remove_useless_ops import can_remove
+
 from executorch.backends.samsung.enn_preprocess import EnnBackend
 from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
@@ -39,6 +45,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.sub.Scalar,
     exir_ops.edge.aten.mul.Scalar,
     exir_ops.edge.aten.div.Scalar,
+    exir_ops.edge.aten.alias_copy.default,
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.as_strided_copy.default,
@@ -59,6 +66,9 @@ class EnnOperatorSupport(OperatorSupportBase):
             compile_specs, ENN_COMPILE_OPTION_TITLE, required=True
         )
         self.enn_wrapper.Init(option_spec.value)
+        self.nodes_in_const_subgraph = get_nodes_in_const_subgraph(edge_program)
+        for node in self.nodes_in_const_subgraph:
+            node.meta["can_fold"] = True
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         if node.op != "call_function":
@@ -80,6 +90,8 @@ class EnnOperatorSupport(OperatorSupportBase):
             return self.node_visitors[node.target.__name__].define_node(
                 node, enn_graph, vals_to_ids
             )
+        elif node in self.nodes_in_const_subgraph:
+            return True
 
         supported = self.enn_wrapper.IsNodeSupportedByBackend()
         return supported
@@ -95,6 +107,44 @@ class EnnPartitioner(Partitioner):
         self.partition_tags: Dict[str, DelegationSpec] = {}
         self.compile_specs = compile_specs
 
+    def remove_fold_node(self, partition_list: list[Partition]):
+        """
+        Remove nodes marked with 'can_fold' from partitions if their users are not in the same partition.
+        """
+        for partition in partition_list:
+            partition_nodes = set(partition.nodes.keys())
+
+            nodes_to_remove = []
+            no_user_fold_nodes = []
+            for node in partition_nodes:
+                if node.meta.get("can_fold", False):
+                    has_external_user = False
+                    for user in node.users:
+                        if user not in partition_nodes:
+                            has_external_user = True
+                            break
+                    if has_external_user:
+                        no_user_fold_nodes.append(node)
+
+            nodes_queue = list(no_user_fold_nodes)
+
+            while nodes_queue:
+                node = nodes_queue.pop(0)
+                nodes_to_remove.append(node)
+                for input_node in node.all_input_nodes:
+                    if (
+                        input_node in partition_nodes
+                        and input_node not in nodes_to_remove
+                    ):
+                        nodes_queue.append(input_node)
+
+            for node in nodes_to_remove:
+                if node in partition.nodes:
+                    del partition.nodes[node]
+
+        partition_list = [p for p in partition_list if len(p.nodes) > 0]
+        return partition_list
+
     def generate_partitions(
         self, edge_program: torch.export.ExportedProgram
     ) -> List[Any]:
@@ -105,30 +155,30 @@ class EnnPartitioner(Partitioner):
         )
         if len(partition_list) == 1 and partition_list[0].size() == 1:
             first_node = list(partition_list[0].nodes.keys())[0]
-            # If there is only one partition graph containing a single "aten.clone.default" that is a useless operation,
+            # If there is only one partition graph containing a single op that is a useless operation,
             # the RemoveUselessOpPass will remove this operation and cause a graph error.
             # Therefore, we delete this node to prevent this graph error.
             # For example, in the test_index_put_in_place_dtype case partition_list is [{aten_clone_default: 2}]
-            if first_node.target == exir_ops.edge.aten.clone.default:
+            if can_remove(first_node):
                 del partition_list[0]
+
+        partition_list = self.remove_fold_node(partition_list)
         return partition_list
 
     def tag_nodes(self, partitions: List[Partition]) -> None:
-        partition_tags: Dict[str, DelegationSpec] = {}
         for partition in partitions:
             # Add delegation tags
             for node in partition.nodes:
                 delegation_tag = f"enn_{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
-                partition_tags[delegation_tag] = self.delegation_spec
-        return partition_tags
+                self.partition_tags[delegation_tag] = self.delegation_spec
 
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
         partitions = self.generate_partitions(edge_program)
         logging.info(f"Find {len(partitions)} " "subgraphs to partition and lowering.")
         if len(partitions) != 0:
-            self.partition_tags = self.tag_nodes(partitions)
+            self.tag_nodes(partitions)
             tag_constant_data(edge_program)
         del self.op_support_checker
         return PartitionResult(

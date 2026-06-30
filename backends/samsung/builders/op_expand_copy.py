@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import cast, Dict, List
+from typing import Dict
 
 import torch
 from executorch.backends.samsung.builders.node_visitor import (
@@ -34,7 +34,8 @@ class ExpandVisitor(NodeVisitor):
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
         in_shape = get_shape(input)
-        sizes = cast(List[int], node.args[1])
+        # node.args[1] may contain "sym_size"
+        sizes = get_shape(node)
         expand_dims = self.check_expand_dims(sizes, in_shape)
         if expand_dims is None:
             return False
