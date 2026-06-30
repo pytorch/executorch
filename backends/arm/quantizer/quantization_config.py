@@ -21,6 +21,7 @@ from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
+    FixedQParamsQuantizationSpec,
     QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
@@ -355,6 +356,7 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         If node is a pooling or upsample operator, returns a shared quantization spec.
         If no weight spec is configured, return ``None``.
+        If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is floating-point.
 
         """
 
@@ -373,6 +375,39 @@ class TOSAQuantizationConfig(QuantizationConfig):
             return _get_fixed_qparams_qspec(
                 node.target, _fixed_output_qspec_ops, output_act_qspec
             )
+        if node.target == torch.ops.aten.to.dtype:
+            from executorch.backends.arm.quantizer.quantizer_support import CastCheck
+
+            input_node = node.all_input_nodes[0]
+            input_val = input_node.meta.get("val", None)
+            output_val = node.meta.get("val", None)
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_integer_to_integer(input_val.dtype, output_val.dtype)
+            ):
+                return None
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_integer_to_float(input_val.dtype, output_val.dtype)
+            ):
+                return FixedQParamsQuantizationSpec(
+                    dtype=input_val.dtype,
+                    scale=1.0,
+                    zero_point=0,
+                    quant_min=torch.iinfo(input_val.dtype).min,
+                    quant_max=torch.iinfo(input_val.dtype).max,
+                    qscheme=torch.per_tensor_symmetric,
+                    is_dynamic=False,
+                )
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_float_identity(input_val.dtype, output_val.dtype)
+            ):
+                return SharedQuantizationSpec((input_node, node))
+            return super().get_output_act_qspec(node)
         if node.target not in self.SHARED_OUTPUT_ACT_QSPEC_PATTERNS:
             return super().get_output_act_qspec()
         if len(node.args) == 0:

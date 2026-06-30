@@ -334,18 +334,18 @@ def test_to_tosa_INT_not_delegated(test_data: Tuple):
     pipeline.run()
 
 
-_TO_COPY_QUANTIZED_IDENTITY_CAST_DATA = {
-    "int8_cast_add": lambda: (
+_TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_DATA = {
+    "int8_to_fp32_add": lambda: (
         (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int8),
         torch.randn(1, 3, 4, 4),
         torch.float32,
     ),
-    "int16_cast_add": lambda: (
+    "int16_to_fp32_add": lambda: (
         (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int16),
         torch.randn(1, 3, 4, 4),
         torch.float32,
     ),
-    "int32_cast_add": lambda: (
+    "int32_to_fp32_add": lambda: (
         (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int32),
         torch.randn(1, 3, 4, 4),
         torch.float32,
@@ -353,14 +353,14 @@ _TO_COPY_QUANTIZED_IDENTITY_CAST_DATA = {
 }
 
 
-_TO_COPY_QUANTIZED_IDENTITY_CAST_CAT_DATA = {
-    "int8_cast_cat": lambda: (
+_TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_CAT_DATA = {
+    "int8_to_fp32_cat": lambda: (
         (torch.randn(1, 2, 4, 4) * 10).to(dtype=torch.int8),
         torch.randn(1, 2, 4, 1),
         torch.float32,
         3,
     ),
-    "int16_cast_cat": lambda: (
+    "int16_to_fp32_cat": lambda: (
         (torch.randn(1, 2, 4, 4) * 10).to(dtype=torch.int16),
         torch.randn(1, 2, 4, 1),
         torch.float32,
@@ -369,8 +369,8 @@ _TO_COPY_QUANTIZED_IDENTITY_CAST_CAT_DATA = {
 }
 
 
-@common.parametrize("test_data", _TO_COPY_QUANTIZED_IDENTITY_CAST_DATA)
-def test_to_tosa_INT_quantized_identity_cast_add(test_data: Tuple):
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_DATA)
+def test_to_tosa_INT_quantized_int_to_float_cast_add(test_data: Tuple):
     x, y, new_dtype = test_data()
     pipeline = TosaPipelineINT[input_t2](
         CastAddTensor(new_dtype),
@@ -388,8 +388,8 @@ def test_to_tosa_INT_quantized_identity_cast_add(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", _TO_COPY_QUANTIZED_IDENTITY_CAST_CAT_DATA)
-def test_to_tosa_INT_quantized_identity_cast_cat(test_data: Tuple):
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_CAT_DATA)
+def test_to_tosa_INT_quantized_int_to_float_cast_cat(test_data: Tuple):
     x, y, new_dtype, dim = test_data()
     pipeline = TosaPipelineINT[input_t2](
         CastCatTensor(new_dtype, dim),
@@ -400,8 +400,8 @@ def test_to_tosa_INT_quantized_identity_cast_cat(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", _TO_COPY_QUANTIZED_IDENTITY_CAST_DATA)
-def test_to_tosa_INT_quantized_identity_cast_to_unquantized_add_delegated(
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_DATA)
+def test_to_tosa_INT_quantized_int_to_float_cast_to_unquantized_add_delegated(
     test_data: Tuple,
 ):
     x, y, new_dtype = test_data()
@@ -419,6 +419,46 @@ def test_to_tosa_INT_quantized_identity_cast_to_unquantized_add_delegated(
             "torch.ops.higher_order.executorch_call_delegate": 1,
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 0,
         },
+    )
+    pipeline.run()
+
+
+_TO_COPY_INT_TO_INT_CAST_DATA = {
+    "int8_to_int16": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int8),
+        torch.int16,
+    ),
+    "int8_to_int32": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int8),
+        torch.int32,
+    ),
+    "int16_to_int8": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int16),
+        torch.int8,
+    ),
+    "int16_to_int32": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int16),
+        torch.int32,
+    ),
+    "int32_to_int8": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
+        torch.int8,
+    ),
+    "int32_to_int16": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
+        torch.int16,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_INT_TO_INT_CAST_DATA)
+def test_to_tosa_INT_int_to_int_cast(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
     )
     pipeline.run()
 
@@ -462,6 +502,25 @@ redundant_xfails_INT = redundant_xfails_FP | {
     "rand_fp16_fp16": "FP16 is not supported",
 }
 
+_TO_COPY_FLOAT_IDENTITY_CAST_DATA = {
+    "fp32_to_fp32": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.float32,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_FLOAT_IDENTITY_CAST_DATA)
+def test_to_tosa_INT_float_to_same_dtype_cast(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        CastAdd(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
+
 
 @common.parametrize(
     "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_FP
@@ -500,6 +559,36 @@ def test_to_tosa_INT_not_delegated_REDUNDANT_CAST(test_data: Tuple):
         Cast(new_dtype),
         (test_tensor,),
         non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
+    )
+    pipeline.run()
+
+
+_TO_COPY_UNSUPPORTED_QUANTIZED_CAST_DATA = {
+    "fp32_to_fp16": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.float16,
+    ),
+    "fp32_to_int32": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.int32,
+    ),
+    "bool_to_fp32": lambda: (
+        torch.randint(0, 2, (1, 2, 3, 4), dtype=torch.bool),
+        torch.float32,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_UNSUPPORTED_QUANTIZED_CAST_DATA)
+def test_to_tosa_INT_unsupported_cast_not_delegated(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+        quantize=True,
     )
     pipeline.run()
 
