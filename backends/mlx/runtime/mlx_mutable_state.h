@@ -195,6 +195,12 @@ void mutable_state_note_handle(
 
 void mutable_state_forget_handle(const void* handle);
 
+// True if a multi-session load scope (with_load_scope) is active on the current
+// thread. The MLXBackend uses this to reject skip_mutable_buffer_init when no
+// owner is active for the load — without an owner, no per-session buffers are
+// ever allocated and execute() would run against empty mutable buffers.
+bool mutable_state_load_scope_active();
+
 ::executorch::runtime::Error mutable_state_rebind_for_execute(
     const void* handle,
     ExecutionState& state);
