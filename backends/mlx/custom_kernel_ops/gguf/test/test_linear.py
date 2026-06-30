@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for the GGUF Q6_K / Q4_K linear lowering.
+Tests for the GGUF Q4_K / Q5_K / Q6_K linear lowering.
 
 A linear whose weight is an ``ExportableGGUFTensor`` (extension/llm/export/gguf)
 exports to ``linear(x, torchao::dequantize_gguf(weight, ggml_type, ...), bias)``.
@@ -36,6 +36,7 @@ from typing import List, Tuple
 import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
 import torch
 import torch.nn as nn
+from executorch.backends.mlx.custom_kernel_ops.gguf.q5k import Q5K_BLOCK_BYTES
 from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import Q6K_BLOCK_BYTES, QK_K
 from executorch.backends.mlx.test.test_utils import OpTestCase
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
@@ -94,7 +95,31 @@ def make_q4_k_blob(N: int, K: int, seed: int = 0) -> torch.Tensor:
     return out
 
 
-_BLOB_MAKERS = {"q6_k": make_q6_k_blob, "q4_k": make_q4_k_blob}
+def make_q5_k_blob(N: int, K: int, seed: int = 0) -> torch.Tensor:
+    """Build a ``(N, (K/256)*176)`` uint8 tensor of valid GGUF Q5_K blocks."""
+    assert K % QK_K == 0, f"K={K} must be a multiple of {QK_K}"
+    nb = K // QK_K
+    block_bytes = Q5K_BLOCK_BYTES  # d(2)+dmin(2)+scales(12)+qh(32)+qs(128) = 176
+    g = torch.Generator().manual_seed(seed)
+    out = torch.empty(N, nb * block_bytes, dtype=torch.uint8)
+    blocks = out.view(N, nb, block_bytes)
+    # d (0:2) / dmin (2:4): small finite fp16 super-block scale + min, so
+    # dequantized magnitudes stay O(0.1) like real Q5_K weights.
+    blocks[..., 0:2] = torch.tensor([7e-4], dtype=torch.float16).view(torch.uint8)
+    blocks[..., 2:4] = torch.tensor([7e-4], dtype=torch.float16).view(torch.uint8)
+    # scales+mins (4:16, 6-bit packed), qh (16:48, high bit), qs (48:176, low
+    # 4 bits): any bytes valid.
+    blocks[..., 4:block_bytes] = torch.randint(
+        0, 256, (N, nb, block_bytes - 4), dtype=torch.uint8, generator=g
+    )
+    return out
+
+
+_BLOB_MAKERS = {
+    "q6_k": make_q6_k_blob,
+    "q5_k": make_q5_k_blob,
+    "q4_k": make_q4_k_blob,
+}
 
 
 @contextmanager
@@ -263,6 +288,21 @@ class GGUFLinearTest(OpTestCase):
                 cfgs.append(
                     cls(ggml_type="q4_k", emit_direct_gguf=emit_direct, **shape)
                 )
+        # Q5_K: fused direct path only (no MLX-native repack). Decode (mat-vec),
+        # prefill (mat-mat), ragged M/N, plus a production-size shape.
+        cfgs.append(cls(ggml_type="q5_k", M=1, N=256, K=256, dtype=torch.bfloat16))
+        cfgs.append(cls(ggml_type="q5_k", M=1, N=512, K=1024, dtype=torch.bfloat16))
+        cfgs.append(cls(ggml_type="q5_k", M=1, N=256, K=256, dtype=torch.float16))
+        cfgs.append(cls(ggml_type="q5_k", M=1, N=256, K=256, dtype=torch.float32))
+        cfgs.append(
+            cls(ggml_type="q5_k", M=1, N=256, K=256, dtype=torch.bfloat16, bias=False)
+        )
+        cfgs.append(cls(ggml_type="q5_k", M=8, N=512, K=512, dtype=torch.bfloat16))
+        cfgs.append(cls(ggml_type="q5_k", M=128, N=512, K=512, dtype=torch.bfloat16))
+        cfgs.append(cls(ggml_type="q5_k", M=32, N=256, K=256, dtype=torch.float16))
+        cfgs.append(cls(ggml_type="q5_k", M=40, N=300, K=256, dtype=torch.bfloat16))
+        cfgs.append(cls(ggml_type="q5_k", M=1, N=300, K=256, dtype=torch.bfloat16))
+        cfgs.append(cls(ggml_type="q5_k", M=1, N=5376, K=5376, dtype=torch.bfloat16))
         return cfgs
 
     def generate_test_files(self, verbose: bool = False):
@@ -353,6 +393,10 @@ class GGUFLinearDynamicTest(OpTestCase):
                     emit_direct_gguf=emit_direct,
                 )
             )
+        # Q5_K dynamic: exercise both IfNode branches (decode mat-vec / prefill
+        # mat-mat) from a single symbolic-M export.
+        cfgs.append(cls(export_M=4, test_M=1, dtype=torch.bfloat16, ggml_type="q5_k"))
+        cfgs.append(cls(export_M=4, test_M=8, dtype=torch.bfloat16, ggml_type="q5_k"))
         return cfgs
 
     def get_dynamic_shapes(self):
@@ -409,7 +453,7 @@ if __name__ == "__main__":  # noqa: C901
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
     parser = argparse.ArgumentParser(
-        description="Test GGUF Q6_K / Q4_K linear lowering"
+        description="Test GGUF Q4_K / Q5_K / Q6_K linear lowering"
     )
     parser.add_argument(
         "action", choices=["generate", "compare", "run", "list", "eager"]
