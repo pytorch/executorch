@@ -35,7 +35,7 @@ from executorch.backends.mlx.test.test_utils import (
 
 
 class _LogitsPassthrough(nn.Module):
-    """Stand-in for a model returning logits [B, vocab]."""
+    """Stand-in for a model returning logits [B, S, vocab]."""
 
     def forward(self, logits: torch.Tensor) -> torch.Tensor:
         return logits
@@ -205,7 +205,7 @@ class TestSampleExport(unittest.TestCase):
         batch = 256
         torch.manual_seed(0)
         row = torch.randn(vocab)
-        logits = row.expand(batch, vocab).contiguous()  # [B, vocab]
+        logits = row.expand(batch, 1, vocab).contiguous()  # [B, S=1, vocab]
         seed = torch.tensor(0, dtype=torch.int64)
 
         run = torch.export.export(
@@ -224,7 +224,7 @@ class TestSampleExport(unittest.TestCase):
         # exported program, independent of host RNG state (the seed is a graph
         # input, not host-side stateful RNG). Different seed -> different draws.
         torch.manual_seed(0)
-        logits = torch.randn(128, 64)
+        logits = torch.randn(128, 1, 64)
         seed = torch.tensor(123, dtype=torch.int64)
 
         run = torch.export.export(
@@ -250,7 +250,7 @@ class TestSampleEndToEnd(unittest.TestCase):
 
     def test_top_p_end_to_end(self):
         # On-device nucleus: probs [0.5,0.3,0.15,0.05], top_p=0.9 -> token in {0,1,2}.
-        logits = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05])).view(1, 4)
+        logits = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05])).view(1, 1, 4)
         inputs = (
             logits,
             torch.tensor(1.0),
@@ -268,7 +268,7 @@ class TestSampleEndToEnd(unittest.TestCase):
 
     def test_top_k_end_to_end(self):
         # On-device top-k: probs [0.5,0.3,0.15,0.05], top_k=2 -> token in {0,1}.
-        logits = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05])).view(1, 4)
+        logits = torch.log(torch.tensor([0.5, 0.3, 0.15, 0.05])).view(1, 1, 4)
         inputs = (
             logits,
             torch.tensor(1.0),

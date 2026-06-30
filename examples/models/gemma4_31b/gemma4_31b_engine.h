@@ -28,7 +28,6 @@
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #elif defined(EXECUTORCH_BUILD_MLX)
-#include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/backends/mlx/runtime/mlx_mutable_state.h>
 #else
 #error "Gemma4_31BEngine requires EXECUTORCH_BUILD_CUDA or EXECUTORCH_BUILD_MLX"

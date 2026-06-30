@@ -996,10 +996,6 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
         comma = "," if i < len(op_nodes) - 1 else ""
         variant_lines.append(f"    {table.name}{comma}")
 
-    for_each_tid_lines = []
-    for table in op_nodes:
-        for_each_tid_lines.extend(_generate_for_each_tid_case(table))
-
     # Read template and fill placeholders
     header = "\n".join(_file_header("//")) + "\n//\n"
     tmpl = LOADER_H_TMPL.read_text()
@@ -1007,46 +1003,7 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
     result = result.replace("{{OPCODE_ENUM_VALUES}}", "\n".join(enum_lines))
     result = result.replace("{{OP_NAME_CASES}}", "\n".join(name_lines))
     result = result.replace("{{NODE_VARIANT_TYPES}}", "\n".join(variant_lines))
-    result = result.replace("{{FOR_EACH_TID_CASES}}", "\n".join(for_each_tid_lines))
     return header + result
-
-
-# for_each_tid emitters: invoke cb(Tid) for each Tid-bearing field. Field kinds
-# that carry no Tid (vid, int_or_vid, scalars, strings, int lists) emit nothing.
-def _emit_cpp_for_each_tid(kind: str, name: str) -> List[str]:
-    """Emit for_each_tid callback lines for a field kind ([] if it has no Tid)."""
-    if kind == "tid":
-        return [f"      cb(n.{name});"]
-    if kind == "optional_tid":
-        return [f"      if (n.{name}.has_value()) cb(*n.{name});"]
-    if kind == "list_tid":
-        return [f"      for (const auto& tid_elem : n.{name}) cb(tid_elem);"]
-    if kind == "vid_or_tid":
-        return [f"      if (!n.{name}.is_vid) cb(n.{name}.tid);"]
-    if kind == "int_or_vid_or_tid":
-        return [f"      if (n.{name}.kind == 2) cb(n.{name}.tid);"]
-    return []
-
-
-def _generate_for_each_tid_case(table: FBSTable) -> List[str]:
-    """Generate a switch case for for_each_tid over one op node."""
-    class_name = table.name
-    op_code = _table_name_to_opcode(class_name)
-
-    body: List[str] = []
-    for fld in table.fields:
-        if fld.name.endswith("_is_set"):
-            continue
-        kind = _get_field_kind(fld, table)
-        body.extend(_emit_cpp_for_each_tid(kind, fld.name))
-
-    lines = [f"    case OpCode::{op_code}: {{"]
-    if body:
-        lines.append(f"      const auto& n = std::get<{class_name}>(instr.node);")
-        lines.extend(body)
-    lines.append("      break;")
-    lines.append("    }")
-    return lines
 
 
 def _is_interned_str(table, field_name) -> bool:
