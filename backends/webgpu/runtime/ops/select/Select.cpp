@@ -201,6 +201,7 @@ void select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           throw std::runtime_error("select(resize): index out of range");
         }
         std::vector<int64_t> od;
+        od.reserve(ind.size() - 1);
         for (size_t k = 0; k < ind.size(); k++) {
           if (static_cast<int>(k) != dim) {
             od.push_back(ind[k]);
