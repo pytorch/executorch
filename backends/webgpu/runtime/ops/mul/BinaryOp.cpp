@@ -63,8 +63,8 @@ void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   uint32_t wg_size =
       utils::clamp_workgroup_size(device, kBinaryMulWorkgroupSizeX);
-  uint32_t workgroup_count =
-      utils::compute_1d_workgroup_count(device, out_meta.numel, wg_size, "mul");
+  utils::WgCount workgroup_count =
+      utils::compute_2d_workgroup_count(device, out_meta.numel, wg_size, "mul");
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -165,8 +165,8 @@ void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  const size_t dispatch_idx =
-      graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count.x, "mul", workgroup_count.y});
 
   // Dynamic shapes: rebuild all 3 broadcast TensorMeta UBOs + dispatch.
   WGPUBuffer o_buf = out_meta_buf, a_buf = in1_meta_buf, b_buf = in2_meta_buf;
@@ -199,9 +199,10 @@ void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         wgpuQueueWriteBuffer(g.queue(), o_buf, 0, &om, sizeof(om));
         wgpuQueueWriteBuffer(g.queue(), a_buf, 0, &am, sizeof(am));
         wgpuQueueWriteBuffer(g.queue(), b_buf, 0, &bm, sizeof(bm));
-        g.dispatch_at(dispatch_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(
-                g.device(), om.numel, wg_size, "mul(resize)");
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(), om.numel, wg_size, "mul(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
       };
   graph.add_tensor_resize_hook(in1_id, mul_resize);
   graph.add_tensor_resize_hook(in2_id, mul_resize);
