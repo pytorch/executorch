@@ -40,6 +40,7 @@ TEST_F(RegisterPrimOpsTest, OpRegistered) {
   EXPECT_TRUE(hasOpsFn("aten::sym_numel"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_max.Scalar"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_min.Scalar"));
+  EXPECT_TRUE(hasOpsFn("executorch_prim::sym_not.Scalar"));
 }
 
 TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
@@ -164,6 +165,26 @@ TEST_F(RegisterPrimOpsTest, SymMinReturnsCorrectValue) {
   values[2] = EValue(out);
   getOpsFn("executorch_prim::sym_min.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[2]->toInt(), -5);
+}
+
+TEST_F(RegisterPrimOpsTest, SymNotReturnsCorrectValue) {
+  EValue values[2];
+  values[0] = EValue(true);
+  values[1] = EValue(false);
+
+  EValue* stack[2];
+  for (size_t i = 0; i < 2; i++) {
+    stack[i] = &values[i];
+  }
+
+  getOpsFn("executorch_prim::sym_not.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[1]->toBool(), false);
+
+  // Test not(false) -> true
+  values[0] = EValue(false);
+  values[1] = EValue(false);
+  getOpsFn("executorch_prim::sym_not.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[1]->toBool(), true);
 }
 
 TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
