@@ -243,6 +243,9 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        params_buf](WebGPUGraph& g) {
         const auto& id = g.cur_dims(indices_id);
         const uint64_t ni = utils::numel_of(id);
+        if (ni == 0) {
+          throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
+        }
         const uint64_t total_blocks = ni * blocks_per_row;
         if (total_blocks > UINT32_MAX) {
           throw std::runtime_error(

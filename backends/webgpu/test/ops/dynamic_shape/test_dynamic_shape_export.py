@@ -87,6 +87,20 @@ class RmsMulModule(torch.nn.Module):
         return _rms(x, self.w, self.eps) * x
 
 
+class SigmoidModule(torch.nn.Module):
+    """sigmoid(x) — elementwise; resize hook recomputes dispatch from live numel."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sigmoid(x)
+
+
+class SelectModule(torch.nn.Module):
+    """x.select(0, -1) — negative index resolved live + dynamic output dispatch."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.select(0, -1)
+
+
 def _ramp(shape) -> torch.Tensor:
     n = 1
     for d in shape:
@@ -96,7 +110,9 @@ def _ramp(shape) -> torch.Tensor:
 
 def _export(model, example_inputs, dynamic_shapes, path: str) -> None:
     ep = torch.export.export(model, example_inputs, dynamic_shapes=dynamic_shapes)
-    et = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()]).to_executorch()
+    et = to_edge_transform_and_lower(
+        ep, partitioner=[VulkanPartitioner()]
+    ).to_executorch()
     found = any(
         d.id == "VulkanBackend"
         for plan in et.executorch_program.execution_plan
@@ -179,6 +195,19 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     # 2g) Interleaved RoPE with a DYNAMIC seq-len S (two outputs xq/xk).
     _export_dynamic_rope(out_dir)
 
+    # 2h) Elementwise sigmoid with a DYNAMIC seq-len S.
+    sig = SigmoidModule()
+    _export(
+        sig,
+        (_ramp((1, 1, MAXS, HIDDEN)),),
+        {"x": {2: s_dim}},
+        os.path.join(out_dir, "dyn_sigmoid.pte"),
+    )
+    _write_goldens(sig, "dyn_sigmoid", out_dir, [MAXS, 32, 1])
+
+    # 2i) select_copy(0, -1) over a DYNAMIC seq-len S (negative live index).
+    _export_dynamic_select(out_dir)
+
     # 3) Static rms_norm (no dynamic dim) — regression: must stay byte-identical.
     static = RmsNormModule(HIDDEN)
     _export(
@@ -207,7 +236,9 @@ def _export_dynamic_linear(out_dir: str) -> None:
     x = _ramp((LIN_MAXM, LIN_K))
     m_dim = torch.export.Dim("m", min=1, max=LIN_MAXM)
     ep = torch.export.export(model, (x,), dynamic_shapes=({0: m_dim},))
-    et = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()]).to_executorch()
+    et = to_edge_transform_and_lower(
+        ep, partitioner=[VulkanPartitioner()]
+    ).to_executorch()
     assert any(
         d.id == "VulkanBackend"
         for plan in et.executorch_program.execution_plan
@@ -250,7 +281,9 @@ def _export_dynamic_sdpa(out_dir: str) -> None:
     s_dim = torch.export.Dim("s", min=1, max=SD_MAXS)
     ds = ({1: s_dim}, {1: s_dim}, {1: s_dim}, None, None)
     ep = torch.export.export(model, (q, k, v, kc, vc), dynamic_shapes=ds)
-    et = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()]).to_executorch()
+    et = to_edge_transform_and_lower(
+        ep, partitioner=[VulkanPartitioner()]
+    ).to_executorch()
     assert any(
         d.id == "VulkanBackend"
         for plan in et.executorch_program.execution_plan
@@ -263,7 +296,14 @@ def _export_dynamic_sdpa(out_dir: str) -> None:
         c = cfg(s)
         q, k, v, kc, vc = _det_inputs(c)
         g = _golden(c, q, k, v, kc, vc)
-        for name, t in [("q", q), ("k", k), ("v", v), ("kc", kc), ("vc", vc), ("golden", g)]:
+        for name, t in [
+            ("q", q),
+            ("k", k),
+            ("v", v),
+            ("kc", kc),
+            ("vc", vc),
+            ("golden", g),
+        ]:
             t.detach().cpu().numpy().astype("<f4").tofile(
                 os.path.join(out_dir, f"sdpa_dyn.S{s}.{name}.bin")
             )
@@ -289,7 +329,9 @@ def _export_dynamic_embedding(out_dir: str) -> None:
     idx_max = torch.arange(EMB_MAXN, dtype=torch.long)
     n_dim = torch.export.Dim("n", min=1, max=EMB_MAXN)
     ep = torch.export.export(qm, (idx_max,), dynamic_shapes=({0: n_dim},))
-    et = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()]).to_executorch()
+    et = to_edge_transform_and_lower(
+        ep, partitioner=[VulkanPartitioner()]
+    ).to_executorch()
     assert any(
         d.id == "VulkanBackend"
         for plan in et.executorch_program.execution_plan
@@ -331,8 +373,12 @@ def _export_dynamic_rope(out_dir: str) -> None:
     xq, xk, fc, fs = _inputs(Shape("dyn", 1, ROPE_MAXS, ROPE_NH, ROPE_NKV, ROPE_HD))
     s_dim = torch.export.Dim("s", min=1, max=ROPE_MAXS)
     ds = ({1: s_dim}, {1: s_dim}, {0: s_dim}, {0: s_dim})
-    ep = torch.export.export(RotaryEmbedding().eval(), (xq, xk, fc, fs), dynamic_shapes=ds)
-    et = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()]).to_executorch()
+    ep = torch.export.export(
+        RotaryEmbedding().eval(), (xq, xk, fc, fs), dynamic_shapes=ds
+    )
+    et = to_edge_transform_and_lower(
+        ep, partitioner=[VulkanPartitioner()]
+    ).to_executorch()
     assert any(
         d.id == "VulkanBackend"
         for plan in et.executorch_program.execution_plan
@@ -344,11 +390,54 @@ def _export_dynamic_rope(out_dir: str) -> None:
     for s in [ROPE_MAXS, 8, 1]:
         xq, xk, fc, fs = _inputs(Shape("dyn", 1, s, ROPE_NH, ROPE_NKV, ROPE_HD))
         gq, gk = _golden(xq, xk, fc, fs)
-        for name, t in [("xq", xq), ("xk", xk), ("fc", fc), ("fs", fs), ("gq", gq), ("gk", gk)]:
+        for name, t in [
+            ("xq", xq),
+            ("xk", xk),
+            ("fc", fc),
+            ("fs", fs),
+            ("gq", gq),
+            ("gk", gk),
+        ]:
             t.detach().cpu().numpy().astype("<f4").tofile(
                 os.path.join(out_dir, f"rope_dyn.S{s}.{name}.bin")
             )
         print(f"  golden rope_dyn S={s}")
+
+
+# Dynamic select_copy: input [2, 1, S, HIDDEN], select(0, -1) -> [1, S, HIDDEN].
+SEL_LEAD = 2
+
+
+def _export_dynamic_select(out_dir: str) -> None:
+    model = SelectModule()
+    s_dim = torch.export.Dim("s", min=1, max=MAXS)
+    ep = torch.export.export(
+        model,
+        (_ramp((SEL_LEAD, 1, MAXS, HIDDEN)),),
+        dynamic_shapes=({2: s_dim},),
+    )
+    et = to_edge_transform_and_lower(
+        ep, partitioner=[VulkanPartitioner()]
+    ).to_executorch()
+    assert any(
+        d.id == "VulkanBackend"
+        for plan in et.executorch_program.execution_plan
+        for d in plan.delegates
+    ), "select_copy not delegated"
+    with open(os.path.join(out_dir, "dyn_select.pte"), "wb") as f:
+        f.write(et.buffer)
+    print("Exported dyn_select.pte")
+    for s in [MAXS, 32, 1]:
+        x = _ramp((SEL_LEAD, 1, s, HIDDEN))
+        with torch.no_grad():
+            g = model(x)
+        x.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"dyn_select.S{s}.input.bin")
+        )
+        g.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"dyn_select.S{s}.golden.bin")
+        )
+        print(f"  golden dyn_select S={s} (shape {tuple(g.shape)})")
 
 
 class TestDynamicShapeExport(unittest.TestCase):
