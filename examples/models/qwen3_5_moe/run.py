@@ -38,10 +38,15 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
 
-def _sampling_scalars(temperature: float, top_p: float, seed: int):
-    """0-dim scalar inputs for a --sample model's forward(tokens, pos, T, p, s)."""
+def _sampling_scalars(temperature: float, top_k: int, top_p: float, seed: int):
+    """0-dim scalar inputs for a --sample model's forward(tokens, pos, T, k, p, s).
+
+    top_k <= 0 means "keep all" -> the max int64 (clipped to vocab on-device).
+    """
+    k = torch.iinfo(torch.int64).max if top_k <= 0 else int(top_k)
     return [
         torch.tensor(float(temperature), dtype=torch.float32),
+        torch.tensor(k, dtype=torch.int64),
         torch.tensor(float(top_p), dtype=torch.float32),
         torch.tensor(int(seed), dtype=torch.int64),
     ]
@@ -65,6 +70,7 @@ def run_inference(  # noqa: C901
     max_new_tokens: int = 10,
     vocab_size: int = 248320,
     temperature: float = 0.0,
+    top_k: int = 0,
     top_p: float = 1.0,
     seed: int = -1,
 ) -> None:
@@ -85,25 +91,25 @@ def run_inference(  # noqa: C901
     except Exception:
         logger.info(f"No vocab size in metadata, using default: {vocab_size}")
 
-    # On-device sampling models (export.py --sample) take temperature/top_p/seed
-    # runtime inputs and return a token id directly instead of logits.
+    # On-device sampling models (export.py --sample) take temperature/top_k/top_p/
+    # seed runtime inputs and return a token id directly instead of logits.
     use_sampling = False
     if "use_sampling" in program.method_names:
         result = program.load_method("use_sampling").execute([])
         use_sampling = bool(
             result[0] if isinstance(result[0], int) else result[0].item()
         )
-    if not use_sampling and (top_p != 1.0 or seed >= 0):
+    if not use_sampling and (top_k != 0 or top_p != 1.0 or seed >= 0):
         raise ValueError(
-            "top_p/seed require a model exported with --sample; this .pte only "
-            "supports --temperature (host-side sampling)."
+            "top_k/top_p/seed require a model exported with --sample; this .pte "
+            "only supports --temperature (host-side sampling)."
         )
     if use_sampling:
         if seed < 0:
             seed = random.randrange(2**32)
         logger.info(
-            f"On-device sampling: temperature={temperature}, top_p={top_p}, "
-            f"base seed={seed} (incremented per token)"
+            f"On-device sampling: temperature={temperature}, top_k={top_k}, "
+            f"top_p={top_p}, base seed={seed} (incremented per token)"
         )
 
     # Tokenize or generate random tokens
@@ -146,7 +152,7 @@ def run_inference(  # noqa: C901
     warmup_pos = torch.tensor([0], dtype=torch.long)
     warmup_inputs = [warmup_tokens, warmup_pos]
     if use_sampling:
-        warmup_inputs += _sampling_scalars(temperature, top_p, 0)
+        warmup_inputs += _sampling_scalars(temperature, top_k, top_p, 0)
     forward.execute(warmup_inputs)
 
     # --- Prefill ---
@@ -156,7 +162,7 @@ def run_inference(  # noqa: C901
     input_pos = torch.arange(prompt_len, dtype=torch.long)
     prefill_inputs = [input_ids, input_pos]
     if use_sampling:
-        prefill_inputs += _sampling_scalars(temperature, top_p, seed)
+        prefill_inputs += _sampling_scalars(temperature, top_k, top_p, seed)
     outputs = forward.execute(prefill_inputs)
     next_token = _next_token(outputs, use_sampling, temperature)
 
@@ -185,7 +191,7 @@ def run_inference(  # noqa: C901
         decode_inputs = [token_input, input_pos]
         if use_sampling:
             decode_inputs += _sampling_scalars(
-                temperature, top_p, seed + len(generated_tokens)
+                temperature, top_k, top_p, seed + len(generated_tokens)
             )
         outputs = forward.execute(decode_inputs)
         t2 = time.time()
@@ -278,6 +284,13 @@ def main():
         help="Sampling temperature (0.0 = greedy)",
     )
     parser.add_argument(
+        "--top-k",
+        type=int,
+        default=0,
+        help="Top-k sampling; keep the k most likely tokens. 0 (default) = off "
+        "(keep all). Only used by a model exported with --sample.",
+    )
+    parser.add_argument(
         "--top-p",
         type=float,
         default=1.0,
@@ -306,6 +319,7 @@ def main():
         max_new_tokens=args.max_new_tokens,
         vocab_size=args.vocab_size,
         temperature=args.temperature,
+        top_k=args.top_k,
         top_p=args.top_p,
         seed=args.seed,
     )

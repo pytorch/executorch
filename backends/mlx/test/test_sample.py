@@ -41,6 +41,12 @@ class _LogitsPassthrough(nn.Module):
         return logits
 
 
+# Baked constants for sampling params a fixture does not expose as a runtime
+# input: keep-all top_k and top_p=off.
+_KEEP_ALL_TOP_K = torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64)
+_TOP_P_OFF = torch.tensor(1.0)
+
+
 class SeededSampleModel(nn.Module):
     """SamplingHead with temperature AND seed as runtime forward inputs."""
 
@@ -49,7 +55,7 @@ class SeededSampleModel(nn.Module):
         self.head = SamplingHead(_LogitsPassthrough())
 
     def forward(self, logits, temperature, seed):
-        return self.head(logits, temperature=temperature, seed=seed)
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, seed)
 
 
 class TopPSampleModel(nn.Module):
@@ -60,7 +66,7 @@ class TopPSampleModel(nn.Module):
         self.head = SamplingHead(_LogitsPassthrough())
 
     def forward(self, logits, temperature, seed, top_p):
-        return self.head(logits, temperature=temperature, seed=seed, top_p=top_p)
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, top_p, seed)
 
 
 class TopKSampleModel(nn.Module):
@@ -71,7 +77,7 @@ class TopKSampleModel(nn.Module):
         self.head = SamplingHead(_LogitsPassthrough())
 
     def forward(self, logits, temperature, seed, top_k):
-        return self.head(logits, temperature=temperature, seed=seed, top_k=top_k)
+        return self.head(logits, temperature, top_k, _TOP_P_OFF, seed)
 
 
 def _ref_gumbel_max(logits: torch.Tensor, temperature: float, seed: int):
