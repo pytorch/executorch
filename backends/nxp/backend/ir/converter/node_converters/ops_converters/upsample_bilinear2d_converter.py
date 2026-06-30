@@ -6,12 +6,12 @@
 import numpy as np
 import torch
 
-from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import node_has_well_defined_shape
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     is_not_qdq_node,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.resize_bilinear_options import (
     ResizeBilinear,
@@ -23,6 +23,7 @@ from torch.nn import Parameter
 
 
 # noinspection SpellCheckingInspection
+@requires_channels_first_format
 class UpsampleBilinear2DConverter(NodeConverter):
 
     @classmethod
@@ -53,14 +54,6 @@ class UpsampleBilinear2DConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-
-        if node.meta.get(NXP_NODE_FORMAT, DataFormat.NONE) != DataFormat.CHANNELS_FIRST:
-            # This should never happen.
-            raise NotImplementedError(
-                "NXP backend: `aten.upsample_bilinear2d.vec` didn't have correctly identified data"
-                " format. Please report this."
-            )
-
         # The conversion requires the output shape to be known and static.
         if not node_has_well_defined_shape(node):
             return False
