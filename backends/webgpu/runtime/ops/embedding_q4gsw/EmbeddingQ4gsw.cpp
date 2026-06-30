@@ -30,7 +30,7 @@ struct EmbeddingParams {
   uint32_t groups_per_row;
   uint32_t bytes_per_row;
   uint32_t total_blocks;
-  uint32_t _pad;
+  uint32_t is_linear_weight;
 };
 static_assert(
     sizeof(EmbeddingParams) == 32,
@@ -60,7 +60,8 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& indices = graph.get_tensor(indices_id);
   const auto& out = graph.get_tensor(out_id);
 
-  // Only the flat weight path is supported (linear-block unsupported).
+  // is_linear_weight selects the nibble packing (false: even dim = high nibble;
+  // true: even dim = low nibble). The shader handles both via a uniform.
   bool is_linear = false;
   if (graph.get_value_type(is_linear_weight_id) ==
       WebGPUGraph::ValueType::Bool) {
@@ -72,10 +73,6 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   } else {
     throw std::runtime_error(
         "WebGPU embedding_q4gsw: is_linear_weight must be Bool or Int");
-  }
-  if (is_linear) {
-    throw std::runtime_error(
-        "WebGPU embedding_q4gsw: is_linear_weight=true is unsupported");
   }
 
   if (weight.dims.size() < 2 || scales.dims.size() < 2 || out.dims.empty() ||
@@ -150,6 +147,7 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.groups_per_row = groups_per_row;
   params.bytes_per_row = bytes_per_row;
   params.total_blocks = static_cast<uint32_t>(total_blocks);
+  params.is_linear_weight = is_linear ? 1u : 0u;
 
   WGPUBufferDescriptor uniform_desc = {};
   uniform_desc.size = sizeof(EmbeddingParams);
