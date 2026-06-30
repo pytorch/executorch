@@ -31,9 +31,9 @@ def pytest_configure(config):
     config._test_seed_label = seed_label
 
     if os.environ.get("TEST_RUNTIME_IS_NOT_OSS", "0") != "1":
-        # This imports/uses torch early and that don't work in some buck2 tests environemnts
-        # As this just stricts up randomnes so testing is less flakey this is mostly meant for
-        # the project testing in the repo anyway.
+        # This imports/uses torch early, which doesn't work in some Buck2 test environments.
+        # Since this only makes randomness deterministic (reducing flakiness), it's mainly meant for
+        # local/OSS project test runs.
         _set_random_seed(seed)
 
 
