@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <cerrno>
 #endif
@@ -636,16 +637,12 @@ bool XNNWeightsCache::load_packed_cache() {
     close(fd);
     return false;
   }
-  // Use lseek instead of fstat: fstat is on Apple's Required Reason API
-  // list (file-timestamp category), which would force every iOS consumer
-  // of this header to declare a PrivacyInfo reason. lseek is not on the
-  // list and yields the same byte count for a regular file.
-  off_t end_off = lseek(fd, 0, SEEK_END);
-  if (end_off < 20) {
+  struct stat st {};
+  if (fstat(fd, &st) != 0 || st.st_size < 20) {
     close(fd);
     return false;
   }
-  size_t file_size = static_cast<size_t>(end_off);
+  size_t file_size = static_cast<size_t>(st.st_size);
 
   uint8_t footer[20];
   if (pread(fd, footer, 20, file_size - 20) != 20) {
