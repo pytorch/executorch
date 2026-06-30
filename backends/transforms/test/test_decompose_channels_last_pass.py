@@ -48,6 +48,27 @@ class _AvgPoolModule(torch.nn.Module):
         )
 
 
+class _AdaptiveAvgPoolModule(torch.nn.Module):
+    def forward(self, x):
+        return torch.ops.channels_last.adaptive_avg_pool2d(x, [4, 4])
+
+
+class _UpsampleBilinearModule(torch.nn.Module):
+    def forward(self, x):
+        return torch.ops.channels_last.upsample_bilinear2d(x, [16, 16], False, None)
+
+
+class _UpsampleBilinearScaleModule(torch.nn.Module):
+    # output_size=None with scale_factors (the other upsample.vec branch).
+    def forward(self, x):
+        return torch.ops.channels_last.upsample_bilinear2d(x, None, False, [2.0, 2.0])
+
+
+class _UpsampleNearestModule(torch.nn.Module):
+    def forward(self, x):
+        return torch.ops.channels_last.upsample_nearest2d(x, [16, 16], None)
+
+
 class _PermuteModule(torch.nn.Module):
     def forward(self, x):
         return torch.ops.channels_last.permute_copy(x, [0, 3, 1, 2])
@@ -73,6 +94,34 @@ _CASES = [
         (torch.randn(2, 8, 8, 3),),
         exir_ops.edge.channels_last.avg_pool2d.default,
         exir_ops.edge.aten.avg_pool2d.default,
+        2,
+    ),
+    (
+        _AdaptiveAvgPoolModule(),
+        (torch.randn(2, 8, 8, 3),),
+        exir_ops.edge.channels_last.adaptive_avg_pool2d.default,
+        exir_ops.edge.aten._adaptive_avg_pool2d.default,
+        2,
+    ),
+    (
+        _UpsampleBilinearModule(),
+        (torch.randn(2, 8, 8, 3),),
+        exir_ops.edge.channels_last.upsample_bilinear2d.default,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
+        2,
+    ),
+    (
+        _UpsampleBilinearScaleModule(),
+        (torch.randn(2, 8, 8, 3),),
+        exir_ops.edge.channels_last.upsample_bilinear2d.default,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
+        2,
+    ),
+    (
+        _UpsampleNearestModule(),
+        (torch.randn(2, 8, 8, 3),),
+        exir_ops.edge.channels_last.upsample_nearest2d.default,
+        exir_ops.edge.aten.upsample_nearest2d.vec,
         2,
     ),
     (

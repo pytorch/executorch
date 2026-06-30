@@ -55,6 +55,26 @@ def _avg_pool2d(
     return out.permute(0, 2, 3, 1).contiguous()
 
 
+def _adaptive_avg_pool2d(input, output_size):
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.adaptive_avg_pool2d(nchw, output_size)
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
+def _upsample_bilinear2d(input, output_size, align_corners, scale_factors):
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.upsample_bilinear2d.vec(
+        nchw, output_size, align_corners, scale_factors
+    )
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
+def _upsample_nearest2d(input, output_size, scale_factors):
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.upsample_nearest2d.vec(nchw, output_size, scale_factors)
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
 def _permute_copy(input, dims):
     return torch.ops.aten.permute_copy(input, dims).contiguous()
 
@@ -73,6 +93,24 @@ lib.define(
 )
 lib.impl("avg_pool2d", _avg_pool2d, "CompositeExplicitAutograd")
 register_fake("channels_last::avg_pool2d", _avg_pool2d, lib=lib)
+
+lib.define("adaptive_avg_pool2d(Tensor input, int[2] output_size) -> Tensor")
+lib.impl("adaptive_avg_pool2d", _adaptive_avg_pool2d, "CompositeExplicitAutograd")
+register_fake("channels_last::adaptive_avg_pool2d", _adaptive_avg_pool2d, lib=lib)
+
+lib.define(
+    "upsample_bilinear2d(Tensor input, int[]? output_size, bool align_corners, "
+    "float[]? scale_factors) -> Tensor"
+)
+lib.impl("upsample_bilinear2d", _upsample_bilinear2d, "CompositeExplicitAutograd")
+register_fake("channels_last::upsample_bilinear2d", _upsample_bilinear2d, lib=lib)
+
+lib.define(
+    "upsample_nearest2d(Tensor input, int[]? output_size, float[]? scale_factors) "
+    "-> Tensor"
+)
+lib.impl("upsample_nearest2d", _upsample_nearest2d, "CompositeExplicitAutograd")
+register_fake("channels_last::upsample_nearest2d", _upsample_nearest2d, lib=lib)
 
 lib.define("permute_copy(Tensor input, int[] dims) -> Tensor")
 lib.impl("permute_copy", _permute_copy, "CompositeExplicitAutograd")

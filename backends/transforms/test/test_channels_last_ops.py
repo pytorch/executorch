@@ -125,6 +125,44 @@ def test_permute_copy_moves_data(dims):
     assert actual.is_contiguous()
 
 
+def test_adaptive_avg_pool2d_matches_aten():
+    torch.manual_seed(0)
+    nchw = torch.randn(2, 3, 8, 8)
+    nhwc = _to_nhwc(nchw)
+
+    expected = _to_nhwc(torch.ops.aten.adaptive_avg_pool2d(nchw, [4, 4]))
+    actual = torch.ops.channels_last.adaptive_avg_pool2d(nhwc, [4, 4])
+
+    assert actual.shape == expected.shape
+    assert torch.allclose(actual, expected, atol=1e-5)
+
+
+def test_upsample_bilinear2d_matches_aten():
+    torch.manual_seed(0)
+    nchw = torch.randn(2, 3, 8, 8)
+    nhwc = _to_nhwc(nchw)
+
+    expected = _to_nhwc(
+        torch.ops.aten.upsample_bilinear2d.vec(nchw, [16, 16], False, None)
+    )
+    actual = torch.ops.channels_last.upsample_bilinear2d(nhwc, [16, 16], False, None)
+
+    assert actual.shape == expected.shape
+    assert torch.allclose(actual, expected, atol=1e-5)
+
+
+def test_upsample_nearest2d_matches_aten():
+    torch.manual_seed(0)
+    nchw = torch.randn(2, 3, 8, 8)
+    nhwc = _to_nhwc(nchw)
+
+    expected = _to_nhwc(torch.ops.aten.upsample_nearest2d.vec(nchw, [16, 16], None))
+    actual = torch.ops.channels_last.upsample_nearest2d(nhwc, [16, 16], None)
+
+    assert actual.shape == expected.shape
+    assert torch.allclose(actual, expected, atol=1e-5)
+
+
 def test_convolution_lowers_to_edge_dialect():
     class M(torch.nn.Module):
         def forward(self, x, w, b):

@@ -17,6 +17,9 @@ _NCHW_TO_NHWC = [0, 2, 3, 1]
 _DECOMPOSITIONS = {
     exir_ops.edge.channels_last.convolution.default: exir_ops.edge.aten.convolution.default,
     exir_ops.edge.channels_last.avg_pool2d.default: exir_ops.edge.aten.avg_pool2d.default,
+    exir_ops.edge.channels_last.adaptive_avg_pool2d.default: exir_ops.edge.aten._adaptive_avg_pool2d.default,
+    exir_ops.edge.channels_last.upsample_bilinear2d.default: exir_ops.edge.aten.upsample_bilinear2d.vec,
+    exir_ops.edge.channels_last.upsample_nearest2d.default: exir_ops.edge.aten.upsample_nearest2d.vec,
 }
 
 
