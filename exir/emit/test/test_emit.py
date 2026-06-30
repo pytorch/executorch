@@ -2408,18 +2408,18 @@ class TestEmit(unittest.TestCase):
     def test_emit_sym_not(self) -> None:
         class SymNotModel(nn.Module):
             def forward(self, x):
-                batch_size = x.shape[0]
-                is_large = batch_size > 10
-                is_small = torch.sym_not(is_large)
-                out_size = batch_size if is_small else 10
-                return torch.zeros(out_size, dtype=x.dtype, device=x.device)
+                n = x.shape[0]
+                flag = n > 5
+                neg = torch.sym_not(flag)
+                val = torch.sym_float(neg)
+                return x + val
 
         model = SymNotModel()
-        test_inputs = [
-            torch.randn(5, 3),   # is_small=True, output zeros(5)
-            torch.randn(15, 3),  # is_small=False, output zeros(10)
-        ]
         model.eval()
+        test_inputs = [
+            torch.randn(3, 4),   # n<=5: sym_not(False)=True, float(True)=1.0
+            torch.randn(8, 4),   # n>5: sym_not(True)=False, float(False)=0.0
+        ]
         reference_outputs = []
         with torch.no_grad():
             for inp in test_inputs:
@@ -2430,6 +2430,15 @@ class TestEmit(unittest.TestCase):
         exported_program = torch.export.export(
             model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
         )
+        sym_not_nodes = [
+            n
+            for n in exported_program.graph.nodes
+            if n.op == "call_function" and n.target is torch.sym_not
+        ]
+        self.assertGreater(
+            len(sym_not_nodes), 0, "sym_not should appear in exported graph"
+        )
+
         edge_program = to_edge(
             exported_program,
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
