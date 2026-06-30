@@ -15,6 +15,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
@@ -186,6 +187,7 @@ void WebGPUGraph::set_cur_dims(
   }
   size_t numel = 1;
   for (size_t d = 0; d < new_dims.size(); d++) {
+    // 0-sized dims unsupported: live shapes are always in [1, max] per dim.
     if (new_dims[d] <= 0) {
       throw std::runtime_error("WebGPU resize: new dim must be positive");
     }
@@ -206,6 +208,11 @@ void WebGPUGraph::set_cur_dims(
 void WebGPUGraph::resize_input(
     int value_id,
     const std::vector<int64_t>& new_dims) {
+  if (std::find(input_ids_.begin(), input_ids_.end(), value_id) ==
+      input_ids_.end()) {
+    throw std::runtime_error(
+        "WebGPUGraph::resize_input: value_id is not a graph input");
+  }
   set_cur_dims(value_id, new_dims);
 }
 
