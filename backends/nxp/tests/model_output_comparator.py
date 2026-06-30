@@ -122,7 +122,7 @@ class AllCloseOutputComparator(BaseOutputComparator):
             all_close = np.allclose(cpu_tensor, npu_tensor, atol=self.atol)
             max_diff = None
             if not all_close:
-                max_diff = np.abs(cpu_tensor - npu_tensor).max()
+                max_diff = np.abs(np.float32(cpu_tensor) - np.float32(npu_tensor)).max()
             assert (
                 all_close
             ), f"NPU output doesn't match reference. Maximum absolute difference: {max_diff}"
