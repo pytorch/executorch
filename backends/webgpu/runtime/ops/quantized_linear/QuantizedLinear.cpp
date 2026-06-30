@@ -52,7 +52,8 @@ uint32_t compute_q4gsw_workgroup_count(
     const char* op_name) {
   if (use_gemv) {
     // coop4: fixed 64 lanes, 1 workgroup per output, grid-strided over M*N.
-    const uint64_t outputs = static_cast<uint64_t>(m) * static_cast<uint64_t>(n);
+    const uint64_t outputs =
+        static_cast<uint64_t>(m) * static_cast<uint64_t>(n);
     if (outputs == 0u || outputs > UINT32_MAX) {
       throw std::runtime_error(
           std::string("WebGPU ") + op_name + ": M*N out of range");
@@ -272,8 +273,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  const size_t dispatch_idx =
-      graph.add_dispatch({pipeline, bind_group, workgroup_count, "linear_q4gsw"});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count, "linear_q4gsw"});
 
   // Dynamic shapes: recompute dispatch + params.M for the live M.
   WGPUBuffer params_buf = uniform_buffer;
@@ -293,6 +294,9 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        dispatch_idx,
        params_buf](WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
+        if (d.empty()) {
+          throw std::runtime_error("WebGPU linear_q4gsw: empty input dims");
+        }
         const uint64_t numel = utils::numel_of(d);
         if (numel % static_cast<uint64_t>(K) != 0u) {
           throw std::runtime_error(
