@@ -9,7 +9,6 @@ import torch
 from executorch.backends.nxp.backend.edge_helper import node_has_well_defined_shape
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
     requires_channels_first_format,
 )
@@ -37,9 +36,7 @@ class UpsampleBilinear2DConverter(NodeConverter):
     ) -> bool:
         input_shape = node.all_input_nodes[0].meta["val"].shape
         output_shape = node.meta["val"].shape
-        is_alone_in_partition = cls.is_node_alone_in_partition(
-            node, partition_list, filter_fn=is_not_qdq_node
-        )
+        is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
 
         if is_alone_in_partition and input_shape == output_shape:
             # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the

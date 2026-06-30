@@ -252,24 +252,39 @@ class SliceTensorConvModule(torch.nn.Module):
 
 
 class AddmmModule(torch.nn.Module):
-    def __init__(self, in_channels: int):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int = 7,
+        alpha: float | None = None,
+        beta: float | None = None,
+        bias_shape=None,
+    ):
+        if bias_shape is None:
+            bias_shape = (out_channels,)
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
-        self.bias = torch.nn.Parameter(torch.empty(in_channels))
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, out_channels))
+        self.bias = torch.nn.Parameter(torch.empty(bias_shape))
         torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
         bound = 1 / math.sqrt(fan_in)
         torch.nn.init.uniform_(self.bias, -bound, bound)
         self.eval()
 
+        self.kwargs = {}
+        if alpha is not None:
+            self.kwargs["alpha"] = alpha
+        if beta is not None:
+            self.kwargs["beta"] = beta
+
     def forward(self, x):
-        return torch.addmm(self.bias, x, self.weight)
+        return torch.addmm(self.bias, x, self.weight, **self.kwargs)
 
 
 class MmModule(torch.nn.Module):
-    def __init__(self, in_channels: int):
+    def __init__(self, in_channels: int, out_channels: int = 7):
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, out_channels))
         torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         self.eval()
 
