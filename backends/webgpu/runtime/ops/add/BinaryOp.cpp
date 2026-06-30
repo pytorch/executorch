@@ -159,13 +159,48 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
   graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  const size_t dispatch_idx = graph.num_dispatches() - 1;
+
+  // Dynamic shapes: recompute numel/dispatch; out follows the larger operand.
+  WGPUBuffer params_buf = uniform_buffer;
+  auto add_resize = [in1_id,
+                     in2_id,
+                     out_id,
+                     alpha,
+                     wg_size,
+                     dispatch_idx,
+                     params_buf](WebGPUGraph& g) {
+    const auto& d1 = g.cur_dims(in1_id);
+    const auto& d2 = g.cur_dims(in2_id);
+    const uint64_t n1 = utils::numel_of(d1);
+    const uint64_t n2 = utils::numel_of(d2);
+    const uint64_t numel = n2 > n1 ? n2 : n1;
+    const uint64_t n_min = n2 > n1 ? n1 : n2;
+    // The flat add follows the larger operand and broadcasts the smaller; valid
+    // only when the smaller tiles evenly into it (rejects e.g. [4,1] vs [1,3],
+    // whose true [4,3] result this flat kernel cannot produce).
+    if (n_min == 0u || numel % n_min != 0u) {
+      throw std::runtime_error(
+          "add(resize): operands are not broadcast-compatible by numel");
+    }
+    g.set_cur_dims(out_id, n2 > n1 ? d2 : d1);
+    AddParams p = {};
+    p.num_elements = static_cast<uint32_t>(numel);
+    p.alpha = alpha;
+    wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+    g.dispatch_at(dispatch_idx).workgroup_count_x =
+        utils::compute_1d_workgroup_count(
+            g.device(), static_cast<uint32_t>(numel), wg_size, "add(resize)");
+  };
+  graph.add_tensor_resize_hook(in1_id, add_resize);
+  graph.add_tensor_resize_hook(in2_id, add_resize);
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // Drop our ref; the bind group keeps the uniform buffer alive until release.
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so a resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace
