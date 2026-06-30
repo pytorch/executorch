@@ -47,6 +47,41 @@ inline uint32_t clamp_workgroup_size(WGPUDevice device, uint32_t desired) {
   return desired;
 }
 
+struct WgCount {
+  uint32_t x;
+  uint32_t y;
+};
+
+// Device's max workgroups per dispatch dimension; the WebGPU spec-default floor
+// (65535) if the query fails — never under-reports a real device's capacity.
+inline uint32_t queried_max_workgroups(WGPUDevice device) {
+  WGPULimits limits = {};
+  return wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+          limits.maxComputeWorkgroupsPerDimension > 0
+      ? limits.maxComputeWorkgroupsPerDimension
+      : 65535u;
+}
+
+// Pure 2D fold of a 1D workgroup count (device-free, unit-testable): {count,1}
+// when count <= max, else {max, div_up(count, max)} so a >max workload fits the
+// per-dimension cap; throws if a 3rd dimension would be needed (out of scope).
+// The shader reconstructs the linear index from @builtin(num_workgroups).
+inline WgCount fold_workgroup_count_2d(
+    uint32_t count,
+    uint32_t max_count,
+    const char* op_name) {
+  if (count <= max_count) {
+    return {count, 1u};
+  }
+  uint32_t y = (count + max_count - 1) / max_count;
+  if (y > max_count) {
+    throw std::runtime_error(
+        std::string("WebGPU ") + op_name +
+        ": workgroup count needs a 3rd dispatch dimension (unsupported)");
+  }
+  return {max_count, y};
+}
+
 // 1D dispatch count (mirrors Vulkan div_up); throws if > device limit.
 inline uint32_t compute_1d_workgroup_count(
     WGPUDevice device,
@@ -54,18 +89,24 @@ inline uint32_t compute_1d_workgroup_count(
     uint32_t workgroup_size,
     const char* op_name) {
   uint32_t count = div_up(num_threads, workgroup_size);
-  WGPULimits limits = {};
-  uint32_t max_count =
-      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
-          limits.maxComputeWorkgroupsPerDimension > 0
-      ? limits.maxComputeWorkgroupsPerDimension
-      : 65535u; // WebGPU spec-default floor
-  if (count > max_count) {
+  if (count > queried_max_workgroups(device)) {
     throw std::runtime_error(
         std::string("WebGPU ") + op_name +
         ": workgroup count exceeds the 1D dispatch limit");
   }
   return count;
+}
+
+// 2D dispatch count: fold the 1D count across x/y when it exceeds the per-dim
+// limit (lifts the cap, e.g. for SDPA prefill). Same fast path as compute_1d.
+inline WgCount compute_2d_workgroup_count(
+    WGPUDevice device,
+    uint32_t num_threads,
+    uint32_t workgroup_size,
+    const char* op_name) {
+  uint32_t count = (num_threads + workgroup_size - 1) / workgroup_size;
+  return fold_workgroup_count_2d(
+      count, queried_max_workgroups(device), op_name);
 }
 
 // Create a uniform buffer mapped-at-creation, copy `size` bytes in, and unmap.
