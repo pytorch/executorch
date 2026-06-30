@@ -282,6 +282,7 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // Dynamic shapes: recompute S/num_pairs + both dispatches; out follows xq/xk.
   const int xq_out_id = out_list[0];
   const int xk_out_id = out_list[1];
+  // xq_id trigger suffices: q and k co-resize on S; this updates both.
   graph.add_tensor_resize_hook(
       xq_id,
       [xq_id,
@@ -299,6 +300,10 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        k_ubuf](WebGPUGraph& g) {
         const auto& qd = g.cur_dims(xq_id);
         const auto& kd = g.cur_dims(xk_id);
+        if (qd.size() < 3 || kd.size() < 3) {
+          throw std::runtime_error(
+              "apply_rotary_emb(resize): q/k rank must be >= 3");
+        }
         const uint32_t s = static_cast<uint32_t>(qd[qd.size() - 3]);
         const uint64_t qn = utils::numel_of(qd);
         const uint64_t kn = utils::numel_of(kd);
