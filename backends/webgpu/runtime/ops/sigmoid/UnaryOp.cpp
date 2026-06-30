@@ -135,14 +135,34 @@ void add_unary_op(
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  const size_t dispatch_idx =
+      graph.add_dispatch({pipeline, bind_group, workgroup_count});
+
+  // Dynamic shapes: recompute num_elements/dispatch for the live shape.
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, wg_size, dispatch_idx, params_buf](WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        const uint64_t numel = utils::numel_of(d);
+        g.set_cur_dims(out_id, d);
+        UnaryParams p = {};
+        p.num_elements = static_cast<uint32_t>(numel);
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(
+                g.device(),
+                static_cast<uint32_t>(numel),
+                wg_size,
+                "unary(resize)");
+      });
 
   // Release intermediates (pipeline + bind_group are kept by dispatch).
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // Drop our ref; the bind group keeps the uniform buffer alive until release.
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
