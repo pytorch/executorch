@@ -12,8 +12,7 @@ import torch.nn as nn
 
 class SamplingHead(nn.Module):
     """
-    Wraps a model that returns last-token logits ``(B, vocab)`` and samples a
-    token id ``(B)`` on-device.
+    Wraps a model that returns logits and samples a token id on-device.
 
         forward(*model_args, temperature, top_k=None, top_p=1.0, seed=None,
                 **model_kwargs) -> token_id
@@ -34,11 +33,12 @@ class SamplingHead(nn.Module):
         self.model = model
 
     def forward(self, *args, temperature, top_k=None, top_p=1.0, seed=None, **kwargs):
-        logits = self.model(*args, **kwargs)  # [B, vocab]
+        logits = self.model(*args, **kwargs)  # [B, S, vocab]
+        last = logits[:, -1, :]  # [B, vocab]
         if not isinstance(top_p, torch.Tensor):
             top_p = torch.tensor(float(top_p))
         if top_k is None:
             top_k = torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64)
         elif not isinstance(top_k, torch.Tensor):
             top_k = torch.tensor(int(top_k), dtype=torch.int64)
-        return torch.ops.mlx.sample(logits, temperature, top_k, top_p, seed)
+        return torch.ops.mlx.sample(last, temperature, top_k, top_p, seed)

@@ -104,8 +104,7 @@ Result<uint64_t> read_sampled_token(
 }
 
 Result<std::unique_ptr<Module>> build_gemma_module(
-    const Gemma4_31BConfig& config,
-    bool multi_session) {
+    const Gemma4_31BConfig& config) {
   std::vector<std::string> data_files;
   if (!config.data_path.empty()) {
     data_files.push_back(config.data_path);
@@ -136,42 +135,9 @@ Result<std::unique_ptr<Module>> build_gemma_module(
   }
 #endif
 
-  const executorch::runtime::LoadBackendOptionsMap* load_options = nullptr;
-#ifdef EXECUTORCH_BUILD_MLX
-  // Per-model MLX runtime specs, delivered to MLXBackend::init(). Must outlive
-  // the load_method calls below (they read it during init).
-  executorch::runtime::BackendOptions<2> mlx_opts;
-  executorch::runtime::LoadBackendOptionsMap mlx_options_map;
-  // Release MLX's cached buffer pool every N forward calls to bound memory
-  // growth during long sessions.
-  constexpr int kMLXClearCacheInterval = 1;
-  ET_CHECK_OK_OR_RETURN_ERROR(mlx_opts.set_option(
-      ::executorch::backends::mlx::kClearCacheIntervalKey,
-      kMLXClearCacheInterval));
-  ET_LOG(
-      Info,
-      "Gemma4_31BEngine: MLX clear_cache_interval=%d",
-      kMLXClearCacheInterval);
-  // skip_mutable_buffer_init must match the multi-session owner: it is only
-  // safe when a load scope is active (the caller passes multi_session = "owner
-  // exists"), since per-session buffers are then allocated by
-  // mlx_mutable_state. The backend also defensively rejects the flag without an
-  // active owner.
-  if (multi_session) {
-    ET_CHECK_OK_OR_RETURN_ERROR(mlx_opts.set_option(
-        ::executorch::backends::mlx::kSkipMutableBufferInitKey, true));
-    ET_LOG(Info, "Gemma4_31BEngine: MLX skip_mutable_buffer_init=true");
-  }
-  ET_CHECK_OK_OR_RETURN_ERROR(mlx_options_map.set_options(
-      ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()));
-  load_options = &mlx_options_map;
-#endif
-
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      module->load_method(kPrefillMethod, nullptr, nullptr, load_options));
+  ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kPrefillMethod));
   if (std::string(kDecodeMethod) != std::string(kPrefillMethod)) {
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        module->load_method(kDecodeMethod, nullptr, nullptr, load_options));
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kDecodeMethod));
   }
   return module;
 }
@@ -729,14 +695,10 @@ Result<std::unique_ptr<Gemma4_31BEngine>> Gemma4_31BEngine::create(
   }
 #endif
 
-  // Pass whether a multi-session owner exists as the single source of truth for
-  // skip_mutable_buffer_init, so the skip flag can never diverge from the
-  // owner.
-  const bool multi_session = mutable_state != nullptr;
-  auto module_res = multi_session ? mutable_state->with_load_scope([&]() {
-    return build_gemma_module(config, multi_session);
-  })
-                                  : build_gemma_module(config, multi_session);
+  auto module_res = mutable_state != nullptr
+      ? mutable_state->with_load_scope(
+            [&]() { return build_gemma_module(config); })
+      : build_gemma_module(config);
   if (module_res.error() != Error::Ok) {
     return module_res.error();
   }
