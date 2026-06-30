@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -35,14 +36,6 @@ struct EmbeddingParams {
 static_assert(
     sizeof(EmbeddingParams) == 32,
     "EmbeddingParams must be 32 bytes");
-
-uint64_t numel_of(const std::vector<int64_t>& dims) {
-  uint64_t n = 1;
-  for (int64_t d : dims) {
-    n *= static_cast<uint64_t>(d);
-  }
-  return n;
-}
 
 // arg order mirrors Vulkan EmbeddingQ4gsw.cpp.
 void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -102,7 +95,7 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   // Leading index dims flatten row-major (mirrors Vulkan num_indices).
-  const uint64_t out_numel = numel_of(out.dims);
+  const uint64_t out_numel = utils::numel_of(out.dims);
   const uint32_t num_indices = static_cast<uint32_t>(out_numel / embed_dim);
   const uint32_t groups_per_row = static_cast<uint32_t>(scales.dims[1]);
   const uint32_t blocks_per_row = embed_dim / 32u;
@@ -119,9 +112,9 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   // Per-type byte guards (no runtime dtype): indices i32, weight u8, fp32 rest.
-  const uint64_t indices_numel = numel_of(indices.dims);
-  const uint64_t weight_numel = numel_of(weight.dims);
-  const uint64_t scales_numel = numel_of(scales.dims);
+  const uint64_t indices_numel = utils::numel_of(indices.dims);
+  const uint64_t weight_numel = utils::numel_of(weight.dims);
+  const uint64_t scales_numel = utils::numel_of(scales.dims);
   if (indices_numel != num_indices ||
       indices.nbytes != indices_numel * sizeof(int32_t) ||
       weight.nbytes != weight_numel ||
@@ -230,13 +223,59 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch(
+  const size_t dispatch_idx = graph.add_dispatch(
       {pipeline, bind_group, workgroup_count, "embedding_q4gsw"});
+
+  // Dynamic shapes: recompute counts/dispatch; out = indices + [embed_dim].
+  const uint32_t gs_u = static_cast<uint32_t>(group_size);
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      indices_id,
+      [indices_id,
+       out_id,
+       embed_dim,
+       blocks_per_row,
+       gs_u,
+       groups_per_row,
+       bytes_per_row,
+       wg_size,
+       dispatch_idx,
+       params_buf](WebGPUGraph& g) {
+        const auto& id = g.cur_dims(indices_id);
+        const uint64_t ni = utils::numel_of(id);
+        if (ni == 0) {
+          throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
+        }
+        const uint64_t total_blocks = ni * blocks_per_row;
+        if (total_blocks > UINT32_MAX) {
+          throw std::runtime_error(
+              "WebGPU embedding_q4gsw: total_blocks exceeds uint32");
+        }
+        std::vector<int64_t> od = id;
+        od.push_back(static_cast<int64_t>(embed_dim));
+        g.set_cur_dims(out_id, od);
+        EmbeddingParams p = {};
+        p.embed_dim = embed_dim;
+        p.blocks_per_row = blocks_per_row;
+        p.num_indices = static_cast<uint32_t>(ni);
+        p.group_size = gs_u;
+        p.groups_per_row = groups_per_row;
+        p.bytes_per_row = bytes_per_row;
+        p.total_blocks = static_cast<uint32_t>(total_blocks);
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(
+                g.device(),
+                static_cast<uint32_t>(total_blocks),
+                wg_size,
+                "embedding_q4gsw(resize)");
+      });
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace
