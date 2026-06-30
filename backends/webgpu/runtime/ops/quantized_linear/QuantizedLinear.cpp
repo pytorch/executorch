@@ -43,8 +43,12 @@ constexpr int64_t kQ4gswTileN = 4;
 // Shmem-GEMM tile dims; MUST match WG_M/WG_N in q4gsw_linear_gemm_shmem.wgsl.
 constexpr int64_t kQ4gswShmemTileM = 32;
 constexpr int64_t kQ4gswShmemTileN = 32;
-// Prefill route: shmem GEMM wins large K/N, tiled wins square (Metal A/B).
+// Prefill route: shmem GEMM wins large K/N; the square 2048^2 (q/o proj,
+// N=2048) also wins on shmem (+~50% Canary, 10-warm/50-run; the earlier -27%
+// did not reproduce), so route it via a lower N threshold while k/v (N=512)
+// stays on register-tiled.
 constexpr uint32_t kQ4gswShmemMinDim = 4096u;
+constexpr uint32_t kQ4gswShmemNMinDim = 2048u;
 
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
 void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -129,7 +133,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
   const bool use_shmem_gemm =
-      !use_gemv && (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemMinDim);
+      !use_gemv && (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
   const char* shader_src = use_gemv ? kQ4gswLinearCoop4WGSL
       : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
                                     : kQ4gswLinearWGSL;
