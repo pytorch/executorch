@@ -151,6 +151,7 @@ Tensor& mean_out(
         p_axis,
         num_axis_dims);
   } else {
+#ifdef G3_ENABLE_ALL_DTYPES
     ET_KERNEL_CHECK(
         ctx,
         torch::executor::check_mean_dim_args(in, dim_list, keepdim, dtype, out),
@@ -183,6 +184,10 @@ Tensor& mean_out(
                 }
               });
         });
+#else
+    ET_DCHECK_MSG(
+        false, "mean.out: non-float dtypes require G3_ENABLE_ALL_DTYPES");
+#endif
   }
 
   return out;
