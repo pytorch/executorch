@@ -192,12 +192,18 @@ class OpenVINOQuantizer(Quantizer):
         :param validate: If set to True, then a RuntimeError will be raised if any ignored scope does not match
           in the model graph.
         """
+        subgraphs_ = []
+        if subgraphs:
+            subgraphs_ = [
+                nncf.Subgraph(inputs=subgraph[0], outputs=subgraph[1])
+                for subgraph in subgraphs
+            ]
         self._algo.set_ignored_scope(
             nncf.IgnoredScope(
                 names=names or [],
                 patterns=patterns or [],
                 types=types or [],
-                subgraphs=subgraphs or [],
+                subgraphs=subgraphs_,
                 validate=validate,
             )
         )

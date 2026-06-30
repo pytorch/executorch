@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+from typing import Any
 
 import torch
 
@@ -19,6 +20,56 @@ SHIFT_INT8 = 20
 
 def quantize_val(val, scale, zp, qmin, qmax):
     return float(min(max(torch.round(torch.Tensor([val / scale + zp])), qmin), qmax))
+
+
+def extract_constant_scalar(arg: Any) -> float | None:
+    if arg is None:
+        return None
+    if isinstance(arg, (int, float)):
+        return float(arg)
+    if isinstance(arg, Node):
+        if arg.op == "call_function" and arg.target in {
+            exir_ops.edge.aten.full_like.default,
+            exir_ops.edge.aten.full.default,
+            torch.ops.aten.full_like.default,
+            torch.ops.aten.full.default,
+        }:
+            fill_arg = arg.args[1] if len(arg.args) > 1 else None
+            return extract_constant_scalar(fill_arg)
+        val = arg.meta.get("val")
+        if val is None:
+            return None
+        return extract_constant_scalar(val)
+    return None
+
+
+def get_activation_bounds(node: Node) -> tuple[float | None, float | None] | None:
+    bounds: tuple[float | None, float | None]
+    match node.target:
+        case exir_ops.edge.aten.relu.default | exir_ops.edge.aten.relu_.default:
+            bounds = (0.0, None)
+        case exir_ops.edge.aten.hardsigmoid.default:
+            bounds = (0.0, 1.0)
+        case exir_ops.edge.aten.hardtanh.default | exir_ops.edge.aten.hardtanh_.default:
+            bounds = (
+                extract_constant_scalar(node.args[1]),
+                extract_constant_scalar(node.args[2]),
+            )
+        case exir_ops.edge.aten.clamp.default | exir_ops.edge.aten.clamp.Tensor:
+            bounds = (
+                extract_constant_scalar(node.args[1]) if len(node.args) > 1 else None,
+                extract_constant_scalar(node.args[2]) if len(node.args) > 2 else None,
+            )
+        case _:
+            return None
+
+    min_val, max_val = bounds
+    if len(node.args) > 1 and min_val is None and node.args[1] is not None:
+        return None
+    if len(node.args) > 2 and max_val is None and node.args[2] is not None:
+        return None
+
+    return bounds
 
 
 def dequantize_per_tensor_cmsis(
@@ -139,6 +190,67 @@ def is_qualified_int8_node(args) -> bool:
         return False
 
 
+def _stable_sigmoid(x: float) -> float:
+    # Always exponentiate the non-positive value so `math.exp` never overflows
+    # for unusually large `|x|` (e.g. wide-range input qparams). Algebraically
+    # identical to `1 / (1 + exp(-x))`.
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    e = math.exp(x)
+    return e / (1.0 + e)
+
+
+def _stable_silu(x: float) -> float:
+    return x * _stable_sigmoid(x)
+
+
+_ACTIVATION_FNS = {
+    exir_ops.edge.aten.sigmoid.default: _stable_sigmoid,
+    exir_ops.edge.aten.tanh.default: math.tanh,
+    exir_ops.edge.aten.silu.default: _stable_silu,
+}
+
+
+def _round_half_away_from_zero(x: float) -> int:
+    # Matches the rounding convention `requantize_cmsis` (above) applies after
+    # the right-shift step: ties on positive values round toward +∞, ties on
+    # negative values round toward -∞. Python's built-in `round` would use
+    # banker's rounding instead and disagree at exact half-integers.
+    return int(math.copysign(math.floor(abs(x) + 0.5), x)) if x != 0 else 0
+
+
+def build_activation_lut(
+    target,
+    input_scale: float,
+    input_zp: int,
+    output_scale: float,
+    output_zp: int,
+) -> torch.Tensor:
+    """AoT-compute a 256-entry int8 lookup table for a quantized activation.
+
+    `target` is the edge-dialect op being lowered (e.g.
+    `exir_ops.edge.aten.sigmoid.default`).
+
+    The LUT is indexed by the input byte value biased by 128: for any int8
+    input `q_in`, the kernel reads `lut[q_in + 128]` to get the int8 output.
+    Because the LUT is computed in float and quantized once per entry, the
+    runtime kernel is a single memory-lookup with no requantization math.
+    """
+    if target not in _ACTIVATION_FNS:
+        raise ValueError(
+            f"build_activation_lut: unsupported activation target {target!r} "
+            f"(supported: {sorted(t.__name__ for t in _ACTIVATION_FNS)})"
+        )
+    f = _ACTIVATION_FNS[target]
+    lut = torch.empty(256, dtype=torch.int8)
+    for q in range(-128, 128):
+        x = (q - input_zp) * input_scale
+        y = f(x)
+        q_out = _round_half_away_from_zero(y / output_scale + output_zp)
+        lut[q + 128] = max(-128, min(127, q_out))
+    return lut
+
+
 def quantize_multiplier_aot(scale: float) -> tuple[int, int]:
     if scale == 0.0:
         return 0, 0
@@ -206,6 +318,17 @@ def is_channels_last(tensor: torch.Tensor) -> bool:
 
     dim_order = list(tensor.dim_order())
     return dim_order[0:2] == [0, 2]
+
+
+_NHWC_DIM_ORDER = [0, 2, 3, 1]
+
+
+def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]:
+    """Permute a 4-element NCHW-ordered list to NHWC physical memory order
+    when ``tensor`` is in channels_last format, otherwise return unchanged."""
+    if not is_channels_last(tensor):
+        return logical_pad
+    return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
 
 
 def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:

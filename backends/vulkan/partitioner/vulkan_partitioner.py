@@ -48,6 +48,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 ops_not_to_decompose = [
     torch.ops.aten.hardswish.default,
     torch.ops.aten.upsample_nearest2d.vec,
+    torch.ops.aten.pixel_shuffle.default,
 ]
 
 logger: logging.Logger = logging.getLogger("")
@@ -377,9 +378,15 @@ class VulkanPartitioner(Partitioner):
             exported_program.graph_module
         )
 
-        texture_limits: utils.ImageExtents = self.options.get(
-            "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
-        )
+        # small_texture_limits opts into the conservative 3D texture limit that is
+        # compatible with most desktop/laptop GPUs (the Vulkan spec only guarantees
+        # 2048). An explicit texture_limits always takes precedence.
+        if "texture_limits" in self.options:
+            texture_limits: utils.ImageExtents = self.options["texture_limits"]
+        elif self.options.get("small_texture_limits", False):
+            texture_limits = utils.SMALL_TEXTURE_LIMITS
+        else:
+            texture_limits = utils.DEFAULT_TEXTURE_LIMITS
         buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

@@ -15,6 +15,8 @@ from executorch.backends.cadence.aot.pass_utils import get_arg
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
+    AddReluPattern0,
+    AddReluPattern1,
     BmmPattern,
     CatPattern,
     Conv1dPattern,
@@ -63,6 +65,7 @@ ConvReluPatterns = (
     Conv2dReluPattern0,
     Conv2dReluPattern1,
 )
+AddReluPatterns = (AddReluPattern0, AddReluPattern1)
 
 
 def get_args_and_kwargs_add(
@@ -616,7 +619,20 @@ class QuantFusion(ExportPass):
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
                     kwargs = {}
-                    if isinstance(pattern, AddPattern):
+                    if isinstance(pattern, AddReluPatterns):
+                        # For AddReLU, we are fusing Add+ReLU.
+                        # The quantized_add op performs requantization,
+                        # so the relu is implicit in the output quant params.
+                        check_out_zero_point_is_min_range(
+                            quant_node.args[2], quant_node.args[5]
+                        )
+                        args, kwargs = get_args_and_kwargs_add(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            quant_node,
+                        )
+                    elif isinstance(pattern, AddPattern):
                         args, kwargs = get_args_and_kwargs_add(
                             graph_module,
                             inputs_inputs,

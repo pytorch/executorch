@@ -28,73 +28,91 @@ input_t1 = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]  # Input x1, x2, x3
 
 
 test_data_suite = {
-    "basic": [
+    "basic": lambda: [
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
         torch.tensor([[1.0, 0.0], [0.0, 1.0]]),
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
         1.0,
         1.0,
     ],
-    "zeros": [torch.zeros(2, 2), torch.zeros(2, 3), torch.zeros(3, 2), 1.0, 1.0],
-    "beta_only": [
+    "zeros": lambda: [
+        torch.zeros(2, 2),
+        torch.zeros(2, 3),
+        torch.zeros(3, 2),
+        1.0,
+        1.0,
+    ],
+    "beta_only": lambda: [
         torch.tensor([[10.0, 20.0], [30.0, 40.0]]),
         torch.randn(2, 3),
         torch.randn(3, 2),
         0.0,
         1.0,
     ],
-    "alpha_only": [
+    "alpha_only": lambda: [
         torch.tensor([[10.0, 20.0], [30.0, 40.0]]),
         torch.randn(2, 3),
         torch.randn(3, 2),
         1.0,
         0.0,
     ],
-    "scaled": [
+    "scaled": lambda: [
         torch.ones(2, 2),
         torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
         torch.tensor([[5.0, 6.0], [7.0, 8.0]]),
         0.5,
         2.0,
     ],
-    "negative_scalars": [
+    "negative_scalars": lambda: [
         torch.tensor([[1.0, -1.0], [-1.0, 1.0]]),
         torch.tensor([[2.0, 0.0], [0.0, 2.0]]),
         torch.tensor([[1.0, 1.0], [1.0, 1.0]]),
         -1.0,
         -1.0,
     ],
-    "non_square": [torch.ones(3, 4), torch.rand(3, 2), torch.rand(2, 4), 1.0, 1.0],
-    "large_values": [
+    "non_square": lambda: [
+        torch.ones(3, 4),
+        torch.rand(3, 2),
+        torch.rand(2, 4),
+        1.0,
+        1.0,
+    ],
+    "large_values": lambda: [
         torch.full((2, 2), 1e6),
         torch.full((2, 3), 1e3),
         torch.full((3, 2), 1e3),
         1.0,
         1.0,
     ],
-    "small_values": [
+    "small_values": lambda: [
         torch.full((2, 2), 1e-6),
         torch.full((2, 3), 1e-3),
         torch.full((3, 2), 1e-3),
         1.0,
         1.0,
     ],
-    "random": [torch.randn(4, 5), torch.randn(4, 3), torch.randn(3, 5), 1.0, 1.0],
-    "broadcast_bias_row": [
+    "random": lambda: [
+        torch.randn(4, 5),
+        torch.randn(4, 3),
+        torch.randn(3, 5),
+        1.0,
+        1.0,
+    ],
+    "broadcast_bias_row": lambda: [
         torch.randn(1, 2),
         torch.randn(3, 4),
         torch.randn(4, 2),
         1.0,
         1.0,
     ],
-    "row_bias": [
+    "row_bias": lambda: [
         torch.randn(3, 1),
         torch.randn(3, 4),
         torch.randn(4, 4),
         1.0,
         1.0,
     ],
-    "scalar_bias": [
+    "scalar_bias": lambda: [
         torch.tensor(2.0),
         torch.randn(5, 3),
         torch.randn(3, 6),
@@ -120,7 +138,7 @@ class Addmm(torch.nn.Module):
 def test_addmm_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
     )
@@ -131,7 +149,7 @@ def test_addmm_tosa_FP(test_data: Tuple):
 def test_addmm_tosa_INT(test_data: Tuple):
     pipeline = TosaPipelineINT[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_op=[],
         exir_op=exir_op,
     )
@@ -143,7 +161,7 @@ def test_addmm_tosa_INT(test_data: Tuple):
 def test_addmm_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_ops=[],
         exir_ops=exir_op,
     )
@@ -155,7 +173,7 @@ def test_addmm_u55_INT(test_data: Tuple):
 def test_addmm_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_ops=[],
         exir_ops=exir_op,
     )
@@ -167,7 +185,7 @@ def test_addmm_u85_INT(test_data: Tuple):
 def test_addmm_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
         quantize=False,
@@ -180,7 +198,7 @@ def test_addmm_vgf_no_quant(test_data: input_t1):
 def test_addmm_vgf_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_op=[],
         exir_op=exir_op,
         quantize=True,
@@ -197,7 +215,7 @@ def test_addmm_16a8w_tosa_INT(test_data: input_t1):
 
     pipeline = TosaPipelineINT[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_op=[],
         exir_op=[],
         per_channel_quantization=per_channel_quantization,
@@ -223,7 +241,7 @@ def test_addmm_16a8w_u55_INT(test_data: input_t1):
 
     pipeline = EthosU55PipelineINT[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_ops=[],
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
@@ -245,7 +263,7 @@ def test_addmm_16a8w_u85_INT(test_data: input_t1):
 
     pipeline = EthosU85PipelineINT[input_t1](
         Addmm(),
-        (*test_data,),
+        (*test_data(),),
         aten_ops=[],
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,

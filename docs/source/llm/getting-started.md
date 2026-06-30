@@ -25,6 +25,6 @@ Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) expor
 
 ### Running
 - [Running with C++](run-with-c-plus-plus.md)
-- [Running on Android (XNNPack)](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android)
+- [Running on Android](run-on-android.md)
 - [Running on Android (Qualcomm)](build-run-llama3-qualcomm-ai-engine-direct-backend.md)
-- [Running on iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple)
+- [Running on iOS](run-on-ios.md)

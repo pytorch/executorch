@@ -45,6 +45,15 @@ def _is_power_of_2(n: int) -> bool:
     return n > 0 and (n & (n - 1)) == 0
 
 
+# KV length at/above which decode (L_q == 1) uses the split-K flash-decoding
+# kernel instead of the standard kernel. Mirrors the threshold the CUDA
+# replacement pass uses to pick triton.sdpa_decode_splitk.
+_SPLITK_LKV_THRESHOLD = 256
+
+# FlashDecoding++ unified-max constant used by the split-K decode path.
+_DEFAULT_SPLITK_PHI = 5.0
+
+
 def _next_power_of_2(x: int) -> int:
     """Get the next power of 2 >= x, clamped to [16, 256].
 
@@ -160,6 +169,7 @@ def _sdpa_fwd_kernel_non_pow2(
     v_ptr,
     o_ptr,
     mask_ptr,
+    kv_len_ptr,
     B,
     H_grid,
     LQ,
@@ -191,6 +201,7 @@ def _sdpa_fwd_kernel_non_pow2(
     BLOCK_D: tl.constexpr,
     HAS_MASK: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
+    HAS_KV_LEN: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
     PACK_GQA: tl.constexpr,
 ):
@@ -254,9 +265,15 @@ def _sdpa_fwd_kernel_non_pow2(
 
     NEG_INF: tl.constexpr = float("-inf")
 
-    for start_n in tl.range(0, LK, BLOCK_N, num_stages=2):
+    # Bound the KV loop to valid (filled) positions; see pow2 body for details.
+    if HAS_KV_LEN:
+        kv_len = tl.load(kv_len_ptr)
+    else:
+        kv_len = LK
+
+    for start_n in tl.range(0, kv_len, BLOCK_N, num_stages=2):
         offs_n = start_n + tl.arange(0, BLOCK_N)
-        kv_col_mask = offs_n < LK
+        kv_col_mask = offs_n < kv_len
 
         k_ptrs = k_base + (offs_n[:, None] * stride_kl + offs_d[None, :] * stride_kd)
         k = tl.load(k_ptrs, mask=kv_col_mask[:, None] & d_mask[None, :], other=0.0)
@@ -332,6 +349,7 @@ def _sdpa_fwd_kernel_body(
     V_ptr,
     O_ptr,
     Mask_ptr,
+    KV_LEN_ptr,
     B,
     H_grid,
     Lq,
@@ -358,6 +376,7 @@ def _sdpa_fwd_kernel_body(
     sm_scale: tl.float32,
     HAS_MASK: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
+    HAS_KV_LEN: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     HEAD_DIM: tl.constexpr,
@@ -422,62 +441,96 @@ def _sdpa_fwd_kernel_body(
 
     offs_n_init = tl.arange(0, BLOCK_N)
 
-    for start_n in tl.range(0, Lk, BLOCK_N):
+    # Bound the KV loop to the number of valid (filled) positions instead of the
+    # full pre-allocated buffer Lk. For decode this is input_pos+1; for a prefill
+    # chunk it is chunk_end. This makes full-attention (global) layers O(context)
+    # rather than O(max_seq_len) — the empty tail of the cache is never touched.
+    # kv_len is read from a GPU scalar so the bound updates across CUDA-graph
+    # replays (decode is graph-captured). When not provided (HAS_KV_LEN False) it
+    # falls back to Lk, preserving the original behavior exactly.
+    if HAS_KV_LEN:
+        kv_len = tl.load(KV_LEN_ptr)
+    else:
+        kv_len = Lk
+
+    # Window-aware early-exit. A KV block that is fully masked (sliding-window
+    # or causal) contributes nothing to the online softmax — every entry is
+    # -inf, so p=0 and m_i/l_i/acc are left unchanged. We detect such blocks up
+    # front and skip their K/V loads and both matmuls. This is exact: it only
+    # skips work the mask would have zeroed out anyway. At seq=2048 the 50
+    # sliding-window(1024) layers and the 10 causal layers each leave roughly
+    # half (or more) of their KV blocks fully masked, so this is a large cut to
+    # the dominant prefill cost. The skip condition is a CTA-wide reduction, so
+    # the branch is uniform and turns into a real skip (not predication).
+    if IS_CAUSAL:
+        max_seq_pos = tl.max(seq_pos)
+
+    for start_n in tl.range(0, kv_len, BLOCK_N):
         offs_n = start_n + offs_n_init
 
-        # K load: uniform (single KV head, shared across all Q heads in tile)
-        k_ptrs = K_ptr + (
-            b * stride_kb
-            + h_kv * stride_kh
-            + (offs_n[:, None] * stride_kn)
-            + (offs_d[None, :] * stride_kd)
-        )
-        k_mask = (offs_n[:, None] < Lk) & (offs_d[None, :] < HEAD_DIM)
-        k = tl.load(k_ptrs, mask=k_mask, other=0.0).to(tl.bfloat16)
-
-        qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
-
+        # Decide whether any row in this tile actually attends to this KV block.
         if HAS_MASK:
             mask_ptrs = Mask_ptr + (
                 b * stride_mb
                 + (seq_pos[:, None] * stride_mq)
                 + (offs_n[None, :] * stride_mk)
             )
-            mn_mask = row_valid[:, None] & (offs_n[None, :] < Lk)
+            mn_mask = row_valid[:, None] & (offs_n[None, :] < kv_len)
             mask_block = tl.load(mask_ptrs, mask=mn_mask, other=False)
-            qk = tl.where(
-                mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
+            block_active = tl.sum(mask_block.to(tl.int32)) > 0
+        elif IS_CAUSAL:
+            # Block is entirely in the future for every row -> skip.
+            block_active = start_n <= max_seq_pos
+        else:
+            block_active = True
+
+        if block_active:
+            # K load: uniform (single KV head, shared across Q heads in tile)
+            k_ptrs = K_ptr + (
+                b * stride_kb
+                + h_kv * stride_kh
+                + (offs_n[:, None] * stride_kn)
+                + (offs_d[None, :] * stride_kd)
             )
+            k_mask = (offs_n[:, None] < kv_len) & (offs_d[None, :] < HEAD_DIM)
+            k = tl.load(k_ptrs, mask=k_mask, other=0.0).to(tl.bfloat16)
 
-        if IS_CAUSAL:
-            causal = offs_n[None, :] > seq_pos[:, None]
-            qk = tl.where(
-                causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
+            qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
+
+            if HAS_MASK:
+                qk = tl.where(
+                    mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
+                )
+
+            if IS_CAUSAL:
+                causal = offs_n[None, :] > seq_pos[:, None]
+                qk = tl.where(
+                    causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
+                )
+
+            m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
+            safe_diff = tl.where(
+                m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
             )
+            p_f32 = tl.exp(safe_diff).to(tl.float32)
+            l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
+            safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
+            alpha = tl.exp(safe_alpha_diff).to(tl.float32)
 
-        m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
-        safe_diff = tl.where(
-            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
-        )
-        p_f32 = tl.exp(safe_diff).to(tl.float32)
-        l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
-        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
-        alpha = tl.exp(safe_alpha_diff).to(tl.float32)
+            # V load: uniform (single KV head)
+            v_ptrs = V_ptr + (
+                b * stride_vb
+                + h_kv * stride_vh
+                + (offs_n[:, None] * stride_vn)
+                + (offs_d[None, :] * stride_vd)
+            )
+            v_mask = (offs_n[:, None] < kv_len) & (offs_d[None, :] < HEAD_DIM)
+            v = tl.load(v_ptrs, mask=v_mask, other=0.0).to(tl.bfloat16)
 
-        # V load: uniform (single KV head)
-        v_ptrs = V_ptr + (
-            b * stride_vb
-            + h_kv * stride_vh
-            + (offs_n[:, None] * stride_vn)
-            + (offs_d[None, :] * stride_vd)
-        )
-        v_mask = (offs_n[:, None] < Lk) & (offs_d[None, :] < HEAD_DIM)
-        v = tl.load(v_ptrs, mask=v_mask, other=0.0).to(tl.bfloat16)
-
-        p_bf16 = p_f32.to(tl.bfloat16)
-        acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
-        l_i = (l_i * alpha + l_ij).to(tl.float32)
-        m_i = m_ij
+            p_bf16 = p_f32.to(tl.bfloat16)
+            acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
+            l_i = (l_i * alpha + l_ij).to(tl.float32)
+            m_i = m_ij
 
     inv_l_i = tl.where(l_i > 0, 1.0 / l_i, 0.0)
     acc = acc * inv_l_i[:, None]
@@ -501,23 +554,64 @@ def _sdpa_fwd_kernel_body(
     tl.store(o_ptrs, acc.to(tl.bfloat16), mask=o_mask)
 
 
+# Prefill / standard-path tile configs. ONE autotuned kernel spanning BLOCK_M in
+# {16..128}; `_sdpa_prefill_prune` drops configs whose fp32 accumulator
+# acc[BLOCK_M, HEAD_DIM] would spill registers for the runtime HEAD_DIM, so the
+# kernel is high-occupancy AND HEAD_DIM-agnostic (64/80/96/128/256/512). This
+# replaces the old fixed BLOCK_M=64 (m64) / BLOCK_M=32 (m32) wrappers + Python
+# CTA-count selector: at HEAD_DIM=512 the m64 path spilled acc[64,512] fp32
+# (128 KB/CTA -> ~280 reg spills -> ~30 TFLOP/s); the autotuner now picks a
+# non-spilling, well-pipelined tile per HEAD_DIM (e.g. BLOCK_M=32 at 512).
+_SDPA_PREFILL_CONFIGS = [
+    triton.Config({"BLOCK_M": 16, "BLOCK_N": 32}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_M": 16, "BLOCK_N": 64}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=3),
+    triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_warps=8, num_stages=2),
+    triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_warps=4, num_stages=2),
+    triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_M": 64, "BLOCK_N": 128}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_warps=8, num_stages=3),
+    triton.Config({"BLOCK_M": 128, "BLOCK_N": 128}, num_warps=8, num_stages=3),
+]
+
+
+def _sdpa_prefill_prune(configs, nargs, **kwargs):
+    """Drop configs whose fp32 acc[BLOCK_M, HEAD_DIM] would spill registers.
+
+    Keeps ``BLOCK_M * HEAD_DIM <= 4096 * num_warps`` (the measured A100 no-spill
+    boundary: HEAD_DIM=512 -> BLOCK_M<=32 at 4 warps / <=64 at 8 warps;
+    HEAD_DIM=128 -> BLOCK_M<=128 at 4 warps). This guarantees a high-occupancy
+    pick for any HEAD_DIM and a non-empty result (the BLOCK_M=16 configs satisfy
+    the budget for every HEAD_DIM<=1024). SMEM-OOR tiles (large
+    BLOCK_N*HEAD_DIM*num_stages) are pruned by the autotuner at benchmark time.
+    """
+    head_dim = kwargs.get("HEAD_DIM")
+    if head_dim is None and nargs is not None:
+        head_dim = nargs.get("HEAD_DIM")
+    if head_dim is None:
+        return configs
+    kept = [c for c in configs if c.kwargs["BLOCK_M"] * head_dim <= 4096 * c.num_warps]
+    if not kept:
+        kept = [min(configs, key=lambda c: c.kwargs["BLOCK_M"] / c.num_warps)]
+    return kept
+
+
 @triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 128}, num_warps=4, num_stages=3),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 128}, num_warps=8, num_stages=2),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 256}, num_warps=8, num_stages=3),
-        triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_warps=4, num_stages=2),
-    ],
+    configs=_SDPA_PREFILL_CONFIGS,
     key=["Lq", "Lk", "HEAD_DIM", "HAS_MASK", "IS_CAUSAL", "NUM_GROUPS", "PACK_GQA"],
+    prune_configs_by={"early_config_prune": _sdpa_prefill_prune},
 )
 @triton.jit
-def _sdpa_fwd_kernel_m64(
+def _sdpa_fwd_kernel(
     Q_ptr,
     K_ptr,
     V_ptr,
     O_ptr,
     Mask_ptr,
+    KV_LEN_ptr,
     B,
     H_grid,
     Lq,
@@ -544,6 +638,7 @@ def _sdpa_fwd_kernel_m64(
     sm_scale: tl.float32,
     HAS_MASK: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
+    HAS_KV_LEN: tl.constexpr,
     HEAD_DIM: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
     PACK_GQA: tl.constexpr,
@@ -556,6 +651,7 @@ def _sdpa_fwd_kernel_m64(
         V_ptr,
         O_ptr,
         Mask_ptr,
+        KV_LEN_ptr,
         B,
         H_grid,
         Lq,
@@ -582,94 +678,7 @@ def _sdpa_fwd_kernel_m64(
         sm_scale,
         HAS_MASK=HAS_MASK,
         IS_CAUSAL=IS_CAUSAL,
-        BLOCK_M=BLOCK_M,
-        BLOCK_N=BLOCK_N,
-        HEAD_DIM=HEAD_DIM,
-        NUM_GROUPS=NUM_GROUPS,
-        PACK_GQA=PACK_GQA,
-    )
-
-
-@triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_M": 32, "BLOCK_N": 128}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_M": 32, "BLOCK_N": 256}, num_warps=4, num_stages=2),
-        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=2),
-    ],
-    key=["Lq", "Lk", "HEAD_DIM", "HAS_MASK", "IS_CAUSAL", "NUM_GROUPS", "PACK_GQA"],
-)
-@triton.jit
-def _sdpa_fwd_kernel_m32(
-    Q_ptr,
-    K_ptr,
-    V_ptr,
-    O_ptr,
-    Mask_ptr,
-    B,
-    H_grid,
-    Lq,
-    Lk,
-    stride_qb,
-    stride_qh,
-    stride_qm,
-    stride_qd,
-    stride_kb,
-    stride_kh,
-    stride_kn,
-    stride_kd,
-    stride_vb,
-    stride_vh,
-    stride_vn,
-    stride_vd,
-    stride_ob,
-    stride_oh,
-    stride_om,
-    stride_od,
-    stride_mb,
-    stride_mq,
-    stride_mk,
-    sm_scale: tl.float32,
-    HAS_MASK: tl.constexpr,
-    IS_CAUSAL: tl.constexpr,
-    HEAD_DIM: tl.constexpr,
-    NUM_GROUPS: tl.constexpr,
-    PACK_GQA: tl.constexpr,
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
-):
-    _sdpa_fwd_kernel_body(
-        Q_ptr,
-        K_ptr,
-        V_ptr,
-        O_ptr,
-        Mask_ptr,
-        B,
-        H_grid,
-        Lq,
-        Lk,
-        stride_qb,
-        stride_qh,
-        stride_qm,
-        stride_qd,
-        stride_kb,
-        stride_kh,
-        stride_kn,
-        stride_kd,
-        stride_vb,
-        stride_vh,
-        stride_vn,
-        stride_vd,
-        stride_ob,
-        stride_oh,
-        stride_om,
-        stride_od,
-        stride_mb,
-        stride_mq,
-        stride_mk,
-        sm_scale,
-        HAS_MASK=HAS_MASK,
-        IS_CAUSAL=IS_CAUSAL,
+        HAS_KV_LEN=HAS_KV_LEN,
         BLOCK_M=BLOCK_M,
         BLOCK_N=BLOCK_N,
         HEAD_DIM=HEAD_DIM,
@@ -763,6 +772,8 @@ def _launch_pow2_kernel(
     is_causal: bool,
     num_groups: int,
     pack_gqa: bool,
+    kv_len_ptr: Optional[torch.Tensor] = None,
+    HAS_KV_LEN: bool = False,
 ) -> None:
     """Launch power-of-2 optimized SDPA kernel."""
     stride_qb, stride_qh, stride_qm, stride_qd = query.stride()
@@ -780,18 +791,18 @@ def _launch_pow2_kernel(
     def grid(meta):
         return (triton.cdiv(Lq_packed, meta["BLOCK_M"]), B * H_grid)
 
-    total_ctas_m64 = ((Lq_packed + 63) // 64) * (B * H_grid)
-    threshold = 4 * 84
-    kernel = (
-        _sdpa_fwd_kernel_m32 if total_ctas_m64 < threshold else _sdpa_fwd_kernel_m64
-    )
-
-    wrap_triton(kernel)[grid](
+    # Single autotuned kernel: the config set spans BLOCK_M in {16..128} and
+    # `_sdpa_prefill_prune` keeps only non-spilling tiles for this HEAD_DIM, so
+    # the autotuner picks a high-occupancy tile (small BLOCK_M for large HEAD_DIM,
+    # larger BLOCK_M / more CTAs for small problems) — subsuming the old
+    # CTA-count m32/m64 selector.
+    wrap_triton(_sdpa_fwd_kernel)[grid](
         query,
         key,
         value,
         out,
         Mask_ptr if HAS_MASK else 0,
+        kv_len_ptr if HAS_KV_LEN else 0,
         B,
         H_grid,
         L_q,
@@ -818,6 +829,7 @@ def _launch_pow2_kernel(
         sm_scale,
         HAS_MASK=HAS_MASK,
         IS_CAUSAL=is_causal,
+        HAS_KV_LEN=HAS_KV_LEN,
         HEAD_DIM=D,
         NUM_GROUPS=num_groups,
         PACK_GQA=pack_gqa,
@@ -841,6 +853,8 @@ def _launch_non_pow2_kernel(
     is_causal: bool,
     num_groups: int,
     pack_gqa: bool,
+    kv_len_ptr: Optional[torch.Tensor] = None,
+    HAS_KV_LEN: bool = False,
 ) -> None:
     """Launch non-power-of-2 SDPA kernel with dynamic HEAD_DIM masking."""
     stride_qb, stride_qh, stride_qm, stride_qd = query.stride()
@@ -880,6 +894,7 @@ def _launch_non_pow2_kernel(
         value,
         out,
         mask_ptr,
+        kv_len_ptr if HAS_KV_LEN else 0,
         B,
         H_grid,
         L_q,
@@ -911,6 +926,7 @@ def _launch_non_pow2_kernel(
         BLOCK_D=BLOCK_D,
         HAS_MASK=HAS_MASK,
         IS_CAUSAL=is_causal,
+        HAS_KV_LEN=HAS_KV_LEN,
         NUM_GROUPS=num_groups,
         PACK_GQA=pack_gqa,
         num_warps=num_warps,
@@ -928,6 +944,7 @@ def sdpa(
     is_causal: bool = False,
     scale: float = 0.0,
     enable_gqa: bool = False,
+    kv_len: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
     Triton fused Scaled Dot-Product Attention with GQA pack optimization.
@@ -945,6 +962,15 @@ def sdpa(
         is_causal: apply causal masking
         scale: attention scale (default: 1/sqrt(D))
         enable_gqa: allow H_q != H_kv (GQA/MQA)
+        kv_len: Optional GPU int scalar = number of valid (filled) KV positions.
+            When provided, the inner KV loop is bounded to ``kv_len`` instead of
+            the full pre-allocated ``L_kv``, making attention O(context) instead
+            of O(max_seq_len). It is read on-device (no host sync) so the bound
+            updates correctly under CUDA-graph replay (decode). For decode pass
+            ``input_pos + 1``; for a prefill chunk pass ``chunk_end``. When None
+            the loop runs over the full ``L_kv`` (original behavior). Supplying
+            it for an L_q==1 decode with a large buffer also routes through the
+            split-K flash-decoding kernel for occupancy.
     Returns:
         Output tensor [B, H_q, L_q, D], dtype torch.bfloat16
     """
@@ -962,6 +988,54 @@ def sdpa(
             "For decode (L_q < L_kv), use an explicit bool mask instead."
         )
 
+    out = torch.empty((B, H_q, L_q, D), device=query.device, dtype=query.dtype)
+    sm_scale = 1.0 / math.sqrt(D) if scale == 0.0 else scale
+    HAS_MASK, Mask_ptr, stride_mb, stride_mq, stride_mk = _prepare_mask_params(
+        attn_mask, B, L_q, L_kv
+    )
+
+    # Optional length bound: device int32 scalar, clamped to the buffer size for
+    # OOB safety. Reshaped to [1] so the kernel can ``tl.load`` element 0. No
+    # ``.item()`` — keeps it CUDA-graph-safe (value updates on replay).
+    HAS_KV_LEN = kv_len is not None
+    if HAS_KV_LEN:
+        kv_len_t = torch.clamp(
+            kv_len.reshape(1).to(torch.int32), max=int(L_kv)
+        ).contiguous()
+    else:
+        kv_len_t = None
+
+    # Split-K decode dispatch: L_q == 1 with a kv_len bound and a large KV
+    # buffer. Flash-decoding partitions the KV sequence across many CTAs for
+    # better occupancy (L_q=1 launches too few CTAs otherwise). The split is
+    # static (from buffer size L_kv, not the runtime kv_len value) so it is
+    # export/AOTI-traceable; the kernel still bounds each split's loop by kv_len
+    # on-device (CUDA-graph safe). Only taken when kv_len is supplied, so callers
+    # that don't pass kv_len keep the exact original (standard-kernel) dispatch.
+    if HAS_KV_LEN and L_q == 1 and _is_power_of_2(D) and L_kv >= _SPLITK_LKV_THRESHOLD:
+        _launch_decode_splitk(
+            query,
+            key,
+            value,
+            out,
+            B,
+            H_q,
+            H_kv,
+            L_kv,
+            D,
+            sm_scale,
+            HAS_MASK,
+            Mask_ptr,
+            stride_mb,
+            stride_mq,
+            stride_mk,
+            num_groups,
+            _DEFAULT_SPLITK_PHI,
+            kv_len_t,
+            HAS_KV_LEN,
+        )
+        return out
+
     # Decide whether to pack GQA based on tile utilization heuristic.
     # Use the actual BLOCK_M that the launched kernel will use:
     # - non-pow2 path always uses BLOCK_M=32
@@ -972,12 +1046,6 @@ def sdpa(
         total_ctas_m64 = ((L_q * num_groups + 63) // 64) * (B * H_kv)
         block_m = 32 if total_ctas_m64 < 4 * 84 else 64
     pack_gqa = _should_pack_gqa(L_q, num_groups, block_m)
-
-    out = torch.empty((B, H_q, L_q, D), device=query.device, dtype=query.dtype)
-    sm_scale = 1.0 / math.sqrt(D) if scale == 0.0 else scale
-    HAS_MASK, Mask_ptr, stride_mb, stride_mq, stride_mk = _prepare_mask_params(
-        attn_mask, B, L_q, L_kv
-    )
 
     if _is_power_of_2(D):
         _launch_pow2_kernel(
@@ -1000,6 +1068,8 @@ def sdpa(
             is_causal,
             num_groups,
             pack_gqa,
+            kv_len_t,
+            HAS_KV_LEN,
         )
     else:
         _launch_non_pow2_kernel(
@@ -1019,6 +1089,8 @@ def sdpa(
             is_causal,
             num_groups,
             pack_gqa,
+            kv_len_t,
+            HAS_KV_LEN,
         )
 
     return out
@@ -1036,6 +1108,7 @@ def _sdpa_abstract(
     is_causal: bool = False,
     scale: float = 0.0,
     enable_gqa: bool = False,
+    kv_len: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
     Abstract/fake implementation for torch.export.
@@ -1080,9 +1153,9 @@ def _sdpa_decode_splitk_kernel(
     K_ptr,
     V_ptr,
     O_partial_ptr,
-    M_partial_ptr,
     L_partial_ptr,
     Mask_ptr,
+    KV_LEN_ptr,
     B,
     H_kv,
     Lk,
@@ -1102,15 +1175,17 @@ def _sdpa_decode_splitk_kernel(
     stride_op_b,
     stride_op_h,
     stride_op_d,
-    stride_mp_s,
-    stride_mp_b,
-    stride_mp_h,
+    stride_lp_s,
+    stride_lp_b,
+    stride_lp_h,
     stride_mb,
     stride_mq,
     stride_mk,
     sm_scale: tl.float32,
+    phi: tl.float32,
     chunk_size,
     HAS_MASK: tl.constexpr,
+    HAS_KV_LEN: tl.constexpr,
     BLOCK_N: tl.constexpr,
     HEAD_DIM: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
@@ -1122,7 +1197,15 @@ def _sdpa_decode_splitk_kernel(
     h_kv = pid_bh % H_kv
 
     start_n = split_id * chunk_size
-    end_n = tl.minimum(start_n + chunk_size, Lk)
+    # Bound the decode KV sweep to the valid (filled) positions. Splits whose
+    # chunk starts past kv_len do no work (end_n <= start_n) and store the zero
+    # partials they were initialized with, so the reduce is unaffected. kv_len is
+    # read on-device (CUDA-graph safe); falls back to Lk when not provided.
+    if HAS_KV_LEN:
+        kv_len = tl.load(KV_LEN_ptr)
+    else:
+        kv_len = Lk
+    end_n = tl.minimum(start_n + chunk_size, kv_len)
 
     offs_d = tl.arange(0, HEAD_DIM)
     offs_g = tl.arange(0, BLOCK_G)
@@ -1138,7 +1221,7 @@ def _sdpa_decode_splitk_kernel(
     )
     q = tl.load(q_ptrs, mask=g_valid[:, None], other=0.0).to(tl.bfloat16)
 
-    m_i = tl.full([BLOCK_G], -float("inf"), dtype=tl.float32)
+    # FlashDecoding++ async softmax: use unified max phi instead of tracking m_i
     l_i = tl.zeros([BLOCK_G], dtype=tl.float32)
     acc = tl.zeros([BLOCK_G, HEAD_DIM], dtype=tl.float32)
 
@@ -1175,15 +1258,10 @@ def _sdpa_decode_splitk_kernel(
                 mask_block, qk, tl.full(qk.shape, -float("inf"), dtype=tl.float32)
             )
 
-        # Online softmax update
-        m_ij = tl.maximum(m_i, tl.max(qk, axis=1).to(tl.float32))
-        safe_diff = tl.where(
-            m_ij[:, None] > -float("inf"), qk - m_ij[:, None], -float("inf")
-        )
+        # FlashDecoding++ async softmax: subtract unified phi instead of local max
+        safe_diff = tl.where(qk > -float("inf"), qk - phi, -float("inf"))
         p_f32 = tl.exp(safe_diff).to(tl.float32)
         l_ij = tl.sum(p_f32, axis=1).to(tl.float32)
-        safe_alpha_diff = tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
-        alpha = tl.exp(safe_alpha_diff).to(tl.float32)
 
         v_ptrs = V_ptr + (
             b * stride_vb
@@ -1194,9 +1272,8 @@ def _sdpa_decode_splitk_kernel(
         v = tl.load(v_ptrs, mask=n_valid[:, None], other=0.0).to(tl.bfloat16)
 
         p_bf16 = p_f32.to(tl.bfloat16)
-        acc = (acc * alpha[:, None] + tl.dot(p_bf16, v)).to(tl.float32)
-        l_i = (l_i * alpha + l_ij).to(tl.float32)
-        m_i = m_ij
+        acc = (acc + tl.dot(p_bf16, v)).to(tl.float32)
+        l_i = (l_i + l_ij).to(tl.float32)
 
     # Store partial results for valid groups only
     h_q_all = h_kv * NUM_GROUPS + offs_g  # [BLOCK_G]
@@ -1208,13 +1285,8 @@ def _sdpa_decode_splitk_kernel(
     )
     tl.store(o_ptrs, acc, mask=g_valid[:, None])
 
-    ml_ptrs = M_partial_ptr + (
-        split_id * stride_mp_s + b * stride_mp_b + h_q_all * stride_mp_h
-    )
-    tl.store(ml_ptrs, m_i, mask=g_valid)
-
     ll_ptrs = L_partial_ptr + (
-        split_id * stride_mp_s + b * stride_mp_b + h_q_all * stride_mp_h
+        split_id * stride_lp_s + b * stride_lp_b + h_q_all * stride_lp_h
     )
     tl.store(ll_ptrs, l_i, mask=g_valid)
 
@@ -1222,7 +1294,6 @@ def _sdpa_decode_splitk_kernel(
 @triton.jit
 def _sdpa_decode_reduce_kernel(
     O_partial_ptr,
-    M_partial_ptr,
     L_partial_ptr,
     O_ptr,
     num_splits,
@@ -1230,9 +1301,9 @@ def _sdpa_decode_reduce_kernel(
     stride_op_b,
     stride_op_h,
     stride_op_d,
-    stride_mp_s,
-    stride_mp_b,
-    stride_mp_h,
+    stride_lp_s,
+    stride_lp_b,
+    stride_lp_h,
     stride_ob,
     stride_oh,
     stride_om,
@@ -1242,40 +1313,25 @@ def _sdpa_decode_reduce_kernel(
     pid = tl.program_id(axis=0)
     offs_d = tl.arange(0, HEAD_DIM)
 
-    # pid indexes into flattened (B, H_q). Partial buffers are allocated
-    # contiguous in _launch_decode_splitk, so pid * stride_*_h is valid.
-    # Find global max across all splits
-    m_global = tl.full([1], -float("inf"), dtype=tl.float32)
-    for s in tl.range(0, num_splits):
-        m_ptr = M_partial_ptr + s * stride_mp_s + pid * stride_mp_h
-        m_s = tl.load(m_ptr)
-        m_global = tl.maximum(m_global, m_s)
-
-    # Accumulate rescaled outputs
+    # FlashDecoding++ async softmax: no rescaling needed, just sum partials
     acc = tl.zeros([HEAD_DIM], dtype=tl.float32)
     l_global = tl.zeros([1], dtype=tl.float32)
+
     for s in tl.range(0, num_splits):
-        m_ptr = M_partial_ptr + s * stride_mp_s + pid * stride_mp_h
-        l_ptr = L_partial_ptr + s * stride_mp_s + pid * stride_mp_h
+        l_ptr = L_partial_ptr + s * stride_lp_s + pid * stride_lp_h
         o_ptrs = O_partial_ptr + (
             s * stride_op_s + pid * stride_op_h + offs_d * stride_op_d
         )
 
-        m_s = tl.load(m_ptr)
         l_s = tl.load(l_ptr)
         o_s = tl.load(o_ptrs)
 
-        safe_diff = tl.where(m_global > -float("inf"), m_s - m_global, 0.0)
-        scale = tl.exp(safe_diff).to(tl.float32)
-        acc += o_s * scale
-        l_global += l_s * scale
+        acc += o_s
+        l_global += l_s
 
     inv_l = tl.where(l_global > 0, 1.0 / l_global, 0.0)
     acc = acc * inv_l
 
-    # pid = b*H_q + h_q. For contiguous output [B, H_q, 1, D] with L_q=1,
-    # stride_ob == H_q * stride_oh, so pid * stride_oh is correct.
-    # This relies on `out` being freshly allocated and contiguous.
     o_out_ptrs = O_ptr + pid * stride_oh + offs_d * stride_od
     tl.store(o_out_ptrs, acc.to(tl.bfloat16))
 
@@ -1297,15 +1353,15 @@ def _launch_decode_splitk(
     stride_mq: int,
     stride_mk: int,
     num_groups: int,
+    phi: float,
+    kv_len_ptr: Optional[torch.Tensor] = None,
+    HAS_KV_LEN: bool = False,
 ) -> None:
     num_splits = min(max(triton.cdiv(L_kv, 256), 1), 128)
     chunk_size = triton.cdiv(L_kv, num_splits)
 
     O_partial = torch.empty(
         (num_splits, B, H_q, D), device=query.device, dtype=torch.float32
-    )
-    M_partial = torch.full(
-        (num_splits, B, H_q), -float("inf"), device=query.device, dtype=torch.float32
     )
     L_partial = torch.zeros(
         (num_splits, B, H_q), device=query.device, dtype=torch.float32
@@ -1316,7 +1372,7 @@ def _launch_decode_splitk(
     stride_vb, stride_vh, stride_vn, stride_vd = value.stride()
     stride_ob, stride_oh, stride_om, stride_od = out.stride()
     stride_op_s, stride_op_b, stride_op_h, stride_op_d = O_partial.stride()
-    stride_mp_s, stride_mp_b, stride_mp_h = M_partial.stride()
+    stride_lp_s, stride_lp_b, stride_lp_h = L_partial.stride()
 
     grid_split = (num_splits, B * H_kv)
     wrap_triton(_sdpa_decode_splitk_kernel)[grid_split](
@@ -1324,9 +1380,9 @@ def _launch_decode_splitk(
         key,
         value,
         O_partial,
-        M_partial,
         L_partial,
         Mask_ptr if HAS_MASK else 0,
+        kv_len_ptr if HAS_KV_LEN else 0,
         B,
         H_kv,
         L_kv,
@@ -1346,15 +1402,17 @@ def _launch_decode_splitk(
         stride_op_b,
         stride_op_h,
         stride_op_d,
-        stride_mp_s,
-        stride_mp_b,
-        stride_mp_h,
+        stride_lp_s,
+        stride_lp_b,
+        stride_lp_h,
         stride_mb,
         stride_mq,
         stride_mk,
         sm_scale,
+        phi,
         chunk_size,
         HAS_MASK=HAS_MASK,
+        HAS_KV_LEN=HAS_KV_LEN,
         HEAD_DIM=D,
         NUM_GROUPS=num_groups,
         BLOCK_G=_next_power_of_2_unclamped(num_groups),
@@ -1363,7 +1421,6 @@ def _launch_decode_splitk(
     grid_reduce = (B * H_q,)
     wrap_triton(_sdpa_decode_reduce_kernel)[grid_reduce](
         O_partial,
-        M_partial,
         L_partial,
         out,
         num_splits,
@@ -1371,9 +1428,9 @@ def _launch_decode_splitk(
         stride_op_b,
         stride_op_h,
         stride_op_d,
-        stride_mp_s,
-        stride_mp_b,
-        stride_mp_h,
+        stride_lp_s,
+        stride_lp_b,
+        stride_lp_h,
         stride_ob,
         stride_oh,
         stride_om,
@@ -1394,12 +1451,21 @@ def sdpa_decode_splitk(
     is_causal: bool = False,
     scale: float = 0.0,
     enable_gqa: bool = False,
+    phi: float = 5.0,
+    kv_len: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Split-K flash-decoding SDPA for L_q=1 (decode step).
+
+    Uses FlashDecoding++ async softmax with unified maximum value (phi)
+    to eliminate per-split max tracking and cross-split rescaling.
 
     Signature mirrors sdpa() for drop-in use with torch.cond dispatch.
     enable_gqa is accepted but ignored — GQA is handled natively via
     H_q // H_kv grouping; no packed-GQA tradeoff exists at L_q=1.
+
+    kv_len: optional GPU int scalar bounding the KV sweep to the valid
+    (filled) positions (O(context) instead of O(max_seq_len)). Read
+    on-device, CUDA-graph safe. When None, sweeps the full L_kv.
     """
     _validate_sdpa_inputs(query, key, value, dropout_p, enable_gqa)
 
@@ -1435,6 +1501,14 @@ def sdpa_decode_splitk(
         attn_mask, B, L_q, L_kv
     )
 
+    HAS_KV_LEN = kv_len is not None
+    if HAS_KV_LEN:
+        kv_len_t = torch.clamp(
+            kv_len.reshape(1).to(torch.int32), max=int(L_kv)
+        ).contiguous()
+    else:
+        kv_len_t = None
+
     _launch_decode_splitk(
         query,
         key,
@@ -1452,6 +1526,9 @@ def sdpa_decode_splitk(
         stride_mq,
         stride_mk,
         num_groups,
+        phi,
+        kv_len_t,
+        HAS_KV_LEN,
     )
     return out
 
@@ -1466,6 +1543,8 @@ def _sdpa_decode_splitk_abstract(
     is_causal: bool = False,
     scale: float = 0.0,
     enable_gqa: bool = False,
+    phi: float = 5.0,
+    kv_len: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     assert query.dtype == key.dtype == value.dtype, "Q, K, V must have the same dtype"
     B, H_q, L_q, D = query.shape

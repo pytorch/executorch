@@ -5,11 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+import hashlib
 import os
 import typing
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 import torch
 from executorch.backends.aoti.passes.replace_view_copy_with_view import (
@@ -25,7 +26,6 @@ from torch.export.passes import move_to_device_pass
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
-    SHARE_KV_CACHE_ACROSS_METHODS = "share_kv_cache_across_methods"
 
 
 @experimental(
@@ -89,9 +89,61 @@ class AotiBackend(ABC):
         return False
 
     @classmethod
-    def get_extra_aoti_compile_context_manager(cls):
-        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager."""
+    def get_extra_aoti_compile_context_manager(
+        cls, compile_specs: Optional[List[CompileSpec]] = None
+    ):
+        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager.
+
+        Subclasses may inspect ``compile_specs`` to opt into behaviors that
+        only apply to specific methods/models (e.g. low-memory export).
+        """
         return contextlib.nullcontext()
+
+    @classmethod
+    def codesign_so(cls, so_path: str, compile_specs: List[CompileSpec]) -> None:
+        """Sign the compiled .so before packing into .pte.
+
+        Called after AOTInductor compilation, before the .so bytes are read
+        and packed into the named data store. Override in platform-specific
+        backends to apply code signing (e.g., macOS codesign for Hardened
+        Runtime compatibility).
+
+        Default: no-op.
+        """
+        return
+
+    @classmethod
+    def move_program_to_device(
+        cls,
+        edge_program: ExportedProgram,
+        device: str,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Move the exported program to the target device for compilation.
+
+        Default implementation moves everything (params, buffers, constants) via
+        ``move_to_device_pass``. Concrete backends may override to keep large
+        non-parameter tensors off the device during a low-memory export.
+        """
+        return move_to_device_pass(edge_program, device)
+
+    @classmethod
+    def release_moved_tensors(
+        cls,
+        device_edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> None:
+        """Release device memory held by tensors that ``move_to_device_pass``
+        placed on the target device.
+
+        Called at the end of ``preprocess`` so that the next ``preprocess``
+        call (e.g. for the next method in a multi-method export) can reuse
+        the freed memory. Override in concrete backends (e.g. ``CudaBackend``)
+        to actually free device memory.
+
+        Default: no-op.
+        """
+        return
 
     @classmethod
     @contextlib.contextmanager
@@ -159,9 +211,13 @@ class AotiBackend(ABC):
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
 
-        # Move the edge_program to the target device
-        device_edge_program = move_to_device_pass(
-            edge_program, device_name if device_name != "metal" else "mps"
+        # Move the edge_program to the target device. Routed through a hook so
+        # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
+        # off the device during a low-memory export.
+        device_edge_program = cls.move_program_to_device(
+            edge_program,
+            device_name if device_name != "metal" else "mps",
+            compile_specs,
         )
 
         # Replace view_copy with view
@@ -196,7 +252,7 @@ class AotiBackend(ABC):
         # Compile with fallback kernel collection
         with cls.collect_unsupported_fallback_kernels(
             missing_fallback_kernels
-        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager():
+        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager(compile_specs):
             paths = torch._inductor.aot_compile(
                 edge_program_module, tuple(user_input_placeholders), options=options
             )
@@ -227,6 +283,9 @@ class AotiBackend(ABC):
                 f"Could not find required files in compiled paths, got {paths}"
             )
 
+        # Sign the .so for platform-specific requirements (e.g., macOS Hardened Runtime)
+        cls.codesign_so(so_path, compile_specs)
+
         # Read SO file
         with open(so_path, "rb") as f:
             so_data = f.read()
@@ -237,25 +296,37 @@ class AotiBackend(ABC):
 
         # Create named data store
         named_data_store = NamedDataStore()
-        method_name = cls.method_name_from_compile_specs(compile_specs)
 
-        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
+        # Key each blob by a content hash so partitions in one method get distinct
+        # keys (a method-name-only key collides). Runtime recovers them from
+        # processed_bytes below.
+        so_blob_key = hashlib.sha256(so_data).hexdigest() + "_so_blob"
+        weights_blob_key = hashlib.sha256(blob_data).hexdigest() + "_weights_blob"
+
+        named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
         external_tag = (
             f"aoti_{device_name}_blob" if cls.save_data_externally() else None
         )
 
-        named_data_store.add_named_data(
-            method_name + "_weights_blob", blob_data, 1, external_tag
-        )
+        named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
 
         # Clean up the generated files
         os.remove(so_path)
         os.remove(blob_path)
 
+        # Release device memory held by tensors that ``move_to_device_pass``
+        # placed on the target device. Default impl is a no-op; concrete
+        # backends (e.g. CudaBackend) override this to free GPU memory before
+        # the next preprocess call (e.g. for the next method).
+        cls.release_moved_tensors(device_edge_program, compile_specs)
+
+        # The runtime cannot recompute these hash keys, so carry them (one per line).
+        processed_bytes = (so_blob_key + "\n" + weights_blob_key).encode("utf-8")
+
         return PreprocessResult(
-            processed_bytes=b"",
+            processed_bytes=processed_bytes,
             debug_handle_map={},
             data_store_output=named_data_store.get_named_data_store_output(),
         )
@@ -286,14 +357,4 @@ class AotiBackend(ABC):
                 return spec.value.decode("utf-8")
         raise RuntimeError(
             f"Could not find method name in compile specs: {compile_specs}"
-        )
-
-    @classmethod
-    def generate_share_kv_cache_compile_spec(cls) -> CompileSpec:
-        """
-        Generate a CompileSpec to enable cross-method KV cache sharing.
-        """
-        return CompileSpec(
-            COMPILE_SPEC_KEYS.SHARE_KV_CACHE_ACROSS_METHODS.value,
-            bytes([1]),
         )

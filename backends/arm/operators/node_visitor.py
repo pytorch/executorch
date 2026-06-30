@@ -30,7 +30,7 @@ from executorch.backends.arm.tosa.specification import (
     TosaSpecification,
     TosaSpecMapping,
 )
-from torch.export import ExportedProgram
+
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,6 @@ class NodeVisitor:
     """Provide a visitor pattern to lower edge IR to TOSA.
 
     Attributes:
-        _exported_program (torch.export.ExportedProgram): Source program being lowered.
         tosa_spec (TosaSpecification): Active TOSA specification for lowering.
         debug_hook (Optional[DebugHook]): Optional hook for debug metadata.
 
@@ -54,11 +53,9 @@ class NodeVisitor:
 
     def __init__(
         self,
-        exported_program: ExportedProgram,
         tosa_spec: TosaSpecification,
         debug_hook: Optional[DebugHook] = None,
     ):
-        self._exported_program = exported_program
         self.tosa_spec = tosa_spec
         self.debug_hook = debug_hook
 
@@ -250,3 +247,15 @@ def get_node_visitors(*args) -> Dict[str, NodeVisitor]:
         node_visitors[target] = visitor(*args)
 
     return node_visitors
+
+
+def get_node_visitor(target: str, tosa_spec: TosaSpecification):
+    # Ensure all operator modules are imported so visitors are registered.
+    import executorch.backends.arm.operators  # noqa: F401
+
+    node_visitor_tuples = _node_visitor_tuples.get(tosa_spec)
+    for target_name, node_visitor_cls in node_visitor_tuples:
+        if target_name == target:
+            return node_visitor_cls(tosa_spec)
+
+    raise ValueError(f"No {target} NodeVisitor registered for {tosa_spec}")

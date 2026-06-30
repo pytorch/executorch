@@ -1,0 +1,104 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+cmake_minimum_required(VERSION 3.24)
+project(gemma4_31b)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(_json_include
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
+)
+
+# gflags
+set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
+find_package(gflags REQUIRED)
+
+# executorch
+list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+executorch_target_link_options_shared_lib(executorch)
+
+set(link_libraries executorch gflags)
+
+# CPU ops (for the host-side helpers that aren't delegated to CUDA)
+list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
+executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+
+# Extensions
+list(
+  APPEND
+  link_libraries
+  extension_llm_runner
+  extension_module
+  extension_data_loader
+  extension_tensor
+  extension_flat_tensor
+)
+
+# Backend: CUDA or MLX (exactly one required)
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  list(APPEND link_libraries aoti_cuda_backend)
+  executorch_target_link_options_shared_lib(aoti_cuda_backend)
+  add_compile_definitions(EXECUTORCH_BUILD_CUDA)
+elseif(TARGET mlxdelegate)
+  list(APPEND link_libraries mlxdelegate mlx)
+  executorch_target_link_options_shared_lib(mlxdelegate)
+  add_compile_definitions(EXECUTORCH_BUILD_MLX)
+else()
+  message(FATAL_ERROR "Set EXECUTORCH_BUILD_CUDA=ON or EXECUTORCH_BUILD_MLX=ON")
+endif()
+
+# Tokenizer (HuggingFace tokenizer.json)
+list(APPEND link_libraries tokenizers::tokenizers)
+
+add_executable(gemma4_31b_runner main.cpp gemma4_31b_engine.cpp)
+target_include_directories(
+  gemma4_31b_runner PUBLIC ${_common_include_directories} ${_json_include}
+)
+target_link_libraries(gemma4_31b_runner PUBLIC ${link_libraries})
+
+add_executable(gemma4_31b_worker gemma4_31b_worker.cpp gemma4_31b_engine.cpp)
+target_include_directories(
+  gemma4_31b_worker PUBLIC ${_common_include_directories} ${_json_include}
+)
+target_link_libraries(gemma4_31b_worker PUBLIC ${link_libraries})
+
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(gemma4_31b_runner)
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(gemma4_31b_runner PRIVATE "LINKER:-s")
+  endif()
+  target_link_options_gc_sections(gemma4_31b_worker)
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(gemma4_31b_worker PRIVATE "LINKER:-s")
+  endif()
+endif()
+
+if(TARGET mlxdelegate)
+  executorch_target_copy_mlx_metallib(gemma4_31b_runner)
+  executorch_target_copy_mlx_metallib(gemma4_31b_worker)
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  enable_testing()
+  add_executable(
+    test_gemma4_31b_nobleed test_gemma4_31b_nobleed.cpp gemma4_31b_engine.cpp
+  )
+  target_include_directories(
+    test_gemma4_31b_nobleed PUBLIC ${_common_include_directories}
+                                   ${_json_include}
+  )
+  target_link_libraries(test_gemma4_31b_nobleed PUBLIC ${link_libraries})
+  add_test(NAME gemma4_31b_nobleed COMMAND test_gemma4_31b_nobleed)
+endif()

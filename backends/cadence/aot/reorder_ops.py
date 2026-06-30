@@ -9,21 +9,24 @@
 
 # This file contains all the functions that reorder ops in the graph module.
 
-import copy
 from collections import defaultdict
 from math import prod
-from typing import cast, DefaultDict, List, Tuple
+from typing import Callable, cast, DefaultDict, List, Optional, Tuple
 
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import get_placeholders, get_shape
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    get_arg,
     get_overload_packet,
     register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
+from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
+    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView as _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -245,12 +248,22 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
     """
-    If the input to quantize op is linear chain of view, transpose, permute, or
-    slice ops that are trivially quantized, we can convert the pattern
-    view/transpose/permute/slice(fp32) -> quantize(int8/uint8) to
-    quantize(int8/uint8) -> view/transpose/permute/slice(int8/uint8).
-    The benefit of such reordering is that the view/transpose/permute/slice
-    will move far less data.
+    Advances a quantize op above data-movement ops to reduce data volume.
+
+    Handles two cases:
+
+    1. Linear chain: if the input to a quantize op is a chain of trivially
+       quantizable ops (view, transpose, permute, slice), rewrite
+       data_movement(fp32) -> quantize to quantize -> data_movement(quantized)
+       so the data movement operates on smaller quantized tensors.
+
+    2. Cat: if the input to a quantize op is a cat with a single user (the
+       quantize), advance the quantize above the cat by quantizing each cat
+       input individually.  A later pass can clean up any redundant
+       dequant-quant pairs on the inputs.
+
+    For the cat case, SplitDequantizedCatPass should run first to ensure
+    each cat has at most one quantize consumer.
     """
 
     def __init__(self):
@@ -299,6 +312,47 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         # All the conditions satisfied, we advance.
         return True
 
+    def _advance_above_cat(
+        self, quant_node: torch.fx.Node, cat_node: torch.fx.Node
+    ) -> None:
+        """Advance a quantize op above a cat by quantizing each cat input."""
+        graph = quant_node.graph
+        quant_params = quant_node.args[1:]
+
+        cat_inputs = cat_node.args[0]
+        assert isinstance(cat_inputs, (list, tuple))
+
+        new_inputs: list[torch.fx.Node] = []
+        for inp in cat_inputs:
+            # cat concatenates tensors, so every input must be a node.
+            assert isinstance(inp, torch.fx.Node)
+
+            with graph.inserting_before(cat_node):
+                new_quant = graph.call_function(
+                    # pyre-ignore[6]
+                    quant_node.target,
+                    args=(inp, *quant_params),
+                )
+                # This copies the fp32 input's meta, so meta["val"] keeps the
+                # fp32 dtype rather than the quantized output dtype. That's fine:
+                # nothing in this pass reads dtype from meta (only shape, which
+                # is correct), and call() re-runs super().call() to re-propagate
+                # fake tensors, making meta dtype-consistent before we return.
+                new_quant.meta = inp.meta.copy()
+            new_inputs.append(new_quant)
+
+        dim = get_arg(cat_node, "dim", int)
+        with graph.inserting_before(quant_node):
+            new_cat = graph.call_function(
+                # pyre-ignore[6]
+                cat_node.target,
+                args=(new_inputs, dim),
+            )
+            new_cat.meta = quant_node.meta.copy()
+
+        quant_node.replace_all_uses_with(new_cat)
+        graph.erase_node(quant_node)
+
     def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
         graph = graph_module.graph
         modified = False
@@ -309,6 +363,17 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
                 exir_ops.edge.cadence.quantize_per_tensor,
                 torch.ops.cadence.quantize_per_tensor,
             ):
+                continue
+
+            inp = node.args[0]
+            if (
+                isinstance(inp, torch.fx.Node)
+                and get_overload_packet(inp.target)
+                in (exir_ops.edge.aten.cat, torch.ops.aten.cat)
+                and len(inp.users) == 1
+            ):
+                self._advance_above_cat(node, inp)
+                modified = True
                 continue
 
             if not self.advancing_feasible(node):
@@ -633,191 +698,567 @@ class HoistOpsCloserToDefPass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
-class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterface):
+class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(
+    _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
+):
+    pass
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
+    """Move slice_copy ops before permute_copy to reduce permute data volume.
+
+    Rewrites permute(input, perm) -> slice(dim=D) into
+    slice(input, dim=perm[D]) -> permute(sliced, perm), so the permute
+    operates on a smaller tensor.
+
+    Scans slice nodes and matches upstream permutes. This also handles
+    chained cases (permute -> slice -> slice) in one pass: each slice
+    independently checks its input for a permute.
+
+    Cost model: dim-0 slices are nop-eligible (zero-copy pointer offset
+    after MakeSliceAndCatDimOutermostPass).  Moving such a slice loses the
+    nop, so we only move it when the permute savings outweigh the nop loss,
+    i.e. when the slice removes more than half the data (full > 2 * sliced).
+    Non-dim-0 slices have no nop opportunity, so any permute savings is
+    pure win.
     """
-    A common pattern seen in transformer models.  If the consumer of permute
-    is a view op, swap their order so permute is below view.
-    Change "permute -> view" to "view -> permute"
-    This is to optimize a chain of view->permute->view->permute...
-    so that the chain will be become view->v...->view->permute->p...->permute.
-    The chain can be optimized by FuseCascadedTransposeOrPermuteOps() and
-    FuseCascadedViewOps().
-    Notice the class name has ViewSqueeze to indicate the View is
-    functionally the same as a squeeze or unsqueeze. It does not necessarily
-    mean the view_copy is normalized from squeeze or unsqueeze.
+
+    STRIDED_SLICE_COST_FACTOR: int = 2
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        permute_node = get_arg(node, "input", torch.fx.Node)
+        if permute_node.target != exir_ops.edge.aten.permute_copy.default:
+            return False
+
+        if len(permute_node.users) != 1:
+            return False
+
+        perm = cast(list[int], permute_node.args[1])
+        permute_input = permute_node.args[0]
+        assert isinstance(permute_input, torch.fx.Node)
+
+        slice_dim = get_arg(node, "dim", int)
+
+        full_size = prod(permute_node.meta["val"].shape)
+        sliced_size = prod(node.meta["val"].shape)
+        if slice_dim == 0 and full_size <= self.STRIDED_SLICE_COST_FACTOR * sliced_size:
+            return False
+
+        new_dim = perm[slice_dim]
+        graph = node.graph
+
+        with graph.inserting_before(permute_node):
+            new_slice_args = (
+                permute_input,
+                new_dim,
+                get_arg(node, "start"),
+                get_arg(node, "end"),
+                get_arg(node, "step", int),
+            )
+            new_slice = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=new_slice_args,
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                permute_input.meta["val"], *new_slice_args[1:]
+            )
+            new_permute = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.permute_copy.default,
+                args=(new_slice, perm),
+            )
+            new_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                new_slice.meta["val"], perm
+            )
+
+        node.replace_all_uses_with(new_permute)
+        return True
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class MoveSliceBeforeViewPass(RemoveOrReplacePassInterface):
+    """Move a slice_copy above a view_copy when the slice is re-expressible as a
+    single slice on one dim of the pre-view tensor.
+
+    Rewrites  view(x) -> slice(dim=d, start, end, step)  into
+    slice(x, dim=d', start', end', step') -> view(sliced, slice_out_shape), so the
+    slice lands directly on x. This may be useful in attention patterns, where
+    we view outputs of a large linear into a new shape where the number of
+    attention heads are the last dim, and we need to run independent computation
+    per head. Moving the slice before the view can allow us to then directly slice
+    the constant linear weights.
+
+    A view is a contiguous reshape: it never moves or reorders elements, it only
+    re-groups the shared row-major index space into different dims. A slice keeps
+    an arithmetic progression of indices (start, start+step, ...) along one viewed
+    dim, and that progression collapses back to a *single* slice on one pre-view
+    dim exactly when the row-major strides line up. ``_derive_pre_view_slice``
+    handles the three cases that qualify:
+
+      * untouched dim: the viewed dim is left unchanged by the view -- same size
+        and same inner stride as some pre-view dim -- so the slice copies over
+        verbatim (any step).
+      * contiguous: the viewed dim and a pre-view dim span the same flat extent
+        (a split's outermost factor, or a merge that aligns), so a contiguous
+        (step==1) slice maps to a contiguous pre-view slice.
+      * strided: the viewed dim is an innermost factor of a pre-view dim
+        (identical inner stride) selected width-1, so it maps to a strided
+        pre-view slice with step == the viewed dim's size.
+
+    Everything else -- middle factors, wider strided selections -- is block-strided
+    (runs separated by gaps), which no single slice can express, so it is left
+    unchanged.
+
+    Each slice is handled independently, so a view that fans out to several slices
+    is rewritten one slice at a time and the now-dead view is removed by dead-code
+    elimination -- there is no single-user requirement on the view.
     """
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.aten.permute_copy.default]
-
-    # If list1 and list2 are same (same values and in same order) except
-    # list1 has one more element with value of 1. Return index of the extra 1.
-    # Otherwise return -1.
-    def check_if_shapes_differ_in_single_dim_of_size_1(
-        self, list1: List, list2: List
-    ) -> int:
-        if len(list1) != len(list2) + 1:
-            return -1
-        for i in range(len(list2)):
-            if list1[i] != list2[i]:
-                # Return index of the extra 1 if the remaining parts are the same
-                if list1[i] == 1 and list2[i:] == list1[i + 1 :]:
-                    return i
-                else:
-                    return -1
-        # If no difference was found, the extra element is at the end
-        if list1[-1] == 1:
-            return len(list2)
-        else:
-            return -1
+        return [exir_ops.edge.aten.slice_copy.Tensor]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        users = list(node.users.keys())
-        # Transform only for pattern permute_copy->view_copy, and
-        # view_copy op is the only user of permute_copy.
-        if len(users) != 1 or users[0].target not in (
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.view.default,
+        view_node = get_arg(node, "input", torch.fx.Node)
+        if view_node.target != exir_ops.edge.aten.view_copy.default:
+            return False
+
+        x_node = get_arg(view_node, "input", torch.fx.Node)
+        pre_view_shape = tuple(x_node.meta["val"].shape)
+        post_view_shape = tuple(view_node.meta["val"].shape)
+        if 0 in pre_view_shape or 0 in post_view_shape:
+            return False
+
+        dim = get_arg(node, "dim", int)
+        if dim < 0:
+            dim += len(post_view_shape)
+        post_view_size = post_view_shape[dim]
+
+        bounds = self._normalize_slice(node, post_view_size)
+        if bounds is None:
+            return False
+        start, stop, step = bounds
+
+        # The slice's own output shape gives the selected-element count along the
+        # sliced dim directly -- it is exactly output_shape[dim].
+        slice_out_shape = tuple(node.meta["val"].shape)
+        post_view_count = slice_out_shape[dim]
+        if post_view_count == 0:
+            return False
+
+        # Row-major stride of the sliced viewed dim, and of every pre-view dim.
+        post_view_stride = prod(post_view_shape[dim + 1 :])
+        pre_view_strides = self._row_major_strides(pre_view_shape)
+
+        derived = self._derive_pre_view_slice(
+            pre_view_shape,
+            pre_view_strides,
+            post_view_stride,
+            post_view_size,
+            start,
+            stop,
+            step,
+            post_view_count,
+        )
+        if derived is None:
+            return False
+        pre_view_dim, pre_view_start, pre_view_stop, pre_view_step = derived
+
+        graph = node.graph
+        with graph.inserting_before(node):
+            new_slice_args = (
+                x_node,
+                pre_view_dim,
+                pre_view_start,
+                pre_view_stop,
+                pre_view_step,
+            )
+            new_slice = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=new_slice_args,
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                x_node.meta["val"], *new_slice_args[1:]
+            )
+            new_view = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.view_copy.default,
+                args=(new_slice, list(slice_out_shape)),
+            )
+            new_view.meta["val"] = exir_ops.edge.aten.view_copy.default(
+                new_slice.meta["val"], list(slice_out_shape)
+            )
+
+        node.replace_all_uses_with(new_view)
+        return True
+
+    @staticmethod
+    def _row_major_strides(shape: tuple[int, ...]) -> list[int]:
+        """Row-major (contiguous) strides for ``shape``."""
+        strides = [1] * len(shape)
+        acc = 1
+        for i in range(len(shape) - 1, -1, -1):
+            strides[i] = acc
+            acc *= shape[i]
+        return strides
+
+    def _normalize_slice(
+        self, node: torch.fx.Node, post_view_size: int
+    ) -> Optional[tuple[int, int, int]]:
+        """Resolve the slice to concrete, clamped ``(start, stop, step)`` ints, or
+        None if the bounds are dynamic or the step is non-positive (neither of
+        which this pass handles)."""
+        step = get_arg(node, "step")
+
+        if not isinstance(step, int):
+            return None
+
+        if step <= 0:
+            return None
+
+        raw_start = get_arg(node, "start")
+        raw_stop = get_arg(node, "end")
+
+        # Make sure raw_start/raw_stop are not symbolic.
+        if (raw_start is not None and not isinstance(raw_start, int)) or (
+            raw_stop is not None and not isinstance(raw_stop, int)
         ):
-            return False
+            return None
 
-        # If the permute_node/view_node was newly added to the
-        # graph, it may not have the meta["val"] FakeTensor.
-        # Skip in this case.
-        if node.meta.get("val") is None:
-            return False
+        start = 0 if raw_start is None else raw_start
+        stop = post_view_size if raw_stop is None else raw_stop
+        if start < 0:
+            start += post_view_size
+        if stop < 0:
+            stop += post_view_size
+        start = max(0, min(start, post_view_size))
+        stop = max(0, min(stop, post_view_size))
+        return start, stop, step
 
-        permute_node_shape = [*cast(list, get_shape(node.graph.owning_module, node))]
-
-        permute_dims = cast(list, node.args[1])
-        view_node = users[0]
-
-        if view_node.meta.get("val") is None:
-            return False
-
-        view_node_shape = [*cast(list, get_shape(node.graph.owning_module, view_node))]
-
-        pred = node.args[0]
-        if not isinstance(pred, torch.fx.Node) or pred.meta.get("val") is None:
-            return False
-
-        pred_shape = [*cast(list, get_shape(node.graph.owning_module, pred))]
-
-        # Handle three cases
-        # 1. view_node_shape is almost same as permute_node_shape
-        #    except the view_node has one more dim somewhere
-        #    and the extra dim has value of 1.
-        # 2. view_node_shape is almost same as permute_node_shape
-        #    except permute_node_shape has one more dim somewhere
-        #    and the extra dim has value of 1.
-        # 3. view_node_shape is the same as permute_node_shape.
-
-        if len(permute_node_shape) + 1 == len(view_node_shape):
-            index = self.check_if_shapes_differ_in_single_dim_of_size_1(
-                view_node_shape, permute_node_shape
-            )
-            if index != -1:
-                # view_node_shape is almost same as permute_node_shape
-                # except it has one more dim somewhere
-                # and the extra dim has value of 1.
-                new_view_shape = copy.deepcopy(pred_shape)
-                new_view_shape.insert(index, 1)
-                new_permute_dims = [x + 1 if x >= index else x for x in permute_dims]
-                new_permute_dims.insert(index, index)
-                self._insert_nodes(
-                    node.graph,
-                    pred,
-                    node,
-                    view_node,
-                    new_view_shape,
-                    new_permute_dims,
-                )
-                return True
-
-        elif len(view_node_shape) + 1 == len(permute_node_shape):
-            index = self.check_if_shapes_differ_in_single_dim_of_size_1(
-                permute_node_shape, view_node_shape
-            )
-            if index != -1:
-                # view_node_shape is almost same as permute_node_shape
-                # except permute_node_shape has one more dim somewhere
-                # and the extra dim has value of 1.
-                # Convert permute_dims to list of ints
-                index_to_remove = permute_dims[index]
-                new_view_shape = copy.deepcopy(pred_shape)
-                del new_view_shape[index_to_remove]
-                new_permute_dims = [
-                    x - 1 if x > index_to_remove else x for x in permute_dims
-                ]
-                del new_permute_dims[index]
-                self._insert_nodes(
-                    node.graph,
-                    pred,
-                    node,
-                    view_node,
-                    new_view_shape,
-                    new_permute_dims,
-                )
-                return True
-
-        elif permute_node_shape == view_node_shape:
-            # view_node_shape is the same as permute_node_shape
-            # Replace the uses of view_node with permute_node
-            view_node.replace_all_uses_with(node)
-            return True
-
-        return False
-
-    def _insert_nodes(
+    def _derive_pre_view_slice(
         self,
-        graph: torch.fx.Graph,
-        pred: torch.fx.Node,
-        permute_node: torch.fx.Node,
-        view_node: torch.fx.Node,
-        new_view_shape: List,
-        new_permute_dims: List,
-    ) -> None:
-        with graph.inserting_after(view_node):
-            # Target is guaranteed to be a callable since it's from the graph
-            view_target = view_node.target
-            assert callable(view_target), "View target must be callable"
-            new_view_node = graph.call_function(
-                view_target,
-                args=(pred, new_view_shape),
+        pre_view_shape: tuple[int, ...],
+        pre_view_strides: list[int],
+        post_view_stride: int,
+        post_view_size: int,
+        start: int,
+        stop: int,
+        step: int,
+        post_view_count: int,
+    ) -> tuple[int, int, int, int] | None:
+        """Return ``(dim, start, stop, step)`` for the single pre-view-tensor slice
+        equivalent to slicing the viewed dim, or None if no single pre-view slice
+        reproduces it.
+
+        Both shapes index the same row-major flat space, so the sliced viewed dim
+        (size ``post_view_size``, inner stride ``post_view_stride``) lines up with
+        one pre-view dim (size ``pre_view_size``, inner stride ``pre_view_stride``)
+        in one of three ways.
+        """
+        for pre_view_dim, (pre_view_stride, pre_view_size) in enumerate(
+            zip(pre_view_strides, pre_view_shape)
+        ):
+            # Untouched: the viewed dim is identical to this pre-view dim (same
+            # size and same inner stride), so the slice applies verbatim, any step.
+            if pre_view_stride == post_view_stride and pre_view_size == post_view_size:
+                return pre_view_dim, start, stop, step
+
+            # Contiguous: the viewed dim and this pre-view dim span the same flat
+            # extent (same period), and the selected band aligns to this dim's
+            # boundaries. A contiguous (step==1) viewed slice
+            # [start, start+post_view_count) is the flat band [start*
+            # post_view_stride, (start+post_view_count)*post_view_stride), a
+            # contiguous slice on this pre-view dim iff both ends are multiples of
+            # its stride.
+            if (
+                step == 1
+                and post_view_size * post_view_stride == pre_view_size * pre_view_stride
+            ):
+                flat_start = start * post_view_stride
+                flat_stop = (start + post_view_count) * post_view_stride
+                if (
+                    flat_start % pre_view_stride == 0
+                    and flat_stop % pre_view_stride == 0
+                ):
+                    return (
+                        pre_view_dim,
+                        flat_start // pre_view_stride,
+                        flat_stop // pre_view_stride,
+                        1,
+                    )
+
+            # Strided is the ONLY way the reshape itself introduces a stride, and
+            # it requires a width-1 selection (post_view_count == 1): the viewed
+            # dim is an innermost factor of this pre-view dim (identical inner
+            # stride), so fixing that single factor index and letting the rest of
+            # the pre-view dim run yields a uniform stride equal to the viewed dim's
+            # size. Any wider selection (post_view_count > 1) of an inner factor
+            # leaves runs separated by gaps -- block-strided, not a single slice --
+            # so width-1 is required.
+            if (
+                post_view_count == 1
+                and post_view_size > 1
+                and pre_view_stride == post_view_stride
+                and pre_view_size % post_view_size == 0
+            ):
+                pre_view_count = pre_view_size // post_view_size
+                pre_view_stop = start + (pre_view_count - 1) * post_view_size + 1
+                return pre_view_dim, start, pre_view_stop, post_view_size
+        return None
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class PropagateSlice(RemoveOrReplacePassInterface):
+    """Propagate slice_copy before element-wise ops when the cost model
+    indicates it reduces total data movement.
+
+    Supported ops (extensible via dispatch table):
+        - quantize_per_tensor: unary element-wise
+        - dequantize_per_tensor: unary element-wise
+        - add.Tensor: binary with broadcast — slices non-broadcasting inputs
+        - mul.Tensor: binary with broadcast — slices non-broadcasting inputs
+
+    Handles any slice dim and any step size.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        elementwise_targets = [
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        ]
+        binary_targets = [
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.mul.Tensor,
+        ]
+        self._dispatch: dict[
+            EdgeOpOverload,
+            tuple[
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+            ],
+        ] = {}
+        for t in elementwise_targets:
+            self._dispatch[t] = (
+                self._should_swap_elementwise,
+                self._swap_elementwise_slice,
             )
 
-        with graph.inserting_after(new_view_node):
-            # Target is guaranteed to be a callable since it's from our targets list
-            permute_target = permute_node.target
-            assert callable(permute_target), "Permute target must be callable"
-            new_permute_node = graph.call_function(
-                permute_target,
-                args=(new_view_node, new_permute_dims),
+        for t in binary_targets:
+            self._dispatch[t] = (
+                self._should_swap_binary_elementwise,
+                self._swap_binary_elementwise_slice,
             )
-            new_permute_node.meta = view_node.meta
-            view_node.replace_all_uses_with(new_permute_node)
 
-        # view_node is user of permute_node, so must erase view_node first
-        graph.erase_node(view_node)
-        graph.erase_node(permute_node)
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        # This pass needs to iterate until convergence because postponing
-        # one permute may enable postponing another in a chain
-        iter_count = 0
-        local_modified = False
-        overall_modified = False
-        while local_modified or iter_count == 0:
-            result = super().call(graph_module)
-            local_modified = result.modified
-            overall_modified |= local_modified
-            graph_module = result.graph_module
-            iter_count += 1
-            if iter_count == 4:
-                break
+    def _should_swap_elementwise(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        full_size = prod(op_node.meta["val"].shape)
+        sliced_size = prod(slice_node.meta["val"].shape)
+        return sliced_size < full_size
 
-        return PassResult(graph_module, overall_modified)
+    def _swap_elementwise_slice(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        op_input = get_arg(op_node, "input", torch.fx.Node)
+        graph = slice_node.graph
+
+        slice_dim = get_arg(slice_node, "dim", int)
+        slice_start = get_arg(slice_node, "start")
+        slice_end = get_arg(slice_node, "end")
+        slice_step = get_arg(slice_node, "step", int)
+
+        with graph.inserting_before(op_node):
+            new_slice = graph.call_function(
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=(op_input, slice_dim, slice_start, slice_end, slice_step),
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                op_input.meta["val"], slice_dim, slice_start, slice_end, slice_step
+            )
+
+            new_args = list(op_node.args)
+            new_args[0] = new_slice
+            target = cast(EdgeOpOverload, op_node.target)
+            new_op = graph.call_function(
+                target,
+                args=tuple(new_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta["val"] = target(
+                new_slice.meta["val"],
+                *[
+                    a.meta["val"] if isinstance(a, torch.fx.Node) else a
+                    for a in new_args[1:]
+                ],
+                **{
+                    k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
+                    for k, v in op_node.kwargs.items()
+                },
+            )
+
+        slice_node.replace_all_uses_with(new_op)
+        graph.erase_node(slice_node)
+        graph.erase_node(op_node)
+        return True
+
+    def _should_swap_binary_elementwise(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        lhs, rhs = op_node.args[0], op_node.args[1]
+        assert isinstance(lhs, torch.fx.Node) and isinstance(rhs, torch.fx.Node)
+        if lhs.meta["val"].shape == rhs.meta["val"].shape:
+            return False
+        full_size = prod(op_node.meta["val"].shape)
+        sliced_size = prod(slice_node.meta["val"].shape)
+        return sliced_size < full_size
+
+    def _swap_binary_elementwise_slice(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        lhs, rhs = op_node.args[0], op_node.args[1]
+        assert isinstance(lhs, torch.fx.Node) and isinstance(rhs, torch.fx.Node)
+        graph = slice_node.graph
+
+        slice_dim = get_arg(slice_node, "dim", int)
+        slice_start = get_arg(slice_node, "start")
+        slice_end = get_arg(slice_node, "end")
+        slice_step = get_arg(slice_node, "step", int)
+
+        output_shape = op_node.meta["val"].shape
+
+        new_args = list(op_node.args)
+        with graph.inserting_before(op_node):
+            for i, inp in enumerate([lhs, rhs]):
+                if inp.meta["val"].shape[slice_dim] == output_shape[slice_dim]:
+                    new_slice = graph.call_function(
+                        exir_ops.edge.aten.slice_copy.Tensor,
+                        args=(inp, slice_dim, slice_start, slice_end, slice_step),
+                    )
+                    new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                        inp.meta["val"], slice_dim, slice_start, slice_end, slice_step
+                    )
+                    new_args[i] = new_slice
+
+            target = cast(EdgeOpOverload, op_node.target)
+            new_op = graph.call_function(
+                target,
+                args=tuple(new_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta["val"] = target(
+                *[
+                    a.meta["val"] if isinstance(a, torch.fx.Node) else a
+                    for a in new_args
+                ],
+                **{
+                    k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
+                    for k, v in op_node.kwargs.items()
+                },
+            )
+
+        slice_node.replace_all_uses_with(new_op)
+        graph.erase_node(slice_node)
+        graph.erase_node(op_node)
+        return True
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        parent = get_arg(node, "input", torch.fx.Node)
+        if len(parent.users) != 1:
+            return False
+        if not isinstance(parent.target, EdgeOpOverload):
+            return False
+
+        entry = self._dispatch.get(parent.target)
+        if entry is None:
+            return False
+
+        should_swap, do_swap = entry
+        return should_swap(parent, node) and do_swap(parent, node)
+
+
+_QUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    exir_ops.edge.cadence.quantize_per_tensor,
+}
+
+_DEQUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    exir_ops.edge.cadence.dequantize_per_tensor,
+}
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class SplitDequantizedCatPass(RemoveOrReplacePassInterface):
+    """Split a cat node so that quantize consumers get their own copy.
+
+    Fires when a cat has all floating-point inputs, at least one dequantize
+    input, and at least one quantize consumer.  Quant consumers are grouped
+    by matching qparams; each group receives a dedicated duplicate of the
+    cat node.  Non-quant consumers stay on the original cat, whose
+    semantics are unchanged.
+
+    A later pass (e.g. AdvanceQuantizeOpAboveDefChainPass extended for cat)
+    can then hoist each quant above its single-consumer cat copy without
+    affecting the non-quant paths.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        cat_inputs = node.args[0]
+        if not isinstance(cat_inputs, (list, tuple)):
+            return False
+
+        has_dequant_input = False
+        for inp in cat_inputs:
+            assert isinstance(inp, torch.fx.Node)
+            val = inp.meta["val"]
+            if val is None or not val.is_floating_point():
+                return False
+            if get_overload_packet(inp.target) in _DEQUANT_OVERLOAD_PACKETS:
+                has_dequant_input = True
+
+        if not has_dequant_input:
+            return False
+
+        quant_groups: DefaultDict[Tuple, List[torch.fx.Node]] = defaultdict(list)
+        for user in list(node.users.keys()):
+            if get_overload_packet(user.target) in _QUANT_OVERLOAD_PACKETS:
+                quant_groups[user.args[1:]].append(user)
+
+        if not quant_groups:
+            return False
+
+        graph = node.graph
+        dim = get_arg(node, "dim", int)
+        for quant_consumers in quant_groups.values():
+            with graph.inserting_after(node):
+                dup_cat = graph.call_function(
+                    exir_ops.edge.aten.cat.default,
+                    args=(list(cat_inputs), dim),
+                )
+                dup_cat.meta = node.meta.copy()
+
+            for q_node in quant_consumers:
+                q_node.replace_input_with(node, dup_cat)
+
+        return True
 
 
 # The following class consolidates functions to reoder ops (i.e., either hoist

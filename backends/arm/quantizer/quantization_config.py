@@ -46,6 +46,7 @@ class QuantizationConfig:
     output_activation: Optional[QuantizationSpecBase]
     weight: Optional[QuantizationSpecBase]
     bias: Optional[QuantizationSpecBase] | Callable[[Any], Any]
+    label: Optional[str] = None  # Optional label for debugging/visualization purposes
 
     def get_input_act_qspec(
         self, node: Optional[Node] = None, input_node: Optional[Node] = None
@@ -283,10 +284,19 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         For comparison operators, make sure that both inputs share the same
         quantization spec, by returning a SharedQuantizationSpec that ties the
-        quantization of both inputs together. For other operators, return the
-        default input activation spec.
+        quantization of both inputs together.
+
+        For trigonometric ops, ensure that input spec has fixed qparams.
+
+        For other operators, return the default input activation spec.
 
         """
+        # MLETORCH-1853: Fix lazy import when moving files around
+        from executorch.backends.arm.quantizer.quantization_annotator import (
+            _fixed_input_qspec_ops,
+            _get_fixed_qparams_qspec,
+        )
+
         if node is None or input_node is None:
             return super().get_input_act_qspec(node, input_node)
 
@@ -295,6 +305,18 @@ class TOSAQuantizationConfig(QuantizationConfig):
                 return super().get_input_act_qspec(node, input_node)
             else:
                 return SharedQuantizationSpec((node.args[0], node))
+        elif node.target == torch.ops.aten.grid_sampler.default:
+            if input_node != node.args[0]:
+                return None
+            input_act_qspec = super().get_input_act_qspec(node, input_node)
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_input_qspec_ops, input_act_qspec
+            )
+        elif node.target in _fixed_input_qspec_ops:
+            input_act_qspec = super().get_input_act_qspec(node, input_node)
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_input_qspec_ops, input_act_qspec
+            )
 
         return super().get_input_act_qspec(node, input_node)
 
@@ -338,6 +360,19 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         if node is None:
             return super().get_output_act_qspec()
+        # MLETORCH-1853: Fix lazy import when moving files around
+        from executorch.backends.arm.quantizer.quantization_annotator import (
+            _fixed_output_qspec_ops,
+            _get_fixed_qparams_qspec,
+        )
+
+        if node.target in _fixed_output_qspec_ops:
+            output_act_qspec = super().get_output_act_qspec(node)
+            if output_act_qspec is None:
+                return None
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_output_qspec_ops, output_act_qspec
+            )
         if node.target not in self.SHARED_OUTPUT_ACT_QSPEC_PATTERNS:
             return super().get_output_act_qspec()
         if len(node.args) == 0:

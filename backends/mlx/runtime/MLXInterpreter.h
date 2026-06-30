@@ -242,6 +242,11 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     freqs_arr = st.const_tensor_ref(*n.freqs);
   }
 
+  // MLX requires exactly one of base or freqs — when freqs is provided,
+  // base must be nullopt.
+  std::optional<float> base =
+      freqs_arr ? std::nullopt : std::optional<float>(n.base);
+
   // MLX has two overloads: rope(..., int offset, ...) and rope(..., const
   // array& offset, ...) Call the appropriate one based on is_vid
   if (n.offset.is_vid) {
@@ -250,14 +255,14 @@ inline void exec_rope(const RopeNode& n, ExecutionState& st, StreamOrDevice s) {
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   } else {
     // Tensor offset from Tid
     const array& offset = st.const_tensor_ref(n.offset.tid);
     st.set_tensor(
         n.out,
         fast::rope(
-            x, n.dims, n.traditional, n.base, n.scale, offset, freqs_arr, s));
+            x, n.dims, n.traditional, base, n.scale, offset, freqs_arr, s));
   }
 }
 
@@ -985,8 +990,8 @@ inline void exec_metal_kernel(
       n.name,
       n.input_names,
       n.output_names,
-      n.source,
-      n.header,
+      n.source ? *n.source : std::string{},
+      n.header ? *n.header : std::string{},
       n.ensure_row_contiguous,
       n.atomic_outputs);
 
@@ -1380,6 +1385,13 @@ inline void exec_logical_not(
   st.set_tensor(n.out, logical_not(st.const_tensor_ref(n.x), s));
 }
 
+inline void exec_bitwise_invert(
+    const BitwiseInvertNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(n.out, bitwise_invert(st.const_tensor_ref(n.x), s));
+}
+
 inline void exec_logical_and(
     const LogicalAndNode& n,
     ExecutionState& st,
@@ -1393,6 +1405,30 @@ inline void
 exec_logical_or(const LogicalOrNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(
       n.out, logical_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_and(
+    const BitwiseAndNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_and(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void
+exec_bitwise_or(const BitwiseOrNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(
+      n.out, bitwise_or(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
+}
+
+inline void exec_bitwise_xor(
+    const BitwiseXorNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  st.set_tensor(
+      n.out,
+      bitwise_xor(st.const_tensor_ref(n.a), st.const_tensor_ref(n.b), s));
 }
 
 inline void exec_tri(const TriNode& n, ExecutionState& st, StreamOrDevice s) {
@@ -1659,6 +1695,26 @@ exec_argmax(const ArgmaxNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, argmax(x, n.axis, n.keepdims, s));
 }
 
+inline void exec_random_bits(
+    const RandomBitsNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  // random::bits supports width (bytes/element) in {1, 2, 4} ->
+  // uint8/uint16/uint32.
+  if (n.width != 1 && n.width != 2 && n.width != 4) {
+    throw std::runtime_error("random_bits: width must be 1, 2, or 4");
+  }
+  auto shape = to_shape(n.shape, st);
+  // uint32 (4 bytes, the widest supported) is a safe upper bound for the guard.
+  check_allocation_bounded(shape, uint32, "random_bits");
+  std::optional<array> key = std::nullopt;
+  if (n.seed.has_value()) {
+    key = random::key(
+        static_cast<uint64_t>(st.const_value_ref<int32_t>(n.seed.value())));
+  }
+  st.set_tensor(n.out, random::bits(shape, n.width, key, s));
+}
+
 inline void
 exec_argmin(const ArgminNode& n, ExecutionState& st, StreamOrDevice s) {
   const auto& x = st.const_tensor_ref(n.x);
@@ -1724,6 +1780,13 @@ inline void exec_all(const AllNode& n, ExecutionState& st, StreamOrDevice s) {
   } else {
     st.set_tensor(n.out, all(x, axes, n.keepdims, s));
   }
+}
+
+inline void exec_roll(const RollNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  auto shifts = to_shape(n.shift, st);
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, roll(x, shifts, axes, s));
 }
 
 inline void
@@ -1794,6 +1857,8 @@ class Interpreter {
       st.begin_op(idx, op_name(instr.op));
       if (instr.op == OpCode::SCAN) {
         exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+      } else if (instr.op == OpCode::IF) {
+        exec_if(prog, std::get<IfNode>(instr.node), st, stream);
       } else {
         dispatch(instr, st, stream);
       }
@@ -1803,6 +1868,20 @@ class Interpreter {
   }
 
  private:
+  void exec_if(
+      const MLXProgram& prog,
+      const IfNode& n,
+      ExecutionState& st,
+      StreamOrDevice s) const {
+    // Select one branch at runtime based on the integer condition.
+    // Nonzero -> then_chain, zero -> else_chain. The selected chain's
+    // instructions write the output slot(s) directly.
+    const int64_t cond = resolve_int(n.cond, st);
+    const uint32_t chain_idx =
+        (cond != 0) ? n.then_chain_idx : n.else_chain_idx;
+    run_chain(prog, chain_idx, st, s);
+  }
+
   void exec_scan(
       const MLXProgram& prog,
       const ScanNode& n,
@@ -1998,6 +2077,9 @@ class Interpreter {
       case OpCode::ARGMAX:
         ops::exec_argmax(std::get<ArgmaxNode>(instr.node), st, s);
         break;
+      case OpCode::RANDOM_BITS:
+        ops::exec_random_bits(std::get<RandomBitsNode>(instr.node), st, s);
+        break;
       case OpCode::SLICE_UPDATE:
         ops::exec_slice_update(std::get<SliceUpdateNode>(instr.node), st, s);
         break;
@@ -2028,11 +2110,24 @@ class Interpreter {
       case OpCode::LOGICAL_NOT:
         ops::exec_logical_not(std::get<LogicalNotNode>(instr.node), st, s);
         break;
+      case OpCode::BITWISE_INVERT:
+        ops::exec_bitwise_invert(
+            std::get<BitwiseInvertNode>(instr.node), st, s);
+        break;
       case OpCode::LOGICAL_AND:
         ops::exec_logical_and(std::get<LogicalAndNode>(instr.node), st, s);
         break;
       case OpCode::LOGICAL_OR:
         ops::exec_logical_or(std::get<LogicalOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_AND:
+        ops::exec_bitwise_and(std::get<BitwiseAndNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_OR:
+        ops::exec_bitwise_or(std::get<BitwiseOrNode>(instr.node), st, s);
+        break;
+      case OpCode::BITWISE_XOR:
+        ops::exec_bitwise_xor(std::get<BitwiseXorNode>(instr.node), st, s);
         break;
       case OpCode::TRI:
         ops::exec_tri(std::get<TriNode>(instr.node), st, s);
@@ -2198,6 +2293,9 @@ class Interpreter {
         break;
       case OpCode::REPEAT:
         ops::exec_repeat(std::get<RepeatNode>(instr.node), st, s);
+        break;
+      case OpCode::ROLL:
+        ops::exec_roll(std::get<RollNode>(instr.node), st, s);
         break;
       case OpCode::SORT:
         ops::exec_sort(std::get<SortNode>(instr.node), st, s);

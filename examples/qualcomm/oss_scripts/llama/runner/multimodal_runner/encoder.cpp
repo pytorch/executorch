@@ -51,7 +51,7 @@ Result<Tensor> EncoderRunner::encode(TensorPtr& image_tensor) {
   ET_CHECK_MSG(is_method_loaded(), "Encoder method not loaded");
 
   auto tensor_ptr = image_tensor.get();
-  ET_LOG(Info, "Encoding image tensor with numel: %zu", tensor_ptr->numel());
+  ET_LOG(Info, "Encoding tensor with numel: %zu", tensor_ptr->numel());
 
   std::vector<executorch::runtime::EValue> encoder_inputs;
   encoder_inputs.emplace_back(*tensor_ptr);
@@ -59,11 +59,10 @@ Result<Tensor> EncoderRunner::encode(TensorPtr& image_tensor) {
   auto encoder_result = module_->forward(encoder_inputs);
   ET_CHECK_MSG(encoder_result.ok(), "Encoder execution failed");
 
-  auto encoder_output = encoder_result.get();
-  auto image_hidden_states = encoder_output[0].toTensor();
-  ET_LOG(Info, "Encoder execution completed, got image hidden states");
+  encoder_output_ = std::move(encoder_result.get());
+  ET_LOG(Info, "Encoder execution completed, got hidden states");
 
-  return image_hidden_states;
+  return encoder_output_[0].toTensor();
 }
 
 } // namespace example

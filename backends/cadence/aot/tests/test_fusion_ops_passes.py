@@ -14,6 +14,8 @@ from typing import cast, Final, List, Tuple
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
+
+from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseBatchNormWithConv,
     FuseCascadedTransposeOrPermuteOps,
@@ -25,10 +27,18 @@ from executorch.backends.cadence.aot.fuse_ops import (
     FuseMulTensorIntoQuantPass,
     FuseQuantDequantToRequantizePass,
     FuseQuantizedBatchNormWithConv,
+    FuseSliceSameDimPass,
     FuseTransposeOrPermuteOpPairsPass,
     HierarchicalCSEPass,
 )
-from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
+from executorch.backends.cadence.aot.pass_utils import (
+    count_node,
+    get_arg,
+    op_counts_match,
+)
+from executorch.backends.cadence.aot.quantizer.quantizer import (
+    CadenceFusedConvReluQuantizer,
+)
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.backends.test.graph_builder import GraphBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -37,6 +47,11 @@ from executorch.exir.pass_base import PassResult, ProxyValue
 
 from parameterized import parameterized
 from torch.utils import _pytree as pytree
+from torchao.quantization.pt2e import (
+    allow_exported_model_train_eval,
+    move_exported_model_to_eval,
+)
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
 
 def validate_numerics(
@@ -598,7 +613,9 @@ class TestFusionPasses(TestFusionPassesBase):
             op=exir_ops.edge.aten.full.default, args=([out_dim, in_dim], 1)
         )
         bias = builder.call_operator(
-            op=exir_ops.edge.aten.full.default, args=([out_dim], 1)
+            op=exir_ops.edge.aten.full.default,
+            args=([out_dim], 1),
+            kwargs={"dtype": torch.int32},
         )
         weight_zero_point = builder.call_operator(
             op=exir_ops.edge.aten.full.default, args=([in_dim], 0)
@@ -1696,3 +1713,318 @@ class TestFuseQuantizedBatchNormWithConv(unittest.TestCase):
         # Verify fusion occurred: bn should be removed, conv remains
         self.assertEqual(count_node(gm, conv_op), 1)
         self.assertEqual(count_node(gm, bn_op), 0)
+
+
+class TestFuseSliceSameDimPass(TestFusionPassesBase):
+    def _get_single_slice(self, gm: torch.fx.GraphModule) -> torch.fx.Node:
+        slices = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slices), 1)
+        return slices[0]
+
+    def test_basic_chain_bypass(self) -> None:
+        """slice(dim=3, 0:78) → slice(dim=3, 0:60) → direct slice(dim=3, 0:60)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 80))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 3, 0, 78, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 3, 0, 60, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 0)
+        self.assertEqual(get_arg(merged, "end"), 60)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(2, 3, 4, 80),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_chain_with_offset(self) -> None:
+        """slice(dim=1, 10:50) → slice(dim=1, 5:20) → direct slice(dim=1, 15:30)."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 64))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 10, 50, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 5, 20, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 15)
+        self.assertEqual(get_arg(merged, "end"), 30)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(4, 64),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_parent_kept_with_other_users(self) -> None:
+        """Parent slice has another user besides the child → parent stays."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 80))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 3, 0, 78, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 3, 0, 60, 1),
+        )
+        neg = builder.call_operator(op=exir_ops.edge.aten.neg.default, args=(parent,))
+        builder.output([child, neg])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 2
+        )
+        slices = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        ends = sorted(get_arg(s, "end") for s in slices)
+        self.assertEqual(ends, [60, 78])
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(2, 3, 4, 80),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_different_dims_no_change(self) -> None:
+        """Chained slices on different dims → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(8, 16, 32))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 0, 10, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 2, 0, 5, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_step_not_one_no_change(self) -> None:
+        """Parent has step != 1 → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 64))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 0, 60, 2),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 0, 10, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_no_chain_no_change(self) -> None:
+        """Single slice with no slice user → no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 64))
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 0, 32, 1),
+        )
+        builder.output([sliced])
+        original = builder.get_graph_module()
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertFalse(result.modified)
+
+    def test_child_end_clamped_to_parent_range(self) -> None:
+        """Child end exceeds parent output size → clamped to parent_end."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 100))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 10, 50, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 5, 45, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 15)
+        self.assertEqual(get_arg(merged, "end"), 50)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(1, 100),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_negative_indices(self) -> None:
+        """Negative start/end are canonicalized before merging."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 100))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 1, 10, -10, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 1, 5, -5, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 15)
+        self.assertEqual(get_arg(merged, "end"), 85)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(1, 100),),
+            "FuseSliceSameDimPass",
+        )
+
+    def test_negative_dim(self) -> None:
+        """Negative dim is canonicalized so matching works across conventions."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4, 5))
+        parent = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, -1, 0, 4, 1),
+        )
+        child = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(parent, 3, 0, 2, 1),
+        )
+        builder.output([child])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, FuseSliceSameDimPass()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor), 1
+        )
+        merged = self._get_single_slice(result.graph_module)
+        self.assertEqual(get_arg(merged, "start"), 0)
+        self.assertEqual(get_arg(merged, "end"), 2)
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            (torch.randn(2, 3, 4, 5),),
+            "FuseSliceSameDimPass",
+        )
+
+
+class ConvBNReluEndToEndFusionTest(unittest.TestCase):
+    """End-to-end: conv+bn+relu folds BatchNorm and fuses a quantized conv.
+
+    Guards the positive path against silent skips. The 3-op
+    ConvBNReluBasePattern only drives annotation; the BatchNorm must be folded
+    so the 2-op ConvReluBasePattern fuses the resulting conv+relu. PTQ folds BN
+    before annotation (torchao prepare_pt2e); QAT folds it across the QAT
+    conv-bn fusion (prepare_qat_pt2e + move_exported_model_to_eval), then
+    FuseQATConvBN / the edge passes. Both lower to the Cadence edge program and
+    assert a quantized conv is produced and no batch_norm survives.
+
+    The QAT recipe mirrors modai/quantization.py::prepare_qat: capture in train
+    mode without ops_to_keep (so conv decomposes to `convolution`, which the QAT
+    conv-bn matcher recognizes) and call allow_exported_model_train_eval so that
+    move_exported_model_to_eval actually moves BatchNorm to its eval form.
+    """
+
+    class ConvBNReluModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+            self.bn = torch.nn.BatchNorm2d(8)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.relu(self.bn(self.conv(x)))
+
+    def _assert_fused_conv_no_bn(self, gm: torch.fx.GraphModule) -> None:
+        targets = [str(n.target) for n in gm.graph.nodes if n.op == "call_function"]
+        quantized_convs = [t for t in targets if "quantized" in t and "conv" in t]
+        self.assertGreaterEqual(
+            len(quantized_convs),
+            1,
+            f"expected a fused quantized conv, got call_function targets: {targets}",
+        )
+        batch_norms = [t for t in targets if "batch_norm" in t]
+        self.assertEqual(
+            len(batch_norms), 0, f"BatchNorm was not folded: {batch_norms}"
+        )
+
+    def test_ptq_conv_bn_relu_fuses(self) -> None:
+        model = self.ConvBNReluModel().eval()
+        inputs = (torch.randn(1, 3, 16, 16),)
+        fused = compiler.quantize_pt2(model, inputs, CadenceFusedConvReluQuantizer())
+        cadence_prog = compiler._lower_ep_to_cadence(fused)
+        self._assert_fused_conv_no_bn(cadence_prog.exported_program().graph_module)
+
+    def test_qat_conv_bn_relu_fuses(self) -> None:
+        model = self.ConvBNReluModel()
+        model.train()
+        inputs = (torch.randn(1, 3, 16, 16),)
+        quantizer = CadenceFusedConvReluQuantizer(is_qat=True)
+
+        captured = torch.export.export(model, inputs, strict=True).module()
+        prepared = prepare_qat_pt2e(captured, quantizer)
+        allow_exported_model_train_eval(prepared)
+        torch.quantization.enable_fake_quant(prepared)
+        for _ in range(3):
+            prepared(*inputs)
+        move_exported_model_to_eval(prepared)
+        converted = convert_pt2e(prepared)
+
+        exported = torch.export.export(converted, inputs)
+        fused = compiler.apply_pre_edge_transform_passes(exported, quantizer)
+        cadence_prog = compiler._lower_ep_to_cadence(fused)
+        self._assert_fused_conv_no_bn(cadence_prog.exported_program().graph_module)

@@ -616,6 +616,242 @@ void test_vulkan_sdpa(
   }
 }
 
+//
+// General-purpose fused SDPA tests (et_vk.sdpa)
+//
+
+/*
+ * Reference implementation of general SDPA: softmax(Q @ K^T * scale + bias) @ V
+ * Q: [B, H, S, D], K: [B, H, L, D], V: [B, H, L, D]
+ * Returns: [B, H, S, D]
+ */
+at::Tensor general_sdpa_reference_impl(
+    const at::Tensor& q,
+    const at::Tensor& k,
+    const at::Tensor& v,
+    const std::optional<at::Tensor>& attn_mask = std::nullopt,
+    const std::optional<double> scale = std::nullopt) {
+  float scale_val =
+      scale.has_value() ? scale.value() : (1.0 / sqrt(q.size(-1)));
+  at::Tensor attn = at::matmul(q, k.transpose(-2, -1)) * scale_val;
+  if (attn_mask.has_value()) {
+    attn = attn + attn_mask.value();
+  }
+  attn = at::softmax(attn, -1);
+  return at::matmul(attn, v);
+}
+
+void test_vulkan_general_sdpa(
+    const int batch_size,
+    const int num_heads,
+    const int q_seq_len,
+    const int kv_seq_len,
+    const int head_dim,
+    const bool has_bias,
+    at::ScalarType dtype = at::kFloat) {
+  torch::manual_seed(42);
+
+  // Generate random inputs in [B, H, S, D] layout
+  at::Tensor q = at::rand(
+      {batch_size, num_heads, q_seq_len, head_dim},
+      at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor k = at::rand(
+      {batch_size, num_heads, kv_seq_len, head_dim},
+      at::device(at::kCPU).dtype(at::kFloat));
+  at::Tensor v = at::rand(
+      {batch_size, num_heads, kv_seq_len, head_dim},
+      at::device(at::kCPU).dtype(at::kFloat));
+
+  std::optional<at::Tensor> bias = std::nullopt;
+  if (has_bias) {
+    // Broadcastable bias: [B, 1, 1, kv_seq_len]
+    bias = at::rand(
+               {batch_size, 1, 1, kv_seq_len},
+               at::device(at::kCPU).dtype(at::kFloat)) *
+            2.0 -
+        1.0;
+  }
+
+  // Compute reference output in fp32
+  at::Tensor reference_out = general_sdpa_reference_impl(q, k, v, bias);
+
+  // Cast to test dtype for Vulkan
+  q = q.to(dtype);
+  k = k.to(dtype);
+  v = v.to(dtype);
+  if (bias.has_value()) {
+    bias = bias.value().to(dtype);
+  }
+
+  // Build Vulkan compute graph
+  using namespace vkcompute;
+
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  IOValueRef r_q = graph.add_input_tensor(
+      q.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+  IOValueRef r_k = graph.add_input_tensor(
+      k.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+  IOValueRef r_v = graph.add_input_tensor(
+      v.sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+
+  ValueRef r_bias = kDummyValueRef;
+  IOValueRef r_bias_io = {};
+  if (has_bias) {
+    r_bias_io = graph.add_input_tensor(
+        bias.value().sizes().vec(), from_at_scalartype(dtype), utils::kBuffer);
+    r_bias = r_bias_io.value;
+  }
+
+  const ValueRef r_out = graph.add_tensor(
+      {batch_size, num_heads, q_seq_len, head_dim},
+      from_at_scalartype(dtype),
+      utils::kBuffer);
+
+  VK_GET_OP_FN("et_vk.sdpa.default")
+  (graph,
+   {
+       r_q.value,
+       r_k.value,
+       r_v.value,
+       r_bias,
+       kDummyValueRef, // scale (None -> 1/sqrt(head_dim))
+       r_out,
+   });
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  // Copy inputs
+  graph.maybe_cast_and_copy_into_staging(
+      r_q.staging, q.const_data_ptr(), q.numel(), from_at_scalartype(dtype));
+  graph.maybe_cast_and_copy_into_staging(
+      r_k.staging, k.const_data_ptr(), k.numel(), from_at_scalartype(dtype));
+  graph.maybe_cast_and_copy_into_staging(
+      r_v.staging, v.const_data_ptr(), v.numel(), from_at_scalartype(dtype));
+  if (has_bias) {
+    graph.maybe_cast_and_copy_into_staging(
+        r_bias_io.staging,
+        bias.value().const_data_ptr(),
+        bias.value().numel(),
+        from_at_scalartype(dtype));
+  }
+
+  graph.execute();
+
+  // Extract output
+  at::Tensor vk_out = at::zeros(
+                          {batch_size, num_heads, q_seq_len, head_dim},
+                          at::device(at::kCPU).dtype(dtype))
+                          .contiguous();
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(dtype));
+
+  // Compare in fp32
+  vk_out = vk_out.to(at::kFloat);
+
+  // Use appropriate tolerance based on dtype
+  double atol = dtype == at::kHalf ? 1e-2 : 1e-4;
+  double rtol = dtype == at::kHalf ? 1e-2 : 1e-5;
+
+  const bool output_correct = at::allclose(reference_out, vk_out, rtol, atol);
+  if (!output_correct) {
+    at::Tensor diffs = at::abs(reference_out - vk_out);
+    std::cout << "General SDPA test failed:" << " B=" << batch_size
+              << " H=" << num_heads << " S=" << q_seq_len << " L=" << kv_seq_len
+              << " D=" << head_dim << " bias=" << has_bias << " dtype=" << dtype
+              << std::endl;
+    std::cout << "Max diff: " << at::max(diffs).item() << std::endl;
+    std::cout << "Max value: "
+              << at::max(at::abs(at::cat({reference_out, vk_out}, -1))).item()
+              << std::endl;
+
+    // Print all elements for small tensors
+    if (reference_out.numel() <= 64) {
+      auto ref_flat = reference_out.flatten();
+      auto vk_flat = vk_out.flatten();
+      std::cout << "Reference vs Vulkan:" << std::endl;
+      for (int i = 0; i < ref_flat.numel(); ++i) {
+        std::cout << "  [" << i << "] ref=" << ref_flat[i].item<float>()
+                  << " vk=" << vk_flat[i].item<float>() << " diff="
+                  << std::abs(
+                         ref_flat[i].item<float>() - vk_flat[i].item<float>())
+                  << std::endl;
+      }
+    }
+  }
+  ASSERT_TRUE(output_correct);
+}
+
+// Basic correctness: small sizes, no bias, fp32
+TEST(VulkanGeneralSDPATest, test_general_sdpa_small_no_bias) {
+  test_vulkan_general_sdpa(1, 2, 4, 4, 8, false);
+}
+
+// With additive bias mask
+TEST(VulkanGeneralSDPATest, test_general_sdpa_small_with_bias) {
+  test_vulkan_general_sdpa(1, 2, 4, 8, 8, true);
+}
+
+// Cross-attention: Q and K have different sequence lengths
+TEST(VulkanGeneralSDPATest, test_general_sdpa_cross_attention) {
+  test_vulkan_general_sdpa(1, 4, 4, 16, 16, false);
+}
+
+// Batch size > 1
+TEST(VulkanGeneralSDPATest, test_general_sdpa_batched) {
+  test_vulkan_general_sdpa(2, 4, 8, 8, 16, false);
+}
+
+// Larger head_dim with bias (EdgeTAM-like)
+TEST(VulkanGeneralSDPATest, test_general_sdpa_large_head_dim) {
+  test_vulkan_general_sdpa(1, 8, 4, 4, 32, true);
+}
+
+// Non-aligned S (S is height dim, not width — no padding issue)
+TEST(VulkanGeneralSDPATest, test_general_sdpa_non_aligned_s) {
+  test_vulkan_general_sdpa(1, 2, 5, 4, 32, false);
+}
+
+// Large number of heads
+TEST(VulkanGeneralSDPATest, test_general_sdpa_many_heads) {
+  test_vulkan_general_sdpa(1, 8, 4, 8, 32, false);
+}
+
+// fp16 — validates fp32 internal accumulation
+TEST(VulkanGeneralSDPATest, test_general_sdpa_fp16) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/4,
+      /*q_seq_len=*/8,
+      /*kv_seq_len=*/8,
+      /*head_dim=*/16,
+      /*has_bias=*/false,
+      /*dtype=*/at::kHalf);
+}
+
+// fp16 with bias
+TEST(VulkanGeneralSDPATest, test_general_sdpa_fp16_with_bias) {
+  test_vulkan_general_sdpa(
+      /*batch_size=*/1,
+      /*num_heads=*/4,
+      /*q_seq_len=*/8,
+      /*kv_seq_len=*/16,
+      /*head_dim=*/16,
+      /*has_bias=*/true,
+      /*dtype=*/at::kHalf);
+}
+
+//
+// Existing KV-cache SDPA tests
+//
+
 TEST(VulkanSDPATest, test_sdpa_op_small_params) {
   const int base_sequence_len = 3;
   const int num_heads = 8;

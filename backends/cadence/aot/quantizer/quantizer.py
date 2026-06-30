@@ -13,11 +13,17 @@ import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
+    AddReluPattern0,
+    AddReluPattern1,
     BmmPattern,
     CatPattern,
+    Conv1dBNReluPattern0,
+    Conv1dBNReluPattern1,
     Conv1dPattern,
     Conv1dReluPattern0,
     Conv1dReluPattern1,
+    Conv2dBNReluPattern0,
+    Conv2dBNReluPattern1,
     Conv2dPattern,
     Conv2dReluPattern0,
     Conv2dReluPattern1,
@@ -393,11 +399,19 @@ class CadenceFusedConvReluQuantizer(CadenceQuantizer):
             quantizers = []
         a8w8 = qconfig_A8W8_qat if is_qat else qconfig_A8W8
         a8w8sym = qconfig_A8W8sym_qat if is_qat else qconfig_A8W8sym
-        # Order matters here, perform the "fused" patterns first
+        # Order matters here, perform the "fused" patterns first.
+        # 3-op conv+bn+relu patterns must come before 2-op conv+relu
+        # so they match when BN sits between conv and relu.
+        quantizers.append(CadenceAtenQuantizer(Conv1dBNReluPattern0(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv1dBNReluPattern1(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dBNReluPattern0(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dBNReluPattern1(), a8w8sym))
         quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern0(), a8w8sym))
         quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern1(), a8w8sym))
         quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern0(), a8w8sym))
         quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern1(), a8w8sym))
+        quantizers.append(CadenceAtenQuantizer(AddReluPattern0(), a8w8))
+        quantizers.append(CadenceAtenQuantizer(AddReluPattern1(), a8w8))
         quantizers = quantizers + get_cadence_default_quantizers(is_qat=is_qat)
         quantizers.append(CadenceAtenQuantizer(AddPattern(), a8w8))
         quantizers.append(CadenceAtenQuantizer(CatPattern(), a8w8))

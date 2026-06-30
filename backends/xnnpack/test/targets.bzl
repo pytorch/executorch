@@ -45,6 +45,16 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "test_xnn_weights_cache_manager",
+        srcs = ["runtime/test_xnn_weights_cache_manager.cpp"],
+        deps = [
+            third_party_dep("XNNPACK"),
+            "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/runtime/executor:pte_data_map",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "test_xnn_data_separation",
         srcs = ["runtime/test_xnn_data_separation.cpp"],
         deps = [
@@ -96,6 +106,9 @@ def define_common_targets():
     runtime.cxx_test(
         name = "test_workspace_manager",
         srcs = ["runtime/test_workspace_manager.cpp"],
+        preprocessor_flags = [
+            "-DXNNPACK_WORKSPACE_ALWAYS_LOCK",
+        ],
         deps = [
                 third_party_dep("XNNPACK"),
                 "//executorch/backends/xnnpack:xnnpack_backend",

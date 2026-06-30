@@ -144,16 +144,20 @@ if(USE_CMSIS_NN)
     # CMSIS-NN model uses only cortex_m:: ops, no portable ops needed. Skip
     # --whole-archive on portable_ops_lib to avoid pulling unused ops.
     message(STATUS "Selective build: CMSIS-NN only (no portable ops)")
+    # libexecutorch_core.a is listed after the kernel libs so that any
+    # references introduced by --whole-archive (e.g. EValue accessors used by
+    # the codegen-generated kernel registrations) can still pull in symbols from
+    # evalue.cpp. ld walks the link line once, left to right.
     target_link_libraries(
       executorch_pico
       PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
-              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               -Wl,--whole-archive
               ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_ops_lib.a
               -Wl,--no-whole-archive
               ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_kernels.a
               ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
               ${BAREMETAL_BUILD_DIR}/lib/libcmsis-nn.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               pico_stdlib
               pico_stdio_usb
     )
@@ -161,7 +165,6 @@ if(USE_CMSIS_NN)
     target_link_libraries(
       executorch_pico
       PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
-              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               -Wl,--whole-archive
               ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_ops_lib.a
               ${BAREMETAL_BUILD_DIR}/lib/libportable_ops_lib.a
@@ -169,6 +172,7 @@ if(USE_CMSIS_NN)
               ${BAREMETAL_BUILD_DIR}/lib/libcortex_m_kernels.a
               ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
               ${BAREMETAL_BUILD_DIR}/lib/libcmsis-nn.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               pico_stdlib
               pico_stdio_usb
     )
@@ -179,11 +183,11 @@ else()
     target_link_libraries(
       executorch_pico
       PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
-              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               -Wl,--whole-archive
               ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_selected_kernels.a
               -Wl,--no-whole-archive
               ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               pico_stdlib
               pico_stdio_usb
     )
@@ -191,11 +195,11 @@ else()
     target_link_libraries(
       executorch_pico
       PRIVATE ${BAREMETAL_BUILD_DIR}/lib/libexecutorch.a
-              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               -Wl,--whole-archive
               ${BAREMETAL_BUILD_DIR}/lib/libportable_ops_lib.a
               -Wl,--no-whole-archive
               ${BAREMETAL_BUILD_DIR}/lib/libportable_kernels.a
+              ${BAREMETAL_BUILD_DIR}/lib/libexecutorch_core.a
               pico_stdlib
               pico_stdio_usb
     )

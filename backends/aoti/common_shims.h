@@ -87,6 +87,13 @@ AOTI_SHIM_EXPORT void aoti_torch_warn(
     uint32_t line,
     const char* msg);
 
+AOTI_SHIM_EXPORT void aoti_torch_check(
+    bool cond,
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg);
+
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_storage_size(Tensor* tensor, int64_t* ret_size);
 

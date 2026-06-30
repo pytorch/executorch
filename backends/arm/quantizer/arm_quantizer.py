@@ -39,10 +39,10 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
 )
 from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
-from executorch.backends.cortex_m.quantizer.quantizer_reporter import (
-    QuantizerReporter,
-    SUPPORTED_QCONFIGS,
-    SUPPORTED_QSPECS,
+from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
+from executorch.exir.graph_module import (
+    _get_control_flow_submodules,
+    get_cond_while_submodules,
 )
 
 from torch._ops import OpOverload
@@ -56,10 +56,6 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
-from executorch.backends.arm._passes.arm_pass_utils import (
-    get_cond_while_submodules_nested,
-    is_submodule_node,
-)
 
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     _get_int32_bias_qspec,
@@ -111,6 +107,28 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+def get_cond_while_submodules_ao(
+    graph_module: GraphModule,
+    apply_quantization: bool = False,
+) -> list[tuple[str, GraphModule, Node]]:
+    """Return cond/while submodules for the current graph module.
+
+    Quantization handles ``while_loop`` body functions natively in torchao, so
+    only the ``while_loop`` cond function is processed explicitly there.
+
+    """
+    if not apply_quantization:
+        return get_cond_while_submodules(graph_module)
+
+    return _get_control_flow_submodules(
+        graph_module,
+        {
+            torch.ops.higher_order.cond: [1, 2],
+            torch.ops.higher_order.while_loop: [0],
+        },
+    )
+
+
 @functools.lru_cache
 def get_symmetric_quantization_config(
     is_per_channel: bool = True,
@@ -137,6 +155,7 @@ def get_symmetric_quantization_config(
         act_qmax (int): Maximum activation quantization value.
         weight_qmin (int): Minimum weight quantization value.
         weight_qmax (int): Maximum weight quantization value.
+        eps (float): Minimum scale value used by observers.
 
     Returns:
         QuantizationConfig: Quantization settings for activations, weights, and
@@ -219,20 +238,28 @@ def get_symmetric_quantization_config(
         bias_quantization_spec = _get_int32_bias_qspec
 
     if is_dynamic:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,
-            None,
-            weight_quantization_spec,
-            bias_quantization_spec,
-        )
+        output_activation = None
     else:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,
-            act_quantization_spec,
-            weight_quantization_spec,
-            bias_quantization_spec,
-        )
-    return quantization_config
+        output_activation = act_quantization_spec
+
+    module_name = __name__.rsplit(".", maxsplit=1)[-1]
+    label = (
+        f"{module_name}.get_symmetric_quantization_config("
+        f"per_channel={int(is_per_channel)}, "
+        f"qat={int(is_qat)}, "
+        f"dynamic={int(is_dynamic)}, "
+        f"act_range=[{act_qmin}, {act_qmax}], "
+        f"weight_range=[{weight_qmin}, {weight_qmax}]"
+        ")"
+    )
+
+    return TOSAQuantizationConfig(
+        act_quantization_spec,
+        output_activation,
+        weight_quantization_spec,
+        bias_quantization_spec,
+        label,
+    )
 
 
 @functools.lru_cache
@@ -357,59 +384,32 @@ def get_symmetric_a16w8_quantization_config(
         is_qat=is_qat,
         is_dynamic=is_dynamic,
     )
-    # Replace activation quantization spec with 16-bit version
+
     if is_dynamic:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,  # 16-bit input activations
-            None,
-            base_config.weight,  # 8-bit weights from base config
-            base_config.bias,  # bias from base config
-        )
+        output_activation = None
     else:
-        quantization_config = TOSAQuantizationConfig(
-            act_quantization_spec,  # 16-bit input activations
-            act_quantization_spec,  # 16-bit output activations
-            base_config.weight,  # 8-bit weights from base config
-            base_config.bias,  # bias from base config
-        )
-    return quantization_config
+        output_activation = act_quantization_spec
 
+    module_name = __name__.rsplit(".", maxsplit=1)[-1]
+    label = (
+        f"{module_name}.get_symmetric_a16w8_quantization_config("
+        f"per_channel={int(is_per_channel)}, "
+        f"qat={int(is_qat)}, "
+        f"dynamic={int(is_dynamic)}, "
+        f"act_range=[{act_quantization_spec.quant_min}, {act_quantization_spec.quant_max}], "
+        f"weight_range=[{weight_qmin}, {weight_qmax}]"
+        ")"
+    )
 
-# Register supported quantization configs and qspecs in the reporter for human-readable reporting
-# MLETORCH-1854: Temporary solution, refactor to automatically register these instead
-_symmetric_a8w4_config_per_channel = get_symmetric_a8w4_quantization_config()
-_symmetric_a8w8_config_per_channel = get_symmetric_quantization_config()
-_symmetric_a16w8_config_per_channel = get_symmetric_a16w8_quantization_config()
-_symmetric_a8w4_config_per_tensor = get_symmetric_a8w4_quantization_config(
-    is_per_channel=False
-)
-_symmetric_a8w8_config_per_tensor = get_symmetric_quantization_config(
-    is_per_channel=False
-)
-_symmetric_a16w8_config_per_tensor = get_symmetric_a16w8_quantization_config(
-    is_per_channel=False
-)
-SUPPORTED_QCONFIGS.update(
-    {
-        _symmetric_a8w8_config_per_channel: f"{__name__}.get_symmetric_quantization_config(is_per_channel=True)",
-        _symmetric_a16w8_config_per_channel: f"{__name__}.get_symmetric_a16w8_quantization_config(is_per_channel=True)",
-        _symmetric_a8w4_config_per_channel: f"{__name__}.get_symmetric_a8w4_quantization_config(is_per_channel=True)",
-        _symmetric_a8w8_config_per_tensor: f"{__name__}.get_symmetric_quantization_config(is_per_channel=False)",
-        _symmetric_a16w8_config_per_tensor: f"{__name__}.get_symmetric_a16w8_quantization_config(is_per_channel=False)",
-        _symmetric_a8w4_config_per_tensor: f"{__name__}.get_symmetric_a8w4_quantization_config(is_per_channel=False)",
-    }
-)
+    # Replace activation quantization spec with 16-bit version
+    return TOSAQuantizationConfig(
+        act_quantization_spec,  # 16-bit input activations
+        output_activation,
+        base_config.weight,  # 8-bit weights from base config
+        base_config.bias,  # bias from base config
+        label,
+    )
 
-SUPPORTED_QSPECS.update(
-    {
-        _symmetric_a8w4_config_per_channel.get_weight_qspec(): "INT4_PER_CHANNEL_QSPEC",
-        _symmetric_a8w8_config_per_channel.get_weight_qspec(): "INT8_PER_CHANNEL_QSPEC",
-        _symmetric_a8w8_config_per_tensor.get_weight_qspec(): "INT8_PER_TENSOR_QSPEC",
-        _symmetric_a8w4_config_per_tensor.get_weight_qspec(): "INT4_PER_TENSOR_QSPEC",
-        _symmetric_a8w8_config_per_tensor.get_input_act_qspec(): "INT8_PER_TENSOR_QSPEC",
-        _symmetric_a16w8_config_per_tensor.get_input_act_qspec(): "INT16_PER_TENSOR_QSPEC",
-    }
-)
 
 NodeFilterType = Callable[[Node], bool]
 """Type for a Node Filter used by annotators.
@@ -525,14 +525,17 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def tosa_spec(self):
+        """Return the TOSA specification used by the active quantizer."""
         return self.quantizer.tosa_spec
 
     @property
     def compile_spec(self):
+        """Return the compile specification used by the active quantizer."""
         return self.quantizer.compile_spec
 
     @property
     def global_config(self):
+        """Return the fallback quantization configuration."""
         return self.quantizer.global_config
 
     @global_config.setter
@@ -546,6 +549,7 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def io_config(self):
+        """Return the input and output quantization configuration."""
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             return self.quantizer.io_config
         else:
@@ -564,6 +568,7 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def module_type_config(self):
+        """Return quantization configuration overrides by module type."""
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             return self.quantizer.module_type_config
         else:
@@ -584,6 +589,7 @@ class TOSAQuantizer(Quantizer):
 
     @property
     def module_name_config(self):
+        """Return quantization configuration overrides by module name."""
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             return getattr(self.quantizer, "module_name_config", {})
         else:
@@ -692,6 +698,7 @@ class TOSAQuantizer(Quantizer):
             quantization_config (Optional[QuantizationConfig]): Configuration
                 describing quantization settings for nodes matched by the provided
                 NodeFinder. ``None`` indicates no quantization.
+            node_finder (NodeFinder): Predicate used to select nodes.
 
         """
         if self.use_composable_quantizer:
@@ -757,14 +764,18 @@ class TOSAQuantizer(Quantizer):
         return self.quantizer.annotate(model)
 
     def validate(self, model: GraphModule) -> None:
-        """Validate the quantization results. Currently, this includes:
-            - Ensure tensor inputs to each operator live on the same device.
+        """Validate the quantization results.
+
+        Currently, this ensures tensor inputs to each operator live on the same
+        device.
 
         Args:
             model (GraphModule): GraphModule being validated.
+
         Raises:
             ValueError: If tensor inputs for any operator span more than one
                 device.
+
         """
         for node in model.graph.nodes:
             if node.op != "call_function":
@@ -809,8 +820,7 @@ class TOSAQuantizer(Quantizer):
         is_qat: bool = False,
         fold_quantize: bool = True,
     ):
-        """Quantizes a GraphModule in a way such that conditional submodules are
-        handled properly.
+        """Quantize a GraphModule with conditional submodule handling.
 
         Note: torchao's prepare_pt2e and convert_pt2e natively handle
         while_loop body_fn submodules, so we only manually process cond
@@ -823,8 +833,8 @@ class TOSAQuantizer(Quantizer):
                 model with submodules, at least one sample per code path is
                 needed.
             is_qat (bool): Whether to do quantization aware training or not.
-            fold_quantize (bool): Enables or disables constant folding when quantization
-                is completed.
+            fold_quantize (bool): Enables or disables constant folding when
+                quantization is completed.
 
         Returns:
             GraphModule: The quantized model.
@@ -833,42 +843,56 @@ class TOSAQuantizer(Quantizer):
         prepare_fn = prepare_qat_pt2e if is_qat else prepare_pt2e
 
         prepared = prepare_fn(model, self)
-        # Prepare conditional submodules (e.g., if/while bodies)
-        # prepare only cond branches and while_loop cond_fn
-        for name, submodule, _ in get_cond_while_submodules_nested(
-            prepared, apply_quantization=True
-        ):
-            prepared.set_submodule(name, prepare_fn(submodule, self), strict=True)
-            for submodule_node in submodule.graph.nodes:
-                if is_submodule_node(submodule_node):
-                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
-                        submodule, apply_quantization=True
-                    ):
-                        prepared.set_submodule(
-                            nested_name, prepare_fn(nested_sub, self), strict=True
-                        )
+
+        def _prepare_control_flow_submodules(
+            source_graph_module: GraphModule, prefix: str = ""
+        ) -> None:
+            for name, submodule, _ in get_cond_while_submodules_ao(
+                source_graph_module, apply_quantization=True
+            ):
+                qualified_name = f"{prefix}.{name}" if prefix else name
+                prepared.set_submodule(
+                    qualified_name, prepare_fn(submodule, self), strict=True
+                )
+                _prepare_control_flow_submodules(submodule, qualified_name)
+
+        _prepare_control_flow_submodules(prepared)
 
         for inp in calibration_samples:
             prepared(*inp)
 
-        # Prepare conditional submodules (e.g., if/while bodies)
-        # convert only cond branches and while_loop cond_fn
-        for _, submodule, _ in get_cond_while_submodules_nested(
-            prepared, apply_quantization=True
-        ):
-            converted = convert_pt2e(submodule, fold_quantize=fold_quantize)
-            for submodule_node in submodule.graph.nodes:
-                if is_submodule_node(submodule_node):
-                    for nested_name, nested_sub, _ in get_cond_while_submodules_nested(
-                        submodule, apply_quantization=True
-                    ):
-                        converted.set_submodule(
-                            nested_name,
-                            convert_pt2e(nested_sub, fold_quantize=fold_quantize),
-                            strict=True,
-                        )
+        def _convert_control_flow_submodule(
+            graph_module: GraphModule,
+        ) -> GraphModule:
+            converted_submodules: list[tuple[str, GraphModule]] = []
+            for name, submodule, _ in get_cond_while_submodules_ao(
+                graph_module, apply_quantization=True
+            ):
+                converted_submodules.append(
+                    (name, _convert_control_flow_submodule(submodule))
+                )
+            converted_graph_module = convert_pt2e(
+                graph_module, fold_quantize=fold_quantize
+            )
+            for name, converted_submodule in converted_submodules:
+                converted_graph_module.set_submodule(
+                    name, converted_submodule, strict=True
+                )
+            return converted_graph_module
 
-        return convert_pt2e(prepared, fold_quantize=fold_quantize)
+        converted_top_level_submodules: list[tuple[str, GraphModule]] = []
+        for name, submodule, _ in list(
+            get_cond_while_submodules_ao(prepared, apply_quantization=True)
+        ):
+            converted_top_level_submodules.append(
+                (name, _convert_control_flow_submodule(submodule))
+            )
+
+        converted = convert_pt2e(prepared, fold_quantize=fold_quantize)
+        for name, converted_submodule in converted_top_level_submodules:
+            converted.set_submodule(name, converted_submodule, strict=True)
+
+        return converted
 
 
 class _TOSAQuantizerV1(Quantizer):
@@ -935,7 +959,6 @@ class _TOSAQuantizerV1(Quantizer):
         quantized models.
 
         """
-
         # First, set all nodes according to global config
         for node in model.graph.nodes:
             node.meta[DISALLOW_TFA_META_KEY] = self.global_config is None
@@ -1090,10 +1113,10 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 
     @property
     def quantizers(self) -> List[Quantizer]:
-        """Returns the configured quantizers in order of precedence, ensuring
-        the global config and shared_qspec_quantizer are applied last.
+        """Return the configured quantizers in order of precedence.
 
-        The returned list is a shallow copy; quantizer instances are shared.
+        The returned list is a shallow copy; quantizer instances are shared. The
+        global config and shared_qspec_quantizer are applied last.
 
         """
         quantizers = self._quantizers.copy()
@@ -1105,9 +1128,7 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 
     @quantizers.setter
     def quantizers(self, value: List[Quantizer]) -> None:
-        """Override of quantizers setter to allow for dynamic updating of
-        quantizers without accessing self._quantizers.
-        """
+        """Update quantizers without accessing self._quantizers directly."""
         self._quantizers = value
 
     def annotate(self, model):
@@ -1132,6 +1153,23 @@ class _TOSAQuantizerV2(ComposableQuantizer):
 
         return model
 
+    def _log_nonquantized_nodes(self, model: GraphModule) -> None:
+        non_quantized_nodes = [
+            n
+            for n in model.graph.nodes
+            if n.meta.get(DISALLOW_TFA_META_KEY, True) and n.op != "get_attr"
+        ]
+        if len(non_quantized_nodes) > 0:
+            msg = """
+----------------------------------------------------------------------------------------------------
+                         PRE-TRANSFORM FOR ANNOTATION QUANTIZATION REPORT                                      
+----------------------------------------------------------------------------------------------------
+The following nodes are not marked for quantization and will not be decomposed in the transform for annotation pipeline:\n"""
+            for node in non_quantized_nodes:
+                msg += f"   {node.name}\n"
+
+            logger.debug(msg)
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         # Transform_for_annotation should only decompose ops if quantized, which is
         # indicated either by node.meta['DISALLOW_TFA_META_KEY']==False or no such key
@@ -1144,14 +1182,12 @@ class _TOSAQuantizerV2(ComposableQuantizer):
         # run to set DISALLOW_TFA_META_KEY for quantized nodes and all nodes missing
         # this key afterwards are set to DISALLOW_TFA_META_KEY=True.
 
-        reporter = QuantizerReporter(
-            self.quantizers, "PRE-TRANSFORM_FOR_ANNOTATION QUANTIZATION REPORT"  # type: ignore[arg-type]
-        )
         model = super().annotate(model)
-        reporter.log_quantizer_report(model)
         for node in model.graph.nodes:
             if DISALLOW_TFA_META_KEY not in node.meta:
                 node.meta[DISALLOW_TFA_META_KEY] = True
+
+        self._log_nonquantized_nodes(model)
 
         pass_manager = ArmPassManager(self.compile_spec)
         transformed_model = pass_manager.transform_for_annotation_pipeline(model)
@@ -1191,6 +1227,7 @@ class _TOSAQuantizerV2(ComposableQuantizer):
             quantization_config, node_finder, self.pattern_matcher
         )
         self.global_config = quantization_config
+        self.shared_qspec_quantizer.global_config = quantization_config
         return self
 
     def set_node_target(

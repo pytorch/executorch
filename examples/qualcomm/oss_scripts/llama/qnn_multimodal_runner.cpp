@@ -9,7 +9,7 @@
 /**
  * @file
  *
- * This tool can run SmolVLM 500M, InternVL3 1B
+ * This tool can run SmolVLM 500M, InternVL3 1B, GraniteSpeech3.3 2B
  * with Qualcomm AI Engine Direct.
  *
  */
@@ -19,6 +19,7 @@
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/encoder.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/multimodal_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/multimodal_runner/utils.h>
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
@@ -29,7 +30,9 @@
 #include <vector>
 
 using executorch::aten::ScalarType;
+using executorch::extension::llm::Audio;
 using executorch::extension::llm::Image;
+using ::executorch::extension::llm::make_audio_input;
 using ::executorch::extension::llm::make_image_input;
 using ::executorch::extension::llm::make_text_input;
 using executorch::extension::llm::MultimodalInput;
@@ -76,9 +79,13 @@ DEFINE_string(
     "",
     "This is an alternative of passing prompts. Users could provide this in a raw file, with tokens saved in uint64 format.");
 DEFINE_string(
+    audio_path,
+    "",
+    "Path to input audio file. For Audio-Language models, please specify audio path.");
+DEFINE_string(
     image_path,
     "",
-    "Path to input image file. If empty, text-only mode is used.");
+    "Path to input image file. For Vision-Language models, please specify image path.");
 DEFINE_string(system_prompt, "", "System prompt for the model.");
 
 // Generation parameters
@@ -130,7 +137,6 @@ std::vector<std::string> CollectPrompts(int argc, char** argv) {
   return prompts;
 }
 
-template <typename T>
 void start_multimodal_runner(
     std::unique_ptr<executorch::extension::Module> encoder,
     std::unique_ptr<executorch::extension::Module> tok_embedding,
@@ -143,7 +149,7 @@ void start_multimodal_runner(
                                                                          : true;
 
   // Create multimodal runner
-  example::QNNMultimodalRunner<T> runner(
+  example::QNNMultimodalRunner runner(
       std::move(encoder),
       std::move(tok_embedding),
       std::move(text_decoder),
@@ -160,12 +166,6 @@ void start_multimodal_runner(
 
   auto model_version = runner.get_model_version().get();
 
-  if (modality_of(model_version) == example::Modality::kVision) {
-    ET_CHECK_MSG(
-        !FLAGS_image_path.empty(),
-        "For VLM models, please specify image path.");
-  }
-
   // Prepare output buffer (similar to qnn_llama_runner.cpp)
   std::vector<char> buf;
   buf.reserve(5 * FLAGS_seq_len); // assume each token is around 5 char
@@ -176,21 +176,33 @@ void start_multimodal_runner(
     }
   };
   executorch::extension::llm::GenerationConfig config{
-      true,
-      false,
-      -1,
-      false,
-      FLAGS_seq_len,
-      static_cast<float>(FLAGS_temperature),
-      0,
-      0};
+      .echo = true,
+      .ignore_eos = false,
+      .max_new_tokens = -1,
+      .warming = false,
+      .seq_len = FLAGS_seq_len,
+      .temperature = static_cast<float>(FLAGS_temperature),
+      .num_bos = 0,
+      .num_eos = 0,
+  };
 
-  // 1. [Multi-modality] Get raw files from input_list.txt
-  std::vector<std::string> raw_files =
-      example::load_raw_files(FLAGS_image_path.c_str());
+  // 1. [Multimodal] Get raw files from input_list.txt
+  std::vector<std::string> audio_raw_files;
+  std::vector<std::string> image_raw_files;
+  if (modality_of(model_version) == example::Modality::kAudio) {
+    ET_CHECK_MSG(
+        !FLAGS_audio_path.empty(), "For ALM, please specify audio path.");
+    audio_raw_files = example::load_raw_files(FLAGS_audio_path.c_str());
+  }
+  if (modality_of(model_version) == example::Modality::kVision) {
+    ET_CHECK_MSG(
+        !FLAGS_image_path.empty(), "For VLM, please specify image path.");
+    image_raw_files = example::load_raw_files(FLAGS_image_path.c_str());
+  }
 
   // 2. Prepare messages for multi-turn simulation
-  std::vector<Message> messages = prepare_messages(prompts, raw_files);
+  std::vector<Message> messages =
+      prepare_messages(prompts, image_raw_files, audio_raw_files);
 
   // 3. Get expected input size/dtype for encoder
   Result<MethodMeta> method_meta = runner.get_encoder_method_meta();
@@ -207,8 +219,17 @@ void start_multimodal_runner(
       const auto& prompt = messages[j].text;
       const std::vector<std::string> files_path = messages[j].files_path;
 
-      // 4.1 prepare image input
+      // 4.1 prepare modality input
       std::vector<MultimodalInput> inputs;
+      // 4.1.1 prepare audio input
+      if (modality_of(model_version) == example::Modality::kAudio) {
+        for (const std::string& file_path : files_path) {
+          Audio audio;
+          example::load_audio(file_path, audio, expected_size, expected_dtype);
+          inputs.emplace_back(make_audio_input(audio));
+        }
+      }
+      // 4.1.2 prepare image input
       if (modality_of(model_version) == example::Modality::kVision) {
         for (const std::string& file_path : files_path) {
           Image image;
@@ -217,12 +238,15 @@ void start_multimodal_runner(
         }
       }
 
-      // 4.2 prepare prompt input
+      // 4.2 apply chat template for text input
       std::string formatted_prompt =
           apply_chat_template(prompt, FLAGS_system_prompt, model_version);
       inputs.emplace_back(make_text_input(formatted_prompt));
 
-      // 4.3 generate text
+      // 4.3 dispatch inputs into correct order
+      inputs = dispatch_inputs(inputs, formatted_prompt);
+
+      // 4.4 generate text
       runner.generate(inputs, config, callback);
     }
   }
@@ -264,35 +288,12 @@ int main(int argc, char** argv) {
           FLAGS_decoder_path.c_str(),
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
 
-  // Using 8bit as default since this meta is introduced with 16bit kv io
-  // support and older models only have 8bit kv io.
-  example::KvBitWidth kv_bitwidth = example::KvBitWidth::kWidth8;
-  if (text_decoder->method_names()->count("get_kv_io_bit_width") > 0) {
-    kv_bitwidth = static_cast<example::KvBitWidth>(
-        text_decoder->get("get_kv_io_bit_width")
-            .get()
-            .toScalar()
-            .to<int64_t>());
-  }
-  // Start runner with appropriate KV bitwidth
-  if (kv_bitwidth == example::KvBitWidth::kWidth8) {
-    start_multimodal_runner<uint8_t>(
-        std::move(encoder),
-        std::move(tok_embedding),
-        std::move(text_decoder),
-        prompts);
-  } else if (kv_bitwidth == example::KvBitWidth::kWidth16) {
-    start_multimodal_runner<uint16_t>(
-        std::move(encoder),
-        std::move(tok_embedding),
-        std::move(text_decoder),
-        prompts);
-  } else {
-    ET_CHECK_MSG(
-        false,
-        "Unsupported kv bitwidth: %ld",
-        static_cast<int64_t>(kv_bitwidth));
-  }
+  // Start runner
+  start_multimodal_runner(
+      std::move(encoder),
+      std::move(tok_embedding),
+      std::move(text_decoder),
+      prompts);
 
   return 0;
 }

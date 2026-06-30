@@ -7,6 +7,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "sampler" + aten_suffix,
             exported_headers = [
+                "logit_processor.h",
                 "sampler.h",
                 "util.h",
             ],

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>ExecuTorch Android Java API</title>
+</head>
+<body>
+
+<p>
+  The ExecuTorch Android Java API lets you run PyTorch models on Android
+  devices using a simple Java or Kotlin interface.
+</p>
+
+<p>
+  ExecuTorch is PyTorch's solution for on-device AI — from smartphones to
+  microcontrollers. The Java API wraps the native ExecuTorch runtime and gives
+  you clean Java classes to load models, build tensors, and run inference.
+</p>
+
+<h2>Quick Start</h2>
+
+<p>Add the library to your app:</p>
+
+<pre>
+// app/build.gradle.kts
+dependencies {
+    implementation("org.pytorch:executorch-android:${executorch_version}")
+}
+</pre>
+
+<p>Load a model and run inference:</p>
+
+<pre>
+import org.pytorch.executorch.EValue;
+import org.pytorch.executorch.Module;
+import org.pytorch.executorch.Tensor;
+
+// Load your exported .pte model
+Module module = Module.load("/data/local/tmp/model.pte");
+
+// Create an input tensor (1x3x224x224 image)
+float[] data = new float[1 * 3 * 224 * 224];
+Tensor input = Tensor.fromBlob(data, new long[]{1, 3, 224, 224});
+
+// Run inference
+EValue[] output = module.forward(EValue.from(input));
+float[] scores = output[0].toTensor().getDataAsFloatArray();
+</pre>
+
+<h2>Packages</h2>
+
+<table>
+  <tr>
+    <td><b>org.pytorch.executorch</b></td>
+    <td>Core API. Contains Module to load and run models, Tensor for tensor operations,
+        and EValue to wrap inputs and outputs.</td>
+  </tr>
+  <tr>
+    <td><b>org.pytorch.executorch.extension.llm</b></td>
+    <td>LLM extension. Contains LlmModule for running large language models like Llama
+        with streaming token generation.</td>
+  </tr>
+  <tr>
+    <td><b>org.pytorch.executorch.annotations</b></td>
+    <td>API annotations. Experimental marks APIs that may change in future releases.</td>
+  </tr>
+</table>
+
+<h2>Resources</h2>
+
+<ul>
+  <li>
+    <a href="https://pytorch.org/executorch/main/using-executorch-android.html">
+      Using ExecuTorch on Android
+    </a> — setup guide, Maven install, build from source
+  </li>
+  <li>
+    <a href="https://github.com/meta-pytorch/executorch-examples">
+      Android Demo Apps
+    </a> — working example apps
+  </li>
+</ul>
+
+</body>
+</html>

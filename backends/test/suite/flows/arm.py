@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -53,6 +53,12 @@ def _create_arm_flow(
         supports_serialize=support_serialize,
         quantize=quantize,
         quantize_stage_factory=(create_quantize_stage if quantize else False),  # type: ignore
+        param_skip_reasons={
+            "use_dynamic_shapes": {
+                True: "Dynamic-shape suite variants are not supported by the current ARM "
+                "TOSA/Ethos-U/VGF flows."
+            }
+        },
     )
 
 

@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/safe_numerics.h>
 #include <dlfcn.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -244,8 +245,12 @@ class ET_EXPERIMENTAL MetalBackend final
       }
     }
 
-    std::string so_blob_key =
-        method_name.empty() ? "so_blob" : method_name + "_so_blob";
+    std::string so_blob_key;
+    std::string weights_blob_key;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        executorch::backends::aoti::resolve_blob_keys(
+            processed, method_name, so_blob_key, weights_blob_key),
+        "Malformed named-data key payload");
     ET_LOG(Info, "MetalBackend::init - so_blob_key: %s", so_blob_key.c_str());
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
@@ -257,8 +262,6 @@ class ET_EXPERIMENTAL MetalBackend final
     // Prefetch the weights blob — trigger async readahead so pages are
     // resident by the time update_constants_from_blob memcpy's them.
     // This overlaps disk I/O with the .so write + dlopen (~200ms).
-    std::string weights_blob_key =
-        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
     {
       auto prefetch_buf = named_data_map->get_data(weights_blob_key.c_str());
       if (prefetch_buf.ok() && prefetch_buf->data() != nullptr) {
@@ -459,8 +462,10 @@ class ET_EXPERIMENTAL MetalBackend final
 
     ET_LOG(Debug, "MetalBackend n_outputs %zd generated", n_outputs);
 
+    size_t n_io_sum = 0;
     ET_CHECK_OR_RETURN_ERROR(
-        n_inputs + n_outputs == args.size(),
+        !c10::add_overflows(n_inputs, n_outputs, &n_io_sum) &&
+            n_io_sum == args.size(),
         InvalidArgument,
         "number of user input %zd and output %zd generated from AOT Inductor does not match ET runner's %zd. Exit.",
         n_inputs,

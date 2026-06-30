@@ -38,6 +38,15 @@ def test_ethos_u55_defaults_to_stable_softmax_u55_INT():
     assert pipeline_config.softmax == SoftmaxDecompositionConfig.STABLE
 
 
+def test_ethos_u65_defaults_to_high_end_dedicated_sram_u65_INT():
+    compile_spec = EthosUCompileSpec("ethos-u65-256")
+
+    assert "--accelerator-config=ethos-u65-256" in compile_spec.compiler_flags
+    assert "--system-config=Ethos_U65_High_End" in compile_spec.compiler_flags
+    assert "--memory-mode=Dedicated_Sram_384KB" in compile_spec.compiler_flags
+    assert compile_spec.tosa_spec.is_U55_subset
+
+
 def test_ethos_u85_defaults_to_masked_softmax_u85_INT():
     """Test that EthosUCompileSpec for U85 defaults to MASKED softmax config."""
     compile_spec = EthosUCompileSpec("ethos-u85-256")
@@ -63,6 +72,13 @@ def test_compile_spec_vgf_no_quant():
         EthosUCompileSpec._from_list(spec_list)
 
 
+def test_compile_spec_vgf_uses_default_pipeline_config():
+    compile_spec = VgfCompileSpec()
+    pipeline_config = compile_spec._get_pass_pipeline_config()
+
+    assert pipeline_config.is_default()
+
+
 def test_compile_spec_tosa_INT():
     compile_spec = TosaCompileSpec("TOSA-1.0+INT")
     spec_list = compile_spec._to_list()
@@ -76,6 +92,12 @@ def test_preserve_io_quantization_roundtrip_vgf_FP_INT():
     compile_spec = VgfCompileSpec()._set_preserve_io_quantization(True)
     roundtripped = VgfCompileSpec._from_list(compile_spec._to_list())
     assert roundtripped.preserve_io_quantization is True
+
+
+def test_preserve_tosa_dev_mode_roundtrip_vgf_FP_INT():
+    compile_spec = VgfCompileSpec()
+    roundtripped = VgfCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.tosa_dev_mode is True
 
 
 def test_preserve_io_quantization_warns_for_u55_INT():

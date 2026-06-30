@@ -1,0 +1,128 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+non_fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = define_common_targets,)
+
+# Text decoder module
+fbcode_target(_kind = runtime.python_library,
+    name = "text_decoder",
+    srcs = [
+        "text_decoder/__init__.py",
+        "text_decoder/convert_weights.py",
+        "text_decoder/gemma4_attention.py",
+        "text_decoder/gemma4_config.py",
+        "text_decoder/gemma4_cross_decoder.py",
+        "text_decoder/gemma4_decoder_layer.py",
+        "text_decoder/gemma4_model.py",
+        "text_decoder/gemma4_self_decoder.py",
+        "text_decoder/gemma4_transformer.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.gemma4",
+    resources = {
+        "config/e2b_config.json": "config/e2b_config.json",
+        "config/e4b_config.json": "config/e4b_config.json",
+    },
+    deps = [
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# Speech transform module
+fbcode_target(_kind = runtime.python_library,
+    name = "speech_transform",
+    srcs = [
+        "speech_transform.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.gemma4",
+    deps = [
+        "//caffe2:torch",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# Export utilities (shared quantization code)
+fbcode_target(_kind = runtime.python_library,
+    name = "quant_utils",
+    srcs = ["quant_utils.py"],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.gemma4",
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:source_transformation",
+        "//executorch/extension/llm/export:export_lib",
+        "//pytorch/ao:torchao",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# Single PTE export
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_gemma4",
+    srcs = ["export_gemma4.py"],
+    main_function = "executorch.examples.models.gemma4.export_gemma4.main",
+    preload_deps = [
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/embedding_xbit:op_embedding_xbit_aten",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+    ],
+    deps = [
+        ":text_decoder",
+        ":speech_transform",
+        ":quant_utils",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/extension/llm/export:export_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/kernels/quantized:aot_lib",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+)
+
+# Image preprocessing utilities
+fbcode_target(_kind = runtime.python_library,
+    name = "image_utils",
+    srcs = ["image_utils.py"],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.gemma4",
+    deps = [
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/pillow:pillow",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# Python runner (single PTE, audio + vision + text-only)
+fbcode_target(_kind = runtime.python_binary,
+    name = "run_gemma4",
+    srcs = ["run_gemma4.py"],
+    main_function = "executorch.examples.models.gemma4.run_gemma4.main",
+    preload_deps = [
+        "//executorch/backends/xnnpack:xnnpack_backend",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/kernels/quantized:aot_lib",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/embedding_xbit:op_embedding_xbit_aten",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
+    ],
+    deps = [
+        ":image_utils",
+        "//caffe2:torch",
+        "//executorch/runtime:runtime",
+        "fbsource//third-party/pypi/sentencepiece:sentencepiece",
+    ],
+)

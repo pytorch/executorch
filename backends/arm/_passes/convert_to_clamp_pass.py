@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from typing import Set, Tuple, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     QuantizeClampArgumentsPass,
@@ -29,11 +29,13 @@ def get_clamp_params(op, args) -> Tuple[float | None, float | None]:
         raise ValueError(f"Getting clamp parameters for op {op} is not implemented.")
 
 
-class ConvertToClampPass(ArmPass):
+class ConvertToClampPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {QuantizeClampArgumentsPass}
+    target_ops = edge_operators
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in edge_operators or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         return super().call_operator(

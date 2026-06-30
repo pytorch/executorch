@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,8 +10,10 @@ from typing import List, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    get_getitem_users,
+)
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
@@ -27,7 +30,7 @@ class DecomposeRnnPass(ArmPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     _TARGETS = {
         torch.ops.aten.rnn_tanh.input,
@@ -105,7 +108,7 @@ class DecomposeRnnPass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule):  # noqa: C901
         graph = graph_module.graph
-        made_changes = False
+        modified = False
 
         for node in list(graph.nodes):
             if (
@@ -117,6 +120,7 @@ class DecomposeRnnPass(ArmPass):
 
             is_relu = node.target == torch.ops.aten.rnn_relu.input
             activation = self._relu if is_relu else self._tanh
+            getitem_users = get_getitem_users(node, 2)
 
             args = node.args
             input_node = args[0]
@@ -223,7 +227,7 @@ class DecomposeRnnPass(ArmPass):
                             graph,
                             self._cat,
                             args=([fw_combined, bw_combined], -1),
-                            from_node=node,
+                            from_node=(getitem_users.get(0)),
                         )
 
                         layer_final_hiddens.append(
@@ -247,7 +251,7 @@ class DecomposeRnnPass(ArmPass):
                             graph,
                             self._cat,
                             args=(fw_outputs, time_dim),
-                            from_node=node,
+                            from_node=(getitem_users.get(0)),
                         )
 
                         layer_final_hiddens.append(
@@ -255,7 +259,7 @@ class DecomposeRnnPass(ArmPass):
                                 graph,
                                 self._unsqueeze,
                                 args=(fw_h_final, 0),
-                                from_node=node,
+                                from_node=(getitem_users.get(1)),
                             )
                         )
 
@@ -269,7 +273,7 @@ class DecomposeRnnPass(ArmPass):
                         graph,
                         self._cat,
                         args=(layer_final_hiddens, 0),
-                        from_node=node,
+                        from_node=getitem_users.get(1),
                     )
 
                 output_node = current_input
@@ -288,11 +292,9 @@ class DecomposeRnnPass(ArmPass):
             for gi in getitem_nodes:
                 graph.erase_node(gi)
             graph.erase_node(node)
-            made_changes = True
+            modified = True
 
-        if not made_changes:
-            return PassResult(graph_module, False)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

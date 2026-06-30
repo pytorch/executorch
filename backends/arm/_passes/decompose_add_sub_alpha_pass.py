@@ -9,7 +9,7 @@ import numbers
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -55,13 +55,14 @@ def _should_decompose(alpha) -> bool:
     return False
 
 
-class DecomposeAddSubAlphaPass(ArmPass):
+class DecomposeAddSubAlphaPass(ArmOpTargetedPass):
     """Rewrite add/sub with alpha into a mul followed by add/sub."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = _ADD_OPS + _SUB_OPS
 
     def call_operator(self, op, args, kwargs, meta, updated: bool | None = False):
-        if op not in _ADD_OPS + _SUB_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         alpha = kwargs.get("alpha", 1)

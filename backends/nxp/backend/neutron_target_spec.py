@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,12 +8,10 @@
 from enum import Enum
 
 import torch
-
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx import Node
 
 

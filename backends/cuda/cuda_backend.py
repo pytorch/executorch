@@ -5,9 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import contextlib
 import logging
 import os
 import shutil
+import threading
 import typing
 from importlib import resources
 from typing import Any, Dict, final, List, Optional
@@ -17,6 +19,9 @@ from executorch.backends.aoti.aoti_backend import AotiBackend
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
+from executorch.backends.cuda.passes.replace_int64_floordiv import (
+    ReplaceInt64FloorDivWithFloatPass,
+)
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -25,6 +30,238 @@ from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.nn.attention import SDPBackend
+
+
+# ---------------------------------------------------------------------------
+# AOTI compile-time CPU clones for mutated buffers
+# ---------------------------------------------------------------------------
+#
+# Inductor's `_unlift_graph` clones every mutated buffer that gets lifted into
+# the AOTI graph. By default it clones on whatever device the original tensor
+# lives on — which after `move_to_device_pass` is CUDA. For Large models like
+# Qwen3.5-MoE that means an extra ~18 GB GPU clone during compile, blowing past
+# the 24 GB cap we want to honor for consumer GPUs (RTX 4090 and similar).
+#
+# The patch below side-steps that by:
+#   1. Wrapping `torch._inductor.compile_fx.clone_preserve_strides` so every
+#      clone the AOTI compile pipeline produces lands on CPU.
+#   2. Wrapping `CppWrapperCpu.codegen_device` so the C++ wrapper still records
+#      the model's original target device (e.g. cuda) in `constants_info_`,
+#      not the now-CPU storage device. Without this the runtime would refuse
+#      to load the constants because of a mixed-device mismatch.
+#
+# The wrappers are scoped via a thread-local guard and are only active while
+# `_compile_time_cpu_clones(...)` is on the call stack — they are inert
+# anywhere else in the process.
+
+_CPU_CLONE_GUARD = threading.local()
+
+
+def _is_cpu_clone_active() -> bool:
+    return getattr(_CPU_CLONE_GUARD, "active", False)
+
+
+def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
+    """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
+
+    Used to re-synthesize KV-cache buffers whose storage was freed (``resize_(0)``)
+    during the low-memory device move. KV content is all zeros, so this exactly
+    reproduces the buffer for both the lifted graph value and serialization.
+    """
+    needed = 1
+    for size, stride in zip(x.size(), x.stride()):
+        needed += (size - 1) * stride
+    buf = torch.zeros(int(needed), dtype=x.dtype, device=device)
+    return torch.as_strided(buf, x.size(), x.stride())
+
+
+def _is_emptied(x) -> bool:
+    return (
+        isinstance(x, torch.Tensor)
+        and x.numel() > 0
+        and x.untyped_storage().nbytes() == 0
+    )
+
+
+@contextlib.contextmanager
+def _compile_time_cpu_clones(target_device: torch.device):
+    """Force AOTI's mutated-buffer clones onto CPU while preserving the
+    serialized constants' target device."""
+    from torch._inductor import compile_fx as _cfx, graph as _graph
+    from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu as _Cpp
+    from torch._inductor.graph import GraphLowering as _GL
+
+    orig_clone = _cfx.clone_preserve_strides
+    orig_codegen_device = _Cpp.codegen_device
+    orig_get_const = _GL.get_original_value_of_constant
+    orig_is_same = _graph.is_same_tensor
+
+    def _is_same_skip_emptied(data, value):
+        # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
+        # is_same_tensor would treat every same-shape KV constant as a duplicate
+        # and collapse the 60 layers' caches into one — the runtime needs each
+        # FQN's own buffer, so the collapsed ones load uninitialized garbage.
+        # Never dedup an emptied tensor.
+        if _is_emptied(data) or _is_emptied(value):
+            return False
+        return orig_is_same(data, value)
+
+    def _cpu_clone_preserve_strides(x: torch.Tensor) -> torch.Tensor:
+        # `clone_preserve_strides` is shared by `_unlift_graph` (clones lifted
+        # buffers — can be safely kept on CPU) and by autotuning code in
+        # `triton_heuristics.py` (clones for benchmark — must stay on GPU for
+        # Triton). Discriminate by caller frame so we only force CPU clones for
+        # the buffer-lifting path.
+        import sys
+
+        caller = sys._getframe(1).f_code.co_name
+        if caller == "_unlift_graph":
+            # KV-cache buffers are emptied (storage resize_(0)) by the low-memory
+            # device move so they never occupy GPU memory during compile. Their
+            # content is all zeros, so re-synthesize zeros (on CPU, strides
+            # preserved) instead of cloning the now-empty storage.
+            if _is_emptied(x):
+                return _full_zeros_preserving_strides(x, "cpu")
+            return orig_clone(x).cpu()
+        return orig_clone(x)
+
+    def _get_const_synthesize_zeros(self, name):
+        # AOTI serializes each constant via get_original_value_of_constant ->
+        # _to_bytes. For KV buffers we freed with resize_(0) this would otherwise
+        # fall back to the empty-storage constant and write 0 bytes, producing a
+        # .ptd with an uninitialized cache. Re-synthesize the zeros so the blob
+        # holds a correctly-zeroed KV cache.
+        value = orig_get_const(self, name)
+        if _is_emptied(value):
+            return _full_zeros_preserving_strides(value, "cpu")
+        return value
+
+    def _codegen_device_target_aware(self, device):
+        # Translate accidental CPU device strings back to the model target
+        # device only when a constant we forced to CPU is being serialized.
+        # Other code paths (extern op args etc.) are pass-through.
+        if (
+            _is_cpu_clone_active()
+            and self.device != "cpu"
+            and isinstance(device, torch.device)
+            and device.type == "cpu"
+        ):
+            device = target_device
+        return orig_codegen_device(self, device)
+
+    _cfx.clone_preserve_strides = _cpu_clone_preserve_strides
+    _Cpp.codegen_device = _codegen_device_target_aware
+    _GL.get_original_value_of_constant = _get_const_synthesize_zeros
+    _graph.is_same_tensor = _is_same_skip_emptied
+    prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
+    _CPU_CLONE_GUARD.active = True
+    try:
+        yield
+    finally:
+        _CPU_CLONE_GUARD.active = prev_active
+        _cfx.clone_preserve_strides = orig_clone
+        _Cpp.codegen_device = orig_codegen_device
+        _GL.get_original_value_of_constant = orig_get_const
+        _graph.is_same_tensor = orig_is_same
+
+
+def _is_kv_buffer(name, v) -> bool:
+    """True only for an actual KV-cache *content* buffer that is safe to free.
+
+    The low-memory path (``_move_to_device_resize_kv``) frees every buffer this
+    matches and re-synthesizes it as ZEROS in both the lifted graph and the
+    serialized ``.ptd`` (see ``_full_zeros_preserving_strides`` /
+    ``_get_const_synthesize_zeros``). That is only valid for genuine KV *content*,
+    which is all-zeros at export time (caches start empty).
+
+    It must NOT match the non-zero constants that some KV-cache modules register
+    alongside the cache — e.g. TurboQuant registers its codebook/rotation
+    (``centroids``/``boundaries``/``rotation``/``rotation_T``) as buffers on the
+    ``kv_cache`` module, so their FQNs also contain ``kv_cache``. Freeing+zeroing
+    those silently corrupts the serialized model (TQ4 dequant -> 0 -> garbage).
+    Gate on the buffer actually being all-zeros so only empty KV content is freed;
+    this is robust to any future constant name (a non-zero buffer is never freed).
+    """
+    if not isinstance(v, torch.Tensor) or isinstance(v, torch.nn.Parameter):
+        return False
+    if "kv_cache" not in name or v.numel() == 0 or v.is_meta:
+        return False
+    # Only the genuinely all-zero KV content may be freed + re-zeroed; non-zero
+    # constants (TurboQuant centroids/rotation/...) must be preserved as-is.
+    return bool(torch.count_nonzero(v) == 0)
+
+
+def _empty_strided_on_device(v, location):
+    """A device tensor with v's shape/stride/dtype but zero (freed) storage."""
+    t = torch.empty_strided(v.shape, v.stride(), dtype=v.dtype, device=location)
+    t.untyped_storage().resize_(0)  # free bytes, keep device + shape/stride
+    return t
+
+
+def _move_graph_nodes_to_device(graph_module, location):
+    """Point node device kwargs / aten.to.device targets / meta vals at location."""
+    import torch.utils._pytree as pytree
+
+    def _to_loc(v):
+        return v.to(location) if isinstance(v, torch.Tensor) else v
+
+    for m in graph_module.modules():
+        if not isinstance(m, torch.fx.GraphModule):
+            continue
+        for node in m.graph.nodes:
+            if "device" in node.kwargs:
+                node.kwargs = {**node.kwargs, "device": location}
+            if node.op == "call_function" and node.target is torch.ops.aten.to.device:
+                args = list(node.args)
+                args[1] = location
+                node.args = tuple(args)
+            node.meta["val"] = pytree.tree_map(_to_loc, node.meta.get("val"))
+
+
+def _move_to_device_resize_kv(ep, location):
+    """``move_to_device_pass`` variant that frees KV-cache storage on-device.
+
+    Mirrors ``torch.export.passes.move_to_device_pass`` exactly, except KV-cache
+    buffers (FQN contains ``kv_cache``) are placed on ``location`` but with their
+    storage immediately freed via ``resize_(0)``. This keeps ``device ==
+    location`` — so the fake-tensor device check on the ``index_copy`` cache
+    update passes (``self`` and ``values`` both on cuda) — while no real KV bytes
+    occupy the device during the AOTI compile. KV content is all zeros, so the
+    emptied tensors are re-synthesized as zeros at the ``_unlift_graph`` clone
+    (see ``_compile_time_cpu_clones``), which is reused as both the lifted initial
+    value and the serialized ``.ptd`` constant. The empty/free is interleaved per
+    tensor so the transient device peak is a single KV buffer, not the whole cache.
+    Only ``kv_cache`` tensors are emptied (they are the lone large zero-buffers);
+    every other tensor is moved normally so non-zero content is never lost.
+    """
+    import torch.utils._pytree as pytree
+
+    for k, v in ep.state_dict.items():
+        if isinstance(v, torch.nn.Parameter):
+            ep._state_dict[k] = torch.nn.Parameter(v.to(location), v.requires_grad)
+        elif _is_kv_buffer(k, v):
+            ep._state_dict[k] = _empty_strided_on_device(v, location)
+        else:
+            ep._state_dict[k] = v.to(location)
+
+    for k, v in ep.constants.items():
+        if isinstance(v, torch.Tensor):
+            ep._constants[k] = (
+                _empty_strided_on_device(v, location)
+                if _is_kv_buffer(k, v)
+                else v.to(location)
+            )
+
+    if ep.example_inputs is not None:
+        args, kwargs = ep.example_inputs
+        ep._example_inputs = (
+            pytree.tree_map_only(torch.Tensor, lambda t: t.to(location), args),
+            pytree.tree_map_only(torch.Tensor, lambda t: t.to(location), kwargs),
+        )
+
+    _move_graph_nodes_to_device(ep.graph_module, location)
+    ep.validate()
+    return ep
 
 
 @final
@@ -146,6 +383,13 @@ class CudaBackend(AotiBackend, BackendDetails):
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
             "at::_ops::sort_stable::call": None,
+            "aoti_torch_cuda_randint_low_out": None,
+            "executorch_cuda::int4_plain_mm": None,
+            "aoti_torch_cuda_int4_plain_mm": None,
+            "executorch_cuda::int6_plain_mm": None,
+            "aoti_torch_cuda_int6_plain_mm": None,
+            "executorch_cuda::int8_plain_mm": None,
+            "aoti_torch_cuda_int8_plain_mm": None,
         }
 
     @classmethod
@@ -175,7 +419,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                         f"Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
-        passes = [MoveCondPredicateToCpuPass()]
+        passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
         if triton_kernel_mode == "ON":
             passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes
@@ -218,6 +462,30 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
 
+        try:
+            import torch
+
+            options["aot_inductor.custom_ops_to_c_shims"] = {
+                torch.ops.executorch_cuda.int4_plain_mm.default: [
+                    "AOTITorchError aoti_torch_cuda_int4_plain_mm("
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                ],
+                torch.ops.executorch_cuda.int6_plain_mm.default: [
+                    "AOTITorchError aoti_torch_cuda_int6_plain_mm("
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                ],
+                torch.ops.executorch_cuda.int8_plain_mm.default: [
+                    "AOTITorchError aoti_torch_cuda_int8_plain_mm("
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                ],
+            }
+        except AttributeError:
+            # quantize_op_dispatch not imported — op not registered, skip C shim mapping
+            pass
+
         # Parse compile_specs to check for platform
 
         platform = "linux"
@@ -252,19 +520,120 @@ class CudaBackend(AotiBackend, BackendDetails):
         return options
 
     @classmethod
-    def get_extra_aoti_compile_context_manager(cls):
+    def get_extra_aoti_compile_context_manager(
+        cls, compile_specs: Optional[List[CompileSpec]] = None
+    ):
         """
-        Return SDPA MATH backend context manager for CUDA compilation.
+        Combine all extra context managers needed during AOTInductor
+        compilation for the CUDA backend. Each manager is documented at
+        its own `enter_context` call site below.
 
-        This context manager plays as a fallback solution for any remaining PyTorch SDPA
-        operations to use the MATH backend (decomposed SDPA) during AOTInductor compilation.
-
-        Note:
-        - If SDPA ops are replaced with Triton kernels by ReplaceEdgeOpWithTritonOpPass,
-          this context manager will have no effect on those ops (they are no longer
-          PyTorch SDPA ops).
-        - If SDPA ops are NOT replaced (e.g., when triton_kernel_mode="OFF"), this
-          context manager will force them to use the MATH backend, causing them to
-          be automatically decomposed during compilation.
+        The low-memory export monkey-patch (CPU clones for mutated buffers)
+        is gated on the ``low_memory_mode`` compile spec — only models that
+        explicitly opt in (currently Qwen3.5 MoE) get it. Other models go
+        through the unmodified AOTI codepath, which avoids regressions in
+        their cuda CI exports.
         """
-        return torch.nn.attention.sdpa_kernel([SDPBackend.MATH])
+        # Parse compile_specs for low_memory_mode (default OFF). compile_specs
+        # may be None when called without specs (parity with base default).
+        low_memory_mode = "OFF"
+        for spec in compile_specs or []:
+            if spec.key == "low_memory_mode":
+                mode = spec.value.decode("utf-8").upper()
+                if mode not in ["ON", "OFF"]:
+                    raise ValueError(
+                        f"Invalid low_memory_mode: {mode}. Expected 'ON' or 'OFF'."
+                    )
+                low_memory_mode = mode
+
+        @contextlib.contextmanager
+        def _combined():
+            with contextlib.ExitStack() as stack:
+                # Force any remaining PyTorch SDPA ops to use the MATH
+                # backend during compilation so AOTI can lower / decompose
+                # them. SDPA ops already replaced by Triton kernels via
+                # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
+                # only the fallback for the `triton_kernel_mode="OFF"` path.
+                stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
+                if low_memory_mode == "ON":
+                    # Force AOTI's mutated-buffer clones onto CPU during
+                    # compile so we stay under tight GPU memory caps (e.g.
+                    # 24 GB on a consumer 4090). See
+                    # `_compile_time_cpu_clones` for details. Only enabled
+                    # for models that explicitly opt in via the
+                    # `low_memory_mode="ON"` compile spec, since the
+                    # monkey-patch can interact poorly with other models'
+                    # AOTI compile pipelines.
+                    stack.enter_context(
+                        _compile_time_cpu_clones(torch.device(cls.get_device_name()))
+                    )
+                yield
+
+        return _combined()
+
+    @staticmethod
+    def _is_low_memory_mode(compile_specs: List[CompileSpec]) -> bool:
+        """Return True if any compile spec opts into low-memory export."""
+        for spec in compile_specs:
+            if spec.key == "low_memory_mode":
+                return spec.value.decode("utf-8").upper() == "ON"
+        return False
+
+    @classmethod
+    def move_program_to_device(
+        cls,
+        edge_program,
+        device: str,
+        compile_specs: List[CompileSpec],
+    ):
+        """Move the program to ``device`` for AOTI compile.
+
+        On a low-memory export (``low_memory_mode="ON"``) the KV-cache buffers —
+        which can be 10+ GiB at long context — are placed on-device but with their
+        storage freed (``resize_(0)``), so they never occupy device memory during
+        the autotune / cpp_wrapper compile while still satisfying the device-match
+        check on the cache update. They are re-synthesized as zeros for the lifted
+        graph and the serialized blob. This activates automatically with low-memory
+        mode. Other (non-low-memory) exports use the stock pass.
+        """
+        from torch.export.passes import move_to_device_pass
+
+        if not cls._is_low_memory_mode(compile_specs):
+            return move_to_device_pass(edge_program, device)
+        return _move_to_device_resize_kv(edge_program, device)
+
+    @classmethod
+    def release_moved_tensors(
+        cls,
+        device_edge_program,
+        compile_specs: List[CompileSpec],
+    ) -> None:
+        """
+        Free GPU memory held by tensors that ``move_to_device_pass`` placed
+        on CUDA (params, buffers, and constants of ``device_edge_program``).
+
+        Resizing the underlying storage to 0 returns those bytes to PyTorch's
+        caching allocator, so the next ``preprocess`` call (e.g. for the
+        next method in a multi-method export) can reuse them when its own
+        ``move_to_device_pass`` runs.
+        """
+        if not torch.cuda.is_available():
+            return
+
+        pools = []
+        state_dict = getattr(device_edge_program, "state_dict", None)
+        if state_dict:
+            pools.append(state_dict.values())
+        constants = getattr(device_edge_program, "constants", None)
+        if constants:
+            pools.append(constants.values())
+
+        for pool in pools:
+            for tensor in pool:
+                if isinstance(tensor, torch.Tensor) and tensor.is_cuda:
+                    try:
+                        tensor.untyped_storage().resize_(0)
+                    except Exception:
+                        # Some storages may be shared / non-resizable; skip
+                        # them rather than failing the export.
+                        pass

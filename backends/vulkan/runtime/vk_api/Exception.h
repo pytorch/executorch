@@ -85,6 +85,7 @@ enum class VulkanExtension : uint8_t {
   INTEGER_DOT_PRODUCT,
   SHADER_INT64,
   SHADER_FLOAT64,
+  SUBGROUP_SIZE_CONTROL,
 };
 
 class ShaderNotSupportedError : public std::exception {

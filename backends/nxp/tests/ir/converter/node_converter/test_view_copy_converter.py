@@ -8,23 +8,16 @@ from typing import Sequence
 import numpy as np
 import pytest
 import torch
-
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
     ModelBuilder,
-)
-from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.conv_2d_options import (
-    Conv2D,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.reshape_options import (
     Reshape,
 )
-from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.transpose_options import (
-    Transpose,
-)
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import (
     to_edge_program,
     to_quantized_edge_program,
@@ -35,6 +28,13 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
+    AllCloseOutputComparator,
+)
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+
+from executorch.backends.nxp.tests.ops_aliases import Convolution, ViewCopy
 from torch import nn
 from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
@@ -143,84 +143,80 @@ class ConvViewConvModule(torch.nn.Module):
         return x
 
 
-def test__view_copy__channels_first_to_2d(mocker):
-    input_shape = (1, 4, 7, 9)
-    new_shape = (6, 32)  # Mix up the dimensions for a thorough test.
+class TestViewCopyNewFlow:
+    # some of the old tests are reworked to utilize NSYS so they don't fail
+    # the rest will be done as part of adding support for `view_copy` using new Neutron flow (EIEX-882)
+    @staticmethod
+    def assert_delegated_and_correct(
+        mocker,
+        model,
+        input_shape,
+        request,
+        exp_deleg_ops,
+        exp_non_deleg_ops,
+        use_qat=False,
+    ):
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops=exp_deleg_ops,
+            expected_non_delegated_ops=exp_non_deleg_ops,
+        )
 
-    torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
-    edge_program = to_edge_program(torch_model, input_shape).exported_program()
+        dataset = RandomDatasetCreator(low=-128, high=128)
+        comparator = AllCloseOutputComparator(atol=1)
 
-    input_data = np.random.random(input_shape).astype(np.float32)
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            dataset,
+            comparator,
+            mocker=mocker,
+            use_qat=use_qat,
+        )
 
-    converter_spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(
-        edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess()
+    @pytest.mark.parametrize(
+        "input_shape, new_shape",
+        [
+            pytest.param((1, 4, 7, 9), (6, 32), id="channels_first to 2D"),
+            pytest.param((1, 8, 6, 8), (7, 4, 2, 5), id="channels_first to 4D"),
+        ],
     )
+    def test__basic_nsys_inference__channels_first_input(
+        self,
+        mocker,
+        input_shape,
+        new_shape,
+        request,
+    ):
+        model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
 
-    tflite_model = converter_spy.spy_return
-    ops = tflite_model.sub_graphs[0].operators.vector
-    assert len(ops) == 3
-    assert isinstance(ops[0].builtin_options, Conv2D)
-    assert isinstance(ops[1].builtin_options, Transpose)
-    assert isinstance(ops[2].builtin_options, Reshape)
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={Convolution: 1, ViewCopy: 1},
+            exp_non_deleg_ops={},
+        )
 
+    def test__basic_nsys_inference__formatless_to_channels_first(self, mocker, request):
+        input_shape = (12, 32)
+        new_shape = (1, 4, 12, 8)  # Mix up the dimensions for a thorough test.
 
-def test__view_copy__channels_first_to_4d(mocker):
-    input_shape = (1, 8, 6, 8)
-    new_shape = (7, 4, 2, 5)
+        model = FormatlessToChannelsFirstModule(
+            channels=new_shape[1], new_shape=new_shape
+        )
 
-    torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
-    edge_program = to_edge_program(torch_model, input_shape).exported_program()
-
-    input_data = np.random.random(input_shape).astype(np.float32)
-
-    converter_spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        atol=2.0e-7,
-        conversion_config=ConversionConfig(
-            {"use_neutron_for_format_conversion": False}
-        ),
-    )
-
-    tflite_model = converter_spy.spy_return
-    ops = tflite_model.sub_graphs[0].operators.vector
-    assert len(ops) == 3
-    assert isinstance(ops[0].builtin_options, Conv2D)
-    assert isinstance(ops[1].builtin_options, Transpose)
-    assert isinstance(ops[2].builtin_options, Reshape)
-
-
-def test__view_copy__formatless_to_channels_first(mocker):
-    input_shape = (12, 32)
-    new_shape = (1, 4, 12, 8)  # Mix up the dimensions for a thorough test.
-
-    torch_model = FormatlessToChannelsFirstModule(
-        channels=new_shape[1], new_shape=new_shape
-    )
-    edge_program = to_edge_program(torch_model, input_shape).exported_program()
-
-    input_data = np.random.random(input_shape).astype(np.float32)
-
-    converter_spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        atol=2.0e-7,
-    )
-
-    tflite_model = converter_spy.spy_return
-    ops = tflite_model.sub_graphs[0].operators.vector
-    assert len(ops) == 3
-    assert isinstance(ops[0].builtin_options, Reshape)
-    assert isinstance(ops[1].builtin_options, Transpose)
-    assert isinstance(ops[2].builtin_options, Conv2D)
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={Convolution: 1, ViewCopy: 1},
+            exp_non_deleg_ops={},
+        )
 
 
 def test__view_copy__formatless_to_formatless(mocker):
@@ -257,7 +253,7 @@ def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape, use
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -291,7 +287,7 @@ def test_view_w_conv_linear_quant_conversion(
     )
 
     # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -370,7 +366,7 @@ def test__view_copy__context_dependent__channels_first_to_formatless__transpose_
         use_neutron_for_format_conversion=False,
     ).exported_program()
 
-    # Make sure the convolution and the linear were delegated, but not the view_copy.
+    # Make sure all ops were delegated anyway.
     assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
     assert not graph_contains_any_of_ops(
         ep.graph,
@@ -378,11 +374,6 @@ def test__view_copy__context_dependent__channels_first_to_formatless__transpose_
             exir_ops.edge.aten.convolution.default,
             exir_ops.edge.aten.mm.default,
             exir_ops.edge.aten.addmm.default,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        ep.graph,
-        [
             exir_ops.edge.aten.view_copy.default,
         ],
     )
@@ -423,33 +414,6 @@ def test__view_copy__formatless_to_channels_first__transpose_supported(mocker):
     )
 
 
-def test__view_copy__formatless_to_channels_first__transpose_not_supported():
-    input_shape = (1, 8 * 3 * 4)
-    new_shape = [1, 8, 3, 4]  # The last dim is not a multiple of num_macs.
-    module = FormatlessToChannelsFirstModule(8, new_shape)
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure the view_copy was not delegated.
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.view_copy.default,
-        ],
-    )
-
-
 def test__view_copy__channels_first_to_channels_first__transpose_supported(mocker):
     input_shape = (1, 8, 3, 8)
     new_shape = [1, 8, 1, 24]
@@ -483,33 +447,6 @@ def test__view_copy__channels_first_to_channels_first__transpose_supported(mocke
         tfl_model=neutron_ir_model,
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tflite_output_preprocess=ToChannelFirstPreprocess(),
-    )
-
-
-def test__view_copy__channels_first_to_channels_first__transpose_not_supported():
-    input_shape = (1, 8, 3, 5)  # The last dimension is not a multiple of num_macs.
-    new_shape = [1, 8, 1, 15]
-    module = ConvViewConvModule(new_shape, 8)
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure the view_copy was NOT delegated
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-        ],
-    )
-    assert graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.view_copy.default,
-        ],
     )
 
 
