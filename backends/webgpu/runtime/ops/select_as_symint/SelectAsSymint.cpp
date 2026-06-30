@@ -92,7 +92,8 @@ void sym_floordiv_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       throw std::runtime_error("sym floordiv: division by zero");
     }
     if (x == INT32_MIN && y == -1) {
-      throw std::runtime_error("sym floordiv: signed overflow (INT32_MIN / -1)");
+      throw std::runtime_error(
+          "sym floordiv: signed overflow (INT32_MIN / -1)");
     }
     int32_t q = x / y;
     if ((x % y != 0) && ((x < 0) != (y < 0))) {
