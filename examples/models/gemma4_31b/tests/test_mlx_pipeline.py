@@ -283,6 +283,7 @@ class TestMlxPipeline(unittest.TestCase):
                         tokens,
                         input_pos,
                         torch.tensor(0.8, dtype=torch.float32),
+                        torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
                         torch.tensor(0.9, dtype=torch.float32),
                         torch.tensor(seed, dtype=torch.int64),
                     ]

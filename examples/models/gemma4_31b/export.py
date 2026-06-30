@@ -309,24 +309,6 @@ def _export_cuda(
     print("Done.")
 
 
-class _MLXSampleWrapper(nn.Module):
-    """Wrap the model so ``forward`` returns a sampled token id.
-
-    The MLX source transforms make ``forward`` return last-token logits
-    ``(B, vocab)``, so sample directly. Temperature, top_p, and seed are runtime
-    scalar inputs so the same .pte serves any sampling request; the runner
-    increments the seed per token.
-    """
-
-    def __init__(self, model: nn.Module):
-        super().__init__()
-        self.model = model
-
-    def forward(self, tokens, input_pos, temperature, top_p, seed):
-        logits = self.model(tokens, input_pos)
-        return torch.ops.mlx.sample(logits, temperature, top_p, seed)
-
-
 def _export_mlx(
     model: Gemma4_31B,
     config: Gemma4_31BConfig,
@@ -383,15 +365,23 @@ def _export_mlx(
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
     if sample:
-        model = _MLXSampleWrapper(model)
+        # forward(tokens, input_pos, temperature, top_k, top_p, seed) -> token id.
+        # gemma's MLX forward already returns last-token logits (B, vocab), so
+        # SamplingHead is used directly with no per-model wrapper.
+        from executorch.backends.mlx.llm.sampling import SamplingHead
+
+        model = SamplingHead(model)
         example_args = (
             example_tokens,
             example_input_pos,
             torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
             torch.tensor(1.0, dtype=torch.float32),
             torch.tensor(0, dtype=torch.int64),
         )
-        dynamic_shapes = ({1: seq_dim}, {0: seq_dim}, None, None, None)
+        # SamplingHead.forward takes ``*args``; dynamic_shapes mirrors that single
+        # variadic parameter as one nested tuple over the positional inputs.
+        dynamic_shapes = (({1: seq_dim}, {0: seq_dim}, None, None, None, None),)
     else:
         example_args = (example_tokens, example_input_pos)
         dynamic_shapes = ({1: seq_dim}, {0: seq_dim})

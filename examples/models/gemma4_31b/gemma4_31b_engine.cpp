@@ -304,6 +304,8 @@ class Gemma4_31BSession : public LLMSession {
     }
     temp_tensor_mlx_ =
         from_blob(&temp_val_mlx_, {}, executorch::aten::ScalarType::Float);
+    top_k_tensor_ =
+        from_blob(&top_k_val_, {}, executorch::aten::ScalarType::Long);
     top_p_tensor_ =
         from_blob(&top_p_val_, {}, executorch::aten::ScalarType::Float);
     seed_tensor_ =
@@ -329,15 +331,12 @@ class Gemma4_31BSession : public LLMSession {
     }
     float first_token_temp = temperature_;
     if (initial_sampling != nullptr) {
-      if (initial_sampling->top_k != 0) {
-        ET_LOG(Error, "prefill_tokens: top_k is not implemented");
-        return Error::NotSupported;
-      }
       if (!use_sampling_ &&
-          (initial_sampling->top_p != 1.0f || initial_sampling->seed != 0)) {
+          (initial_sampling->top_k != 0 || initial_sampling->top_p != 1.0f ||
+           initial_sampling->seed != 0)) {
         ET_LOG(
             Error,
-            "prefill_tokens: top_p/seed require a sampling model "
+            "prefill_tokens: top_k/top_p/seed require a sampling model "
             "(export with --sample); only temperature is supported otherwise");
         return Error::NotSupported;
       }
@@ -347,6 +346,7 @@ class Gemma4_31BSession : public LLMSession {
           ET_LOG(Error, "prefill_tokens: top_p must be in (0, 1]");
           return Error::InvalidArgument;
         }
+        top_k_ = initial_sampling->top_k;
         top_p_ = initial_sampling->top_p;
         seed_ = initial_sampling->seed;
       }
@@ -398,14 +398,11 @@ class Gemma4_31BSession : public LLMSession {
   }
 
   Result<DecodeResult> decode_one(const SamplingConfig& sampling) override {
-    if (sampling.top_k != 0) {
-      ET_LOG(Error, "Gemma4_31BSession: top_k is not implemented");
-      return Error::NotSupported;
-    }
-    if (!use_sampling_ && (sampling.top_p != 1.0f || sampling.seed != 0)) {
+    if (!use_sampling_ &&
+        (sampling.top_k != 0 || sampling.top_p != 1.0f || sampling.seed != 0)) {
       ET_LOG(
           Error,
-          "Gemma4_31BSession: top_p/seed require a sampling model "
+          "Gemma4_31BSession: top_k/top_p/seed require a sampling model "
           "(export with --sample); only temperature is supported otherwise");
       return Error::NotSupported;
     }
@@ -423,6 +420,7 @@ class Gemma4_31BSession : public LLMSession {
         ET_LOG(Error, "decode_one: top_p must be in (0, 1]");
         return Error::InvalidArgument;
       }
+      top_k_ = sampling.top_k;
       top_p_ = sampling.top_p;
     }
 
@@ -474,8 +472,9 @@ class Gemma4_31BSession : public LLMSession {
     inputs.push_back(EValue(decode_pos_));
 #ifdef EXECUTORCH_BUILD_MLX
     if (use_sampling_) {
-      set_sampling_inputs(temperature_, top_p_, seed_);
+      set_sampling_inputs(temperature_, top_k_, top_p_, seed_);
       inputs.push_back(EValue(temp_tensor_mlx_));
+      inputs.push_back(EValue(top_k_tensor_));
       inputs.push_back(EValue(top_p_tensor_));
       inputs.push_back(EValue(seed_tensor_));
     }
@@ -522,8 +521,10 @@ class Gemma4_31BSession : public LLMSession {
   }
 
 #ifdef EXECUTORCH_BUILD_MLX
-  void set_sampling_inputs(float temp, float top_p, uint64_t seed) {
+  void
+  set_sampling_inputs(float temp, int64_t top_k, float top_p, uint64_t seed) {
     temp_val_mlx_ = (temp < 0.0f) ? 0.0f : temp;
+    top_k_val_ = (top_k <= 0) ? INT64_MAX : top_k; // 0/neg = keep all
     top_p_val_ = top_p;
     seed_val_ = static_cast<int64_t>(seed);
   }
@@ -564,8 +565,9 @@ class Gemma4_31BSession : public LLMSession {
 #endif
 #ifdef EXECUTORCH_BUILD_MLX
     if (use_sampling_) {
-      set_sampling_inputs(temperature, top_p_, seed_);
+      set_sampling_inputs(temperature, top_k_, top_p_, seed_);
       inputs.push_back(EValue(temp_tensor_mlx_));
+      inputs.push_back(EValue(top_k_tensor_));
       inputs.push_back(EValue(top_p_tensor_));
       inputs.push_back(EValue(seed_tensor_));
     }
@@ -705,6 +707,7 @@ class Gemma4_31BSession : public LLMSession {
   std::atomic<bool> stop_{false};
 
   bool use_sampling_ = false;
+  int64_t top_k_ = 0; // 0 = off (keep all); mapped to INT64_MAX on-device
   float top_p_ = 1.0f;
   uint64_t seed_ = 0;
 
@@ -727,9 +730,11 @@ class Gemma4_31BSession : public LLMSession {
 #endif
 #ifdef EXECUTORCH_BUILD_MLX
   float temp_val_mlx_ = 0.0f;
+  int64_t top_k_val_ = INT64_MAX;
   float top_p_val_ = 1.0f;
   int64_t seed_val_ = 0;
   TensorPtr temp_tensor_mlx_;
+  TensorPtr top_k_tensor_;
   TensorPtr top_p_tensor_;
   TensorPtr seed_tensor_;
 #endif
