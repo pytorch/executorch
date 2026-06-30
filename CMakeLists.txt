@@ -229,6 +229,12 @@ if(EXECUTORCH_BUILD_CUDA)
   add_definitions(-DCUDA_AVAILABLE=1)
 endif()
 
+option(ET_ENABLE_VGF_INPUT_DUMP
+       "Enable Arm/VGF delegate-boundary input dump flags in executor_runner"
+       OFF
+)
+announce_configured_options(ET_ENABLE_VGF_INPUT_DUMP)
+
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)
@@ -1423,6 +1429,9 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner PRIVATE ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+  if(ET_ENABLE_VGF_INPUT_DUMP)
+    target_compile_definitions(executor_runner PRIVATE ET_ENABLE_VGF_INPUT_DUMP)
+  endif()
   if(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     target_compile_definitions(
       executor_runner PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1
