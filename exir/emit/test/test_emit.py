@@ -2417,8 +2417,8 @@ class TestEmit(unittest.TestCase):
         model = SymNotModel()
         model.eval()
         test_inputs = [
-            torch.randn(3, 4),   # n<=5: sym_not(False)=True, float(True)=1.0
-            torch.randn(8, 4),   # n>5: sym_not(True)=False, float(False)=0.0
+            torch.randn(3, 4),  # n<=5: sym_not(False)=True, float(True)=1.0
+            torch.randn(8, 4),  # n>5: sym_not(True)=False, float(False)=0.0
         ]
         reference_outputs = []
         with torch.no_grad():
