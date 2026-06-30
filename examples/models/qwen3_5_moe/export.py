@@ -728,7 +728,7 @@ def _strip_sampler_from_forward(model):
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        return self.lm_head(x)
+        return self.lm_head(x[:, -1, :])
 
     model.forward = types.MethodType(_clean_forward, model)
 
