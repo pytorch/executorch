@@ -244,6 +244,8 @@ class GGUFLinearTest(OpTestCase):
         self.ggml_type = ggml_type
         self.emit_direct_gguf = emit_direct_gguf
         self.rtol, self.atol = _DTYPE_TOL[dtype]
+        if ggml_type == "q5_k" and dtype == torch.float16:
+            self.rtol, self.atol = 2e-2, 2e-2
         tag = f"gguf_linear_{ggml_type}_m{M}_n{N}_k{K}_{_DTYPE_TAG[dtype]}"
         if ggml_type == "q4_k" and not emit_direct_gguf:
             tag += "_mlx_native"

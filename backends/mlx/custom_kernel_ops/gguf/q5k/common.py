@@ -110,11 +110,11 @@ inline float dequant_q5k_elem(device const block_q5_K * blk, int p) {
     const int c    = p >> 6;        // 0..3 (64-element chunk)
     const int within = p & 63;      // 0..63 within chunk
     const int l    = within & 31;   // 0..31 (also the qh byte index)
-    const int half = within >> 5;   // 0 low nibble, 1 high nibble
-    const int sub  = 2 * c + half;  // sub-block 0..7 (also the qh bit index)
+    const int hi   = within >> 5;   // 0 low nibble, 1 high nibble
+    const int sub  = 2 * c + hi;    // sub-block 0..7 (also the qh bit index)
 
     const uint8_t byte = blk->qs[c * 32 + l];
-    const int nib = (half == 0) ? (byte & 0xF) : (byte >> 4);
+    const int nib = (hi == 0) ? (byte & 0xF) : (byte >> 4);
     const int hibit = (blk->qh[l] >> sub) & 1;
     const int q = nib + (hibit << 4);  // 0..31
 
