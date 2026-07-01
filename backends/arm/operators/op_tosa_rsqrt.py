@@ -1,4 +1,4 @@
-# Copyright 2025-2026 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,15 +16,15 @@ FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
 
 
 @register_node_visitor
-class FloorVisitor(SimpleNodeVisitor):
-    target = "aten.floor.default"
+class RsqrtVisitor(SimpleNodeVisitor):
+    target = "tosa.RSQRT.default"
     tosa_specs = FP_SPECS
 
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.FLOOR,
-            attr_method="FloorAttribute",
+            tosa_op=ts.Op.RSQRT,
+            attr_method="RsqrtAttribute",
             num_inputs=1,
             input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
         )
