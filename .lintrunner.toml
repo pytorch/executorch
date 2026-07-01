@@ -139,7 +139,6 @@ exclude_patterns = [
     'backends/cuda/**',
     'backends/mediatek/**',
     'backends/mlx/**',
-    'backends/nxp/**',
     'backends/openvino/**',
     'backends/qualcomm/**',
     'backends/samsung/**',
@@ -151,7 +150,6 @@ exclude_patterns = [
     # Backend-owned examples to onboard with those backends.
     'examples/demo-apps/**',
     'examples/mediatek/**',
-    'examples/nxp/**',
     'examples/qualcomm/**',
     'examples/samsung/**',
 
