@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import operator
 from abc import ABC, abstractmethod
 from typing import Callable
@@ -12,6 +13,7 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import (
     input_quantization_type,
     output_quantization_type,
@@ -53,6 +55,23 @@ def is_not_qdq_node(node: torch.fx.Node) -> bool:
     return not (_is_quant_node(node) or _is_dequant_node(node))
 
 
+def requires_channels_first_format(cls):
+    """Class decorator for NodeConverter subclasses.
+
+    Marks a converter as requiring that both the node's main input and output
+    use the channels-first data format (as inferred by NodeFormatInference).
+    The check is automatically enforced via `NodeConverter.is_supported()`.
+
+    Usage::
+
+        @requires_channels_first_format
+        class ConvConverter(NodeConverter):
+            ...
+    """
+    cls._requires_channels_first_format = True
+    return cls
+
+
 class NodeConverter(ABC):
     """
     Classes which implement conversion of torch.Node to TFLite should inherit from this class and overwrite the
@@ -60,6 +79,11 @@ class NodeConverter(ABC):
     """
 
     context: ConversionContext
+
+    # If `True`, the `is_supported()` method will disallow delegation if the node's main input/output doesn't have the
+    #  channels first node format.
+    # Subclasses decorated with @requires_channels_first_format will have this set to True.
+    _requires_channels_first_format: bool = False
 
     def __init__(self, context: ConversionContext):
         self.context = context
@@ -116,6 +140,36 @@ class NodeConverter(ABC):
         return True
 
     @classmethod
+    def _node_format_is_supported(cls, node: Node) -> bool:
+        """Check that the node's main input and output carry the channels-first data format, if the converter was
+             decorated with `@requires_channels_first_format`.
+
+        When the decorator is not present the check returns True.
+
+        :param node: The node to inspect.
+        :return: True when the format requirement is satisfied (or not applicable).
+        """
+        if not cls._requires_channels_first_format:
+            return True
+
+        def _is_channels_first(n: Node) -> bool:
+            return (
+                n.meta.get(NXP_NODE_FORMAT, DataFormat.NONE)
+                is DataFormat.CHANNELS_FIRST
+            )
+
+        format_requirement_satisfied = _is_channels_first(node) and _is_channels_first(
+            node.args[0]
+        )
+        if not format_requirement_satisfied:
+            logging.warning(
+                f"NXP backend: Node `{node}` requires channels-first format for its input and output, but the inferred "
+                "format does not satisfy this requirement. The node will not be delegated. Please report this issue."
+            )
+
+        return format_requirement_satisfied
+
+    @classmethod
     def is_supported(
         cls,
         node: Node,
@@ -133,10 +187,15 @@ class NodeConverter(ABC):
                                     be outdated.
         :param custom_delegation_options: Custom user options which affect node delegation.
         """
-        return cls._is_supported_in_IR(
-            node, parameters_mapping, custom_delegation_options
-        ) and cls._is_supported_on_target(
-            node, neutron_target_spec, parameters_mapping, custom_delegation_options
+
+        return (
+            cls._node_format_is_supported(node)
+            and cls._is_supported_in_IR(
+                node, parameters_mapping, custom_delegation_options
+            )
+            and cls._is_supported_on_target(
+                node, neutron_target_spec, parameters_mapping, custom_delegation_options
+            )
         )
 
     @classmethod
@@ -194,7 +253,9 @@ class NodeConverter(ABC):
 
     @staticmethod
     def is_node_alone_in_partition(
-        node: Node, partition_list: list[Partition], filter_fn: Callable[[Node], bool]
+        node: Node,
+        partition_list: list[Partition],
+        filter_fn: Callable[[Node], bool] = is_not_qdq_node,
     ) -> bool:
         """Return True if `node` is the only node in its partition for which `filter_fn`
         returns True.
@@ -205,9 +266,8 @@ class NodeConverter(ABC):
 
         :param node: The torch.fx.Node to check.
         :param partition_list: List of proposed partitions.
-        :param filter_fn: Predicate applied to nodes in the partition.
-                        `node` is considered alone if it is the only node
-                        for which this predicate returns True.
+        :param filter_fn: Predicate applied to nodes in the partition. `node` is considered alone if it is the only node
+                           for which this predicate returns True. By default, Q/Dq nodes are ignored.
         """
         partitions = [p for p in partition_list if node in p.nodes]
         if len(partitions) != 1:
@@ -225,22 +285,16 @@ class NodeConverter(ABC):
         """Assert that the call `is_supported()` returns `True`. Otherwise, raise an exception and print an
         error message.
         """
-        supported_in_ir = self._is_supported_in_IR(
-            node,
-            self.context.parameters_mapping,
-            self.context.custom_delegation_options,
-        )
 
-        supported_on_target = self._is_supported_on_target(
+        is_supported = self.is_supported(
             node,
             self.neutron_target_spec,
             self.context.parameters_mapping,
             self.context.custom_delegation_options,
         )
-
-        assert supported_in_ir and supported_on_target, (
-            f"Node `{node}` was selected for delegation to Neutron, but it is not convertible to the intermediate "
-            "representation. There is an error in the Neutron partitioner. Please report this."
+        assert is_supported, (
+            f"NXP backend: Node `{node}` was selected for delegation to Neutron, but it is not convertible to the "
+            "intermediate representation. There is an error in the Neutron partitioner. Please report this."
         )
 
     @property

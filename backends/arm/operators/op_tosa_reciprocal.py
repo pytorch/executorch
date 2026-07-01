@@ -17,7 +17,7 @@ FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
 
 @register_node_visitor
 class ReciprocalVisitor(SimpleNodeVisitor):
-    target = "aten.reciprocal.default"
+    target = "tosa.RECIPROCAL.default"
     tosa_specs = FP_SPECS
 
     @classmethod
