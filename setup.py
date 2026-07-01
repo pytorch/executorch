@@ -890,6 +890,33 @@ class CustomBuild(build):
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
 
+        # Unlike CUDA, Vulkan also needs its third-party submodules, which
+        # aren't in the default checkout, along with glslc. A partial checkout
+        # no-ops here rather than failing in CMake.
+        vulkan_third_party = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "backends",
+            "vulkan",
+            "third-party",
+        )
+        vulkan_submodules_present = all(
+            os.path.exists(os.path.join(vulkan_third_party, *parts))
+            for parts in (
+                ("volk", "volk.c"),
+                ("Vulkan-Headers", "include", "vulkan", "vulkan.h"),
+                ("VulkanMemoryAllocator", "include", "vk_mem_alloc.h"),
+            )
+        )
+        if (
+            not minimal_build
+            and vulkan_submodules_present
+            and install_utils.is_vulkan_available()
+            and install_utils.is_cmake_option_on(
+                cmake_configuration_args, "EXECUTORCH_BUILD_VULKAN", default=True
+            )
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_VULKAN=ON"]
+
         # Check if QNN SDK is available (via QNN_SDK_ROOT env var), and if so,
         # enable building the Qualcomm backend by default.
         qnn_sdk_root = os.environ.get("QNN_SDK_ROOT", "").strip()
