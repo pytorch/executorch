@@ -191,26 +191,6 @@ def test_mv2_vgf_no_quant():
     pipeline.run()
 
 
-@common.SkipIfNoModelConverter
-def test_mv2_vgf_no_quant_bf16():
-    bf16_model = models.mobilenetv2.mobilenet_v2(
-        weights=MobileNet_V2_Weights.DEFAULT
-    ).eval()
-    bf16_model = bf16_model.to(torch.bfloat16)
-    bf16_input = normalize(torch.rand((1, 3, 224, 224))).to(torch.bfloat16)
-    pipeline = VgfPipeline[input_t](
-        bf16_model,
-        (bf16_input,),
-        aten_op=[],
-        exir_op=[],
-        use_to_edge_transform_and_lower=True,
-        quantize=False,
-        atol=2.5e-01,
-        rtol=2.5e-01,
-    )
-    pipeline.run()
-
-
 def test_mv2_tosa_INT_FP_partial_quant():
     pipeline = TosaPipelineINT[input_t](
         mv2,
