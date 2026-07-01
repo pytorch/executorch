@@ -6,7 +6,6 @@
 from typing import Any, List
 
 import torch.fx
-
 import tosa_serializer as ts
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -26,11 +25,6 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int]:
-    """Returns (input1_zp, output_zp) for TOSA NEGATE.
-
-    Must be zero for non-int8 types.
-
-    """
     if is_int8:
         return (
             get_input_qparams(node)[0].get_zp_per_tensor(),
@@ -41,10 +35,7 @@ def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int
 
 @register_node_visitor
 class NegVisitor(NodeVisitor):
-    target = "aten.neg.default"
-
-    def __init__(self, *args):
-        super().__init__(*args)
+    target = "tosa.NEGATE.default"
 
     def define_node(
         self,
@@ -71,14 +62,13 @@ class NegVisitor(NodeVisitor):
         input_zp, output_zp = get_negate_zero_points(
             node, inputs[0].dtype == ts.DType.INT8
         )
-
         input_zp_tensor = tosa_graph.addConst(
             (1,), inputs[0].dtype, [input_zp], name=output.name + "_input_zp"
         )
-
         output_zp_tensor = tosa_graph.addConst(
             (1,), output.dtype, [output_zp], name=output.name + "_output_zp"
         )
+
         attr = ts.TosaSerializerAttribute()
         attr.NegateAttribute()
         self._serialize_operator(

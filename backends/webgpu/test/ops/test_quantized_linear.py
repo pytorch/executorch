@@ -53,7 +53,13 @@ CONFIGS = [
     Q4gswConfig("kv_proj_4k", 4096, 2048, 512),
     Q4gswConfig("q_proj_8k", 8192, 2048, 2048, heavy=True),  # 67MB golden
     Q4gswConfig("kv_proj_8k", 8192, 2048, 512, heavy=True),
-    # Prefill shapes routing to the shmem GEMM (K>=4096 or N>=4096); M=128.
+    # The M==1 decode configs above (q/kv/gate/down_proj) exercise the bicol 2-col
+    # decode GEMV: the handler routes M==1 -> bicol, so each reads its own per-
+    # column scale (col0/col1) across many K-groups (down_proj: 256 groups). q4gsw
+    # requires N % 8 == 0 (torchao pads N for the scale layout), so odd-N / N=1 are
+    # not exportable -- bicol's has1 odd-N guard is defensive (mirrors coop4's
+    # general-N robustness) and unreachable through this op.
+    # Prefill shapes routing to the shmem GEMM (K>=4096 or N>=2048); M=128.
     Q4gswConfig("gate_proj_pf", 128, 2048, 8192),  # gate/up prefill (shmem via N)
     Q4gswConfig("down_proj_pf", 128, 8192, 2048),  # down prefill (shmem via K)
     Q4gswConfig("shmem_edge", 130, 4096, 2056),  # partial 32-tile bounds
