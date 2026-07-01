@@ -414,8 +414,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 mode = spec.value.decode("utf-8").upper()
                 if mode not in ["ON", "OFF"]:
                     raise ValueError(
-                        f"Invalid triton_kernel_mode: {mode}. "
-                        f"Expected 'ON' or 'OFF'."
+                        f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
         passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
@@ -471,6 +470,12 @@ class CudaBackend(AotiBackend, BackendDetails):
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "int64_t, AtenTensorHandle*)"
                 ],
+                torch.ops.executorch_cuda.int5_plain_mm.default: [
+                    "AOTITorchError aoti_torch_cuda_int5_plain_mm("
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "int64_t, AtenTensorHandle*)"
+                ],
                 torch.ops.executorch_cuda.int6_plain_mm.default: [
                     "AOTITorchError aoti_torch_cuda_int6_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
@@ -514,9 +519,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         else:
             # Linux platform
 
-            assert (
-                shim_library_path is None
-            ), "shim_library_path should not be set for Linux"
+            assert shim_library_path is None, (
+                "shim_library_path should not be set for Linux"
+            )
         return options
 
     @classmethod
