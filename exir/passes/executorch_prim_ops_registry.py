@@ -134,6 +134,13 @@ def sym_not(a: _SymScalar) -> bool:
     return not a  # pyre-ignore
 
 
+@bind_pattern_to_op(
+    executorch_prims_lib, "sym_ite.Scalar(Scalar b, Scalar t, Scalar f) -> Scalar"
+)
+def sym_ite(b: _SymScalar, t: _SymScalar, f: _SymScalar) -> _SymScalar:
+    return t if b else f  # pyre-ignore
+
+
 _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[Any, OpOverload] = {
     builtins.round: ops.backend.executorch_prim.round.Scalar,
     math.ceil: ops.backend.executorch_prim.ceil.Scalar,
@@ -155,6 +162,7 @@ _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[Any, OpOverload] = {
     torch.sym_max: ops.backend.executorch_prim.sym_max.Scalar,
     torch.sym_min: ops.backend.executorch_prim.sym_min.Scalar,
     torch.sym_not: ops.backend.executorch_prim.sym_not.Scalar,
+    torch.sym_ite: ops.backend.executorch_prim.sym_ite.Scalar,
 }
 
 

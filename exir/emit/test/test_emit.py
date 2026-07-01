@@ -2466,6 +2466,45 @@ class TestEmit(unittest.TestCase):
             torch.randn(3, 4),
             torch.randn(8, 4),
         ]
+        ]
+        reference_outputs = []
+        with torch.no_grad():
+            for inp in test_inputs:
+                reference_outputs.append(model(inp))
+
+        batch_dim = Dim("batch", min=1, max=20)
+        dynamic_shapes = {"x": {0: batch_dim}}
+        exported_program = torch.export.export(
+            model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
+        )
+
+        edge_program = to_edge(
+            exported_program,
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        et_program = edge_program.to_executorch()
+        program_buffer = et_program.buffer
+        et_module = _load_for_executorch_from_buffer(program_buffer)
+        for inp, expected in zip(test_inputs, reference_outputs):
+            et_output = et_module.forward([inp])
+            et_result = et_output[0]
+            self.assertTrue(expected.shape == et_result.shape)
+            self.assertTrue(torch.allclose(expected, et_result))
+
+    def test_emit_sym_ite(self) -> None:
+        class SymIteModel(nn.Module):
+            def forward(self, x):
+                n = x.shape[0]
+                cond = n > 5
+                val = torch.sym_ite(cond, n, 6)
+                return torch.zeros(val, dtype=x.dtype, device=x.device)
+
+        model = SymIteModel()
+        model.eval()
+        test_inputs = [
+            torch.randn(3, 4),  # n<=5: ite(False,3,6)=6
+            torch.randn(8, 4),  # n>5: ite(True,8,6)=8
+        ]
         reference_outputs = []
         with torch.no_grad():
             for inp in test_inputs:
