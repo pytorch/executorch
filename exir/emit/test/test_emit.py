@@ -2452,6 +2452,52 @@ class TestEmit(unittest.TestCase):
             self.assertTrue(expected.shape == et_result.shape)
             self.assertTrue(torch.allclose(expected, et_result))
 
+    def test_emit_sym_int(self) -> None:
+        class SymIntModel(nn.Module):
+            def forward(self, x):
+                n = x.shape[0]
+                f = torch.sym_float(n)
+                i = torch.sym_int(f)
+                return torch.zeros(i, dtype=x.dtype, device=x.device)
+
+        model = SymIntModel()
+        model.eval()
+        test_inputs = [
+            torch.randn(3, 4),
+            torch.randn(8, 4),
+        ]
+        reference_outputs = []
+        with torch.no_grad():
+            for inp in test_inputs:
+                reference_outputs.append(model(inp))
+
+        batch_dim = Dim("batch", min=1, max=20)
+        dynamic_shapes = {"x": {0: batch_dim}}
+        exported_program = torch.export.export(
+            model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
+        )
+        sym_int_nodes = [
+            n
+            for n in exported_program.graph.nodes
+            if n.op == "call_function" and n.target is torch.sym_int
+        ]
+        self.assertGreater(
+            len(sym_int_nodes), 0, "sym_int should appear in exported graph"
+        )
+
+        edge_program = to_edge(
+            exported_program,
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        et_program = edge_program.to_executorch()
+        program_buffer = et_program.buffer
+        et_module = _load_for_executorch_from_buffer(program_buffer)
+        for inp, expected in zip(test_inputs, reference_outputs):
+            et_output = et_module.forward([inp])
+            et_result = et_output[0]
+            self.assertTrue(expected.shape == et_result.shape)
+            self.assertTrue(torch.allclose(expected, et_result))
+
     def test_emit_channels_last_constant(self) -> None:
         """Test that channels-last constant tensors are emitted correctly.
 
