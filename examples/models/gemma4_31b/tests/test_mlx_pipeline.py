@@ -20,7 +20,6 @@ import unittest
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
 from executorch.examples.models.gemma4_31b.quant import (
     DEFAULT_MLX_PACKERS,
@@ -31,8 +30,10 @@ from executorch.examples.models.gemma4_31b.quant import (
     QuantRule,
 )
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
+    build_gguf_checkpoint,
     build_random_tiny_model,
     config_dict,
+    GGUF_CONFIG,
     save_checkpoint,
     TINY_CONFIG,
 )
@@ -243,6 +244,59 @@ class TestMlxPipeline(unittest.TestCase):
             export_and_lower(model, config, out_dir, backend="mlx")
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
+    def test_export_to_pte_with_sampling(self):
+        """--sample export: forward returns a seed-reproducible int64 token."""
+        try:
+            from executorch.backends.mlx import MLXPartitioner  # noqa: F401
+        except ImportError:
+            self.skipTest("MLX backend not available")
+
+        from executorch.examples.models.gemma4_31b.export import (
+            export_and_lower,
+            load_prequantized_model,
+        )
+        from executorch.runtime import Runtime, Verification
+
+        with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:
+            save_checkpoint(ckpt_dir)
+            with open(os.path.join(ckpt_dir, "config.json"), "w") as f:
+                json.dump(config_dict(), f)
+
+            model, config = load_prequantized_model(
+                ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len, backend="mlx"
+            )
+            export_and_lower(model, config, out_dir, backend="mlx", sample=True)
+            pte = os.path.join(out_dir, "model.pte")
+            self.assertTrue(os.path.exists(pte))
+
+            program = Runtime.get().load_program(pte, verification=Verification.Minimal)
+            self.assertIn("use_sampling", program.method_names)
+            self.assertTrue(bool(program.load_method("use_sampling").execute([])[0]))
+
+            forward = program.load_method("forward")
+            tokens = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+            input_pos = torch.arange(4, dtype=torch.long)
+
+            def sample(seed):
+                return forward.execute(
+                    [
+                        tokens,
+                        input_pos,
+                        torch.tensor(0.8, dtype=torch.float32),
+                        torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
+                        torch.tensor(0.9, dtype=torch.float32),
+                        torch.tensor(seed, dtype=torch.int64),
+                    ]
+                )[0]
+
+            token = sample(7)
+            self.assertEqual(token.dtype, torch.int64)
+            # Same-seed reproducibility is checked against the host reference
+            # mlx.sample, which is not bit-identical to the on-device graph; on
+            # non-Mac CI the delegated op runs that CPU reference, so this asserts
+            # the reference's determinism, not the Metal delegate's.
+            self.assertTrue(torch.equal(token, sample(7)))  # same seed reproducible
+
 
 class TestGgufMlxPipeline(unittest.TestCase):
     """Test GGUF → MLX loading path with synthetic Q6_K-like tensors."""
@@ -321,6 +375,209 @@ class TestGgufMlxPipeline(unittest.TestCase):
             torch.allclose(before, after, atol=1e-5),
             f"max diff: {(before - after).abs().max():.6g}",
         )
+
+
+class TestGgufLinearMlx(unittest.TestCase):
+    """GGUF-quantized linears (Q6_K + Q4_K) lower through the MLX GGUF pattern."""
+
+    def _linear(self, N: int, K: int, ggml_type: str) -> nn.Module:
+        from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
+            make_q4_k_blob,
+            make_q6_k_blob,
+        )
+        from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+
+        blob = (make_q6_k_blob if ggml_type == "q6_k" else make_q4_k_blob)(N, K)
+        lin = nn.Linear(K, N, bias=False).to(torch.bfloat16)
+        lin.weight = nn.Parameter(
+            ExportableGGUFTensor.from_raw(blob, ggml_type, torch.bfloat16),
+            requires_grad=False,
+        )
+        return lin.eval()
+
+    def _assert_delegated(self, model, example, leftovers):
+        import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+        from executorch.backends.mlx import MLXPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from torch.export import Dim, export
+
+        seq = Dim("seq", min=1, max=8)
+        ep = export(model, example, dynamic_shapes=({0: seq},), strict=True)
+        et = to_edge_transform_and_lower(
+            ep,
+            partitioner=[MLXPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        remaining = [
+            str(n.target)
+            for n in et.exported_program().graph.nodes
+            if n.op == "call_function" and any(t in str(n.target) for t in leftovers)
+        ]
+        self.assertEqual(remaining, [], f"not delegated to MLX: {remaining}")
+
+    def test_q6k_linear_delegates(self):
+        self._assert_delegated(
+            self._linear(256, 512, "q6_k"),
+            (torch.randn(4, 512, dtype=torch.bfloat16),),
+            ("dequantize_gguf", "linear"),
+        )
+
+    def test_q4k_linear_delegates(self):
+        self._assert_delegated(
+            self._linear(512, 512, "q4_k"),
+            (torch.randn(4, 512, dtype=torch.bfloat16),),
+            ("dequantize_gguf", "linear"),
+        )
+
+
+class TestGgufEmbeddingMlx(unittest.TestCase):
+    """GGUF token embeddings (Q6_K + Q4_K) lower through the MLX GGUF pattern."""
+
+    def _assert_delegated(self, ggml_type: str):
+        import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+        from executorch.backends.mlx import MLXPartitioner
+        from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
+            make_q4_k_blob,
+            make_q6_k_blob,
+        )
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+        from torch.export import Dim, export
+
+        vocab, K = 512, 256
+        blob = (make_q6_k_blob if ggml_type == "q6_k" else make_q4_k_blob)(vocab, K)
+        emb = nn.Embedding(vocab, K)
+        emb.weight = nn.Parameter(
+            ExportableGGUFTensor.from_raw(blob, ggml_type, torch.bfloat16),
+            requires_grad=False,
+        )
+        emb = emb.eval()
+        seq = Dim("seq", min=1, max=8)
+        ep = export(
+            emb,
+            (torch.randint(0, vocab, (4,), dtype=torch.int64),),
+            dynamic_shapes=({0: seq},),
+            strict=True,
+        )
+        et = to_edge_transform_and_lower(
+            ep,
+            partitioner=[MLXPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        remaining = [
+            str(n.target)
+            for n in et.exported_program().graph.nodes
+            if n.op == "call_function"
+            and any(t in str(n.target) for t in ("dequantize_gguf", "embedding"))
+        ]
+        self.assertEqual(remaining, [], f"not delegated to MLX: {remaining}")
+
+    def test_q6k_embedding_delegates(self):
+        self._assert_delegated("q6_k")
+
+    def test_q4k_embedding_delegates(self):
+        self._assert_delegated("q4_k")
+
+
+class TestInt4Mlx(unittest.TestCase):
+    """ExportableInt4Tensor linear + embedding lower through the MLX Int4 pattern."""
+
+    def _make_int4(self, N, K, gs=32, seed=0):
+        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+        g = torch.Generator().manual_seed(seed)
+        q = torch.randint(0, 16, (N, K), generator=g, dtype=torch.int32)
+        packed = (q[:, 0::2] | (q[:, 1::2] << 4)).to(torch.uint8)
+        scale = (torch.randn(K // gs, N, generator=g) * 0.1).to(torch.bfloat16)
+        zero = torch.randint(0, 16, (K // gs, N), generator=g).to(torch.bfloat16)
+        it = Int4Tensor(
+            qdata=packed,
+            scale=scale,
+            zero_point=zero,
+            block_size=[1, gs],
+            shape=torch.Size([N, K]),
+        )
+        return ExportableInt4Tensor.from_int4_tensor(it)
+
+    def _assert_delegated(self, model, example, leftovers):
+        import executorch.backends.mlx.patterns  # noqa: F401
+        from executorch.backends.mlx import MLXPartitioner
+        from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+        from torch.export import Dim, export
+
+        seq = Dim("seq", min=1, max=8)
+        ep = export(model, example, dynamic_shapes=({0: seq},), strict=True)
+        et = to_edge_transform_and_lower(
+            ep,
+            partitioner=[MLXPartitioner()],
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        remaining = [
+            str(n.target)
+            for n in et.exported_program().graph.nodes
+            if n.op == "call_function" and any(t in str(n.target) for t in leftovers)
+        ]
+        self.assertEqual(remaining, [], f"not delegated to MLX: {remaining}")
+
+    def test_int4_linear_delegates(self):
+        lin = nn.Linear(512, 256, bias=False).to(torch.bfloat16)
+        lin.weight = nn.Parameter(self._make_int4(256, 512), requires_grad=False)
+        self._assert_delegated(
+            lin.eval(),
+            (torch.randn(4, 512, dtype=torch.bfloat16),),
+            ("dequantize_int4_tensor", "linear"),
+        )
+
+    def test_int4_embedding_delegates(self):
+        vocab, K = 512, 256
+        emb = nn.Embedding(vocab, K)
+        emb.weight = nn.Parameter(self._make_int4(vocab, K), requires_grad=False)
+        self._assert_delegated(
+            emb.eval(),
+            (torch.randint(0, vocab, (4,), dtype=torch.int64),),
+            ("dequantize_int4_tensor", "embedding"),
+        )
+
+
+class TestGgufLoadMlx(unittest.TestCase):
+    """GGUF file -> load_gguf_model(mlx) -> export (parity with the CUDA test)."""
+
+    def setUp(self):
+        try:
+            import gguf  # noqa: F401
+        except ImportError:
+            self.skipTest("gguf package required")
+
+    def _load(self, tmp):
+        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+
+        path = os.path.join(tmp, "tiny.gguf")
+        build_gguf_checkpoint(path)
+        return load_gguf_model(path, backend="mlx", config=GGUF_CONFIG)
+
+    def test_load_keeps_gguf_tensors_and_ties_lm_head(self):
+        """MLX keeps weights as ExportableGGUFTensor; lm_head stays tied."""
+        from executorch.extension.llm.export.gguf import ExportableGGUFTensor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model, _ = self._load(tmp)
+
+        self.assertIsInstance(
+            model.layers[0].self_attn.q_proj.weight.data, ExportableGGUFTensor
+        )
+        self.assertIsInstance(model.embed_tokens.weight.data, ExportableGGUFTensor)
+        # GGUF ties embed/lm_head; on MLX they share the one quantized tensor.
+        self.assertIs(model.lm_head.weight.data, model.embed_tokens.weight.data)
+
+    def test_export(self):
+        """GGUF -> MLX load -> export_and_lower produces a .pte (export.py)."""
+        from executorch.examples.models.gemma4_31b.export import export_and_lower
+
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as out_dir:
+            model, config = self._load(tmp)
+            export_and_lower(model, config, out_dir, backend="mlx")
+            self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
 
 if __name__ == "__main__":

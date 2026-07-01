@@ -264,7 +264,7 @@ test_model_with_qnn() {
         ;;
   esac
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} --build_folder ${CMAKE_OUTPUT_DIR} --soc_model ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 

@@ -58,8 +58,7 @@ Args:
 ```python
 def VgfCompileSpec.dump_intermediate_artifacts_to(self, output_path: str | None):
 ```
-Sets a path for dumping intermediate results during such as tosa and
-pte.
+Set a path for dumping TOSA and PTE intermediate results.
 
 Args:
 - **output_path**: Path to dump intermediate results to.
@@ -80,11 +79,30 @@ Args:
 ```python
 def VgfCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
-Sets the configuration that controls how the Arm pass pipeline should
-behave. Subclasses may override to tweak defaults for specific targets.
+Set the configuration for the Arm pass pipeline.
 
 Args:
 - **config**: The custom ArmPassPipelineConfig to set.
+
+```python
+def VgfCompileSpec.validate_environment(self, build_dir: str | None = None, *, require_runtime_build: bool = False) -> 'VgfEnvironmentReport':
+```
+Run VGF environment preflight checks.
+
+By default this validates only AoT/export prerequisites. Runtime and
+source-build diagnostics are intentionally explicit in check_env.py.
+
+Args:
+- **build_dir**: Optional source-build CMake build directory or
+        CMakeCache.txt path.
+- **require_runtime_build**: If true, run source-build diagnostics instead
+        of the default AoT check.
+
+Returns:
+- **VgfEnvironmentReport**: Structured check report.
+
+Raises:
+- **RuntimeError**: If any required check fails.
 
 
 

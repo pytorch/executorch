@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Callable, Dict, Optional, Tuple, TYPE_CHECKING, Union
 
 import torch
 from executorch.backends.mlx.builder.slot_manager import Slot
@@ -157,7 +157,8 @@ def emit_lifted_constant(P: "MLXProgramBuilder", value, dtype: torch.dtype) -> S
 
     if isinstance(value, (int, float, bool)):
         return P.make_or_get_constant(
-            f"_scalar_{value}", torch.tensor(value, dtype=dtype)  # 0-D
+            f"_scalar_{value}",
+            torch.tensor(value, dtype=dtype),  # 0-D
         )
 
     from executorch.backends.mlx.serialization.mlx_graph_schema import FullNode
@@ -285,6 +286,110 @@ def emit_product(
     return P.to_int_or_vid(final_val)
 
 
+def emit_add_int(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a + b``, folding to a literal when both operands are static."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        AddIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal + b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(AddIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_sub_int(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a - b``, folding to a literal when both operands are static."""
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        SubtractIntNode,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal - b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(SubtractIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_ceil_div(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: int,
+) -> "IntOrVid":
+    """Emit ``ceil(a / b)``, folding to a literal when ``a`` is static.
+
+    Computes ``(a + b - 1) // b``.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        FloorDivideIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid:
+        return IntOrVid.from_literal((a.literal + b - 1) // b)
+
+    sum_iov = emit_add_int(P, a, IntOrVid.from_literal(b - 1))
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(
+        FloorDivideIntNode(
+            a=sum_iov,
+            b=IntOrVid.from_literal(b),
+            out=P.slot_to_vid(out_slot),
+        )
+    )
+    return P.to_int_or_vid(out_slot)
+
+
+def emit_if_else(
+    P: "MLXProgramBuilder",
+    cond: "IntOrVid",
+    emit_then: Callable[[], None],
+    emit_else: Callable[[], None],
+) -> None:
+    """Emit a branch on ``cond``: nonzero -> then, zero -> else.
+
+    If ``cond`` is a literal, no IfNode or chains are emitted; the
+    selected callback is invoked directly in the current chain.
+    Otherwise both callbacks are emitted into fresh chains and an
+    ``IfNode`` selects between them at runtime. Nodes emitted inside a
+    callback land in that branch's chain only.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import IfNode
+
+    if not cond.is_vid:
+        if cond.literal:
+            emit_then()
+        else:
+            emit_else()
+        return
+
+    with P.new_chain() as then_idx:
+        emit_then()
+    with P.new_chain() as else_idx:
+        emit_else()
+
+    P.emit(
+        IfNode(
+            cond=cond,
+            then_chain_idx=then_idx,
+            else_chain_idx=else_idx,
+        )
+    )
+
+
 def emit_quantized_biases(
     P: "MLXProgramBuilder",
     zero_point_key: str,
@@ -329,6 +434,79 @@ def emit_quantized_biases(
     return biases
 
 
+def emit_quantized_gather(
+    P: MLXProgramBuilder,
+    out: Slot,
+    indices_slot: Slot,
+    qdata_slot: Slot,
+    scales_slot: Slot,
+    biases_slot: Optional[Slot],
+    *,
+    group_size: int,
+    bits: int,
+    mode: str,
+    out_dtype: torch.dtype,
+) -> None:
+    """Gather quantized rows by index and dequantize them into ``out``.
+
+    Emits ``TakeNode`` for qdata and scales (and biases when present), then a
+    ``DequantizeNode``.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        DequantizeNode,
+        IntOrVidOrTid,
+        TakeNode,
+    )
+
+    ids_index = IntOrVidOrTid.from_tid(P.slot_to_tid(indices_slot))
+
+    _, wq_sel = P.make_tmp_slot()
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(qdata_slot),
+            index=ids_index,
+            out=P.slot_to_tid(wq_sel),
+            axis=0,
+        )
+    )
+
+    _, sc_sel = P.make_tmp_slot()
+    P.emit(
+        TakeNode(
+            x=P.slot_to_tid(scales_slot),
+            index=ids_index,
+            out=P.slot_to_tid(sc_sel),
+            axis=0,
+        )
+    )
+
+    biases_tid = None
+    if biases_slot is not None:
+        _, b_sel = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(biases_slot),
+                index=ids_index,
+                out=P.slot_to_tid(b_sel),
+                axis=0,
+            )
+        )
+        biases_tid = P.slot_to_tid(b_sel)
+
+    P.emit(
+        DequantizeNode(
+            w=P.slot_to_tid(wq_sel),
+            scales=P.slot_to_tid(sc_sel),
+            out=P.slot_to_tid(out),
+            biases=biases_tid,
+            group_size=group_size,
+            bits=bits,
+            mode=mode,
+            dtype=torch_dtype_to_scalar_type(out_dtype),
+        )
+    )
+
+
 def to_mlx_qparams(
     qdata: torch.Tensor,
     scale: torch.Tensor,
@@ -356,11 +534,10 @@ def to_mlx_qparams(
     assert qdata.dtype == torch.int8
     offset = 2 ** (bits - 1)
 
-    # Pack data tightly into uint32
-    assert 32 % bits == 0
-    vals_per_uint32 = 32 // bits
-    assert qdata.shape[1] % vals_per_uint32 == 0
+    # Pack data into a contiguous uint32 bitstream. cols*bits must be a
+    # multiple of 32 (holds since in_features is a multiple of group_size>=32).
     rows, cols = qdata.shape
+    assert (cols * bits) % 32 == 0
 
     if bits == 4:
         # 4-bit: view(uint8) + wrapping add + pack 2 nibbles per byte → view as uint32
@@ -377,14 +554,18 @@ def to_mlx_qparams(
         q = qdata.view(torch.uint8) + offset
         Q = q.contiguous().view(torch.uint32).reshape(rows, -1)
     else:
-        # General fallback for other bit widths
-        Q = (qdata.to(torch.int32) + offset).reshape(-1, vals_per_uint32)
-        shifts = torch.arange(0, 32, bits, dtype=torch.int32)
-        shifted = Q << shifts
-        packed = shifted[:, 0]
-        for i in range(1, vals_per_uint32):
-            packed = packed | shifted[:, i]
-        Q = packed.view(torch.uint32).reshape(rows, -1)
+        # Contiguous bit-packing for widths that don't divide 32 (e.g. 6-bit),
+        # matching MLX's affine pack_and_quantize (ops.cpp): each value
+        # contributes `bits` LSB-first bits to a continuous stream that is
+        # chunked into uint32 words (also LSB-first), straddling word
+        # boundaries -> (rows, cols*bits//32) uint32.
+        q = qdata.to(torch.int32) + offset  # 0 .. 2**bits-1
+        bit_ids = torch.arange(bits, dtype=torch.int32)
+        stream = (q.unsqueeze(-1) >> bit_ids) & 1  # (rows, cols, bits) LSB-first
+        stream = stream.reshape(rows, -1, 32)  # (rows, n_words, 32)
+        word_shifts = torch.arange(32, dtype=torch.int64)
+        packed = (stream.to(torch.int64) << word_shifts).sum(-1)  # (rows, n_words)
+        Q = packed.to(torch.int32).contiguous().view(torch.uint32)
 
     if compute_biases:
         B = -scale * (zero_point.to(scale.dtype) + offset)
@@ -421,6 +602,34 @@ def parse_dequant_nvfp4_node(
     return qdata, scale, per_tensor_scale, output_dtype
 
 
+def parse_dequant_int4_node(
+    node: Node,
+) -> Optional[Tuple[Node, Node, Node, int, Optional[torch.dtype]]]:
+    """Parse a torchao.dequantize_int4_tensor node.
+
+    Returns (qdata, scale, zero_point, group_size, output_dtype) or None if not a
+    dequantize_int4_tensor node or the custom op is not registered.
+    """
+    target = get_aten_target(node.target)
+    try:
+        import executorch.extension.llm.export.int4  # noqa: F401
+    except ImportError:
+        return None
+
+    if target is not torch.ops.torchao.dequantize_int4_tensor.default:
+        return None
+
+    qdata, scale, zero_point, group_size = node.args[0:4]
+
+    output_dtype = None
+    if len(node.args) > 4:
+        output_dtype = node.args[4]
+    elif "output_dtype" in node.kwargs:
+        output_dtype = node.kwargs["output_dtype"]
+
+    return qdata, scale, zero_point, group_size, output_dtype
+
+
 def parse_dequant_node(
     node: Node,
 ) -> Optional[Tuple[Node, Node, Node, int, int, Optional[torch.dtype], int]]:
@@ -449,10 +658,11 @@ def parse_dequant_node(
     if group_size not in [16, 32, 64, 128]:
         return None
 
-    # TODO: MLX supports 3, 5, and 7, but we need to figure out the
-    # packing story in to_mlx_qparams to use them
+    # MLX supports 2,3,4,5,6,8-bit affine quantization. to_mlx_qparams packs
+    # 2/4/8 via fast paths and other widths (e.g. 6) via a general contiguous
+    # bit-packer, so enable 6 here too.
     bits = (qmax - qmin + 1).bit_length() - 1
-    if bits not in [2, 4, 8]:
+    if bits not in [2, 4, 6, 8]:
         return None
     return qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim
 

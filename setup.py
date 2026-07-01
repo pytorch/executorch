@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024, 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -73,7 +73,7 @@ if _spec.loader is None:
     raise ImportError(f"Module spec has no loader for {_install_utils_path}")
 _spec.loader.exec_module(install_utils)
 
-from setuptools import Extension, setup
+from setuptools import Extension, find_namespace_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
@@ -98,6 +98,142 @@ def _is_macos() -> bool:
 
 def _is_windows() -> bool:
     return sys.platform == "win32"
+
+
+def _is_env_flag_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().upper() in {"1", "ON", "TRUE", "YES"}
+
+
+def _is_minimal_build() -> bool:
+    return _is_env_flag_enabled("EXECUTORCH_BUILD_MINIMAL")
+
+
+def _minimal_cmake_flags() -> List[str]:
+    return [
+        "-DEXECUTORCH_BUILD_COREML=OFF",
+        "-DEXECUTORCH_BUILD_CUDA=OFF",
+        "-DEXECUTORCH_BUILD_DEVTOOLS=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_LLM=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_MODULE=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_TENSOR=OFF",
+        "-DEXECUTORCH_BUILD_EXTENSION_TRAINING=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_LLM=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_LLM_AOT=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=OFF",
+        "-DEXECUTORCH_BUILD_MLX=OFF",
+        "-DEXECUTORCH_BUILD_OPENVINO=OFF",
+        "-DEXECUTORCH_BUILD_PORTABLE_OPS=OFF",
+        "-DEXECUTORCH_BUILD_PYBIND=OFF",
+        "-DEXECUTORCH_BUILD_QNN=OFF",
+        "-DEXECUTORCH_BUILD_TESTS=OFF",
+        "-DEXECUTORCH_BUILD_VULKAN=OFF",
+        "-DEXECUTORCH_BUILD_XNNPACK=OFF",
+        "-DEXECUTORCH_BUILD_CMSIS_NN_PYBINDS=OFF",
+    ]
+
+
+def _minimal_packages() -> List[str]:
+    return sorted(
+        find_namespace_packages(
+            where="src",
+            include=[
+                "executorch",
+                "executorch.data",
+                "executorch.data.bin",
+                "executorch.exir",
+                "executorch.exir.*",
+                "executorch.extension",
+                "executorch.extension.flat_tensor",
+                "executorch.extension.flat_tensor.*",
+                "executorch.extension.pytree",
+            ],
+            exclude=[
+                "*.test",
+                "*.test.*",
+                "*.tests",
+                "*.tests.*",
+                "*.__pycache__",
+                "*.__pycache__.*",
+            ],
+        )
+    )
+
+
+def _base_dependencies() -> List[str]:
+    """Runtime dependencies for the full wheel.
+
+    Declared here rather than in pyproject.toml (where `dependencies` is marked
+    dynamic) so the minimal build can ship a slimmer set. Keep in sync with the
+    project's runtime needs.
+    """
+    return [
+        "expecttest",
+        "flatbuffers",
+        "hypothesis",
+        "kgb",
+        "mpmath==1.3.0",
+        "numpy>=2.0.0; python_version >= '3.10'",
+        "packaging",
+        "pandas>=2.2.2; python_version >= '3.10'",
+        "parameterized",
+        "pytorch-tokenizers",
+        "pyyaml",
+        "ruamel.yaml",
+        "sympy",
+        "tabulate",
+        # See also third-party/TARGETS for buck's typing-extensions version.
+        "typing-extensions>=4.10.0",
+        # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
+        "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
+        # scikit-learn is used to support palettization in the coreml backend.
+        "scikit-learn==1.7.1",
+        "hydra-core>=1.3.0",
+        "omegaconf>=2.3.0",
+    ]
+
+
+def _minimal_dependencies() -> List[str]:
+    """Runtime dependencies for the minimal (AOT export only) wheel.
+
+    Derived as the subset of _base_dependencies() that executorch.exir needs to
+    lower and serialize a .pte, so version pins and markers stay in sync with the
+    full set. torch is intentionally absent from both (consumers bring their own).
+    mpmath is intentionally dropped too: it is pulled transitively by sympy, whose
+    "mpmath<1.4" cap resolves to the same 1.3.0 the full wheel pins. Keep the name
+    set below in sync with the `expected` set in .ci/scripts/test_minimal_wheel.sh.
+    """
+    keep = {
+        "flatbuffers",
+        "numpy",
+        "packaging",
+        "pyyaml",
+        "ruamel-yaml",
+        "sympy",
+        "tabulate",
+        "typing-extensions",
+    }
+
+    def _name(dep: str) -> str:
+        # PEP 503 normalized distribution name, e.g. "ruamel.yaml" -> "ruamel-yaml".
+        return re.sub(
+            r"[-_.]+", "-", re.split(r"[ ;\[<>=!~(]", dep, maxsplit=1)[0]
+        ).lower()
+
+    minimal = [dep for dep in _base_dependencies() if _name(dep) in keep]
+    # Fail the build loudly if a name in `keep` no longer matches a full-wheel dep
+    # (e.g. renamed or removed in _base_dependencies()), instead of silently
+    # shipping a minimal wheel that is missing a required dependency.
+    unmatched = keep - {_name(dep) for dep in minimal}
+    assert not unmatched, f"minimal keep-set names not found in base deps: {unmatched}"
+    return minimal
 
 
 class Version:
@@ -550,6 +686,22 @@ class CustomBuildPy(build_py):
     a file to a different relative location under the output package directory.
     """
 
+    def analyze_manifest(self):
+        super().analyze_manifest()
+        # Recent versions of setuptools may include bare directory symlinks from version
+        # control (e.g. src/executorch/{backends,codegen,data,...} ->
+        # ../../<name>) in manifest_files. These exist for editable mode but
+        # break regular installs: build_package_data passes them to copy_file,
+        # which calls os.path.isfile() and gets False for a symlink-to-directory.
+        if not self.editable_mode:
+            _root = os.path.dirname(os.path.abspath(__file__))
+            for _pkg in list(self.manifest_files):
+                self.manifest_files[_pkg] = [
+                    _f
+                    for _f in self.manifest_files[_pkg]
+                    if os.path.isfile(os.path.join(_root, _f))
+                ]
+
     def run(self):
         # Copy python files to the output directory. This set of files is
         # defined by the py_module list and package_data patterns.
@@ -577,41 +729,44 @@ class CustomBuildPy(build_py):
             # https://setuptools.pypa.io/en/latest/userguide/extension.html
             ("schema/scalar_type.fbs", "exir/_serialize/scalar_type.fbs"),
             ("schema/program.fbs", "exir/_serialize/program.fbs"),
-            (
-                "devtools/bundled_program/schema/bundled_program_schema.fbs",
-                "devtools/bundled_program/serialize/bundled_program_schema.fbs",
-            ),
-            (
-                "devtools/bundled_program/schema/scalar_type.fbs",
-                "devtools/bundled_program/serialize/scalar_type.fbs",
-            ),
-            # Install executorch-wheel-config.cmake to pip package.
-            (
-                "tools/cmake/executorch-wheel-config.cmake",
-                "share/cmake/executorch-config.cmake",
-            ),
         ]
-        # Copy all the necessary headers into include/executorch/ so that they can
-        # be found in the pip package. This is the subset of headers that are
-        # essential for building custom ops extensions.
-        # TODO: Use cmake to gather the headers instead of hard-coding them here.
-        # For example:
-        # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
-        for include_dir in [
-            "runtime/core/",
-            "runtime/executor/",
-            "runtime/kernel/",
-            "runtime/backend/",
-            "runtime/platform/",
-            "extension/kernel_util/",
-            "extension/tensor/",
-            "extension/threadpool/",
-        ]:
-            src_list = Path(include_dir).rglob("*.h")
-            for src in src_list:
-                src_to_dst.append(
-                    (str(src), os.path.join("include/executorch", str(src)))
-                )
+        if not _is_minimal_build():
+            src_to_dst += [
+                (
+                    "devtools/bundled_program/schema/bundled_program_schema.fbs",
+                    "devtools/bundled_program/serialize/bundled_program_schema.fbs",
+                ),
+                (
+                    "devtools/bundled_program/schema/scalar_type.fbs",
+                    "devtools/bundled_program/serialize/scalar_type.fbs",
+                ),
+                # Install executorch-wheel-config.cmake to pip package.
+                (
+                    "tools/cmake/executorch-wheel-config.cmake",
+                    "share/cmake/executorch-config.cmake",
+                ),
+            ]
+            # Copy all the necessary headers into include/executorch/ so that they can
+            # be found in the pip package. This is the subset of headers that are
+            # essential for building custom ops extensions.
+            # TODO: Use cmake to gather the headers instead of hard-coding them here.
+            # For example:
+            # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
+            for include_dir in [
+                "runtime/core/",
+                "runtime/executor/",
+                "runtime/kernel/",
+                "runtime/backend/",
+                "runtime/platform/",
+                "extension/kernel_util/",
+                "extension/tensor/",
+                "extension/threadpool/",
+            ]:
+                src_list = Path(include_dir).rglob("*.h")
+                for src in src_list:
+                    src_to_dst.append(
+                        (str(src), os.path.join("include/executorch", str(src)))
+                    )
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
 
@@ -630,9 +785,9 @@ class CustomBuildPy(build_py):
         # Setuptools discovers packages at configuration time, before CMake
         # runs. Directories created by CMake during the build (e.g. by
         # generate.py) are not in the package list and must be copied manually.
-        generated_dirs = [
-            "backends/mlx/serialization/_generated",
-        ]
+        generated_dirs = []
+        if not _is_minimal_build():
+            generated_dirs.append("backends/mlx/serialization/_generated")
         for rel_dir in generated_dirs:
             src_dir = os.path.join("src/executorch", rel_dir)
             if not os.path.isdir(src_dir):
@@ -690,6 +845,7 @@ class CustomBuild(build):
 
     def run(self):  # noqa C901
         self.dump_options()
+        minimal_build = _is_minimal_build()
         cmake_build_type = get_build_type(self.debug)
         # get_python_lib() typically returns the path to site-packages, where
         # all pip packages in the environment are installed.
@@ -720,19 +876,29 @@ class CustomBuild(build):
         cmake_configuration_args += [
             item for item in re.split(r"\s+", os.environ.get("CMAKE_ARGS", "")) if item
         ]
+        if minimal_build:
+            cmake_configuration_args += _minimal_cmake_flags()
 
         # Check if CUDA is available, and if so, enable building the CUDA
         # backend by default.
-        if install_utils.is_cuda_available() and install_utils.is_cmake_option_on(
-            cmake_configuration_args, "EXECUTORCH_BUILD_CUDA", default=True
+        if (
+            not minimal_build
+            and install_utils.is_cuda_available()
+            and install_utils.is_cmake_option_on(
+                cmake_configuration_args, "EXECUTORCH_BUILD_CUDA", default=True
+            )
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
 
         # Check if QNN SDK is available (via QNN_SDK_ROOT env var), and if so,
         # enable building the Qualcomm backend by default.
         qnn_sdk_root = os.environ.get("QNN_SDK_ROOT", "").strip()
-        if qnn_sdk_root and install_utils.is_cmake_option_on(
-            cmake_configuration_args, "EXECUTORCH_BUILD_QNN", default=True
+        if (
+            not minimal_build
+            and qnn_sdk_root
+            and install_utils.is_cmake_option_on(
+                cmake_configuration_args, "EXECUTORCH_BUILD_QNN", default=True
+            )
         ):
             cmake_configuration_args += [
                 "-DEXECUTORCH_BUILD_QNN=ON",
@@ -741,10 +907,14 @@ class CustomBuild(build):
 
         # Enable OpenVINO backend on Linux. The backend uses dlopen at
         # runtime so it has no build-time SDK dependency.
-        if sys.platform == "linux" and install_utils.is_cmake_option_on(
-            cmake_configuration_args,
-            "EXECUTORCH_BUILD_OPENVINO",
-            default=True,
+        if (
+            not minimal_build
+            and sys.platform == "linux"
+            and install_utils.is_cmake_option_on(
+                cmake_configuration_args,
+                "EXECUTORCH_BUILD_OPENVINO",
+                default=True,
+            )
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_OPENVINO=ON"]
 
@@ -796,40 +966,52 @@ class CustomBuild(build):
             if item
         ]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
-            cmake_build_args += ["--target", "portable_lib"]
-            cmake_build_args += ["--target", "data_loader"]
-            cmake_build_args += ["--target", "selective_build"]
+        if minimal_build:
+            # The minimal wheel only needs flatc. Every other target is gated off
+            # by _minimal_cmake_flags(), so skip the entire non-minimal target
+            # list explicitly rather than relying on each flag being OFF.
+            cmake_build_args += ["--target", "flatbuffers_ep"]
+        else:
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
+                cmake_build_args += ["--target", "portable_lib"]
+                cmake_build_args += ["--target", "data_loader"]
+                cmake_build_args += ["--target", "selective_build"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
-            cmake_build_args += ["--target", "_llm_runner"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
+                cmake_build_args += ["--target", "_llm_runner"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
-            cmake_build_args += ["--target", "aoti_cuda_backend"]
-            cmake_build_args += ["--target", "aoti_common_shims_slim"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
+                cmake_build_args += ["--target", "vulkan_backend"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
-            cmake_build_args += ["--target", "extension_module"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
+                cmake_build_args += ["--target", "cmsis_nn"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
-            cmake_build_args += ["--target", "_training_lib"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+                cmake_build_args += ["--target", "aoti_cuda_backend"]
+                cmake_build_args += ["--target", "aoti_common_shims_slim"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
-            cmake_build_args += ["--target", "executorchcoreml"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
+                cmake_build_args += ["--target", "extension_module"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
-            cmake_build_args += ["--target", "mlxdelegate"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_TRAINING"):
+                cmake_build_args += ["--target", "_training_lib"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
-            cmake_build_args += ["--target", "custom_ops_aot_lib"]
-            cmake_build_args += ["--target", "quantized_ops_aot_lib"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_COREML"):
+                cmake_build_args += ["--target", "executorchcoreml"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
-            cmake_build_args += ["--target", "qnn_executorch_backend"]
-            cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
+                cmake_build_args += ["--target", "mlxdelegate"]
 
-        if cmake_cache.is_enabled("EXECUTORCH_BUILD_OPENVINO"):
-            cmake_build_args += ["--target", "openvino_backend"]
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
+                cmake_build_args += ["--target", "custom_ops_aot_lib"]
+                cmake_build_args += ["--target", "quantized_ops_aot_lib"]
+
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_QNN"):
+                cmake_build_args += ["--target", "qnn_executorch_backend"]
+                cmake_build_args += ["--target", "PyQnnManagerAdaptor"]
+
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_OPENVINO"):
+                cmake_build_args += ["--target", "openvino_backend"]
 
         # Set PYTHONPATH to the location of the pip package.
         os.environ["PYTHONPATH"] = (
@@ -841,6 +1023,14 @@ class CustomBuild(build):
         self.cmake_cache_dir = cmake_cache_dir
         # Finally, run the underlying subcommands like build_py, build_ext.
         build.run(self)
+
+
+setup_kwargs = {}
+if _is_minimal_build():
+    setup_kwargs["packages"] = _minimal_packages()
+    setup_kwargs["install_requires"] = _minimal_dependencies()
+else:
+    setup_kwargs["install_requires"] = _base_dependencies()
 
 
 setup(
@@ -868,92 +1058,111 @@ setup(
             dst="executorch/data/bin/__init__.py",
             dependent_cmake_flags=[],
         ),
-        # Install the prebuilt pybindings extension wrapper for the runtime,
-        # portable kernels, and a selection of backends. This lets users
-        # load and execute .pte files from python.
-        BuiltExtension(
-            src="_portable_lib.cp*" if _is_windows() else "_portable_lib.*",
-            modpath="executorch.extension.pybindings._portable_lib",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
-        ),
-        # Install the data_loader pybindings extension which provides the
-        # PyDataLoader type for external pybinding extensions.
-        BuiltExtension(
-            src="data_loader.cp*" if _is_windows() else "data_loader.*",
-            modpath="executorch.extension.pybindings.data_loader",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
-        ),
-        # MLX metallib (Metal GPU kernels) must be colocated with _portable_lib.so
-        # because MLX uses dladdr() to find the directory containing the library,
-        # then looks for mlx.metallib in that directory at runtime.
-        # After submodule migration, the path is backends/mlx/mlx/...
-        BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
-            src_name="mlx.metallib",
-            dst="executorch/extension/pybindings/",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
-        ),
-        BuiltExtension(
-            src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
-            modpath="executorch.extension.training.pybindings._training_lib",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_TRAINING"],
-        ),
-        BuiltExtension(
-            src_dir="%CMAKE_CACHE_DIR%/codegen/tools/%BUILD_TYPE%/",
-            src="selective_build.cp*" if _is_windows() else "selective_build.*",
-            modpath="executorch.codegen.tools.selective_build",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
-        ),
-        BuiltExtension(
-            src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
-            modpath="executorch.extension.llm.runner._llm_runner",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"],
-        ),
-        BuiltExtension(
-            src="executorchcoreml.*",
-            src_dir="backends/apple/coreml",
-            modpath="executorch.backends.apple.coreml.executorchcoreml",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_COREML"],
-        ),
-        BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/extension/llm/custom_ops/%BUILD_TYPE%/",
-            src_name="custom_ops_aot_lib",
-            dst="executorch/extension/llm/custom_ops/",
-            is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
-        ),
-        BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/%BUILD_TYPE%/",
-            src_name="quantized_ops_aot_lib",
-            dst="executorch/kernels/quantized/",
-            is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
-        ),
-        BuiltFile(
-            src_dir="backends/cuda/runtime/",
-            src_name="aoti_cuda_shims.lib",
-            dst="executorch/data/lib/",
-            dependent_cmake_flags=[],
-        ),
-        BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/backends/cuda/%BUILD_TYPE%/",
-            src_name="aoti_cuda_shims",
-            dst="executorch/backends/cuda/",
-            is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
-        ),
-        BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-            src_name="qnn_executorch_backend",
-            dst="executorch/backends/qualcomm/",
-            is_dynamic_lib=True,
-            dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
-        ),
-        BuiltExtension(
-            src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-            src="PyQnnManagerAdaptor.*",
-            modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
-            dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
+        *(
+            []
+            if _is_minimal_build()
+            else [
+                # Install the prebuilt pybindings extension wrapper for the runtime,
+                # portable kernels, and a selection of backends. This lets users
+                # load and execute .pte files from python.
+                BuiltExtension(
+                    src="_portable_lib.cp*" if _is_windows() else "_portable_lib.*",
+                    modpath="executorch.extension.pybindings._portable_lib",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+                ),
+                # Install the data_loader pybindings extension which provides the
+                # PyDataLoader type for external pybinding extensions.
+                BuiltExtension(
+                    src="data_loader.cp*" if _is_windows() else "data_loader.*",
+                    modpath="executorch.extension.pybindings.data_loader",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+                ),
+                # MLX metallib (Metal GPU kernels) must be colocated with _portable_lib.so
+                # because MLX uses dladdr() to find the directory containing the library,
+                # then looks for mlx.metallib in that directory at runtime.
+                # After submodule migration, the path is backends/mlx/mlx/...
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/mlx/mlx/mlx/backend/metal/kernels/",
+                    src_name="mlx.metallib",
+                    dst="executorch/extension/pybindings/",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_MLX"],
+                ),
+                BuiltExtension(
+                    src="extension/training/_training_lib.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
+                    modpath="executorch.extension.training.pybindings._training_lib",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_TRAINING"],
+                ),
+                BuiltExtension(
+                    src_dir="%CMAKE_CACHE_DIR%/codegen/tools/%BUILD_TYPE%/",
+                    src="selective_build.cp*" if _is_windows() else "selective_build.*",
+                    modpath="executorch.codegen.tools.selective_build",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+                ),
+                BuiltExtension(
+                    src="cmsis_nn.cp*" if _is_windows() else "cmsis_nn.*",
+                    src_dir="backends/cortex_m/cmsis_nn-build/%BUILD_TYPE%/",
+                    modpath="executorch.backends.cortex_m.library._cmsis_nn.cmsis_nn",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS",
+                    ],
+                ),
+                BuiltExtension(
+                    src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
+                    modpath="executorch.extension.llm.runner._llm_runner",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"],
+                ),
+                BuiltExtension(
+                    src="executorchcoreml.*",
+                    src_dir="backends/apple/coreml",
+                    modpath="executorch.backends.apple.coreml.executorchcoreml",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_COREML"],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/llm/custom_ops/%BUILD_TYPE%/",
+                    src_name="custom_ops_aot_lib",
+                    dst="executorch/extension/llm/custom_ops/",
+                    is_dynamic_lib=True,
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/%BUILD_TYPE%/",
+                    src_name="quantized_ops_aot_lib",
+                    dst="executorch/kernels/quantized/",
+                    is_dynamic_lib=True,
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
+                ),
+                BuiltFile(
+                    src_dir="backends/cuda/runtime/",
+                    src_name="aoti_cuda_shims.lib",
+                    dst="executorch/data/lib/",
+                    dependent_cmake_flags=[],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/%BUILD_TYPE%/",
+                    src_name="aoti_cuda_shims",
+                    dst="executorch/backends/cuda/",
+                    is_dynamic_lib=True,
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
+                    src_name="qnn_executorch_backend",
+                    dst="executorch/backends/qualcomm/",
+                    is_dynamic_lib=True,
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
+                ),
+                BuiltExtension(
+                    src_dir="backends/qualcomm/%BUILD_TYPE%/",
+                    src=(
+                        "PyQnnManagerAdaptor*.pyd"
+                        if _is_windows()
+                        else "PyQnnManagerAdaptor.*"
+                    ),
+                    modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
+                ),
+            ]
         ),
     ],
+    **setup_kwargs,
 )
