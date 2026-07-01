@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for the GGUF Q6_K / Q4_K embedding lowering.
+Tests for the GGUF Q4_K / Q5_K / Q6_K embedding lowering.
 
 An ``nn.Embedding`` whose weight is an ``ExportableGGUFTensor`` exports to
 ``embedding(torchao::dequantize_gguf(weight, ggml_type, ...), indices)``. The MLX
@@ -27,10 +27,9 @@ import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
+    _BLOB_MAKERS,
     _emit_direct_gguf_env,
     _q4k_mlx_native_dequant,
-    make_q4_k_blob,
-    make_q6_k_blob,
 )
 from executorch.backends.mlx.test.test_utils import OpTestCase
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
@@ -43,8 +42,7 @@ def _make_gguf_embedding_model(
     seed: int = 0,
 ) -> nn.Module:
     emb = nn.Embedding(vocab, K)
-    blob_maker = make_q4_k_blob if ggml_type == "q4_k" else make_q6_k_blob
-    blob = blob_maker(vocab, K, seed=seed)
+    blob = _BLOB_MAKERS[ggml_type](vocab, K, seed=seed)
     emb.weight = nn.Parameter(
         ExportableGGUFTensor.from_raw(blob, ggml_type, torch.bfloat16),
         requires_grad=False,
@@ -103,6 +101,14 @@ class GGUFEmbeddingTest(OpTestCase):
                 ggml_type="q4_k",
                 emit_direct_gguf=False,
             ),
+            # Q5_K: fused gather. Single / batched / multi-dim indices, a
+            # non-tile-aligned vocab, and a production embed width.
+            cls(vocab=512, K=256, idx_shape=(1,), ggml_type="q5_k"),
+            cls(vocab=512, K=256, idx_shape=(8,), ggml_type="q5_k"),
+            cls(vocab=512, K=1024, idx_shape=(4,), ggml_type="q5_k"),
+            cls(vocab=300, K=256, idx_shape=(16,), ggml_type="q5_k"),
+            cls(vocab=512, K=256, idx_shape=(2, 3), ggml_type="q5_k"),
+            cls(vocab=2048, K=5376, idx_shape=(8,), ggml_type="q5_k"),
         ]
 
     def generate_test_files(self, verbose: bool = False):
@@ -138,7 +144,7 @@ def _main() -> None:  # noqa: C901
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
     parser = argparse.ArgumentParser(
-        description="Test GGUF Q6_K / Q4_K embedding lowering"
+        description="Test GGUF Q4_K / Q5_K / Q6_K embedding lowering"
     )
     parser.add_argument("action", choices=["generate", "compare", "run", "list"])
     parser.add_argument("--verbose", "-v", action="store_true")
