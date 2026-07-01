@@ -9,7 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -117,21 +117,22 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU linear_q4gsw: scales dims too small for K/N");
   }
 
-  // M==1 decode -> coop4 GEMV (needs K%8==0 && gs%8==0); else tiled GEMM.
+  // M==1 decode -> bicol GEMV (needs K%8==0 && gs%8==0); else tiled GEMM.
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
-  const char* shader_src = use_gemv ? kQ4gswLinearCoop4WGSL : kQ4gswLinearWGSL;
+  const char* shader_src =
+      use_gemv ? kQ4gswLinearCoop4BicolWGSL : kQ4gswLinearWGSL;
   uint32_t workgroup_count;
   if (use_gemv) {
-    // coop4: fixed 64 lanes, 1 workgroup per output, grid-strided over M*N.
-    const uint64_t outputs =
-        static_cast<uint64_t>(M) * static_cast<uint64_t>(N);
-    if (outputs == 0u || outputs > UINT32_MAX) {
-      throw std::runtime_error("WebGPU linear_q4gsw: M*N out of range");
+    // bicol: fixed 64 lanes, 2 output columns/workgroup, grid-strided over
+    // ceil(N/2) column-pairs (M == 1 on this decode path).
+    const uint64_t pairs = (static_cast<uint64_t>(N) + 1u) / 2u;
+    if (pairs == 0u || pairs > UINT32_MAX) {
+      throw std::runtime_error("WebGPU linear_q4gsw: N/2 out of range");
     }
     workgroup_count =
-        utils::clamp_workgroup_count(device, static_cast<uint32_t>(outputs));
+        utils::clamp_workgroup_count(device, static_cast<uint32_t>(pairs));
     if (workgroup_count == 0u) {
       throw std::runtime_error("WebGPU linear_q4gsw: zero GEMV dispatch");
     }
@@ -224,7 +225,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  // coop4 GEMV uses fixed @workgroup_size(64); only the GEMM has an override.
+  // bicol GEMV uses fixed @workgroup_size(64); only the GEMM has an override.
   pipeline_desc.compute.constantCount = use_gemv ? 0u : 1u;
   pipeline_desc.compute.constants = use_gemv ? nullptr : &wg_size_constant;
   WGPUComputePipeline pipeline =
