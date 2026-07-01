@@ -59,6 +59,10 @@ CONFIGS = [
     # requires N % 8 == 0 (torchao pads N for the scale layout), so odd-N / N=1 are
     # not exportable -- bicol's has1 odd-N guard is defensive (mirrors coop4's
     # general-N robustness) and unreachable through this op.
+    # Prefill shapes routing to the shmem GEMM (K>=4096 or N>=2048); M=128.
+    Q4gswConfig("gate_proj_pf", 128, 2048, 8192),  # gate/up prefill (shmem via N)
+    Q4gswConfig("down_proj_pf", 128, 8192, 2048),  # down prefill (shmem via K)
+    Q4gswConfig("shmem_edge", 130, 4096, 2056),  # partial 32-tile bounds
 ]
 
 
