@@ -34,8 +34,10 @@ The preprocess() pipeline:
 7. Emit and serialize.
 """
 
+import copy
+import struct
 from functools import partial
-from typing import Any, Dict, final, List
+from typing import Any, Dict, final, List, Optional, Sequence, Tuple, Type
 
 import torch
 from executorch.exir._serialize._flatbuffer_program import _program_to_flatbuffer
@@ -56,6 +58,9 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.exir.program._program import _transform
 
 from torch._export.verifier import Verifier
+
+# Type alias for specialization config: (BackendDetails subclass, compile_specs)
+Specialization = Tuple[Type[BackendDetails], List[CompileSpec]]
 
 
 # ---------------------------------------------------------------------------
@@ -79,87 +84,15 @@ def _build_backend_inplace_ops() -> frozenset:
     the in-place counterpart for each via schema matching.
     """
     from executorch.exir.dialects._ops import ops as _edge_ops
-    from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS
 
     edge = _edge_ops.edge.aten
 
     pairs = [
-        # ------- pointwise unary -------
         ("relu", ["default"]),
-        ("relu6", ["default"]),
-        ("sigmoid", ["default"]),
-        ("tanh", ["default"]),
-        ("exp", ["default"]),
-        ("expm1", ["default"]),
-        ("log", ["default"]),
-        ("log1p", ["default"]),
-        ("log2", ["default"]),
-        ("log10", ["default"]),
-        ("neg", ["default"]),
-        ("abs", ["default"]),
-        ("sqrt", ["default"]),
-        ("rsqrt", ["default"]),
-        ("reciprocal", ["default"]),
-        ("square", ["default"]),
-        ("cos", ["default"]),
-        ("sin", ["default"]),
-        ("tan", ["default"]),
-        ("cosh", ["default"]),
-        ("sinh", ["default"]),
-        ("asin", ["default"]),
-        ("acos", ["default"]),
-        ("atan", ["default"]),
-        ("asinh", ["default"]),
-        ("acosh", ["default"]),
-        ("atanh", ["default"]),
-        ("erf", ["default"]),
-        ("erfc", ["default"]),
-        ("sign", ["default"]),
-        ("ceil", ["default"]),
-        ("floor", ["default"]),
-        ("round", ["default"]),
-        ("trunc", ["default"]),
-        ("frac", ["default"]),
-        ("silu", ["default"]),
         ("gelu", ["default"]),
-        ("elu", ["default"]),
-        ("leaky_relu", ["default"]),
-        ("hardtanh", ["default"]),
-        ("hardsigmoid", ["default"]),
-        ("hardswish", ["default"]),
-        ("logical_not", ["default"]),
-        ("bitwise_not", ["default"]),
-        # ------- binary -------
-        ("add", ["Tensor", "Scalar"]),
-        ("sub", ["Tensor", "Scalar"]),
-        ("mul", ["Tensor", "Scalar"]),
-        ("div", ["Tensor", "Scalar"]),
-        ("pow", ["Scalar", "Tensor_Scalar"]),
-        ("remainder", ["Tensor", "Scalar"]),
-        ("fmod", ["Tensor", "Scalar"]),
-        ("atan2", ["default"]),
-        ("logical_and", ["default"]),
-        ("logical_or", ["default"]),
-        ("logical_xor", ["default"]),
-        ("bitwise_and", ["Tensor", "Scalar"]),
-        ("bitwise_or", ["Tensor", "Scalar"]),
-        ("bitwise_xor", ["Tensor", "Scalar"]),
-        # ------- scatter / index -------
+        ("sigmoid", ["default"]),
+        ("index_put", ["default"]),
         ("index_copy", ["default"]),
-        ("index_fill", ["int_Scalar"]),
-        ("index_add", ["default"]),
-        ("scatter", ["src", "value"]),
-        ("scatter_add", ["default"]),
-        ("masked_fill", ["Scalar", "Tensor"]),
-        ("masked_scatter", ["default"]),
-        # ------- misc -------
-        ("fill", ["Scalar", "Tensor"]),
-        ("clamp", ["default"]),
-        ("clamp_min", ["default"]),
-        ("clamp_max", ["default"]),
-        ("addcmul", ["default"]),
-        ("addcdiv", ["default"]),
-        ("lerp", ["Scalar", "Tensor"]),
     ]
 
     functional_ops = set()
@@ -172,10 +105,51 @@ def _build_backend_inplace_ops() -> frozenset:
             if op is not None:
                 functional_ops.add(op)
 
-    return DEFAULT_INPLACEABLE_OPS | functional_ops
+    return frozenset(functional_ops)
 
 
 BACKEND_INPLACE_OPS: frozenset = _build_backend_inplace_ops()
+
+
+# ---------------------------------------------------------------------------
+# Fat PTE container format
+#
+# A fat blob packs multiple backend specializations into one delegate payload.
+# The runtime parses the header and picks the best available specialization.
+#
+# Layout:
+#   [4 bytes] magic  "NFAT"
+#   [4 bytes] version (1)
+#   [4 bytes] num_specializations
+#   For each specialization:
+#     [32 bytes] backend_id (utf-8, null-padded)
+#     [8 bytes]  offset into data section
+#     [8 bytes]  length
+#   [payload bytes for specialization 0]
+#   [payload bytes for specialization 1]
+#   ...
+# ---------------------------------------------------------------------------
+
+_FAT_MAGIC = b"NFAT"
+_FAT_VERSION = 1
+_FAT_ENTRY_FMT = "32sQQ"  # backend_id(32) + offset(u64) + size(u64)
+_FAT_ENTRY_SIZE = struct.calcsize(_FAT_ENTRY_FMT)
+
+
+def _pack_fat_blob(
+    specializations: List[Tuple[str, bytes]],
+) -> bytes:
+    """Pack multiple (backend_id, payload) pairs into a fat blob."""
+    header = struct.pack("<4sII", _FAT_MAGIC, _FAT_VERSION, len(specializations))
+
+    entries = []
+    offset = 0
+    for backend_id, payload in specializations:
+        bid = backend_id.encode("utf-8")[:32].ljust(32, b"\x00")
+        entries.append(struct.pack("<" + _FAT_ENTRY_FMT, bid, offset, len(payload)))
+        offset += len(payload)
+
+    return header + b"".join(entries) + b"".join(p for _, p in specializations)
 
 
 class _AnyOp(Verifier):
@@ -231,10 +205,64 @@ class NativeBackend(BackendDetails):
 
     Class name `NativeBackend` matches the runtime backend_id
     registered in native/NativeBackend.cpp.
+
+    Supports "fat PTE" mode: when specializations are configured,
+    preprocess runs each backend's pipeline on the same subgraph and
+    packs all results into a single fat blob. The runtime picks the
+    best available specialization at load time. All specializations
+    share the same PTD (named data store).
     """
+
+    # Set by NativePartitioner before preprocess is called.
+    _specializations: Optional[Sequence[Specialization]] = None
 
     @classmethod
     def preprocess(
+        cls,
+        program: ExportedProgram,
+        module_compile_spec: List[CompileSpec],
+    ) -> PreprocessResult:
+        native_result = cls._preprocess_native(program, module_compile_spec)
+
+        specializations = cls._specializations
+        if not specializations:
+            return native_result
+
+        # Fat PTE: run each specialization backend and pack results.
+        from executorch.exir._serialize._named_data_store import NamedDataStore
+
+        fat_entries: List[Tuple[str, bytes]] = [
+            ("NativeBackend", native_result.processed_bytes),
+        ]
+
+        merged_data_store = NamedDataStore()
+        # Seed with native's named data.
+        if native_result.data_store_output:
+            for key, entry in native_result.data_store_output.pte_data.items():
+                buf = native_result.data_store_output.buffers[entry.buffer_index]
+                merged_data_store.add_named_data(key, buf, alignment=entry.alignment)
+
+        for backend_cls, spec_compile_specs in specializations:
+            spec_program = copy.deepcopy(program)
+            spec_result = backend_cls.preprocess(spec_program, spec_compile_specs)
+
+            fat_entries.append((backend_cls.__name__, spec_result.processed_bytes))
+
+            if spec_result.data_store_output:
+                for key, entry in spec_result.data_store_output.pte_data.items():
+                    buf = spec_result.data_store_output.buffers[entry.buffer_index]
+                    merged_data_store.add_named_data(
+                        key, buf, alignment=entry.alignment
+                    )
+
+        return PreprocessResult(
+            processed_bytes=_pack_fat_blob(fat_entries),
+            debug_handle_map=native_result.debug_handle_map,
+            data_store_output=merged_data_store.get_named_data_store_output(),
+        )
+
+    @classmethod
+    def _preprocess_native(
         cls,
         program: ExportedProgram,
         module_compile_spec: List[CompileSpec],

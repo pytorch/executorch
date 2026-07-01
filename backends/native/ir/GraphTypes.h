@@ -462,8 +462,7 @@ class Graph {
   // Version
   //===------------------------------------------------------------------===//
 
-  const char* version() const {
-    // TODO: Return actual version when available
+  static const char* version() {
     return "1.0";
   }
 
@@ -637,8 +636,8 @@ class Graph {
     return chains ? chains->size() : 0;
   }
 
-  int32_t main_chain_idx() const {
-    return 0; // Default: first chain is main
+  static int32_t main_chain_idx() {
+    return 0;
   }
 
   // Get number of ops in a chain
