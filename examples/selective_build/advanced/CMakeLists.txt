@@ -54,7 +54,7 @@ option(EXECUTORCH_EXAMPLE_USE_CUSTOM_OPS
 # used by this example when defining a custom operator target:
 #
 # EXECUTORCH_SELECT_OPS_YAML EXECUTORCH_SELECT_OPS_LIST
-# EXECUTORCH_SELECT_OPS_MODEL EXECUTORCH_DTYPE_SELECTIVE_BUILD
+# EXECUTORCH_SELECT_OPS_MODEL EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD
 
 # ------------------------------- OPTIONS END --------------------------------
 
@@ -99,7 +99,7 @@ gen_selected_ops(
   OPS_FROM_MODEL
   "${EXECUTORCH_SELECT_OPS_MODEL}"
   DTYPE_SELECTIVE_BUILD
-  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
+  "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
 
 generate_bindings_for_kernels(
@@ -110,7 +110,7 @@ generate_bindings_for_kernels(
   CUSTOM_OPS_YAML
   "${_custom_ops_yaml}"
   DTYPE_SELECTIVE_BUILD
-  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
+  "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
 
 gen_operators_lib(
@@ -121,7 +121,7 @@ gen_operators_lib(
   DEPS
   executorch_core
   DTYPE_SELECTIVE_BUILD
-  "${EXECUTORCH_DTYPE_SELECTIVE_BUILD}"
+  "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
 
 executorch_target_link_options_shared_lib(select_build_lib)
