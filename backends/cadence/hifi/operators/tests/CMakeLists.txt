@@ -44,11 +44,20 @@ if(NOT TARGET gtest)
   )
 endif()
 
-# Seed the suite with one quantized op to prove the harness end-to-end on the
-# ISS. Further op tests can be added alongside it.
+# Op-level gtests, one source per operator. Each calls its kernel directly and
+# checks with EXPECT_TENSOR_EQ, mirroring the BUCK tests.
 add_executable(
   cadence_hifi_op_tests
+  test_op_cat.cpp
+  test_op_dequantize_per_tensor_out.cpp
+  test_op_div.cpp
+  test_op_im2row_out.cpp
+  test_op_permute_copy.cpp
+  test_op_quantize_per_tensor.cpp
+  test_op_quantized_conv2d_out.cpp
+  test_op_quantized_matmul_out.cpp
   test_op_quantized_relu_out.cpp
+  test_op_transpose_copy.cpp
   ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp
 )
 target_compile_definitions(cadence_hifi_op_tests PRIVATE GTEST_HAS_PTHREAD=0)
@@ -57,12 +66,18 @@ target_include_directories(
                                 ${CMAKE_BINARY_DIR}
 )
 
-# Direct-call: link the kernel lib that defines
-# impl::HiFi::native::quantized_relu_out (custom_ops), the cadence kernels, and
-# the core runtime (executorch provides the platform layer the tests'
-# runtime_init() needs). No cadence_ops_lib registry is needed for direct-call
-# tests.
+# Direct-call: link the libs that define the kernels under test. custom_ops has
+# the quantized ops; aten_ops_cadence has the aten-compliant ops (cat, div,
+# im2row, permute, transpose); cadence_kernels is the shared nnlib layer;
+# executorch provides the platform layer the tests' runtime_init() needs. No
+# cadence_ops_lib registry is needed for direct-call tests.
 target_link_libraries(
-  cadence_hifi_op_tests PRIVATE gtest gtest_main gmock executorch custom_ops
-                                cadence_kernels
+  cadence_hifi_op_tests
+  PRIVATE gtest
+          gtest_main
+          gmock
+          executorch
+          custom_ops
+          aten_ops_cadence
+          cadence_kernels
 )
