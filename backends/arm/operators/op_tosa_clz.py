@@ -1,4 +1,4 @@
-# Copyright 2025-2026 Arm Limited and/or its affiliates.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,17 +10,21 @@ from executorch.backends.arm.operators.simple_node_visitor import (
     SimpleNodeVisitor,
     SimpleNodeVisitorConfig,
 )
+from executorch.backends.arm.tosa import TosaSpecification
+
+INT_SPECS = TosaSpecification.all_versions_for_profile("INT")
 
 
 @register_node_visitor
-class AbsVisitor(SimpleNodeVisitor):
-    target = "aten.abs.default"
+class ClzVisitor(SimpleNodeVisitor):
+    target = "tosa.CLZ.default"
+    tosa_specs = INT_SPECS
 
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.ABS,
-            attr_method="AbsAttribute",
+            tosa_op=ts.Op.CLZ,
+            attr_method="ClzAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.INT32],
         )
