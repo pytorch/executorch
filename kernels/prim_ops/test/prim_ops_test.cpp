@@ -187,6 +187,23 @@ TEST_F(RegisterPrimOpsTest, SymNotReturnsCorrectValue) {
   EXPECT_EQ(stack[1]->toBool(), true);
 }
 
+TEST_F(RegisterPrimOpsTest, SymFloatHandlesBoolInput) {
+  EValue values[2];
+  values[0] = EValue(true);
+  values[1] = EValue(0.0);
+  EValue* stack[2];
+  for (size_t i = 0; i < 2; i++) {
+    stack[i] = &values[i];
+  }
+  getOpsFn("executorch_prim::sym_float.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_FLOAT_EQ(stack[1]->toDouble(), 1.0);
+
+  values[0] = EValue(false);
+  values[1] = EValue(0.0);
+  getOpsFn("executorch_prim::sym_float.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_FLOAT_EQ(stack[1]->toDouble(), 0.0);
+}
+
 TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
   EValue values[3];
   int64_t a = 3;

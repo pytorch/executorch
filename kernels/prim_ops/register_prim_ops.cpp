@@ -391,6 +391,8 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble()) {
             // TODO: This should be impossible
             out = EValue(a.toDouble());
+          } else if (a.isBool()) {
+            out = EValue(static_cast<double>(a.toBool()));
           } else {
             ET_KERNEL_CHECK_MSG(
                 context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
