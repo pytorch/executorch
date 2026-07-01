@@ -13,7 +13,17 @@ partitioning across accelerators (Metal, etc.) happens in C++ based on
 has_op() queries against the per-runtime op registries.
 """
 
-from typing import Any, Callable, Dict, final, List, Mapping, Optional, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    final,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    TYPE_CHECKING,
+)
 
 import torch
 
@@ -29,6 +39,9 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx import Node
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+if TYPE_CHECKING:
+    from executorch.backends.native.preprocess import Specialization
 
 
 # Canonical list of ops the native backend preserves (does NOT decompose)
@@ -125,8 +138,10 @@ class NativePartitioner(Partitioner):
     def __init__(
         self,
         compile_options: Optional[Dict[str, Any]] = None,
+        specializations: Optional[List["Specialization"]] = None,
     ) -> None:
         self.options = compile_options or {}
+        self.specializations = specializations
         compile_spec = self._parse_compile_options(self.options)
         # Import here to avoid circular dependency
         from executorch.backends.native.preprocess import NativeBackend
@@ -199,6 +214,11 @@ class NativePartitioner(Partitioner):
         Since native supports everything, this partitions the entire graph
         into a single delegation block.
         """
+        # Wire specializations to the backend class before partitioning.
+        from executorch.backends.native.preprocess import NativeBackend
+
+        NativeBackend._specializations = self.specializations
+
         partition_tags = {}
 
         # Use CapabilityBasedPartitioner with our "support everything" checker
