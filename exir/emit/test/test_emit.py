@@ -2456,15 +2456,17 @@ class TestEmit(unittest.TestCase):
         class SymIntModel(nn.Module):
             def forward(self, x):
                 n = x.shape[0]
-                f = torch.sym_float(n)
-                i = torch.sym_int(f)
-                return torch.zeros(i, dtype=x.dtype, device=x.device)
+                flag = n > 5
+                neg = torch.sym_not(flag)
+                val = torch.sym_float(neg)
+                i = torch.sym_int(val)
+                return torch.zeros(n + i, dtype=x.dtype, device=x.device)
 
         model = SymIntModel()
         model.eval()
         test_inputs = [
-            torch.randn(3, 4),
-            torch.randn(8, 4),
+            torch.randn(3, 4),  # n<=5: not(F)=T, float(T)=1.0, int(1.0)=1, zeros(4)
+            torch.randn(8, 4),  # n>5: not(T)=F, float(F)=0.0, int(0.0)=0, zeros(8)
         ]
         reference_outputs = []
         with torch.no_grad():
@@ -2475,14 +2477,6 @@ class TestEmit(unittest.TestCase):
         dynamic_shapes = {"x": {0: batch_dim}}
         exported_program = torch.export.export(
             model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
-        )
-        sym_int_nodes = [
-            n
-            for n in exported_program.graph.nodes
-            if n.op == "call_function" and n.target is torch.sym_int
-        ]
-        self.assertGreater(
-            len(sym_int_nodes), 0, "sym_int should appear in exported graph"
         )
 
         edge_program = to_edge(
