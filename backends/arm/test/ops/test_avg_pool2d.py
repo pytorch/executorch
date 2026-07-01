@@ -286,16 +286,31 @@ def test_avg_pool2d_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules | test_modules_fp16)
+@common.parametrize(
+    "test_module",
+    test_modules | test_modules_bf16 | test_modules_fp16,
+    xfails={
+        "kernel_3x3_stride_1_pad_1_bf16": "'Unsupported BF16 PAD constant encoding' in emulation layer. MLCE-1887."
+    },
+)
 @common.SkipIfNoModelConverter
 def test_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()
+    match input_tensor[0].dtype:
+        case torch.bfloat16:
+            atol = 5e-3
+            rtol = 5e-3
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t](
         model,
         input_tensor,
         aten_op,
         exir_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
