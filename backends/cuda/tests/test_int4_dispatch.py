@@ -238,9 +238,9 @@ def _record_int4_plain_mm():
     """
     calls = []
 
-    def _fake(self, qdata, scale, zero, group_size):
+    def _fake(self, qdata, scale, zero, steps, group_size):
         calls.append((tuple(self.shape), group_size))
-        return _dequant_matmul(self, qdata, scale, zero, group_size)
+        return _dequant_matmul(self, qdata, scale, zero, steps, group_size)
 
     with mock.patch.object(torch.ops.executorch_cuda, "int4_plain_mm", _fake):
         yield calls
@@ -317,8 +317,22 @@ class TestDispatchRouting(unittest.TestCase):
         n_groups = 192 // 64
         self.assertEqual(tuple(t.scale.shape), (n_groups, 24))  # torchao layout
         self.assertEqual(tuple(c.scale.shape), (24, n_groups))  # coalesced layout
-        self.assertTrue(torch.equal(c.scale, t.scale.t().contiguous()))
-        self.assertTrue(torch.equal(c.zero_point, t.zero_point.t().contiguous()))
+        # scale/zero are stored as uint8 codes + a per-row bf16 super-scale
+        # (value = code * step); decoding them must recover the transposed
+        # torchao scale/zero (within the 8-bit code quantization error).
+        scale_step = c.steps[:, 0].unsqueeze(1).to(torch.bfloat16)
+        zero_step = c.steps[:, 1].unsqueeze(1).to(torch.bfloat16)
+        dec_scale = c.scale.to(torch.bfloat16) * scale_step
+        dec_zero = c.zero_point.to(torch.bfloat16) * zero_step
+        torch.testing.assert_close(
+            dec_scale, t.scale.t().contiguous().to(torch.bfloat16), rtol=0.02, atol=0
+        )
+        torch.testing.assert_close(
+            dec_zero,
+            t.zero_point.t().contiguous().to(torch.bfloat16),
+            rtol=0.02,
+            atol=0,
+        )
         # End-to-end decode result matches a reference dequant of the original.
         x = torch.randn(2, 192, dtype=torch.bfloat16)
         with _record_int4_plain_mm() as calls:
