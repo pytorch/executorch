@@ -152,8 +152,8 @@ def _q4k_matmul_source(has_bias: bool) -> str:
     constexpr short NL0 = NK / 16;  // = 2 — dequant iterations per thread for weight
     constexpr short NL1 = NK / 8;   // = 4 — load iterations per thread for activation
 
-    threadgroup half sa[4096];  // NR0 * NK storage (strided by 64)
-    threadgroup half sb[4096];  // NR1 * NK storage (strided by 64)
+    threadgroup half sa[4096];  // NR0 * NK weight tile; reused as NR1*NR0 float output staging (8 KB)
+    threadgroup half sb[1024];  // NR1 * NK activation tile (strided by 64): 16 ib slots * 64
 
     const ushort tid   = thread_index_in_threadgroup;   // 0..127
     const ushort sgitg = simdgroup_index_in_threadgroup; // 0..3
@@ -252,7 +252,9 @@ def _q4k_matmul_source(has_bias: bool) -> str:
         }}
     }}
 
-    // --- Write results: always via threadgroup memory for float→OutT cast ---
+    // --- Write results: stage the output tile in threadgroup memory, then
+    // drain it to device. Staging is required for the float->OutT cast and the
+    // optional bias add.
     // Barrier needed: sa was used for weight tiles during the K-loop and is now
     // reused as float staging for the output. Without this barrier, a fast
     // simdgroup could start writing mc[] into sa while a slower one is still
@@ -268,14 +270,15 @@ def _q4k_matmul_source(has_bias: bool) -> str:
         }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        if (sgitg == 0) {{
-            for (int j = tid; j < nr1; j += NR1) {{
-                device OutT * D = out + (uint)(r1 + j) * (uint)N + r0;
-                threadgroup float * Cp = ((threadgroup float *) sa) + j * NR0;
-                for (int i = 0; i < nr0; ++i) {{
-                    float v = Cp[i];
-                    D[i] = (OutT)(v {bias_add});
-                }}
+        // Drain all NR1*NR0 tile elements across the threadgroup's 128 threads.
+        // NR0/NR1 are compile-time constants, so idx / NR0 and idx % NR0 fold
+        // to a shift/mask.
+        for (int idx = tid; idx < NR1 * NR0; idx += 128) {{
+            const int j = idx / NR0;
+            const int i = idx % NR0;
+            if (j < nr1 && i < nr0) {{
+                const float v = ((threadgroup float *) sa)[j * NR0 + i];
+                out[(uint)(r1 + j) * (uint)N + (r0 + i)] = (OutT)(v {bias_add});
             }}
         }}
     }}

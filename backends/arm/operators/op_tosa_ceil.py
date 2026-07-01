@@ -1,4 +1,4 @@
-# Copyright 2024-2026 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,15 +16,15 @@ FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
 
 
 @register_node_visitor
-class LogVisitor(SimpleNodeVisitor):
-    target = "aten.log.default"
+class CeilVisitor(SimpleNodeVisitor):
+    target = "tosa.CEIL.default"
     tosa_specs = FP_SPECS
 
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.LOG,
-            attr_method="LogAttribute",
+            tosa_op=ts.Op.CEIL,
+            attr_method="CeilAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.FP32, ts.DType.FP16, ts.DType.BF16],
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
         )

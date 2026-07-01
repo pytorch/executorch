@@ -728,28 +728,9 @@ def _strip_sampler_from_forward(model):
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        return self.lm_head(x)
+        return self.lm_head(x[:, -1, :])
 
     model.forward = types.MethodType(_clean_forward, model)
-
-
-class _MLXSampleWrapper(nn.Module):
-    """Wrap the logits-producing model so ``forward`` returns a sampled token.
-
-    Temperature, top_p, and seed are runtime scalar inputs so the same .pte
-    serves any sampling request; the runner increments the seed per token.
-    """
-
-    def __init__(self, model: nn.Module):
-        super().__init__()
-        from executorch.backends.mlx.llm.sampling import SamplingHead
-
-        self.head = SamplingHead(model)
-
-    def forward(self, tokens, input_pos, temperature, top_p, seed):
-        return self.head(
-            tokens, input_pos, temperature=temperature, top_p=top_p, seed=seed
-        )
 
 
 def _export_mlx(model, config, args):
@@ -775,17 +756,22 @@ def _export_mlx(model, config, args):
     seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
 
     if sample:
-        # forward(tokens, input_pos, temperature, top_p, seed) -> token id.
+        # forward(tokens, input_pos, temperature, top_k, top_p, seed) -> token id.
         # Scalars are static (None in dynamic_shapes); only the seq dim is dynamic.
-        model = _MLXSampleWrapper(model)
+        from executorch.backends.mlx.llm.sampling import SamplingHead
+
+        model = SamplingHead(model)
         example_args = (
             example_tokens,
             example_input_pos,
             torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
             torch.tensor(1.0, dtype=torch.float32),
             torch.tensor(0, dtype=torch.int64),
         )
-        dynamic_shapes = ({1: seq_dim}, {0: seq_dim}, None, None, None)
+        # SamplingHead.forward takes ``*args``; dynamic_shapes mirrors that single
+        # variadic parameter as one nested tuple over the positional inputs.
+        dynamic_shapes = (({1: seq_dim}, {0: seq_dim}, None, None, None, None),)
     else:
         example_args = (example_tokens, example_input_pos)
         dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
