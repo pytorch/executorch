@@ -288,10 +288,11 @@ static const Q4gswConfig kQ4gswConfigs[] = {
     {"kv_proj_4k", 4096, 2048, 512, 1e-4f, 1e-3f, true, false},
     {"q_proj_8k", 8192, 2048, 2048, 1e-4f, 1e-3f, false, true},
     {"kv_proj_8k", 8192, 2048, 512, 1e-4f, 1e-3f, false, true},
-    // The M==1 configs above (q/kv/gate/down_proj) exercise the bicol 2-col decode
-    // GEMV (handler routes M==1 -> bicol; each reads its own per-column scale over
-    // 64-256 K-groups). q4gsw requires N % 8 == 0, so odd-N is not exportable;
-    // bicol's has1 odd-N guard is defensive (mirrors coop4 general-N robustness).
+    // The M==1 configs above (q/kv/gate/down_proj) exercise the bicol 2-col
+    // decode GEMV (handler routes M==1 -> bicol; each reads its own per-column
+    // scale over 64-256 K-groups). q4gsw requires N % 8 == 0, so odd-N is not
+    // exportable; bicol's has1 odd-N guard is defensive (mirrors coop4
+    // general-N robustness).
 };
 
 // /16 ramp over the flat index; mirrors test_quantized_linear.py _ramp_input.

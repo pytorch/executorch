@@ -10,6 +10,7 @@
 
 #include <cuda_runtime.h>
 
+#include <executorch/extension/cuda/caller_stream.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch::backends::cuda {
@@ -18,6 +19,85 @@ using executorch::runtime::Error;
 using executorch::runtime::Result;
 using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
+
+namespace {
+
+Error copy_impl(
+    void* dst,
+    const void* src,
+    size_t nbytes,
+    DeviceIndex index,
+    cudaMemcpyKind kind) {
+  ET_CHECK_OR_RETURN_ERROR(
+      kind == cudaMemcpyHostToDevice || kind == cudaMemcpyDeviceToHost,
+      InvalidArgument,
+      "CudaAllocator::copy_impl: unsupported cudaMemcpyKind %d",
+      static_cast<int>(kind));
+  const char* method = kind == cudaMemcpyHostToDevice
+      ? "CudaAllocator::copy_host_to_device"
+      : "CudaAllocator::copy_device_to_host";
+  ET_CHECK_OR_RETURN_ERROR(
+      dst != nullptr, InvalidArgument, "%s: dst is null", method);
+  ET_CHECK_OR_RETURN_ERROR(
+      src != nullptr, InvalidArgument, "%s: src is null", method);
+  ET_CHECK_OR_RETURN_ERROR(
+      index >= -1,
+      InvalidArgument,
+      "%s: invalid device index %d (must be >= -1)",
+      method,
+      static_cast<int>(index));
+  const auto caller_stream = executorch::extension::cuda::getCallerStream();
+  if (caller_stream) {
+    // TODO: validate caller stream device matches index.
+    // For now assert index is -1 or 0.
+    ET_CHECK_OR_RETURN_ERROR(
+        index == -1 || index == 0,
+        InvalidArgument,
+        "%s: with caller stream, only supports device 0 or -1 (current), got %d",
+        method,
+        static_cast<int>(index));
+  }
+  if (nbytes == 0) {
+    return Error::Ok;
+  }
+
+  int prev_device = 0;
+  cudaError_t prev_device_err = cudaSuccess;
+
+  if (index >= 0) {
+    prev_device_err = cudaGetDevice(&prev_device);
+    if (prev_device_err == cudaSuccess) {
+      (void)cudaSetDevice(index);
+    }
+  }
+  cudaError_t err = cudaSuccess;
+  if (caller_stream) {
+    err = cudaMemcpyAsync(dst, src, nbytes, kind, *caller_stream);
+    if (err == cudaSuccess && kind == cudaMemcpyDeviceToHost) {
+      err = cudaStreamSynchronize(*caller_stream);
+    }
+  } else {
+    err = cudaMemcpy(dst, src, nbytes, kind);
+  }
+
+  if (index >= 0 && prev_device_err == cudaSuccess) {
+    (void)cudaSetDevice(prev_device);
+  }
+
+  if (err != cudaSuccess) {
+    ET_LOG(
+        Error,
+        "cudaMemcpy %s failed: %s (%zu bytes, device %d)",
+        kind == cudaMemcpyHostToDevice ? "H2D" : "D2H",
+        cudaGetErrorString(err),
+        nbytes,
+        static_cast<int>(index));
+    return Error::Internal;
+  }
+  return Error::Ok;
+}
+
+} // namespace
 
 Result<void*>
 CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
@@ -124,72 +204,20 @@ void CudaAllocator::deallocate(void* ptr, DeviceIndex index) {
   }
 }
 
-// TODO(gasoonjia): Add support for async copy
 Error CudaAllocator::copy_host_to_device(
     void* dst,
     const void* src,
     size_t nbytes,
     DeviceIndex index) {
-  int prev_device = 0;
-  cudaError_t prev_device_err = cudaSuccess;
-
-  if (index >= 0) {
-    prev_device_err = cudaGetDevice(&prev_device);
-    if (prev_device_err == cudaSuccess) {
-      cudaSetDevice(index);
-    }
-  }
-
-  cudaError_t err = cudaMemcpy(dst, src, nbytes, cudaMemcpyHostToDevice);
-
-  if (index >= 0 && prev_device_err == cudaSuccess) {
-    cudaSetDevice(prev_device);
-  }
-
-  if (err != cudaSuccess) {
-    ET_LOG(
-        Error,
-        "cudaMemcpy H2D failed: %s (%zu bytes, device %d)",
-        cudaGetErrorString(err),
-        nbytes,
-        static_cast<int>(index));
-    return Error::Internal;
-  }
-  return Error::Ok;
+  return copy_impl(dst, src, nbytes, index, cudaMemcpyHostToDevice);
 }
 
-// TODO(gasoonjia): Add support for async copy
 Error CudaAllocator::copy_device_to_host(
     void* dst,
     const void* src,
     size_t nbytes,
     DeviceIndex index) {
-  int prev_device = 0;
-  cudaError_t prev_device_err = cudaSuccess;
-
-  if (index >= 0) {
-    prev_device_err = cudaGetDevice(&prev_device);
-    if (prev_device_err == cudaSuccess) {
-      cudaSetDevice(index);
-    }
-  }
-
-  cudaError_t err = cudaMemcpy(dst, src, nbytes, cudaMemcpyDeviceToHost);
-
-  if (index >= 0 && prev_device_err == cudaSuccess) {
-    cudaSetDevice(prev_device);
-  }
-
-  if (err != cudaSuccess) {
-    ET_LOG(
-        Error,
-        "cudaMemcpy D2H failed: %s (%zu bytes, device %d)",
-        cudaGetErrorString(err),
-        nbytes,
-        static_cast<int>(index));
-    return Error::Internal;
-  }
-  return Error::Ok;
+  return copy_impl(dst, src, nbytes, index, cudaMemcpyDeviceToHost);
 }
 
 DeviceType CudaAllocator::device_type() const {
