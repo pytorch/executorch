@@ -111,9 +111,7 @@ def _(func, types, args, kwargs):
 
     M = x_2d.shape[0]
     if M <= 4:
-        out = torch.ops.executorch_cuda.int6_plain_mm(
-            x_2d, ql, qh, scale, steps, gs
-        )
+        out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, steps, gs)
     else:
         out = _dequant_matmul_int6(x_2d, ql, qh, scale, steps, gs)
 
