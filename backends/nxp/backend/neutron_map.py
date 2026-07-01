@@ -352,7 +352,9 @@ class NeutronMap:
                 for neutron_node in subgraph.nodes:
                     if self._nodes_match_by_io(tf_node, neutron_node):
                         for kernel in range(subgraph.kernels):
-                            subgraph_idxs.append(subgraph.location + location_shift + kernel)
+                            subgraph_idxs.append(
+                                subgraph.location + location_shift + kernel
+                            )
                         break
                 location_shift += max(subgraph.kernels - 1, 0)
             # Filter subgraph_idxs to avoid mapping multiple parallel single-input nodes that consume the

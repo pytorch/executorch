@@ -17,12 +17,15 @@ from executorch.backends.nxp.tests.model_output_comparator import (
 from executorch.backends.nxp.tests.models import AvgPool2dModule, SoftmaxModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 
+from executorch.examples.models.mlperf_tiny import (
+    DeepAutoEncoder,
+    DSCNNKWS,
+    MobileNetV1025,
+    ResNet8,
+)
+
 from executorch.examples.nxp.experimental.cifar_net.cifar_net import CifarNetModel
 
-from executorch.examples.models.mlperf_tiny.resnet8 import ResNet8
-from executorch.examples.models.mlperf_tiny import DSCNNKWS
-from executorch.examples.models.mlperf_tiny import MobileNetV1025
-from executorch.examples.models.mlperf_tiny import DeepAutoEncoder
 
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
@@ -56,6 +59,7 @@ class SimpleParallelPoolModel(torch.nn.Module):
         x = torch.cat((self.max_pool2d(x), self.avg_pool2d(x)), dim=1)
         x = self.conv_out(x)
         return x
+
 
 class ParallelPoolModel(torch.nn.Module):
     def __init__(self, ch=16):
@@ -182,7 +186,6 @@ class TestProfiling:
             3: (),  # Neutron Dump
         }
 
-
     def test__parallel_pool(self, caplog, request):
         caplog.set_level(logging.INFO)
         input_shape = (1, 16, 32, 32)
@@ -198,16 +201,15 @@ class TestProfiling:
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (8, 9), # Conv2DStandardV1 (Pad + Conv2d)
-            1: (10,), # Conv2DStandardV1
-            2: (11,), # Add
-            3: (), # Conv2DDepthwiseV2 (AvgPool)
-            4: (12,), # MaxPool
-            5: (14,), # StridedSliceConcat
-            6: (15, 16), # Conv2DPointwise (Conv2D + Relu)
-            7: () # Neutron Dump
+            0: (8, 9),  # Conv2DStandardV1 (Pad + Conv2d)
+            1: (10,),  # Conv2DStandardV1
+            2: (11,),  # Add
+            3: (),  # Conv2DDepthwiseV2 (AvgPool)
+            4: (12,),  # MaxPool
+            5: (14,),  # StridedSliceConcat
+            6: (15, 16),  # Conv2DPointwise (Conv2D + Relu)
+            7: (),  # Neutron Dump
         }
-
 
     def test__resnet8(self, caplog, request):
         # Three-stage residual network for the MLPerf Tiny image-classification.
@@ -215,36 +217,36 @@ class TestProfiling:
         model = ResNet8()
         input_shape = (1, 3, 32, 32)
 
-        lower_run_compare(model,
-                          input_shape,
-                          dlg_model_verifier=BaseGraphVerifier(1, []),
-                          request=request,
-                          output_comparator=NumericalStatsOutputComparator(),
-                          use_neutron_for_format_conversion=False,
-                          use_profiling=True,
+        lower_run_compare(
+            model,
+            input_shape,
+            dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
+            output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
+            use_profiling=True,
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (14, 15), # Conv2DStandardV2 (Pad + Conv)
-            1: (17, 18), # Conv2DStandardV1 (Pad + Conv)
-            2: (20,), # Conv2DStandardV1
-            3: (21,), # Add
-            4: (22,), # GlobalBiasScale (Relu)
-            5: (28,), # Conv2DStandardV1
-            6: (24, 25), #Conv2DStandardV1 (Pad + Conv)
-            7: (27,), # Conv2DStandardV1
-            8: (29,), # Add
-            9: (30,), # GlobalBiasScale (Relu)
-            10: (36,), # Conv2DStandardV1
-            11: (32, 33), # Conv2DStandardV1 (Pad + Conv)
-            12: (35,), # Conv2DStandardV1
-            13: (37,), # Add
-            14: (38,), # GlobalBiasScale (Relu)
-            15: (), # GlobalAvgPool (Mean)
-            16: (41,), # FullyConnected
-            17: ()  # Neutron Dump
+            0: (14, 15),  # Conv2DStandardV2 (Pad + Conv)
+            1: (17, 18),  # Conv2DStandardV1 (Pad + Conv)
+            2: (20,),  # Conv2DStandardV1
+            3: (21,),  # Add
+            4: (22,),  # GlobalBiasScale (Relu)
+            5: (28,),  # Conv2DStandardV1
+            6: (24, 25),  # Conv2DStandardV1 (Pad + Conv)
+            7: (27,),  # Conv2DStandardV1
+            8: (29,),  # Add
+            9: (30,),  # GlobalBiasScale (Relu)
+            10: (36,),  # Conv2DStandardV1
+            11: (32, 33),  # Conv2DStandardV1 (Pad + Conv)
+            12: (35,),  # Conv2DStandardV1
+            13: (37,),  # Add
+            14: (38,),  # GlobalBiasScale (Relu)
+            15: (),  # GlobalAvgPool (Mean)
+            16: (41,),  # FullyConnected
+            17: (),  # Neutron Dump
         }
-
 
     def test__ds_cnn(self, caplog, request):
         # Depthwise Separable CNN used for keyword spotting in MLCommons Tiny.
@@ -252,31 +254,31 @@ class TestProfiling:
         model = DSCNNKWS()
         input_shape = (1, 1, 49, 10)
 
-        lower_run_compare(model,
-                          input_shape,
-                          dlg_model_verifier=BaseGraphVerifier(1, []),
-                          request=request,
-                          output_comparator=NumericalStatsOutputComparator(),
-                          use_neutron_for_format_conversion=False,
-                          use_profiling=True,
-                          )
+        lower_run_compare(
+            model,
+            input_shape,
+            dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
+            output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
+            use_profiling=True,
+        )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (14, 15), # Pad (Conv + Relu)
-            1: (14, 15), # Conv2DStandardV2 (Conv + Relu)
-            2: (18, 19), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            3: (21, 22), # Conv2DPointwise (Conv + Relu)
-            4: (24, 25), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            5: (27, 28), # Conv2DDepthwiseV1 (Conv + Relu)
-            6: (30, 31), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            7: (33, 34), # Conv2DPointwise (Conv + Relu)
-            8: (36, 37), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            9: (39, 40), # Conv2DPointwise  (Conv + Relu)
-            10: (42,), # Conv2DDepthwiseDense (AvgPool)
-            11: (44,), # FullyConnected
-            12: () # Neutron Dump
+            0: (14, 15),  # Pad (Conv + Relu)
+            1: (14, 15),  # Conv2DStandardV2 (Conv + Relu)
+            2: (18, 19),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            3: (21, 22),  # Conv2DPointwise (Conv + Relu)
+            4: (24, 25),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            5: (27, 28),  # Conv2DDepthwiseV1 (Conv + Relu)
+            6: (30, 31),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            7: (33, 34),  # Conv2DPointwise (Conv + Relu)
+            8: (36, 37),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            9: (39, 40),  # Conv2DPointwise  (Conv + Relu)
+            10: (42,),  # Conv2DDepthwiseDense (AvgPool)
+            11: (44,),  # FullyConnected
+            12: (),  # Neutron Dump
         }
-
 
     def test__mobilenet_v1_025(self, caplog, request):
         # MobileNetV1 with width multiplier 0.25 for the Visual Wake Words.
@@ -284,48 +286,48 @@ class TestProfiling:
         model = MobileNetV1025()
         input_shape = (1, 3, 96, 96)
 
-        lower_run_compare(model,
-                          input_shape,
-                          dlg_model_verifier=BaseGraphVerifier(1, []),
-                          request=request,
-                          output_comparator=NumericalStatsOutputComparator(),
-                          use_neutron_for_format_conversion=False,
-                          use_profiling=True,
-                          )
+        lower_run_compare(
+            model,
+            input_shape,
+            dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
+            output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
+            use_profiling=True,
+        )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (32, 33), # Conv2DStandardV2 (Conv + Relu)
-            1: (35, 36), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            2: (38, 39), # Conv2DPointwise (Conv + Relu)
-            3: (41, 42), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            4: (44, 45), # Conv2DPointwise (Conv + Relu)
-            5: (47, 48), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            6: (50, 51), # Conv2DPointwise (Conv + Relu)
-            7: (53, 54), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            8: (56, 57), # Conv2DPointwise (Conv + Relu)
-            9: (59, 60), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            10: (62, 63), # Conv2DPointwise (Conv + Relu)
-            11: (65, 66), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            12: (68, 69), # Conv2DPointwise (Conv + Relu)
-            13: (71, 72), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            14: (74, 75), # Conv2DPointwise (Conv + Relu)
-            15: (77, 78), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            16: (80, 81), # Conv2DPointwise (Conv + Relu)
-            17: (83, 84), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            18: (86, 87), # Conv2DPointwise (Conv + Relu)
-            19: (89, 90), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            20: (92, 93), # Conv2DPointwise (Conv + Relu)
-            21: (95, 96), # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
-            22: (98, 99), # Conv2DPointwise (Conv + Relu)
-            23: (101, 102), # Conv2DDepthwiseDense (DepthwiseConv + Relu)
-            24: (104, 105), # Conv2DPointwise (Conv + Relu)
-            25: (107, 108), # Conv2DDepthwiseDense (DepthwiseConv + Relu)
-            26: (110, 111), # Conv2DPointwise (Conv + Relu)
-            27: (), # Mean (GlobalAvgPool)
-            28: (114,), # FullyConnected
-            29: () # Neutron Dump
+            0: (32, 33),  # Conv2DStandardV2 (Conv + Relu)
+            1: (35, 36),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            2: (38, 39),  # Conv2DPointwise (Conv + Relu)
+            3: (41, 42),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            4: (44, 45),  # Conv2DPointwise (Conv + Relu)
+            5: (47, 48),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            6: (50, 51),  # Conv2DPointwise (Conv + Relu)
+            7: (53, 54),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            8: (56, 57),  # Conv2DPointwise (Conv + Relu)
+            9: (59, 60),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            10: (62, 63),  # Conv2DPointwise (Conv + Relu)
+            11: (65, 66),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            12: (68, 69),  # Conv2DPointwise (Conv + Relu)
+            13: (71, 72),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            14: (74, 75),  # Conv2DPointwise (Conv + Relu)
+            15: (77, 78),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            16: (80, 81),  # Conv2DPointwise (Conv + Relu)
+            17: (83, 84),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            18: (86, 87),  # Conv2DPointwise (Conv + Relu)
+            19: (89, 90),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            20: (92, 93),  # Conv2DPointwise (Conv + Relu)
+            21: (95, 96),  # Conv2DDepthwiseV1 (DepthwiseConv + Relu)
+            22: (98, 99),  # Conv2DPointwise (Conv + Relu)
+            23: (101, 102),  # Conv2DDepthwiseDense (DepthwiseConv + Relu)
+            24: (104, 105),  # Conv2DPointwise (Conv + Relu)
+            25: (107, 108),  # Conv2DDepthwiseDense (DepthwiseConv + Relu)
+            26: (110, 111),  # Conv2DPointwise (Conv + Relu)
+            27: (),  # Mean (GlobalAvgPool)
+            28: (114,),  # FullyConnected
+            29: (),  # Neutron Dump
         }
-
 
     def test__deep_autoencoder(self, caplog, request):
         # MLPerf Tiny anomaly detection deep autoencoder.
@@ -333,25 +335,26 @@ class TestProfiling:
         model = DeepAutoEncoder()
         input_shape = (1, 640)
 
-        lower_run_compare(model,
-                          input_shape,
-                          dlg_model_verifier=BaseGraphVerifier(1, []),
-                          request=request,
-                          output_comparator=NumericalStatsOutputComparator(),
-                          use_neutron_for_format_conversion=False,
-                          use_profiling=True,
-                          )
+        lower_run_compare(
+            model,
+            input_shape,
+            dlg_model_verifier=BaseGraphVerifier(1, []),
+            request=request,
+            output_comparator=NumericalStatsOutputComparator(),
+            use_neutron_for_format_conversion=False,
+            use_profiling=True,
+        )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (22, 23), # FullyConnected (FullyConnected + Relu)
-            1: (24, 25), # FullyConnected (FullyConnected + Relu)
-            2: (26, 27), # FullyConnected (FullyConnected + Relu)
-            3: (28, 29), # FullyConnected (FullyConnected + Relu)
-            4: (30, 31), # FullyConnected (FullyConnected + Relu)
-            5: (32, 33), # FullyConnected (FullyConnected + Relu)
-            6: (34, 35), # FullyConnected (FullyConnected + Relu)
-            7: (36, 37), # FullyConnected (FullyConnected + Relu)
-            8: (38, 39), # FullyConnected (FullyConnected + Relu)
-            9: (40,), # FullyConnected
-            10: () # Neutron Dump
+            0: (22, 23),  # FullyConnected (FullyConnected + Relu)
+            1: (24, 25),  # FullyConnected (FullyConnected + Relu)
+            2: (26, 27),  # FullyConnected (FullyConnected + Relu)
+            3: (28, 29),  # FullyConnected (FullyConnected + Relu)
+            4: (30, 31),  # FullyConnected (FullyConnected + Relu)
+            5: (32, 33),  # FullyConnected (FullyConnected + Relu)
+            6: (34, 35),  # FullyConnected (FullyConnected + Relu)
+            7: (36, 37),  # FullyConnected (FullyConnected + Relu)
+            8: (38, 39),  # FullyConnected (FullyConnected + Relu)
+            9: (40,),  # FullyConnected
+            10: (),  # Neutron Dump
         }
