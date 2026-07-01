@@ -1953,6 +1953,41 @@ def _repeat_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return out
 
 
+@REGISTRY.register(target=[torch.ops.aten.flip.default])
+def _flip_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    args = P.args(n)
+    require_args(args, 2, 2, "aten.flip")
+    require_kwargs(P.kwargs(n), set(), "aten.flip")
+    x, dims_arg = args
+
+    dims: List[int] = [dims_arg] if isinstance(dims_arg, int) else list(dims_arg)
+    require_static_ints(dims, "dims", "aten.flip")
+
+    x_meta = n.args[0].meta.get("val")
+    if x_meta is None:
+        raise RuntimeError("aten.flip: missing tensor metadata")
+    ndim = len(x_meta.shape)
+    if len(set(d % ndim for d in dims)) != len(dims):
+        raise ValueError(f"aten.flip: dims must be unique, got {dims}")
+
+    out = P.make_or_get_slot(n)
+    current = x
+    for i, dim in enumerate(dims):
+        reverse_out = out if i == len(dims) - 1 else P.make_tmp_slot()[1]
+        P.emit(
+            SliceNode(
+                x=P.slot_to_tid(current),
+                out=P.slot_to_tid(reverse_out),
+                axis=P.to_int_or_vid(dim),
+                start=P.to_int_or_vid(-1),
+                stop=P.to_int_or_vid(-(x_meta.shape[dim % ndim] + 1)),
+                step=-1,
+            )
+        )
+        current = reverse_out
+    return out
+
+
 @REGISTRY.register(target=[torch.ops.aten.roll.default])
 def _roll_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     args = P.args(n)

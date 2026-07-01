@@ -1025,6 +1025,55 @@ class RepeatTest(OpTestCase):
         return (x,)
 
 
+class FlipModel(nn.Module):
+    """Model that flips a tensor along specified dimensions."""
+
+    def __init__(self, dims: Tuple[int, ...]):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.flip(x, dims=self.dims)
+
+
+@register_test
+class FlipTest(OpTestCase):
+    """Test case for torch.flip()."""
+
+    name = "flip"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        input_shape: Tuple[int, ...] = (4, 5),
+        dims: Tuple[int, ...] = (0,),
+    ):
+        self.input_shape = input_shape
+        self.dims = dims
+        dim_str = ",".join(str(d) for d in dims)
+        self.name = f"flip_dim({dim_str})"
+
+    @classmethod
+    def get_test_configs(cls) -> List["FlipTest"]:
+        return [
+            cls(input_shape=(8,), dims=(0,)),
+            cls(input_shape=(4, 5), dims=(0,)),
+            cls(input_shape=(4, 5), dims=(1,)),
+            cls(input_shape=(3, 4, 5), dims=(2,)),
+            cls(input_shape=(3, 4, 5), dims=(0, 2)),
+            cls(input_shape=(3, 4, 5), dims=(0, 1, 2)),
+            cls(input_shape=(3, 4, 5), dims=(-1,)),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return FlipModel(self.dims)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.input_shape)
+        return (x,)
+
+
 class RollModel(nn.Module):
     """Model that rolls a tensor along specified dimensions."""
 
