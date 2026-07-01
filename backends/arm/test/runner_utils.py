@@ -243,7 +243,8 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         return all(isinstance(dim, numbers.Integral) for dim in shape_like)
 
     def to_torch_tensor() -> torch.Tensor:
-        if output_tensor.dtype == torch.bfloat16 or array.dtype.type is np.void:
+        if array.dtype.type is np.void:
+            # If dtype is void, "cheat" and use the output_tensor dtype.
             return torch.frombuffer(array, dtype=output_tensor.dtype)
         return torch.from_numpy(array)
 
