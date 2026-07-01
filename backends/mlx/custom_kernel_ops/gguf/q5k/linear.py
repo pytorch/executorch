@@ -12,10 +12,12 @@ Same structure as :mod:`..q6k.linear` / :mod:`..q4k.linear`: mat-vec (M==1),
 mat-mat (M>1), IfNode (dynamic M).
 
 Q5_K is the affine super-block of Q4_K (``d``/``dmin`` + 6-bit packed
-scales/mins via ``get_scale_min_k4``) plus a Q6_K-style 5th bit from ``qh``:
+scales/mins) plus a Q6_K-style 5th bit from ``qh``:
 
-* the mat-vec accumulates ``y * q`` per affine sub-block with ``q = nibble +
-  16*high_bit`` and applies ``d*scale`` / ``dmin*min`` once per sub-block;
+* the mat-vec is a faithful port of llama.cpp ``kernel_mul_mv_q5_K_f32_impl``
+  (``N_R0 = 1``, ``NSG = 2``): inline kmask scale/min unpacking, with the nibble
+  sum and the 5th-bit indicator sum accumulated separately and folded with
+  ``d*scale`` / ``dmin*min``;
 * the mat-mat reuses the shared tiled simdgroup kernel and only swaps in
   ``dequantize_q5_K_16`` for the weight tile decode.
 
@@ -59,18 +61,21 @@ from torch.fx.node import Node
 # ---------------------------------------------------------------------------
 
 
-# Decode mat-vec kernel, ported from llama.cpp kernel_mul_mv_q5_K_f32_impl.
-# Threadgroup = (32 * NSG, 1, 1): NSG simdgroups, each computing N_R0 output
-# rows for one activation row (grid.y). Accumulate in float, reduce via simd_sum.
-# Thread decomposition mirrors the Q4_K matvec (ix = tiisg/8 groups super-blocks;
-# it = tiisg%8 -> iq,ir); weight values are decoded byte-wise with the 5th bit
-# from qh (q = nibble + 16*high_bit) and the affine d*scale / dmin*min applied per
-# sub-block via get_scale_min_k4.
+# Decode mat-vec kernel, a faithful port of llama.cpp kernel_mul_mv_q5_K_f32_impl
+# (N_R0 = 1, NSG = 2). Threadgroup = (32 * NSG, 1, 1): NSG simdgroups, each
+# computing N_R0 output rows for one activation row (grid.y). Accumulate in float,
+# reduce via simd_sum. Thread map: tid = tiisg/4, ix = tiisg%4 (block stride),
+# iq = tid/4, ir = tid%4. Scales/mins are unpacked inline via the kmask trick; the
+# nibble sum (acc1) and the 5th-bit indicator sum (acc2, y where qh bit set) are
+# accumulated separately and folded with d*scale / dmin*min.
 def _q5k_matvec_source(has_bias: bool) -> str:
     write = "out[(uint)m * N + r] = (OutT)(tot"
     write += " + (float)bias[r]);" if has_bias else ");"
     return f"""
-    constexpr short N_R0 = 2;
+    constexpr short N_R0 = 1;
+    constexpr uint16_t kmask1 = 0x3f3f;
+    constexpr uint16_t kmask2 = 0x0f0f;
+    constexpr uint16_t kmask3 = 0xc0c0;
 
     const ushort tiisg = thread_index_in_simdgroup;
     const ushort sgitg = simdgroup_index_in_threadgroup;
@@ -79,16 +84,14 @@ def _q5k_matvec_source(has_bias: bool) -> str:
     const int    nb    = K / QK_K;
     const int    first_row = (int)(tgx * NSG + sgitg) * N_R0;
 
-    const short ix = tiisg / 8;     // 0..3 : which super-blocks (step 4)
-    const short it = tiisg % 8;
-    const short iq = it / 4;        // 0..1
-    const short ir = it % 4;        // 0..3
+    const short tid = tiisg / 4;
+    const short ix  = tiisg % 4;   // block stride (i = ix, ix+4, ...)
+    const short iq  = tid / 4;     // 0..1
+    const short ir  = tid % 4;     // 0..3
+    const short l0  = 8 * ir;
+    const short q_offset = 32 * iq + l0;
+    const short y_offset = 64 * iq + l0;
 
-    const short y_offset = 64 * iq + 8 * ir;
-    const short q_offset = 32 * iq + 8 * ir;
-
-    // 5th-bit masks for the four sub-blocks this thread touches:
-    // 2*iq (q1 low), 2*iq+1 (q1 high), 2*iq+4 (q2 low), 2*iq+5 (q2 high).
     const uint8_t hm1 = 1u << (2 * iq);
     const uint8_t hm2 = hm1 << 1;
     const uint8_t hm3 = hm1 << 4;
@@ -96,56 +99,65 @@ def _q5k_matvec_source(has_bias: bool) -> str:
 
     device const block_q5_K * xrows = (device const block_q5_K *) weight;
     device const InT * yy = x + (uint)m * (uint)K;
-    device const InT * y4 = yy + ix * QK_K + y_offset;
+    device const InT * y1 = yy + ix * QK_K + y_offset;
 
     float sumf[N_R0];
     for (short row = 0; row < N_R0; ++row) {{ sumf[row] = 0.f; }}
 
     float yl[16];
     float yh[16];
+    uint16_t sc16[4];
+    thread const uint8_t * sc8 = (thread const uint8_t *) sc16;
 
-    for (int ib = ix; ib < nb; ib += 4) {{
+    for (int i = ix; i < nb; i += 4) {{
+        device const InT * y2 = y1 + 128;
         float4 sumy = {{0.f, 0.f, 0.f, 0.f}};
-        for (short i = 0; i < 8; ++i) {{
-            yl[i + 0] = (float) y4[i +   0]; sumy[0] += yl[i + 0];
-            yl[i + 8] = (float) y4[i +  32]; sumy[1] += yl[i + 8];
-            yh[i + 0] = (float) y4[i + 128]; sumy[2] += yh[i + 0];
-            yh[i + 8] = (float) y4[i + 160]; sumy[3] += yh[i + 8];
+        for (short l = 0; l < 8; ++l) {{
+            yl[l + 0] = (float) y1[l +  0]; sumy[0] += yl[l + 0];
+            yl[l + 8] = (float) y1[l + 32]; sumy[1] += yl[l + 8];
+            yh[l + 0] = (float) y2[l +  0]; sumy[2] += yh[l + 0];
+            yh[l + 8] = (float) y2[l + 32]; sumy[3] += yh[l + 8];
         }}
 
         for (short row = 0; row < N_R0; ++row) {{
             const int r = first_row + row;
             if (r >= N) {{ break; }}
-            device const block_q5_K * blk = xrows + (uint)r * nb + ib;
-            device const uint8_t * q1 = blk->qs + q_offset;
-            device const uint8_t * q2 = q1 + 64;
-            device const uint8_t * qh = blk->qh + 8 * ir;
-            const float d  = (float) blk->d;
-            const float dm = (float) blk->dmin;
+            device const block_q5_K * blk = xrows + (uint)r * nb + i;
+            device const uint8_t  * q1 = blk->qs + q_offset;
+            device const uint8_t  * q2 = q1 + 64;
+            device const uint8_t  * qh = blk->qh + l0;
+            device const uint16_t * a  = (device const uint16_t *) blk->scales + iq;
+
+            sc16[0] = a[0] & kmask1;
+            sc16[1] = a[2] & kmask1;
+            sc16[2] = ((a[4] >> 0) & kmask2) | ((a[0] & kmask3) >> 2);
+            sc16[3] = ((a[4] >> 4) & kmask2) | ((a[2] & kmask3) >> 2);
 
             float4 acc1 = {{0.f, 0.f, 0.f, 0.f}};
             float4 acc2 = {{0.f, 0.f, 0.f, 0.f}};
             for (short l = 0; l < 8; ++l) {{
                 const uint8_t h = qh[l];
-                acc1[0] += yl[l + 0] * (float)((q1[l] & 0x0F) + ((h & hm1) ? 16 : 0));
-                acc1[1] += yl[l + 8] * (float)((q1[l] >> 4)   + ((h & hm2) ? 16 : 0));
-                acc2[0] += yh[l + 0] * (float)((q2[l] & 0x0F) + ((h & hm3) ? 16 : 0));
-                acc2[1] += yh[l + 8] * (float)((q2[l] >> 4)   + ((h & hm4) ? 16 : 0));
+                acc1[0] += yl[l + 0] * (float)(q1[l] & 0x0F);
+                acc1[1] += yl[l + 8] * (float)(q1[l] & 0xF0);
+                acc1[2] += yh[l + 0] * (float)(q2[l] & 0x0F);
+                acc1[3] += yh[l + 8] * (float)(q2[l] & 0xF0);
+                acc2[0] += (h & hm1) ? yl[l + 0] : 0.f;
+                acc2[1] += (h & hm2) ? yl[l + 8] : 0.f;
+                acc2[2] += (h & hm3) ? yh[l + 0] : 0.f;
+                acc2[3] += (h & hm4) ? yh[l + 8] : 0.f;
             }}
 
-            uint8_t sc0, m0, sc1, m1, sc4, m4, sc5, m5;
-            get_scale_min_k4(2 * iq + 0, blk->scales, sc0, m0);
-            get_scale_min_k4(2 * iq + 1, blk->scales, sc1, m1);
-            get_scale_min_k4(2 * iq + 4, blk->scales, sc4, m4);
-            get_scale_min_k4(2 * iq + 5, blk->scales, sc5, m5);
-
-            sumf[row] += d * ((float)sc0 * acc1[0] + (float)sc1 * acc1[1] +
-                              (float)sc4 * acc2[0] + (float)sc5 * acc2[1]) -
-                         dm * ((float)m0 * sumy[0] + (float)m1 * sumy[1] +
-                               (float)m4 * sumy[2] + (float)m5 * sumy[3]);
+            sumf[row] += (float) blk->d * (
+                             (float) sc8[0] * (acc1[0]        + 16.f * acc2[0]) +
+                             (float) sc8[1] * (acc1[1] / 16.f + 16.f * acc2[1]) +
+                             (float) sc8[4] * (acc1[2]        + 16.f * acc2[2]) +
+                             (float) sc8[5] * (acc1[3] / 16.f + 16.f * acc2[3])) -
+                         (float) blk->dmin * (
+                             sumy[0] * (float) sc8[2] + sumy[1] * (float) sc8[3] +
+                             sumy[2] * (float) sc8[6] + sumy[3] * (float) sc8[7]);
         }}
 
-        y4 += 4 * QK_K;
+        y1 += 4 * QK_K;
     }}
 
     for (short row = 0; row < N_R0; ++row) {{
@@ -174,8 +186,9 @@ def _q5k_matmul_source(has_bias: bool) -> str:
     constexpr short NL0 = NK / 16;  // = 2 — dequant iterations per thread for weight
     constexpr short NL1 = NK / 8;   // = 4 — load iterations per thread for activation
 
-    threadgroup half sa[4096];  // NR0 * NK storage (strided by 64)
-    threadgroup half sb[4096];  // NR1 * NK storage (strided by 64)
+    threadgroup half sa[4096];  // NR0 * NK weight tile (strided by 64); also reused
+                                // as the 8 KB float output-staging buffer below
+    threadgroup half sb[1024];  // NR1 * NK activation tile (strided by 64): 16 ib slots * 64
 
     const ushort tid   = thread_index_in_threadgroup;   // 0..127
     const ushort sgitg = simdgroup_index_in_threadgroup; // 0..3
@@ -274,7 +287,9 @@ def _q5k_matmul_source(has_bias: bool) -> str:
         }}
     }}
 
-    // --- Write results: always via threadgroup memory for float→OutT cast ---
+    // --- Write results: stage the output tile in threadgroup memory, then
+    // drain it to device across all 128 threads. Staging is required for the
+    // float->OutT cast and the optional bias add.
     // Barrier needed: sa was used for weight tiles during the K-loop and is now
     // reused as float staging for the output. Without this barrier, a fast
     // simdgroup could start writing mc[] into sa while a slower one is still
@@ -290,23 +305,23 @@ def _q5k_matmul_source(has_bias: bool) -> str:
         }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        if (sgitg == 0) {{
-            for (int j = tid; j < nr1; j += NR1) {{
-                device OutT * D = out + (uint)(r1 + j) * (uint)N + r0;
-                threadgroup float * Cp = ((threadgroup float *) sa) + j * NR0;
-                for (int i = 0; i < nr0; ++i) {{
-                    float v = Cp[i];
-                    D[i] = (OutT)(v {bias_add});
-                }}
+        // Drain all NR1*NR0 tile elements across the threadgroup's 128 threads.
+        // NR0/NR1 are compile-time constants, so idx / NR0 and idx % NR0 fold
+        // to a shift/mask.
+        for (int idx = tid; idx < NR1 * NR0; idx += 128) {{
+            const int j = idx / NR0;
+            const int i = idx % NR0;
+            if (j < nr1 && i < nr0) {{
+                const float v = ((threadgroup float *) sa)[j * NR0 + i];
+                out[(uint)(r1 + j) * (uint)N + (r0 + i)] = (OutT)(v {bias_add});
             }}
         }}
     }}
 """
 
 
-# Number of simdgroups per threadgroup for the mat-vec kernel.
-# Matches the Q4_K affine matvec (N_SG=2): nsg=4 launches half as many (fatter)
-# threadgroups, hurting occupancy on the bandwidth-bound decode matvec.
+# Mat-vec launch params, matching llama.cpp Q5_K (N_R0_Q5_K = 1, N_SG_Q5_K = 2).
+_Q5K_MV_N_R0 = 1
 _Q5K_MV_NSG = 2
 # Tile sizes for the mat-mat kernel (from llama.cpp kernel_mul_mm).
 _Q5K_MM_NR0 = 64  # weight/output rows (N dim) per threadgroup
@@ -330,7 +345,7 @@ def _emit_q5k_matvec(
     M_iov = emit_product(P, leading)
     out_shape_flat = leading + [IntOrVid.from_literal(N)]
 
-    n_r0 = 2
+    n_r0 = _Q5K_MV_N_R0
     nsg = _Q5K_MV_NSG
     num_row_groups = (N + nsg * n_r0 - 1) // (nsg * n_r0)
     grid_x = num_row_groups * 32 * nsg
