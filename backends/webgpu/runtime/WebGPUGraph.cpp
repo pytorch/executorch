@@ -77,6 +77,19 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   return buffer;
 }
 
+WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
+  WGPUBufferDescriptor desc = {};
+  desc.size = size;
+  desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  desc.mappedAtCreation = true;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &desc);
+  void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
+  std::memcpy(mapped, data, size);
+  wgpuBufferUnmap(buffer);
+  uniform_buffer_bytes_ += size;
+  return buffer;
+}
+
 void WebGPUGraph::update_symints_from_inputs(
     const std::vector<InputData>& inputs) {
   for (const auto& src : symint_sources_) {
@@ -245,9 +258,10 @@ void WebGPUGraph::build(
   tensors_.resize(num_vals);
   tensor_mem_obj_ids_.resize(num_vals, -1);
   ints_.resize(num_vals, 0);
+  int_lists_.resize(num_vals);
+  value_lists_.resize(num_vals);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
-  value_lists_.resize(num_vals);
 
   // Pre-scan the op chain: a constant may be DEFERRED (no eager GPU buffer; the
   // prepack node materializes it once) only if it is a prepack source AND never
@@ -375,6 +389,25 @@ void WebGPUGraph::build(
         ints_[i] = val->value_as_Int()->int_val();
         break;
       }
+      case vkgraph::GraphTypes::IntList: {
+        value_types_[i] = ValueType::IntList;
+        const auto* items = val->value_as_IntList()->items();
+        if (items) {
+          int_lists_[i].assign(items->cbegin(), items->cend());
+        }
+        break;
+      }
+      case vkgraph::GraphTypes::ValueList: {
+        value_types_[i] = ValueType::ValueList;
+        const auto* items = val->value_as_ValueList()->items();
+        if (items) {
+          value_lists_[i].reserve(items->size());
+          for (unsigned j = 0; j < items->size(); j++) {
+            value_lists_[i].push_back(static_cast<int>(items->Get(j)));
+          }
+        }
+        break;
+      }
       case vkgraph::GraphTypes::Double: {
         value_types_[i] = ValueType::Double;
         doubles_[i] = val->value_as_Double()->double_val();
@@ -404,16 +437,6 @@ void WebGPUGraph::build(
         wgpuBufferUnmap(slot.buffer);
         symints_[i] = slot;
         add_uniform_buffer_bytes(kSymIntUniformBytes);
-        break;
-      }
-      case vkgraph::GraphTypes::ValueList: {
-        value_types_[i] = ValueType::ValueList;
-        const auto* items = val->value_as_ValueList()->items();
-        if (items) {
-          for (unsigned j = 0; j < items->size(); j++) {
-            value_lists_[i].push_back(static_cast<int>(items->Get(j)));
-          }
-        }
         break;
       }
       default:

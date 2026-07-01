@@ -109,6 +109,43 @@ def node_is_effectively_static_tensor(
     )
 
 
+def weights_are_effectively_static(
+    node: Node, parameters_mapping: dict[str, Parameter], weight_index: int = 1
+) -> bool:
+    """Neutron IR sometimes requires some weights to be static. This method checks if this is the case for the
+        provided `node`.
+
+    Sometimes a `permute_copy` is inserted to transpose the weights during edge lowering. The `permute_copy` is
+    then removed during conversion to Neutron IR if it transposes static data. In those cases, the weights will be
+    static. Therefore, it is ok if the weights are produced by a `permute_copy` with a static input.
+
+    :param node: Tensor node to check for data.
+    :param parameters_mapping: Dict mapping tensor names to their static data. Should be inferred from the
+                                `state_dict` attribute of an edge program.
+    :param weight_index: Index to the `node.args` where the weight is located. Defaults to 1.
+    :return: True if the weight at the given index is effectively static.
+    """
+
+    def _is_permute_copy(node_: Node) -> bool:
+        return hasattr(node_, "target") and node_.target == PermuteCopy
+
+    if (
+        _is_dequantize(dq_node := node.args[weight_index])
+        and _is_quantize(q_node := dq_node.args[0])
+        and _is_permute_copy(permute_copy_node := q_node.args[0])
+    ):
+        # The weights are produced by a `permute_copy`. Its input (the weights) must be static.
+        return node_is_effectively_static_tensor(
+            permute_copy_node.args[0], parameters_mapping
+        )
+
+    else:
+        # There is no `permute_copy`. The weights must be static directly.
+        return node_is_effectively_static_tensor(
+            node.args[weight_index], parameters_mapping
+        )
+
+
 def try_get_tensor_constant_from_node(
     graph_module: GraphModule, node: Node
 ) -> Parameter | None:

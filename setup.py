@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024, 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -136,6 +136,7 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_TESTS=OFF",
         "-DEXECUTORCH_BUILD_VULKAN=OFF",
         "-DEXECUTORCH_BUILD_XNNPACK=OFF",
+        "-DEXECUTORCH_BUILD_CMSIS_NN_PYBINDS=OFF",
     ]
 
 
@@ -982,6 +983,9 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
                 cmake_build_args += ["--target", "vulkan_backend"]
 
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
+                cmake_build_args += ["--target", "cmsis_nn"]
+
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
@@ -1093,6 +1097,14 @@ setup(
                     src="selective_build.cp*" if _is_windows() else "selective_build.*",
                     modpath="executorch.codegen.tools.selective_build",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+                ),
+                BuiltExtension(
+                    src="cmsis_nn.cp*" if _is_windows() else "cmsis_nn.*",
+                    src_dir="backends/cortex_m/cmsis_nn-build/%BUILD_TYPE%/",
+                    modpath="executorch.backends.cortex_m.library._cmsis_nn.cmsis_nn",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS",
+                    ],
                 ),
                 BuiltExtension(
                     src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh

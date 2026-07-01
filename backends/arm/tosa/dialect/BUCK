@@ -6,9 +6,12 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "lib.py",
         "ops_registration.py",
+        "real_impl.py",
         "shape.py",
     ],
     deps = [
+        "fbsource//third-party/tosa_tools:serializer",
+        "fbsource//third-party/tosa_tools:tosa_reference_model",
         "//caffe2:torch",
         "//executorch/backends/arm/tosa:mapping",
         "//executorch/backends/arm/tosa:tosa",

@@ -113,6 +113,9 @@ class EdgeProgramToIRConverter:
         self._convert_qdq_cluster_q_dq_nodes(edge_program.graph.nodes, cc)
         self._process_nodes(edge_program.graph.nodes, cc)
 
+        # Make sure the operators are correctly ordered.
+        cc.tflite_builder.sort_operators_topologically()
+
         # Assign the model its inputs and outputs.
         cc.tflite_builder.assign_model_io_to_subgraph(edge_program.graph_signature)
 
