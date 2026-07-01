@@ -9,6 +9,9 @@ on:
       - "exir/_serialize/generated/**"
       - "devtools/bundled_program/serialize/generated/**"
 
+permissions:
+  contents: read
+
 jobs:
   exir-flatbuffer:
     runs-on: ubuntu-latest
