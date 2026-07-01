@@ -25,6 +25,7 @@ from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
 )
 from executorch.backends.xnnpack._passes.decompose_batch_norm import DecomposeBatchNorm
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
+from executorch.backends.xnnpack._passes.fold_conv_pad import FoldConvPadPass
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
@@ -81,6 +82,7 @@ class XNNPACKPassManager:
                 FuseActivationPass,
                 DecomposeConcatenate,
                 RemoveGetItemPass,
+                FoldConvPadPass,
                 Conv1dUnsqueezePass,
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,

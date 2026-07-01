@@ -38,6 +38,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
 from executorch.exir.backend.utils import WhyNoPartition
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
@@ -402,6 +403,30 @@ class ConvolutionConfig(GEMMConfig):
             ConfigPrecisionType.STATIC_QUANT,
             ConfigPrecisionType.DYNAMIC_QUANT,
         ]
+
+    def _get_act_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        # An even-kernel 'same'-padding conv decomposes into
+        # dequant -> constant_pad_nd -> convolution. Pull the zero-valued spatial
+        # pad into this conv's partition so FoldConvPadPass can fold it into the
+        # conv's native asymmetric padding instead of orphaning it.
+        act_input = get_input_node(node, self.act_idx)
+        if (
+            precision != ConfigPrecisionType.FP32
+            and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
+            and len(act_input.users) == 1
+            and is_dequant(get_input_node(act_input, 0))
+        ):
+            pad_value = act_input.args[2] if len(act_input.args) > 2 else 0
+            pad_amounts = cast(List[int], act_input.args[1])
+            spatial_only = len(pad_amounts) <= 4 or all(a == 0 for a in pad_amounts[4:])
+            if pad_value == 0 and spatial_only:
+                valid, deps = super()._get_act_deps(act_input, ep, precision)
+                if valid:
+                    return (True, [act_input, *deps])
+
+        return super()._get_act_deps(node, ep, precision)
 
 
 class AddmmConfig(GEMMConfig):
