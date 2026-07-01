@@ -13,6 +13,7 @@ from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
     rewrite_argmax,
     rewrite_binary_operator,
     rewrite_rfft2,
+    rewrite_unary_operator,
 )
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
@@ -85,6 +86,26 @@ def _get_binary_operator_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return rewrite_binary_operator(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.abs.default,
+    exir_ops.edge.aten.bitwise_not.default,
+    exir_ops.edge.aten.ceil.default,
+    exir_ops.edge.aten.cos.default,
+    exir_ops.edge.aten.exp.default,
+    exir_ops.edge.aten.floor.default,
+    exir_ops.edge.aten.log.default,
+    exir_ops.edge.aten.logical_not.default,
+    exir_ops.edge.aten.neg.default,
+    exir_ops.edge.aten.reciprocal.default,
+    exir_ops.edge.aten.rsqrt.default,
+    exir_ops.edge.aten.sin.default,
+)
+def _get_unary_operator_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_unary_operator(node, pass_)
 
 
 @register_dialect_substitutions(
