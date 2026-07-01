@@ -392,7 +392,7 @@ evaluator = StandardEvaluator(
 
 ### Disabling Accuracy Evaluation
 
-Accuracy lenses are opt-in via `--lense_recipe=accuracy` on backend CLIs. When
+Accuracy lenses are opt-in via `--lens-recipe=accuracy` on backend CLIs. When
 omitted, no accuracy evaluation runs. To disable accuracy when using the Python
 API directly:
 

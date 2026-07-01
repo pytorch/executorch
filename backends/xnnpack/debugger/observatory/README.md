@@ -15,7 +15,7 @@ python -m executorch.backends.xnnpack.debugger.observatory \
 
 ```bash
 python -m executorch.backends.xnnpack.debugger.observatory \
-    --lense_recipe=accuracy \
+    --lens-recipe=accuracy \
     [--output-html PATH] [--output-archive PATH] \
     SCRIPT [SCRIPT_ARGS...]
 ```
@@ -39,7 +39,7 @@ uses `runpy.run_module` instead of `runpy.run_path`.
 ```bash
 python -m executorch.backends.xnnpack.debugger.observatory \
     --output-html /tmp/mv2/report.html \
-    --lense_recipe=accuracy \
+    --lens-recipe=accuracy \
     examples/xnnpack/aot_compiler.py \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
@@ -49,7 +49,7 @@ python -m executorch.backends.xnnpack.debugger.observatory \
 ```bash
 python -m executorch.backends.xnnpack.debugger.observatory \
     --output-html /tmp/mv2/report.html \
-    --lense_recipe=accuracy \
+    --lens-recipe=accuracy \
     examples.xnnpack.aot_compiler \
     --model_name=mv2 --delegate --quantize --output_dir /tmp/mv2
 ```
@@ -79,7 +79,7 @@ Pass `--model_name` with any of the models defined in `examples/xnnpack/__init__
 Common flags: `--delegate` (XNNPACK delegation, on by default), `--quantize` (8-bit PTQ),
 `--output_dir` (where the `.pte` is written).
 
-## Accuracy lenses (`--lense_recipe=accuracy`)
+## Accuracy lenses (`--lens-recipe=accuracy`)
 
 Registers `AccuracyLens` and `PerLayerAccuracyLens` on top of the default
 `PipelineGraphCollectorLens`. These produce:

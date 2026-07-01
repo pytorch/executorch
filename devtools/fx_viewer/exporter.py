@@ -26,6 +26,15 @@ from .models import (
 )
 
 
+class _FastSugiyamaMissingError(ImportError):
+    """Raised when the optional fast-sugiyama dependency is not installed.
+
+    Subclasses ImportError so callers can catch either this specific type
+    (to fail-soft, e.g. skip the graph payload for one record) or the
+    generic ImportError (to fail-fast at library load time).
+    """
+
+
 class FXGraphExporter:
     """Export PyTorch FX graphs to JSON/JS/HTML payloads for the viewer.
 
@@ -330,7 +339,7 @@ class FXGraphExporter:
         try:
             from fast_sugiyama import from_edges
         except ImportError as exc:
-            raise ImportError(
+            raise _FastSugiyamaMissingError(
                 "fx_viewer layout requires 'fast-sugiyama' (and rectangle-packer "
                 "for multi-component packing). Install with: "
                 "pip install 'fast-sugiyama[all]'  (requires Python >= 3.11)"

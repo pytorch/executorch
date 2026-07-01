@@ -42,6 +42,43 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 # ---------------------------------------------------------------------------
 
 
+def _format_bytes(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:,.1f} {unit}" if unit != "B" else f"{n:,} B"
+        n = n / 1024
+    return f"{n:,.1f} GB"
+
+
+def _print_export_summary(
+    output_html: str,
+    output_archive: str,
+    output_report_json: str | None,
+    record_names: list[str],
+) -> None:
+    """Print a one-shot end-of-run summary so users can see what was written.
+
+    Uses ``print`` rather than ``logging.info`` because the default Python log
+    level is WARNING, which silently swallows info-level messages. A visible
+    summary matters here: without it, the CLI ends immediately after the last
+    "Running fast-sugiyama layout..." line, which reads like the run hung.
+    """
+    lines = ["[Observatory CLI] Session complete. Wrote:"]
+    for path in (output_html, output_archive, output_report_json):
+        if not path:
+            continue
+        try:
+            size = os.path.getsize(path)
+            size_str = _format_bytes(size)
+        except OSError:
+            size_str = "missing"
+        lines.append(f"  {path}  ({size_str})")
+    lines.append(
+        f"  {len(record_names)} record(s): {', '.join(record_names)}"
+    )
+    print("\n".join(lines))
+
+
 def make_collect_parser(prog=None):
     """Create the base argparse parser for collection mode.
 
@@ -173,10 +210,11 @@ def run_visualize(input_archive: str, output_html: str, *, setup_fn=None) -> Non
     if setup_fn is not None:
         setup_fn(Observatory)
     Observatory.generate_html_from_json(input_archive, output_html)
-    logging.info(
-        "[Observatory CLI] visualize: html=%s from archive=%s",
-        output_html,
-        input_archive,
+    _print_export_summary(
+        output_html=output_html,
+        output_archive="",  # visualize consumes an archive, does not produce one
+        output_report_json=None,
+        record_names=[f"←{os.path.basename(input_archive)}"],
     )
 
 
@@ -286,15 +324,14 @@ def run_observatory(
             Observatory.export_report_json(output_report_json, title=title)
         collected = Observatory.list_collected()
         if collected:
-            logging.info(
-                "[Observatory CLI] Reports: html=%s archive=%s (%d records: %s)",
-                output_html,
-                output_archive,
-                len(collected),
-                ", ".join(collected),
+            _print_export_summary(
+                output_html=output_html,
+                output_archive=output_archive,
+                output_report_json=output_report_json,
+                record_names=collected,
             )
         else:
-            logging.warning("[Observatory CLI] No records collected")
+            print("[Observatory CLI] No records collected — no report written.")
 
 
 # ---------------------------------------------------------------------------
@@ -341,10 +378,11 @@ def run_compare(
         # config is not threaded through compare mode (compare_archives drives
         # analysis). Pass None so export_report_json uses an empty config.
         Observatory.export_report_json(output_report_json, title=title, config=None)
-    logging.info(
-        "[Observatory CLI] compare: html=%s from %d archives",
-        output_html,
-        len(input_archives),
+    _print_export_summary(
+        output_html=output_html,
+        output_archive="",  # compare has no output archive of its own
+        output_report_json=output_report_json,
+        record_names=[f"{lbl}←{os.path.basename(pth)}" for lbl, pth in zip(labels, input_archives)],
     )
 
 
