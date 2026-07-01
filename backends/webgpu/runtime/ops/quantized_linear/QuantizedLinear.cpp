@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -38,6 +39,16 @@ static_assert(sizeof(Q4gswParams) == 32, "Q4gswParams must be 32 bytes");
 // Register-tile dims; MUST match TM/TN in q4gsw_linear.wgsl.
 constexpr int64_t kQ4gswTileM = 4;
 constexpr int64_t kQ4gswTileN = 4;
+
+// Shmem-GEMM tile dims; MUST match WG_M/WG_N in q4gsw_linear_gemm_shmem.wgsl.
+constexpr int64_t kQ4gswShmemTileM = 32;
+constexpr int64_t kQ4gswShmemTileN = 32;
+// Prefill route: shmem GEMM wins large K/N; the square 2048^2 (q/o proj,
+// N=2048) also wins on shmem (+~50% Canary, 10-warm/50-run; the earlier -27%
+// did not reproduce), so route it via a lower N threshold while k/v (N=512)
+// stays on register-tiled.
+constexpr uint32_t kQ4gswShmemMinDim = 4096u;
+constexpr uint32_t kQ4gswShmemNMinDim = 2048u;
 
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
 void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -117,12 +128,15 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU linear_q4gsw: scales dims too small for K/N");
   }
 
-  // M==1 decode -> bicol GEMV (needs K%8==0 && gs%8==0); else tiled GEMM.
+  // M==1 -> bicol GEMV; M>1 -> shmem GEMM (large K/N) else tiled GEMM.
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
-  const char* shader_src =
-      use_gemv ? kQ4gswLinearCoop4BicolWGSL : kQ4gswLinearWGSL;
+  const bool use_shmem_gemm =
+      !use_gemv && (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
+  const char* shader_src = use_gemv ? kQ4gswLinearCoop4BicolWGSL
+      : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
+                                    : kQ4gswLinearWGSL;
   uint32_t workgroup_count;
   if (use_gemv) {
     // bicol: fixed 64 lanes, 2 output columns/workgroup, grid-strided over
@@ -136,6 +150,21 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     if (workgroup_count == 0u) {
       throw std::runtime_error("WebGPU linear_q4gsw: zero GEMV dispatch");
     }
+  } else if (use_shmem_gemm) {
+    // shmem GEMM: one workgroup per tile, no grid-stride -> throw over limit.
+    const int64_t total_wgs = utils::div_up<int64_t>(M, kQ4gswShmemTileM) *
+        utils::div_up<int64_t>(N, kQ4gswShmemTileN);
+    WGPULimits limits = {};
+    const uint32_t max_wgs =
+        wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+            limits.maxComputeWorkgroupsPerDimension > 0
+        ? limits.maxComputeWorkgroupsPerDimension
+        : 65535u;
+    if (total_wgs > static_cast<int64_t>(max_wgs)) {
+      throw std::runtime_error(
+          "WebGPU linear_q4gsw: shmem GEMM tile count exceeds the 1D dispatch limit");
+    }
+    workgroup_count = static_cast<uint32_t>(total_wgs);
   } else {
     const int64_t total_tiles = utils::div_up<int64_t>(M, kQ4gswTileM) *
         utils::div_up<int64_t>(N, kQ4gswTileN);
@@ -225,9 +254,10 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  // bicol GEMV uses fixed @workgroup_size(64); only the GEMM has an override.
-  pipeline_desc.compute.constantCount = use_gemv ? 0u : 1u;
-  pipeline_desc.compute.constants = use_gemv ? nullptr : &wg_size_constant;
+  // Only the tiled GEMM has a wg_size override; GEMV + shmem are fixed 64.
+  const bool fixed_wg = use_gemv || use_shmem_gemm;
+  pipeline_desc.compute.constantCount = fixed_wg ? 0u : 1u;
+  pipeline_desc.compute.constants = fixed_wg ? nullptr : &wg_size_constant;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
