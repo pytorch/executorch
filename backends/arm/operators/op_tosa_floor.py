@@ -10,17 +10,21 @@ from executorch.backends.arm.operators.simple_node_visitor import (
     SimpleNodeVisitor,
     SimpleNodeVisitorConfig,
 )
+from executorch.backends.arm.tosa import TosaSpecification
+
+FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
 
 
 @register_node_visitor
-class LogicalNotVisitor(SimpleNodeVisitor):
-    target = "aten.logical_not.default"
+class FloorVisitor(SimpleNodeVisitor):
+    target = "tosa.FLOOR.default"
+    tosa_specs = FP_SPECS
 
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.LOGICAL_NOT,
-            attr_method="LogicalNotAttribute",
+            tosa_op=ts.Op.FLOOR,
+            attr_method="FloorAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.BOOL],
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
         )

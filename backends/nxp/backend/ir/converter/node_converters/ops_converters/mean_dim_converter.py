@@ -13,7 +13,6 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_utils import (
@@ -42,9 +41,7 @@ class MeanDimConverter(NodeConverter):
         dim, keepdim = MeanDimConverter._get_attrs(node)
         input_shape = node.args[0].meta["val"].shape
 
-        is_alone_in_partition = cls.is_node_alone_in_partition(
-            node, partition_list, filter_fn=is_not_qdq_node
-        )
+        is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
 
         if is_alone_in_partition and keepdim and all(input_shape[d] == 1 for d in dim):
             # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the

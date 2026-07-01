@@ -12,19 +12,19 @@ from executorch.backends.arm.operators.simple_node_visitor import (
 )
 from executorch.backends.arm.tosa import TosaSpecification
 
-FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
+INT_SPECS = TosaSpecification.all_versions_for_profile("INT")
 
 
 @register_node_visitor
-class CeilVisitor(SimpleNodeVisitor):
-    target = "aten.ceil.default"
-    tosa_specs = FP_SPECS
+class BitwiseNotVisitor(SimpleNodeVisitor):
+    target = "tosa.BITWISE_NOT.default"
+    tosa_specs = INT_SPECS
 
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.CEIL,
-            attr_method="CeilAttribute",
+            tosa_op=ts.Op.BITWISE_NOT,
+            attr_method="BitwiseNotAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
         )

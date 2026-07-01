@@ -17,7 +17,7 @@ FP_SPECS = TosaSpecification.all_versions_for_profile("FP")
 
 @register_node_visitor
 class SinVisitor(SimpleNodeVisitor):
-    target = "aten.sin.default"
+    target = "tosa.SIN.default"
     tosa_specs = FP_SPECS
 
     @classmethod
