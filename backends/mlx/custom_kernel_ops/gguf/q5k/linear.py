@@ -135,7 +135,7 @@ def _q5k_matvec_source(has_bias: bool) -> str:
 
             float4 acc1 = {{0.f, 0.f, 0.f, 0.f}};
             float4 acc2 = {{0.f, 0.f, 0.f, 0.f}};
-            for (short l = 0; l < 8; ++l) {{
+            FOR_UNROLL (short l = 0; l < 8; ++l) {{
                 const uint8_t h = qh[l];
                 acc1[0] += yl[l + 0] * (float)(q1[l] & 0x0F);
                 acc1[1] += yl[l + 8] * (float)(q1[l] & 0xF0);
@@ -253,9 +253,9 @@ def _q5k_matmul_source(has_bias: bool) -> str:
         const short ly_b = (tid / NL1) % 8;
         const short ib_b = 4 * sx_b + sy_b;
 
-        for (short i = 0; i < 8; ++i) {{
-            *(sb + 64 * ib_b + 8 * ly_b + i) = (half) *(yp + i);
-        }}
+        using InT2x4 = typename vec2x4<InT>::type;
+        *(threadgroup half2x4 *)(sb + 64 * ib_b + 8 * ly_b) =
+            (half2x4)(*(device const InT2x4 *)(yp));
 
         // Advance weight pointer through Q5_K sub-blocks.
         il = (il + 2 < NL) ? il + 2 : il % 2;
