@@ -11,6 +11,7 @@
 #include <webgpu/webgpu.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -63,9 +64,13 @@ inline uint32_t queried_max_workgroups(WGPUDevice device) {
 }
 
 // Pure 2D fold of a 1D workgroup count (device-free, unit-testable): {count,1}
-// when count <= max, else {max, div_up(count, max)} so a >max workload fits the
-// per-dimension cap; throws if a 3rd dimension would be needed (out of scope).
-// The shader reconstructs the linear index from @builtin(num_workgroups).
+// when count <= max, else a near-square {x, y} with x ~ ceil(sqrt(count)) so
+// the launched grid stays close to count. A flat {max, div_up(count, max)}
+// split would leave up to ~half the workgroups inactive when count just exceeds
+// max, and inactive workgroups still cost launch/scheduling; the near-square
+// split keeps the waste to O(sqrt(count)). Throws if even a max*max grid is too
+// small (a 3rd dispatch dimension, out of scope). The shader reconstructs the
+// linear index from @builtin(num_workgroups), so any x/y factoring works.
 inline WgCount fold_workgroup_count_2d(
     uint32_t count,
     uint32_t max_count,
@@ -73,13 +78,17 @@ inline WgCount fold_workgroup_count_2d(
   if (count <= max_count) {
     return {count, 1u};
   }
-  uint32_t y = (count + max_count - 1) / max_count;
+  uint32_t x =
+      static_cast<uint32_t>(std::ceil(std::sqrt(static_cast<double>(count))));
+  x = std::min(x, max_count);
+  // ceil-div written overflow-safe (count >= 1 here) as count nears UINT32_MAX.
+  uint32_t y = 1u + (count - 1u) / x;
   if (y > max_count) {
     throw std::runtime_error(
         std::string("WebGPU ") + op_name +
         ": workgroup count needs a 3rd dispatch dimension (unsupported)");
   }
-  return {max_count, y};
+  return {x, y};
 }
 
 // 1D dispatch count (mirrors Vulkan div_up); throws if > device limit.
@@ -104,7 +113,7 @@ inline WgCount compute_2d_workgroup_count(
     uint32_t num_threads,
     uint32_t workgroup_size,
     const char* op_name) {
-  uint32_t count = (num_threads + workgroup_size - 1) / workgroup_size;
+  uint32_t count = div_up(num_threads, workgroup_size);
   return fold_workgroup_count_2d(
       count, queried_max_workgroups(device), op_name);
 }
