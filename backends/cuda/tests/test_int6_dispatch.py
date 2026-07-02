@@ -30,7 +30,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cuda.dp4a_planar_int6_tensor import (
-    _encode_int8_per_row,
+    _encode_int8_per_super,
     CudaDp4aPlanarInt6Tensor,
     pack_int6,
     unpack_int6,
@@ -50,16 +50,20 @@ def _make_int6_tensor(N, K, group_size=16):
 
     ``q`` (int8 in [-32, 31]) and the returned ``scale`` (the effective per-group
     scale ``code * step`` the kernel actually decodes) are the originals, so tests
-    can measure against the exact dequant reference ``w = q * scale``.
+    can measure against the exact dequant reference ``w = q * scale``. K must be a
+    multiple of 256 (the per-256 scale-step super-block).
     """
     q = torch.randint(-32, 32, (N, K), dtype=torch.int8)
     scale = (torch.rand(N, K // group_size) * 0.1 + 0.01).to(torch.bfloat16)
     ql, qh = pack_int6(q)
-    # The tensor stores int8 scale *codes* + a per-row [N, 1] bf16 super-scale
-    # (scale = code * step); encode here and return the effective scale so the
-    # reference dequant matches what the kernel decodes.
-    scale_codes, steps = _encode_int8_per_row(scale)
-    eff_scale = (scale_codes.to(torch.bfloat16) * steps).to(torch.bfloat16)
+    # The tensor stores int8 scale *codes* + a per-256-super-block [N, K/256]
+    # fp16 step (scale = code * step[:, g // (256 // gs)]); encode here and
+    # return the effective scale so the reference dequant matches the kernel.
+    scale_codes, steps = _encode_int8_per_super(scale.float(), group_size)
+    n_super = steps.shape[1]
+    gps = (K // group_size) // n_super
+    step_g = steps.to(torch.bfloat16).repeat_interleave(gps, dim=1)
+    eff_scale = (scale_codes.to(torch.bfloat16) * step_g).to(torch.bfloat16)
     t = CudaDp4aPlanarInt6Tensor(
         ql, qh, scale_codes, steps, [1, group_size], torch.Size([N, K])
     )
@@ -109,8 +113,8 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_decode_routes_to_int6_plain_mm(self):
         """M<=4 routes to the decode custom op."""
-        t, _, _ = _make_int6_tensor(16, 64)
-        x = torch.randn(1, 64, dtype=torch.bfloat16)  # M=1 (decode regime)
+        t, _, _ = _make_int6_tensor(16, 256)
+        x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
         self.assertEqual(len(calls), 1)
@@ -118,8 +122,8 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_prefill_uses_dequant(self):
         """M>4 uses inline dequant (no custom op) and is numerically correct."""
-        t, q, scale = _make_int6_tensor(16, 64)
-        x = torch.randn(8, 64, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
+        t, q, scale = _make_int6_tensor(16, 256)
+        x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])
@@ -128,8 +132,8 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_decode_result_matches_reference(self):
         """The decode op (eager -> dequant) is numerically correct."""
-        t, q, scale = _make_int6_tensor(24, 128)
-        x = torch.randn(2, 128, dtype=torch.bfloat16)
+        t, q, scale = _make_int6_tensor(24, 512)
+        x = torch.randn(2, 512, dtype=torch.bfloat16)
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
         self.assertEqual(len(calls), 1)
@@ -138,9 +142,9 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_with_bias(self):
         """Bias is added after the matmul on the decode path."""
-        t, q, scale = _make_int6_tensor(16, 64)
+        t, q, scale = _make_int6_tensor(16, 256)
         bias = torch.randn(16, dtype=torch.bfloat16)
-        x = torch.randn(1, 64, dtype=torch.bfloat16)
+        x = torch.randn(1, 256, dtype=torch.bfloat16)
         with _record_int6_plain_mm():
             out = F.linear(x, t, bias)
         ref = F.linear(x, _ref_weight(q, scale, 16), bias)
@@ -148,9 +152,9 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_with_bias_kwarg(self):
         """Bias passed as a keyword (F.linear(x, w, bias=b)) is applied, not dropped."""
-        t, q, scale = _make_int6_tensor(16, 64)
+        t, q, scale = _make_int6_tensor(16, 256)
         bias = torch.randn(16, dtype=torch.bfloat16)
-        x = torch.randn(1, 64, dtype=torch.bfloat16)
+        x = torch.randn(1, 256, dtype=torch.bfloat16)
         with _record_int6_plain_mm():
             out = F.linear(x, t, bias=bias)
         ref = F.linear(x, _ref_weight(q, scale, 16), bias)
@@ -166,8 +170,8 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_3d_batched_input(self):
         """3D input is flattened and the output shape is restored."""
-        t, q, scale = _make_int6_tensor(16, 64)
-        x = torch.randn(2, 8, 64, dtype=torch.bfloat16)  # flattened M=16 > 4
+        t, q, scale = _make_int6_tensor(16, 256)
+        x = torch.randn(2, 8, 256, dtype=torch.bfloat16)  # flattened M=16 > 4
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])  # prefill regime
@@ -179,7 +183,7 @@ class TestDispatchRouting(unittest.TestCase):
         """_from_intx_int8 packs a symmetric int8 tensor and dispatch is correct."""
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
-        N, K, gs = 16, 64, 16
+        N, K, gs = 16, 256, 16
         q = torch.randint(-32, 32, (N, K), dtype=torch.int8)
         scale = (torch.rand(N, K // gs) * 0.1 + 0.01).to(torch.bfloat16)
         intx = IntxUnpackedToInt8Tensor(
@@ -196,7 +200,16 @@ class TestDispatchRouting(unittest.TestCase):
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
         self.assertEqual(len(calls), 1)
-        ref = F.linear(x, _ref_weight(q, scale, gs))
+        # The packer re-encodes scale as int8 code * per-256 fp16 step, so the
+        # reference uses the effective decoded scale (the tensor's dequant), not
+        # the raw input scale.
+        n_super = t.steps.shape[1]
+        gps = (K // gs) // n_super
+        eff = (
+            t.scale.to(torch.bfloat16)
+            * t.steps.to(torch.bfloat16).repeat_interleave(gps, dim=1)
+        ).to(torch.bfloat16)
+        ref = F.linear(x, _ref_weight(q, eff, gs))
         self.assertLess(self._rel_err(out, ref), 0.02)
 
     def test_from_intx_int8_rejects_asymmetric(self):
@@ -243,13 +256,18 @@ class TestDispatchRouting(unittest.TestCase):
 
         # The packer must reuse the shared Q6_K int8 decode (no duplication) and
         # bit-pack it losslessly: the unpacked q and the decoded scale match the
-        # int8 path. The scale is stored as int8 codes + a per-row bf16 step
-        # (scale = code * step); the GGUF sub-scales are constant within a row,
-        # so the int8 re-encoding is exact here.
+        # int8 path. The scale is stored as int8 codes + a per-256 fp16 step
+        # (scale = code * step[:, g // (256 // gs)]); the GGUF sub-scales are
+        # constant within this single super-block, so the int8 re-encoding is
+        # exact here.
         intx = gt.to_intx_unpacked_to_int8_tensor()
         q_rt = unpack_int6(t.ql, t.qh, N, nb * 256).to(torch.int8)
         self.assertTrue(torch.equal(q_rt, intx.qdata))
-        decoded_scale = (t.scale.to(torch.bfloat16) * t.steps).to(torch.bfloat16)
+        n_groups = intx.scale.shape[1]
+        n_super = t.steps.shape[1]
+        gps = n_groups // n_super
+        step_g = t.steps.to(torch.bfloat16).repeat_interleave(gps, dim=1)
+        decoded_scale = (t.scale.to(torch.bfloat16) * step_g).to(torch.bfloat16)
         self.assertTrue(torch.equal(decoded_scale, intx.scale))
 
     def test_from_exportable_gguf_rejects_non_q6k(self):
@@ -294,7 +312,7 @@ class TestFLinearDispatchCuda(unittest.TestCase):
         self._check(module(x), F.linear(x, w_ref))
 
     def test_dequantize_matches_reference(self):
-        t, q, scale = _make_int6_tensor(32, 128)
+        t, q, scale = _make_int6_tensor(32, 256)
         ref = _ref_weight(q, scale, 16)
         # Pass an explicit dtype: the scale is stored as int8 codes, so the
         # default (self.scale.dtype) would dequantize in int8 and collapse to 0.

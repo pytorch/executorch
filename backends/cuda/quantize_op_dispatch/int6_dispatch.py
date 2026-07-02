@@ -59,8 +59,9 @@ def _meta_int6(self, ql, qh, scale, steps, group_size):
 
 @impl(_lib, "int6_plain_mm", "CUDA")
 def _cuda_int6(self, ql, qh, scale, steps, group_size):
-    # scale is int8 codes in the [N, n_groups] layout; steps is the per-row
-    # [N, 1] bf16 super-scale. _dequant_matmul_int6 reconstructs scale=code*step.
+    # scale is int8 codes in the [N, n_groups] layout; steps is the per-256
+    # super-block [N, K/256] fp16 scale step. _dequant_matmul_int6 reconstructs
+    # scale = code * steps[:, g // (256 // gs)].
     return _dequant_matmul_int6(self, ql, qh, scale, steps, group_size)
 
 
@@ -68,17 +69,23 @@ def _dequant_matmul_int6(x, ql, qh, scale, steps, group_size):
     """Dequant packed-INT6 weights to input dtype and call F.linear.
 
     ql [N, K/2] / qh [N, K/4] pack symmetric Q6_K values q in [-32, 31].
-    scale [N, K//gs] is int8 codes; steps [N, 1] bf16 is the per-row super-scale,
-    so the real per-group scale is ``scale_code * step``. Dequant:
-    w[n, k] = q[n, k] * (scale_code[n, k//gs] * step[n]).
+    scale [N, K//gs] is int8 codes; steps [N, K//256] fp16 is the per-256
+    super-block scale step, so the real per-group scale is
+    ``scale_code * steps[:, g // (256 // gs)]``. Dequant:
+    w[n, k] = q[n, k] * (scale_code[n, k//gs] * steps[n, (k//gs) // gps]).
     """
     N = ql.shape[0]
     K = ql.shape[1] * 2
     n_groups = K // group_size
+    n_super = steps.shape[1]
+    groups_per_super = n_groups // n_super
     dtype = x.dtype
 
     q = unpack_int6(ql, qh, N, K).to(dtype).reshape(N, n_groups, group_size)
-    s = (scale.to(dtype) * steps.to(dtype)).reshape(N, n_groups, 1)
+    # Broadcast the per-256 step over the groups_per_super groups in each
+    # super-block, then multiply by the int8 code -> effective per-group scale.
+    step_g = steps.to(dtype).repeat_interleave(groups_per_super, dim=1)
+    s = (scale.to(dtype) * step_g).reshape(N, n_groups, 1)
     w_deq = (q * s).reshape(N, K)
 
     return F.linear(x, w_deq)

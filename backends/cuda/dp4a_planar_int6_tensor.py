@@ -31,8 +31,20 @@ INT4 even/odd extraction verbatim:
             each byte holds the four 2-bit highs (``hi = (u >> 4) & 0x3``) of one
             8-weight dp4a word, bit field ``j`` (bits ``2j..2j+1``) = the high 2
             bits of that word's ``j``-th even/odd weight.
-    scale : (N, K/gs) bf16 — per-group scales, row-major (already coalesced; the
-            decode kernel reads it row-for-row, no transpose).
+    scale : (N, K/gs) int8 — per-group signed scale *codes*, row-major (already
+            coalesced; the decode kernel reads it row-for-row, no transpose).
+    steps : (N, K/256) fp16 — per-256-super-block scale step; the real per-group
+            scale is ``scale_code * steps[:, g // (256 // gs)]``.
+
+Metadata encoding: the per-group scale is a signed int8 *code* with a
+**per-256-super-block fp16 step** (``scale = code * step``). group_size is 16
+(GGUF Q6_K), so a 256-weight super-block spans 16 groups and there are ``K/256``
+scale steps per row. This mirrors GGUF Q6_K's own per-super-block fp16 ``d``: the
+finer per-256 step (vs a single per-row step) recovers that native granularity
+and lifts whole-weight dequant SNR. The scale step MUST be fp16 (mirrors int4,
+where bf16 for the per-256 step cost ~0.39 dB); the int8 code width is kept (NOT
+narrowed to 6-bit). The weight stays symmetric (no zero) and the planar ql/qh
+layout is UNCHANGED.
 
 The pack/unpack helpers (:func:`pack_int6`, :func:`unpack_int6`) must stay in
 lockstep with ``int6_plain_mm.cuh`` (the decode kernel) — the per-32-weight
@@ -50,6 +62,9 @@ __all__ = [
     "pack_int6",
     "unpack_int6",
 ]
+
+_CODE_ABSMAX = 127  # int8 signed code range [-127, 127]
+_SUPER_BLOCK = 256  # weights per super-block (GGUF Q6_K QK_K); scale step is per this
 
 
 def pack_int6(q: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -123,27 +138,46 @@ def unpack_int6(ql: torch.Tensor, qh: torch.Tensor, N: int, K: int) -> torch.Ten
     return u.to(torch.int16) - 32
 
 
-def _encode_int8_per_row(
+def _encode_int8_per_super(
     x: torch.Tensor,
+    group_size: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Encode a (N, n_groups) signed per-group scale to per-row int8 codes.
+    """Encode a (N, n_groups) signed per-group scale to per-256-super-block int8 codes.
 
-    Q6_K per-group scales are signed (the int8 sub-scales can be negative), so
-    we use a symmetric signed code: ``codes`` is ``(N, n_groups)`` int8 and
-    ``step`` is ``(N, 1)`` bf16, with ``code * step`` reconstructing the scale.
-    The step is the per-row absmax / 127 rounded to bf16, so the
-    largest-magnitude group in each row maps to ~+/-127 and the 8-bit code spans
-    the row's dynamic range. This halves the int6 scale metadata (bf16 -> int8),
-    7.0 -> 6.5 bpw, mirroring Q6_K's own 8-bit block scales. The scale is a
-    per-row constant factor in the dp4a sum, so the matvec stays bit-identical
-    modulo the 8-bit scale rounding.
+    Mirrors int4's per-256 scale step, but SIGNED (Q6_K sub-scales can be
+    negative) and int8-code-width: a super-block is ``_SUPER_BLOCK`` (256)
+    weights = ``groups_per_super = 256 // group_size`` groups (16 for
+    group_size=16). Returns ``(codes, step)`` where ``codes`` is
+    ``(N, n_groups)`` int8 and ``step`` is ``(N, n_super)`` fp16 with
+    ``n_super = n_groups // groups_per_super = K // 256``, such that
+    ``code * step[:, g // groups_per_super] ≈ x``. The step is the
+    per-256-super-block absmax / 127 rounded to fp16; rounding uses the
+    fp16-rounded step (what the kernel reads) so encode and decode agree.
+
+    The finer per-256 step (vs a single per-row step) matches GGUF Q6_K's own
+    per-super-block fp16 ``d`` granularity, improving whole-weight dequant SNR.
     """
     xf = x.contiguous().float()  # (N, n_groups), signed
-    row_absmax = xf.abs().amax(dim=1, keepdim=True).clamp_min(1e-30)  # (N, 1)
-    step = (row_absmax / 127.0).to(torch.bfloat16)  # (N, 1) bf16
+    N, n_groups = int(xf.shape[0]), int(xf.shape[1])
+    groups_per_super = _SUPER_BLOCK // int(group_size)
+    if groups_per_super < 1:
+        raise ValueError(
+            f"group_size={group_size} must be <= {_SUPER_BLOCK} for the per-256 "
+            "scale step"
+        )
+    if n_groups % groups_per_super != 0:
+        raise ValueError(
+            f"n_groups={n_groups} must be a multiple of {groups_per_super} "
+            f"(K must be a multiple of {_SUPER_BLOCK}) for group_size={group_size}"
+        )
+    n_super = n_groups // groups_per_super
+    xb = xf.reshape(N, n_super, groups_per_super)  # (N, n_super, gps)
+    block_absmax = xb.abs().amax(dim=2, keepdim=True).clamp_min(1e-30)  # (N, n_super, 1)
+    step = (block_absmax / _CODE_ABSMAX).to(torch.float16)  # (N, n_super, 1) fp16
     step_f = step.float().clamp_min(1e-30)
-    codes = torch.round(xf / step_f).clamp_(-127, 127).to(torch.int8)
-    return codes.contiguous(), step.contiguous()
+    codes = torch.round(xb / step_f).clamp_(-127, 127).to(torch.int8)
+    codes = codes.reshape(N, n_groups).contiguous()
+    return codes, step.squeeze(2).contiguous()
 
 
 class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
@@ -168,7 +202,10 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
     ):
         kwargs = {}
         kwargs["device"] = ql.device
-        kwargs["dtype"] = steps.dtype
+        # The weight represents a bf16 tensor; pin the wrapper dtype to bf16
+        # (decoupled from ``steps``, which is now fp16 for the per-256 scale
+        # step) so F.linear / the tied embedding see a bf16 weight as before.
+        kwargs["dtype"] = torch.bfloat16
         kwargs["requires_grad"] = False
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)  # type: ignore[attr-defined]
 
@@ -214,7 +251,7 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
                 f"Q6_K values must be in [-32, 31], got [{q_min}, {q_max}]"
             )
         ql, qh = pack_int6(q)
-        scale_codes, steps = _encode_int8_per_row(t.scale)
+        scale_codes, steps = _encode_int8_per_super(t.scale, int(t.block_size[-1]))
         return cls(
             ql,
             qh,
@@ -244,16 +281,20 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """Dequantize to a dense tensor (symmetric: ``w = q * scale``).
 
-        Used for the tied lm_head / token embedding (which can't gather a packed
-        tensor) and as the numerical reference.
+        Reconstructs the per-group scale from the int8 codes and the per-256
+        fp16 step (broadcast over the ``groups_per_super`` groups in each
+        super-block). Used for the tied lm_head / token embedding (which can't
+        gather a packed tensor) and as the numerical reference.
         """
-        dtype = output_dtype if output_dtype is not None else self.scale.dtype
+        dtype = output_dtype if output_dtype is not None else torch.bfloat16
         N, K = int(self.shape[0]), int(self.shape[1])
         gs = self.block_size[-1]
+        n_groups = K // gs
+        n_super = int(self.steps.shape[1])
+        groups_per_super = n_groups // n_super
         q = unpack_int6(self.ql, self.qh, N, K).to(dtype)
-        scale = (self.scale.to(dtype) * self.steps.to(dtype)).repeat_interleave(
-            gs, dim=-1
-        )
+        step_g = self.steps.to(dtype).repeat_interleave(groups_per_super, dim=1)
+        scale = (self.scale.to(dtype) * step_g).repeat_interleave(gs, dim=-1)
         return (q * scale).to(dtype)
 
 
