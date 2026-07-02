@@ -908,6 +908,20 @@ class LinearPReLUModule(torch.nn.Module):
         return self.prelu(x)
 
 
+class ConvPReLUModule(torch.nn.Module):
+    def __init__(self, in_channels, num_parameters=1):
+        super().__init__()
+
+        self.conv = Conv2dModule(
+            in_channels=in_channels, out_channels=in_channels, stride=1, padding=1
+        )
+        self.prelu = torch.nn.PReLU(num_parameters)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.prelu(x)
+
+
 class TwoPartitionPReLUModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
