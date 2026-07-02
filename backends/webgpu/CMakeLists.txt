@@ -161,9 +161,6 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
   add_webgpu_native_test(
     webgpu_update_cache_test test/native/test_update_cache.cpp
   )
-  add_webgpu_native_test(
-    webgpu_dynamic_shape_test test/native/test_dynamic_shape.cpp
-  )
 
   # Manifest-driven op-test framework: a generic gtest driver (webgpu_op_test) +
   # its device-free util unit test. GTest needs -DEXECUTORCH_BUILD_TESTS=ON.
@@ -197,6 +194,13 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
     target_compile_options(webgpu_op_test_util_test PRIVATE -fexceptions)
     set_property(TARGET webgpu_op_test_util_test PROPERTY CXX_STANDARD 17)
+
+    # Dynamic-shape integration test: a gtest binary with its own main() that
+    # brings up the device once (like webgpu_op_test).
+    add_webgpu_native_test(
+      webgpu_dynamic_shape_test test/native/test_dynamic_shape.cpp
+    )
+    target_link_libraries(webgpu_dynamic_shape_test PRIVATE GTest::gtest)
   endif()
   add_webgpu_native_test(webgpu_index_test test/native/test_index.cpp)
 endif()
