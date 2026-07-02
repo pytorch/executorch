@@ -11,8 +11,9 @@ Pipeline: SpecProp → reinplace → writeback → external constants →
 memory planning → emit → serialize via _program_to_flatbuffer.
 """
 
+import json
 from functools import partial
-from typing import final, List, Optional, Sequence, Tuple
+from typing import final, List, Tuple
 
 import torch
 
@@ -65,6 +66,8 @@ BACKEND_INPLACE_OPS: frozenset = _build_backend_inplace_ops()
 
 
 class _AnyOp(Verifier):
+    # "TRAINING" is the only dialect that allows non-functional (mutating) ops.
+    # After reinplace converts e.g. relu → relu_, the verifier must accept them.
     dialect = "TRAINING"
 
     def allowed_op_types(self):
@@ -93,16 +96,17 @@ def _apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
 
 @final
 class NativeBackend(BackendDetails):
-    # Set by NativePartitioner before preprocess is called.
-    _specialization_names: Optional[Sequence[str]] = None
-
     @classmethod
     def preprocess(
         cls,
         program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
-        names = cls._specialization_names
+        names = None
+        for spec in module_compile_spec:
+            if spec.key == "native_specializations":
+                names = json.loads(spec.value.decode("utf-8"))
+
         if not names:
             return cls._preprocess_native(program)
 
@@ -139,22 +143,6 @@ class NativeBackend(BackendDetails):
         )
 
         program = _et_reinplace_pass(program, ops_to_inplace=BACKEND_INPLACE_OPS)
-
-        # reinplace may rename output nodes; fix the graph signature to match.
-        output_node = next(
-            n for n in program.graph_module.graph.nodes if n.op == "output"
-        )
-        actual_names = [arg.name for arg in output_node.args[0] if hasattr(arg, "name")]
-        new_output_specs = []
-        for spec, name in zip(program.graph_signature.output_specs, actual_names):
-            new_output_specs.append(
-                type(spec)(
-                    kind=spec.kind,
-                    arg=type(spec.arg)(name=name),
-                    target=spec.target,
-                )
-            )
-        program._graph_signature.output_specs = new_output_specs
 
         # Re-run SpecPropPass: reinplace copies meta["val"] but not meta["spec"].
         program = _apply_passes(program, [SpecPropPass()])
@@ -212,6 +200,7 @@ class NativeBackend(BackendDetails):
             algo_list=[greedy_memory_planning]
         )
 
+        # Tells the emitter to use out-variant kernels for ops that support them.
         program.graph_module.encounter_to_out_var_failure = True
 
         program = _apply_passes(
