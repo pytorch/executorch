@@ -11,126 +11,31 @@
 /**
  * Graph: backend-facing IR adapter.
  *
- * These types provide our backends' view of the program IR. The current
- * implementation adapts ExecuTorch's flatbuffer
- * (executorch_flatbuffer::ExecutionPlan / KernelCall) but the API is
- * intentionally backing-agnostic — a different serialization could
- * replace the underlying storage without changing this header or any
- * backend that uses it.
+ * Wraps ExecuTorch's flatbuffer (ExecutionPlan / KernelCall) behind a
+ * backing-agnostic API. A different serialization could replace the
+ * underlying storage without changing this header.
  *
- * Some methods are documented IR concepts that the current adapter does
- * not yet back (e.g., mutable_buffer_ids, version): they are placeholders
- * pending serialization support.
+ * IR schema (what Graph presents):
  *
- * ----------------------------------------------------------------------
- * Fictional IR schema (what Graph effectively presents)
- * ----------------------------------------------------------------------
- * If the IR were serialized in its own format (independent of the
- * underlying ExecuTorch flatbuffer), it would look like this:
- *
- *   // Top-level
  *   table Graph {
- *     version:         string;        // schema/program version
- *     values:          [Value];       // dense pool indexed by value_id (uint)
- *     inputs:          [uint];        // graph input value_ids
- *     outputs:         [uint];        // graph output value_ids
- *     mutable_buffers: [uint];        // values that persist across executes
- *     operators:       [OperatorDef]; // op-name registry (deduped)
- *     chains:          [Chain];       // chains[0] is main; others used by
- *                                     // future control flow (if/while/call)
- *   }
- *
- *   table OperatorDef {
- *     name:            string;        // e.g. "aten.add.Tensor"
- *   }
- *
- *   // Op chains
- *   table Chain {
- *     instructions:    [Instruction];
- *   }
- *
- *   table Instruction {
- *     // Today only one variant; future variants for control flow
- *     // (if/while/call) would extend this union.
- *     body: KernelCall;
+ *     version:         string;
+ *     values:          [Value];        // dense pool, indexed by value_id
+ *     inputs:          [uint];
+ *     outputs:         [uint];
+ *     mutable_buffers: [uint];         // values that persist across executes
+ *     operators:       [OperatorDef];  // deduped op-name registry
+ *     instructions:    [KernelCall];   // flat list of operator calls
  *   }
  *
  *   table KernelCall {
- *     op_index:        uint;          // → Graph.operators[op_index].name
- *     args:            [uint];        // value_ids: args[0..n-2] = inputs,
- *                                     // args[n-1] = output. Single-output
- *                                     // assumed today; multi-output is a
- *                                     // future extension.
+ *     op_index: uint;                  // -> operators[op_index]
+ *     args:     [uint];                // value_ids; last = output
  *   }
  *
- *   // Values
- *   union Value {
- *     None,
- *     Int     { v: int64; },
- *     Double  { v: float64; },
- *     Bool    { v: bool; },
- *     String  { v: string; },
- *     Tensor,
- *     IntList,
- *     DoubleList,
- *     BoolList,
- *     OptionalTensor,
- *     // ...
- *   }
- *
- *   table Tensor {
- *     scalar_type:     ScalarType;     // dtype
- *     sizes:           [int32];        // for DYNAMIC_BOUND, this is max-shape
- *     dim_order:       [uint8];        // permutation defining memory layout
- *     shape_dynamism:  ShapeDynamism;  // STATIC | DYNAMIC_BOUND |
- * DYNAMIC_UNBOUND allocation:      AllocationInfo?;// null = no AOT plan data:
- * TensorData;
- *   }
- *
- *   union TensorData {
- *     None,
- *     Inline   { buffer_idx: uint; },  // bytes embedded in program
- *     External { ndm_key:    string;}, // bytes in NamedDataMap, FQN-keyed
- *   }
- *
- *   table AllocationInfo {
- *     pool_id: int32;
- *     offset:  uint64;                 // raw byte offset within pool_id
- *   }
- *
- *   table IntList {
- *     member_ids: [int64];             // value_ids of list elements
- *   }
- *
- * ----------------------------------------------------------------------
- * Derived views computed by the adapter (not in the schema itself)
- * ----------------------------------------------------------------------
- *   mem_obj_id(vid)               sort-and-index over (pool_id, offset)
- *                                 → dense small int identifying shared
- *                                   storage slots. Two values with the
- *                                   same id were memory-planned to share
- *                                   storage (used by router for
- *                                   AllocRequest grouping; backends MAY
- *                                   honor it as actual storage aliasing).
- *   value_kind(vid)               from membership in inputs/outputs +
- *                                 the data field
- *                                 → INPUT / OUTPUT / CONSTANT /
- *                                   INTERMEDIATE / MUTABLE_BUFFER.
- *   tensor_constant_data_key(vid) convenience accessor for
- *                                 TensorData.External.ndm_key.
- *   tensor_nbytes_max(vid)        dtype_size × prod(sizes); upper bound
- *                                 for DYNAMIC_BOUND tensors.
- *
- * ----------------------------------------------------------------------
- * Adapter cost
- * ----------------------------------------------------------------------
- * All accessors are inline and compile down to essentially the same
- * machine code as direct flatbuffer access. The Graph constructor pays
- * a one-time O(N log N) precompute (over tensor values) for mem_obj_id,
- * and O(num_inputs + num_outputs) for the value_kind sets. Per-call
- * overhead in the runtime hot path is a few inline indirections plus
- * predictable ET_CHECK branches; release builds compile away these
- * checks entirely under -DNDEBUG.
+ * Derived views (computed at construction):
+ *   mem_obj_id(vid)    — dense int from (pool_id, offset) sort-rank
+ *   value_kind(vid)    — INPUT / OUTPUT / CONSTANT / INTERMEDIATE /
+ * MUTABLE_BUFFER
  */
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -152,24 +57,16 @@ namespace executorch {
 namespace backends {
 namespace portable {
 
-// Forward declare
 class Graph;
 
-/**
- * Value kind — matches design doc's TensorKind
- */
 enum class ValueKind : uint8_t {
-  INPUT = 0, // Graph input (user provides)
-  OUTPUT, // Graph output (user reads)
-  CONSTANT, // Immutable weight
-  MUTABLE_BUFFER, // Mutable state (e.g., KV cache)
-  INTERMEDIATE, // Temporary (produced/consumed internally)
+  INPUT = 0,
+  OUTPUT,
+  CONSTANT,
+  MUTABLE_BUFFER,
+  INTERMEDIATE,
 };
 
-/**
- * Type of an EValue stored at a value_id. Mirrors the runtime EValue
- * sum-type but in adapter-level form (no flatbuffer types in the API).
- */
 enum class ValueType : uint8_t {
   None = 0,
   Int,
@@ -179,68 +76,12 @@ enum class ValueType : uint8_t {
   IntList,
   TensorList,
   OptionalTensorList,
-  Other, // String, OptionalTensor, BoolList, DoubleList, ...
-         // Adapter doesn't surface these yet; executor falls back to
-         // default-constructed EValue.
+  Other,
 };
 
 /**
- * Kind of an Instruction in a Chain. Mirrors ET's InstructionArguments
- * union but as an adapter-level enum (no flatbuffer types in the API).
- *
- * See CONTROL_FLOW_DESIGN.md §4.
- *
- * - Kernel: the only kind a CompiledSegment may contain.
- * - JumpFalse: control-flow boundary; segment break.
- * - Move: copies one EValue into another; segment break (host-host
- *   transfer).
- * - Free: informational hint to release a value's storage; v2 ignores
- *   (memory plan handles deallocation at delegate destroy).
- * - Delegate: nested executorch_call_delegate inside our chain.
- *   REJECTED at init; partitioner contract forbids nested delegates.
- */
-enum class InstructionKind : uint8_t {
-  Kernel = 0,
-  JumpFalse,
-  Move,
-  Free,
-  Delegate,
-};
-
-/**
- * Decoded JumpFalseCall payload. Backing-agnostic.
- */
-struct JumpFalseInfo {
-  uint32_t cond_value_id; // EValue index whose value is the predicate
-  uint32_t destination_pc; // Source-PC of the jump target
-};
-
-/**
- * Decoded MoveCall payload. Backing-agnostic.
- */
-struct MoveInfo {
-  uint32_t src_value_id;
-  uint32_t dst_value_id;
-};
-
-/**
- * Thin wrapper around ExecuTorch's flatbuffer KernelCall providing
- * convenient access to op name and input/output value_ids.
- *
- * ExecuTorch packs all op args into a single `args` array per the
- * convention "the last arg is the (single) output." This wrapper
- * exposes inputs/outputs accordingly without copying — `inputs()` /
- * `output()` return Spans / values that reference the underlying
- * flatbuffer storage directly.
- *
- * Per-call cost: just stores two pointers + an int. No allocations.
- * Safe to construct repeatedly in hot dispatch loops.
- *
- * NOTE: Multi-output ops (e.g., `aten.split`, `aten.max.dim`) are not
- * supported by this wrapper — `num_outputs()` always returns 0 or 1.
- * Adding multi-output support requires per-op schema knowledge that
- * isn't in the flatbuffer. ET_CHECK guards the single-output access
- * path.
+ * Wraps a flatbuffer KernelCall. Provides access to op name and
+ * input/output value_ids. Last arg is the (single) output.
  */
 class OperatorCall {
  public:
@@ -249,7 +90,6 @@ class OperatorCall {
       const Graph* graph)
       : call_(call), graph_(graph) {}
 
-  // node_id for error messages/profiling
   uint32_t node_id() const {
     return node_id_;
   }
@@ -257,33 +97,16 @@ class OperatorCall {
     node_id_ = id;
   }
 
-  // Op base name (e.g., "aten::add"). Does NOT include the overload
-  // suffix; for that use full_name().
   const char* name() const;
-
-  // Op overload (e.g., "Tensor", "Scalar", "out"). May be empty string
-  // for ops with no overload disambiguation. Use full_name() to get
-  // the combined "name.overload" form most callers want.
   const char* overload() const;
-
-  // Combined unique key "<name>.<overload>" (e.g., "aten::add.Tensor"),
-  // or just "<name>" if the overload is empty. This is the canonical
-  // identity used by the CPU op registry to dispatch — registering
-  // by base name alone collapses every overload of an op into one
-  // handler, which is wrong for ops like aten::pow_ that have multiple
-  // overloads with different schemas.
   std::string full_name() const;
 
-  // All op args (flat). Last entry is the output; the rest are inputs.
-  // Optional args are NOT indicated by -1 — instead the index points to
-  // a value with isNone() == true. (ExecuTorch convention.)
   runtime::Span<const int32_t> args() const {
     auto* a = call_->args();
     return a ? runtime::Span<const int32_t>(a->data(), a->size())
              : runtime::Span<const int32_t>{};
   }
 
-  // Inputs = args[0..n-2]. Returns empty span if op has no args.
   runtime::Span<const int32_t> inputs() const {
     auto a = args();
     return a.empty() ? a : runtime::Span<const int32_t>(a.data(), a.size() - 1);
@@ -293,6 +116,7 @@ class OperatorCall {
     auto a = args();
     return a.empty() ? 0 : a.size() - 1;
   }
+
   uint32_t input(size_t i) const {
     ET_CHECK_MSG(
         i < num_inputs(),
@@ -302,11 +126,10 @@ class OperatorCall {
     return static_cast<uint32_t>(args()[i]);
   }
 
-  // Single-output assumption (see class doc). Multi-output ops will
-  // break here.
   size_t num_outputs() const {
     return args().empty() ? 0 : 1;
   }
+
   uint32_t output(size_t i) const {
     ET_CHECK_MSG(
         i < num_outputs(),
@@ -324,10 +147,7 @@ class OperatorCall {
 };
 
 /**
- * IR view of a program. Adapts executorch_flatbuffer::ExecutionPlan;
- * exposes value metadata, input/output IDs, the operator table, and
- * chains of operator calls. See the file-header comment for the
- * adapter-pattern rationale.
+ * IR view of a program. Adapts executorch_flatbuffer::ExecutionPlan.
  */
 class Graph {
  public:
@@ -335,7 +155,6 @@ class Graph {
       const executorch_flatbuffer::ExecutionPlan* plan,
       const executorch_flatbuffer::Program* program = nullptr)
       : plan_(plan), program_(program) {
-    // Precompute input/output value_id sets for O(1) value_kind lookup.
     if (auto* in = plan_->inputs()) {
       input_ids_.reserve(in->size());
       for (size_t i = 0; i < in->size(); ++i) {
@@ -349,20 +168,13 @@ class Graph {
       }
     }
 
-    // Precompute mem_obj_id for every tensor value.
-    //
-    // Algorithm: collect (pool_id, offset) keys for all aliasable tensor
-    // values; sort the unique keys; assign mem_obj_id = sort rank. Two
-    // values with the same (pool_id, offset) get the same id (they share
-    // storage). Sort-and-index is deterministic across runs and depends
-    // only on the AOT memory plan.
+    // Compute mem_obj_id: sort (pool_id, offset) pairs, assign dense rank.
+    // Same (pool_id, offset) → same id (shared storage).
     size_t n_vals = num_values();
     mem_obj_ids_.assign(n_vals, -1);
     if (n_vals == 0)
       return;
 
-    // 1. Collect (key, value_id) entries for tensor values with
-    // allocation_info.
     struct Entry {
       uint64_t key; // (pool_id << 32) | offset
       uint32_t value_id;
@@ -388,13 +200,11 @@ class Graph {
     if (entries.empty())
       return;
 
-    // 2. Sort by key (lex order on (pool_id, offset)).
     std::sort(
         entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
           return a.key < b.key;
         });
 
-    // 3. Assign mem_obj_id = sort rank (same key → same id).
     int32_t next_id = -1;
     uint64_t prev_key = ~0ULL;
     for (const auto& e : entries) {
@@ -405,54 +215,31 @@ class Graph {
       mem_obj_ids_[e.value_id] = next_id;
     }
 
-    // Precompute mutable_buffer_ids_: tensor values with allocation_info,
-    // not graph IO, not constants, and NOT produced by any op (i.e.
-    // placeholders that aren't graph inputs). These are mutable buffer
-    // placeholders pulled into the delegate by tag_mutated_buffer; their
-    // state persists across execute() calls.
-    //
-    // Used by the router to distinguish semantic alias groups (buffer
-    // mutation: AOT spec-shared the buffer placeholder with its mutation
-    // source) from lifetime-reuse aliasing (the planner happened to put
-    // two values at the same offset because their lifetimes don't
-    // overlap). Only semantic groups need the "all touching ops on same
-    // runtime else home=host" coordination.
+    // Mutable buffers: allocated tensors that aren't IO, constants, or
+    // produced by any op. These are buffer placeholders (e.g., KV cache)
+    // that persist across execute() calls.
     {
-      // Collect all op-output value_ids across all chains. Skip non-Kernel
-      // instructions (JumpFalseCall, MoveCall, FreeCall, DelegateCall) —
-      // see CONTROL_FLOW_DESIGN.md §4.3. MoveCall's dst is a special case:
-      // it appears here under produced_vids only if MoveCall handling is
-      // wired through the router (currently MoveCall is treated as a
-      // host->host TransferStep, which does not classify the dst as
-      // "produced by an op"). Tolerable today; revisit if MoveCall-only
-      // mutable-buffer patterns appear.
       std::unordered_set<uint32_t> produced_vids;
-      for (size_t ci = 0; ci < num_chains(); ++ci) {
-        auto chains = plan_->chains();
-        auto instrs = chains->Get(ci)->instructions();
-        size_t n_instr = instrs ? instrs->size() : 0;
-        for (size_t oi = 0; oi < n_instr; ++oi) {
-          if (instruction_kind(ci, oi) != InstructionKind::Kernel)
-            continue;
-          OperatorCall op = get_op(ci, oi);
-          for (size_t k = 0; k < op.num_outputs(); ++k) {
-            produced_vids.insert(op.output(k));
-          }
+      auto chains = plan_->chains();
+      auto instrs = chains->Get(0)->instructions();
+      size_t n_instr = instrs ? instrs->size() : 0;
+      for (size_t oi = 0; oi < n_instr; ++oi) {
+        OperatorCall op = get_op(oi);
+        for (size_t k = 0; k < op.num_outputs(); ++k) {
+          produced_vids.insert(op.output(k));
         }
       }
       for (uint32_t i = 0; i < n_vals; ++i) {
         if (mem_obj_ids_[i] < 0)
-          continue; // not an allocated tensor
+          continue;
         if (input_ids_.count(i) > 0)
-          continue; // graph input
+          continue;
         if (output_ids_.count(i) > 0)
-          continue; // graph output
+          continue;
         if (tensor_constant_data_key(i) != nullptr)
-          continue; // constant
+          continue;
         if (produced_vids.count(i) > 0)
-          continue; // produced by an op
-        // Tensor with alloc, not IO, not constant, not produced → it's a
-        // mutable buffer placeholder.
+          continue;
         mutable_buffer_ids_.push_back(i);
       }
     }
@@ -475,11 +262,6 @@ class Graph {
     return v ? v->size() : 0;
   }
 
-  // Access serialized value metadata.
-  // NOTE: returns the raw flatbuffer EValue. This is the construction-
-  // seam escape hatch — backends and routers should prefer the typed
-  // accessors below (value_type, int_value, tensor_*, etc) so they
-  // don't couple to the underlying serialization.
   const executorch_flatbuffer::EValue* value_meta(uint32_t value_id) const {
     auto values = plan_->values();
     if (!values || value_id >= values->size())
@@ -487,23 +269,19 @@ class Graph {
     return values->Get(value_id);
   }
 
-  // Value metadata helpers
   ValueKind value_kind(uint32_t value_id) const;
   int32_t mem_obj_id(uint32_t value_id) const;
 
   //===------------------------------------------------------------------===//
-  // Typed value accessors (adapter-level — no flatbuffer types leak)
+  // Typed value accessors
   //===------------------------------------------------------------------===//
 
-  // Returns the kind of the EValue stored at value_id.
   ValueType value_type(uint32_t value_id) const;
 
-  // Scalar accessors — ET_CHECK if the value isn't of the expected kind.
   int64_t int_value(uint32_t value_id) const;
   double double_value(uint32_t value_id) const;
   bool bool_value(uint32_t value_id) const;
 
-  // Tensor accessors — ET_CHECK if the value isn't a tensor.
   ::executorch::aten::ScalarType tensor_dtype(uint32_t value_id) const;
   ::executorch::runtime::Span<const int32_t> tensor_sizes(
       uint32_t value_id) const;
@@ -511,42 +289,25 @@ class Graph {
       uint32_t value_id) const;
   ::executorch::aten::TensorShapeDynamism tensor_shape_dynamism(
       uint32_t value_id) const;
-  // Returns NDM key (FQN) for an external constant tensor, or nullptr
-  // if the tensor isn't an NDM-stored constant.
+
+  // NDM key (FQN) for external constants, or nullptr.
   const char* tensor_constant_data_key(uint32_t value_id) const;
 
-  // Returns the raw bytes of an inline constant (stored in the
-  // program's constant_buffer field), or an empty span if the tensor
-  // isn't an inline constant. Inline constants are constants the AOT
-  // didn't promote to NDM (e.g., literals lifted into _lifted_tensor_*
-  // placeholders). Mutually exclusive with tensor_constant_data_key:
-  // a constant is either NDM-stored (key != nullptr) or inline
-  // (this returns non-empty), never both.
+  // Raw bytes for inline constants, or empty span.
   ::executorch::runtime::Span<const uint8_t> tensor_inline_data(
       uint32_t value_id) const;
 
-  // True if the tensor is a constant of either flavor (NDM-stored or
-  // inline). Use this for "is this an immutable constant?" filtering
-  // checks in the router; the source matters only at upload time.
   bool is_constant(uint32_t value_id) const {
     if (tensor_constant_data_key(value_id) != nullptr)
       return true;
     return !tensor_inline_data(value_id).empty();
   }
 
-  // dtype-size × prod(sizes); 0 if not a tensor or sizes empty.
   size_t tensor_nbytes_max(uint32_t value_id) const;
 
-  // IntList accessors — ET_CHECK if the value isn't an IntList.
-  // Returns the EValue indices that the list elements reference (stored
-  // as int64 in the serialization); the caller resolves them through
-  // the values array.
   ::executorch::runtime::Span<const int64_t> int_list_member_ids(
       uint32_t value_id) const;
 
-  // For a TensorList or OptionalTensorList value, returns the EValue
-  // indices that the list contains. For OptionalTensorList, indices may
-  // point at None values (representing nullopt).
   ::executorch::runtime::Span<const int32_t> tensor_list_member_ids(
       uint32_t value_id) const;
 
@@ -585,7 +346,7 @@ class Graph {
   }
 
   //===------------------------------------------------------------------===//
-  // Mutable Buffer IDs (values that persist across execute() calls)
+  // Mutable Buffers
   //===------------------------------------------------------------------===//
 
   size_t num_mutable_buffer_ids() const {
@@ -603,7 +364,7 @@ class Graph {
   }
 
   //===------------------------------------------------------------------===//
-  // Operators (for op name lookup)
+  // Operators
   //===------------------------------------------------------------------===//
 
   size_t num_operators() const {
@@ -628,55 +389,31 @@ class Graph {
   }
 
   //===------------------------------------------------------------------===//
-  // Chains
+  // Instructions
   //===------------------------------------------------------------------===//
 
-  size_t num_chains() const {
+  size_t num_instructions() const {
     auto chains = plan_->chains();
-    return chains ? chains->size() : 0;
-  }
-
-  static int32_t main_chain_idx() {
-    return 0;
-  }
-
-  // Get number of ops in a chain
-  size_t num_ops_in_chain(size_t chain_idx) const {
-    auto chains = plan_->chains();
-    ET_CHECK_MSG(
-        chains && chain_idx < chains->size(),
-        "Graph::num_ops_in_chain(%zu) out of range (have %zu chains)",
-        chain_idx,
-        chains ? chains->size() : 0);
-    auto instrs = chains->Get(chain_idx)->instructions();
+    ET_CHECK_MSG(chains && chains->size() > 0, "Graph has no chains");
+    auto instrs = chains->Get(0)->instructions();
     return instrs ? instrs->size() : 0;
   }
 
-  // Get OperatorCall for op in chain
-  // PRECONDITION: instruction_kind(chain_idx, op_idx) ==
-  // InstructionKind::Kernel. Use instruction_kind() first to dispatch on kind.
-  OperatorCall get_op(size_t chain_idx, size_t op_idx) const {
+  OperatorCall get_op(size_t op_idx) const {
     auto chains = plan_->chains();
-    ET_CHECK_MSG(
-        chains && chain_idx < chains->size(),
-        "Graph::get_op: chain_idx=%zu out of range (have %zu chains)",
-        chain_idx,
-        chains ? chains->size() : 0);
-    auto instrs = chains->Get(chain_idx)->instructions();
+    ET_CHECK_MSG(chains && chains->size() > 0, "Graph has no chains");
+    auto instrs = chains->Get(0)->instructions();
     ET_CHECK_MSG(
         instrs && op_idx < instrs->size(),
-        "Graph::get_op: op_idx=%zu out of range in chain %zu "
-        "(have %zu ops)",
+        "Graph::get_op: op_idx=%zu out of range (have %zu instructions)",
         op_idx,
-        chain_idx,
         instrs ? instrs->size() : 0);
     auto instr = instrs->Get(op_idx);
     ET_CHECK_MSG(
         instr->instr_args_type() ==
             executorch_flatbuffer::InstructionArguments::KernelCall,
-        "Graph::get_op: instruction at chain=%zu op_idx=%zu is not a KernelCall "
-        "(type=%u). Use instruction_kind() to dispatch.",
-        chain_idx,
+        "Graph::get_op: instruction at op_idx=%zu is not a KernelCall "
+        "(type=%u)",
         op_idx,
         static_cast<unsigned>(instr->instr_args_type()));
     auto kernel = static_cast<const executorch_flatbuffer::KernelCall*>(
@@ -684,145 +421,20 @@ class Graph {
     return OperatorCall(kernel, this);
   }
 
-  //===------------------------------------------------------------------===//
-  // Typed instruction accessors (kind-aware; see CONTROL_FLOW_DESIGN.md §4)
-  //===------------------------------------------------------------------===//
-
-  // Returns the InstructionKind at (chain_idx, op_idx).
-  InstructionKind instruction_kind(size_t chain_idx, size_t op_idx) const {
-    auto chains = plan_->chains();
-    ET_CHECK_MSG(
-        chains && chain_idx < chains->size(),
-        "Graph::instruction_kind: chain_idx=%zu out of range (have %zu chains)",
-        chain_idx,
-        chains ? chains->size() : 0);
-    auto instrs = chains->Get(chain_idx)->instructions();
-    ET_CHECK_MSG(
-        instrs && op_idx < instrs->size(),
-        "Graph::instruction_kind: op_idx=%zu out of range in chain %zu",
-        op_idx,
-        chain_idx);
-    auto instr = instrs->Get(op_idx);
-    using IA = executorch_flatbuffer::InstructionArguments;
-    switch (instr->instr_args_type()) {
-      case IA::KernelCall:
-        return InstructionKind::Kernel;
-      case IA::JumpFalseCall:
-        return InstructionKind::JumpFalse;
-      case IA::MoveCall:
-        return InstructionKind::Move;
-      case IA::FreeCall:
-        return InstructionKind::Free;
-      case IA::DelegateCall:
-        return InstructionKind::Delegate;
-      default:
-        ET_CHECK_MSG(
-            false,
-            "Graph::instruction_kind: unsupported InstructionArguments type %u",
-            static_cast<unsigned>(instr->instr_args_type()));
-    }
-  }
-
-  // Convenience: main-chain shortcut.
-  InstructionKind instruction_kind(size_t op_idx) const {
-    return instruction_kind(main_chain_idx(), op_idx);
-  }
-
-  // Typed accessors per kind. ET_CHECK if the kind doesn't match.
-  OperatorCall get_kernel_call(size_t chain_idx, size_t op_idx) const {
-    return get_op(chain_idx, op_idx);
-  }
-
-  JumpFalseInfo get_jump_false(size_t chain_idx, size_t op_idx) const {
-    auto chains = plan_->chains();
-    ET_CHECK_MSG(
-        chains && chain_idx < chains->size(),
-        "Graph::get_jump_false: chain_idx=%zu out of range",
-        chain_idx);
-    auto instrs = chains->Get(chain_idx)->instructions();
-    ET_CHECK_MSG(
-        instrs && op_idx < instrs->size(),
-        "Graph::get_jump_false: op_idx=%zu out of range in chain %zu",
-        op_idx,
-        chain_idx);
-    auto instr = instrs->Get(op_idx);
-    auto* jf = instr->instr_args_as_JumpFalseCall();
-    ET_CHECK_MSG(
-        jf != nullptr,
-        "Graph::get_jump_false: instruction at chain=%zu op_idx=%zu is not a "
-        "JumpFalseCall",
-        chain_idx,
-        op_idx);
-    JumpFalseInfo info;
-    info.cond_value_id = static_cast<uint32_t>(jf->cond_value_index());
-    info.destination_pc = static_cast<uint32_t>(jf->destination_instruction());
-    return info;
-  }
-
-  MoveInfo get_move(size_t chain_idx, size_t op_idx) const {
-    auto chains = plan_->chains();
-    ET_CHECK_MSG(
-        chains && chain_idx < chains->size(),
-        "Graph::get_move: chain_idx=%zu out of range",
-        chain_idx);
-    auto instrs = chains->Get(chain_idx)->instructions();
-    ET_CHECK_MSG(
-        instrs && op_idx < instrs->size(),
-        "Graph::get_move: op_idx=%zu out of range in chain %zu",
-        op_idx,
-        chain_idx);
-    auto instr = instrs->Get(op_idx);
-    auto* mv = instr->instr_args_as_MoveCall();
-    ET_CHECK_MSG(
-        mv != nullptr,
-        "Graph::get_move: instruction at chain=%zu op_idx=%zu is not a MoveCall",
-        chain_idx,
-        op_idx);
-    MoveInfo info;
-    info.src_value_id = static_cast<uint32_t>(mv->move_from());
-    info.dst_value_id = static_cast<uint32_t>(mv->move_to());
-    return info;
-  }
-
-  //===------------------------------------------------------------------===//
-  // Convenience: main chain accessors
-  //===------------------------------------------------------------------===//
-
-  size_t num_instructions() const {
-    return num_ops_in_chain(main_chain_idx());
-  }
-
   OperatorCall get_instruction(size_t idx) const {
-    return get_op(main_chain_idx(), idx);
+    return get_op(idx);
   }
 
  private:
   const executorch_flatbuffer::ExecutionPlan* plan_;
-  // Optional reference to the parent Program, needed only for
-  // tensor_inline_data() (which dereferences program_->constant_buffer).
-  // Pre-existing constructions that pass only the plan get nullptr and
-  // tensor_inline_data() returns empty for them.
   const executorch_flatbuffer::Program* program_;
-  // Precomputed at construction for O(1) value_kind lookup.
   std::unordered_set<uint32_t> input_ids_;
   std::unordered_set<uint32_t> output_ids_;
-  // mem_obj_ids_[value_id] = dense small int identifying the storage slot
-  // (sort rank of (pool_id, offset) pairs across all aliasable tensor
-  // values). -1 for non-tensor / non-allocated values. Same id ⇒ same
-  // storage. Computed once at construction; O(1) lookup at use sites.
   std::vector<int32_t> mem_obj_ids_;
-
-  // Mutable buffer placeholder value_ids: tensor values with allocation
-  // info that aren't graph IO, aren't constants, and aren't produced by
-  // any op. These persist across execute() calls (their storage is
-  // preserved between invocations). Identified by tag_mutated_buffer at
-  // AOT time.
   std::vector<uint32_t> mutable_buffer_ids_;
 };
 
-// Implement OperatorCall::name() after Graph is defined
 inline const char* OperatorCall::name() const {
-  // In ExecuTorch, op names are in the operators table, indexed by op_index
   return graph_->operator_name(call_->op_index());
 }
 
@@ -845,14 +457,12 @@ inline std::string OperatorCall::full_name() const {
   return s;
 }
 
-// Implement value metadata accessors
 inline ValueKind Graph::value_kind(uint32_t value_id) const {
   if (input_ids_.count(value_id))
     return ValueKind::INPUT;
   if (output_ids_.count(value_id))
     return ValueKind::OUTPUT;
 
-  // Constant if the tensor has a baked data buffer.
   auto val = value_meta(value_id);
   if (val && val->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
     auto* tensor = val->val_as_Tensor();
@@ -866,10 +476,6 @@ inline ValueKind Graph::value_kind(uint32_t value_id) const {
 inline int32_t Graph::mem_obj_id(uint32_t value_id) const {
   return value_id < mem_obj_ids_.size() ? mem_obj_ids_[value_id] : -1;
 }
-
-//===----------------------------------------------------------------------===//
-// Typed value accessors
-//===----------------------------------------------------------------------===//
 
 inline ValueType Graph::value_type(uint32_t value_id) const {
   auto* val = value_meta(value_id);
@@ -902,7 +508,7 @@ inline int64_t Graph::int_value(uint32_t value_id) const {
   auto* val = value_meta(value_id);
   ET_CHECK_MSG(
       val && val->val_type() == executorch_flatbuffer::KernelTypes::Int,
-      "Graph::int_value(%u): value is not an Int",
+      "Graph::int_value(%u): not an Int",
       value_id);
   return static_cast<const executorch_flatbuffer::Int*>(val->val())->int_val();
 }
@@ -911,7 +517,7 @@ inline double Graph::double_value(uint32_t value_id) const {
   auto* val = value_meta(value_id);
   ET_CHECK_MSG(
       val && val->val_type() == executorch_flatbuffer::KernelTypes::Double,
-      "Graph::double_value(%u): value is not a Double",
+      "Graph::double_value(%u): not a Double",
       value_id);
   return static_cast<const executorch_flatbuffer::Double*>(val->val())
       ->double_val();
@@ -921,7 +527,7 @@ inline bool Graph::bool_value(uint32_t value_id) const {
   auto* val = value_meta(value_id);
   ET_CHECK_MSG(
       val && val->val_type() == executorch_flatbuffer::KernelTypes::Bool,
-      "Graph::bool_value(%u): value is not a Bool",
+      "Graph::bool_value(%u): not a Bool",
       value_id);
   return static_cast<const executorch_flatbuffer::Bool*>(val->val())
       ->bool_val();
@@ -940,14 +546,14 @@ inline const executorch_flatbuffer::Tensor* tensor_or_null(
 inline ::executorch::aten::ScalarType Graph::tensor_dtype(
     uint32_t value_id) const {
   auto* t = detail::tensor_or_null(value_meta(value_id));
-  ET_CHECK_MSG(t, "Graph::tensor_dtype(%u): value is not a Tensor", value_id);
+  ET_CHECK_MSG(t, "Graph::tensor_dtype(%u): not a Tensor", value_id);
   return static_cast<::executorch::aten::ScalarType>(t->scalar_type());
 }
 
 inline ::executorch::runtime::Span<const int32_t> Graph::tensor_sizes(
     uint32_t value_id) const {
   auto* t = detail::tensor_or_null(value_meta(value_id));
-  ET_CHECK_MSG(t, "Graph::tensor_sizes(%u): value is not a Tensor", value_id);
+  ET_CHECK_MSG(t, "Graph::tensor_sizes(%u): not a Tensor", value_id);
   auto* s = t->sizes();
   return s ? ::executorch::runtime::Span<const int32_t>(s->data(), s->size())
            : ::executorch::runtime::Span<const int32_t>{};
@@ -956,8 +562,7 @@ inline ::executorch::runtime::Span<const int32_t> Graph::tensor_sizes(
 inline ::executorch::runtime::Span<const uint8_t> Graph::tensor_dim_order(
     uint32_t value_id) const {
   auto* t = detail::tensor_or_null(value_meta(value_id));
-  ET_CHECK_MSG(
-      t, "Graph::tensor_dim_order(%u): value is not a Tensor", value_id);
+  ET_CHECK_MSG(t, "Graph::tensor_dim_order(%u): not a Tensor", value_id);
   auto* d = t->dim_order();
   return d ? ::executorch::runtime::Span<const uint8_t>(d->data(), d->size())
            : ::executorch::runtime::Span<const uint8_t>{};
@@ -966,8 +571,7 @@ inline ::executorch::runtime::Span<const uint8_t> Graph::tensor_dim_order(
 inline ::executorch::aten::TensorShapeDynamism Graph::tensor_shape_dynamism(
     uint32_t value_id) const {
   auto* t = detail::tensor_or_null(value_meta(value_id));
-  ET_CHECK_MSG(
-      t, "Graph::tensor_shape_dynamism(%u): value is not a Tensor", value_id);
+  ET_CHECK_MSG(t, "Graph::tensor_shape_dynamism(%u): not a Tensor", value_id);
   return static_cast<::executorch::aten::TensorShapeDynamism>(
       t->shape_dynamism());
 }
@@ -994,9 +598,7 @@ inline ::executorch::runtime::Span<const uint8_t> Graph::tensor_inline_data(
   if (!t)
     return {};
   uint32_t idx = static_cast<uint32_t>(t->data_buffer_idx());
-  // Index 0 is reserved (placeholder for "no inline data"). External
-  // constants also have idx == 0; they're handled by
-  // tensor_constant_data_key.
+  // Index 0 is reserved (no inline data).
   if (idx == 0)
     return {};
   auto* buffers = program_->constant_buffer();
@@ -1032,7 +634,7 @@ inline ::executorch::runtime::Span<const int64_t> Graph::int_list_member_ids(
   auto* val = value_meta(value_id);
   ET_CHECK_MSG(
       val && val->val_type() == executorch_flatbuffer::KernelTypes::IntList,
-      "Graph::int_list_member_ids(%u): value is not an IntList",
+      "Graph::int_list_member_ids(%u): not an IntList",
       value_id);
   auto* items =
       static_cast<const executorch_flatbuffer::IntList*>(val->val())->items();
@@ -1049,11 +651,8 @@ inline ::executorch::runtime::Span<const int32_t> Graph::tensor_list_member_ids(
           (val->val_type() == executorch_flatbuffer::KernelTypes::TensorList ||
            val->val_type() ==
                executorch_flatbuffer::KernelTypes::OptionalTensorList),
-      "Graph::tensor_list_member_ids(%u): value is not a TensorList "
-      "or OptionalTensorList",
+      "Graph::tensor_list_member_ids(%u): not a TensorList or OptionalTensorList",
       value_id);
-  // Both TensorList and OptionalTensorList have the same shape:
-  // table { items: [int]; }. Cast to either to access items().
   const flatbuffers::Vector<int32_t>* items = nullptr;
   if (val->val_type() == executorch_flatbuffer::KernelTypes::TensorList) {
     items = static_cast<const executorch_flatbuffer::TensorList*>(val->val())
