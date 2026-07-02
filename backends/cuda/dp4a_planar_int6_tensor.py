@@ -123,6 +123,29 @@ def unpack_int6(ql: torch.Tensor, qh: torch.Tensor, N: int, K: int) -> torch.Ten
     return u.to(torch.int16) - 32
 
 
+def _encode_int8_per_row(
+    x: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Encode a (N, n_groups) signed per-group scale to per-row int8 codes.
+
+    Q6_K per-group scales are signed (the int8 sub-scales can be negative), so
+    we use a symmetric signed code: ``codes`` is ``(N, n_groups)`` int8 and
+    ``step`` is ``(N, 1)`` bf16, with ``code * step`` reconstructing the scale.
+    The step is the per-row absmax / 127 rounded to bf16, so the
+    largest-magnitude group in each row maps to ~+/-127 and the 8-bit code spans
+    the row's dynamic range. This halves the int6 scale metadata (bf16 -> int8),
+    7.0 -> 6.5 bpw, mirroring Q6_K's own 8-bit block scales. The scale is a
+    per-row constant factor in the dp4a sum, so the matvec stays bit-identical
+    modulo the 8-bit scale rounding.
+    """
+    xf = x.contiguous().float()  # (N, n_groups), signed
+    row_absmax = xf.abs().amax(dim=1, keepdim=True).clamp_min(1e-30)  # (N, 1)
+    step = (row_absmax / 127.0).to(torch.bfloat16)  # (N, 1) bf16
+    step_f = step.float().clamp_min(1e-30)
+    codes = torch.round(xf / step_f).clamp_(-127, 127).to(torch.int8)
+    return codes.contiguous(), step.contiguous()
+
+
 class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
     """Dp4a-planar 6-bit weight (ql/qh split bit-planes + per-group scale), symmetric.
 
@@ -131,7 +154,7 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
     this class only.
     """
 
-    tensor_data_names = ["ql", "qh", "scale"]
+    tensor_data_names = ["ql", "qh", "scale", "steps"]
     tensor_attribute_names = ["block_size", "shape"]
 
     def __new__(
@@ -139,12 +162,13 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
         ql: torch.Tensor,
         qh: torch.Tensor,
         scale: torch.Tensor,
+        steps: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
     ):
         kwargs = {}
         kwargs["device"] = ql.device
-        kwargs["dtype"] = scale.dtype
+        kwargs["dtype"] = steps.dtype
         kwargs["requires_grad"] = False
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)  # type: ignore[attr-defined]
 
@@ -153,6 +177,7 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
         ql: torch.Tensor,
         qh: torch.Tensor,
         scale: torch.Tensor,
+        steps: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
     ):
@@ -160,6 +185,7 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
         self.ql = ql
         self.qh = qh
         self.scale = scale
+        self.steps = steps
         self.block_size = block_size
 
     def _quantization_type(self):
@@ -188,10 +214,12 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
                 f"Q6_K values must be in [-32, 31], got [{q_min}, {q_max}]"
             )
         ql, qh = pack_int6(q)
+        scale_codes, steps = _encode_int8_per_row(t.scale)
         return cls(
             ql,
             qh,
-            t.scale.contiguous(),
+            scale_codes,
+            steps,
             list(t.block_size),
             t.shape,
         )
@@ -223,7 +251,9 @@ class CudaDp4aPlanarInt6Tensor(TorchAOBaseTensor):
         N, K = int(self.shape[0]), int(self.shape[1])
         gs = self.block_size[-1]
         q = unpack_int6(self.ql, self.qh, N, K).to(dtype)
-        scale = self.scale.to(dtype).repeat_interleave(gs, dim=-1)
+        scale = (self.scale.to(dtype) * self.steps.to(dtype)).repeat_interleave(
+            gs, dim=-1
+        )
         return (q * scale).to(dtype)
 
 

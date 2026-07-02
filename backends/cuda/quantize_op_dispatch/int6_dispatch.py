@@ -48,25 +48,29 @@ from torch.library import impl
 # ---------------------------------------------------------------------------
 
 _lib.define(
-    "int6_plain_mm(Tensor self, Tensor ql, Tensor qh, Tensor scale, int group_size) -> Tensor"
+    "int6_plain_mm(Tensor self, Tensor ql, Tensor qh, Tensor scale, Tensor steps, int group_size) -> Tensor"
 )
 
 
 @impl(_lib, "int6_plain_mm", "Meta")
-def _meta_int6(self, ql, qh, scale, group_size):
+def _meta_int6(self, ql, qh, scale, steps, group_size):
     return torch.empty(self.shape[0], ql.shape[0], dtype=self.dtype, device=self.device)
 
 
 @impl(_lib, "int6_plain_mm", "CUDA")
-def _cuda_int6(self, ql, qh, scale, group_size):
-    return _dequant_matmul_int6(self, ql, qh, scale, group_size)
+def _cuda_int6(self, ql, qh, scale, steps, group_size):
+    # scale is int8 codes in the [N, n_groups] layout; steps is the per-row
+    # [N, 1] bf16 super-scale. _dequant_matmul_int6 reconstructs scale=code*step.
+    return _dequant_matmul_int6(self, ql, qh, scale, steps, group_size)
 
 
-def _dequant_matmul_int6(x, ql, qh, scale, group_size):
+def _dequant_matmul_int6(x, ql, qh, scale, steps, group_size):
     """Dequant packed-INT6 weights to input dtype and call F.linear.
 
-    ql [N, K/2] / qh [N, K/4] pack symmetric Q6_K values q in [-32, 31];
-    scale [N, K//gs]. Dequant: w[n, k] = q[n, k] * scale[n, k//gs].
+    ql [N, K/2] / qh [N, K/4] pack symmetric Q6_K values q in [-32, 31].
+    scale [N, K//gs] is int8 codes; steps [N, 1] bf16 is the per-row super-scale,
+    so the real per-group scale is ``scale_code * step``. Dequant:
+    w[n, k] = q[n, k] * (scale_code[n, k//gs] * step[n]).
     """
     N = ql.shape[0]
     K = ql.shape[1] * 2
@@ -74,7 +78,7 @@ def _dequant_matmul_int6(x, ql, qh, scale, group_size):
     dtype = x.dtype
 
     q = unpack_int6(ql, qh, N, K).to(dtype).reshape(N, n_groups, group_size)
-    s = scale.to(dtype).reshape(N, n_groups, 1)
+    s = (scale.to(dtype) * steps.to(dtype)).reshape(N, n_groups, 1)
     w_deq = (q * s).reshape(N, K)
 
     return F.linear(x, w_deq)
@@ -102,13 +106,14 @@ def _(func, types, args, kwargs):
     ql = weight_tensor.ql
     qh = weight_tensor.qh
     scale = weight_tensor.scale
+    steps = weight_tensor.steps
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
     if M <= 4:
-        out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, gs)
+        out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, steps, gs)
     else:
-        out = _dequant_matmul_int6(x_2d, ql, qh, scale, gs)
+        out = _dequant_matmul_int6(x_2d, ql, qh, scale, steps, gs)
 
     out = out.reshape(*orig_shape[:-1], -1)
     if bias is not None:

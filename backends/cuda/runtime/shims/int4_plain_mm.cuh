@@ -9,7 +9,11 @@
 // W4A8 dp4a matvec for INT4 decode (M <= 4).
 //
 // Reads plain nibble-packed [N, K//2] weights (Int4Tensor format).
-// Scale/zero layout: [N, K//gs] (transposed AOT for coalesced loads).
+// Scale/zero layout: [N, K//gs] uint8 codes (transposed AOT for coalesced
+// loads), with a per-row [N, 2] bf16 super-scale (scale_step, zero_step):
+// scale = code * scale_step, zero = code * zero_step. This halves the
+// per-group metadata vs bf16 scale+zero (5.0 -> 4.5 bpw) at ~baseline
+// accuracy, since Q4_K group scales fit an 8-bit per-row-normalized code.
 //
 // Dynamically quantizes bf16 activations to INT8 (per-32-element blocks),
 // then uses dp4a for fused int4×int8 dot products with 16-byte vectorized
@@ -105,19 +109,21 @@ __global__ void quantize_activations_q8_kernel(
 // Coalesced-scale W4A8 dp4a matvec
 //
 // Reads scale/zero in the transposed [N, n_groups] layout (transposed AOT at
-// export time). With group_size >= 32, one uint4 (32 weights) maps to exactly
-// one activation block and one weight group, so within a warp the 32 lanes
-// touch 32 consecutive groups. In [N, n_groups] layout those 32 group scales
-// are contiguous => a single coalesced load, vs 32 stride-N cache lines in the
-// native layout. For the gemma group_size=32 weights this is the dominant
-// decode-matvec cost.
+// export time) as uint8 codes, decoded with a per-row bf16 super-scale
+// (scale = code*scale_step, zero = code*zero_step). With group_size >= 32, one
+// uint4 (32 weights) maps to exactly one activation block and one weight
+// group, so within a warp the 32 lanes touch 32 consecutive groups. In
+// [N, n_groups] layout those 32 group codes are contiguous => a single
+// coalesced load, vs 32 stride-N cache lines in the native layout. For the
+// gemma group_size=32 weights this is the dominant decode-matvec cost.
 // ---------------------------------------------------------------------------
 
 __global__ void __launch_bounds__(MV_THREADS)
     int4_w4a8_matvec_coalesced_kernel(
         const uint8_t* __restrict__ qdata,
-        const __nv_bfloat16* __restrict__ w_scale_t, // [N, n_groups]
-        const __nv_bfloat16* __restrict__ w_zero_t, // [N, n_groups]
+        const uint8_t* __restrict__ w_scale_t, // [N, n_groups] uint8 codes
+        const uint8_t* __restrict__ w_zero_t, // [N, n_groups] uint8 codes
+        const __nv_bfloat16* __restrict__ w_steps, // [N, 2] (scale_step, zero_step)
         const Q8Block* __restrict__ q8,
         __nv_bfloat16* __restrict__ out,
         int32_t N,
@@ -134,10 +140,16 @@ __global__ void __launch_bounds__(MV_THREADS)
   const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE;
 
   const uint8_t* qrow = qdata + static_cast<int64_t>(n) * K_half;
-  const __nv_bfloat16* scale_row =
-      w_scale_t + static_cast<int64_t>(n) * n_groups;
-  const __nv_bfloat16* zero_row =
-      w_zero_t + static_cast<int64_t>(n) * n_groups;
+  const uint8_t* scale_row = w_scale_t + static_cast<int64_t>(n) * n_groups;
+  const uint8_t* zero_row = w_zero_t + static_cast<int64_t>(n) * n_groups;
+  // Per-row super-scales: the int8 group codes are decoded as
+  // scale = code * scale_step, zero = code * zero_step. scale_step is a
+  // per-row constant (it factors out of the dp4a sum), so the dp4a dot
+  // products below are bit-identical to the bf16-metadata kernel.
+  const float scale_step =
+      __bfloat162float(__ldg(&w_steps[static_cast<int64_t>(n) * 2 + 0]));
+  const float zero_step =
+      __bfloat162float(__ldg(&w_steps[static_cast<int64_t>(n) * 2 + 1]));
   const Q8Block* q8_row = q8 + static_cast<int64_t>(m) * n_q8_blocks;
 
   const uint4* qrow16 = reinterpret_cast<const uint4*>(qrow);
@@ -172,8 +184,8 @@ __global__ void __launch_bounds__(MV_THREADS)
       int32_t g = k_word >> gs_shift;
 
       if (g != prev_g) {
-        ws = __bfloat162float(__ldg(&scale_row[g]));
-        wz = __bfloat162float(__ldg(&zero_row[g]));
+        ws = static_cast<float>(__ldg(&scale_row[g])) * scale_step;
+        wz = static_cast<float>(__ldg(&zero_row[g])) * zero_step;
         prev_g = g;
       }
 
@@ -243,8 +255,9 @@ static Q8Block* get_q8_buffer(size_t needed) {
 void _int4_plain_mm_cuda(
     const Tensor& A, // [M, K] bf16
     const Tensor& qdata, // [N, K//2] uint8
-    const Tensor& scale, // [N, K//gs] bf16
-    const Tensor& zero, // [N, K//gs] bf16
+    const Tensor& scale, // [N, K//gs] uint8 codes
+    const Tensor& zero, // [N, K//gs] uint8 codes
+    const Tensor& steps, // [N, 2] bf16 (scale_step, zero_step)
     int64_t group_size,
     Tensor* output) { // [M, N] bf16, pre-allocated
   int32_t M = A.size(0);
@@ -255,8 +268,13 @@ void _int4_plain_mm_cuda(
   ET_CHECK(
       qdata.dtype() == c10::ScalarType::Byte ||
       qdata.dtype() == c10::ScalarType::Char);
-  ET_CHECK(scale.dtype() == c10::ScalarType::BFloat16);
-  ET_CHECK(zero.dtype() == c10::ScalarType::BFloat16);
+  ET_CHECK(
+      scale.dtype() == c10::ScalarType::Byte ||
+      scale.dtype() == c10::ScalarType::Char);
+  ET_CHECK(
+      zero.dtype() == c10::ScalarType::Byte ||
+      zero.dtype() == c10::ScalarType::Char);
+  ET_CHECK(steps.dtype() == c10::ScalarType::BFloat16);
   ET_CHECK(A.dim() == 2);
   ET_CHECK(qdata.dim() == 2);
   ET_CHECK(qdata.size(1) == K / 2);
@@ -264,6 +282,9 @@ void _int4_plain_mm_cuda(
   ET_CHECK(scale.size(0) == N);
   ET_CHECK(zero.dim() == 2);
   ET_CHECK(zero.size(0) == N);
+  ET_CHECK(steps.dim() == 2);
+  ET_CHECK(steps.size(0) == N);
+  ET_CHECK(steps.size(1) == 2);
 
   int32_t gs = static_cast<int32_t>(group_size);
   ET_CHECK_MSG(
@@ -299,8 +320,9 @@ void _int4_plain_mm_cuda(
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
   int4_w4a8_matvec_coalesced_kernel<<<grid, block, 0, stream>>>(
       reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
-      reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
-      reinterpret_cast<const __nv_bfloat16*>(zero.data_ptr()),
+      reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+      reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+      reinterpret_cast<const __nv_bfloat16*>(steps.data_ptr()),
       q8_buf,
       reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
       N, K, gs_shift, n_groups);

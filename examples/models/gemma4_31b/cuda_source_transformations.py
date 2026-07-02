@@ -206,10 +206,12 @@ def _fused_mlp_forward(self, x: torch.Tensor) -> torch.Tensor:
 def _concat_coalesced_int4_along_n(a, b):
     """Concatenate two ``CudaCoalescedInt4Tensor`` along the output (N) dim.
 
-    qdata is ``[N, K/2]`` and scale/zero_point are ``[N, n_groups]`` in the
-    coalesced layout, so a per-output-row concat on dim 0 is exact: the W4A8
-    dp4a matvec reads each output row's qdata/scale/zero independently, so
-    out[:N_a] reproduces ``a`` and out[N_a:] reproduces ``b`` bit-for-bit.
+    qdata is ``[N, K/2]``, scale/zero_point are ``[N, n_groups]`` uint8 codes,
+    and steps is ``[N, 2]`` per-row bf16 — all in the coalesced layout, so a
+    per-output-row concat on dim 0 is exact: the W4A8 dp4a matvec reads each
+    output row's qdata/scale/zero/step independently, so out[:N_a] reproduces
+    ``a`` and out[N_a:] reproduces ``b`` bit-for-bit (each row keeps its own
+    super-scale).
     """
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
 
@@ -217,6 +219,7 @@ def _concat_coalesced_int4_along_n(a, b):
         torch.cat([a.qdata, b.qdata], dim=0),
         torch.cat([a.scale, b.scale], dim=0),
         torch.cat([a.zero_point, b.zero_point], dim=0),
+        torch.cat([a.steps, b.steps], dim=0),
         a.block_size,
         torch.Size([a.shape[0] + b.shape[0], a.shape[1]]),
         None,

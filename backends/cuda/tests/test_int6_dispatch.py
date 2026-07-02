@@ -30,6 +30,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+    _encode_int8_per_row,
     CudaDp4aPlanarInt6Tensor,
     pack_int6,
     unpack_int6,
@@ -47,14 +48,22 @@ def _require_cuda(tc: unittest.TestCase) -> None:
 def _make_int6_tensor(N, K, group_size=16):
     """Build a CudaDp4aPlanarInt6Tensor (symmetric Q6_K) and return (tensor, q, scale).
 
-    ``q`` (int8 in [-32, 31]) and ``scale`` are the originals, so tests can
-    measure against the exact dequant reference ``w = q * scale``.
+    ``q`` (int8 in [-32, 31]) and the returned ``scale`` (the effective per-group
+    scale ``code * step`` the kernel actually decodes) are the originals, so tests
+    can measure against the exact dequant reference ``w = q * scale``.
     """
     q = torch.randint(-32, 32, (N, K), dtype=torch.int8)
     scale = (torch.rand(N, K // group_size) * 0.1 + 0.01).to(torch.bfloat16)
     ql, qh = pack_int6(q)
-    t = CudaDp4aPlanarInt6Tensor(ql, qh, scale, [1, group_size], torch.Size([N, K]))
-    return t, q, scale
+    # The tensor stores int8 scale *codes* + a per-row [N, 1] bf16 super-scale
+    # (scale = code * step); encode here and return the effective scale so the
+    # reference dequant matches what the kernel decodes.
+    scale_codes, steps = _encode_int8_per_row(scale)
+    eff_scale = (scale_codes.to(torch.bfloat16) * steps).to(torch.bfloat16)
+    t = CudaDp4aPlanarInt6Tensor(
+        ql, qh, scale_codes, steps, [1, group_size], torch.Size([N, K])
+    )
+    return t, q, eff_scale
 
 
 def _ref_weight(q, scale, group_size, dtype=torch.bfloat16):
@@ -75,9 +84,9 @@ def _record_int6_plain_mm():
     """
     calls = []
 
-    def _fake(self, ql, qh, scale, group_size):
+    def _fake(self, ql, qh, scale, steps, group_size):
         calls.append((tuple(self.shape), group_size))
-        return _dequant_matmul_int6(self, ql, qh, scale, group_size)
+        return _dequant_matmul_int6(self, ql, qh, scale, steps, group_size)
 
     with mock.patch.object(torch.ops.executorch_cuda, "int6_plain_mm", _fake):
         yield calls
@@ -233,11 +242,15 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertEqual(tuple(t.shape), (N, nb * 256))
 
         # The packer must reuse the shared Q6_K int8 decode (no duplication) and
-        # bit-pack it losslessly: the unpacked q and the scale match the int8 path.
+        # bit-pack it losslessly: the unpacked q and the decoded scale match the
+        # int8 path. The scale is stored as int8 codes + a per-row bf16 step
+        # (scale = code * step); the GGUF sub-scales are constant within a row,
+        # so the int8 re-encoding is exact here.
         intx = gt.to_intx_unpacked_to_int8_tensor()
         q_rt = unpack_int6(t.ql, t.qh, N, nb * 256).to(torch.int8)
         self.assertTrue(torch.equal(q_rt, intx.qdata))
-        self.assertTrue(torch.equal(t.scale, intx.scale))
+        decoded_scale = (t.scale.to(torch.bfloat16) * t.steps).to(torch.bfloat16)
+        self.assertTrue(torch.equal(decoded_scale, intx.scale))
 
     def test_from_exportable_gguf_rejects_non_q6k(self):
         """A non-q6_k ExportableGGUFTensor is rejected before any decode."""
@@ -283,7 +296,9 @@ class TestFLinearDispatchCuda(unittest.TestCase):
     def test_dequantize_matches_reference(self):
         t, q, scale = _make_int6_tensor(32, 128)
         ref = _ref_weight(q, scale, 16)
-        self.assertTrue(torch.equal(t.dequantize().cpu(), ref))
+        # Pass an explicit dtype: the scale is stored as int8 codes, so the
+        # default (self.scale.dtype) would dequantize in int8 and collapse to 0.
+        self.assertTrue(torch.equal(t.dequantize(torch.bfloat16).cpu(), ref))
 
 
 if __name__ == "__main__":

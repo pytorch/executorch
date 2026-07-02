@@ -25,6 +25,7 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
     Tensor* qdata,
     Tensor* scale,
     Tensor* zero,
+    Tensor* steps,
     int64_t group_size,
     Tensor** ret0) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -46,6 +47,11 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       zero != nullptr,
       InvalidArgument,
       "aoti_torch_cuda_int4_plain_mm: zero is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      steps != nullptr,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: steps is null");
 
   ET_CHECK_OR_RETURN_ERROR(
       ret0 != nullptr,
@@ -88,6 +94,15 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       static_cast<long long>(scale->size(1)),
       static_cast<long long>(zero->size(1)));
 
+  ET_CHECK_OR_RETURN_ERROR(
+      steps->dim() == 2 && steps->size(0) == N && steps->size(1) == 2,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: steps must be [N, 2] (per-row scale_step, zero_step). Expected size(0)=N=%lld size(1)=2, got steps.dim()=%lld size(0)=%lld size(1)=%lld",
+      static_cast<long long>(N),
+      static_cast<long long>(steps->dim()),
+      static_cast<long long>(steps->dim() == 2 ? steps->size(0) : -1),
+      static_cast<long long>(steps->dim() == 2 ? steps->size(1) : -1));
+
   int32_t M = self->size(0);
   Tensor* C = nullptr;
   std::array<int64_t, 2> c_shape = {M, N};
@@ -103,7 +118,7 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       0,
       &C);
 
-  _int4_plain_mm_cuda(*self, *qdata, *scale, *zero, group_size, C);
+  _int4_plain_mm_cuda(*self, *qdata, *scale, *zero, *steps, group_size, C);
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
 
   *ret0 = C;

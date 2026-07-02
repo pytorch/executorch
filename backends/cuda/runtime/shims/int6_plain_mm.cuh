@@ -140,7 +140,8 @@ __global__ void quantize_activations_q8_i6_kernel(
 __global__ void __launch_bounds__(MV6_THREADS) int6_w6a8_matvec_kernel(
     const uint8_t* __restrict__ ql, // [N, K/2]
     const uint8_t* __restrict__ qh, // [N, K/4]
-    const __nv_bfloat16* __restrict__ w_scale, // [N, n_groups]
+    const int8_t* __restrict__ w_scale, // [N, n_groups] int8 codes
+    const __nv_bfloat16* __restrict__ w_steps, // [N, 1] per-row scale_step
     const Q8Block_i6* __restrict__ q8,
     __nv_bfloat16* __restrict__ out,
     int32_t N,
@@ -159,7 +160,11 @@ __global__ void __launch_bounds__(MV6_THREADS) int6_w6a8_matvec_kernel(
 
   const uint8_t* qlrow = ql + static_cast<int64_t>(n) * K_half;
   const uint8_t* qhrow = qh + static_cast<int64_t>(n) * K_quarter;
-  const __nv_bfloat16* scale_row = w_scale + static_cast<int64_t>(n) * n_groups;
+  const int8_t* scale_row = w_scale + static_cast<int64_t>(n) * n_groups;
+  // Per-row super-scale: int8 group codes decode as scale = code * scale_step.
+  // scale_step is a per-row constant (it factors out of the dp4a sum), so the
+  // dp4a dot products below are bit-identical to the bf16-metadata kernel.
+  const float scale_step = __bfloat162float(__ldg(&w_steps[n]));
   const Q8Block_i6* q8_row = q8 + static_cast<int64_t>(m) * n_q8_blocks;
 
   // Vectorized loads: one uint4 of ql (32 weights) + one uint2 of qh (the
@@ -200,7 +205,7 @@ __global__ void __launch_bounds__(MV6_THREADS) int6_w6a8_matvec_kernel(
       int32_t g = k_word >> gs_shift;
 
       if (g != prev_g) {
-        ws = __bfloat162float(__ldg(&scale_row[g]));
+        ws = static_cast<float>(__ldg(&scale_row[g])) * scale_step;
         prev_g = g;
       }
 
@@ -281,7 +286,8 @@ inline void _int6_plain_mm_cuda(
     const Tensor& A, // [M, K] bf16
     const Tensor& ql, // [N, K/2] uint8
     const Tensor& qh, // [N, K/4] uint8
-    const Tensor& scale, // [N, K/gs] bf16
+    const Tensor& scale, // [N, K/gs] int8 codes
+    const Tensor& steps, // [N, 1] bf16 per-row scale_step
     int64_t group_size,
     Tensor* output) { // [M, N] bf16, pre-allocated
   int32_t M = A.size(0);
@@ -295,7 +301,10 @@ inline void _int6_plain_mm_cuda(
   ET_CHECK(
       qh.dtype() == c10::ScalarType::Byte ||
       qh.dtype() == c10::ScalarType::Char);
-  ET_CHECK(scale.dtype() == c10::ScalarType::BFloat16);
+  ET_CHECK(
+      scale.dtype() == c10::ScalarType::Byte ||
+      scale.dtype() == c10::ScalarType::Char);
+  ET_CHECK(steps.dtype() == c10::ScalarType::BFloat16);
   ET_CHECK(A.dim() == 2);
   ET_CHECK(ql.dim() == 2);
   ET_CHECK(ql.size(1) == K / 2);
@@ -303,6 +312,9 @@ inline void _int6_plain_mm_cuda(
   ET_CHECK(qh.size(1) == K / 4);
   ET_CHECK(scale.dim() == 2);
   ET_CHECK(scale.size(0) == N);
+  ET_CHECK(steps.dim() == 2);
+  ET_CHECK(steps.size(0) == N);
+  ET_CHECK(steps.size(1) == 1);
 
   int32_t gs = static_cast<int32_t>(group_size);
   ET_CHECK_MSG(
@@ -345,7 +357,8 @@ inline void _int6_plain_mm_cuda(
   int6_w6a8_matvec_kernel<<<grid, block, 0, stream>>>(
       reinterpret_cast<const uint8_t*>(ql.data_ptr()),
       reinterpret_cast<const uint8_t*>(qh.data_ptr()),
-      reinterpret_cast<const __nv_bfloat16*>(scale.data_ptr()),
+      reinterpret_cast<const int8_t*>(scale.data_ptr()),
+      reinterpret_cast<const __nv_bfloat16*>(steps.data_ptr()),
       q8_buf,
       reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
       N,
