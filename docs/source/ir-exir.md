@@ -2,7 +2,7 @@
 
 Export IR is an intermediate representation (IR) for the result of
 `torch.export`. To read more on the details of Export IR, please read this
-[document](https://pytorch.org/docs/stable/export/ir_spec.html).
+[document](https://docs.pytorch.org/docs/2.12/user_guide/torch_compiler/export/ir_spec.html).
 
 The Exported IR is a specification that consists of the following parts:
 
