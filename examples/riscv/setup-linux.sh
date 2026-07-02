@@ -8,7 +8,7 @@
 # - gcc/g++/binutils for riscv64-linux-gnu (cross-compiler + sysroot)
 # - qemu-user-static (qemu-riscv64 user-mode emulator)
 
-set -eu
+set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 
@@ -22,9 +22,18 @@ if [[ $EUID -ne 0 ]]; then
     SUDO="sudo"
 fi
 
+source /etc/os-release
+
+GCC_VERSION=""
+if [[ "${VERSION_ID:-}" == "24.04" || "${VERSION_ID:-}" == "26.04" ]]; then
+    GCC_VERSION="14"
+fi
+
 ${SUDO} apt-get update
 ${SUDO} apt-get install -y --no-install-recommends \
     build-essential \
+    gcc${GCC_VERSION:+-${GCC_VERSION}} \
+    g++${GCC_VERSION:+-${GCC_VERSION}} \
     gcc${GCC_VERSION:+-${GCC_VERSION}}-riscv64-linux-gnu \
     g++${GCC_VERSION:+-${GCC_VERSION}}-riscv64-linux-gnu \
     binutils-riscv64-linux-gnu \
@@ -39,6 +48,8 @@ ${SUDO} apt-get install -y --no-install-recommends \
     libgl1
 
 if [[ -n "${GCC_VERSION+x}" ]]; then
+    ${SUDO} update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc${GCC_VERSION:+-${GCC_VERSION}} 100
+    ${SUDO} update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++${GCC_VERSION:+-${GCC_VERSION}} 100
     ${SUDO} update-alternatives --install /usr/bin/riscv64-linux-gnu-gcc riscv64-linux-gnu-gcc /usr/bin/riscv64-linux-gnu-gcc${GCC_VERSION:+-${GCC_VERSION}} 100
     ${SUDO} update-alternatives --install /usr/bin/riscv64-linux-gnu-g++ riscv64-linux-gnu-g++ /usr/bin/riscv64-linux-gnu-g++${GCC_VERSION:+-${GCC_VERSION}} 100
 fi
