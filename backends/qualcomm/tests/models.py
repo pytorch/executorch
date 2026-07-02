@@ -2386,6 +2386,77 @@ class SimpleModel(torch.nn.Module):
         return z5
 
 
+class SimpleLLMDecoder(torch.nn.Module):
+    """
+    Minimal transformer decoder mirroring how QNN LLM decoders are built:
+    a token embedding feeds a stack of decoder blocks whose linear projections
+    are expressed as 1x1 conv2d (see static_llama.py), grouped under a
+    ``layers.N`` ModuleList. Takes token ids and an additive attention mask.
+    """
+
+    class ConvAttention(torch.nn.Module):
+        def __init__(self, dim, n_heads):
+            super().__init__()
+            self.n_heads = n_heads
+            self.head_dim = dim // n_heads
+            self.scale = self.head_dim**-0.5
+            self.wq_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+            self.wk_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+            self.wv_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+            self.wo_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+
+        def forward(self, x, atten_mask):  # x: (b, dim, 1, seq)
+            b, dim, _, seq = x.shape
+            q = self.wq_conv(x).view(b, self.n_heads, self.head_dim, seq)
+            k = self.wk_conv(x).view(b, self.n_heads, self.head_dim, seq)
+            v = self.wv_conv(x).view(b, self.n_heads, self.head_dim, seq)
+            attn = torch.matmul(q.transpose(-2, -1), k) * self.scale
+            attn = torch.softmax(attn + atten_mask, dim=-1)
+            ctx = torch.matmul(v, attn.transpose(-2, -1))
+            ctx = ctx.reshape(b, dim, 1, seq)
+            return self.wo_conv(ctx)
+
+    class ConvFeedForward(torch.nn.Module):
+        def __init__(self, dim, hidden_dim):
+            super().__init__()
+            self.w1_conv = torch.nn.Conv2d(dim, hidden_dim, 1, bias=False)
+            self.w2_conv = torch.nn.Conv2d(hidden_dim, dim, 1, bias=False)
+            self.w3_conv = torch.nn.Conv2d(dim, hidden_dim, 1, bias=False)
+            self.act_fn = torch.nn.SiLU()
+
+        def forward(self, x):
+            return self.w2_conv(self.act_fn(self.w1_conv(x)) * self.w3_conv(x))
+
+    class DecoderLayer(torch.nn.Module):
+        def __init__(self, dim, hidden_dim, n_heads):
+            super().__init__()
+            self.attention = SimpleLLMDecoder.ConvAttention(dim, n_heads)
+            self.feed_forward = SimpleLLMDecoder.ConvFeedForward(dim, hidden_dim)
+
+        def forward(self, x, atten_mask):
+            x = x + self.attention(x, atten_mask)
+            x = x + self.feed_forward(x)
+            return x
+
+    def __init__(self, vocab_size=128, dim=32, hidden_dim=64, n_heads=4, n_layers=1):
+        super().__init__()
+        self.tok_embeddings = torch.nn.Embedding(vocab_size, dim)
+        self.layers = torch.nn.ModuleList(
+            [self.DecoderLayer(dim, hidden_dim, n_heads) for _ in range(n_layers)]
+        )
+        self.output_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+        self.eval()
+
+    def forward(self, input_ids, atten_mask):  # input_ids: (b, seq)
+        x = self.tok_embeddings(input_ids)  # (b, seq, dim)
+        b, seq, dim = x.shape
+        x = x.reshape(b, seq, 1, dim).transpose(1, 3)  # (b, dim, 1, seq)
+        for layer in self.layers:
+            x = layer(x, atten_mask)
+        x = self.output_conv(x)
+        return x.transpose(1, 3).reshape(b, seq, dim)
+
+
 class SkipBackToBack(torch.nn.Module):
 
     def __init__(self):
