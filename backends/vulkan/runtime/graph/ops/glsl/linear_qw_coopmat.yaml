@@ -11,11 +11,10 @@
 # INT weight storage can be texture2d or buffer (matches the tiled path).
 # DTYPE = half only; fp32 activations are not supported.
 # Geometry follows the double-buffered reference (coopmat_mm_ref): 128x64
-# tile, K-step 16, 4 subgroups x 32 threads (subgroup size 32 forced). The
-# 128x64 / 2x2-subgroup-grid geometry is the tile-sweep optimum for M5 EVT1
-# (dbuf1_opt, ~+25% over the prior 128x128 / 4x2 layout). NOTE: the C++
-# dispatch in QuantizedLinear.cpp must keep kQ4gswCoopmatDims.n and .wg_size
-# in sync with WG_TILE_N (64) and WG_SIZE (= SG_GRID_X*SG_GRID_Y*SUBGROUP = 128).
+# tile, K-step 16, 2x2 subgroup grid x 32 threads (subgroup size 32 forced).
+# This geometry was tuned for AMD-RDNA GPUs. NOTE: the C++ dispatch in
+# QuantizedLinear.cpp must keep kQ4gswCoopmatDims.n and .wg_size in sync with
+# WG_TILE_N (64) and WG_SIZE (= SG_GRID_X*SG_GRID_Y*SUBGROUP = 128).
 
 linear_qw_coopmat:
   parameter_names_with_default_values:
