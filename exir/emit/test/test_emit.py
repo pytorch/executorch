@@ -2466,7 +2466,6 @@ class TestEmit(unittest.TestCase):
             torch.randn(3, 4),
             torch.randn(8, 4),
         ]
-        ]
         reference_outputs = []
         with torch.no_grad():
             for inp in test_inputs:
