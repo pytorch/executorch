@@ -41,6 +41,7 @@ TEST_F(RegisterPrimOpsTest, OpRegistered) {
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_max.Scalar"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_min.Scalar"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_not.Scalar"));
+  EXPECT_TRUE(hasOpsFn("executorch_prim::sym_int.Scalar"));
 }
 
 TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
@@ -202,6 +203,42 @@ TEST_F(RegisterPrimOpsTest, SymFloatHandlesBoolInput) {
   values[1] = EValue(0.0);
   getOpsFn("executorch_prim::sym_float.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_FLOAT_EQ(stack[1]->toDouble(), 0.0);
+}
+
+TEST_F(RegisterPrimOpsTest, SymIntReturnsCorrectValue) {
+  EValue values[2];
+  EValue* stack[2];
+  for (size_t i = 0; i < 2; i++) {
+    stack[i] = &values[i];
+  }
+
+  // Int passthrough
+  values[0] = EValue((int64_t)7);
+  values[1] = EValue((int64_t)0);
+  getOpsFn("executorch_prim::sym_int.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[1]->toInt(), 7);
+
+  // Double truncates toward zero
+  values[0] = EValue(3.7);
+  values[1] = EValue((int64_t)0);
+  getOpsFn("executorch_prim::sym_int.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[1]->toInt(), 3);
+
+  values[0] = EValue(-2.9);
+  values[1] = EValue((int64_t)0);
+  getOpsFn("executorch_prim::sym_int.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[1]->toInt(), -2);
+
+  // Bool converts to 0/1
+  values[0] = EValue(true);
+  values[1] = EValue((int64_t)0);
+  getOpsFn("executorch_prim::sym_int.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[1]->toInt(), 1);
+
+  values[0] = EValue(false);
+  values[1] = EValue((int64_t)0);
+  getOpsFn("executorch_prim::sym_int.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[1]->toInt(), 0);
 }
 
 TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
