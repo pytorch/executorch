@@ -27,6 +27,13 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
+
+# A specialization recipe: callable that takes an ExportedProgram and returns
+# serialized bytes.  Each recipe owns the full
+# to_edge_transform_and_lower → to_executorch → serialize flow.
+
+
+from executorch.exir.dialects._ops import ops as _edge_ops
 from executorch.exir.emit import emit_program
 from executorch.exir.memory_planning import greedy, MemoryPlanningAlgorithmSuite
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
@@ -38,31 +45,16 @@ from executorch.exir.program._program import _transform
 
 from torch._export.verifier import Verifier
 
-# A specialization recipe: callable that takes an ExportedProgram and returns
-# serialized bytes.  Each recipe owns the full
-# to_edge_transform_and_lower → to_executorch → serialize flow.
-
-
-def _build_backend_inplace_ops() -> frozenset:
-    """Edge-dialect ops the native runtime supports in-place.
-
-    reinplace_pass auto-derives the in-place counterpart for each.
-    """
-    from executorch.exir.dialects._ops import ops as _edge_ops
-
-    edge = _edge_ops.edge.aten
-    return frozenset(
-        [
-            edge.relu.default,
-            edge.gelu.default,
-            edge.sigmoid.default,
-            edge.index_put.default,
-            edge.index_copy.default,
-        ]
-    )
-
-
-BACKEND_INPLACE_OPS: frozenset = _build_backend_inplace_ops()
+_edge = _edge_ops.edge.aten
+BACKEND_INPLACE_OPS: frozenset = frozenset(
+    [
+        _edge.relu.default,
+        _edge.gelu.default,
+        _edge.sigmoid.default,
+        _edge.index_put.default,
+        _edge.index_copy.default,
+    ]
+)
 
 
 class _AnyOp(Verifier):
@@ -119,13 +111,13 @@ class NativeBackend(BackendDetails):
 
         import copy
 
-        spec_programs = [copy.deepcopy(program) for _ in names]
-        native_result = cls._preprocess_native(program)
+        native_result = cls._preprocess_native(copy.deepcopy(program))
 
         results: List[Tuple[str, PreprocessResult]] = [
             ("NativeBackend", native_result),
         ]
-        for name, spec_program in zip(names, spec_programs):
+        for name in names:
+            spec_program = copy.deepcopy(program)
             payload = _SPECIALIZATION_REGISTRY[name](spec_program)
             results.append((name, PreprocessResult(processed_bytes=payload)))
 
