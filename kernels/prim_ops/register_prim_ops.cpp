@@ -391,6 +391,8 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble()) {
             // TODO: This should be impossible
             out = EValue(a.toDouble());
+          } else if (a.isBool()) {
+            out = EValue(static_cast<double>(a.toBool()));
           } else {
             ET_KERNEL_CHECK_MSG(
                 context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
@@ -471,6 +473,36 @@ static Kernel prim_ops[] = {
           } else {
             ET_KERNEL_CHECK_MSG(
                 context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
+          }
+        }),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SYM_NOT_SCALAR)
+    // executorch_prim::sym_not.Scalar(bool a) -> bool
+    Kernel(
+        "executorch_prim::sym_not.Scalar",
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isBool()) {
+            out = EValue(!a.toBool());
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_not only supports bool inputs, got %zu",
+                (size_t)a.tag);
           }
         }),
 #endif

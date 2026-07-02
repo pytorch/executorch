@@ -105,7 +105,7 @@ def _q4k_matvec_source(has_bias: bool) -> str:
 
             float4 acc1 = {{0.f, 0.f, 0.f, 0.f}};
             float4 acc2 = {{0.f, 0.f, 0.f, 0.f}};
-            for (short i = 0; i < 4; ++i) {{
+            FOR_UNROLL (short i = 0; i < 4; ++i) {{
                 acc1[0] += yl[2*i + 0] * (float)(q1[i] & 0x000F);
                 acc1[1] += yl[2*i + 1] * (float)(q1[i] & 0x0F00);
                 acc1[2] += yl[2*i + 8] * (float)(q1[i] & 0x00F0);
@@ -218,9 +218,9 @@ def _q4k_matmul_source(has_bias: bool) -> str:
         const short ly_b = (tid / NL1) % 8;
         const short ib_b = 4 * sx_b + sy_b;
 
-        for (short i = 0; i < 8; ++i) {{
-            *(sb + 64 * ib_b + 8 * ly_b + i) = (half) *(yp + i);
-        }}
+        using InT2x4 = typename vec2x4<InT>::type;
+        *(threadgroup half2x4 *)(sb + 64 * ib_b + 8 * ly_b) =
+            (half2x4)(*(device const InT2x4 *)(yp));
 
         // Advance weight pointer through Q4_K sub-blocks.
         il = (il + 2 < NL) ? il + 2 : il % 2;

@@ -25,6 +25,19 @@ class CastInt64BuffersToInt32Pass(ArmPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
+    def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
+        for node in graph_module.graph.nodes:
+            if len(node.users) == 0:
+                continue
+            fake_tensor = node.meta.get("val")
+            if not isinstance(fake_tensor, torch._subclasses.fake_tensor.FakeTensor):
+                continue
+            if fake_tensor.dtype == torch.int64 and is_buffer(
+                self.exported_program, node
+            ):
+                return True
+        return False
+
     def _assert_within_int32(self, tensor: torch.Tensor, node: torch.fx.Node):
         if torch.min(tensor) < torch.iinfo(torch.int32).min:
             raise RuntimeError(
