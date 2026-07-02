@@ -10,10 +10,14 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -24,13 +28,8 @@ using namespace executorch::runtime;
 
 namespace {
 
-// Names mirror test_index.py CONFIGS (self/idx/golden bins written per case).
-constexpr const char* kIndexCases[] = {
-    "index_n16_m5",
-    "index_n8_rev",
-    "index_n32_m3",
-    "index_n4_rep",
-};
+// Artifacts directory; set from env/argv in main() before RUN_ALL_TESTS().
+std::string g_dir; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 std::vector<float> read_f32_bin(const std::string& path) {
   std::ifstream f(path, std::ios::binary | std::ios::ate);
@@ -62,22 +61,19 @@ std::vector<int32_t> read_i32_bin(const std::string& path) {
   return data;
 }
 
-bool run_case(const std::string& dir, const char* name) {
-  printf("\n--- Test: %s ---\n", name);
-  const std::string base = dir + "/" + name;
+// index.Tensor: self [n] float, idx [m] int64 -> output [m]. Names mirror
+// test_index.py CONFIGS (self/idx/golden bins written per case).
+void run_case(const char* name) {
+  const std::string base = g_dir + "/" + name;
   std::vector<float> self_data = read_f32_bin(base + ".self.bin");
   std::vector<int32_t> idx32 = read_i32_bin(base + ".idx.bin");
   std::vector<float> golden = read_f32_bin(base + ".golden.bin");
-  if (self_data.empty() || idx32.empty() || golden.empty()) {
-    printf("FAIL: could not read self/idx/golden for %s\n", name);
-    return false;
-  }
+  ASSERT_FALSE(self_data.empty() || idx32.empty() || golden.empty())
+      << "could not read self/idx/golden for " << name;
 
   Module module(base + ".pte");
-  if (module.load_forward() != Error::Ok) {
-    printf("FAIL: could not load %s.pte\n", name);
-    return false;
-  }
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load " << name << ".pte";
 
   const int32_t n = static_cast<int32_t>(self_data.size());
   const int32_t m = static_cast<int32_t>(idx32.size());
@@ -87,33 +83,21 @@ bool run_case(const std::string& dir, const char* name) {
   auto idx = make_tensor_ptr({m}, std::vector<int64_t>(idx64));
 
   auto result = module.forward({EValue(x), EValue(idx)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
 
   const auto& outputs = result.get();
   // index.Tensor has exactly one output of shape [num_indices]; fail loud else.
-  if (outputs.size() != 1 || !outputs[0].isTensor()) {
-    printf("FAIL: expected exactly one tensor output\n");
-    return false;
-  }
+  ASSERT_TRUE(outputs.size() == 1 && outputs[0].isTensor())
+      << "expected exactly one tensor output";
   const auto& out_tensor = outputs[0].toTensor();
-  if (out_tensor.dim() != 1 || out_tensor.size(0) != m) {
-    printf(
-        "FAIL: output shape mismatch (dim %d size0 %d, expected [%d])\n",
-        (int)out_tensor.dim(),
-        (int)(out_tensor.dim() == 1 ? out_tensor.size(0) : -1),
-        m);
-    return false;
-  }
-  if (static_cast<size_t>(out_tensor.numel()) != golden.size()) {
-    printf(
-        "FAIL: output numel %zu != golden %zu\n",
-        (size_t)out_tensor.numel(),
-        golden.size());
-    return false;
-  }
+  ASSERT_TRUE(out_tensor.dim() == 1 && out_tensor.size(0) == m)
+      << "output shape mismatch (dim " << (int)out_tensor.dim() << " size0 "
+      << (int)(out_tensor.dim() == 1 ? out_tensor.size(0) : -1)
+      << ", expected [" << m << "])";
+  ASSERT_EQ(static_cast<size_t>(out_tensor.numel()), golden.size())
+      << "output numel " << (size_t)out_tensor.numel() << " != golden "
+      << golden.size();
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_abs_err = 0.0f;
@@ -124,51 +108,54 @@ bool run_case(const std::string& dir, const char* name) {
     const float denom = std::max(std::abs(golden[i]), 1e-6f);
     max_rel_err = std::max(max_rel_err, abs_err / denom);
   }
-  printf(
-      "Max abs error: %e   Max rel error: %e (%zu elements)\n",
-      max_abs_err,
-      max_rel_err,
-      golden.size());
-  if (max_abs_err > 1e-3f || max_rel_err > 1e-3f) {
-    printf("FAIL: %s exceeds tolerance 1e-3\n", name);
-    return false;
-  }
-  printf("PASS: %s\n", name);
-  return true;
+  EXPECT_LT(max_abs_err, 1e-3f) << name << " max_abs_err=" << max_abs_err
+                                << " (" << golden.size() << " elements)";
+  EXPECT_LT(max_rel_err, 1e-3f) << name << " max_rel_err=" << max_rel_err
+                                << " (" << golden.size() << " elements)";
 }
 
 } // namespace
 
+TEST(Index, N16M5) {
+  run_case("index_n16_m5");
+}
+
+TEST(Index, N8Rev) {
+  run_case("index_n8_rev");
+}
+
+TEST(Index, N32M3) {
+  run_case("index_n32_m3");
+}
+
+TEST(Index, N4Rep) {
+  run_case("index_n4_rep");
+}
+
 int main(int argc, char** argv) {
-  std::string dir = "/tmp/index";
+  ::testing::InitGoogleTest(&argc, argv);
+
+  // Artifacts dir: env wins, else first positional arg, else default (gtest
+  // flags were already stripped by InitGoogleTest above).
+  g_dir = "/tmp/index";
   if (argc > 1) {
-    dir = argv[1];
+    g_dir = argv[1];
   }
   if (const char* env = std::getenv("WEBGPU_INDEX_DIR")) {
-    dir = env;
+    g_dir = env;
   }
 
   WebGPUContext ctx;
   try {
     ctx = create_webgpu_context();
   } catch (const std::exception& e) {
-    printf("SKIP: %s\n", e.what());
+    std::printf("SKIP: %s\n", e.what());
     return 0;
   }
   set_default_webgpu_context(&ctx);
-  printf("WebGPU device acquired (native); case dir: %s\n", dir.c_str());
 
-  bool ok = true;
-  for (const char* name : kIndexCases) {
-    ok = run_case(dir, name) && ok;
-  }
-
+  const int rc = RUN_ALL_TESTS();
   set_default_webgpu_context(nullptr);
   destroy_webgpu_context(ctx);
-
-  if (!ok) {
-    return 1;
-  }
-  printf("\nAll index tests passed\n");
-  return 0;
+  return rc;
 }
