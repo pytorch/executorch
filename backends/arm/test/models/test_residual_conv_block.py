@@ -5,8 +5,7 @@
 """Residual conv block model test for ARM TOSA backend.
 
 Tests a minimal residual architecture with conv->batchnorm->relu->add blocks and
-permute operations, representative of quantized signal processing models where
-FuseConsecutiveRescalesPass eliminates redundant RESCALE pairs.
+permute operations.
 
 """
 
@@ -28,10 +27,7 @@ class ResidualConvBlock(torch.nn.Module):
 
     Architecture: conv->bn->relu->add (residual) -> permute ->
     conv->bn->relu->add. When quantized, each residual add is
-    wrapped with INT32 RESCALEs by InsertRescaleInt32Pass. Stacked
-    blocks create consecutive RESCALE pairs (INT32->INT8->INT32)
-    between adjacent adds that FuseConsecutiveRescalesPass
-    eliminates.
+    wrapped with INT32 RESCALEs by InsertRescaleInt32Pass.
 
     """
 
