@@ -593,6 +593,14 @@ Tensor& sdpa_with_kv_cache_out(
 
   ET_CHECK_MSG(q_projected.dim() == 4, "query must be a 4D tensor");
 
+  // For DYNAMIC_UNBOUND lazy KV cache: allocate if data is null.
+  if (key_cache.const_data_ptr() == nullptr) {
+    resize_tensor(key_cache, key_cache.sizes());
+  }
+  if (value_cache.const_data_ptr() == nullptr) {
+    resize_tensor(value_cache, value_cache.sizes());
+  }
+
   update_cache(k_projected, key_cache, start_pos, seq_len);
   update_cache(v_projected, value_cache, start_pos, seq_len);
 

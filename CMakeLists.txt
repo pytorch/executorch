@@ -216,6 +216,9 @@ endif()
 
 # Disable the deprecated constant_buffer path.
 add_definitions(-DET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0)
+if(EXECUTORCH_ENABLE_DYNAMIC_ALLOCATOR)
+  add_definitions(-DET_DYNAMIC_ALLOCATOR_ENABLED)
+endif()
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)

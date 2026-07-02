@@ -20,6 +20,9 @@
 #if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
 #include <sys/resource.h>
 #endif
+#if defined(__linux__) || defined(__ANDROID__)
+#include <unistd.h>
+#endif
 
 #define ET_UNWRAP_TOKENIZER(result__)                       \
   ({                                                        \
@@ -217,17 +220,18 @@ ET_EXPERIMENTAL long inline time_in_ms() {
 // process. These values are approximate, and are only used for logging
 // purposes.
 ET_EXPERIMENTAL size_t inline get_rss_bytes() {
-#if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
-  struct rusage r_usage;
-  if (getrusage(RUSAGE_SELF, &r_usage) == 0) {
-    return r_usage.ru_maxrss * 1024;
+#if defined(__linux__) || defined(__ANDROID__)
+  // Read current VmRSS from /proc/self/statm (page count in field 1).
+  FILE* f = fopen("/proc/self/statm", "r");
+  if (f) {
+    size_t vm_size = 0, resident = 0;
+    if (fscanf(f, "%zu %zu", &vm_size, &resident) == 2) {
+      fclose(f);
+      return resident * sysconf(_SC_PAGESIZE);
+    }
+    fclose(f);
   }
-#endif // __linux__ || __ANDROID__ || __unix__
-  // Unsupported platform like Windows, or getrusage() failed.
-  // __APPLE__ and __MACH__ are not supported because r_usage.ru_maxrss does not
-  // consistently return kbytes on macOS. On older versions of macOS, it
-  // returns bytes, but on newer versions it returns kbytes. Need to figure out
-  // when this changed.
+#endif // __linux__ || __ANDROID__
   return 0;
 }
 
