@@ -493,21 +493,23 @@ class TOSAQuantizer(Quantizer):
     """Manage quantization annotations for TOSA-compatible backends.
 
     .. warning::
-        Setting ``use_composable_quantizer=True`` enables an experimental API
-        surface that may change without notice.
+        The composable quantizer is now the default implementation. Setting
+        ``use_composable_quantizer=False`` is deprecated and will be removed in
+        two minor releases.
 
     """
 
     def __init__(
         self,
         compile_spec_or_tosa_spec,
-        use_composable_quantizer: bool = False,
+        use_composable_quantizer: bool = True,
     ) -> None:
         """Create a TOSA quantizer from a TOSA spec or Arm compile spec.
 
         .. warning::
-            Setting ``use_composable_quantizer=True`` enables an experimental
-            API surface that may change without notice.
+            The composable quantizer is now the default implementation.
+            Setting ``use_composable_quantizer=False`` is deprecated and will
+            be removed in two minor releases.
 
         """
         self.use_composable_quantizer = use_composable_quantizer
@@ -519,9 +521,44 @@ class TOSAQuantizer(Quantizer):
             self.quantizer = _TOSAQuantizerV2(compile_spec_or_tosa_spec)
         else:
             logger.info(
-                "Using default quantizer in the arm backend. This quantizer is planned to be replaced by the composable quantizer implementation in the future, see https://github.com/pytorch/executorch/issues/17701"
+                "Using deprecated legacy quantizer implementation in the arm backend. Setting use_composable_quantizer=False will be removed in two minor releases. See https://github.com/pytorch/executorch/issues/17701"
             )
             self.quantizer = _TOSAQuantizerV1(compile_spec_or_tosa_spec)
+
+    @staticmethod
+    def _validate_optional_quantization_config(
+        config_name: str, value: object, value_description: str = "value"
+    ) -> None:
+        if value is not None and not isinstance(value, QuantizationConfig):
+            raise TypeError(
+                f"{config_name} {value_description} must be "
+                "QuantizationConfig or None, "
+                f"got {type(value).__name__}."
+            )
+
+    @staticmethod
+    def _validate_config_dict(
+        config_name: str,
+        value: object,
+        is_valid_key: Callable[[object], bool],
+        key_description: str,
+    ) -> Dict[Any, Optional[QuantizationConfig]]:
+        if not isinstance(value, dict):
+            raise TypeError(
+                f"{config_name} must be a dict, got {type(value).__name__}."
+            )
+
+        for key, quantization_config in value.items():
+            if not is_valid_key(key):
+                raise TypeError(
+                    f"{config_name} keys must be {key_description}, "
+                    f"got {type(key).__name__}."
+                )
+            TOSAQuantizer._validate_optional_quantization_config(
+                config_name, quantization_config, "values"
+            )
+
+        return value
 
     @property
     def tosa_spec(self):
@@ -540,12 +577,11 @@ class TOSAQuantizer(Quantizer):
 
     @global_config.setter
     def global_config(self, value: Optional[QuantizationConfig]) -> None:
+        self._validate_optional_quantization_config("global_config", value)
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             self.quantizer.global_config = value
         else:
-            raise NotImplementedError(
-                "Composable quantizer does not allow setting global_config directly. Please use set_global() instead."
-            )
+            self.quantizer.set_global(value)
 
     @property
     def io_config(self):
@@ -559,12 +595,12 @@ class TOSAQuantizer(Quantizer):
 
     @io_config.setter
     def io_config(self, value: Optional[QuantizationConfig]) -> None:
+        self._validate_optional_quantization_config("io_config", value)
         if isinstance(self.quantizer, _TOSAQuantizerV1):
             self.quantizer.io_config = value
         else:
-            raise NotImplementedError(
-                "Composable quantizer does not allow setting io_config directly. Please use set_io() instead."
-            )
+            self.quantizer.clear_io_config()
+            self.quantizer.set_io(value)
 
     @property
     def module_type_config(self):
@@ -580,12 +616,18 @@ class TOSAQuantizer(Quantizer):
     def module_type_config(
         self, value: Dict[Callable, Optional[QuantizationConfig]]
     ) -> None:
+        module_type_config = self._validate_config_dict(
+            "module_type_config",
+            value,
+            callable,
+            "callable",
+        )
         if isinstance(self.quantizer, _TOSAQuantizerV1):
-            self.quantizer.module_type_config = value
+            self.quantizer.module_type_config = module_type_config
         else:
-            raise NotImplementedError(
-                "Composable quantizer does not allow setting module_type_config directly. Please use set_module_type() instead."
-            )
+            self.quantizer.clear_module_type_config()
+            for module_type, quantization_config in module_type_config.items():
+                self.quantizer.set_module_type(module_type, quantization_config)
 
     @property
     def module_name_config(self):
@@ -601,12 +643,18 @@ class TOSAQuantizer(Quantizer):
     def module_name_config(
         self, value: Dict[str, Optional[QuantizationConfig]]
     ) -> None:
+        module_name_config = self._validate_config_dict(
+            "module_name_config",
+            value,
+            lambda key: isinstance(key, str),
+            "str",
+        )
         if isinstance(self.quantizer, _TOSAQuantizerV1):
-            self.quantizer.module_name_config = value
+            self.quantizer.module_name_config = module_name_config
         else:
-            raise NotImplementedError(
-                "Composable quantizer does not allow setting module_name_config directly. Please use set_module_name() instead."
-            )
+            self.quantizer.clear_module_name_config()
+            for module_name, quantization_config in module_name_config.items():
+                self.quantizer.set_module_name(module_name, quantization_config)
 
     def set_global(
         self, quantization_config: Optional[QuantizationConfig]
@@ -1131,6 +1179,30 @@ class _TOSAQuantizerV2(ComposableQuantizer):
         """Update quantizers without accessing self._quantizers directly."""
         self._quantizers = value
 
+    def _remove_quantizers_by_node_finder_type(
+        self, node_finder_types: type[NodeFinder] | tuple[type[NodeFinder], ...]
+    ) -> None:
+        self._quantizers = [
+            quantizer
+            for quantizer in self._quantizers
+            if not (
+                isinstance(quantizer, PatternQuantizer)
+                and isinstance(quantizer.node_finder, node_finder_types)
+            )
+        ]
+
+    def clear_module_type_config(self) -> _TOSAQuantizerV2:
+        self._remove_quantizers_by_node_finder_type(ModuleTypeNodeFinder)
+        return self
+
+    def clear_module_name_config(self) -> _TOSAQuantizerV2:
+        self._remove_quantizers_by_node_finder_type(ModuleNameNodeFinder)
+        return self
+
+    def clear_io_config(self) -> _TOSAQuantizerV2:
+        self._remove_quantizers_by_node_finder_type((InputNodeFinder, OutputNodeFinder))
+        return self
+
     def annotate(self, model):
         reporter = QuantizerReporter(self.quantizers, "FINAL QUANTIZATION REPORT")
         model = super().annotate(model)
@@ -1284,20 +1356,25 @@ class EthosUQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Ethos-U backend.
 
     .. warning::
-        Setting ``use_composable_quantizer=True`` enables an experimental API
-        surface that may change without notice.
+        The composable quantizer is now the default implementation. Setting
+        ``use_composable_quantizer=False`` is deprecated and will be removed in
+        two minor releases.
 
     Args:
         compile_spec (EthosUCompileSpec): Backend compile specification for
             Ethos-U targets.
-        use_composable_quantizer (bool): Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
+        use_composable_quantizer (bool): Whether to use the composable
+            quantizer implementation. Setting this to ``False`` is deprecated
+            and will be removed in two minor releases. See
+            [issue #17701](https://github.com/pytorch/executorch/issues/17701)
+            for details.
 
     """
 
     def __init__(
         self,
         compile_spec: EthosUCompileSpec,
-        use_composable_quantizer: bool = False,
+        use_composable_quantizer: bool = True,
     ) -> None:
         super().__init__(compile_spec, use_composable_quantizer)
 
@@ -1306,19 +1383,24 @@ class VgfQuantizer(TOSAQuantizer):
     """Quantizer supported by the Arm Vgf backend.
 
     .. warning::
-        Setting ``use_composable_quantizer=True`` enables an experimental API
-        surface that may change without notice.
+        The composable quantizer is now the default implementation. Setting
+        ``use_composable_quantizer=False`` is deprecated and will be removed in
+        two minor releases.
 
     Args:
         compile_spec (VgfCompileSpec): Backend compile specification for Vgf
             targets.
-        use_composable_quantizer (bool): Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
+        use_composable_quantizer (bool): Whether to use the composable
+            quantizer implementation. Setting this to ``False`` is deprecated
+            and will be removed in two minor releases. See
+            [issue #17701](https://github.com/pytorch/executorch/issues/17701)
+            for details.
 
     """
 
     def __init__(
         self,
         compile_spec: VgfCompileSpec,
-        use_composable_quantizer: bool = False,
+        use_composable_quantizer: bool = True,
     ) -> None:
         super().__init__(compile_spec, use_composable_quantizer)

@@ -16,18 +16,23 @@ The Arm Ethos-U delegate supports the following quantization schemes:
 ### Quantization API
 
 ```python
-class EthosUQuantizer(compile_spec: 'EthosUCompileSpec', use_composable_quantizer: 'bool' = False) -> 'None'
+class EthosUQuantizer(compile_spec: 'EthosUCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'
 ```
 Quantizer supported by the Arm Ethos-U backend.
 
 .. warning::
-    Setting ``use_composable_quantizer=True`` enables an experimental API
-    surface that may change without notice.
+    The composable quantizer is now the default implementation. Setting
+    ``use_composable_quantizer=False`` is deprecated and will be removed in
+    two minor releases.
 
 Args:
 - **compile_spec (EthosUCompileSpec)**: Backend compile specification for
         Ethos-U targets.
-- **use_composable_quantizer (bool)**: Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
+- **use_composable_quantizer (bool)**: Whether to use the composable
+        quantizer implementation. Setting this to ``False`` is deprecated
+        and will be removed in two minor releases. See
+        [issue #17701](https://github.com/pytorch/executorch/issues/17701)
+        for details.
 
 ```python
 def EthosUQuantizer.add_quantizer(self, quantizer: 'Quantizer') -> 'TOSAQuantizer':

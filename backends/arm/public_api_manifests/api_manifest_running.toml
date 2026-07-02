@@ -62,7 +62,7 @@ signature = "EthosUPartitioner.register_custom_partition_op(self, op: torch._ops
 
 [python.EthosUQuantizer]
 kind = "class"
-signature = "EthosUQuantizer(compile_spec: 'EthosUCompileSpec', use_composable_quantizer: 'bool' = False) -> 'None'"
+signature = "EthosUQuantizer(compile_spec: 'EthosUCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'"
 
 [python.EthosUQuantizer.annotate]
 kind = "function"
@@ -150,7 +150,7 @@ signature = "VgfPartitioner.register_custom_partition_op(self, op: torch._ops.Op
 
 [python.VgfQuantizer]
 kind = "class"
-signature = "VgfQuantizer(compile_spec: 'VgfCompileSpec', use_composable_quantizer: 'bool' = False) -> 'None'"
+signature = "VgfQuantizer(compile_spec: 'VgfCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'"
 
 [python.VgfQuantizer.annotate]
 kind = "function"
