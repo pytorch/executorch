@@ -2495,15 +2495,16 @@ class TestEmit(unittest.TestCase):
         class SymIteModel(nn.Module):
             def forward(self, x):
                 n = x.shape[0]
+                m = x.shape[1]
                 cond = n > 5
-                val = torch.sym_ite(cond, n, 6)
+                val = torch.sym_ite(cond, n, m)
                 return torch.zeros(val, dtype=x.dtype, device=x.device)
 
         model = SymIteModel()
         model.eval()
         test_inputs = [
-            torch.randn(3, 4),  # n<=5: ite(False,3,6)=6
-            torch.randn(8, 4),  # n>5: ite(True,8,6)=8
+            torch.randn(3, 6),  # n<=5: ite(False,3,6)=6
+            torch.randn(8, 4),  # n>5: ite(True,8,4)=8
         ]
         reference_outputs = []
         with torch.no_grad():
@@ -2511,7 +2512,8 @@ class TestEmit(unittest.TestCase):
                 reference_outputs.append(model(inp))
 
         batch_dim = Dim("batch", min=1, max=20)
-        dynamic_shapes = {"x": {0: batch_dim}}
+        feat_dim = Dim("feat", min=1, max=20)
+        dynamic_shapes = {"x": {0: batch_dim, 1: feat_dim}}
         exported_program = torch.export.export(
             model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
         )
