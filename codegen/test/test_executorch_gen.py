@@ -14,6 +14,9 @@ import yaml
 from executorch.codegen.gen import (
     ComputeCodegenUnboxedKernels,
     gen_functions_declarations,
+    gen_headers,
+    gen_unboxing,
+    get_manual_registration_function_name,
     parse_yaml_files,
     translate_native_yaml,
 )
@@ -29,6 +32,7 @@ from torchgen.model import (
     OperatorName,
 )
 from torchgen.selective_build.selector import SelectiveBuilder
+from torchgen.utils import FileManager
 
 
 TEST_YAML = """
@@ -316,6 +320,105 @@ class TestParseKernelYamlFiles(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
         except OSError:
             pass
+
+
+class TestManualRegistrationFunctionName(unittest.TestCase):
+    def test_default_function_name(self) -> None:
+        self.assertEqual(
+            get_manual_registration_function_name(
+                manual_registration=True,
+                manual_registration_lib_name=None,
+            ),
+            "register_all_kernels",
+        )
+
+    def test_named_function_name(self) -> None:
+        self.assertEqual(
+            get_manual_registration_function_name(
+                manual_registration=True,
+                manual_registration_lib_name="portable_ops_lib",
+            ),
+            "register_portable_ops_lib_kernels",
+        )
+
+    def test_named_function_requires_manual_registration(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "--manual-registration-lib-name requires"
+        ):
+            get_manual_registration_function_name(
+                manual_registration=False,
+                manual_registration_lib_name="portable_ops_lib",
+            )
+
+    def test_named_function_requires_cpp_identifier(self) -> None:
+        with self.assertRaisesRegex(ValueError, "valid C\\+\\+ identifier"):
+            get_manual_registration_function_name(
+                manual_registration=True,
+                manual_registration_lib_name="portable-ops-lib",
+            )
+
+
+class TestManualRegistrationTemplates(unittest.TestCase):
+    def setUp(self) -> None:
+        self.template_dir = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "templates"
+        )
+        self.function_name = "register_portable_ops_lib_kernels"
+
+    def test_register_kernels_header_uses_named_function(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            gen_headers(
+                native_functions=[],
+                gen_custom_ops_header=False,
+                custom_ops_native_functions=[],
+                selector=SelectiveBuilder.get_nop_selector(),
+                kernel_index=ETKernelIndex(index={}),  # type: ignore[arg-type]
+                cpu_fm=FileManager(tempdir, self.template_dir, False),
+                use_aten_lib=False,
+                manual_registration_function_name=self.function_name,
+            )
+
+            with open(os.path.join(tempdir, "RegisterKernels.h")) as f:
+                header = f.read()
+
+        self.assertIn(f"Error {self.function_name}();", header)
+        self.assertNotIn("Error register_all_kernels();", header)
+
+    def test_register_kernels_cpp_uses_named_function(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            native_function, backend_index = NativeFunction.from_yaml(
+                {
+                    "func": "custom_1::op_1() -> bool",
+                    "dispatch": {"CPU": "kernel_1"},
+                },
+                loc=Location(__file__, 1),
+                valid_tags=set(),
+            )
+            backend_indices: dict[
+                DispatchKey, dict[OperatorName, BackendMetadata]
+            ] = {
+                DispatchKey.CPU: {},
+                DispatchKey.QuantizedCPU: {},
+            }
+            BackendIndex.grow_index(backend_indices, backend_index)
+
+            gen_unboxing(
+                native_functions=[native_function],
+                cpu_fm=FileManager(tempdir, self.template_dir, False),
+                selector=SelectiveBuilder.from_yaml_dict(
+                    {"include_all_operators": True}
+                ),
+                use_aten_lib=False,
+                kernel_index=ETKernelIndex.from_backend_indices(backend_indices),
+                manual_registration=True,
+                manual_registration_function_name=self.function_name,
+            )
+
+            with open(os.path.join(tempdir, "RegisterKernelsEverything.cpp")) as f:
+                source = f.read()
+
+        self.assertIn(f"Error {self.function_name}() {{", source)
+        self.assertNotIn("Error register_all_kernels() {", source)
 
 
 class TestGenFunctionsDeclarations(unittest.TestCase):

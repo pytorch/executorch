@@ -7,7 +7,7 @@
  */
 
 // ${generated_comment}
-// This implements register_all_kernels() API that is declared in
+// This implements ${manual_registration_function_name}() API that is declared in
 // RegisterKernels.h
 #include "RegisterKernels.h"
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -16,14 +16,14 @@
 namespace torch {
 namespace executor {
 
-Error register_all_kernels() {
+Error ${manual_registration_function_name}() {
   Kernel kernels_to_register[] = {
       ${unboxed_kernels} // Generated kernels
   };
   Error success_with_kernel_reg =
       ::executorch::runtime::register_kernels({kernels_to_register});
   if (success_with_kernel_reg != Error::Ok) {
-    ET_LOG(Error, "Failed register all kernels");
+    ET_LOG(Error, "Failed to register kernels");
     return success_with_kernel_reg;
   }
   return Error::Ok;
