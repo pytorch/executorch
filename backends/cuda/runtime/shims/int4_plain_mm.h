@@ -26,28 +26,32 @@ extern "C" {
  *
  * Weight format: [N, K//2] uint8, two INT4 values per byte
  * (low nibble = even k, high nibble = odd k).
- * Scale: [N, K//group_size] uint8 per-group scale codes (coalesced layout).
- * Zero:  [N, K//group_size] uint8 per-group zero codes (coalesced layout).
- * Steps: [N, 2] bf16 per-row super-scales (scale_step, zero_step); the group
- *        scale/zero are decoded as code*scale_step / code*zero_step. This
- *        halves the per-group metadata vs bf16 scale+zero (5.0 -> 4.5 bpw).
- * W4A8 dp4a matvec: dynamically quantizes activations to INT8,
- * then uses dp4a for fused int4×int8 dot products.
+ * Encoding: the per-group scale is a uint8 code with a per-256-super-block fp16
+ * step; the per-group zero is a uint8 code with a per-row bf16 step.
+ *   scale      : [N, K//gs]  uint8 — per-group scale codes (coalesced layout)
+ *   scale_step : [N, K//256] fp16  — per-256-super-block scale step; the group
+ *                scale is decoded as scale_code * scale_step[:, g//(256/gs)].
+ *   zero       : [N, K//gs]  uint8 — per-group zero codes (coalesced layout)
+ *   zero_step  : [N, 1]      bf16  — per-row zero step; zero = code*zero_step.
+ * W4A8 dp4a matvec: dynamically quantizes activations to INT8, then uses dp4a
+ * for fused int4×int8 dot products.
  *
- * @param self     Input activation [M, K] bf16
- * @param qdata    Packed weights [N, K//2] uint8
- * @param scale    Per-group scale codes [N, K//group_size] uint8
- * @param zero     Per-group zero codes [N, K//group_size] uint8
- * @param steps    Per-row super-scales [N, 2] bf16 (scale_step, zero_step)
+ * @param self       Input activation [M, K] bf16
+ * @param qdata      Packed weights [N, K//2] uint8
+ * @param scale      Per-group scale codes [N, K//gs] uint8
+ * @param scale_step Per-256 scale step [N, K//256] fp16
+ * @param zero       Per-group zero codes [N, K//gs] uint8
+ * @param zero_step  Per-row zero step [N, 1] bf16
  * @param group_size Quantization group size (32, 64, 128)
- * @param ret0     Output [M, N] bf16
+ * @param ret0       Output [M, N] bf16
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_int4_plain_mm(
     Tensor* self,
     Tensor* qdata,
     Tensor* scale,
+    Tensor* scale_step,
     Tensor* zero,
-    Tensor* steps,
+    Tensor* zero_step,
     int64_t group_size,
     Tensor** ret0);
 

@@ -14,18 +14,34 @@ selected by *type* — it is registered on this class only — so stock
 ``Int4Tensor`` weights keep falling back to torchao's default (mslk/tinygemm)
 path.
 
+Metadata encoding: the SCALE is a per-group **uint8 code** with a
+**per-256-super-block fp16 step** (``scale = code * step``); the ZERO is
+unchanged from the previous encoding (per-group uint8 code + per-row bf16 step).
+group_size is 32, so a 256-weight super-block spans 8 groups and there are
+``K/256`` scale steps per row. Dequant is unchanged: ``w = (q - zero) * scale``
+with ``zero = min/scale``.
+
+This mirrors GGUF Q4_K's per-super-block fp16 ``d`` for the scale: the finer
+per-256 step (vs the previous per-row step) is what lifts whole-weight dequant
+SNR to ~45.4 dB (vs 44.37 dB for the per-row-step encoding). The scale code
+stays a single coalesced uint8 (one byte/group, same layout as the zero code) so
+the decode kernel reads exactly one scale byte per group — no bit-plane
+reconstruct — and the per-256 step is loaded once per super-block. The scale
+step MUST be fp16 (bf16 for the per-256 step costs ~0.39 dB); the per-row zero
+step stays bf16 (dtype-insensitive at per-row granularity).
+
 Layout difference from torchao ``Int4Tensor``:
     qdata      : packed int4 weight (N, K/2), nibble-packed (same as Int4Tensor)
     scale      : (N, n_groups) uint8 — per-group scale *codes*, coalesced
                  (transposed from torchao's (n_groups, N))
-    zero_point : (N, n_groups) uint8 — per-group zero *codes*, coalesced
-    steps      : (N, 2) bf16 — per-row super-scales (scale_step, zero_step);
-                 the real per-group values are ``code * step``. This compacts
-                 the metadata from bf16 scale + bf16 zero (4 B/group, 5.0 bpw)
-                 to uint8 scale + uint8 zero + a tiny per-row step (2 B/group,
-                 4.5 bpw) at ~baseline accuracy (Q4_K group scales fit an
-                 8-bit per-row-normalized code; measured dequant SNR 48 dB,
-                 identical to the bf16 metadata it replaces).
+    scale_step : (N, K/256) fp16 — per-256-super-block scale step; the real
+                 per-group scale is ``scale_code * scale_step[:, g // 8]``.
+    zero_point : (N, n_groups) uint8 — per-group zero codes (UNCHANGED)
+    zero_step  : (N, 1) bf16 — per-row zero step (UNCHANGED); the real per-group
+                 zero is ``zero_code * zero_step``.
+
+Bits-per-weight: 4.0 (qdata) + 8/32 (scale codes) + 16/256 (fp16 scale step) +
+8/32 (uint8 zero codes) + ~0 (per-row zero step) = 4.5625 bpw.
 
 The coalesced [N, n_groups] layout is exactly what the W4A8 dp4a matvec kernel
 (``executorch_cuda::int4_plain_mm`` / ``int4_plain_mm.cuh``) reads row-for-row
@@ -44,37 +60,90 @@ __all__ = [
     "CudaCoalescedInt4Tensor",
 ]
 
+_CODE_MAX = 255  # uint8 code range [0, 255] (both scale and zero)
+_SUPER_BLOCK = 256  # weights per super-block (GGUF Q4_K QK_K); scale step is per this
+
 
 def _encode_uint8_per_row(
     x: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Encode a (n_groups, N) non-negative tensor to per-row uint8 codes.
 
-    Returns ``(codes, step)`` where ``codes`` is ``(N, n_groups)`` uint8
-    (already transposed to the coalesced layout) and ``step`` is ``(N,)`` bf16,
-    such that ``code * step ≈ x.t()``. The step is the per-row max / 255 rounded
-    to bf16, so the largest group in each row maps to ~255 and the 8-bit code
-    spans the row's dynamic range. Q4_K scales/zeros are non-negative, so an
-    unsigned code is exact at the endpoints and ~baseline accuracy elsewhere.
+    Used for the zero_point (UNCHANGED). Returns ``(codes, step)`` where
+    ``codes`` is ``(N, n_groups)`` uint8 (transposed to the coalesced layout) and
+    ``step`` is ``(N, 1)`` bf16, such that ``code * step ≈ x.t()``. The step is
+    the per-row max / 255 rounded to bf16.
     """
     xt = x.t().contiguous().float()  # (N, n_groups)
     row_max = xt.amax(dim=1, keepdim=True).clamp_min(1e-30)  # (N, 1)
-    step = (row_max / 255.0).to(torch.bfloat16)  # (N, 1) bf16
+    step = (row_max / _CODE_MAX).to(torch.bfloat16)  # (N, 1) bf16
     step_f = step.float().clamp_min(1e-30)
-    codes = torch.round(xt / step_f).clamp_(0, 255).to(torch.uint8)
-    return codes.contiguous(), step.squeeze(1).contiguous()
+    codes = torch.round(xt / step_f).clamp_(0, _CODE_MAX).to(torch.uint8)
+    return codes.contiguous(), step.contiguous()
+
+
+def _encode_uint8_per_super(
+    x: torch.Tensor,
+    group_size: int,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Encode a (n_groups, N) non-negative tensor to per-super-block uint8 codes.
+
+    Used for the scale. A super-block is ``_SUPER_BLOCK`` (256) weights =
+    ``groups_per_super = 256 // group_size`` groups (8 for group_size=32).
+    Returns ``(codes, step)`` where ``codes`` is ``(N, n_groups)`` uint8
+    (transposed to the coalesced layout) and ``step`` is ``(N, n_super)`` fp16
+    with ``n_super = n_groups // groups_per_super = K // 256``, such that
+    ``code * step[:, g // groups_per_super] ≈ x.t()``. The step is the
+    per-256-super-block max / 255 rounded to fp16. Rounding uses the fp16-rounded
+    step (what the kernel reads) so encode and decode agree.
+    """
+    xt = x.t().contiguous().float()  # (N, n_groups)
+    N, n_groups = int(xt.shape[0]), int(xt.shape[1])
+    groups_per_super = _SUPER_BLOCK // int(group_size)
+    if groups_per_super < 1:
+        raise ValueError(
+            f"group_size={group_size} must be <= {_SUPER_BLOCK} for the per-256 "
+            "scale step"
+        )
+    if n_groups % groups_per_super != 0:
+        raise ValueError(
+            f"n_groups={n_groups} must be a multiple of {groups_per_super} "
+            f"(K must be a multiple of {_SUPER_BLOCK}) for group_size={group_size}"
+        )
+    n_super = n_groups // groups_per_super
+    xb = xt.reshape(N, n_super, groups_per_super)  # (N, n_super, gps)
+    block_max = xb.amax(dim=2, keepdim=True).clamp_min(1e-30)  # (N, n_super, 1)
+    step = (block_max / _CODE_MAX).to(torch.float16)  # (N, n_super, 1) fp16
+    step_f = step.float().clamp_min(1e-30)
+    codes = torch.round(xb / step_f).clamp_(0, _CODE_MAX).to(torch.uint8)
+    codes = codes.reshape(N, n_groups).contiguous()
+    return codes, step.squeeze(2).contiguous()
+
+
+def _unpack_nibble_qdata(qdata: torch.Tensor, N: int, K: int) -> torch.Tensor:
+    """Unpack nibble-packed int4 qdata ``(N, K/2)`` -> ``(N, K)`` uint8 [0, 15]."""
+    qu = qdata.to(torch.uint8)
+    even = qu & 0xF
+    odd = (qu >> 4) & 0xF
+    return torch.stack([even, odd], dim=-1).reshape(N, K)
 
 
 class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
-    """INT4 weight with scale/zero_point in the coalesced [N, n_groups] layout.
+    """INT4 weight, uint8 scale + per-256 fp16 step, uint8/per-row zero, coalesced.
 
     ExecuTorch-internal; see the module docstring. Mirrors torchao
     ``Int4Tensor``'s data/attribute layout (so the common tensor utilities and
-    serialization work) but owns the [n_groups, N] -> [N, n_groups] transpose
-    of scale/zero_point via :meth:`from_int4_tensor`.
+    serialization work) but owns the [n_groups, N] -> [N, n_groups] transpose and
+    the uint8 re-encoding via :meth:`from_int4_tensor`.
     """
 
-    tensor_data_names = ["qdata", "scale", "zero_point", "steps"]
+    tensor_data_names = [
+        "qdata",
+        "scale",
+        "scale_step",
+        "zero_point",
+        "zero_step",
+    ]
     tensor_attribute_names = ["block_size", "shape"]
     optional_tensor_data_names = ["act_pre_scale"]
     optional_tensor_attribute_names = ["activation_dtype"]
@@ -83,8 +152,9 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         cls,
         qdata: torch.Tensor,
         scale: torch.Tensor,
+        scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        steps: torch.Tensor,
+        zero_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
         act_pre_scale: Optional[torch.Tensor] = None,
@@ -92,7 +162,9 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
     ):
         kwargs = {}
         kwargs["device"] = qdata.device
-        kwargs["dtype"] = steps.dtype
+        kwargs["dtype"] = (
+            activation_dtype if activation_dtype is not None else torch.bfloat16
+        )
         kwargs["requires_grad"] = False
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)  # type: ignore[attr-defined]
 
@@ -100,8 +172,9 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         self,
         qdata: torch.Tensor,
         scale: torch.Tensor,
+        scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        steps: torch.Tensor,
+        zero_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
         act_pre_scale: Optional[torch.Tensor] = None,
@@ -110,8 +183,9 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         super().__init__()
         self.qdata = qdata
         self.scale = scale
+        self.scale_step = scale_step
         self.zero_point = zero_point
-        self.steps = steps
+        self.zero_step = zero_step
         self.block_size = block_size
         self.activation_dtype = (
             activation_dtype if activation_dtype is not None else torch.bfloat16
@@ -129,26 +203,52 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         """Build a coalesced tensor from a torchao ``Int4Tensor``.
 
         Owns the transpose AND the uint8 re-encoding: torchao stores
-        scale/zero_point as (n_groups, N) bf16; the CUDA decode kernel reads
-        (N, n_groups) uint8 *codes* plus a per-row (N, 2) bf16 ``steps``
-        super-scale (scale = code*scale_step, zero = code*zero_step). The
-        transpose + encode here is baked into the serialized weight constant so
-        the exported decode graph has no per-step transpose/clone, and the
-        constant is 2 B/group instead of 4 B/group (5.0 -> 4.5 bpw).
+        scale/zero_point as (n_groups, N) bf16. The CUDA decode kernel reads the
+        (N, n_groups) uint8 scale *codes* plus a per-256-super-block (N, K/256)
+        fp16 ``scale_step`` (scale = scale_code * scale_step[:, g//8]). The zero
+        path is unchanged: (N, n_groups) uint8 codes + a per-row (N, 1) bf16
+        ``zero_step``. The transpose + encode here is baked into the serialized
+        weight constant so the exported decode graph has no per-step
+        transpose/clone.
         """
-        scale_codes, scale_step = _encode_uint8_per_row(t.scale)
+        scale_codes, scale_step = _encode_uint8_per_super(t.scale, t.block_size[-1])
         zero_codes, zero_step = _encode_uint8_per_row(t.zero_point)
-        steps = torch.stack([scale_step, zero_step], dim=1).contiguous()  # (N, 2)
         return cls(
             t.qdata,
             scale_codes,
+            scale_step,
             zero_codes,
-            steps,
+            zero_step,
             t.block_size,
             t.shape,
             t.act_pre_scale,
             t.activation_dtype,
         )
+
+    def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> torch.Tensor:
+        """Dequantize to a dense tensor: ``w = (q - zero) * scale``.
+
+        Reconstructs the per-group scale from the uint8 codes and the per-256
+        fp16 step, and the per-group zero from the uint8 codes and the per-row
+        bf16 step. Used as the numerical reference and for the tied lm_head /
+        token embedding.
+        """
+        dtype = output_dtype if output_dtype is not None else torch.bfloat16
+        N, K = int(self.shape[0]), int(self.shape[1])
+        gs = self.block_size[-1]
+        n_groups = K // gs
+        n_super = int(self.scale_step.shape[1])
+        groups_per_super = n_groups // n_super
+
+        q = _unpack_nibble_qdata(self.qdata, N, K).to(torch.float32)
+        scale_code = self.scale.to(torch.float32)  # (N, n_groups)
+        scale_step = self.scale_step.float().repeat_interleave(groups_per_super, dim=1)
+        scale = (scale_code * scale_step).repeat_interleave(gs, dim=1)  # (N, K)
+
+        zero_code = self.zero_point.to(torch.float32)  # (N, n_groups)
+        zero_step = self.zero_step.float().reshape(N, 1)
+        zero = (zero_code * zero_step).repeat_interleave(gs, dim=1)  # (N, K)
+        return ((q - zero) * scale).to(dtype)
 
 
 # Allow a model with CudaCoalescedInt4Tensor weights to be loaded with

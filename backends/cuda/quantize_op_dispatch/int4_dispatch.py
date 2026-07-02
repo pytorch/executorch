@@ -41,24 +41,27 @@ from torch.library import impl
 # ---------------------------------------------------------------------------
 
 _lib.define(
-    "int4_plain_mm(Tensor self, Tensor qdata, Tensor scale, Tensor zero, Tensor steps, int group_size) -> Tensor"
+    "int4_plain_mm(Tensor self, Tensor qdata, Tensor scale, Tensor scale_step, Tensor zero, Tensor zero_step, int group_size) -> Tensor"
 )
 
 
 @impl(_lib, "int4_plain_mm", "Meta")
-def _meta(self, qdata, scale, zero, steps, group_size):
+def _meta(self, qdata, scale, scale_step, zero, zero_step, group_size):
     return torch.empty(
         self.shape[0], qdata.shape[0], dtype=self.dtype, device=self.device
     )
 
 
 @impl(_lib, "int4_plain_mm", "CUDA")
-def _cuda(self, qdata, scale, zero, steps, group_size):
-    # scale/zero are stored as uint8 codes in the coalesced [N, n_groups] layout
-    # (transposed at pack time, see pack_cuda.pack_linear_for_cuda); steps is the
-    # per-row [N, 2] bf16 super-scale (scale_step, zero_step). _dequant_matmul
-    # reconstructs scale = code*scale_step, zero = code*zero_step.
-    return _dequant_matmul(self, qdata, scale, zero, steps, group_size)
+def _cuda(self, qdata, scale, scale_step, zero, zero_step, group_size):
+    # Metadata is stored in the coalesced [N, n_groups] layout (transposed at
+    # pack time, see pack_cuda.pack_linear_for_cuda). The scale is a uint8 code
+    # with a per-256 fp16 scale_step; the zero is a uint8 code with a per-row
+    # bf16 zero_step. _dequant_matmul reconstructs scale = code*scale_step[g//8],
+    # zero = code*zero_step.
+    return _dequant_matmul(
+        self, qdata, scale, scale_step, zero, zero_step, group_size
+    )
 
 
 # Chunked dequant for the export GPU budget. The lm_head dequant (N = vocab_size,
@@ -75,13 +78,17 @@ _DEQUANT_N_THRESHOLD = 65536
 _DEQUANT_N_CHUNK = 32768
 
 
-def _dequant_matmul(x, qdata, scale, zero, steps, group_size):
+def _dequant_matmul(
+    x, qdata, scale, scale_step, zero, zero_step, group_size
+):
     """Dequant INT4 weights to input dtype and call F.linear.
 
-    scale/zero are uint8 codes in the coalesced [N, n_groups] layout (baked into
-    the weight constant at pack time), aligned row-for-row with qdata's [N, *].
-    steps is [N, 2] bf16 per-row super-scales: the real per-group values are
-    ``scale = scale_code * scale_step`` and ``zero = zero_code * zero_step``.
+    Metadata is in the coalesced [N, n_groups] layout (baked into the weight
+    constant at pack time), aligned row-for-row with qdata's [N, *]. The scale is
+    a uint8 code with a per-256-super-block fp16 ``scale_step`` ([N, K/256]); the
+    real per-group scale is ``scale_code * scale_step[:, g // 8]``. The zero is a
+    uint8 code with a per-row bf16 ``zero_step`` ([N, 1]);
+    ``zero = zero_code * zero_step``.
 
     Large weights (N > threshold, i.e. the lm_head) are chunked along N to bound
     the dequant intermediate (see note above); smaller weights take the original
@@ -91,28 +98,40 @@ def _dequant_matmul(x, qdata, scale, zero, steps, group_size):
     K = K_half * 2
     n_groups = K // group_size
     gs_half = group_size // 2
+    n_super = K // 256
+    groups_per_super = n_groups // n_super
     dtype = x.dtype
 
-    def _dq(qd, sc, ze, st, rows):
+    def _dq(qd, sc, s_step, ze, z_step, rows):
         p = qd.to(torch.uint8).reshape(rows, n_groups, gs_half)
         low = (p & 0x0F).to(dtype)
         high = ((p >> 4) & 0x0F).to(dtype)
         data = torch.stack([low, high], dim=-1).reshape(rows, n_groups, group_size)
-        # Decode uint8 codes -> bf16 per-group scale/zero via per-row steps.
-        scale_step = st[:, 0].to(dtype).reshape(rows, 1)
-        zero_step = st[:, 1].to(dtype).reshape(rows, 1)
-        s = (sc.to(dtype) * scale_step).unsqueeze(-1)
-        z = (ze.to(dtype) * zero_step).unsqueeze(-1)
+        # Scale: uint8 code * per-256 fp16 step (broadcast over the 8 groups in
+        # each super-block).
+        scale_step_g = s_step.to(dtype).repeat_interleave(groups_per_super, dim=1)
+        s = (sc.to(dtype) * scale_step_g).unsqueeze(-1)
+        # Zero: uint8 code * per-row bf16 step (unchanged).
+        z = (ze.to(dtype) * z_step.to(dtype).reshape(rows, 1)).unsqueeze(-1)
         w_deq = ((data - z) * s).reshape(rows, K)
         return F.linear(x, w_deq)
 
     if N <= _DEQUANT_N_THRESHOLD:
-        return _dq(qdata, scale, zero, steps, N)
+        return _dq(qdata, scale, scale_step, zero, zero_step, N)
 
     outs = []
     for i in range(0, N, _DEQUANT_N_CHUNK):
         j = min(i + _DEQUANT_N_CHUNK, N)
-        outs.append(_dq(qdata[i:j], scale[i:j], zero[i:j], steps[i:j], j - i))
+        outs.append(
+            _dq(
+                qdata[i:j],
+                scale[i:j],
+                scale_step[i:j],
+                zero[i:j],
+                zero_step[i:j],
+                j - i,
+            )
+        )
     return torch.cat(outs, dim=-1)
 
 
@@ -137,23 +156,26 @@ def _(func, types, args, kwargs):
 
     qdata = weight_tensor.qdata
     scale = weight_tensor.scale
+    scale_step = weight_tensor.scale_step
     zero = weight_tensor.zero_point
-    steps = weight_tensor.steps
+    zero_step = weight_tensor.zero_step
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
     if M <= 4:
-        # scale/zero are already uint8 codes in the coalesced [N, n_groups]
-        # layout the decode kernel reads directly (baked into the weight
-        # constant at pack time); steps is the per-row [N, 2] super-scale.
-        # Passing them straight through keeps the export graph free of any
-        # per-step transpose/clone, so the coalesced layout is realized
-        # without recomputing it every decode step.
+        # The metadata is already in the coalesced [N, n_groups] layout the
+        # decode kernel reads directly (baked into the weight constant at pack
+        # time): scale as uint8 codes + per-256 fp16 scale_step; zero as uint8
+        # codes + per-row bf16 zero_step. Passing them straight through keeps the
+        # export graph free of any per-step transpose/clone, so the coalesced
+        # layout is realized without recomputing it every decode step.
         out = torch.ops.executorch_cuda.int4_plain_mm(
-            x_2d, qdata, scale, zero, steps, gs
+            x_2d, qdata, scale, scale_step, zero, zero_step, gs
         )
     else:
-        out = _dequant_matmul(x_2d, qdata, scale, zero, steps, gs)
+        out = _dequant_matmul(
+            x_2d, qdata, scale, scale_step, zero, zero_step, gs
+        )
 
     out = out.reshape(*orig_shape[:-1], -1)
     if bias is not None:

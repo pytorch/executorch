@@ -24,8 +24,9 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
     Tensor* self,
     Tensor* qdata,
     Tensor* scale,
+    Tensor* scale_step,
     Tensor* zero,
-    Tensor* steps,
+    Tensor* zero_step,
     int64_t group_size,
     Tensor** ret0) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -44,21 +45,26 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       "aoti_torch_cuda_int4_plain_mm: scale is null");
 
   ET_CHECK_OR_RETURN_ERROR(
+      scale_step != nullptr,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: scale_step is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
       zero != nullptr,
       InvalidArgument,
       "aoti_torch_cuda_int4_plain_mm: zero is null");
 
   ET_CHECK_OR_RETURN_ERROR(
-      steps != nullptr,
+      zero_step != nullptr,
       InvalidArgument,
-      "aoti_torch_cuda_int4_plain_mm: steps is null");
+      "aoti_torch_cuda_int4_plain_mm: zero_step is null");
 
   ET_CHECK_OR_RETURN_ERROR(
       ret0 != nullptr,
       InvalidArgument,
       "aoti_torch_cuda_int4_plain_mm: ret0 is null");
 
-  // Validate the coalesced scale/zero layout [N, K/group_size]
+  // Validate the coalesced metadata layout.
 
   const int64_t N = qdata->size(0);
   const int64_t K = qdata->size(1) * 2;
@@ -94,14 +100,29 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       static_cast<long long>(scale->size(1)),
       static_cast<long long>(zero->size(1)));
 
+  // Scale step: per-256-super-block fp16, [N, K/256].
+  const int64_t n_super = K / 256;
   ET_CHECK_OR_RETURN_ERROR(
-      steps->dim() == 2 && steps->size(0) == N && steps->size(1) == 2,
+      scale_step->dim() == 2 && scale_step->size(0) == N &&
+          scale_step->size(1) == n_super,
       InvalidArgument,
-      "aoti_torch_cuda_int4_plain_mm: steps must be [N, 2] (per-row scale_step, zero_step). Expected size(0)=N=%lld size(1)=2, got steps.dim()=%lld size(0)=%lld size(1)=%lld",
+      "aoti_torch_cuda_int4_plain_mm: scale_step must be [N, K/256] fp16. Expected size(0)=N=%lld size(1)=%lld, got dim()=%lld size(0)=%lld size(1)=%lld",
       static_cast<long long>(N),
-      static_cast<long long>(steps->dim()),
-      static_cast<long long>(steps->dim() == 2 ? steps->size(0) : -1),
-      static_cast<long long>(steps->dim() == 2 ? steps->size(1) : -1));
+      static_cast<long long>(n_super),
+      static_cast<long long>(scale_step->dim()),
+      static_cast<long long>(scale_step->dim() == 2 ? scale_step->size(0) : -1),
+      static_cast<long long>(scale_step->dim() == 2 ? scale_step->size(1) : -1));
+
+  // Zero step: per-row bf16, [N, 1].
+  ET_CHECK_OR_RETURN_ERROR(
+      zero_step->dim() == 2 && zero_step->size(0) == N &&
+          zero_step->size(1) == 1,
+      InvalidArgument,
+      "aoti_torch_cuda_int4_plain_mm: zero_step must be [N, 1] bf16. Expected size(0)=N=%lld size(1)=1, got dim()=%lld size(0)=%lld size(1)=%lld",
+      static_cast<long long>(N),
+      static_cast<long long>(zero_step->dim()),
+      static_cast<long long>(zero_step->dim() == 2 ? zero_step->size(0) : -1),
+      static_cast<long long>(zero_step->dim() == 2 ? zero_step->size(1) : -1));
 
   int32_t M = self->size(0);
   Tensor* C = nullptr;
@@ -118,7 +139,8 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       0,
       &C);
 
-  _int4_plain_mm_cuda(*self, *qdata, *scale, *zero, *steps, group_size, C);
+  _int4_plain_mm_cuda(
+      *self, *qdata, *scale, *scale_step, *zero, *zero_step, group_size, C);
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
 
   *ret0 = C;
