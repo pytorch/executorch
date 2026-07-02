@@ -737,6 +737,8 @@ bool ValueSpec::validate_against_reference(
   }
 
   // Element-wise comparison with both absolute and relative tolerance
+  size_t num_mismatched = 0;
+  size_t first_mismatch = 0;
   for (size_t i = 0; i < computed_data.size(); ++i) {
     float diff = std::abs(computed_data[i] - reference_data[i]);
     float abs_ref = std::abs(reference_data[i]);
@@ -746,14 +748,50 @@ bool ValueSpec::validate_against_reference(
     bool rel_tolerance_ok = diff <= rel_tolerance * abs_ref;
 
     if (!abs_tolerance_ok && !rel_tolerance_ok) {
-      std::cout << "Mismatch at element " << i
-                << ": computed=" << computed_data[i]
-                << ", reference=" << reference_data[i] << ", diff=" << diff
-                << ", abs_tolerance=" << abs_tolerance
-                << ", rel_tolerance=" << rel_tolerance
-                << ", rel_threshold=" << (rel_tolerance * abs_ref) << std::endl;
-      return false;
+      if (num_mismatched == 0) {
+        first_mismatch = i;
+        std::cout << "Mismatch at element " << i
+                  << ": computed=" << computed_data[i]
+                  << ", reference=" << reference_data[i] << ", diff=" << diff
+                  << ", abs_tolerance=" << abs_tolerance
+                  << ", rel_tolerance=" << rel_tolerance
+                  << ", rel_threshold=" << (rel_tolerance * abs_ref)
+                  << std::endl;
+      }
+      num_mismatched++;
     }
+  }
+  if (num_mismatched > 0) {
+    std::cout << "  total mismatched: " << num_mismatched << " / "
+              << computed_data.size() << " (first at " << first_mismatch
+              << ")" << std::endl;
+    // For 2D outputs, print a per-16x16-tile mismatch-count map to expose
+    // the spatial structure of the failure (e.g. zeroed MMA subtiles).
+    if (sizes.size() == 2) {
+      const int64_t Mr = sizes[0];
+      const int64_t Nc = sizes[1];
+      std::cout << "  16x16-tile mismatch counts (rows=M/16, cols=N/16):"
+                << std::endl;
+      for (int64_t ti = 0; ti < (Mr + 15) / 16; ++ti) {
+        std::cout << "    ";
+        for (int64_t tj = 0; tj < (Nc + 15) / 16; ++tj) {
+          int count = 0;
+          for (int64_t r = ti * 16; r < std::min(Mr, (ti + 1) * 16); ++r) {
+            for (int64_t c = tj * 16; c < std::min(Nc, (tj + 1) * 16); ++c) {
+              float diff =
+                  std::abs(computed_data[r * Nc + c] - reference_data[r * Nc + c]);
+              float abs_ref = std::abs(reference_data[r * Nc + c]);
+              if (diff > abs_tolerance && diff > rel_tolerance * abs_ref) {
+                count++;
+              }
+            }
+          }
+          std::cout << std::setw(4) << count;
+        }
+        std::cout << std::endl;
+      }
+    }
+    return false;
   }
 
   if (debugging()) {
@@ -1842,8 +1880,6 @@ TestResult execute_test_cases(
                       << result.get_kernel_name() << std::endl;
             print_valuespec_data(output_spec, "vulkan output");
             print_valuespec_data(output_spec, "ref output", true);
-
-            throw std::runtime_error("Correctness validation failed");
           }
         }
 
@@ -1899,6 +1935,14 @@ TestResult execute_test_cases(
 
   print_separator();
   std::cout << "Completed " << results.size() << " test cases" << std::endl;
+
+  // Hard-fail if any correctness check failed. The per-case loop above keeps
+  // running after a mismatch (so the full pass/fail matrix and per-16x16-tile
+  // mismatch maps are printed for debugging) rather than aborting on the first
+  // failure; throwing here preserves the original abort-on-mismatch behavior.
+  if (any_correctness_failed) {
+    throw std::runtime_error("Correctness validation failed");
+  }
 
   return results;
 }
@@ -1981,10 +2025,19 @@ void print_valuespec_data(
       break;
     }
     case vkapi::kHalf: {
+      if (print_ref_data) {
+        const auto& ref = spec.get_ref_float_data();
+        for (size_t i = 0; i < print_count; ++i) {
+          std::cout << ref[i];
+          if (i < print_count - 1)
+            std::cout << ", ";
+        }
+        break;
+      }
       const auto& data = spec.get_half_data();
       for (size_t i = 0; i < print_count; ++i) {
-        // Convert uint16_t back to float for display
-        float value = data[i] / 32767.0f;
+        // Convert IEEE 754 half-precision bit pattern back to float.
+        float value = half_to_float(data[i]);
         std::cout << value;
         if (i < print_count - 1)
           std::cout << ", ";
