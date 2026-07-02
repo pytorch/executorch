@@ -1,5 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 # Exposed through __init__.py
 runtime.python_library(
     name = "quantization_config",
