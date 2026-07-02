@@ -2,16 +2,15 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import logging
 
 import executorch.backends.nxp.backend.ir.lib.tflite.Padding as tflPadding
 import torch
 
-from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.ir.converter.conversion import common
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     average_pool_2d_options,
@@ -25,6 +24,7 @@ KernelSize = tuple[int, int]
 Stride = tuple[int, int]
 
 
+@requires_channels_first_format
 class AdaptiveAvgPool2dConverter(NodeConverter):
 
     @staticmethod
@@ -45,15 +45,6 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if (
-            format_ := node.meta.get(NXP_NODE_FORMAT)
-        ) is None or not format_.is_channels_first():
-            logging.warning(
-                "NXP backend: `adaptive_avg_pool_2d` doesn't have the required input format for delegation. "
-                "Please run `NodeFormatInference.identify_node_formats()` during lowering or report this issue."
-            )
-            return False
-
         input_size = node.args[0].meta["val"].shape
         output_size = node.args[1]
 

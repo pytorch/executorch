@@ -783,7 +783,7 @@ if(EXECUTORCH_BUILD_XNNPACK)
   list(APPEND _executorch_backends xnnpack_backend)
 endif()
 
-if(EXECUTORCH_BUILD_CORTEX_M)
+if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
