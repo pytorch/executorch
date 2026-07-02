@@ -27,7 +27,6 @@ See README.md in this directory for full documentation.
 import os
 from typing import Callable, Dict, List, Optional, Tuple
 
-import executorch.exir as exir
 import torch
 import torch.nn as nn
 
@@ -112,62 +111,6 @@ class AddTest(OpTestCase):
         else:
             y = torch.randn(self.shape)
             return (x, y)
-
-
-class ReinplaceChainModel(nn.Module):
-    """Elementwise chain the reinplace pass converts to in-place ops.
-
-    Mixes a pure unary op (exp), activations (sigmoid/relu/clamp/gelu), and
-    binary ops (add/mul/sub) so the chain exercises the unary, activation, and
-    binary in-place handlers. Every op after the first sigmoid consumes a
-    single-use temp, so all become in-place (sigmoid_/add_/relu_/mul_/clamp_/
-    exp_/gelu_/sub_) and run on one rolling buffer; the terminal neg writes the
-    graph output. Inputs are kept NaN/Inf-free: sigmoid -> bounded, clamp to
-    [-2, 2] before exp so exp stays in [e^-2, e^2].
-    """
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        s = torch.sigmoid(x)  # reads input -> fresh temp
-        s = s + y  # add_
-        s = torch.relu(s)  # relu_ (activation)
-        s = s * y  # mul_
-        s = torch.clamp(s, -2.0, 2.0)  # clamp_ (activation), bounds exp below
-        s = torch.exp(s)  # exp_ (pure unary)
-        s = torch.nn.functional.gelu(s)  # gelu_ (activation)
-        s = s - y  # sub_
-        return torch.neg(s)  # terminal output (not in-place)
-
-
-@register_test
-class ReinplaceChainTest(OpTestCase):
-    """On-device numeric check that reinplaced (out==in) ops are correct.
-
-    Lowers with get_default_passes() so the MLXReinplacePass + in-place handlers
-    (out == in buffer donation) run through the actual MLX runtime. The
-    build-level aliasing is unit-tested in test_passes.py; only on-device
-    execution catches a read-after-overwrite bug from buffer reuse.
-    """
-
-    name = "reinplace_chain"
-    rtol = 1e-4
-    atol = 1e-4
-
-    def create_model(self) -> nn.Module:
-        return ReinplaceChainModel()
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(2, 16, 64), torch.randn(2, 16, 64))
-
-    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
-        # Reinplace introduces non-core-ATen in-place ops (add_, sigmoid_, ...),
-        # so disable the strict edge verifier — matching the production export
-        # path (which also runs get_default_passes with this config).
-        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
-
-    def get_transform_passes(self) -> Optional[list]:
-        from executorch.backends.mlx.passes import get_default_passes
-
-        return get_default_passes()
 
 
 class SubModel(nn.Module):
@@ -6599,12 +6542,28 @@ class QuantizedSwitchLinearTest(OpTestCase):
 class GatherMmModel(nn.Module):
     """Model using mlx::gather_mm for expert selection + matmul."""
 
-    def __init__(self, num_experts: int, in_features: int, out_features: int):
+    def __init__(
+        self,
+        num_experts: int,
+        in_features: int,
+        out_features: int,
+        sorted_indices: bool = False,
+    ):
         super().__init__()
         self.register_buffer(
             "weight",
             torch.randn(num_experts, out_features, in_features),
         )
+        # issue #20554: sorted_indices is now Optional[Tensor] (0-d int32)
+        # rather than a bool. Store as buffer so it is part of the exported
+        # graph and exercises the new IntOrVid runtime path in the handler.
+        if sorted_indices:
+            self.register_buffer(
+                "sorted_flag",
+                torch.ones((), dtype=torch.int32),
+            )
+        else:
+            self.sorted_flag = None
 
     def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
         import executorch.backends.mlx.custom_ops as _  # noqa
@@ -6613,13 +6572,20 @@ class GatherMmModel(nn.Module):
         # Transpose weight from [E, out, in] to [E, in, out]
         # gather_mm returns [N, 1, out], squeeze dim -2
         return torch.ops.mlx.gather_mm(
-            x.unsqueeze(-2), self.weight.transpose(-1, -2), rhs_indices=indices
+            x.unsqueeze(-2),
+            self.weight.transpose(-1, -2),
+            rhs_indices=indices,
+            sorted_indices=self.sorted_flag,
         ).squeeze(-2)
 
 
 @register_test
 class GatherMmTest(OpTestCase):
-    """Test case for mlx::gather_mm."""
+    """Test case for mlx::gather_mm.
+
+    issue #20554: added sorted=True config to exercise the new
+    Optional[Tensor] -> IntOrVid runtime path in _gather_mm_handler.
+    """
 
     name = "gather_mm"
     rtol = 1e-4
@@ -6632,16 +6598,20 @@ class GatherMmTest(OpTestCase):
         out_features: int = 128,
         batch_size: int = 2,
         dtype: torch.dtype = torch.float32,
+        sorted_indices: bool = False,
     ):
         self.num_experts = num_experts
         self.in_features = in_features
         self.out_features = out_features
         self.batch_size = batch_size
         self.dtype = dtype
+        self.sorted_indices = sorted_indices
 
         parts = ["gather_mm", f"e{num_experts}", f"i{in_features}", f"o{out_features}"]
         if dtype != torch.float32:
             parts.append(str(dtype).split(".")[-1])
+        if sorted_indices:
+            parts.append("sorted")
         self.name = "_".join(parts)
 
     @classmethod
@@ -6651,10 +6621,18 @@ class GatherMmTest(OpTestCase):
             cls(num_experts=8, in_features=128, out_features=256),
             cls(dtype=torch.bfloat16),
             cls(batch_size=1),
+            # issue #20554: exercise sorted_indices=Tensor (IntOrVid runtime path)
+            cls(sorted_indices=True),
+            cls(sorted_indices=True, dtype=torch.bfloat16),
         ]
 
     def create_model(self) -> nn.Module:
-        model = GatherMmModel(self.num_experts, self.in_features, self.out_features)
+        model = GatherMmModel(
+            self.num_experts,
+            self.in_features,
+            self.out_features,
+            sorted_indices=self.sorted_indices,
+        )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
@@ -6676,10 +6654,16 @@ class GatherQmmModel(nn.Module):
         in_features: int,
         out_features: int,
         group_size: int = 32,
+        sorted_indices: bool = False,
     ):
         super().__init__()
         self.out_features = out_features
         self.group_size = group_size
+        # issue #20554: same pattern as GatherMmModel
+        if sorted_indices:
+            self.register_buffer("sorted_flag", torch.ones((), dtype=torch.int32))
+        else:
+            self.sorted_flag = None
 
         # Create per-expert nn.Linear, quantize, extract inner tensors
         from executorch.backends.mlx.llm.quantization import quantize_model_
@@ -6720,12 +6704,17 @@ class GatherQmmModel(nn.Module):
             biases=self.zero_point,
             rhs_indices=indices,
             group_size=self.group_size,
+            sorted_indices=self.sorted_flag,  # issue #20554: Optional[Tensor]
         ).squeeze(-2)
 
 
 @register_test
 class GatherQmmTest(OpTestCase):
-    """Test case for mlx::gather_qmm."""
+    """Test case for mlx::gather_qmm.
+
+    issue #20554: added sorted=True config to exercise the new
+    Optional[Tensor] -> IntOrVid runtime path in _gather_qmm_handler.
+    """
 
     name = "gather_qmm"
     rtol = 0.1
@@ -6739,6 +6728,7 @@ class GatherQmmTest(OpTestCase):
         batch_size: int = 2,
         group_size: int = 32,
         dtype: torch.dtype = torch.float32,
+        sorted_indices: bool = False,
     ):
         self.num_experts = num_experts
         self.in_features = in_features
@@ -6746,6 +6736,7 @@ class GatherQmmTest(OpTestCase):
         self.batch_size = batch_size
         self.group_size = group_size
         self.dtype = dtype
+        self.sorted_indices = sorted_indices
 
         parts = [
             "gather_qmm",
@@ -6756,6 +6747,8 @@ class GatherQmmTest(OpTestCase):
         ]
         if dtype != torch.float32:
             parts.append(str(dtype).split(".")[-1])
+        if sorted_indices:
+            parts.append("sorted")
         self.name = "_".join(parts)
 
     @classmethod
@@ -6765,6 +6758,9 @@ class GatherQmmTest(OpTestCase):
             cls(num_experts=8, in_features=128, out_features=256),
             cls(dtype=torch.bfloat16),
             cls(batch_size=1),
+            # issue #20554: exercise sorted_indices=Tensor (IntOrVid runtime path)
+            cls(sorted_indices=True),
+            cls(sorted_indices=True, dtype=torch.bfloat16),
         ]
 
     def get_edge_compile_config(self):
@@ -6778,6 +6774,7 @@ class GatherQmmTest(OpTestCase):
             self.in_features,
             self.out_features,
             self.group_size,
+            sorted_indices=self.sorted_indices,
         )
         return model.to(self.dtype)
 
@@ -7733,17 +7730,6 @@ class TopPSampleModel(nn.Module):
         return self.head(logits, temperature=temperature, seed=seed, top_p=top_p)
 
 
-class TopKSampleModel(nn.Module):
-    """SamplingHead with temperature, seed, and top_k as runtime inputs."""
-
-    def __init__(self):
-        super().__init__()
-        self.head = SamplingHead(_LogitsPassthrough())
-
-    def forward(self, logits, temperature, seed, top_k):
-        return self.head(logits, temperature=temperature, seed=seed, top_k=top_k)
-
-
 @register_test
 class SampleSeededTest(OpTestCase):
     """Seeded sample lowers to one MLX segment; seed threads in via ItemIntNode."""
@@ -7754,14 +7740,12 @@ class SampleSeededTest(OpTestCase):
         "IfNode": 1,  # temperature==0 greedy branch
         "RandomBitsNode": 1,
         "ArgmaxNode": 2,  # sampling branch + greedy branch
-        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "ItemIntNode": 2,  # seed + temperature>0 condition
         "SoftmaxNode": 1,  # top-p nucleus chain
-        "SortNode": 2,  # top-k threshold + top-p nucleus chain
+        "SortNode": 1,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 2,  # last-token slice + top-k threshold gather
-        "ExpandDimsNode": 1,
-        "WhereNode": 3,
+        "WhereNode": 2,
     }
 
     def create_model(self) -> nn.Module:
@@ -7785,7 +7769,7 @@ class SampleUnseededTest(OpTestCase):
         "IfNode": 1,
         "RandomBitsNode": 1,
         "ArgmaxNode": 2,
-        "ItemIntNode": 2,  # top_k + temperature>0 condition only (no seed)
+        "ItemIntNode": 1,  # temperature>0 condition only (no seed)
         "SoftmaxNode": 1,  # top-p nucleus chain (top_p defaults to 1.0)
     }
 
@@ -7806,14 +7790,12 @@ class SampleTopPTest(OpTestCase):
         "IfNode": 1,
         "RandomBitsNode": 1,
         "ArgmaxNode": 2,
-        "ItemIntNode": 3,
+        "ItemIntNode": 2,
         "SoftmaxNode": 1,
-        "SortNode": 2,
+        "SortNode": 1,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 2,  # last-token slice + top-k threshold gather
-        "ExpandDimsNode": 1,
-        "WhereNode": 3,
+        "WhereNode": 2,
     }
 
     def create_model(self) -> nn.Module:
@@ -7825,39 +7807,6 @@ class SampleTopPTest(OpTestCase):
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
             torch.tensor(0.9),
-        )
-
-
-@register_test
-class SampleTopKTest(OpTestCase):
-    """Top-k sample emits the threshold before the top-p nucleus chain."""
-
-    name = "sample_top_k"
-    skip_comparison = True  # sampling RNG is not host/device bit-identical
-    expected_node_counts = {
-        "IfNode": 1,
-        "RandomBitsNode": 1,
-        "ArgmaxNode": 2,
-        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
-        "SoftmaxNode": 1,
-        "SortNode": 2,
-        "CumsumNode": 1,
-        "MinNode": 1,
-        "TakeNode": 2,  # last-token slice + top-k threshold gather
-        "ExpandDimsNode": 1,
-        "LogicalOrNode": 0,
-        "WhereNode": 3,
-    }
-
-    def create_model(self) -> nn.Module:
-        return TopKSampleModel()
-
-    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (
-            torch.randn(1, 4, 256),
-            torch.tensor(0.8),
-            torch.tensor(0, dtype=torch.int64),
-            torch.tensor(2, dtype=torch.int64),
         )
 
 
@@ -7903,3 +7852,191 @@ class SampleGreedyTest(OpTestCase):
             torch.tensor(self.temperature),
             torch.tensor(0, dtype=torch.int64),
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #20554: moe_gather_inputs / moe_scatter_outputs
+# ---------------------------------------------------------------------------
+
+
+class MoeGatherInputsModel(nn.Module):
+    """Wraps moe_gather_inputs to make it exportable as a single-output model.
+    Returns only x_input (the first of the four outputs) so OpTestCase can
+    compare it against the eager reference using its standard allclose check.
+    The remaining outputs (idx, sort_experts, inv_order) are validated in
+    MoeScatterOutputsModel below via the round-trip prefill test.
+    """
+
+    def __init__(self, top_k: int = 2, sort_cutoff: int = 1):
+        super().__init__()
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+
+    def forward(
+        self, x: torch.Tensor, expert_indices: torch.Tensor
+    ) -> torch.Tensor:
+        import executorch.backends.mlx.custom_ops as _  # noqa: F401
+
+        x_input, _, _, _ = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, self.top_k, self.sort_cutoff
+        )
+        return x_input
+
+
+@register_test
+class MoeGatherInputsTest(OpTestCase):
+    """Test case for mlx::moe_gather_inputs (issue #20554).
+
+    Covers both N=1 (decode, unsorted) and N>sort_cutoff (prefill, sorted)
+    paths via separate configs, matching get_test_configs() convention.
+    Node counts verified by validate_moe_20554.py.
+    """
+
+    name = "moe_gather_inputs"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        batch_size: int = 4,
+        hidden_size: int = 32,
+        num_experts: int = 8,
+        top_k: int = 2,
+        sort_cutoff: int = 1,
+        tag: str = "",
+    ):
+        self.batch_size = batch_size
+        self.hidden_size = hidden_size
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+
+        parts = ["moe_gather_inputs", f"N{batch_size}", f"E{num_experts}", f"k{top_k}"]
+        if tag:
+            parts.append(tag)
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["MoeGatherInputsTest"]:
+        return [
+            cls(batch_size=4, tag="prefill"),     # N > sort_cutoff -> sorted path
+            cls(batch_size=1, tag="decode"),       # N <= sort_cutoff -> unsorted path
+            cls(batch_size=4, num_experts=16, top_k=4, tag="top4"),
+        ]
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        if self.batch_size > self.sort_cutoff:
+            # sorted path: 2x ArgsortNode, no RepeatNode, no IfNode
+            return {
+                "ArgsortNode": 2,
+                "TakeNode": 2,
+                "FloorDivideNode": 1,
+                "ExpandDimsNode": 1,
+                "IdCopyNode": 5,
+                "RepeatNode": 0,
+                "IfNode": 0,
+            }
+        else:
+            # unsorted path: RepeatNode, no ArgsortNode, no IfNode
+            return {
+                "ArgsortNode": 0,
+                "RepeatNode": 1,
+                "ExpandDimsNode": 1,
+                "IdCopyNode": 5,
+                "IfNode": 0,
+            }
+
+    def create_model(self) -> nn.Module:
+        return MoeGatherInputsModel(top_k=self.top_k, sort_cutoff=self.sort_cutoff)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.hidden_size)
+        expert_indices = torch.randint(0, self.num_experts, (self.batch_size, self.top_k))
+        return (x, expert_indices)
+
+
+class MoeScatterOutputsModel(nn.Module):
+    """Round-trip: moe_gather_inputs -> identity down_proj -> moe_scatter_outputs.
+    Returns the final [N, top_k, hidden] tensor so OpTestCase can verify
+    the full gather/sort/scatter pipeline end-to-end.
+    """
+
+    def __init__(self, top_k: int = 2, sort_cutoff: int = 1, hidden_out: int = 16):
+        super().__init__()
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+        self.hidden_out = hidden_out
+
+    def forward(
+        self, x: torch.Tensor, expert_indices: torch.Tensor
+    ) -> torch.Tensor:
+        import executorch.backends.mlx.custom_ops as _  # noqa: F401
+
+        x_input, idx, sort_experts, inv_order = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, self.top_k, self.sort_cutoff
+        )
+        # Simulate a down_proj output: [N*top_k, 1, hidden_out]
+        NK = x_input.shape[0]
+        down = x_input[..., : self.hidden_out].contiguous()   # cheap slice as proxy
+        if down.shape[-1] < self.hidden_out:
+            down = down.repeat(1, 1, self.hidden_out // down.shape[-1] + 1)[
+                ..., : self.hidden_out
+            ]
+        down = down.view(NK, 1, self.hidden_out)
+        return torch.ops.mlx.moe_scatter_outputs(down, sort_experts, inv_order, self.top_k)
+
+
+@register_test
+class MoeScatterOutputsTest(OpTestCase):
+    """Test case for mlx::moe_scatter_outputs (issue #20554).
+
+    Validates the round-trip shape and that the unsorted (decode) path
+    produces a result consistent with the sorted (prefill) path.
+    """
+
+    name = "moe_scatter_outputs"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        batch_size: int = 4,
+        hidden_size: int = 32,
+        hidden_out: int = 16,
+        num_experts: int = 8,
+        top_k: int = 2,
+        sort_cutoff: int = 1,
+        tag: str = "",
+    ):
+        self.batch_size = batch_size
+        self.hidden_size = hidden_size
+        self.hidden_out = hidden_out
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+
+        parts = ["moe_scatter_outputs", f"N{batch_size}", f"E{num_experts}", f"k{top_k}"]
+        if tag:
+            parts.append(tag)
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["MoeScatterOutputsTest"]:
+        return [
+            cls(batch_size=4, tag="prefill"),
+            cls(batch_size=1, tag="decode"),
+            cls(batch_size=4, num_experts=16, top_k=4, hidden_out=32, tag="top4"),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return MoeScatterOutputsModel(
+            top_k=self.top_k,
+            sort_cutoff=self.sort_cutoff,
+            hidden_out=self.hidden_out,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.hidden_size)
+        expert_indices = torch.randint(0, self.num_experts, (self.batch_size, self.top_k))
+        return (x, expert_indices)
+

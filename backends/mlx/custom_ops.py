@@ -14,7 +14,7 @@ These ops are used during model export to represent operations that MLX
 can execute efficiently but may not have direct PyTorch equivalents.
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 from torch import Tensor
@@ -285,7 +285,7 @@ def gather_mm(
     b: Tensor,  # [E, K, N] or [..., K, N]
     rhs_indices: Optional[Tensor] = None,  # Expert selection indices
     lhs_indices: Optional[Tensor] = None,  # Optional LHS gather indices
-    sorted_indices: bool = False,
+    sorted_indices: Optional[Tensor] = None,  # issue #20554: 0-d int; None/0 = unsorted
 ) -> Tensor:
     """
     Gather matrix multiply — matches mlx::core::gather_mm semantics exactly.
@@ -295,6 +295,10 @@ def gather_mm(
 
     For MoE: a=[N_tokens, 1, K], b=[E, K, out], rhs_indices=[N_tokens]
     → output=[N_tokens, 1, out]. Caller squeezes dim -2.
+
+    sorted_indices is layout-only (correctness contract for the MLX
+    kernel at runtime); numerics are identical either way, so the eager
+    reference ignores it (issue #20554, section 2).
     """
     if rhs_indices is not None:
         b_sel = b[rhs_indices]
@@ -309,7 +313,7 @@ def gather_mm_fake(
     b: Tensor,
     rhs_indices: Optional[Tensor] = None,
     lhs_indices: Optional[Tensor] = None,
-    sorted_indices: bool = False,
+    sorted_indices: Optional[Tensor] = None,
 ) -> Tensor:
     # Matches MLX: output = indices.shape + [M, N]
     # For simplicity, use matmul shape rules after gather
@@ -334,7 +338,7 @@ def gather_qmm(
     group_size: int = 32,
     bits: int = 4,
     mode: str = "affine",
-    sorted_indices: bool = False,
+    sorted_indices: Optional[Tensor] = None,  # issue #20554: 0-d int; None/0 = unsorted
 ) -> Tensor:
     """
     Gather quantized matrix multiply — matches mlx::core::gather_qmm semantics.
@@ -343,6 +347,8 @@ def gather_qmm(
 
     For MoE: x=[N_tokens, 1, K], w=[E, out, K_packed], rhs_indices=[N_tokens]
     → output=[N_tokens, 1, out]. Caller squeezes dim -2.
+
+    sorted_indices is layout-only; ignored here (see gather_mm docstring).
     """
     # Eager fallback: gather, dequantize, matmul
     if rhs_indices is not None:
@@ -381,7 +387,7 @@ def gather_qmm_fake(
     group_size: int = 32,
     bits: int = 4,
     mode: str = "affine",
-    sorted_indices: bool = False,
+    sorted_indices: Optional[Tensor] = None,
 ) -> Tensor:
     # Matches MLX: output = indices.shape + [M, N]
     M = x.shape[-2]
@@ -397,19 +403,15 @@ def gather_qmm_fake(
 def sample(
     logits: Tensor,
     temperature: Tensor,
-    top_k: Tensor,
     top_p: Tensor,
     seed: Optional[Tensor] = None,
 ) -> Tensor:
     """
-    Gumbel-max sampling from softmax(logits / temperature), with top-k and
-    top-p (nucleus) filtering.
+    Gumbel-max sampling from softmax(logits / temperature), with top-p (nucleus).
     logits:      [B, vocab]
     temperature: scalar float tensor    (runtime input). temperature <= 0 is
                  greedy: return argmax(logits) directly (matches the device,
                  which branches on temperature > 0).
-    top_k:       scalar int tensor. It is clipped to the vocab size; using the
-                 max int default keeps every token.
     top_p:       scalar float tensor in (0, 1]. top_p=1.0 keeps every
                  token, i.e. it is off.
     seed:        scalar int tensor or None
@@ -426,14 +428,6 @@ def sample(
         return torch.argmax(logits, dim=-1)
     # whole chain in fp32 to match the lowered graph (bf16 sums mis-rank ties).
     scaled = logits.float() / temperature
-
-    k = min(int(top_k.item()), scaled.shape[-1])
-    s_scaled, _ = torch.sort(scaled, dim=-1, descending=True)
-    kth = s_scaled[..., k - 1 : k]
-    scaled = torch.where(scaled >= kth, scaled, scaled.new_tensor(float("-inf")))
-
-    # Apply top-p after top-k so the probabilities are renormalized over the
-    # top-k subset.
     probs = torch.softmax(scaled, dim=-1)
     s_probs, _ = torch.sort(probs, dim=-1, descending=True)
     cum = torch.cumsum(s_probs, dim=-1)
@@ -452,5 +446,77 @@ def sample(
 
 
 @torch.library.register_fake("mlx::sample")
-def sample_fake(logits, temperature, top_k, top_p, seed=None):
+def sample_fake(logits, temperature, top_p, seed=None):
     return logits.new_empty(logits.shape[:-1], dtype=torch.long)
+
+
+# ---------------------------------------------------------------------
+# Issue #20554: runtime MoE expert-sort for decode (MLX backend)
+# ---------------------------------------------------------------------
+
+
+@torch.library.custom_op("mlx::moe_gather_inputs", mutates_args=())
+def moe_gather_inputs(
+    x: Tensor, expert_indices: Tensor, top_k: int, sort_cutoff: int
+) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Branch on M on purpose — this is the executable spec the lowering
+    handler (ops.py) mirrors branch-for-branch. Sorting is an invertible
+    permutation (identical numerics either way); the two paths exist for
+    the lowering's sake, not the math's."""
+    N = x.shape[0]
+    if N > sort_cutoff:  # SORTED path  (handler: emit_sorted)
+        flat = expert_indices.flatten()
+        order = flat.argsort().to(torch.int32)
+        inv_order = order.argsort().to(torch.int32)
+        idx = flat[order].to(torch.int32)                      # [N*top_k]
+        x_input = x[(order // top_k).to(torch.int64)].unsqueeze(-2)  # [N*top_k, 1, D]
+        sort_experts = torch.ones((), dtype=torch.int32)
+    else:                # UNSORTED path (handler: emit_unsorted)
+        x_input = x.repeat_interleave(top_k, dim=0).unsqueeze(-2)    # [N*top_k, 1, D]
+        idx = expert_indices.flatten().to(torch.int32)              # [N*top_k]
+        sort_experts = torch.zeros((), dtype=torch.int32)
+        inv_order = torch.empty(0, dtype=torch.int32)               # sentinel: never read
+    return x_input, idx, sort_experts, inv_order
+
+
+@torch.library.register_fake("mlx::moe_gather_inputs")
+def moe_gather_inputs_fake(
+    x: Tensor, expert_indices: Tensor, top_k: int, sort_cutoff: int
+) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    """Must NOT branch on M (symbolic SymInt under export — data-dependent
+    control flow on it is illegal). One shape for all M: the sorted-path
+    shape for x_input/idx/inv_order (issue #20554, section 3)."""
+    N = x.shape[0]
+    D = x.shape[-1]
+    NK = N * top_k
+    x_input = x.new_empty((NK, 1, D))
+    idx = expert_indices.new_empty((NK,), dtype=torch.int32)
+    sort_experts = x.new_empty((), dtype=torch.int32)
+    inv_order = x.new_empty((NK,), dtype=torch.int32)
+    return x_input, idx, sort_experts, inv_order
+
+
+@torch.library.custom_op("mlx::moe_scatter_outputs", mutates_args=())
+def moe_scatter_outputs(
+    down: Tensor, sort_experts: Tensor, inv_order: Tensor, top_k: int
+) -> Tensor:
+    down = down.squeeze(-2)                                     # [N*top_k, H]
+    if sort_experts.item():  # prefill: scatter back   (handler: emit_then)
+        down = down[inv_order]
+    # decode: no scatter (inv_order is the unread sentinel)  (handler: emit_else)
+    return down.reshape(down.shape[0] // top_k, top_k, -1).clone()  # [N, top_k, H]
+    # .clone(): avoids the aliasing-on-leaf-op issue opcheck flags for
+    # the no-op (unsorted) reshape path -- not in the issue's pseudo-code
+    # verbatim, added per torch.library.opcheck's aliasing requirement
+    # for custom ops (mutates_args=() means outputs must not alias inputs).
+
+
+@torch.library.register_fake("mlx::moe_scatter_outputs")
+def moe_scatter_outputs_fake(
+    down: Tensor, sort_experts: Tensor, inv_order: Tensor, top_k: int
+) -> Tensor:
+    """Shape derived only from down + top_k -- no branching needed, no
+    dependency on inv_order's shape (issue #20554, section 3)."""
+    NK = down.shape[0]
+    H = down.shape[-1]
+    return down.new_empty((NK // top_k, top_k, H))

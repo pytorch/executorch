@@ -352,6 +352,28 @@ def emit_ceil_div(
     return P.to_int_or_vid(out_slot)
 
 
+def emit_floordiv(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a // b`` (floor division), folding when both operands are
+    static (issue #20554). Used for ``cond = (M - 1) // sort_cutoff``:
+    0 when M <= sort_cutoff (unsorted), >= 1 when M > sort_cutoff (sorted).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        FloorDivideIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal // b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(FloorDivideIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
 def emit_if_else(
     P: "MLXProgramBuilder",
     cond: "IntOrVid",

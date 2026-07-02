@@ -21,16 +21,18 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
     emit_if_else,
+    emit_floordiv,
     emit_lifted_constant,
     emit_quantized_biases,
     emit_shape,
+    emit_sub_int,
     parse_dequant_node,
     to_mlx_qparams,
     torch_dtype_to_scalar_type,
 )
 from executorch.backends.mlx.builder.op_registry import REGISTRY
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
-from executorch.backends.mlx.builder.slot_manager import IdSpace, IdType, Slot
+from executorch.backends.mlx.builder.slot_manager import IdType, Slot
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AbsNode,
     AddIntNode,
@@ -164,7 +166,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
 # The corresponding edge ops are automatically registered
 # For ops that are not in aten (e.g., dim order ops), directly register on exir_ops
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.passes.reinplace import _derive_edge_inplace_overload
 from torch.fx.node import Node
 
 _LEAKY_RELU_DEFAULT_NEGATIVE_SLOPE = 0.01
@@ -427,217 +428,6 @@ def _make_unary_handler(node_cls: Any, op_name: str):
 
 for _target, _node_cls, _op_name in _UNARY_OPS:
     REGISTRY.register(target=[_target])(_make_unary_handler(_node_cls, _op_name))
-
-
-def _make_inplace_unary_handler(node_cls: Any, op_name: str):
-    """Create a handler for an in-place unary op (e.g. aten.exp_).
-
-    These nodes are produced by the MLX reinplace pass (see passes.py), which
-    only rewrites a functional op to its in-place form when the input is a dead,
-    single-use temp. We bind the node's output slot to that input slot and emit
-    with out_tid == in_tid so MLX donates the input buffer at eval time (same
-    mechanism as SLICE_UPDATE/INDEX_COPY). If the input is not a reusable temp
-    (defensive — should not happen given the reinplace safety analysis), fall
-    back to allocating a fresh output slot.
-    """
-
-    def handler(P: MLXProgramBuilder, n: Node) -> Slot:
-        args = P.args(n)
-        require_args(args, 1, 1, op_name)
-        require_kwargs(P.kwargs(n), set(), op_name)
-        x = args[0]
-        input_node = n.args[0]
-        # Only alias when n produces a fresh temp (no pre-assigned slot). Graph
-        # outputs / mutable buffers already own an Output/MutableBuffer slot
-        # (from _make_io_slots) and must keep it, so fall back to functional for
-        # those — donation on a terminal output is worthless anyway (it's copied
-        # out). Also require the input to be a dead, single-use temp.
-        if (
-            P.slot_manager.get_slot(n) is None
-            and isinstance(x, Slot)
-            and x.id_space == IdSpace.Temp
-            and isinstance(input_node, Node)
-            and len(input_node.users) == 1
-        ):
-            # Reuse the dead input temp's slot as the output (out == in). The
-            # builder's slot-lifetime transfer (program_builder._mark_read) keeps
-            # this slot alive until n's own users are done.
-            P.set_slot(n, x)
-            P.emit(node_cls(x=P.slot_to_tid(x), out=P.slot_to_tid(x)))
-            return x
-        out = P.make_or_get_slot(n)
-        P.emit(node_cls(x=P.slot_to_tid(x), out=P.slot_to_tid(out)))
-        return out
-
-    handler.__name__ = f"_{op_name.replace('.', '_')}_handler"
-    handler.__doc__ = f"Handle {op_name} (in-place table-driven unary op)."
-    return handler
-
-
-# Register in-place variants (e.g. aten.exp_) for every unary op MLX handles that
-# has an aten in-place overload. REINPLACEABLE_UNARY_BASE_NAMES is the source of
-# truth consumed by passes.py to build the reinplace pass's op set, so MLX has
-# full control over exactly which ops get reinplaced (handlers exist for all of
-# them, and nothing else — e.g. index_put is never included).
-REINPLACEABLE_UNARY_BASE_NAMES: List[str] = []
-for _target, _node_cls, _op_name in _UNARY_OPS:
-    _base = _op_name.split(".")[-1]
-    _ip_packet = getattr(torch.ops.aten, _base + "_", None)
-    _ip_op = getattr(_ip_packet, "default", None) if _ip_packet is not None else None
-    if _ip_op is None:
-        continue
-    REGISTRY.register(target=[_ip_op])(
-        _make_inplace_unary_handler(_node_cls, _op_name + "_")
-    )
-    REINPLACEABLE_UNARY_BASE_NAMES.append(_base)
-
-
-def _inplace_alias_slot(P: MLXProgramBuilder, n: Node, a) -> Optional[Slot]:
-    """Return ``a``'s slot if it is safe to reuse it as ``n``'s output (out == in).
-
-    The MLX reinplace pass only emits an in-place op when the mutated operand is
-    full-size and dtype-matching (the shape/dtype guard lives there, where it is
-    dynamic-shape/SymInt-safe). So this handler-side check just confirms ``a`` is
-    a reusable temp: ``n`` has no pre-assigned slot (not a graph output / mutable
-    buffer) and ``a`` is a single-use ``Temp`` tensor. (Reusing the slot is
-    runtime-correct regardless of shape — it is functional slot reuse; MLX only
-    donates the buffer when sizes are compatible.) Returns None otherwise.
-    """
-    if P.slot_manager.get_slot(n) is not None:
-        return None
-    a_node = n.args[0] if n.args else None
-    if not (
-        isinstance(a, Slot)
-        and a.id_space == IdSpace.Temp
-        and isinstance(a_node, Node)
-        and len(a_node.users) == 1
-    ):
-        return None
-    return a
-
-
-def _make_inplace_binary_handler(node_cls: Any, op_name: str):
-    """In-place binary handler (mul_/div_, no alpha): alias out == arg0 when safe.
-
-    Produced by the MLX reinplace pass, which already guarantees arg0 is a
-    full-size, dtype-matching, single-use dead temp; the alias check here is
-    defensive and also handles the graph-output fallback.
-    """
-
-    def handler(P: MLXProgramBuilder, n: Node) -> Slot:
-        args = P.args(n)
-        require_args(args, 2, 2, op_name)
-        require_kwargs(P.kwargs(n), set(), op_name)
-        a, b = args[0], args[1]
-        alias = _inplace_alias_slot(P, n, a)
-        out = alias if alias is not None else P.make_or_get_slot(n)
-        P.emit(node_cls(a=P.slot_to_tid(a), b=P.slot_to_tid(b), out=P.slot_to_tid(out)))
-        if alias is not None:
-            P.set_slot(n, alias)
-        return out
-
-    handler.__name__ = f"_{op_name.replace('.', '_')}_handler"
-    handler.__doc__ = f"Handle {op_name} (in-place table-driven binary op)."
-    return handler
-
-
-def _make_inplace_addsub_handler(node_cls: Any, op_name: str):
-    """In-place add_/sub_ handler: handles the alpha kwarg and aliases out == arg0.
-
-    ``alpha`` only scales the *other* operand (arg1), so it never blocks aliasing
-    arg0 (self); when ``alpha != 1`` we emit ``other * alpha`` into a temp first.
-    """
-
-    def handler(P: MLXProgramBuilder, n: Node) -> Slot:
-        args = P.args(n)
-        require_args(args, 2, 2, op_name)
-        require_kwargs(P.kwargs(n), {"alpha"}, op_name)
-        a, b = args[0], args[1]
-        alpha = P.kwargs(n).get("alpha", 1)
-        if alpha != 1:
-            input_meta = n.args[0].meta.get("val")
-            dtype = input_meta.dtype if input_meta is not None else torch.float32
-            alpha_slot = emit_lifted_constant(P, alpha, dtype)
-            _, tmp = P.make_tmp_slot()
-            P.emit(
-                MultiplyNode(
-                    a=P.slot_to_tid(b),
-                    b=P.slot_to_tid(alpha_slot),
-                    out=P.slot_to_tid(tmp),
-                )
-            )
-            b = tmp
-        alias = _inplace_alias_slot(P, n, a)
-        out = alias if alias is not None else P.make_or_get_slot(n)
-        P.emit(node_cls(a=P.slot_to_tid(a), b=P.slot_to_tid(b), out=P.slot_to_tid(out)))
-        if alias is not None:
-            P.set_slot(n, alias)
-        return out
-
-    handler.__name__ = f"_{op_name.replace('.', '_')}_handler"
-    handler.__doc__ = f"Handle {op_name} (in-place add/sub op)."
-    return handler
-
-
-# In-place binary handlers + the (base, overload) source of truth consumed by
-# passes.py to build the binary reinplace op set. Restricted to dtype-preserving
-# arithmetic Tensor overloads; the reinplace pass additionally guards that arg0
-# is full-size (no broadcast) before producing these in-place ops.
-REINPLACEABLE_BINARY_BASE_OVERLOADS: List[Tuple[str, str]] = []
-for _ip_target, _ip_node_cls, _ip_name, _is_addsub in (
-    (torch.ops.aten.add_.Tensor, AddNode, "aten.add_", True),
-    (torch.ops.aten.sub_.Tensor, SubtractNode, "aten.sub_", True),
-    (torch.ops.aten.mul_.Tensor, MultiplyNode, "aten.mul_", False),
-    (torch.ops.aten.div_.Tensor, DivideNode, "aten.div_", False),
-):
-    _factory = (
-        _make_inplace_addsub_handler if _is_addsub else _make_inplace_binary_handler
-    )
-    REGISTRY.register(target=[_ip_target])(_factory(_ip_node_cls, _ip_name))
-    REINPLACEABLE_BINARY_BASE_OVERLOADS.append((_ip_name.split(".")[-1][:-1], "Tensor"))
-
-
-def _make_inplace_passthrough_handler(functional_handler):
-    """In-place handler that aliases out == self, then delegates to the op's
-    existing functional handler.
-
-    These functional handlers (clamp, pow, gelu, relu, leaky_relu, hardtanh)
-    obtain their output slot via ``P.make_or_get_slot(n)`` and write it with the
-    last op they emit. By pre-binding ``n``'s slot to the dead ``self`` temp
-    before delegating, that final write becomes in-place (out == in) and MLX can
-    donate the buffer. When ``self`` is not a reusable temp (e.g. a graph
-    output), no pre-bind happens and the functional handler runs unchanged.
-
-    The mutated ``self`` is always positional arg 0 for these ops, and every
-    op emitted before the output writer only *reads* ``self``, so the in-place
-    write (last) is safe. This "all reads of ``self`` happen before the final
-    write to out == self" ordering is a contract on each delegated functional
-    handler; the assertion below catches the easy-to-spot violation where a
-    handler stops using ``n``'s slot as its output, but a handler that reads
-    ``self`` *after* writing out would still silently corrupt — keep that
-    invariant in mind when editing clamp/pow/gelu/relu/leaky_relu/hardtanh.
-    """
-
-    def handler(P: MLXProgramBuilder, n: Node) -> Slot:
-        args = P.args(n)
-        self_slot = args[0] if args else None
-        alias = _inplace_alias_slot(P, n, self_slot)
-        if alias is not None:
-            P.set_slot(n, alias)
-        result = functional_handler(P, n)
-        # When we pre-bind out == self, the delegated handler must treat that
-        # slot as its output (write it last). Confirm it actually returned the
-        # aliased slot; otherwise the in-place aliasing silently did nothing.
-        assert alias is None or result is alias, (
-            f"{getattr(functional_handler, '__name__', functional_handler)} did "
-            f"not use the aliased out==self slot as its output for {n}; in-place "
-            f"passthrough requires the delegated handler to write n's slot."
-        )
-        return result
-
-    handler.__name__ = "_inplace_passthrough_handler"
-    handler.__doc__ = "In-place passthrough (aliases out==self, delegates)."
-    return handler
 
 
 # ---------------------------------------------------------------------------
@@ -1757,7 +1547,9 @@ def _split_with_sizes_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 @REGISTRY.register(target=[torch.ops.mlx.gather_mm.default])
 def _gather_mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle mlx::gather_mm — fused gather + matmul for MoE experts."""
-    from executorch.backends.mlx.serialization.mlx_graph_schema import GatherMmNode
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        GatherMmNode, IntOrVid, ItemIntNode,
+    )
 
     args = P.args(n)
     kwargs = P.kwargs(n)
@@ -1766,7 +1558,20 @@ def _gather_mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     b = args[1]
     rhs_indices = args[2] if len(args) > 2 else kwargs.get("rhs_indices")
     lhs_indices = args[3] if len(args) > 3 else kwargs.get("lhs_indices")
-    sorted_indices = args[4] if len(args) > 4 else kwargs.get("sorted_indices", False)
+    sorted_indices = args[4] if len(args) > 4 else kwargs.get("sorted_indices")
+    # issue #20554: sorted_indices is now Optional[Tensor] (was bool).
+    # P.args(n) already resolved any FX Node to a Slot, so a runtime
+    # tensor arrives here as a Slot, not a Node (verified
+    # program_builder.py:194-222). Thread it to a Vid via ItemIntNode
+    # (same gesture as cond_val in _sample_handler:3709) -- slot_to_vid
+    # cannot be called directly on a Tensor-typed Slot
+    # (assert slot.id_type != IdType.Tensor, program_builder.py:303).
+    if isinstance(sorted_indices, Slot):
+        _, item_slot = P.make_tmp_value_slot()
+        P.emit(ItemIntNode(x=P.slot_to_tid(sorted_indices), out=P.slot_to_vid(item_slot)))
+        sorted_indices_iov = P.to_int_or_vid(item_slot)
+    else:
+        sorted_indices_iov = IntOrVid.from_literal(0)
 
     out = P.make_or_get_slot(n)
     P.emit(
@@ -1776,7 +1581,7 @@ def _gather_mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             lhs_indices=P.slot_to_tid(lhs_indices) if lhs_indices is not None else None,
             rhs_indices=P.slot_to_tid(rhs_indices) if rhs_indices is not None else None,
-            sorted_indices=sorted_indices,
+            sorted_indices=sorted_indices_iov,
         )
     )
     return out
@@ -1789,7 +1594,9 @@ def _gather_qmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     Converts TorchAO quantization format to MLX format (unsigned + biases)
     and emits a GatherQmmNode.
     """
-    from executorch.backends.mlx.serialization.mlx_graph_schema import GatherQmmNode
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        GatherQmmNode, IntOrVid, ItemIntNode,
+    )
 
     args = P.args(n)
     kwargs = P.kwargs(n)
@@ -1804,7 +1611,14 @@ def _gather_qmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     group_size = args[7] if len(args) > 7 else kwargs.get("group_size", 32)
     bits = args[8] if len(args) > 8 else kwargs.get("bits", 4)
     mode = args[9] if len(args) > 9 else kwargs.get("mode", "affine")
-    sorted_indices = args[10] if len(args) > 10 else kwargs.get("sorted_indices", False)
+    sorted_indices = args[10] if len(args) > 10 else kwargs.get("sorted_indices")
+    # issue #20554: same Optional[Tensor]/Slot conversion as gather_mm.
+    if isinstance(sorted_indices, Slot):
+        _, item_slot = P.make_tmp_value_slot()
+        P.emit(ItemIntNode(x=P.slot_to_tid(sorted_indices), out=P.slot_to_vid(item_slot)))
+        sorted_indices_iov = P.to_int_or_vid(item_slot)
+    else:
+        sorted_indices_iov = IntOrVid.from_literal(0)
 
     # Convert quantized weights to MLX format
     w_target, w_data = P.get_placeholder_target_and_tensor(w_node)
@@ -1847,10 +1661,141 @@ def _gather_qmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             group_size=group_size,
             bits=bits,
             mode=mode,
-            sorted_indices=sorted_indices,
+            sorted_indices=sorted_indices_iov,
         )
     )
     return out
+
+
+@REGISTRY.register(target=[torch.ops.mlx.moe_gather_inputs.default])
+def _moe_gather_inputs_handler(P: MLXProgramBuilder, n: Node):
+    """Issue #20554. Node-for-node lowering of the moe_gather_inputs
+    eager reference (custom_ops.py): emit_sorted mirrors the N >
+    sort_cutoff branch, emit_unsorted mirrors the else branch. Both
+    pre-allocate every output slot and both branches write all of them
+    (the IfNode only selects a chain; downstream reads fixed slot ids).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        ArgsortNode, TakeNode, FloorDivideNode, ExpandDimsNode,
+        RepeatNode, IdCopyNode, IntOrVid,
+    )
+
+    args = P.args(n)
+    x, expert_indices = args[0], args[1]
+    top_k = args[2]                       # static int
+    sort_cutoff = args[3]                 # static int, consulted here at emission
+
+    out_slots = P.make_or_get_slots(n)    # (x_input, idx, sort_experts, inv_order)
+
+    m_iov = emit_shape(P, n.args[0], x, end_dim=1)[0]   # M = N (token count)
+
+    def emit_sorted():
+        # ArgsortNode x2, FloorDivideNode (order // top_k), TakeNode,
+        # ExpandDimsNode, a 0-d const "1" -> write all four out_slots
+        _, order_slot = P.make_tmp_slot()
+        P.emit(ArgsortNode(x=P.slot_to_tid(expert_indices), out=P.slot_to_tid(order_slot), axis=0))
+
+        _, inv_order_slot = P.make_tmp_slot()
+        P.emit(ArgsortNode(x=P.slot_to_tid(order_slot), out=P.slot_to_tid(inv_order_slot), axis=0))
+
+        _, idx_slot = P.make_tmp_slot()
+        P.emit(TakeNode(x=P.slot_to_tid(expert_indices), out=P.slot_to_tid(idx_slot),
+                         index=P.slot_to_tid(order_slot), axis=0))
+
+        top_k_const = emit_lifted_constant(P, top_k, torch.int32)
+        _, row_idx_slot = P.make_tmp_slot()
+        P.emit(FloorDivideNode(a=P.slot_to_tid(order_slot), b=P.slot_to_tid(top_k_const),
+                                out=P.slot_to_tid(row_idx_slot)))
+
+        _, x_gathered_slot = P.make_tmp_slot()
+        P.emit(TakeNode(x=P.slot_to_tid(x), out=P.slot_to_tid(x_gathered_slot),
+                         index=P.slot_to_tid(row_idx_slot), axis=0))
+
+        _, x_input_slot = P.make_tmp_slot()
+        P.emit(ExpandDimsNode(x=P.slot_to_tid(x_gathered_slot), out=P.slot_to_tid(x_input_slot), axis=-2))
+
+        one_const = emit_lifted_constant(P, 1, torch.int32)
+
+        P.emit(IdCopyNode(x=P.slot_to_tid(x_input_slot), out=P.slot_to_tid(out_slots[0])))
+        P.emit(IdCopyNode(x=P.slot_to_tid(idx_slot), out=P.slot_to_tid(out_slots[1])))
+        P.emit(IdCopyNode(x=P.slot_to_tid(one_const), out=P.slot_to_tid(out_slots[2])))
+        P.emit(IdCopyNode(x=P.slot_to_tid(inv_order_slot), out=P.slot_to_tid(out_slots[3])))
+
+    def emit_unsorted():
+        # BroadcastTo/Reshape + ExpandDimsNode, ReshapeNode (flatten idx),
+        # a 0-element const for inv_order (sentinel; never read when sort
+        # flag == 0, so no dynamic IotaNode needed), a 0-d const "0"
+        top_k_iov = IntOrVid.from_literal(top_k)
+        _, x_rep_slot = P.make_tmp_slot()
+        P.emit(RepeatNode(x=P.slot_to_tid(x), out=P.slot_to_tid(x_rep_slot),
+                           repeats=top_k_iov, axis=0))
+
+        _, x_input_slot = P.make_tmp_slot()
+        P.emit(ExpandDimsNode(x=P.slot_to_tid(x_rep_slot), out=P.slot_to_tid(x_input_slot), axis=-2))
+
+        zero_const = emit_lifted_constant(P, 0, torch.int32)
+
+        # 0-element sentinel: never read on the unsorted path (see
+        # moe_scatter_outputs), so a plain static constant suffices
+        # (no dynamic IotaNode needed, per the issue's own note).
+        empty_inv_order = P.make_or_get_constant(
+            "_moe_inv_order_sentinel", torch.empty(0, dtype=torch.int32)
+        )
+
+        P.emit(IdCopyNode(x=P.slot_to_tid(x_input_slot), out=P.slot_to_tid(out_slots[0])))
+        P.emit(IdCopyNode(x=P.slot_to_tid(expert_indices), out=P.slot_to_tid(out_slots[1])))
+        P.emit(IdCopyNode(x=P.slot_to_tid(zero_const), out=P.slot_to_tid(out_slots[2])))
+        P.emit(IdCopyNode(x=P.slot_to_tid(empty_inv_order), out=P.slot_to_tid(out_slots[3])))
+
+    # cond = (M - 1) // sort_cutoff: 0 (-> else/unsorted) for M <= sort_cutoff,
+    # >= 1 (-> then/sorted) for M > sort_cutoff. The IfNode rule is nonzero ->
+    # then. If M is a compile-time literal, both fold and emit_if_else picks
+    # one branch -- no IfNode emitted.
+    cond = emit_floordiv(P, emit_sub_int(P, m_iov, IntOrVid.from_literal(1)),
+                          IntOrVid.from_literal(sort_cutoff))
+    emit_if_else(P, cond, emit_sorted, emit_unsorted)
+    return out_slots
+
+
+@REGISTRY.register(target=[torch.ops.mlx.moe_scatter_outputs.default])
+def _moe_scatter_outputs_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Issue #20554. down [N*top_k, 1, H] -> squeeze -> (gather if sorted)
+    -> reshape [N, top_k, H]. Read sort_experts (0-d tensor) to a Vid via
+    ItemIntNode, then emit_if_else on it -- then: TakeNode(down,
+    inv_order) then ReshapeNode; else: ReshapeNode only (skip the gather).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        ItemIntNode, SqueezeNode, TakeNode, ReshapeNode, IntOrVid,
+    )
+
+    args = P.args(n)
+    down, sort_experts, inv_order = args[0], args[1], args[2]
+    top_k = args[3]  # static int
+
+    out_slot = P.make_or_get_slot(n)
+
+    _, down_sq_slot = P.make_tmp_slot()
+    P.emit(SqueezeNode(x=P.slot_to_tid(down), out=P.slot_to_tid(down_sq_slot), dims=[-2]))
+
+    _, cond_val_slot = P.make_tmp_value_slot()
+    P.emit(ItemIntNode(x=P.slot_to_tid(sort_experts), out=P.slot_to_vid(cond_val_slot)))
+
+    n_top_k_iov = emit_shape(P, n.args[0], down_sq_slot, end_dim=1)[0]
+    n_iov = emit_floordiv(P, n_top_k_iov, IntOrVid.from_literal(top_k))
+
+    def emit_then():  # prefill: scatter back
+        _, gathered_slot = P.make_tmp_slot()
+        P.emit(TakeNode(x=P.slot_to_tid(down_sq_slot), out=P.slot_to_tid(gathered_slot),
+                         index=P.slot_to_tid(inv_order), axis=0))
+        P.emit(ReshapeNode(x=P.slot_to_tid(gathered_slot), out=P.slot_to_tid(out_slot),
+                            shape=[n_iov, IntOrVid.from_literal(top_k), IntOrVid.from_literal(-1)]))
+
+    def emit_else():  # decode: no scatter
+        P.emit(ReshapeNode(x=P.slot_to_tid(down_sq_slot), out=P.slot_to_tid(out_slot),
+                            shape=[n_iov, IntOrVid.from_literal(top_k), IntOrVid.from_literal(-1)]))
+
+    emit_if_else(P, P.to_int_or_vid(cond_val_slot), emit_then, emit_else)
+    return out_slot
 
 
 @REGISTRY.register(
@@ -3740,10 +3685,10 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     skipping the sampling chain (so 0 is exact, not the small-epsilon approx).
     """
     args = P.args(n)
-    require_args(args, 4, 5, "mlx.sample")
+    require_args(args, 3, 4, "mlx.sample")
     require_kwargs(P.kwargs(n), set(), "mlx.sample")
-    logits, temperature, top_k, top_p = args[0], args[1], args[2], args[3]
-    seed = args[4] if len(args) > 4 and args[4] is not None else None
+    logits, temperature, top_p = args[0], args[1], args[2]
+    seed = args[3] if len(args) > 3 and args[3] is not None else None
 
     temp_dt = n.args[1].meta["val"].dtype
     out = P.make_or_get_slot(n)
@@ -3824,82 +3769,8 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             )
         )
         scaled = logits_f
-        neg_inf = emit_lifted_constant(P, float("-inf"), torch.float32)
 
-        # Top-k first, on scaled logits. Clip k to vocab size so the default
-        # max-int sentinel selects every token.
-        vocab_size = int(n.args[0].meta["val"].shape[-1])
-        vocab = emit_lifted_constant(P, vocab_size, torch.int64)
-        _, clipped_top_k = P.make_tmp_slot()
-        P.emit(
-            MinimumNode(
-                a=P.slot_to_tid(top_k),
-                b=P.slot_to_tid(vocab),
-                out=P.slot_to_tid(clipped_top_k),
-            )
-        )
-        _, top_k_val = P.make_tmp_value_slot()
-        P.emit(
-            ItemIntNode(x=P.slot_to_tid(clipped_top_k), out=P.slot_to_vid(top_k_val))
-        )
-        _, top_k_index = P.make_tmp_value_slot()
-        P.emit(
-            SubtractIntNode(
-                a=P.to_int_or_vid(top_k_val),
-                b=IntOrVid.from_literal(1),
-                out=P.slot_to_vid(top_k_index),
-            )
-        )
-
-        _, sorted_scaled = P.make_tmp_slot()
-        P.emit(NegNode(x=P.slot_to_tid(scaled), out=P.slot_to_tid(sorted_scaled)))
-        P.emit(
-            SortNode(
-                x=P.slot_to_tid(sorted_scaled),
-                out=P.slot_to_tid(sorted_scaled),
-                axis=-1,
-            )
-        )
-        P.emit(
-            NegNode(x=P.slot_to_tid(sorted_scaled), out=P.slot_to_tid(sorted_scaled))
-        )
-        _, top_k_thresh = P.make_tmp_slot()
-        P.emit(
-            TakeNode(
-                x=P.slot_to_tid(sorted_scaled),
-                index=P.to_int_or_vid_or_tid(top_k_index),
-                out=P.slot_to_tid(top_k_thresh),
-                axis=-1,
-            )
-        )
-        P.emit(
-            ExpandDimsNode(
-                x=P.slot_to_tid(top_k_thresh),
-                out=P.slot_to_tid(top_k_thresh),
-                axis=-1,
-            )
-        )
-        _, drop_k = P.make_tmp_slot()
-        P.emit(
-            LessNode(
-                a=P.slot_to_tid(scaled),
-                b=P.slot_to_tid(top_k_thresh),
-                out=P.slot_to_tid(drop_k),
-            )
-        )
-        _, top_k_scaled = P.make_tmp_slot()
-        P.emit(
-            WhereNode(
-                condition=P.slot_to_tid(drop_k),
-                x=P.slot_to_tid(neg_inf),
-                y=P.slot_to_tid(scaled),
-                out=P.slot_to_tid(top_k_scaled),
-            )
-        )
-        scaled = top_k_scaled
-
-        # Top-p nucleus mask on probabilities renormalized over the top-k set.
-        # SortNode is ascending-only, so sort -probs for descending.
+        # top-p nucleus mask; SortNode is ascending-only, so sort -probs for descending.
         # probs is read twice (neg_p below and the drop comparison), keep separate.
         _, probs = P.make_tmp_slot()
         P.emit(SoftmaxNode(x=P.slot_to_tid(scaled), out=P.slot_to_tid(probs), axis=-1))
@@ -3960,6 +3831,7 @@ def _sample_handler(P: MLXProgramBuilder, n: Node) -> Slot:
                 out=P.slot_to_tid(drop),
             )
         )
+        neg_inf = emit_lifted_constant(P, float("-inf"), torch.float32)
         # masked = where(drop, -inf, scaled); then add gumbel noise in place.
         _, masked = P.make_tmp_slot()
         P.emit(
@@ -4726,36 +4598,3 @@ def _topk_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
 
     return output_slots
-
-
-# ---------------------------------------------------------------------------
-# In-place variants for ops with bespoke functional handlers (clamp, pow,
-# activations). Each reuses its functional handler via a passthrough that
-# aliases out == self when self is a dead temp (see
-# _make_inplace_passthrough_handler). Registered last, after every functional
-# handler above is defined. REINPLACEABLE_EXTRA_BASE_OVERLOADS feeds passes.py.
-# ---------------------------------------------------------------------------
-REINPLACEABLE_EXTRA_BASE_OVERLOADS: List[Tuple[str, str]] = []
-for _base, _overload in (
-    ("clamp", "default"),
-    ("clamp", "Tensor"),
-    ("gelu", "default"),
-    ("relu", "default"),
-    ("leaky_relu", "default"),
-    ("hardtanh", "default"),
-    ("pow", "Tensor_Scalar"),
-    ("pow", "Tensor_Tensor"),
-):
-    _func_aten = getattr(getattr(torch.ops.aten, _base), _overload, None)
-    if _func_aten is None:
-        continue
-    _func_handler = REGISTRY._handlers.get(_func_aten)
-    if _func_handler is None:
-        continue
-    _ip_edge = _derive_edge_inplace_overload(_func_aten)
-    if _ip_edge is None:
-        continue
-    REGISTRY.register(target=[_ip_edge._op])(
-        _make_inplace_passthrough_handler(_func_handler)
-    )
-    REINPLACEABLE_EXTRA_BASE_OVERLOADS.append((_base, _overload))

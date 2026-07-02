@@ -53,7 +53,7 @@ def _prepare_and_quantize_mlx(model, config, args):
         model,
         model_dtype=torch.bfloat16,
         config=config,
-        sort_experts=True,
+        sort_cutoff=1,
         fuse_gate_up=False,
     )
     if args.qlinear or args.qembedding:

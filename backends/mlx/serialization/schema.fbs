@@ -943,27 +943,27 @@ table MedianNode {
 }
 
 table GatherMmNode {
-    a: Tid (required);          // Input activations
-    b: Tid (required);          // Weight matrix [E, out, in] or similar
+    a: Tid (required);
+    b: Tid (required);
     out: Tid (required);
+    sorted_indices: IntOrVid (required);  // issue #20554: bool -> IntOrVid (cf. PartitionNode.kth:683)
     lhs_indices: Tid;           // optional - LHS gather indices
     rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
-    sorted_indices: bool = false;
 }
 
 table GatherQmmNode {
-    x: Tid (required);          // Input activations
-    w: Tid (required);          // Quantized weight matrix [E, out, in_packed]
-    scales: Tid (required);     // Quantization scales [E, out, in//gs]
+    x: Tid (required);
+    w: Tid (required);
+    scales: Tid (required);
     out: Tid (required);
-    mode: string (required);    // "affine", "fp", etc.
+    mode: string (required);
+    sorted_indices: IntOrVid (required);  // issue #20554: bool -> IntOrVid (cf. PartitionNode.kth:683)
     biases: Tid;                // optional - for affine mode
     lhs_indices: Tid;           // optional - LHS gather indices
     rhs_indices: Tid;           // optional - RHS gather indices (expert selection)
     transpose: bool = true;
     group_size: int32;
     bits: int32;
-    sorted_indices: bool = false;
 }
 
 table ScanNode {

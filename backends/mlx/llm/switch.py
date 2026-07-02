@@ -41,6 +41,7 @@ Usage:
 """
 
 import logging
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -131,12 +132,15 @@ class SwitchLinear(nn.Module):
         self,
         x: torch.Tensor,
         indices: torch.Tensor,
-        sorted_indices: bool = False,
+        sorted_indices: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward without unsqueeze/squeeze — caller manages dimensions.
 
         Used by UnfusedMoEExperts which passes x as [N, 1, 1, D]
         and indices as [N, top_k] to handle all experts at once.
+
+        issue #20554: sorted_indices: bool -> Optional[Tensor] (same swap
+        as gather_mm/gather_qmm). Passed straight through to those ops.
         """
         if not self._packed:
             raise RuntimeError("SwitchLinear.pack() must be called before forward_raw.")
@@ -193,6 +197,7 @@ class SwitchMLP(nn.Module):
         activation=None,
         bias: bool = False,
         fuse_gate_up: bool = False,
+        sort_cutoff: int = 1,
     ):
         super().__init__()
         if activation is None:
@@ -201,6 +206,9 @@ class SwitchMLP(nn.Module):
         self.num_experts = num_experts
         self.intermediate_size = intermediate_size
         self.fuse_gate_up = fuse_gate_up
+        # issue #20554: static export-time threshold, compared against
+        # M=N inside moe_gather_inputs to decide sort/no-sort at runtime.
+        self.sort_cutoff = sort_cutoff
 
         if fuse_gate_up:
             self.gate_up_proj = SwitchLinear(
@@ -223,7 +231,6 @@ class SwitchMLP(nn.Module):
         expert_weights: torch.Tensor,
         expert_indices: torch.Tensor,
         top_k: int,
-        sort_experts: bool = False,
     ) -> torch.Tensor:
         """Forward pass through the gated MoE MLP.
 
@@ -232,25 +239,20 @@ class SwitchMLP(nn.Module):
             expert_weights: Routing weights [N, top_k] (already softmaxed)
             expert_indices: Expert assignments [N, top_k]
             top_k: Number of experts per token
-            sort_experts: Sort tokens by expert index for coalesced memory
-                access during prefill. No effect on decode (single token).
 
         Returns:
             Output tensor [N, D]
-        """
-        N = x.shape[0]
 
-        if sort_experts:
-            flat_indices = expert_indices.flatten()
-            order = flat_indices.argsort().to(torch.int32)
-            inv_order = order.argsort().to(torch.int32)
-            sorted_idx = flat_indices[order].to(torch.int32)
-            x_sorted = x[(order // top_k).to(torch.int64)]
-            x_input = x_sorted.unsqueeze(-2)
-            idx = sorted_idx
-        else:
-            x_input = x.unsqueeze(-2).unsqueeze(-2)
-            idx = expert_indices
+        issue #20554: sort/no-sort is now a RUNTIME decision (M vs
+        self.sort_cutoff) made inside moe_gather_inputs, rather than a
+        compile-time bool baked into the exported .pte. The `sort_experts`
+        arg is therefore gone from this signature (was: bool = False) --
+        callers (e.g. mlx_source_transformations.py) configure the
+        threshold once via SwitchMLP(..., sort_cutoff=...) instead.
+        """
+        x_input, idx, sort_experts, inv_order = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, top_k, self.sort_cutoff
+        )
 
         if self.fuse_gate_up:
             gate_up = self.gate_up_proj(x_input, idx, sorted_indices=sort_experts)
@@ -262,11 +264,7 @@ class SwitchMLP(nn.Module):
         h = self.activation(gate) * up
         down = self.down_proj(h, idx, sorted_indices=sort_experts)
 
-        if sort_experts:
-            down = down.squeeze(-2)
-            down = down[inv_order].reshape(N, top_k, -1)
-        else:
-            down = down.squeeze(-2)
+        down = torch.ops.mlx.moe_scatter_outputs(down, sort_experts, inv_order, top_k)
 
         return (down * expert_weights.unsqueeze(-1)).sum(dim=-2)
 

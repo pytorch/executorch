@@ -872,7 +872,13 @@ exec_gather_mm(const GatherMmNode& n, ExecutionState& st, StreamOrDevice s) {
     rhs_idx = st.const_tensor_ref(*n.rhs_indices);
   }
 
-  array Y = gather_mm(A, B, lhs_idx, rhs_idx, n.sorted_indices, s);
+  array Y = gather_mm(
+      A,
+      B,
+      lhs_idx,
+      rhs_idx,
+      resolve_int(n.sorted_indices, st) != 0,
+      s);
   st.set_tensor(n.out, std::move(Y));
 }
 
@@ -906,7 +912,7 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
       n.group_size,
       n.bits,
       n.mode,
-      n.sorted_indices,
+      resolve_int(n.sorted_indices, st) != 0,
       s);
   st.set_tensor(n.out, std::move(Y));
 }
