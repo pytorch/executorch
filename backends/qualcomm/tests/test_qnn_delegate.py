@@ -8654,18 +8654,18 @@ class TestExampleLLMScript(TestQNN):
                         msg["wiki_ppl"], self.llm_specs[model_name].wikitext_ppl
                     )
 
-    def test_qwen2_5(self):
-        # This is not testing static llm flow.
+    def test_hf_causal_lm(self):
+        # This is the Hugging Face transformers flow, not the static llm flow.
         if not self.required_envs([]):
             self.skipTest("missing required envs")
         prompt = "My favourite condiment is "
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/qwen2_5/qwen2_5.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
             "--prompt",
             prompt,
             "--decoder_model",
-            "qwen2.5_0.5B",
+            "qwen2_5-0_5b",
             "--ptq",
             "16a8w",
             "--enable_spinquant_r3",
