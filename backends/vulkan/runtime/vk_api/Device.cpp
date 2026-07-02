@@ -320,20 +320,33 @@ void PhysicalDevice::query_extensions_vk_1_1() {
 
 #ifdef VK_KHR_cooperative_matrix
   if (cooperative_matrix_features.cooperativeMatrix == VK_TRUE) {
-    uint32_t count = 0;
-    vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(handle, &count, nullptr);
-    if (count > 0) {
-      std::vector<VkCooperativeMatrixPropertiesKHR> props(count);
-      for (auto& p : props) {
-        p.sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
-        p.pNext = nullptr;
-      }
-      vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(
-          handle, &count, props.data());
-      for (const auto& p : props) {
-        if (p.AType == VK_COMPONENT_TYPE_SINT8_KHR) {
-          supports_int8_coopmat = true;
-          break;
+    // Resolve the extension entry point at runtime via vkGetInstanceProcAddr
+    // instead of calling it directly. Builds that link Vulkan without volk do
+    // not have the extension symbol available at link time, so a direct call
+    // fails with an undefined symbol. Mirrors the vkGetPhysicalDeviceFeatures2KHR
+    // / vkGetPhysicalDeviceProperties2KHR resolution above.
+    auto vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn =
+        (PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)
+            vkGetInstanceProcAddr(
+                instance,
+                "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR");
+    if (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn != nullptr) {
+      uint32_t count = 0;
+      vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
+          handle, &count, nullptr);
+      if (count > 0) {
+        std::vector<VkCooperativeMatrixPropertiesKHR> props(count);
+        for (auto& p : props) {
+          p.sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
+          p.pNext = nullptr;
+        }
+        vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
+            handle, &count, props.data());
+        for (const auto& p : props) {
+          if (p.AType == VK_COMPONENT_TYPE_SINT8_KHR) {
+            supports_int8_coopmat = true;
+            break;
+          }
         }
       }
     }

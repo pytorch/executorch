@@ -178,6 +178,13 @@ static bool can_use_q4gsw_coopmat(
   if (adapter->subgroup_size() != 64) {
     return false;
   }
+  // These coopmat shaders have only been validated on AMD-RDNA GPUs (Samsung
+  // Xclipse and AMD Radeon). Gate to those families so the path stays off on
+  // other devices that advertise cooperative matrix support but have not been
+  // validated.
+  if (!graph->device_is_amd()) {
+    return false;
+  }
   // Coopmat shaders dispatch over gl_WorkGroupID.xy only; batched (rank > 2)
   // outputs would silently miscompute all slices beyond the first.
   if (graph->dim_of(output) > 2) {

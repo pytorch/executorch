@@ -1936,6 +1936,14 @@ TestResult execute_test_cases(
   print_separator();
   std::cout << "Completed " << results.size() << " test cases" << std::endl;
 
+  // Hard-fail if any correctness check failed. The per-case loop above keeps
+  // running after a mismatch (so the full pass/fail matrix and per-16x16-tile
+  // mismatch maps are printed for debugging) rather than aborting on the first
+  // failure; throwing here preserves the original abort-on-mismatch behavior.
+  if (any_correctness_failed) {
+    throw std::runtime_error("Correctness validation failed");
+  }
+
   return results;
 }
 
