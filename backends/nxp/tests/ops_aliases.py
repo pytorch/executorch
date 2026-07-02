@@ -15,6 +15,7 @@ Abs = exir_ops.edge.aten.abs.default
 AdaptiveAvgPool2D = exir_ops.edge.aten._adaptive_avg_pool2d.default
 AddMM = exir_ops.edge.aten.addmm.default
 AddTensor = exir_ops.edge.aten.add.Tensor
+Amin = exir_ops.edge.aten.amin.default
 AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
 BMM = exir_ops.edge.aten.bmm.default
 Cat = exir_ops.edge.aten.cat.default
