@@ -542,6 +542,48 @@ static Kernel prim_ops[] = {
 #endif
 
 #if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SYM_ITE_SCALAR)
+    // executorch_prim::sym_ite.Scalar(bool b, Scalar t, Scalar f) -> Scalar
+    Kernel(
+        "executorch_prim::sym_ite.Scalar",
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 4,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)4,
+              stack.size());
+          EValue& b = *stack[0];
+          EValue& out = *stack[3];
+          ET_KERNEL_CHECK_MSG(
+              context,
+              b.isBool(),
+              InvalidType,
+              /* void */,
+              "sym_ite condition must be bool, got %zu",
+              (size_t)b.tag);
+          EValue& selected = b.toBool() ? *stack[1] : *stack[2];
+          if (selected.isInt()) {
+            out = EValue(selected.toInt());
+          } else if (selected.isDouble()) {
+            out = EValue(selected.toDouble());
+          } else if (selected.isBool()) {
+            out = EValue(selected.toBool());
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_ite value must be int, double, or bool, got %zu",
+                (size_t)selected.tag);
+          }
+        }),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
     defined(INCLUDE_EXECUTORCH_PRIM_FLOORDIV_INT)
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
