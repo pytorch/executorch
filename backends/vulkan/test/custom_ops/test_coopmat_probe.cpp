@@ -7,8 +7,7 @@
 // One-shot capability probe: prints the cooperative matrix configurations
 // exposed by the active Vulkan device, plus the relevant adapter properties
 // (subgroup size, iGPU vs dGPU, device name). Used to gate the coopmat
-// experiment for quantized linear shaders. See:
-//   yanwen/instruction-for-ai/2026-05-14_kernel_optimization_research.md
+// implementations for quantized linear shaders.
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
