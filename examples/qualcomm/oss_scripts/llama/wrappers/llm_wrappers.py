@@ -13,7 +13,7 @@ import re
 import types
 
 from functools import partial
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import torch
 
@@ -783,10 +783,17 @@ class HybridTextDecoder(Component):
                     activation_override(quantized_user, unquantized_user)
 
         def parameter_override(quantized_node, unquantized_node):
+            # Some parameters need to be iterated over to retrieve attributes such as static_llama.tok_embedding.weight
+            def _get_attr(graph_module: torch.fx.GraphModule, target: str) -> Any:
+                attr: Any = graph_module
+                for target_atom in target.split("."):
+                    attr = getattr(attr, target_atom)
+                return attr
+
             setattr(
                 unquantized_model,
                 unquantized_node.target,
-                getattr(quantized_model, quantized_node.target),
+                _get_attr(quantized_model, quantized_node.target),
             )
             # scale / zero point are part of op's attributes
             if list(quantized_node.users)[0].target in ptq_target:

@@ -14,12 +14,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
-    QCOM_QUANT_MAX,
-    QCOM_QUANT_MIN,
-    QCOM_SCALE,
-    QCOM_SCALES,
-    QCOM_ZERO_POINT,
-    QCOM_ZERO_POINTS,
 )
 
 from .node_visitor import NodeVisitor, PER_CHANNEL_ENCODING, QNN_QUANT_TYPE_MAP
@@ -40,6 +34,7 @@ class Embedding(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
+        op_wrapper_list = []
         weight_node = self.get_node(node.args[0])
         is_pcq_embedding = QCOM_QUANT_ATTRS in weight_node.meta and weight_node.meta[
             QCOM_QUANT_ATTRS
@@ -63,44 +58,53 @@ class Embedding(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        gather_input_tensors = [weight_tensor_wrapper, indices_tensor_wrapper]
+        gather_input_tensors = []
+        if is_pcq_embedding:
+            act_quant_encoding, act_quant_configs = self.get_quant_encoding_conf(
+                node, node
+            )
+            act_dtype = (
+                torch.uint16
+                if act_quant_configs[QCOM_DTYPE] == torch.int32
+                else act_quant_configs[QCOM_DTYPE]
+            )
+            convert_tensor_wrapper = self.define_custom_tensor_wrapper(
+                node_name=node.name + "_convert",
+                tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                dtype=QNN_QUANT_TYPE_MAP[act_dtype],
+                quant_encoding=act_quant_encoding,
+                quant_configs=act_quant_configs,
+                dims=weight_tensor.size(),
+                tensor=weight_tensor,
+                is_fake_tensor=True,
+                nodes_to_wrappers=nodes_to_wrappers,
+            )
+            convert_op = PyQnnManager.PyQnnOpWrapper(
+                node.name + "_convert",
+                QNN_OP_PACKAGE_NAME_QTI_AISW,
+                OpConvert.op_name,
+            )
+            convert_op.AddInputTensors([weight_tensor_wrapper])
+            convert_op.AddOutputTensors([convert_tensor_wrapper])
+            op_wrapper_list.append(convert_op)
+            gather_input_tensors.append(convert_tensor_wrapper)
+        else:
+            gather_input_tensors.append(weight_tensor_wrapper)
+        gather_input_tensors.append(indices_tensor_wrapper)
 
         output_tensor = self.get_tensor(node, node)
-        node_name = node.name
-        if is_pcq_embedding:
-            node_quant_attrs = node.meta[QCOM_QUANT_ATTRS].copy()
-            intermediate_quant_attrs = node.meta[QCOM_QUANT_ATTRS].copy()
-            # Based on QNN HTP quantization constraints,
-            # we should set the scale to max of scales and per-tensor quantization for embedding op
-            intermediate_quant_attrs[QCOM_SCALE] = (
-                weight_node.meta[QCOM_QUANT_ATTRS][QCOM_SCALES].max().item()
-            )
-            intermediate_quant_attrs[QCOM_ZERO_POINT] = (
-                weight_node.meta[QCOM_QUANT_ATTRS][QCOM_ZERO_POINTS].max().item()
-            )
-            intermediate_quant_attrs[QCOM_DTYPE] = weight_node.meta[QCOM_QUANT_ATTRS][
-                QCOM_DTYPE
-            ]
-            intermediate_quant_attrs[QCOM_QUANT_MAX] = weight_node.meta[
-                QCOM_QUANT_ATTRS
-            ][QCOM_QUANT_MAX]
-            intermediate_quant_attrs[QCOM_QUANT_MIN] = weight_node.meta[
-                QCOM_QUANT_ATTRS
-            ][QCOM_QUANT_MIN]
-            node.meta[QCOM_QUANT_ATTRS] = intermediate_quant_attrs
-            node_name += "_intermediate"
         output_tensor_wrapper = self.define_tensor(
             node,
             node,
             output_tensor,
             PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
-            node_name=node_name,
+            node_name=node.name,
         )
         gather_output_tensors = [output_tensor_wrapper]
 
         gather_op = PyQnnManager.PyQnnOpWrapper(
-            node_name,
+            node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpGather.op_name,
         )
@@ -113,37 +117,6 @@ class Embedding(NodeVisitor):
             PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_INT_32,
             {QCOM_DATA: np.int32(0)},
         )
-
-        op_wrapper_list = [gather_op]
-
-        if is_pcq_embedding:
-            node.meta[QCOM_QUANT_ATTRS] = node_quant_attrs
-            act_quant_encoding, act_quant_configs = self.get_quant_encoding_conf(
-                node, node
-            )
-            act_dtype = (
-                torch.uint16
-                if act_quant_configs[QCOM_DTYPE] == torch.int32
-                else act_quant_configs[QCOM_DTYPE]
-            )
-            convert_tensor_wrapper = self.define_custom_tensor_wrapper(
-                node_name=node.name,
-                tensor_type=PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-                dtype=QNN_QUANT_TYPE_MAP[act_dtype],
-                quant_encoding=act_quant_encoding,
-                quant_configs=act_quant_configs,
-                dims=output_tensor.size(),
-                tensor=output_tensor,
-                is_fake_tensor=True,
-                nodes_to_wrappers=nodes_to_wrappers,
-            )
-            convert_op = PyQnnManager.PyQnnOpWrapper(
-                node.name + "_convert",
-                QNN_OP_PACKAGE_NAME_QTI_AISW,
-                OpConvert.op_name,
-            )
-            convert_op.AddInputTensors(gather_output_tensors)
-            convert_op.AddOutputTensors([convert_tensor_wrapper])
-            op_wrapper_list.append(convert_op)
+        op_wrapper_list.append(gather_op)
 
         return op_wrapper_list
