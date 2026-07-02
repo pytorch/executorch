@@ -21,6 +21,7 @@ from executorch.backends.nxp.tests.ops_aliases import (
     QuantizePerChannel,
     QuantizePerTensor,
     SubTensor,
+    SumDimIntList,
     ViewCopy,
 )
 from torch.fx import GraphModule, Node
@@ -49,6 +50,7 @@ no_op_candidates = {
     MulTensor,
     PermuteCopy,
     SubTensor,
+    SumDimIntList,
 }
 
 

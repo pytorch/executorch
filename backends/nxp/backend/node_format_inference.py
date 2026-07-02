@@ -27,6 +27,7 @@ from executorch.backends.nxp.tests.ops_aliases import (
     MeanDim,
     PermuteCopy,
     QuantizePerTensor,
+    SumDimIntList,
     UpsampleBilinear2D,
     UpsampleNearest2D,
     ViewCopy,
@@ -60,6 +61,7 @@ class NodeFormatInference:
         PermuteCopy,
         MeanDim,
         Amin,
+        SumDimIntList,
     }
 
     _type_changed_during_last_run: bool
@@ -136,7 +138,7 @@ class NodeFormatInference:
                     self._node_inputs[node][0], DataFormat.FORMATLESS
                 )
 
-            elif op_type in [MeanDim, Amin]:
+            elif op_type in [MeanDim, Amin, SumDimIntList]:
                 # The operator schema is:
                 #  <reduce_op>(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor
                 keep_dim = try_get_arg(node, 2) or False
