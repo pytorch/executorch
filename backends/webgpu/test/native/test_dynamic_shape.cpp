@@ -140,7 +140,10 @@ void check_sdpa(int s) {
   auto kc = read_bin(b + "kc.bin");
   auto vc = read_bin(b + "vc.bin");
   auto golden = read_bin(b + "golden.bin");
-  ASSERT_FALSE(q.empty() || golden.empty()) << "missing sdpa_dyn.S" << s;
+  ASSERT_FALSE(
+      q.empty() || k.empty() || v.empty() || kc.empty() || vc.empty() ||
+      golden.empty())
+      << "missing sdpa_dyn.S" << s;
   auto tq = make_tensor_ptr({1, s, kSdHq, kSdD}, std::move(q));
   auto tk = make_tensor_ptr({1, s, kSdHkv, kSdD}, std::move(k));
   auto tv = make_tensor_ptr({1, s, kSdHkv, kSdD}, std::move(v));
@@ -216,7 +219,10 @@ void check_rope(int s) {
   auto fs = read_bin(b + "fs.bin");
   auto gq = read_bin(b + "gq.bin");
   auto gk = read_bin(b + "gk.bin");
-  ASSERT_FALSE(xq.empty() || gq.empty()) << "missing rope_dyn.S" << s;
+  ASSERT_FALSE(
+      xq.empty() || xk.empty() || fc.empty() || fs.empty() || gq.empty() ||
+      gk.empty())
+      << "missing rope_dyn.S" << s;
   auto txq = make_tensor_ptr({1, s, kRopeNH, kRopeHD}, std::move(xq));
   auto txk = make_tensor_ptr({1, s, kRopeNKV, kRopeHD}, std::move(xk));
   auto tfc = make_tensor_ptr({s, kRopeHD / 2}, std::move(fc));
