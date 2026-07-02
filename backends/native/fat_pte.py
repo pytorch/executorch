@@ -39,7 +39,12 @@ def pack_fat_blob(specializations: List[Tuple[str, bytes]]) -> bytes:
     entries = []
     offset = 0
     for backend_id, payload in specializations:
-        bid = backend_id.encode("utf-8")[:32].ljust(32, b"\x00")
+        encoded = backend_id.encode("ascii")
+        if len(encoded) > 32:
+            raise ValueError(
+                f"Backend ID '{backend_id}' is {len(encoded)} bytes; max is 32"
+            )
+        bid = encoded.ljust(32, b"\x00")
         entries.append(struct.pack("<" + _ENTRY_FMT, bid, offset, len(payload)))
         offset += len(payload)
 

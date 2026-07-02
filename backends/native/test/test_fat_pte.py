@@ -65,13 +65,10 @@ class TestPackFatBlob(unittest.TestCase):
         self.assertEqual(count, 0)
         self.assertEqual(len(blob), 12)
 
-    def test_backend_id_truncated_to_32_bytes(self):
-        long_name = "A" * 100
-        blob = pack_fat_blob([(long_name, b"x")])
-        header_size = 12
-        bid, _, _ = struct.unpack_from("<" + _ENTRY_FMT, blob, header_size)
-        self.assertEqual(len(bid), 32)
-        self.assertEqual(bid, b"A" * 32)
+    def test_backend_id_over_32_bytes_raises(self):
+        long_name = "A" * 33
+        with self.assertRaises(ValueError):
+            pack_fat_blob([(long_name, b"x")])
 
 
 class TestBuildFatResult(unittest.TestCase):

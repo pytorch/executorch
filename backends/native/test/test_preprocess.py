@@ -12,7 +12,6 @@ import torch.nn as nn
 
 from executorch.backends.native.fat_pte import FAT_MAGIC
 from executorch.backends.native.partitioner import NativePartitioner
-from executorch.backends.native.preprocess import NativeBackend
 from executorch.backends.native.specializations import (
     _SPECIALIZATION_REGISTRY,
     register_specialization,
@@ -45,7 +44,6 @@ class TestSpecializationRegistry(unittest.TestCase):
     def tearDown(self):
         _SPECIALIZATION_REGISTRY.clear()
         _SPECIALIZATION_REGISTRY.update(self._saved)
-        NativeBackend._specialization_names = None
 
     def test_register_and_lookup(self):
         register_specialization("TestBackend", lambda ep: b"test")

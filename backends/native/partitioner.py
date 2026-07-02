@@ -10,12 +10,15 @@ Native backend partitioner.
 Claims core ATen ops (torch.Tag.core) plus an explicit opt-in set.
 """
 
+import json
+
 from typing import Callable, final, List, Mapping, Optional, Tuple
 
 import executorch.backends.native.specializations  # noqa: F401 — register recipes
 
 import torch
 
+from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -64,6 +67,8 @@ class NativeSupportedOperators(OperatorSupportBase):
 
 @final
 class NativePartitioner(Partitioner):
+    _SPECIALIZATIONS_KEY = "native_specializations"
+
     def __init__(
         self,
         specializations: Optional[List[str]] = None,
@@ -71,14 +76,24 @@ class NativePartitioner(Partitioner):
         self.specializations = specializations
         from executorch.backends.native.preprocess import NativeBackend
 
-        self.delegation_spec = DelegationSpec(NativeBackend.__name__, [])
+        compile_specs = []
+        if specializations:
+            compile_specs.append(
+                CompileSpec(
+                    self._SPECIALIZATIONS_KEY,
+                    json.dumps(specializations).encode("utf-8"),
+                )
+            )
+        self.delegation_spec = DelegationSpec(NativeBackend.__name__, compile_specs)
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[Node], bool]]]:
         # Already-partitioned graph -> nothing to preserve.
+        from executorch.exir.lowered_backend_module import executorch_call_delegate
+
         for node in ep.graph.nodes:
-            if node.op == "get_attr" and "lowered_module" in node.name:
+            if node.op == "call_function" and node.target is executorch_call_delegate:
                 return ([], None)
 
         present: List[torch._ops.OpOverload] = []
@@ -95,10 +110,6 @@ class NativePartitioner(Partitioner):
         return (present, None)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        from executorch.backends.native.preprocess import NativeBackend
-
-        NativeBackend._specialization_names = self.specializations
-
         partition_tags = {}
 
         capability_partitioner = CapabilityBasedPartitioner(
