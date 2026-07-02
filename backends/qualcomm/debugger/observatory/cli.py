@@ -1,0 +1,196 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Qualcomm Observatory CLI -- QNN-specific lens configuration.
+
+Collection mode (default):
+    python -m executorch.backends.qualcomm.debugger.observatory \\
+        [--output-html PATH] [--output-archive PATH] [--archive LABEL] \\
+        SCRIPT [SCRIPT_ARGS...]
+
+With one or more lens recipes (repeat the flag or comma-separate):
+    python -m executorch.backends.qualcomm.debugger.observatory \\
+        --lens-recipe adb --lens-recipe accuracy SCRIPT [SCRIPT_ARGS...]
+    python -m executorch.backends.qualcomm.debugger.observatory \\
+        --lens-recipe adb,accuracy SCRIPT [SCRIPT_ARGS...]
+
+Visualize mode (Archive JSON -> HTML, no script execution):
+    python -m executorch.backends.qualcomm.debugger.observatory visualize \\
+        --input-archive report.json --output-html report.html \\
+        [--lens-recipe adb] [--lens-recipe accuracy]
+
+Compare mode (overlay multiple Archives into one HTML report):
+    python -m executorch.backends.qualcomm.debugger.observatory compare \\
+        --input-archive a.json --label A \\
+        --input-archive b.json --label B \\
+        --output-html compare.html [--title "..."] \\
+        [--lens-recipe adb,accuracy]
+
+``--archive`` sets ``Session.archive`` and (when the user script does not
+open its own outermost ``enter_context(region_name=...)``) names the
+default session for the dashboard sidebar.
+"""
+
+from __future__ import annotations
+
+import sys
+
+
+_RECIPE_CHOICES = ["accuracy", "adb"]
+
+_PROG = "python -m executorch.backends.qualcomm.debugger.observatory"
+
+
+def _parse_recipe_values(values):
+    """Split repeated and comma-separated --lens-recipe values."""
+    recipes: set = set()
+    for v in values or []:
+        for token in str(v).split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if token not in _RECIPE_CHOICES:
+                raise SystemExit(
+                    "argument --lens-recipe: invalid choice: "
+                    f"{token!r} (choose from {', '.join(repr(c) for c in _RECIPE_CHOICES)})"
+                )
+            recipes.add(token)
+    return recipes
+
+
+def _register_render_lenses(Observatory, recipes):
+    """Register lens frontends for visualize/compare (no collection-time patches)."""
+    if "accuracy" in recipes:
+        from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
+
+        Observatory.register_lens(AccuracyLens)
+
+        from executorch.devtools.observatory.lenses.per_layer_accuracy import (
+            PerLayerAccuracyLens,
+        )
+
+        Observatory.register_lens(PerLayerAccuracyLens)
+
+    if "adb" in recipes:
+        from .lenses.adb import AdbLens
+
+        Observatory.register_lens(AdbLens)
+
+
+def main():
+    from executorch.devtools.observatory.cli import (
+        make_collect_parser,
+        make_compare_parser,
+        make_visualize_parser,
+        run_compare,
+        run_observatory,
+        run_visualize,
+    )
+
+    if len(sys.argv) > 1 and sys.argv[1] == "visualize":
+        parser = make_visualize_parser(prog=f"{_PROG} visualize")
+        parser.add_argument(
+            "--lens-recipe",
+            action="append",
+            default=[],
+            metavar="RECIPE",
+            help=(
+                "Pre-register lens(es) before rendering (auto-discovery runs "
+                "regardless; this flag adds explicit control). "
+                f"Choices: {', '.join(_RECIPE_CHOICES)}"
+            ),
+        )
+        args = parser.parse_args(sys.argv[2:])
+        recipes = _parse_recipe_values(args.lens_recipe)
+        setup_fn = (lambda obs: _register_render_lenses(obs, recipes)) if recipes else None
+        run_visualize(args.input_archive, args.output_html, setup_fn=setup_fn)
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "compare":
+        parser = make_compare_parser(prog=f"{_PROG} compare")
+        parser.add_argument(
+            "--lens-recipe",
+            action="append",
+            default=[],
+            metavar="RECIPE",
+            help=(
+                "Pre-register lens(es) before rendering (auto-discovery runs "
+                "regardless; this flag adds explicit control). "
+                f"Choices: {', '.join(_RECIPE_CHOICES)}"
+            ),
+        )
+        args = parser.parse_args(sys.argv[2:])
+        recipes = _parse_recipe_values(args.lens_recipe)
+        setup_fn = (lambda obs: _register_render_lenses(obs, recipes)) if recipes else None
+        run_compare(
+            input_archives=args.input_archives,
+            labels=args.labels,
+            output_html=args.output_html,
+            title=args.title,
+            setup_fn=setup_fn,
+            output_report_json=args.output_report_json,
+        )
+        return
+
+    parser = make_collect_parser(prog=_PROG)
+    parser.add_argument(
+        "--lens-recipe",
+        action="append",
+        default=[],
+        metavar="RECIPE",
+        help=(
+            "Lens recipe to enable. Repeat the flag or comma-separate to "
+            "enable multiple (e.g. '--lens-recipe adb --lens-recipe accuracy' "
+            "or '--lens-recipe adb,accuracy'). "
+            f"Choices: {', '.join(_RECIPE_CHOICES)}"
+        ),
+    )
+    args = parser.parse_args(sys.argv[1:])
+    recipes = _parse_recipe_values(args.lens_recipe)
+
+    from executorch.devtools.observatory.observatory import Observatory
+    from executorch.devtools.observatory.lenses.pipeline_graph_collector import (
+        PipelineGraphCollectorLens,
+    )
+    from .lenses.qnn_patches import install_qnn_patches
+
+    Observatory.clear()
+    PipelineGraphCollectorLens.register_backend_patches(install_qnn_patches)
+    Observatory.register_lens(PipelineGraphCollectorLens)
+
+    if "accuracy" in recipes:
+        from executorch.devtools.observatory.lenses.accuracy import AccuracyLens
+        from .lenses.qnn_dataset_patches import install_qnn_dataset_patches
+
+        AccuracyLens.register_dataset_patches(install_qnn_dataset_patches)
+        Observatory.register_lens(AccuracyLens)
+
+        from executorch.devtools.observatory.lenses.per_layer_accuracy import (
+            PerLayerAccuracyLens,
+        )
+
+        Observatory.register_lens(PerLayerAccuracyLens)
+
+    if "adb" in recipes:
+        from .lenses.adb import AdbLens
+        from .lenses.adb_patches import install_adb_patches
+
+        AdbLens.register_adb_patches(install_adb_patches)
+        Observatory.register_lens(AdbLens)
+
+    run_observatory(
+        args.script,
+        args.script_args,
+        Observatory,
+        args.output_html,
+        args.output_archive,
+        archive=args.archive,
+        output_report_json=args.output_report_json,
+    )
+
+
+if __name__ == "__main__":
+    main()
