@@ -10881,19 +10881,40 @@ class TestUtilsScript(TestQNN):
             save_suggest_recipes,
         )
 
-        module = SimpleModel()  # noqa: F405
-        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        torch.manual_seed(8)
+        n_layers = 20
+        vocab_size, seq_len, n_heads = 128, 8, 4
+        module = SimpleLLMDecoder(  # noqa: F405
+            vocab_size=vocab_size, n_heads=n_heads, n_layers=n_layers
+        )
+        input_ids = torch.randint(0, vocab_size, (1, seq_len), dtype=torch.int32)
+        atten_mask = torch.triu(
+            torch.full((1, 1, seq_len, seq_len), float("-inf")), diagonal=1
+        )
+        sample_input = (input_ids, atten_mask)
         fp32_gm = torch.export.export(module, sample_input, strict=True).module()
         qdq_gm = self.get_qdq_module(
             module, sample_input, quant_dtype=QuantDtype.use_8a4w
         )
 
+        class DecoderInference:
+            def get_inputs(self, input_ids, attn_mask):
+                return (input_ids, attn_mask)
+
+        text_dataloader = [
+            {
+                "input_ids": input_ids,
+                "attention_mask": atten_mask,
+            }
+        ]
+
+        num_sharding = 5
         report = PerLayerSqnrAnalyzer(
-            model_name="simple_conv",
-            num_layers=4,
+            model_name="simple_llm_decoder",
+            num_layers=n_layers,
             fp32_gm=fp32_gm,
             qdq_gm=qdq_gm,
-        ).analyze([sample_input], num_sharding=4)
+        ).analyze(DecoderInference(), text_dataloader, num_sharding=num_sharding)
 
         overrides = report.suggest_recipe_overrides(sqnr_threshold=22.0)
 
@@ -10902,10 +10923,13 @@ class TestUtilsScript(TestQNN):
             save_suggest_recipes(report, overrides, output_dir=tmp_dir)
 
             # --- save_analysis_summary csv file ---
-            with open(f"{tmp_dir}/simple_conv_quantization_error.csv") as f:
+            with open(f"{tmp_dir}/simple_llm_decoder_quantization_error.csv") as f:
                 csv_content = f.read()
             rows = list(csv.reader(csv_content.splitlines()))
-            self.assertEqual(len(rows), 5)  # 1 header + 4 group rows
+            # 1 header + per-shard conv groups (7 projections each: wq/wk/wv/wo,
+            # w1/w2/w3) + the model-level output_conv. Layers are bucketed into
+            # num_sharding contiguous shards (n_layers >= num_sharding).
+            self.assertEqual(len(rows), 1 + num_sharding * 7 + 1)
             self.assertEqual(
                 rows[0],
                 [
@@ -10921,11 +10945,11 @@ class TestUtilsScript(TestQNN):
 
             # --- save_suggest_recipes .py file (only written when sensitive layers exist) ---
             if overrides:
-                with open(f"{tmp_dir}/simple_conv_suggest_recipe.py") as f:
+                with open(f"{tmp_dir}/simple_llm_decoder_suggest_recipe.py") as f:
                     py_content = f.read()
                 # generated file must be valid Python
                 try:
-                    compile(py_content, "simple_conv_suggest_recipe.py", "exec")
+                    compile(py_content, "simple_llm_decoder_suggest_recipe.py", "exec")
                 except SyntaxError as e:
                     self.fail(
                         f"Generated recipe file has syntax error: {e}\n{py_content}"
