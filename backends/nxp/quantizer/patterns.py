@@ -319,6 +319,15 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class AminPattern(SharedSpecPattern):
+    """
+    Quantizer for Amin operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amin.default]
+
+
 class BMMPattern(QuantizationPattern):
     """
     Quantizer for BatchMatMul operator.
