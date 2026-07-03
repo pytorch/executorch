@@ -8,7 +8,7 @@
 """Tests for ``extension/llm/export/gguf.py``.
 
 The reference oracle is the ``gguf`` package's own ``gguf.dequantize`` (which can
-dequantize Q4_K / Q6_K). We validate that:
+dequantize Q4_K / Q5_K / Q6_K). We validate that:
 
 * ``ExportableGGUFTensor.dequantize`` (and the ``torchao::dequantize_gguf`` op,
   whose eager body uses ``gguf``) reproduces ``gguf.dequantize``;
@@ -37,6 +37,7 @@ except ImportError:
 
 from executorch.extension.llm.export.gguf import (
     _Q4_K_BLOCK_BYTES,
+    _Q5_K_BLOCK_BYTES,
     _Q6_K_BLOCK_BYTES,
     ExportableGGUFTensor,
     Q4_K_GROUP_SIZE,
@@ -57,6 +58,18 @@ def _make_q4k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
     blk[:, 2:4] = _fp16_bytes(0.01)  # dmin
     blk[:, 4:16] = 0x21  # fixed mid-range 6-bit sub-scales/mins (non-zero)
     return blk.reshape(N, nb * _Q4_K_BLOCK_BYTES)
+
+
+def _make_q5k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
+    """A ``(N, nb*176)`` uint8 Q5_K blob with sane, deterministic magnitudes."""
+    g = torch.Generator().manual_seed(seed)
+    blk = torch.randint(
+        0, 256, (N * nb, _Q5_K_BLOCK_BYTES), dtype=torch.uint8, generator=g
+    )
+    blk[:, 0:2] = _fp16_bytes(0.01)  # d
+    blk[:, 2:4] = _fp16_bytes(0.01)  # dmin
+    blk[:, 4:16] = 0x21  # fixed mid-range 6-bit sub-scales/mins (non-zero)
+    return blk.reshape(N, nb * _Q5_K_BLOCK_BYTES)
 
 
 def _make_q6k_raw(N: int, nb: int, seed: int = 0) -> torch.Tensor:
@@ -96,6 +109,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
     def test_dequantize_matches_gguf(self):
         for ggml_type, qtype, make in (
             ("q4_k", GGMLQuantizationType.Q4_K, _make_q4k_raw),
+            ("q5_k", GGMLQuantizationType.Q5_K, _make_q5k_raw),
             ("q6_k", GGMLQuantizationType.Q6_K, _make_q6k_raw),
         ):
             raw = make(N=3, nb=2)
@@ -143,7 +157,11 @@ class TestExportableGGUFTensor(unittest.TestCase):
         )
 
     def test_dequantize_gguf_op_matches_reference(self):
-        for ggml_type, make in (("q4_k", _make_q4k_raw), ("q6_k", _make_q6k_raw)):
+        for ggml_type, make in (
+            ("q4_k", _make_q4k_raw),
+            ("q5_k", _make_q5k_raw),
+            ("q6_k", _make_q6k_raw),
+        ):
             raw = make(N=3, nb=2)
             t = ExportableGGUFTensor.from_raw(raw, ggml_type)
             out = torch.ops.torchao.dequantize_gguf(raw, ggml_type, torch.float32)
@@ -168,7 +186,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
     def test_unsupported_type_raises(self):
         raw = torch.zeros(1, _Q6_K_BLOCK_BYTES, dtype=torch.uint8)
         with self.assertRaises(NotImplementedError):
-            ExportableGGUFTensor.from_raw(raw, "q5_k")
+            ExportableGGUFTensor.from_raw(raw, "q2_k")
 
 
 @unittest.skipUnless(_HAS_GGUF, "gguf package not installed")
