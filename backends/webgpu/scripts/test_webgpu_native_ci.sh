@@ -47,6 +47,8 @@ UPDATE_CACHE_DIR="/tmp/update_cache"
 UPDATE_CACHE_OK=1
 INDEX_DIR="/tmp/index"
 INDEX_OK=1
+DYNAMIC_SHAPE_DIR="/tmp/dynamic_shape"
+DYNAMIC_SHAPE_OK=1
 EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
 EMBEDDING_INDICES="/tmp/webgpu_embedding_q4gsw_indices.bin"
 EMBEDDING_GOLDEN="/tmp/webgpu_embedding_q4gsw_golden.bin"
@@ -111,6 +113,11 @@ from executorch.backends.webgpu.test.ops.index.test_index import export_all_inde
 export_all_index_models('${INDEX_DIR}')
 " || { echo "WARN: index export failed; skipping index native test"; INDEX_OK=0; }
 
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.dynamic_shape.test_dynamic_shape_export import export_dynamic_shape_cases
+export_dynamic_shape_cases('${DYNAMIC_SHAPE_DIR}')
+" || { echo "WARN: dynamic_shape export failed; skipping dynamic_shape native test"; DYNAMIC_SHAPE_OK=0; }
+
 # Non-fatal: a failed sdpa export makes the required 4k/8k configs hard-fail in
 # webgpu_native_test below (precise per-config error), so don't exit/mask here.
 $PYTHON_EXECUTABLE -c "
@@ -132,6 +139,7 @@ rm -rf "${BUILD_DIR}"
 cmake \
     -DEXECUTORCH_BUILD_WEBGPU=ON \
     -DEXECUTORCH_BUILD_WEBGPU_TEST=ON \
+    -DEXECUTORCH_BUILD_TESTS=ON \
     -DDawn_DIR="${Dawn_DIR}" \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -143,7 +151,7 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 # ── Build + run every native test target that exists in this tree ────────────
-TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_index_test webgpu_dispatch_2d_test)
+TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_index_test webgpu_dynamic_shape_test webgpu_dispatch_2d_test)
 BIN_DIR="${BUILD_DIR}/backends/webgpu"
 
 # Which targets are defined depends on which diffs are landed (native_test +
@@ -210,6 +218,9 @@ if [[ "${DISPATCH_ORDER_OK}" == "1" && -x "${BIN_DIR}/webgpu_dispatch_order_test
 fi
 if [[ "${INDEX_OK}" == "1" && -x "${BIN_DIR}/webgpu_index_test" ]]; then
   "${BIN_DIR}/webgpu_index_test" "${INDEX_DIR}"
+fi
+if [[ "${DYNAMIC_SHAPE_OK}" == "1" && -x "${BIN_DIR}/webgpu_dynamic_shape_test" ]]; then
+  "${BIN_DIR}/webgpu_dynamic_shape_test" "${DYNAMIC_SHAPE_DIR}"
 fi
 [[ -x "${BIN_DIR}/webgpu_scratch_buffer_test" ]] && "${BIN_DIR}/webgpu_scratch_buffer_test"
 # Device-free: pure 2D workgroup-count fold unit test (no .pte, no GPU).
