@@ -46,6 +46,9 @@ fbcode_target(_kind = python_pytest,
     srcs = [
         "generic_tests/test_quantizer.py",
     ],
+    resources = [
+        "generic_tests/conftest.py",
+    ],
     deps = [
         "//executorch/backends/nxp:quantizer",
         "//caffe2:torch",
