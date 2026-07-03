@@ -4737,6 +4737,21 @@ def _nan_input_fn(nan_frac: float = 0.3):
     return fn
 
 
+def _inf_input_fn():
+    """Return a callable(shape, dtype) that generates inputs with some inf values."""
+
+    def fn(shape, dtype):
+        x = torch.randn(shape, dtype=dtype)
+        # Insert ~20% +inf and ~10% -inf using non-overlapping masks
+        mask_pos = torch.rand(shape) > 0.8  # ~20% -> +inf
+        mask_neg = (~mask_pos) & (torch.rand(shape) > 0.9)  # ~10% of remaining -> -inf
+        x[mask_pos] = float("inf")
+        x[mask_neg] = float("-inf")
+        return (x,)
+
+    return fn
+
+
 # Standard shape and dtype configs used by unary tests.
 _SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
 _SHAPES_2 = [(16,), (4, 4)]
@@ -4830,6 +4845,7 @@ _UNARY_OP_TESTS = [
     {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
     {"op_name": "bitwise_not_int", "op_fn": torch.bitwise_not, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn": _int_input_fn()},
     {"op_name": "isnan",      "op_fn": torch.isnan,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _nan_input_fn()},
+    {"op_name": "isinf",      "op_fn": torch.isinf,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _inf_input_fn()},
     # activations
     {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
@@ -6303,6 +6319,8 @@ class QuantizedLinearTest(OpTestCase):
             cls(group_size=128),
             cls(qdtype=torch.int2),
             cls(qdtype=torch.int8),
+            cls(qdtype=torch.int6),
+            cls(qdtype=torch.int6, group_size=128),
             # group_size=16: exercises the non-fused dequantize+matmul path
             # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
             cls(qdtype=torch.int8, group_size=16),
@@ -7694,10 +7712,16 @@ class Int4QuantizedEmbeddingTest(OpTestCase):
 
 
 class _LogitsPassthrough(nn.Module):
-    """Stand-in for a model returning logits [B, S, vocab]."""
+    """Stand-in for a model returning logits [B, vocab]."""
 
     def forward(self, logits: torch.Tensor) -> torch.Tensor:
         return logits
+
+
+# Baked constants for sampling params a fixture does not expose as a runtime
+# input: keep-all top_k and top_p=off.
+_KEEP_ALL_TOP_K = torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64)
+_TOP_P_OFF = torch.tensor(1.0)
 
 
 class SeededSampleModel(nn.Module):
@@ -7708,7 +7732,7 @@ class SeededSampleModel(nn.Module):
         self.head = SamplingHead(_LogitsPassthrough())
 
     def forward(self, logits, temperature, seed):
-        return self.head(logits, temperature=temperature, seed=seed)
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, seed)
 
 
 class UnseededSampleModel(nn.Module):
@@ -7719,7 +7743,7 @@ class UnseededSampleModel(nn.Module):
         self.head = SamplingHead(_LogitsPassthrough())
 
     def forward(self, logits, temperature):
-        return self.head(logits, temperature=temperature)
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, None)
 
 
 class TopPSampleModel(nn.Module):
@@ -7730,7 +7754,7 @@ class TopPSampleModel(nn.Module):
         self.head = SamplingHead(_LogitsPassthrough())
 
     def forward(self, logits, temperature, seed, top_p):
-        return self.head(logits, temperature=temperature, seed=seed, top_p=top_p)
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, top_p, seed)
 
 
 class TopKSampleModel(nn.Module):
@@ -7741,7 +7765,7 @@ class TopKSampleModel(nn.Module):
         self.head = SamplingHead(_LogitsPassthrough())
 
     def forward(self, logits, temperature, seed, top_k):
-        return self.head(logits, temperature=temperature, seed=seed, top_k=top_k)
+        return self.head(logits, temperature, top_k, _TOP_P_OFF, seed)
 
 
 @register_test
@@ -7759,7 +7783,7 @@ class SampleSeededTest(OpTestCase):
         "SortNode": 2,  # top-k threshold + top-p nucleus chain
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 2,  # last-token slice + top-k threshold gather
+        "TakeNode": 1,  # top-k threshold gather
         "ExpandDimsNode": 1,
         "WhereNode": 3,
     }
@@ -7769,7 +7793,7 @@ class SampleSeededTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 4, 256),
+            torch.randn(1, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
         )
@@ -7793,7 +7817,7 @@ class SampleUnseededTest(OpTestCase):
         return UnseededSampleModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        return (torch.randn(1, 4, 256), torch.tensor(0.8))
+        return (torch.randn(1, 256), torch.tensor(0.8))
 
 
 @register_test
@@ -7811,7 +7835,7 @@ class SampleTopPTest(OpTestCase):
         "SortNode": 2,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 2,  # last-token slice + top-k threshold gather
+        "TakeNode": 1,  # top-k threshold gather
         "ExpandDimsNode": 1,
         "WhereNode": 3,
     }
@@ -7821,7 +7845,7 @@ class SampleTopPTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 4, 256),
+            torch.randn(1, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
             torch.tensor(0.9),
@@ -7843,7 +7867,7 @@ class SampleTopKTest(OpTestCase):
         "SortNode": 2,
         "CumsumNode": 1,
         "MinNode": 1,
-        "TakeNode": 2,  # last-token slice + top-k threshold gather
+        "TakeNode": 1,  # top-k threshold gather
         "ExpandDimsNode": 1,
         "LogicalOrNode": 0,
         "WhereNode": 3,
@@ -7854,7 +7878,7 @@ class SampleTopKTest(OpTestCase):
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (
-            torch.randn(1, 4, 256),
+            torch.randn(1, 256),
             torch.tensor(0.8),
             torch.tensor(0, dtype=torch.int64),
             torch.tensor(2, dtype=torch.int64),
@@ -7895,9 +7919,9 @@ class SampleGreedyTest(OpTestCase):
         return SeededSampleModel()
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
-        logits = torch.randn(self.batch, 4, 1024, dtype=self.dtype)
+        logits = torch.randn(self.batch, 1024, dtype=self.dtype)
         if self.dtype == torch.bfloat16:
-            logits[0, -1, 512] = 50.0  # dominant -> unambiguous bf16 argmax
+            logits[0, 512] = 50.0  # dominant -> unambiguous bf16 argmax
         return (
             logits,
             torch.tensor(self.temperature),

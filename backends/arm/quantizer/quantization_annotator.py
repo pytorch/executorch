@@ -859,6 +859,7 @@ def get_quant_properties(  # noqa: C901
         )
     elif node.target in (
         torch.ops.aten.cat.default,
+        torch.ops.aten.concat.default,
         torch.ops.aten.concatenate.default,
         torch.ops.aten.stack.default,
     ):
