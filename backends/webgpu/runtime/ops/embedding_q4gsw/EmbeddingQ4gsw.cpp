@@ -37,6 +37,50 @@ static_assert(
     sizeof(EmbeddingParams) == 32,
     "EmbeddingParams must be 32 bytes");
 
+// Resize hook body: recompute counts/dispatch; out = indices dims +
+// [embed_dim].
+void resize_embedding_q4gsw(
+    WebGPUGraph& g,
+    int indices_id,
+    int out_id,
+    uint32_t embed_dim,
+    uint32_t blocks_per_row,
+    uint32_t gs_u,
+    uint32_t groups_per_row,
+    uint32_t bytes_per_row,
+    uint32_t wg_size,
+    size_t dispatch_idx,
+    WGPUBuffer params_buf) {
+  const auto& id = g.cur_dims(indices_id);
+  const uint64_t ni = utils::numel_of(id);
+  if (ni == 0) {
+    throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
+  }
+  const uint64_t total_blocks = ni * blocks_per_row;
+  if (total_blocks > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU embedding_q4gsw: total_blocks exceeds uint32");
+  }
+  std::vector<int64_t> od = id;
+  od.push_back(static_cast<int64_t>(embed_dim));
+  g.set_cur_dims(out_id, od);
+  EmbeddingParams p = {};
+  p.embed_dim = embed_dim;
+  p.blocks_per_row = blocks_per_row;
+  p.num_indices = static_cast<uint32_t>(ni);
+  p.group_size = gs_u;
+  p.groups_per_row = groups_per_row;
+  p.bytes_per_row = bytes_per_row;
+  p.total_blocks = static_cast<uint32_t>(total_blocks);
+  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+  g.dispatch_at(dispatch_idx).workgroup_count_x =
+      utils::compute_1d_workgroup_count(
+          g.device(),
+          static_cast<uint32_t>(total_blocks),
+          wg_size,
+          "embedding_q4gsw(resize)");
+}
+
 // arg order mirrors Vulkan EmbeddingQ4gsw.cpp.
 void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int weight_id = args.at(0);
@@ -241,34 +285,18 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        wg_size,
        dispatch_idx,
        params_buf](WebGPUGraph& g) {
-        const auto& id = g.cur_dims(indices_id);
-        const uint64_t ni = utils::numel_of(id);
-        if (ni == 0) {
-          throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
-        }
-        const uint64_t total_blocks = ni * blocks_per_row;
-        if (total_blocks > UINT32_MAX) {
-          throw std::runtime_error(
-              "WebGPU embedding_q4gsw: total_blocks exceeds uint32");
-        }
-        std::vector<int64_t> od = id;
-        od.push_back(static_cast<int64_t>(embed_dim));
-        g.set_cur_dims(out_id, od);
-        EmbeddingParams p = {};
-        p.embed_dim = embed_dim;
-        p.blocks_per_row = blocks_per_row;
-        p.num_indices = static_cast<uint32_t>(ni);
-        p.group_size = gs_u;
-        p.groups_per_row = groups_per_row;
-        p.bytes_per_row = bytes_per_row;
-        p.total_blocks = static_cast<uint32_t>(total_blocks);
-        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-        g.dispatch_at(dispatch_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(
-                g.device(),
-                static_cast<uint32_t>(total_blocks),
-                wg_size,
-                "embedding_q4gsw(resize)");
+        resize_embedding_q4gsw(
+            g,
+            indices_id,
+            out_id,
+            embed_dim,
+            blocks_per_row,
+            gs_u,
+            groups_per_row,
+            bytes_per_row,
+            wg_size,
+            dispatch_idx,
+            params_buf);
       });
 
   wgpuShaderModuleRelease(shader);
