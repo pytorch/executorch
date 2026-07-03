@@ -142,16 +142,14 @@ void WebGPUGraph::update_symints_from_inputs(
     // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
     const int64_t offset = static_cast<int64_t>(index) * stride;
     const void* host = inputs[pos].data;
-    // Stored elem_size (live nbytes/numel mis-derives for a dynamic source).
-    const size_t elem_size = tensors_[src.input_tensor_id].elem_size;
+    // Interpret the HOST buffer by its scalar type, not the tensor's serialized
+    // elem_size: copy_inputs narrows an int64 host input to an int32 buffer, so
+    // elem_size (buffer-derived) would misread int64 host data as int32.
     int32_t val;
-    if (elem_size == sizeof(int64_t)) {
+    if (inputs[pos].host_is_int64) {
       val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
-    } else if (elem_size == sizeof(int32_t)) {
-      val = static_cast<const int32_t*>(host)[offset];
     } else {
-      throw std::runtime_error(
-          "select_as_symint: unsupported input element size");
+      val = static_cast<const int32_t*>(host)[offset];
     }
     set_symint(src.symint_id, val);
   }
