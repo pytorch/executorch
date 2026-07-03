@@ -38,6 +38,7 @@ def define_arm_tests():
         "ops/test_to_copy.py",
         "ops/test_exp.py",
         "ops/test_fft.py",
+        "ops/test_flip.py",
         "ops/test_reciprocal.py",
         "ops/test_mean_dim.py",
         "ops/test_var.py",

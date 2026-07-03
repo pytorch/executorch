@@ -38,6 +38,11 @@ DEFINE_string(
     "",
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
+DEFINE_int32(
+    top_k,
+    0,
+    "Top-k sampling; keep the k most likely tokens. 0 (default) = off (keep "
+    "all). Requires a model exported with --sample (MLX on-device sampling).");
 DEFINE_double(
     top_p,
     1.0,
@@ -161,6 +166,7 @@ int main(int argc, char** argv) {
   // printed only on the first iteration (coherence check).
   llm::SamplingConfig sampling;
   sampling.temperature = static_cast<float>(FLAGS_temperature);
+  sampling.top_k = FLAGS_top_k;
   sampling.top_p = static_cast<float>(FLAGS_top_p);
   // Only a --sample model uses the seed; randomize an unset seed for those and
   // leave non-sample models at 0 so they don't trip the top_p/seed guard.
