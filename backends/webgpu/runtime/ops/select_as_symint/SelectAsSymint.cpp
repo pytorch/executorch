@@ -40,6 +40,28 @@ void select_as_symint_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<int>(graph.get_int(index_id)));
 }
 
+// aten.sym_size.int(self, dim) -> SymInt = self.size(dim). The WebGPU ops read
+// live sizes from cur_dims directly, so this SymInt is usually unused.
+void sym_size_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  if (args.size() < 3) {
+    throw std::runtime_error("sym_size.int: expected [self, dim, out] args");
+  }
+  const int self_id = args.at(0);
+  const int dim_id = args.at(1);
+  const int out_id = args.at(2);
+  if (graph.get_value_type(out_id) != WebGPUGraph::ValueType::SymInt) {
+    return; // folded to a static Int -> nothing live to source
+  }
+  if (graph.get_value_type(dim_id) != WebGPUGraph::ValueType::Int) {
+    throw std::runtime_error("sym_size.int: dim arg is not an Int");
+  }
+  if (graph.get_value_type(self_id) != WebGPUGraph::ValueType::Tensor) {
+    throw std::runtime_error("sym_size.int: self arg is not a Tensor");
+  }
+  graph.add_symint_dim_source(
+      out_id, self_id, static_cast<int>(graph.get_int(dim_id)));
+}
+
 // An operand is a live SymInt or a static Int constant.
 int32_t read_scalar(WebGPUGraph& graph, int id) {
   if (graph.get_value_type(id) == WebGPUGraph::ValueType::SymInt) {
@@ -109,6 +131,7 @@ void sym_floordiv_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(et_vk.select_as_symint.default, select_as_symint_impl);
+  WEBGPU_REGISTER_OP(sym_size.int, sym_size_impl);
   WEBGPU_REGISTER_OP(add, sym_add_impl);
   WEBGPU_REGISTER_OP(sub, sym_sub_impl);
   WEBGPU_REGISTER_OP(mul, sym_mul_impl);
