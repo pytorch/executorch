@@ -104,19 +104,18 @@ Error WebGPUBackend::execute(
   // Copy inputs from EValue tensors to GPU buffers
   std::vector<InputData> inputs;
   inputs.reserve(num_inputs);
-  for (size_t i = 0; i < num_inputs; i++) {
-    const auto& tensor = args[i]->toTensor();
-    const bool host_is_int64 =
-        tensor.scalar_type() == executorch::aten::ScalarType::Long;
-    inputs.push_back({tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
-  }
   // Fail loud as a runtime Error so a throw never crosses the backend boundary.
   try {
-    // Dynamic shapes: shrink each input to its live sizes before upload
-    // (mirrors Vulkan maybe_resize_input). No-op when unchanged, so a static
-    // graph is byte-identical.
+    // Build the input list and, for dynamic shapes, shrink each input to its
+    // live sizes before upload (mirrors Vulkan maybe_resize_input). No-op when
+    // unchanged, so a static graph is byte-identical.
     for (size_t i = 0; i < num_inputs; i++) {
-      const auto sizes = args[i]->toTensor().sizes();
+      const auto& tensor = args[i]->toTensor();
+      const bool host_is_int64 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Long;
+      inputs.push_back(
+          {tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
+      const auto sizes = tensor.sizes();
       std::vector<int64_t> new_dims(sizes.begin(), sizes.end());
       graph->resize_input(graph->input_ids()[i], new_dims);
     }
