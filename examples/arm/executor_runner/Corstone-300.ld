@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -24,8 +24,16 @@
   #define ETHOSU_ARENA  1
 #endif
 
-__STACK_SIZE = 0x00008000;
-__HEAP_SIZE  = 0x00008000;
+#ifndef STACK_SIZE
+  #define STACK_SIZE 0x00008000
+#endif
+
+#ifndef HEAP_SIZE
+  #define HEAP_SIZE 0x00008000
+#endif
+
+__STACK_SIZE = STACK_SIZE;
+__HEAP_SIZE  = HEAP_SIZE;
 
 MEMORY
 {
