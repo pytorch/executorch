@@ -92,7 +92,7 @@ void permute_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   uint32_t wg_size =
       utils::clamp_workgroup_size(device, kPermuteWorkgroupSizeX);
-  uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       device, out_meta.numel, wg_size, "permute");
 
   WGPUConstantEntry wg_size_constant = {};
@@ -176,7 +176,8 @@ void permute_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count.x, "permute", workgroup_count.y});
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
