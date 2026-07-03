@@ -32,6 +32,39 @@ struct RmsNormParams {
 };
 static_assert(sizeof(RmsNormParams) == 16, "RmsNormParams must be 16 bytes");
 
+// Resize hook body: recompute num_rows + rewrite the UBO for the live input.
+void resize_rms_norm(
+    WebGPUGraph& g,
+    int in_id,
+    int out_id,
+    uint32_t row_width,
+    float epsilon,
+    size_t dispatch_idx,
+    WGPUBuffer params_buf) {
+  const auto& d = g.cur_dims(in_id);
+  const uint64_t numel = utils::numel_of(d);
+  if (numel % static_cast<uint64_t>(row_width) != 0) {
+    throw std::runtime_error(
+        "WebGPU rms_norm: numel not a multiple of row_width");
+  }
+  const uint32_t rows =
+      static_cast<uint32_t>(numel / static_cast<uint64_t>(row_width));
+  if (rows == 0) {
+    throw std::runtime_error("WebGPU rms_norm: zero rows");
+  }
+  if (rows > 65535u) {
+    throw std::runtime_error(
+        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
+  }
+  RmsNormParams p = {};
+  p.num_rows = rows;
+  p.row_width = row_width;
+  p.epsilon = epsilon;
+  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+  g.dispatch_at(dispatch_idx).workgroup_count_x = rows;
+  g.set_cur_dims(out_id, d);
+}
+
 void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // et_vk.rms_norm.default args: [in, weight, eps, out]
   const int in_id = args.at(0);
@@ -197,28 +230,8 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       in_id,
       [in_id, out_id, row_width, epsilon, dispatch_idx, params_buf](
           WebGPUGraph& g) {
-        const auto& d = g.cur_dims(in_id);
-        const uint64_t numel = utils::numel_of(d);
-        if (numel % static_cast<uint64_t>(row_width) != 0) {
-          throw std::runtime_error(
-              "WebGPU rms_norm: numel not a multiple of row_width");
-        }
-        const uint32_t rows =
-            static_cast<uint32_t>(numel / static_cast<uint64_t>(row_width));
-        if (rows == 0) {
-          throw std::runtime_error("WebGPU rms_norm: zero rows");
-        }
-        if (rows > 65535u) {
-          throw std::runtime_error(
-              "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
-        }
-        RmsNormParams p = {};
-        p.num_rows = rows;
-        p.row_width = row_width;
-        p.epsilon = epsilon;
-        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-        g.dispatch_at(dispatch_idx).workgroup_count_x = rows;
-        g.set_cur_dims(out_id, d);
+        resize_rms_norm(
+            g, in_id, out_id, row_width, epsilon, dispatch_idx, params_buf);
       });
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
