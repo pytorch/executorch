@@ -148,6 +148,10 @@ from .normalize_index_put_none_indices_pass import (  # noqa
 )
 from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
+from .propagate_view_copy_permute_pass import (  # noqa
+    PropagateViewCopyPermuteDownPass,
+    PropagateViewCopyPermuteUpPass,
+)
 from .remove_getitem_pass import RemoveGetItemPass  # noqa
 from .remove_graph_asserts_pass import RemoveGraphAssertsPass  # noqa
 from .remove_noop_pass import RemoveNoopPass  # noqa
