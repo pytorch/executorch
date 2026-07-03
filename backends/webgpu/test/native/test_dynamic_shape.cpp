@@ -102,35 +102,43 @@ void check_s(Module& m, const std::string& prefix, int s) {
                       << " golden.size=" << golden.size() << ")";
 }
 
-// Dynamic quantized linear: input [M, kLinK] -> output [M, kLinN].
+// Dynamic quantized linear: input [M, kLinK] -> output [M, n]. kLinN is the
+// register-tiled/bicol config; kLinNShmem (N>=2048) routes to the shmem GEMM.
 constexpr int kLinK = 64;
 constexpr int kLinN = 128;
-// Run dyn_linear at [m_rows, kLinK] on an already-loaded module (so it can be
+constexpr int kLinNShmem = 2048;
+// Run <prefix> at [m_rows, kLinK] on an already-loaded module (so it can be
 // reused across M without a fresh load), and compare to the golden.
-void run_linear(Module& m, int m_rows) {
-  const std::string base = g_dir + "/dyn_linear.S" + std::to_string(m_rows);
+void run_linear(Module& m, int m_rows, const char* prefix, int n) {
+  const std::string base = g_dir + "/" + prefix + ".S" + std::to_string(m_rows);
   auto input = read_bin(base + ".input.bin");
   auto golden = read_bin(base + ".golden.bin");
-  ASSERT_FALSE(input.empty()) << "missing dyn_linear.S" << m_rows;
+  ASSERT_FALSE(input.empty()) << "missing " << prefix << ".S" << m_rows;
   auto t = make_tensor_ptr({m_rows, kLinK}, std::move(input));
   auto r = m.forward({EValue(t)});
   ASSERT_TRUE(r.ok() && !r.get().empty() && r.get()[0].isTensor())
-      << "dyn_linear M=" << m_rows << " forward failed";
+      << prefix << " M=" << m_rows << " forward failed";
   const auto& out = r.get()[0].toTensor();
-  const size_t numel = static_cast<size_t>(m_rows) * kLinN;
+  const size_t numel = static_cast<size_t>(m_rows) * n;
   ASSERT_EQ(static_cast<size_t>(out.numel()), numel)
-      << "dyn_linear M=" << m_rows << " output numel mismatch";
+      << prefix << " M=" << m_rows << " output numel mismatch";
   std::vector<float> got(
       out.const_data_ptr<float>(), out.const_data_ptr<float>() + numel);
   const float e = max_err(got, golden);
   // 4-bit quant: looser tol (the kernel mirrors the dequant-matmul reference).
-  EXPECT_LT(e, 5e-3f) << "dyn_linear M=" << m_rows << " max_err=" << e;
+  EXPECT_LT(e, 5e-3f) << prefix << " M=" << m_rows << " max_err=" << e;
 }
 
 void check_linear(int m_rows) {
   Module m(g_dir + "/dyn_linear.pte");
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear.pte";
-  run_linear(m, m_rows);
+  run_linear(m, m_rows, "dyn_linear", kLinN);
+}
+
+void check_linear_shmem(int m_rows) {
+  Module m(g_dir + "/dyn_linear_shmem.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear_shmem.pte";
+  run_linear(m, m_rows, "dyn_linear_shmem", kLinNShmem);
 }
 
 // Dynamic SDPA (GQA prefill, input_pos=0): q[1,s,hq,d] k/v[1,s,hkv,d]
@@ -395,7 +403,25 @@ TEST(DynamicShape, QuantizedLinearReusedGraph) {
   Module m(g_dir + "/dyn_linear.pte");
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear.pte";
   for (int m_rows : {128, 32, 1, 128}) {
-    run_linear(m, m_rows);
+    run_linear(m, m_rows, "dyn_linear", kLinN);
+  }
+}
+
+// I3: dynamic linear at N=2048 -> the shmem-GEMM route (K>=4096||N>=2048); the
+// resize hook recomputes the shmem tile count for the live M on the fixed shmem
+// pipeline (M=1 exercises a partial row-tile).
+TEST(DynamicShape, QuantizedLinearShmem) {
+  for (int m_rows : {128, 32, 1}) {
+    check_linear_shmem(m_rows);
+  }
+}
+
+// I4: shmem-routed linear reusing ONE loaded graph across M.
+TEST(DynamicShape, QuantizedLinearShmemReusedGraph) {
+  Module m(g_dir + "/dyn_linear_shmem.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear_shmem.pte";
+  for (int m_rows : {128, 32, 1, 128}) {
+    run_linear(m, m_rows, "dyn_linear_shmem", kLinNShmem);
   }
 }
 
