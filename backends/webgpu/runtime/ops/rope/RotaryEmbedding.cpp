@@ -109,6 +109,61 @@ RopeDispatch add_rope_dispatch(
   return {uniform_buffer, dispatch_index};
 }
 
+// Resize hook body: recompute S/num_pairs + both dispatches; out follows xq/xk.
+void resize_rope(
+    WebGPUGraph& g,
+    int xq_id,
+    int xk_id,
+    int xq_out_id,
+    int xk_out_id,
+    uint32_t n_heads_q,
+    uint32_t n_heads_k,
+    uint32_t head_dim,
+    uint32_t half_dim,
+    uint32_t wg_size,
+    size_t q_idx,
+    size_t k_idx,
+    WGPUBuffer q_ubuf,
+    WGPUBuffer k_ubuf) {
+  const auto& qd = g.cur_dims(xq_id);
+  const auto& kd = g.cur_dims(xk_id);
+  if (qd.size() < 3 || kd.size() < 3) {
+    throw std::runtime_error("apply_rotary_emb(resize): q/k rank must be >= 3");
+  }
+  const uint32_t s = static_cast<uint32_t>(qd[qd.size() - 3]);
+  const uint64_t qn = utils::numel_of(qd);
+  const uint64_t kn = utils::numel_of(kd);
+  // pk = pq (seq=s); require k's seq == s, not silently q's.
+  if (static_cast<uint32_t>(kd[kd.size() - 3]) != s) {
+    throw std::runtime_error(
+        "apply_rotary_emb(resize): q and k seq lengths differ");
+  }
+  // freqs stay max-allocated; shader indexes by position (S = prefix).
+  RotaryParams pq = {};
+  pq.n_heads = n_heads_q;
+  pq.seq = s;
+  pq.head_dim = head_dim;
+  pq.half_dim = half_dim;
+  pq.num_pairs = static_cast<uint32_t>(qn / 2u);
+  RotaryParams pk = pq;
+  pk.n_heads = n_heads_k;
+  pk.num_pairs = static_cast<uint32_t>(kn / 2u);
+  wgpuQueueWriteBuffer(g.queue(), q_ubuf, 0, &pq, sizeof(pq));
+  wgpuQueueWriteBuffer(g.queue(), k_ubuf, 0, &pk, sizeof(pk));
+  g.dispatch_at(q_idx).workgroup_count_x = utils::compute_1d_workgroup_count(
+      g.device(),
+      static_cast<uint32_t>(qn / 2u),
+      wg_size,
+      "apply_rotary_emb(resize)");
+  g.dispatch_at(k_idx).workgroup_count_x = utils::compute_1d_workgroup_count(
+      g.device(),
+      static_cast<uint32_t>(kn / 2u),
+      wg_size,
+      "apply_rotary_emb(resize)");
+  g.set_cur_dims(xq_out_id, qd);
+  g.set_cur_dims(xk_out_id, kd);
+}
+
 // args: [xq, xk, freqs_cos, freqs_sin, out_list(ValueList[xq_out, xk_out])].
 void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int xq_id = args.at(0);
@@ -282,63 +337,40 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // Dynamic shapes: recompute S/num_pairs + both dispatches; out follows xq/xk.
   const int xq_out_id = out_list[0];
   const int xk_out_id = out_list[1];
-  // xq_id trigger suffices: q and k co-resize on S; this updates both.
-  graph.add_tensor_resize_hook(
-      xq_id,
-      [xq_id,
-       xk_id,
-       xq_out_id,
-       xk_out_id,
-       n_heads_q,
-       n_heads_k,
-       head_dim,
-       half_dim,
-       wg_size,
-       q_idx,
-       k_idx,
-       q_ubuf,
-       k_ubuf](WebGPUGraph& g) {
-        const auto& qd = g.cur_dims(xq_id);
-        const auto& kd = g.cur_dims(xk_id);
-        if (qd.size() < 3 || kd.size() < 3) {
-          throw std::runtime_error(
-              "apply_rotary_emb(resize): q/k rank must be >= 3");
-        }
-        const uint32_t s = static_cast<uint32_t>(qd[qd.size() - 3]);
-        const uint64_t qn = utils::numel_of(qd);
-        const uint64_t kn = utils::numel_of(kd);
-        // pk = pq (seq=s); require k's seq == s, not silently q's.
-        if (static_cast<uint32_t>(kd[kd.size() - 3]) != s) {
-          throw std::runtime_error(
-              "apply_rotary_emb(resize): q and k seq lengths differ");
-        }
-        // freqs stay max-allocated; shader indexes by position (S = prefix).
-        RotaryParams pq = {};
-        pq.n_heads = n_heads_q;
-        pq.seq = s;
-        pq.head_dim = head_dim;
-        pq.half_dim = half_dim;
-        pq.num_pairs = static_cast<uint32_t>(qn / 2u);
-        RotaryParams pk = pq;
-        pk.n_heads = n_heads_k;
-        pk.num_pairs = static_cast<uint32_t>(kn / 2u);
-        wgpuQueueWriteBuffer(g.queue(), q_ubuf, 0, &pq, sizeof(pq));
-        wgpuQueueWriteBuffer(g.queue(), k_ubuf, 0, &pk, sizeof(pk));
-        g.dispatch_at(q_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(
-                g.device(),
-                static_cast<uint32_t>(qn / 2u),
-                wg_size,
-                "apply_rotary_emb(resize)");
-        g.dispatch_at(k_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(
-                g.device(),
-                static_cast<uint32_t>(kn / 2u),
-                wg_size,
-                "apply_rotary_emb(resize)");
-        g.set_cur_dims(xq_out_id, qd);
-        g.set_cur_dims(xk_out_id, kd);
-      });
+  // Register on both xq and xk so the recompute fires whichever is marked dirty
+  // (q and k co-resize on S; resize_rope is idempotent, so a double-fire when
+  // both are dirty is harmless).
+  auto rope_hook = [xq_id,
+                    xk_id,
+                    xq_out_id,
+                    xk_out_id,
+                    n_heads_q,
+                    n_heads_k,
+                    head_dim,
+                    half_dim,
+                    wg_size,
+                    q_idx,
+                    k_idx,
+                    q_ubuf,
+                    k_ubuf](WebGPUGraph& g) {
+    resize_rope(
+        g,
+        xq_id,
+        xk_id,
+        xq_out_id,
+        xk_out_id,
+        n_heads_q,
+        n_heads_k,
+        head_dim,
+        half_dim,
+        wg_size,
+        q_idx,
+        k_idx,
+        q_ubuf,
+        k_ubuf);
+  };
+  graph.add_tensor_resize_hook(xq_id, rope_hook);
+  graph.add_tensor_resize_hook(xk_id, rope_hook);
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
