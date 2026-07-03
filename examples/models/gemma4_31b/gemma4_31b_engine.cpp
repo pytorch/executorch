@@ -54,12 +54,15 @@ constexpr const char* kDecodeMethod = "decode";
 
 constexpr const char* kMaxPrefillChunk = "get_max_prefill_chunk";
 constexpr const char* kMinPrefillChunk = "get_min_prefill_chunk";
+constexpr const char* kUseSampling = "use_sampling";
 
 Result<uint64_t> read_sampled_token(
     const executorch::aten::Tensor& output,
-    float temperature) {
+    float temperature,
+    bool use_sampling) {
 #ifdef EXECUTORCH_BUILD_CUDA
   (void)temperature;
+  (void)use_sampling;
   const void* ptr = output.const_data_ptr();
   cudaPointerAttributes attrs{};
   const bool on_device = cudaPointerGetAttributes(&attrs, ptr) == cudaSuccess &&
@@ -98,13 +101,21 @@ Result<uint64_t> read_sampled_token(
       static_cast<int>(output.scalar_type()));
   return Error::InvalidArgument;
 #else
+  if (use_sampling) {
+    ET_CHECK_OR_RETURN_ERROR(
+        output.scalar_type() == executorch::aten::ScalarType::Long,
+        InvalidProgram,
+        "read_sampled_token: use_sampling set but forward output is not Long");
+    return static_cast<uint64_t>(output.const_data_ptr<int64_t>()[0]);
+  }
   return static_cast<uint64_t>(
       logits_to_token(output, temperature < 0.0f ? 0.0f : temperature));
 #endif
 }
 
 Result<std::unique_ptr<Module>> build_gemma_module(
-    const Gemma4_31BConfig& config) {
+    const Gemma4_31BConfig& config,
+    bool multi_session) {
   std::vector<std::string> data_files;
   if (!config.data_path.empty()) {
     data_files.push_back(config.data_path);
@@ -135,9 +146,42 @@ Result<std::unique_ptr<Module>> build_gemma_module(
   }
 #endif
 
-  ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kPrefillMethod));
+  const executorch::runtime::LoadBackendOptionsMap* load_options = nullptr;
+#ifdef EXECUTORCH_BUILD_MLX
+  // Per-model MLX runtime specs, delivered to MLXBackend::init(). Must outlive
+  // the load_method calls below (they read it during init).
+  executorch::runtime::BackendOptions<2> mlx_opts;
+  executorch::runtime::LoadBackendOptionsMap mlx_options_map;
+  // Release MLX's cached buffer pool every N forward calls to bound memory
+  // growth during long sessions.
+  constexpr int kMLXClearCacheInterval = 1;
+  ET_CHECK_OK_OR_RETURN_ERROR(mlx_opts.set_option(
+      ::executorch::backends::mlx::kClearCacheIntervalKey,
+      kMLXClearCacheInterval));
+  ET_LOG(
+      Info,
+      "Gemma4_31BEngine: MLX clear_cache_interval=%d",
+      kMLXClearCacheInterval);
+  // skip_mutable_buffer_init must match the multi-session owner: it is only
+  // safe when a load scope is active (the caller passes multi_session = "owner
+  // exists"), since per-session buffers are then allocated by
+  // mlx_mutable_state. The backend also defensively rejects the flag without an
+  // active owner.
+  if (multi_session) {
+    ET_CHECK_OK_OR_RETURN_ERROR(mlx_opts.set_option(
+        ::executorch::backends::mlx::kSkipMutableBufferInitKey, true));
+    ET_LOG(Info, "Gemma4_31BEngine: MLX skip_mutable_buffer_init=true");
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(mlx_options_map.set_options(
+      ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()));
+  load_options = &mlx_options_map;
+#endif
+
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      module->load_method(kPrefillMethod, nullptr, nullptr, load_options));
   if (std::string(kDecodeMethod) != std::string(kPrefillMethod)) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(kDecodeMethod));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        module->load_method(kDecodeMethod, nullptr, nullptr, load_options));
   }
   return module;
 }
@@ -258,6 +302,19 @@ class Gemma4_31BSession : public LLMSession {
         from_blob(&temp_val_, {1}, executorch::aten::ScalarType::Float);
     temp_tensor_dev_ = clone_tensor_ptr_to(temp_host, cuda_device_);
 #endif
+#ifdef EXECUTORCH_BUILD_MLX
+    if (auto it = metadata_.find(kUseSampling); it != metadata_.end()) {
+      use_sampling_ = it->second != 0;
+    }
+    temp_tensor_mlx_ =
+        from_blob(&temp_val_mlx_, {}, executorch::aten::ScalarType::Float);
+    top_k_tensor_ =
+        from_blob(&top_k_val_, {}, executorch::aten::ScalarType::Long);
+    top_p_tensor_ =
+        from_blob(&top_p_val_, {}, executorch::aten::ScalarType::Float);
+    seed_tensor_ =
+        from_blob(&seed_val_, {}, executorch::aten::ScalarType::Long);
+#endif
   }
 
   ~Gemma4_31BSession() override {
@@ -278,15 +335,25 @@ class Gemma4_31BSession : public LLMSession {
     }
     float first_token_temp = temperature_;
     if (initial_sampling != nullptr) {
-      if (initial_sampling->top_p != 1.0f || initial_sampling->top_k != 0 ||
-          initial_sampling->seed != 0) {
+      if (!use_sampling_ &&
+          (initial_sampling->top_k != 0 || initial_sampling->top_p != 1.0f ||
+           initial_sampling->seed != 0)) {
         ET_LOG(
             Error,
-            "Gemma4_31BSession: only temperature is supported; top_p/top_k/seed "
-            "are not implemented");
+            "prefill_tokens: top_k/top_p/seed require a sampling model "
+            "(export with --sample); only temperature is supported otherwise");
         return Error::NotSupported;
       }
       first_token_temp = initial_sampling->temperature;
+      if (use_sampling_) {
+        if (!valid_top_p(initial_sampling->top_p)) {
+          ET_LOG(Error, "prefill_tokens: top_p must be in (0, 1]");
+          return Error::InvalidArgument;
+        }
+        top_k_ = initial_sampling->top_k;
+        top_p_ = initial_sampling->top_p;
+        seed_ = initial_sampling->seed;
+      }
     }
     if (!valid_temperature(first_token_temp)) {
       ET_LOG(Error, "prefill_tokens: temperature must be -1 or in [0, 2]");
@@ -326,15 +393,21 @@ class Gemma4_31BSession : public LLMSession {
       offset += chunk;
     }
     prev_decode_token_ = tokens.back();
+#ifdef EXECUTORCH_BUILD_MLX
+    if (use_sampling_) {
+      seed_ += 1;
+    }
+#endif
     return Error::Ok;
   }
 
   Result<DecodeResult> decode_one(const SamplingConfig& sampling) override {
-    if (sampling.top_p != 1.0f || sampling.top_k != 0 || sampling.seed != 0) {
+    if (!use_sampling_ &&
+        (sampling.top_k != 0 || sampling.top_p != 1.0f || sampling.seed != 0)) {
       ET_LOG(
           Error,
-          "Gemma4_31BSession: only temperature is supported; top_p/top_k/seed "
-          "are not implemented");
+          "Gemma4_31BSession: top_k/top_p/seed require a sampling model "
+          "(export with --sample); only temperature is supported otherwise");
       return Error::NotSupported;
     }
     if (!valid_temperature(sampling.temperature)) {
@@ -346,6 +419,14 @@ class Gemma4_31BSession : public LLMSession {
         InvalidState,
         "decode_one requires a pending token; call prefill_tokens() first");
     temperature_ = sampling.temperature;
+    if (use_sampling_) {
+      if (!valid_top_p(sampling.top_p)) {
+        ET_LOG(Error, "decode_one: top_p must be in (0, 1]");
+        return Error::InvalidArgument;
+      }
+      top_k_ = sampling.top_k;
+      top_p_ = sampling.top_p;
+    }
 
     if (stop_.load(std::memory_order_relaxed)) {
       return DecodeResult{0, "", /*is_eos=*/false, /*is_terminal=*/true};
@@ -393,6 +474,15 @@ class Gemma4_31BSession : public LLMSession {
 #else
     inputs.push_back(EValue(decode_tokens_));
     inputs.push_back(EValue(decode_pos_));
+#ifdef EXECUTORCH_BUILD_MLX
+    if (use_sampling_) {
+      set_sampling_inputs(temperature_, top_k_, top_p_, seed_);
+      inputs.push_back(EValue(temp_tensor_mlx_));
+      inputs.push_back(EValue(top_k_tensor_));
+      inputs.push_back(EValue(top_p_tensor_));
+      inputs.push_back(EValue(seed_tensor_));
+    }
+#endif
 #endif
     auto sampled =
         run_locked(kDecodeMethod, inputs, temperature_, /*sync_after=*/false);
@@ -400,6 +490,11 @@ class Gemma4_31BSession : public LLMSession {
     pending_ = sampled.get();
     prev_decode_token_ = token;
     pos_ += 1;
+#ifdef EXECUTORCH_BUILD_MLX
+    if (use_sampling_) {
+      seed_ += 1;
+    }
+#endif
     return DecodeResult{
         token, std::move(text_piece), /*is_eos=*/false, /*is_terminal=*/false};
   }
@@ -424,6 +519,20 @@ class Gemma4_31BSession : public LLMSession {
   static bool valid_temperature(float temperature) {
     return temperature == -1.0f || (temperature >= 0.0f && temperature <= 2.0f);
   }
+
+  static bool valid_top_p(float top_p) {
+    return top_p > 0.0f && top_p <= 1.0f;
+  }
+
+#ifdef EXECUTORCH_BUILD_MLX
+  void
+  set_sampling_inputs(float temp, int64_t top_k, float top_p, uint64_t seed) {
+    temp_val_mlx_ = (temp < 0.0f) ? 0.0f : temp;
+    top_k_val_ = (top_k <= 0) ? INT64_MAX : top_k; // 0/neg = keep all
+    top_p_val_ = top_p;
+    seed_val_ = static_cast<int64_t>(seed);
+  }
+#endif
 
   Result<uint64_t>
   run_prefill_chunk(const uint64_t* tokens, int64_t T, float temperature) {
@@ -457,6 +566,15 @@ class Gemma4_31BSession : public LLMSession {
         (T >= min_prefill_chunk_) ? kPrefillMethod : kDecodeMethod;
 #else
     const char* method = kPrefillMethod;
+#endif
+#ifdef EXECUTORCH_BUILD_MLX
+    if (use_sampling_) {
+      set_sampling_inputs(temperature, top_k_, top_p_, seed_);
+      inputs.push_back(EValue(temp_tensor_mlx_));
+      inputs.push_back(EValue(top_k_tensor_));
+      inputs.push_back(EValue(top_p_tensor_));
+      inputs.push_back(EValue(seed_tensor_));
+    }
 #endif
     return run_locked(method, inputs, temperature, /*sync_after=*/true);
   }
@@ -560,7 +678,7 @@ class Gemma4_31BSession : public LLMSession {
         : module_->execute(method, inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
     const auto& out_tensor = res.get()[0].toTensor();
-    auto sampled = read_sampled_token(out_tensor, temperature);
+    auto sampled = read_sampled_token(out_tensor, temperature, use_sampling_);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
 #ifdef EXECUTORCH_BUILD_CUDA
     ET_CHECK_OK_OR_RETURN_ERROR(
@@ -592,6 +710,11 @@ class Gemma4_31BSession : public LLMSession {
   float temperature_ = -1.0f;
   std::atomic<bool> stop_{false};
 
+  bool use_sampling_ = false;
+  int64_t top_k_ = 0; // 0 = off (keep all); mapped to INT64_MAX on-device
+  float top_p_ = 1.0f;
+  uint64_t seed_ = 0;
+
   int64_t decode_token_data_[1] = {0};
   int64_t decode_pos_data_[1] = {0};
   TensorPtr decode_tokens_;
@@ -608,6 +731,16 @@ class Gemma4_31BSession : public LLMSession {
   TensorPtr decode_tokens_dev_;
   TensorPtr decode_pos_dev_;
   TensorPtr temp_tensor_dev_;
+#endif
+#ifdef EXECUTORCH_BUILD_MLX
+  float temp_val_mlx_ = 0.0f;
+  int64_t top_k_val_ = INT64_MAX;
+  float top_p_val_ = 1.0f;
+  int64_t seed_val_ = 0;
+  TensorPtr temp_tensor_mlx_;
+  TensorPtr top_k_tensor_;
+  TensorPtr top_p_tensor_;
+  TensorPtr seed_tensor_;
 #endif
 };
 
@@ -655,6 +788,12 @@ Result<std::unique_ptr<Gemma4_31BEngine>> Gemma4_31BEngine::create(
     metadata[kMaxPrefillChunk] = max_prefill_chunk;
   }
 
+#ifdef EXECUTORCH_BUILD_MLX
+  if (auto get_result = meta_module->get(kUseSampling); get_result.ok()) {
+    metadata[kUseSampling] = get_result->toScalar().to<int64_t>();
+  }
+#endif
+
   int64_t min_prefill_chunk = 1;
 #ifdef EXECUTORCH_BUILD_CUDA
   min_prefill_chunk = 5;
@@ -695,10 +834,14 @@ Result<std::unique_ptr<Gemma4_31BEngine>> Gemma4_31BEngine::create(
   }
 #endif
 
-  auto module_res = mutable_state != nullptr
-      ? mutable_state->with_load_scope(
-            [&]() { return build_gemma_module(config); })
-      : build_gemma_module(config);
+  // Pass whether a multi-session owner exists as the single source of truth for
+  // skip_mutable_buffer_init, so the skip flag can never diverge from the
+  // owner.
+  const bool multi_session = mutable_state != nullptr;
+  auto module_res = multi_session ? mutable_state->with_load_scope([&]() {
+    return build_gemma_module(config, multi_session);
+  })
+                                  : build_gemma_module(config, multi_session);
   if (module_res.error() != Error::Ok) {
     return module_res.error();
   }
