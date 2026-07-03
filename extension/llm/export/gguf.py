@@ -18,11 +18,11 @@ defers all unpacking, serving as the canonical GGUF loading representation:
 * ``.to_int4_tensor()`` / ``.to_intx_unpacked_to_int8_tensor()`` convert into
   torchao subclasses (``Int4Tensor`` / ``IntxUnpackedToInt8Tensor``) instead.
 
-The quant type is a string (``"q4_k"`` / ``"q6_k"``); the ``gguf`` package's
-integer ``GGMLQuantizationType`` ids are an internal lookup detail. Which tensors
-to convert is the caller's policy.
+The quant type is a string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``); the ``gguf``
+package's integer ``GGMLQuantizationType`` ids are an internal lookup detail.
+Which tensors to convert is the caller's policy.
 
-Attribution: Q4_K / Q6_K block layouts follow llama.cpp / gguf-py
+Attribution: Q4_K / Q5_K / Q6_K block layouts follow llama.cpp / gguf-py
 (``ggml-common.h``), MIT-licensed (Copyright (c) 2023-2024 The ggml authors).
 """
 
@@ -45,19 +45,25 @@ Q4_K_GROUP_SIZE = QK_K // 8  # 32  (8 sub-blocks per super-block)
 Q6_K_GROUP_SIZE = QK_K // 16  # 16 (16 sub-blocks per super-block)
 
 _Q4_K_BLOCK_BYTES = 2 + 2 + 12 + QK_K // 2  # 144
+_Q5_K_BLOCK_BYTES = 2 + 2 + 12 + QK_K // 8 + QK_K // 2  # 176
 _Q6_K_BLOCK_BYTES = 2 + QK_K // 2 + QK_K // 4 + QK_K // 16  # 210
 
 # ``gguf.GGMLQuantizationType`` integer ids.
 GGML_F32 = 0
 GGML_F16 = 1
 GGML_Q4_K = 12
+GGML_Q5_K = 13
 GGML_Q6_K = 14
 
 # String quant-type names are the user-facing identifier (op arg + subclass attr).
 # These dicts map names to the internal ids / block sizes.
-_GGML_ID_BY_TYPE = {"q4_k": GGML_Q4_K, "q6_k": GGML_Q6_K}
+_GGML_ID_BY_TYPE = {"q4_k": GGML_Q4_K, "q5_k": GGML_Q5_K, "q6_k": GGML_Q6_K}
 _TYPE_BY_GGML_ID = {v: k for k, v in _GGML_ID_BY_TYPE.items()}
-_BLOCK_BYTES_BY_TYPE = {"q4_k": _Q4_K_BLOCK_BYTES, "q6_k": _Q6_K_BLOCK_BYTES}
+_BLOCK_BYTES_BY_TYPE = {
+    "q4_k": _Q4_K_BLOCK_BYTES,
+    "q5_k": _Q5_K_BLOCK_BYTES,
+    "q6_k": _Q6_K_BLOCK_BYTES,
+}
 
 
 def _read_f16(raw: Tensor, col_start: int, col_end: int) -> Tensor:
@@ -350,9 +356,9 @@ def iter_gguf(
 ) -> Iterator[Tuple[str, Union[ExportableGGUFTensor, Tensor]]]:
     """Stream ``(name, value)`` for every tensor in a GGUF file (low peak mem).
 
-    Quantized tensors (Q4_K, Q6_K) are wrapped as ``ExportableGGUFTensor`` with
-    the raw block bytes; F32/F16 are returned as plain float tensors (bf16 for
-    F16). GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
+    Quantized tensors (Q4_K, Q5_K, Q6_K) are wrapped as ``ExportableGGUFTensor``
+    with the raw block bytes; F32/F16 are returned as plain float tensors (bf16
+    for F16). GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
     """
     from gguf import GGMLQuantizationType, GGUFReader
 
@@ -374,6 +380,8 @@ def iter_gguf(
             yield tensor.name, flat.view(torch.float16).reshape(shape).to(
                 torch.bfloat16
             )
+        elif tensor.tensor_type == GGMLQuantizationType.BF16:
+            yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
         else:
             raise ValueError(f"Unsupported GGUF quant type: {tensor.tensor_type}")
 
