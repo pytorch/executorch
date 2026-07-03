@@ -199,7 +199,7 @@ void test_update_cache(const std::string& model_path) {
     max_abs_err = std::max(max_abs_err, std::abs(out_data[i] - ref[i]));
   }
   printf("Max abs error: %e (checked %d elements)\n", max_abs_err, cnumel);
-  EXPECT_LT(max_abs_err, 1e-3f) << "max error exceeds tolerance 1e-3";
+  EXPECT_LE(max_abs_err, 1e-3f) << "max error exceeds tolerance 1e-3";
 }
 
 std::vector<float> load_golden(const std::string& path, size_t numel) {

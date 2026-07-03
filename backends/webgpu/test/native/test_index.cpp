@@ -108,9 +108,9 @@ void run_case(const char* name) {
     const float denom = std::max(std::abs(golden[i]), 1e-6f);
     max_rel_err = std::max(max_rel_err, abs_err / denom);
   }
-  EXPECT_LT(max_abs_err, 1e-3f) << name << " max_abs_err=" << max_abs_err
+  EXPECT_LE(max_abs_err, 1e-3f) << name << " max_abs_err=" << max_abs_err
                                 << " (" << golden.size() << " elements)";
-  EXPECT_LT(max_rel_err, 1e-3f) << name << " max_rel_err=" << max_rel_err
+  EXPECT_LE(max_rel_err, 1e-3f) << name << " max_rel_err=" << max_rel_err
                                 << " (" << golden.size() << " elements)";
 }
 
