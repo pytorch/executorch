@@ -380,6 +380,8 @@ def iter_gguf(
             yield tensor.name, flat.view(torch.float16).reshape(shape).to(
                 torch.bfloat16
             )
+        elif tensor.tensor_type == GGMLQuantizationType.BF16:
+            yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
         else:
             raise ValueError(f"Unsupported GGUF quant type: {tensor.tensor_type}")
 
