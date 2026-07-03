@@ -90,7 +90,9 @@ WebGPUContext create_webgpu_context() {
 
   // TimedWaitAny lets webgpu_wait() block on futures via wgpuInstanceWaitAny.
   WGPUInstanceDescriptor instance_desc = {};
-#if defined(__EMSCRIPTEN__)
+  // Vendored (buck) Dawn uses the older capabilities.* API; the rig's native
+  // Dawn and emscripten's emdawnwebgpu (emcc 4.0.19+) use requiredFeatures.
+#if defined(WEBGPU_DAWN_INSTANCE_CAPABILITIES)
   instance_desc.capabilities.timedWaitAnyEnable = true;
   instance_desc.capabilities.timedWaitAnyMaxCount = 1;
 #else
