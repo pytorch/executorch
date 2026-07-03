@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib
 import logging
 import os
 import random
@@ -76,9 +77,16 @@ def set_random_seed():
         ARM_TEST_SEED=RANDOM pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
     Rerun with a specific seed
         ARM_TEST_SEED=3478246 pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
-
     """
     import torch
+
+    # In fbcode @mode/opt, the `torch._utils` submodule is importable but is not
+    # bound as an attribute on `torch`. Importing `torch._dynamo` (pulled in via
+    # executorch.exir / torchao when a test module is collected) reads
+    # `torch._utils` directly and otherwise fails the whole listing with
+    # "module 'torch' has no attribute '_utils'". Bind it explicitly here, which
+    # runs before collection. Harmless elsewhere (the attribute is already set).
+    torch._utils = importlib.import_module("torch._utils")
 
     seed_env = os.environ.get("ARM_TEST_SEED", "0")
     if seed_env == "RANDOM":
@@ -104,9 +112,8 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
     """Returns whether an option is successfully enabled, i.e. if the flag was
     given to pytest and the necessary requirements are available.
 
-    The optional parameter 'fail_if_not_enabled' makes the function raise a
-    RuntimeError instead of returning False.
-
+    The optional parameter 'fail_if_not_enabled' makes the function
+    raise a RuntimeError instead of returning False.
     """
 
     if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
@@ -123,7 +130,6 @@ def get_option(option: str) -> Any | None:
 
     Args:
         option (str): The option to check for.
-
     """
     if option in pytest._test_options:  # type: ignore[attr-defined]
         return pytest._test_options[option]  # type: ignore[attr-defined]
