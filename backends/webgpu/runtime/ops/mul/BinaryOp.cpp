@@ -34,7 +34,7 @@ void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& in2_tensor = graph.get_tensor(in2_id);
   const auto& out_tensor = graph.get_tensor(out_id);
 
-  // Rank guard (NCHW backend is <= 4 dims; 1D dispatch only).
+  // Rank guard (NCHW backend is <= 4 dims).
   if (out_tensor.dims.size() > kTensorMetaMaxNdim ||
       in1_tensor.dims.size() > kTensorMetaMaxNdim ||
       in2_tensor.dims.size() > kTensorMetaMaxNdim) {
