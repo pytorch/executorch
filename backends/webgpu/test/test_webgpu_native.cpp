@@ -758,6 +758,18 @@ static const SdpaConfig kSdpaConfigs[] = {
      16.0f,
      /*required=*/false,
      /*expect_reject=*/true},
+    // 2D-dispatch cap (>65535 wg): S=512 folds QK; S=2048 folds QK+softmax+AV
+    // (cap+1).
+    {"llama1b_prefill_512", 32, 8, 64, 512, 512, 0, 16.0f, /*required=*/true},
+    {"llama1b_prefill_2048",
+     32,
+     8,
+     64,
+     2048,
+     2048,
+     0,
+     16.0f,
+     /*required=*/true},
 };
 
 // Ramp denominator; mirror of test_sdpa.py::_RAMP_DENOM (keep in sync).
