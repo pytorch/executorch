@@ -183,8 +183,10 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     )
     _write_goldens(rmsmul, "dyn_rmsmul", out_dir, [MAXS, 32, 1])
 
-    # 2d) 4-bit quantized linear with a DYNAMIC rows (M) dim — prefill GEMM.
+    # 2d) 4-bit quantized linear with a DYNAMIC rows (M) dim — prefill GEMM
+    # (register-tiled N=128) + a shmem-GEMM-routed variant (N=2048).
     _export_dynamic_linear(out_dir)
+    _export_dynamic_linear(out_dir, n=LIN_SHMEM_N, prefix="dyn_linear_shmem")
 
     # 2e) Fused SDPA with a DYNAMIC seq-len S (prefill, input_pos=0).
     _export_dynamic_sdpa(out_dir)
@@ -222,17 +224,20 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
 # Quantized linear: K x N weight, dynamic rows M; input [M, K], output [M, N].
 LIN_K = 64
 LIN_N = 128
+LIN_SHMEM_N = 2048  # N>=2048 routes linear_q4gsw to the shmem-GEMM path
 LIN_GROUP = 32
 LIN_MAXM = 128
 
 
-def _export_dynamic_linear(out_dir: str) -> None:
+def _export_dynamic_linear(
+    out_dir: str, n: int = LIN_N, prefix: str = "dyn_linear"
+) -> None:
     from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import (
         _fp64_golden,
         _make_quantized_model,
     )
 
-    model = _make_quantized_model(LIN_K, LIN_N, LIN_GROUP)
+    model = _make_quantized_model(LIN_K, n, LIN_GROUP)
     x = _ramp((LIN_MAXM, LIN_K))
     m_dim = torch.export.Dim("m", min=1, max=LIN_MAXM)
     ep = torch.export.export(model, (x,), dynamic_shapes=({0: m_dim},))
@@ -244,17 +249,17 @@ def _export_dynamic_linear(out_dir: str) -> None:
         for plan in et.executorch_program.execution_plan
         for d in plan.delegates
     ), "linear_q4gsw not delegated"
-    with open(os.path.join(out_dir, "dyn_linear.pte"), "wb") as f:
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
         f.write(et.buffer)
-    print("Exported dyn_linear.pte")
+    print(f"Exported {prefix}.pte")
     for m in [LIN_MAXM, 32, 1]:
         xm = _ramp((m, LIN_K))
         g = _fp64_golden(model, xm).astype("<f4")  # [m, N]
         xm.detach().numpy().astype("<f4").tofile(
-            os.path.join(out_dir, f"dyn_linear.S{m}.input.bin")
+            os.path.join(out_dir, f"{prefix}.S{m}.input.bin")
         )
-        g.tofile(os.path.join(out_dir, f"dyn_linear.S{m}.golden.bin"))
-        print(f"  golden dyn_linear M={m}")
+        g.tofile(os.path.join(out_dir, f"{prefix}.S{m}.golden.bin"))
+        print(f"  golden {prefix} M={m}")
 
 
 # Dynamic SDPA: GQA prefill (input_pos=0), q/k/v seq-len dynamic.
