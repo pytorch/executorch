@@ -814,7 +814,7 @@ void WebGPUGraph::execute() {
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatch.bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatch.workgroup_count_x, 1, 1);
+          pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -822,7 +822,7 @@ void WebGPUGraph::execute() {
         qp->record(
             static_cast<uint32_t>(i),
             dispatch.kernel_name,
-            {dispatch.workgroup_count_x, 1, 1},
+            {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
             {1, 1, 1});
       }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -894,7 +894,10 @@ void WebGPUGraph::execute() {
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatches_[i].bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatches_[i].workgroup_count_x, 1, 1);
+          pass,
+          dispatches_[i].workgroup_count_x,
+          dispatches_[i].workgroup_count_y,
+          1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
     }
