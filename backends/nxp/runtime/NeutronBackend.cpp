@@ -104,7 +104,7 @@ typedef struct {
 // Neutron compute has no access to FLASH.
 // Prefetch weights from FLASH to SRAM using memcpy.
 // For a model converted with --fetch_constants_to_sram.
-void copy(void* dst, void* src, uint32_t size, uint32_t channel) {
+void copy(void* dst, const void* src, uint32_t size, uint32_t channel) {
   memcpy(dst, src, size);
 }
 void wait(uint32_t channel) {}
@@ -378,8 +378,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
 #endif
 
     // Prepare data for through neutron driver.
-    NeutronError neutronRC =
-        neutronModelPrepare((const NeutronModelConfig*)&cfg->mcfg, &cfg->nmh);
+    NeutronError neutronRC = neutronModelPrepare(&cfg->mcfg, &cfg->nmh);
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
@@ -587,7 +586,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
       char* profile_info =
           static_cast<char*>(cfg->dcfg.outputs[profiling_index]);
       NeutronFullProfilingEvent* neutron_events =
-          (NeutronFullProfilingEvent*)profile_info;
+          reinterpreter_cast<NeutronFullProfilingEvent*>(profile_info);
       executorch::runtime::EventTracer* tracer = context.event_tracer();
       uint32_t start_time = 0;
       int index = 0;
