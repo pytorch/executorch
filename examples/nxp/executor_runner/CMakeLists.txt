@@ -60,6 +60,7 @@ if(NOT TARGET nd)
   )
 
   add_library(nd STATIC IMPORTED GLOBAL)
+  add_library(flatccrt STATIC IMPORTED GLOBAL)
   set_target_properties(
     nd PROPERTIES IMPORTED_LOCATION ${EIQ_NEUTRON_TARGET_DRIVER}
   )
@@ -108,11 +109,15 @@ add_executable(
   ${EXECUTORCH_PATH}/extension/data_loader/file_data_loader.cpp
 )
 
-target_compile_options(nxp_executor_runner PRIVATE -DNEUTRON_CMODEL)
+target_compile_options(
+  nxp_executor_runner PRIVATE -DNEUTRON_CMODEL -DEXECUTORCH_BUILD_DEVTOOLS=ON
+                              -DEXECUTORCH_ENABLE_EVENT_TRACER=ON
+)
 
 target_link_libraries(
   nxp_executor_runner
-  PRIVATE executorch
+  PRIVATE etdump
+          executorch
           executorch_kernels
           nd
           gflags::gflags

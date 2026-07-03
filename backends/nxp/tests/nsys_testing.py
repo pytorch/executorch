@@ -153,6 +153,15 @@ def _run_delegated_executorch_program(
 
     save_pte_program(delegated_program, test_name + "_delegated", test_dir)
 
+    # Generate ETRecord if profiling flag is set.
+    if use_profiling:
+        etrecord_path = os.path.join(npu_results_dir, "etrecord.bin")
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(etrecord_path), exist_ok=True)
+        # Save ETRecord
+        delegated_program.get_etrecord().save(etrecord_path)
+        logging.info(f"The ETRecord for the model was saved to {etrecord_path}.")
+
     # Preparation of quantized dataset, requires quantization parameters from converted delegated model
     if remove_quant_io_ops:
         dataset_dir_quant = os.path.join(test_dir, "dataset_quant")
