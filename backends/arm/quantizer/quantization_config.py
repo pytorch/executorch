@@ -189,9 +189,9 @@ class QuantizationConfig:
             weight_obs_or_fq = obs_or_fqs[1]
             act_scale, _ = act_obs_or_fq.calculate_qparams()
             weight_scale, _ = weight_obs_or_fq.calculate_qparams()
-            return torch.tensor(act_scale * weight_scale).to(
-                torch.float32
-            ), torch.full_like(weight_scale, fill_value=0, dtype=torch.int32)
+            return (act_scale * weight_scale).to(torch.float32), torch.full_like(
+                weight_scale, fill_value=0, dtype=torch.int32
+            )
 
         if node.target in [
             torch.ops.aten.conv1d.default,
