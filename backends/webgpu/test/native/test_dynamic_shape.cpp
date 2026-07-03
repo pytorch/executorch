@@ -105,9 +105,9 @@ void check_s(Module& m, const std::string& prefix, int s) {
 // Dynamic quantized linear: input [M, kLinK] -> output [M, kLinN].
 constexpr int kLinK = 64;
 constexpr int kLinN = 128;
-void check_linear(int m_rows) {
-  Module m(g_dir + "/dyn_linear.pte");
-  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear.pte";
+// Run dyn_linear at [m_rows, kLinK] on an already-loaded module (so it can be
+// reused across M without a fresh load), and compare to the golden.
+void run_linear(Module& m, int m_rows) {
   const std::string base = g_dir + "/dyn_linear.S" + std::to_string(m_rows);
   auto input = read_bin(base + ".input.bin");
   auto golden = read_bin(base + ".golden.bin");
@@ -125,6 +125,12 @@ void check_linear(int m_rows) {
   const float e = max_err(got, golden);
   // 4-bit quant: looser tol (the kernel mirrors the dequant-matmul reference).
   EXPECT_LT(e, 5e-3f) << "dyn_linear M=" << m_rows << " max_err=" << e;
+}
+
+void check_linear(int m_rows) {
+  Module m(g_dir + "/dyn_linear.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear.pte";
+  run_linear(m, m_rows);
 }
 
 // Dynamic SDPA (GQA prefill, input_pos=0): q[1,s,hq,d] k/v[1,s,hkv,d]
@@ -177,9 +183,9 @@ void check_sdpa(int s) {
 // Dynamic embedding: int64 token ids [N] -> [N, kEmbDim] fp32. The int64 host
 // input exercises copy_inputs' int64->int32 narrow path under dynamic shapes.
 constexpr int kEmbDim = 64;
-void check_embedding(int n) {
-  Module m(g_dir + "/emb_dyn.pte");
-  ASSERT_EQ(m.load_forward(), Error::Ok) << "load emb_dyn.pte";
+// Run emb_dyn at N tokens on an already-loaded module (so it can be reused
+// across N), and compare to the golden.
+void run_embedding(Module& m, int n) {
   const std::string b = g_dir + "/emb_dyn.S" + std::to_string(n) + ".";
   std::ifstream f(b + "idx.bin", std::ios::binary | std::ios::ate);
   ASSERT_TRUE(f.good()) << "missing emb_dyn.S" << n;
@@ -206,12 +212,18 @@ void check_embedding(int n) {
   EXPECT_LT(e, 5e-3f) << "emb_dyn N=" << n << " max_err=" << e;
 }
 
+void check_embedding(int n) {
+  Module m(g_dir + "/emb_dyn.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load emb_dyn.pte";
+  run_embedding(m, n);
+}
+
 // Dynamic RoPE: xq[1,s,nh,hd] xk[1,s,nkv,hd] freqs[s,hd/2] -> xq_out/xk_out
 // (2 outputs, selected by head count nh != nkv).
 constexpr int kRopeNH = 8, kRopeNKV = 2, kRopeHD = 64;
-void check_rope(int s) {
-  Module m(g_dir + "/rope_dyn.pte");
-  ASSERT_EQ(m.load_forward(), Error::Ok) << "load rope_dyn.pte";
+// Run rope_dyn at seq-len s on an already-loaded module (so it can be reused
+// across s), comparing xq_out/xk_out (selected by head count) to the goldens.
+void run_rope(Module& m, int s) {
   const std::string b = g_dir + "/rope_dyn.S" + std::to_string(s) + ".";
   auto xq = read_bin(b + "xq.bin");
   auto xk = read_bin(b + "xk.bin");
@@ -254,13 +266,19 @@ void check_rope(int s) {
   EXPECT_LT(e, 1e-3f) << "rope_dyn S=" << s << " max_err=" << e;
 }
 
+void check_rope(int s) {
+  Module m(g_dir + "/rope_dyn.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load rope_dyn.pte";
+  run_rope(m, s);
+}
+
 // Dynamic select_copy(0,-1): input [2,1,S,kHidden] -> output [1,S,kHidden]. The
 // negative index resolves against the (static) leading dim live; the dynamic S
 // flows to the output, so the resize hook recomputes its dispatch each S.
 constexpr int kSelLead = 2;
-void check_select(int s) {
-  Module m(g_dir + "/dyn_select.pte");
-  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_select.pte";
+// Run dyn_select at seq-len s on an already-loaded module (so it can be reused
+// across s), and compare to the golden.
+void run_select(Module& m, int s) {
   const std::string base = g_dir + "/dyn_select.S" + std::to_string(s);
   auto input = read_bin(base + ".input.bin");
   auto golden = read_bin(base + ".golden.bin");
@@ -278,6 +296,12 @@ void check_select(int s) {
       out.const_data_ptr<float>(), out.const_data_ptr<float>() + numel);
   const float e = max_err(got, golden);
   EXPECT_LT(e, 1e-3f) << "dyn_select S=" << s << " max_err=" << e;
+}
+
+void check_select(int s) {
+  Module m(g_dir + "/dyn_select.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_select.pte";
+  run_select(m, s);
 }
 
 } // namespace
@@ -301,6 +325,17 @@ TEST(DynamicShape, RmsNormReusedGraph) {
   }
 }
 
+// C2: grow-only reuse — one loaded rms graph run smallest -> largest, so the
+// FIRST resize grows the dispatch (every other reuse test starts at MAXS and
+// only shrinks; this catches a hook with a shrink-only short-circuit).
+TEST(DynamicShape, RmsNormGrowReused) {
+  Module m(g_dir + "/dyn_rms.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_rms.pte";
+  for (int s : {1, 8, 64, 128}) {
+    check_s(m, "dyn_rms", s);
+  }
+}
+
 // D: static rms_norm (no dynamic dim) — regression that the static path is
 // unchanged.
 TEST(DynamicShape, StaticRmsNorm) {
@@ -314,6 +349,17 @@ TEST(DynamicShape, RmsChainCascade) {
   for (int s : {128, 16, 1}) {
     Module m(g_dir + "/dyn_rms_chain.pte");
     ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_rms_chain.pte";
+    check_s(m, "dyn_rms_chain", s);
+  }
+}
+
+// F2: cascade graph REUSED across S — one loaded rms(rms(x)) graph run across S
+// (op1's output-resize feeds op2's input-resize on a persistent graph; the
+// single-op reuse tests don't cover an inter-op resize cascade under reuse).
+TEST(DynamicShape, RmsChainCascadeReusedGraph) {
+  Module m(g_dir + "/dyn_rms_chain.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_rms_chain.pte";
+  for (int s : {128, 16, 1, 128}) {
     check_s(m, "dyn_rms_chain", s);
   }
 }
@@ -343,6 +389,16 @@ TEST(DynamicShape, QuantizedLinear) {
   }
 }
 
+// I2: dynamic linear reusing ONE loaded graph across M (buffers must not move
+// => bind groups stay valid; the resize hook recomputes dispatch each M).
+TEST(DynamicShape, QuantizedLinearReusedGraph) {
+  Module m(g_dir + "/dyn_linear.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear.pte";
+  for (int m_rows : {128, 32, 1, 128}) {
+    run_linear(m, m_rows);
+  }
+}
+
 // J: dynamic SDPA (GQA prefill) at several seq-len S. The whole case skips
 // while op coverage is pending (the dynamic-S build throws err 48 until
 // registered).
@@ -366,10 +422,31 @@ TEST(DynamicShape, Embedding) {
   }
 }
 
+// K2: dynamic embedding reusing ONE loaded graph across N (buffers must not
+// move
+// => the multi-buffer bind group stays valid; resize recomputes blocks each N).
+TEST(DynamicShape, EmbeddingReusedGraph) {
+  Module m(g_dir + "/emb_dyn.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load emb_dyn.pte";
+  for (int n : {16, 8, 1, 16}) {
+    run_embedding(m, n);
+  }
+}
+
 // L: dynamic RoPE (two outputs) at several seq-len S.
 TEST(DynamicShape, Rope) {
   for (int s : {16, 8, 1}) {
     check_rope(s);
+  }
+}
+
+// L2: dynamic RoPE reusing ONE loaded graph across S (buffers must not move =>
+// bind groups stay valid; the resize hook recomputes both outputs each S).
+TEST(DynamicShape, RopeReusedGraph) {
+  Module m(g_dir + "/rope_dyn.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load rope_dyn.pte";
+  for (int s : {16, 8, 1, 16}) {
+    run_rope(m, s);
   }
 }
 
@@ -382,10 +459,29 @@ TEST(DynamicShape, Sigmoid) {
   }
 }
 
+// M2: dynamic sigmoid reusing ONE loaded graph across S.
+TEST(DynamicShape, SigmoidReusedGraph) {
+  Module m(g_dir + "/dyn_sigmoid.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_sigmoid.pte";
+  for (int s : {128, 32, 1, 128}) {
+    check_s(m, "dyn_sigmoid", s);
+  }
+}
+
 // N: dynamic select_copy(0,-1) at several S.
 TEST(DynamicShape, Select) {
   for (int s : {128, 32, 1}) {
     check_select(s);
+  }
+}
+
+// N2: dynamic select_copy reusing ONE loaded graph across S (the resize hook
+// re-resolves the negative index against the LIVE leading dim each call).
+TEST(DynamicShape, SelectReusedGraph) {
+  Module m(g_dir + "/dyn_select.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_select.pte";
+  for (int s : {128, 32, 1, 128}) {
+    run_select(m, s);
   }
 }
 

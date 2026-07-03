@@ -277,7 +277,6 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       {pipeline, bind_group, workgroup_count, "linear_q4gsw"});
 
   // Dynamic shapes: recompute dispatch + params.M for the live M.
-  WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       in_id,
       [in_id,
@@ -292,26 +291,28 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        wg_size,
        use_gemv,
        dispatch_idx,
-       params_buf](WebGPUGraph& g) {
+       uniform_buffer](WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         if (d.empty()) {
-          throw std::runtime_error("WebGPU linear_q4gsw: empty input dims");
+          throw std::runtime_error(
+              "WebGPU linear_q4gsw(resize): empty input dims");
         }
         const uint64_t numel = utils::numel_of(d);
         if (numel % static_cast<uint64_t>(K) != 0u) {
           throw std::runtime_error(
-              "WebGPU linear_q4gsw: live input numel not a multiple of K");
+              "WebGPU linear_q4gsw(resize): live input numel not a multiple "
+              "of K");
         }
         const uint32_t m =
             static_cast<uint32_t>(numel / static_cast<uint64_t>(K));
         if (m == 0u) {
-          throw std::runtime_error("WebGPU linear_q4gsw: live M == 0");
+          throw std::runtime_error("WebGPU linear_q4gsw(resize): live M == 0");
         }
         // Buffers/bind-groups were sized for the build-time max M; a larger
         // live M would write out of bounds.
         if (m > M) {
           throw std::runtime_error(
-              "WebGPU linear_q4gsw: live M exceeds the build-time max");
+              "WebGPU linear_q4gsw(resize): live M exceeds the build-time max");
         }
         const uint32_t wgc = compute_q4gsw_workgroup_count(
             g.device(), use_gemv, m, N, wg_size, "linear_q4gsw(resize)");
@@ -323,7 +324,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         p.group_size = gs;
         p.padded_N = padded_N;
         p.has_bias = has_bias;
-        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        wgpuQueueWriteBuffer(g.queue(), uniform_buffer, 0, &p, sizeof(p));
         g.dispatch_at(dispatch_idx).workgroup_count_x = wgc;
         std::vector<int64_t> od(d.begin(), d.end());
         od.back() = static_cast<int64_t>(N);
