@@ -8,7 +8,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -18,7 +18,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class DecomposeLinearPass(ArmPass):
+class DecomposeLinearPass(ArmOpTargetedPass):
     """This pass decomposes linear into a Conv2D with view operations.
 
     Example:
@@ -31,6 +31,7 @@ class DecomposeLinearPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}
+    target_ops = (exir_ops.edge.aten.linear.default,)
 
     def call(self, graph_module):
         modified = False

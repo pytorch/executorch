@@ -37,6 +37,9 @@ EXECUTORCH_EXTENSION_CUDA_API std::optional<cudaStream_t> getCallerStream();
  * context's SM partition; the confinement rides the stream, so the green
  * context need not be made current. The caller owns the stream for the guard's
  * lifetime.
+ *
+ * The user is responsible for handling the lifetimes of host data so that it
+ * lasts until after async operations that use it are completed.
  */
 class EXECUTORCH_EXTENSION_CUDA_API CallerStreamGuard {
  public:
