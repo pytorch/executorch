@@ -213,6 +213,40 @@ jobs:
         pip install gguf
         python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
+  unittest-cuda-runtime:
+    name: unittest-cuda-runtime
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state -j$(nproc)
+        ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
+
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).

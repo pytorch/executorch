@@ -244,6 +244,59 @@ class TestMlxPipeline(unittest.TestCase):
             export_and_lower(model, config, out_dir, backend="mlx")
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
+    def test_export_to_pte_with_sampling(self):
+        """--sample export: forward returns a seed-reproducible int64 token."""
+        try:
+            from executorch.backends.mlx import MLXPartitioner  # noqa: F401
+        except ImportError:
+            self.skipTest("MLX backend not available")
+
+        from executorch.examples.models.gemma4_31b.export import (
+            export_and_lower,
+            load_prequantized_model,
+        )
+        from executorch.runtime import Runtime, Verification
+
+        with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:
+            save_checkpoint(ckpt_dir)
+            with open(os.path.join(ckpt_dir, "config.json"), "w") as f:
+                json.dump(config_dict(), f)
+
+            model, config = load_prequantized_model(
+                ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len, backend="mlx"
+            )
+            export_and_lower(model, config, out_dir, backend="mlx", sample=True)
+            pte = os.path.join(out_dir, "model.pte")
+            self.assertTrue(os.path.exists(pte))
+
+            program = Runtime.get().load_program(pte, verification=Verification.Minimal)
+            self.assertIn("use_sampling", program.method_names)
+            self.assertTrue(bool(program.load_method("use_sampling").execute([])[0]))
+
+            forward = program.load_method("forward")
+            tokens = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+            input_pos = torch.arange(4, dtype=torch.long)
+
+            def sample(seed):
+                return forward.execute(
+                    [
+                        tokens,
+                        input_pos,
+                        torch.tensor(0.8, dtype=torch.float32),
+                        torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
+                        torch.tensor(0.9, dtype=torch.float32),
+                        torch.tensor(seed, dtype=torch.int64),
+                    ]
+                )[0]
+
+            token = sample(7)
+            self.assertEqual(token.dtype, torch.int64)
+            # Same-seed reproducibility is checked against the host reference
+            # mlx.sample, which is not bit-identical to the on-device graph; on
+            # non-Mac CI the delegated op runs that CPU reference, so this asserts
+            # the reference's determinism, not the Metal delegate's.
+            self.assertTrue(torch.equal(token, sample(7)))  # same seed reproducible
+
 
 class TestGgufMlxPipeline(unittest.TestCase):
     """Test GGUF → MLX loading path with synthetic Q6_K-like tensors."""
