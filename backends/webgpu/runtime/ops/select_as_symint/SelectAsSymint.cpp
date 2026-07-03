@@ -69,7 +69,9 @@ void register_sym_binary(
   if (graph.get_value_type(a) == WebGPUGraph::ValueType::SymInt) {
     graph.add_resize_hook(a, recompute);
   }
-  if (graph.get_value_type(b) == WebGPUGraph::ValueType::SymInt) {
+  // b != a: for a self-op (e.g. x + x) both operands share one id; register the
+  // recompute hook once, not twice.
+  if (b != a && graph.get_value_type(b) == WebGPUGraph::ValueType::SymInt) {
     graph.add_resize_hook(b, recompute);
   }
 }
