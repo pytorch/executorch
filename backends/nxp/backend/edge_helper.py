@@ -10,6 +10,7 @@ import torch
 
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
+    Amin,
     Cat,
     Clone,
     CloneDimOrder,
@@ -44,6 +45,7 @@ DEQUANTIZE_OPERATORS = [
 #  as no-ops (and potentially not delegated), if their input and output tensors are equal (when run on random data).
 no_op_candidates = {
     AddTensor,
+    Amin,
     MulTensor,
     PermuteCopy,
     SubTensor,
@@ -371,6 +373,8 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
         if (
             output_data.dtype == val.dtype
             and output_data.shape == val.shape
+            and output_data.dtype == input_data.dtype
+            and output_data.shape == input_data.shape
             and torch.all(input_data == output_data)
         ):
             # The operator preserves the shape, data type, and data. Therefore, it is a no-op from the perspective of

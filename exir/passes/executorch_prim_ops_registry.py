@@ -58,6 +58,11 @@ def sym_float(a: _SymScalar) -> _SymScalar:
     return float(a)  # pyre-ignore
 
 
+@bind_pattern_to_op(executorch_prims_lib, "sym_int.Scalar(Scalar a) -> Scalar")
+def sym_int(a: _SymScalar) -> _SymScalar:
+    return int(a)  # pyre-ignore
+
+
 # TODO: ideally we should return SymBool in the schema, but it seems
 # the schema parser does not recognize SymBool yet: P629748075
 @bind_pattern_to_op(executorch_prims_lib, "gt.Scalar(Scalar a, Scalar b) -> bool")
@@ -146,6 +151,7 @@ _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[Any, OpOverload] = {
     operator.mod: ops.backend.executorch_prim.mod.Scalar,
     operator.neg: ops.backend.executorch_prim.neg.Scalar,
     torch.sym_float: ops.backend.executorch_prim.sym_float.Scalar,
+    torch.sym_int: ops.backend.executorch_prim.sym_int.Scalar,
     torch.sym_max: ops.backend.executorch_prim.sym_max.Scalar,
     torch.sym_min: ops.backend.executorch_prim.sym_min.Scalar,
     torch.sym_not: ops.backend.executorch_prim.sym_not.Scalar,
