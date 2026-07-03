@@ -48,7 +48,6 @@ perf_overlay=false
 visualize_tosa=false
 visualize_pte=false
 model_converter=false
-specify_ethosu_scratch=false
 extra_build_flags=""
 preset_file="${et_root_dir}/tools/cmake/preset/arm_baremetal.cmake"
 cmake_cache_file=""
@@ -82,7 +81,6 @@ function help() {
     echo "  --config=<FILEPATH>                    Ethos-U: System configuration file that specifies system configurations (vela.ini)"
     echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U65 targets and 'Dedicated_Sram_384KB' for Ethos-U85 targets"
     echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
-    echo "  --specify_ethosu_scratch               Use actual Ethos-U scratch size for given model to size temp allocator"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scratch dir if you not using default ${arm_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
@@ -119,7 +117,6 @@ for arg in "$@"; do
       --config=*) config="${arg#*=}";;
       --memory_mode=*) memory_mode="${arg#*=}";;
       --pte_placement=*) pte_placement="${arg#*=}";;
-      --specify_ethosu_scratch) specify_ethosu_scratch=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
@@ -262,21 +259,6 @@ function check_setup () {
     return 0
 }
 
-function get_ethosu_scratch_size() {
-    local pte_path="$1"
-    python3 - "$pte_path" <<'PY'
-from executorch.backends.arm.scripts.get_ethosu_scratch_from_pte import (
-    get_scratch_from_pte,
-)
-import sys
-
-size = get_scratch_from_pte(sys.argv[1])
-if size is None:
-    sys.exit(2)
-print(size)
-PY
-}
-
 sanitize_for_path() {
     local value="$1"
     printf '%s' "${value}" | tr -c '[:alnum:]._-' '_'
@@ -359,6 +341,7 @@ configure_runner_build_dir() {
         cmake_cmd+=("${extra_args[@]}")
     fi
     echo "[run.sh] Configuring ExecuTorch build at ${build_dir}"
+    echo "[run.sh] Configuring the build system with ${cmake_cmd[@]}"
     "${cmake_cmd[@]}"
     build_dir_initialized=false
 }
@@ -661,30 +644,6 @@ EOF
     echo "${cache_path}"
 }
 
-configure_ethosu_scratch_if_requested() {
-    local pte_path="$1"
-    if [ "$specify_ethosu_scratch" != true ] || [[ ! ${target} =~ "ethos-u" ]]; then
-        return
-    fi
-    local scratch_size
-    scratch_size=$(get_ethosu_scratch_size "$pte_path" | tail -n 1)
-    if [[ -z "${scratch_size}" ]]; then
-        echo "WARNING: Failed to derive Ethos-U scratch size from ${pte_path}" >&2
-        return
-    fi
-    local cmake_cmd=(
-        cmake -S "${runner_source_dir}" -B "${build_dir}"
-    )
-    if [[ -n "${extra_build_flags}" ]]; then
-        # shellcheck disable=SC2206
-        local extra_args=(${extra_build_flags})
-        cmake_cmd+=("${extra_args[@]}")
-    fi
-    cmake_cmd+=("-DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${scratch_size}")
-    echo "[run.sh] Updating scratch allocator size to ${scratch_size}"
-    "${cmake_cmd[@]}"
-}
-
 if [[ -z "$model_name" ]]; then
     echo "[run.sh] WARNING: Built-in test models executed when --model_name is omitted are deprecated and will be removed after the ExecuTorch 1.2 release." >&2
     # the test models run, and whether to delegate
@@ -817,7 +776,6 @@ for i in "${!test_model[@]}"; do
             model_data="--data=${pte_file}@${pte_placement}"
         fi
 
-        configure_ethosu_scratch_if_requested "${pte_file}"
 
         build_runner_target arm_executor_runner
         elf_file=$(locate_runner_binary arm_executor_runner) \
