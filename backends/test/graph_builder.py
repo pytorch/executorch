@@ -23,6 +23,17 @@ from torch.fx.node import Target
 from torch.utils import _pytree as pytree
 
 
+def _hoist_placeholders_to_front(graph: torch.fx.Graph) -> None:
+    """Move placeholders ahead of the graph body, preserving their relative order."""
+    body_start: Optional[torch.fx.Node] = None
+    for node in list(graph.nodes):
+        if node.op != "placeholder":
+            if body_start is None:
+                body_start = node
+        elif body_start is not None:
+            body_start.prepend(node)
+
+
 class GraphBuilder(ExportPass):
     """Utility class for creating a graph module with user-specified ops.
 
@@ -76,6 +87,11 @@ class GraphBuilder(ExportPass):
         return super().output(results, NodeMetadata({}))
 
     def get_graph_module(self) -> torch.fx.GraphModule:
+        # Callers may create placeholders at any point during building; FX requires
+        # them before all other nodes, so normalize before handing back the module.
+        # (Nodes are created at the tracer's cursor, so a placeholder made after an
+        # op would otherwise sit after it and break lint / later passes.)
+        _hoist_placeholders_to_front(self.tracer.graph)
         return torch.fx.GraphModule(self.tracer.root, self.tracer.graph)
 
     def call_operator(
