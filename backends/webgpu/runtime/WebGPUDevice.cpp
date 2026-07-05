@@ -13,9 +13,7 @@
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
-#ifdef WGPU_BACKEND_ENABLE_PROFILING
 #include <vector>
-#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 namespace executorch {
 namespace backends {
@@ -143,16 +141,25 @@ WebGPUContext create_webgpu_context() {
     device_desc.requiredLimits = &supported_limits;
   }
 
+  // Request optional features the backend uses when the adapter supports them;
+  // fail-open (absence just disables the corresponding fast path). The vector
+  // must outlive wgpuAdapterRequestDevice below (device_desc points into it).
+  std::vector<WGPUFeatureName> required_features;
+  if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_ShaderF16)) {
+    required_features.push_back(WGPUFeatureName_ShaderF16);
+    ctx.shader_f16_supported = true;
+  }
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
   // Bench: enable TimestampQuery if available; fail-open (skip timing if not).
-  std::vector<WGPUFeatureName> required_features;
   if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_TimestampQuery)) {
     required_features.push_back(WGPUFeatureName_TimestampQuery);
-    device_desc.requiredFeatureCount = required_features.size();
-    device_desc.requiredFeatures = required_features.data();
     ctx.timestamp_supported = true;
   }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+  if (!required_features.empty()) {
+    device_desc.requiredFeatureCount = required_features.size();
+    device_desc.requiredFeatures = required_features.data();
+  }
 
   device_desc.uncapturedErrorCallbackInfo.callback = on_device_error;
 
