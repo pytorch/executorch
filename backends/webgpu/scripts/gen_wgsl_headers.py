@@ -289,7 +289,8 @@ def parse_template_spec(json_path) -> Dict[str, List[Dict[str, Any]]]:  # noqa: 
                 - params_names
                 - reserved_keys
             )
-            assert len(invalid_keys) == 0
+            if invalid_keys:
+                raise ValueError(f"unknown variant key(s): {sorted(invalid_keys)}")
 
             iterated_params = variant.get(
                 "generate_variant_forall", default_iterated_params
@@ -389,7 +390,9 @@ def embedded_sha256(header_text: str) -> str:
     return m.group(1) if m else ""
 
 
-def render_header(name_or_path, wgsl_text: str, provenance_stem: str = None) -> str:
+def render_header(
+    name_or_path, wgsl_text: str, provenance_stem: Optional[str] = None
+) -> str:
     """Render the full <name>_wgsl.h text for a shader (shader embedded unchanged).
 
     Two call forms:
@@ -498,7 +501,10 @@ def main(argv=None) -> int:
     for wgsl in discover():
         try:
             rendered = list(headers_for_shader(wgsl))
-        except ValueError as e:
+        # A malformed spec raises ValueError/KeyError from parse_template_spec,
+        # and a malformed template raises AssertionError from preprocess; catch
+        # all three so a bad shader is a clean --check report, not a traceback.
+        except (ValueError, KeyError, AssertionError) as e:
             errors.append(f"{wgsl.relative_to(BACKEND_ROOT)}: {e}")
             continue
         for header, want in rendered:
