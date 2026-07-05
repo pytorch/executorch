@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from huggingface_hub import snapshot_download
 from safetensors.torch import load_file
+from torch.export import Dim
 from transformers import AutoModelForCausalLM
 
 from executorch.backends.mlx.examples.llm.dflash_draft_model import DFlashDraftModel, load_dflash_config
@@ -36,13 +37,28 @@ def main():
     parser.add_argument("--output", default="qwen3_4b_dflash_draft.pte")
     parser.add_argument("--block-size", type=int, default=16)
     parser.add_argument("--ctx-len", type=int, default=8)
+    parser.add_argument("--max-ctx-len", type=int, default=4096)
     args = parser.parse_args()
 
     target = AutoModelForCausalLM.from_pretrained(args.target_model, dtype="auto")
     model = load_draft_model(args.draft_model, target.state_dict())
     model.eval()
-    model = model.float()
     del target
+
+    # Quantize to 4-bit to match the target export (--qlinear 4w --qembedding 4w,
+    # group_size=32). Without this the draft is full float32 (~3.5GB) with its
+    # shared embed/lm_head dominating memory; quantizing brings it to ~1GB and,
+    # critically, keeps the shared embed/lm_head at the SAME precision as the
+    # target so their logits stay consistent (acceptance depends on this).
+    from executorch.backends.mlx.llm.quantization import quantize_model_
+    quantize_model_(
+        model,
+        qlinear_config="4w",
+        qlinear_group_size=32,
+        qembedding_config="4w",
+        qembedding_group_size=32,
+        tie_word_embeddings=False,
+    )
 
     block_size, ctx_len = args.block_size, args.ctx_len
     hidden_size = model.fc.in_features
@@ -50,7 +66,18 @@ def main():
     target_hidden = torch.randn(1, ctx_len, hidden_size)
     position_ids = torch.arange(ctx_len + block_size).unsqueeze(0)
 
-    exported = torch.export.export(model, (tokens, target_hidden, position_ids))
+    ctx_dim = Dim("ctx_len", min=1, max=args.max_ctx_len)
+    dynamic_shapes = {
+        "tokens": None,
+        "target_hidden": {1: ctx_dim},
+        "position_ids": {1: ctx_dim + block_size},
+    }
+
+    import torch.fx.experimental._config as fx_config
+    with fx_config.patch(backed_size_oblivious=True):
+        exported = torch.export.export(
+            model, (tokens, target_hidden, position_ids), dynamic_shapes=dynamic_shapes
+        )
 
     from executorch.exir import to_edge_transform_and_lower
     from executorch.backends.mlx.partitioner import MLXPartitioner
@@ -61,6 +88,7 @@ def main():
     with open(args.output, "wb") as f:
         f.write(et_program.buffer)
     print(f"Saved draft model to: {args.output}")
+    print(f"Dynamic ctx_len supported: 1 to {args.max_ctx_len}, block_size fixed at {block_size}.")
 
 
 if __name__ == "__main__":

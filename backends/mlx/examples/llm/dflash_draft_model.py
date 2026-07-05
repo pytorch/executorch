@@ -81,6 +81,12 @@ def rotate_half(x: torch.Tensor) -> torch.Tensor:
     x1, x2 = x.chunk(2, dim=-1)
     return torch.cat((-x2, x1), dim=-1)
 
+def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+    if n_rep == 1:
+        return x
+    b, h, s, d = x.shape
+    x = x[:, :, None, :, :].expand(b, h, n_rep, s, d)
+    return x.reshape(b, h * n_rep, s, d)
 
 def apply_rotary_pos_emb(q, k, cos, sin):
     # q rotates over its own (last q_len) positions; k rotates over its full length.
@@ -143,8 +149,8 @@ class DFlashAttention(nn.Module):
         v = v.transpose(1, 2)
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
         if self.n_rep > 1:
-            k = k.repeat_interleave(self.n_rep, dim=1)
-            v = v.repeat_interleave(self.n_rep, dim=1)
+            k = repeat_kv(k, self.n_rep)
+            v = repeat_kv(v, self.n_rep)
         mask = self._sliding_mask(L, S, q.device, q.dtype) if self.is_sliding else None
         out = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=mask, is_causal=False, scale=self.scaling)

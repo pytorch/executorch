@@ -484,3 +484,12 @@ clean:
 	rm -rf cmake-out \
 	       extension/llm/tokenizers/build \
 	       extension/llm/tokenizers/pytorch_tokenizers.egg-info
+
+qwen3_dflash-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Qwen3 DFlash speculative decoding runner with MLX..."
+	cd examples/models/qwen3 && cmake --workflow --preset qwen3-dflash-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Runner: cmake-out/examples/models/qwen3/qwen3_dflash_runner"

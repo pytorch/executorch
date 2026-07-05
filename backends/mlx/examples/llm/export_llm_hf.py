@@ -137,6 +137,7 @@ def _export_with_custom_components(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
+    dflash_layers: Optional[list[int]] = None,
 ) -> None:
     """
     Export using direct HF model with custom MLX components.
@@ -219,6 +220,24 @@ def _export_with_custom_components(
             batch_size=1,
             max_cache_len=effective_cache_len,
         )
+    elif dflash_layers is not None:
+        # Qwen3-specific for now
+        # Generalize the import if/when another model needs DFlash tapping.
+        #
+        # Stateless (no persistent KV cache), NOT TorchExportableModuleWithStaticCacheAndHidden:
+        # DFlash's speculative-decode loop re-verifies overlapping/non-contiguous token
+        # ranges every round, which corrupts a persistent StaticCache (confirmed at the
+        # eager PyTorch level -- see StatelessQwen3WithHidden's docstring). The driver
+        # always passes the full accumulated sequence instead of relying on a cache.
+        from executorch.examples.models.qwen3.mlx_source_transformations import (
+            StatelessQwen3WithHidden,
+        )
+
+        logger.info(f"Creating stateless DFlash hidden-state-tapping wrapper, layers={dflash_layers}")
+        exportable = StatelessQwen3WithHidden(
+            model=model,
+            layer_ids=dflash_layers,
+        )
     else:
         logger.info("Creating TorchExportableModuleWithStaticCache wrapper...")
         exportable = TorchExportableModuleWithStaticCache(
@@ -227,7 +246,7 @@ def _export_with_custom_components(
             max_cache_len=effective_cache_len,
         )
 
-    if use_custom_kv_cache:
+    if use_custom_kv_cache and dflash_layers is None:
         from executorch.backends.mlx.llm.source_transformation import (
             replace_hf_cache_with_mlx,
         )
@@ -335,6 +354,7 @@ def export_llama_hf(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
+    dflash_layers: Optional[list[int]] = None,
 ) -> None:
     """
     Export a HuggingFace Llama model to ExecuTorch with MLX backend.
@@ -349,10 +369,10 @@ def export_llama_hf(
         use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
         use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
     """
-    if use_custom_sdpa or use_custom_kv_cache:
+    if use_custom_sdpa or use_custom_kv_cache or dflash_layers is not None:
         logger.info(
             f"Using custom components: sdpa={use_custom_sdpa}, "
-            f"kv_cache={use_custom_kv_cache}"
+            f"kv_cache={use_custom_kv_cache}, dflash_layers={dflash_layers}"
         )
         _export_with_custom_components(
             model_id=model_id,
@@ -367,6 +387,7 @@ def export_llama_hf(
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
+            dflash_layers=dflash_layers,
         )
     else:
         logger.info("Using optimum-executorch pipeline (no custom components)")
@@ -434,8 +455,17 @@ def main():
         default=False,
         help="Use MLX custom KV cache (mlx::kv_cache_update)",
     )
+    parser.add_argument(
+        "--dflash-layers",
+        type=str,
+        default=None,
+        help="Comma-separated layer indices to tap for DFlash hidden-state output, e.g. '2,18,33'",
+    )
 
     args = parser.parse_args()
+    dflash_layers = (
+        [int(x) for x in args.dflash_layers.split(",")] if args.dflash_layers else None
+    )
 
     export_llama_hf(
         model_id=args.model_id,
@@ -450,6 +480,7 @@ def main():
         no_tie_word_embeddings=args.no_tie_word_embeddings,
         qlinear_group_size=args.qlinear_group_size,
         qembedding_group_size=args.qembedding_group_size,
+        dflash_layers=dflash_layers,
     )
 
 

@@ -69,6 +69,7 @@ xcuserdata/
 /src/executorch/include/
 /src/executorch/share/
 /src/executorch/version.py
+/dflash_benchmarks.md
 *_etdump
 
 # Android
