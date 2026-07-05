@@ -58,8 +58,9 @@ _BSD_HEADER = """\
 
 # WGSL type-helpers injected into preprocess's exec globals so ${...} template
 # expressions can spell WGSL types (f32/f16, vec4<T>); @group/@binding layout is
-# written directly in the templates.
-def wgsl_scalar_type(dtype: str) -> str:
+# written directly in the templates. Names mirror gen_vulkan_spv.py's
+# buffer_scalar_type / buffer_gvec_type / accum_scalar_type.
+def buffer_scalar_type(dtype: str) -> str:
     if dtype == "half":
         return "f16"
     elif dtype == "float":
@@ -67,22 +68,25 @@ def wgsl_scalar_type(dtype: str) -> str:
     return dtype
 
 
-def wgsl_buffer_type(dtype: str, vec: int) -> str:
-    if vec == 1:
-        return wgsl_scalar_type(dtype)
-    return f"vec{vec}<{wgsl_scalar_type(dtype)}>"
+def buffer_gvec_type(dtype: str, n: int) -> str:
+    if n == 1:
+        return buffer_scalar_type(dtype)
+    return f"vec{n}<{buffer_scalar_type(dtype)}>"
 
 
-def wgsl_accum_type() -> str:
-    # Accumulators stay f32 in every variant (f16 accumulation is numerically
-    # unsafe on target GPUs).
-    return "f32"
+def accum_scalar_type(dtype: str) -> str:
+    # The float family (incl. half) accumulates in f32 -- f16 accumulation is
+    # numerically unsafe on target GPUs. Mirrors gen_vulkan_spv.py's
+    # accum_scalar_type (half -> rgba16f -> "float" there is the same intent).
+    if dtype in ("half", "float"):
+        return "f32"
+    return buffer_scalar_type(dtype)
 
 
 WGSL_HELPERS: Dict[str, Any] = {
-    "wgsl_scalar_type": wgsl_scalar_type,
-    "wgsl_buffer_type": wgsl_buffer_type,
-    "wgsl_accum_type": wgsl_accum_type,
+    "buffer_scalar_type": buffer_scalar_type,
+    "buffer_gvec_type": buffer_gvec_type,
+    "accum_scalar_type": accum_scalar_type,
 }
 
 
