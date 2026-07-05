@@ -1,0 +1,17 @@
+{
+  "rms_norm": {
+    "parameter_names_with_default_values": {
+      "DTYPE": "float",
+      "VEC": 1
+    },
+    "generate_variant_forall": {
+      "VEC": [
+        { "VALUE": 1, "SUFFIX": "" },
+        { "VALUE": 4, "SUFFIX": "vec4" }
+      ]
+    },
+    "shader_variants": [
+      { "NAME": "rms_norm" }
+    ]
+  }
+}
