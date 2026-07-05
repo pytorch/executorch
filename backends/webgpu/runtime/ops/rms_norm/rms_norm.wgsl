@@ -1,6 +1,6 @@
-@group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
-@group(0) @binding(1) var<storage, read> t_in: array<f32>;
-@group(0) @binding(2) var<storage, read> t_weight: array<f32>;
+@group(0) @binding(0) var<storage, read_write> t_out: array<${wgsl_buffer_type(DTYPE, VEC)}>;
+@group(0) @binding(1) var<storage, read> t_in: array<${wgsl_buffer_type(DTYPE, VEC)}>;
+@group(0) @binding(2) var<storage, read> t_weight: array<${wgsl_buffer_type(DTYPE, VEC)}>;
 
 struct Params {
   num_rows: u32,
@@ -12,7 +12,7 @@ struct Params {
 
 const WG_SIZE: u32 = 64u;
 
-var<workgroup> shared_sum: array<f32, WG_SIZE>;
+var<workgroup> shared_sum: array<${wgsl_accum_type()}, WG_SIZE>;
 
 fn reduce_shared(worker_id: u32) {
   workgroupBarrier();
@@ -29,6 +29,10 @@ fn reduce_shared(worker_id: u32) {
   }
 }
 
+$if VEC == 4:
+  // vec4 variant of rms_norm: each lane strides by WG_SIZE over rw4 = row_width/4
+  // texels and accumulates dot(v, v). row_width is the ELEMENT count, so mean_sq
+  // divides by it (not rw4). The host selects this only when row_width % 4 == 0.
 @compute @workgroup_size(64, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
@@ -40,18 +44,33 @@ fn main(
     return;
   }
 
-  let base = row_idx * params.row_width;
+  $if VEC == 4:
+    let rw4 = params.row_width / 4u;
+    let base4 = row_idx * rw4;
+  $else:
+    let base = row_idx * params.row_width;
 
-  var local_sq_sum: f32 = 0.0;
-  var x: u32 = worker_id;
-  loop {
-    if (x >= params.row_width) {
-      break;
+  var local_sq_sum: ${wgsl_accum_type()} = 0.0;
+  $if VEC == 4:
+    var x4: u32 = worker_id;
+    loop {
+      if (x4 >= rw4) {
+        break;
+      }
+      let v = t_in[base4 + x4];
+      local_sq_sum = local_sq_sum + dot(v, v);
+      x4 = x4 + WG_SIZE;
     }
-    let v = t_in[base + x];
-    local_sq_sum = local_sq_sum + v * v;
-    x = x + WG_SIZE;
-  }
+  $else:
+    var x: u32 = worker_id;
+    loop {
+      if (x >= params.row_width) {
+        break;
+      }
+      let v = t_in[base + x];
+      local_sq_sum = local_sq_sum + v * v;
+      x = x + WG_SIZE;
+    }
 
   shared_sum[worker_id] = local_sq_sum;
   reduce_shared(worker_id);
@@ -59,14 +78,24 @@ fn main(
   let mean_sq = shared_sum[0] / f32(params.row_width);
   let rstd = inverseSqrt(mean_sq + params.epsilon);
 
-  x = worker_id;
-  loop {
-    if (x >= params.row_width) {
-      break;
+  $if VEC == 4:
+    x4 = worker_id;
+    loop {
+      if (x4 >= rw4) {
+        break;
+      }
+      t_out[base4 + x4] = t_in[base4 + x4] * rstd * t_weight[x4];
+      x4 = x4 + WG_SIZE;
     }
-    let v = t_in[base + x];
-    let w = t_weight[x];
-    t_out[base + x] = v * rstd * w;
-    x = x + WG_SIZE;
-  }
+  $else:
+    x = worker_id;
+    loop {
+      if (x >= params.row_width) {
+        break;
+      }
+      let v = t_in[base + x];
+      let w = t_weight[x];
+      t_out[base + x] = v * rstd * w;
+      x = x + WG_SIZE;
+    }
 }
