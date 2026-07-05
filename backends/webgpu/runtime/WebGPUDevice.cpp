@@ -141,9 +141,12 @@ WebGPUContext create_webgpu_context() {
     device_desc.requiredLimits = &supported_limits;
   }
 
-  // Request optional features the backend uses when the adapter supports them;
-  // fail-open (absence just disables the corresponding fast path). The vector
-  // must outlive wgpuAdapterRequestDevice below (device_desc points into it).
+  // Request optional features when the adapter advertises them. A feature the
+  // adapter lacks is skipped (its fast path stays disabled). A feature the
+  // adapter advertises becomes required of the device, so if the device were
+  // to reject it, context creation fails below rather than falling back. The
+  // vector must outlive wgpuAdapterRequestDevice below (device_desc points
+  // into it).
   std::vector<WGPUFeatureName> required_features;
   if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_ShaderF16)) {
     required_features.push_back(WGPUFeatureName_ShaderF16);
