@@ -408,6 +408,7 @@ class ConvolutionConfig(GEMMConfig):
             and is_node(act_input)
             and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
             and len(act_input.users) == 1
+            and not node.args[6]
         ):
             pad_value = act_input.args[2] if len(act_input.args) > 2 else 0
             pad_amounts = cast(List[int], act_input.args[1])

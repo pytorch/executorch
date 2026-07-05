@@ -165,6 +165,7 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                         and input_node.target
                         == exir_ops.edge.aten.constant_pad_nd.default
                         and len(input_node.users) == 1
+                        and not node.args[6]
                     ):
                         pad_value = (
                             input_node.args[2] if len(input_node.args) > 2 else 0
@@ -264,22 +265,19 @@ class Conv1dFoldedPadMetaPass(XNNPACKPass):
         shape_3d: tuple,
     ):
         visited = set()
-        stack = list(node.users)
+        stack = [(user, shape_4d) for user in node.users]
         while stack:
-            user = stack.pop()
+            user, current_shape = stack.pop()
             if user in visited or user.op != "call_function":
                 continue
             visited.add(user)
 
             if user.target == exir_ops.edge.aten.squeeze_copy.dim:
                 self._resize_meta_val(user, shape_3d)
-                for squeeze_user in user.users:
-                    if squeeze_user.op == "call_function":
-                        self._resize_meta_val(squeeze_user, shape_3d)
-                continue
-
-            self._resize_meta_val(user, shape_4d)
-            stack.extend(user.users)
+                stack.extend((u, shape_3d) for u in user.users)
+            else:
+                self._resize_meta_val(user, current_shape)
+                stack.extend((u, current_shape) for u in user.users)
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
