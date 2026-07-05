@@ -14,23 +14,32 @@ Usage:
   gen_wgsl_headers.py            # (re)write all <stem>_wgsl.h
   gen_wgsl_headers.py --check    # exit 1 if any committed header is stale
 
-A shader is treated as a template iff a sibling <stem>.json spec exists; the
+A shader is treated as a template iff a sibling <stem>.yaml spec exists; the
 $-block engine (preprocess/escape/generate_variant_combinations) expands one
 template + a DTYPE/VEC variant matrix into the concrete per-variant headers.
 
-Stdlib only (the devserver has no third-party pip; no yaml).
+Spec parsing uses PyYAML (a declared ExecuTorch codegen dependency, mirroring
+backends/vulkan/runtime/gen_vulkan_spv.py); run under the ExecuTorch dev env.
 """
 
 import argparse
 import copy
 import hashlib
 import io
-import json
 import re
 import sys
 from itertools import product
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
+
+import yaml
+from yaml.constructor import ConstructorError
+from yaml.nodes import MappingNode
+
+try:
+    from yaml import CLoader as Loader
+except ImportError:
+    from yaml import Loader  # type: ignore[assignment, misc]
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
@@ -51,7 +60,7 @@ _BSD_HEADER = """\
 #
 #  A $-block transpiler (extract_leading_whitespace / escape / preprocess)
 #  plus a DTYPE/VEC variant matrix (generate_variant_combinations /
-#  parse_template_spec) expand one template + its JSON sidecar into the
+#  parse_template_spec) expand one template + its YAML sidecar into the
 #  per-variant WGSL headers.
 ########################################################################
 
@@ -188,14 +197,39 @@ def preprocess(
     return output_stream.getvalue()
 
 
-# json object_pairs_hook that rejects duplicate keys in a spec object.
-def _reject_duplicate_keys(pairs: List[Any]) -> Dict[str, Any]:
-    mapping: Dict[str, Any] = {}
-    for key, value in pairs:
-        if key in mapping:
-            raise ValueError(f"found duplicate key: {key!r}")
-        mapping[key] = value
-    return mapping
+# https://gist.github.com/pypt/94d747fe5180851196eb
+class UniqueKeyLoader(Loader):
+    def construct_mapping(self, node, deep=False):  # type: ignore[no-untyped-def]
+        if not isinstance(node, MappingNode):
+            raise ConstructorError(
+                None,
+                None,
+                f"expected a mapping node, but found {node.id}",
+                node.start_mark,
+            )
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)  # type: ignore[no-untyped-call]
+            try:
+                hash(key)
+            except TypeError as e:
+                raise ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    "found unacceptable key ",
+                    key_node.start_mark,
+                ) from e
+            # check for duplicate keys
+            if key in mapping:
+                raise ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    "found duplicate key",
+                    key_node.start_mark,
+                )
+            value = self.construct_object(value_node, deep=deep)  # type: ignore[no-untyped-call]
+            mapping[key] = value
+        return mapping
 
 
 def generate_variant_combinations(  # noqa: C901
@@ -257,13 +291,13 @@ def generate_variant_combinations(  # noqa: C901
     return list(product(*all_iterated_params))
 
 
-def parse_template_spec(json_path) -> Dict[str, List[Dict[str, Any]]]:  # noqa: C901
-    """Parse a <stem>.json variant spec into {template_name: [expanded
-    per-variant param dicts]}. Stdlib JSON with a dup-key-rejecting
-    object_pairs_hook."""
+def parse_template_spec(yaml_path) -> Dict[str, List[Dict[str, Any]]]:  # noqa: C901
+    """Parse a <stem>.yaml variant spec into {template_name: [expanded
+    per-variant param dicts]}. PyYAML with a dup-key-rejecting UniqueKeyLoader
+    (mirrors gen_vulkan_spv.py)."""
     shader_template_params: Dict[str, List[Dict[str, Any]]] = {}
-    with open(json_path) as f:
-        contents = json.load(f, object_pairs_hook=_reject_duplicate_keys)
+    with open(yaml_path) as f:
+        contents = yaml.load(f, Loader=UniqueKeyLoader)
     for template_name, params_dict in contents.items():
         if template_name in shader_template_params:
             raise KeyError(f"{template_name} params file is defined twice")
@@ -451,13 +485,13 @@ def discover():
 def headers_for_shader(wgsl):
     """Yield (header_path, rendered_text) pairs for one shader source.
 
-    A shader is a template iff a sibling <stem>.json spec exists: each expanded
+    A shader is a template iff a sibling <stem>.yaml spec exists: each expanded
     variant emits its own <NAME>_wgsl.h (the provenance line cites the template
     stem). Otherwise the shader is embedded unchanged into <stem>_wgsl.h.
     """
     stem = wgsl.stem
     text = wgsl.read_text()
-    spec_path = wgsl.with_name(stem + ".json")
+    spec_path = wgsl.with_name(stem + ".yaml")
     if spec_path.exists():
         spec = parse_template_spec(spec_path)
         if list(spec.keys()) != [stem]:
@@ -472,7 +506,7 @@ def headers_for_shader(wgsl):
     else:
         if "$if " in text or "${" in text:
             raise ValueError(
-                f"shader uses $if/${{ templating but has no sibling {stem}.json spec"
+                f"shader uses $if/${{ templating but has no sibling {stem}.yaml spec"
             )
         header = wgsl.with_name(stem + "_wgsl.h")
         yield header, render_header(stem, text, stem)
@@ -505,10 +539,11 @@ def main(argv=None) -> int:
     for wgsl in discover():
         try:
             rendered = list(headers_for_shader(wgsl))
-        # A malformed spec raises ValueError/KeyError from parse_template_spec,
-        # and a malformed template raises AssertionError from preprocess; catch
-        # all three so a bad shader is a clean --check report, not a traceback.
-        except (ValueError, KeyError, AssertionError) as e:
+        # A malformed spec raises yaml.YAMLError (incl. UniqueKeyLoader's
+        # ConstructorError) / ValueError / KeyError from parse_template_spec, and
+        # a malformed template raises AssertionError from preprocess; catch them
+        # all so a bad shader is a clean --check report, not a traceback.
+        except (ValueError, KeyError, AssertionError, yaml.YAMLError) as e:
             errors.append(f"{wgsl.relative_to(BACKEND_ROOT)}: {e}")
             continue
         for header, want in rendered:
