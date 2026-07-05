@@ -11,11 +11,12 @@ Loads the generator by file path (no package/namespace dependency).
 
 import hashlib
 import importlib.util
-import json
 import re
 import tempfile
 import unittest
 from pathlib import Path
+
+import yaml
 
 _GEN = Path(__file__).resolve().parents[1] / "scripts" / "gen_wgsl_headers.py"
 _spec = importlib.util.spec_from_file_location("gen_wgsl_headers", _GEN)
@@ -23,30 +24,39 @@ g = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(g)
 
 # gen_wgsl_headers.py and backends/vulkan/runtime/gen_vulkan_spv.py share the
-# same $-block transpiler helpers; the test below keeps them in sync with that
-# source of truth. Resolve the path relative to the repo root (both
-# backends/vulkan and backends/webgpu exist in pytorch/executorch) and compare
-# the bodies as TEXT -- gen_vulkan_spv.py cannot be imported (it top-level
-# `import yaml`s, absent on the codegen runtime).
+# same $-block transpiler helpers + the UniqueKeyLoader; the test below keeps
+# them in sync with that source of truth. Resolve the path relative to the repo
+# root (both backends/vulkan and backends/webgpu exist in pytorch/executorch)
+# and compare the bodies as TEXT -- gen_vulkan_spv.py is the Vulkan backend's
+# script and is not imported here.
 _REPO_ROOT = g.BACKEND_ROOT.parents[1]
 _VULKAN_SPV = _REPO_ROOT / "backends" / "vulkan" / "runtime" / "gen_vulkan_spv.py"
-_SHARED_TRANSPILER_FNS = ("extract_leading_whitespace", "escape", "preprocess")
+_SHARED_TRANSPILER_NAMES = (
+    "extract_leading_whitespace",
+    "escape",
+    "preprocess",
+    "UniqueKeyLoader",
+)
 
 
 def _function_source(text: str, name: str) -> str:
-    """Return a top-level function's source: its `def <name>` line through the
-    last line before the next column-0 construct (def-line to next dedent).
+    """Return a top-level function/class's source: the `def`/`class <name>` line
+    through the last line before the next column-0 construct (to next dedent).
 
     Two-phase so a multi-line signature -- whose closing `) -> str:` sits at
     column 0 -- is not mistaken for the next top-level construct.
     """
     lines = text.splitlines()
     start = next(
-        (i for i, ln in enumerate(lines) if re.match(rf"^def {re.escape(name)}\b", ln)),
+        (
+            i
+            for i, ln in enumerate(lines)
+            if re.match(rf"^(?:def|class) {re.escape(name)}\b", ln)
+        ),
         None,
     )
     if start is None:
-        raise AssertionError(f"def {name} not found")
+        raise AssertionError(f"def/class {name} not found")
     # Advance past the (possibly multi-line) signature to the line ending in ':'.
     sig = start
     while not lines[sig].rstrip().endswith(":"):
@@ -244,11 +254,11 @@ class WgslTemplateEngineTest(unittest.TestCase):
         # `import yaml`s).
         src_text = _VULKAN_SPV.read_text()
         gen_text = _GEN.read_text()
-        for fn in _SHARED_TRANSPILER_FNS:
+        for name in _SHARED_TRANSPILER_NAMES:
             self.assertEqual(
-                _function_source(src_text, fn),
-                _function_source(gen_text, fn),
-                f"{fn} has drifted from its source of truth "
+                _function_source(src_text, name),
+                _function_source(gen_text, name),
+                f"{name} has drifted from its source of truth "
                 f"({_VULKAN_SPV}) -- re-sync the shared transpiler helpers",
             )
 
@@ -325,8 +335,8 @@ class WgslTemplateEngineTest(unittest.TestCase):
     # --- parse_template_spec ---------------------------------------------
 
     def _write_spec(self, tmp: str, name: str, spec_obj) -> Path:
-        p = Path(tmp) / f"{name}.json"
-        p.write_text(json.dumps(spec_obj))
+        p = Path(tmp) / f"{name}.yaml"
+        p.write_text(yaml.safe_dump(spec_obj))
         return p
 
     def test_parse_template_spec_minimal(self) -> None:
@@ -365,12 +375,13 @@ class WgslTemplateEngineTest(unittest.TestCase):
         self.assertEqual(parsed["op"][0]["NAME"], "op_4")
 
     def test_parse_template_spec_duplicate_key_raises(self) -> None:
-        # The dup-key object_pairs_hook rejects a repeated key anywhere in the spec.
+        # UniqueKeyLoader rejects a repeated key anywhere in the spec (this flow
+        # mapping is valid YAML with a duplicate key).
         dup = '{"op": {"NAME": 1, "NAME": 2}}'
         with tempfile.TemporaryDirectory() as tmp:
-            p = Path(tmp) / "op.json"
+            p = Path(tmp) / "op.yaml"
             p.write_text(dup)
-            with self.assertRaises(ValueError):
+            with self.assertRaises(yaml.YAMLError):
                 g.parse_template_spec(p)
 
     def test_headers_for_shader_top_level_key_must_match_stem(self) -> None:
@@ -379,7 +390,7 @@ class WgslTemplateEngineTest(unittest.TestCase):
             op_dir.mkdir(parents=True)
             (op_dir / "op.wgsl").write_text("@workgroup_size(64)\nfn main(){}\n")
             # top-level key "WRONG" != stem "op" -> must raise.
-            (op_dir / "op.json").write_text(
+            (op_dir / "op.yaml").write_text(
                 '{"WRONG": {"parameter_names_with_default_values": {},'
                 ' "shader_variants": [{"NAME": "op"}]}}'
             )
@@ -387,7 +398,7 @@ class WgslTemplateEngineTest(unittest.TestCase):
                 list(g.headers_for_shader(op_dir / "op.wgsl"))
 
     def test_headers_for_shader_templating_without_sidecar_raises(self) -> None:
-        # A $if/${ shader with no sibling .json spec is a hard error.
+        # A $if/${ shader with no sibling .yaml spec is a hard error.
         with tempfile.TemporaryDirectory() as tmp:
             op_dir = Path(tmp) / "runtime/ops/op"
             op_dir.mkdir(parents=True)
