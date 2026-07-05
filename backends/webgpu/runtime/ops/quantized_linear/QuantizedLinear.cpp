@@ -140,9 +140,9 @@ uint32_t compute_q4gsw_workgroup_count(
   }
   if (use_steel) {
     // steel: one workgroup per 64x64 tile. Over-limit THROWS here -- unlike the
-    // build-time steel_workgroup_count, which returns 0 so the caller falls back
-    // to shmem/tiled. The routed kernel is baked into the pipeline at build, so
-    // the resize path cannot switch kernels for a larger live M.
+    // build-time steel_workgroup_count, which returns 0 so the caller falls
+    // back to shmem/tiled. The routed kernel is baked into the pipeline at
+    // build, so the resize path cannot switch kernels for a larger live M.
     return tiled_wg_count(
         device, m, n, kQ4gswSteelTile, kQ4gswSteelTile, op_name, "steel GEMM");
   }
