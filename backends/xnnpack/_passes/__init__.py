@@ -16,6 +16,7 @@ from executorch.backends.xnnpack._passes.channels_last_tagged_reshape_pass impor
     ChannelsLastTaggedReshapePass,
 )
 from executorch.backends.xnnpack._passes.conv1d_unsqueeze_pass import (
+    Conv1dFoldedPadMetaPass,
     Conv1dUnsqueezePass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
@@ -87,6 +88,7 @@ class XNNPACKPassManager:
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
                 RemoveRedundantCopyPass,
+                Conv1dFoldedPadMetaPass,
             ]
         else:
             self.passes = passes

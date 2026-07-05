@@ -397,6 +397,35 @@ class ConvolutionConfig(GEMMConfig):
             return False
         return True
 
+    def _get_act_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        act_input = get_input_node(node, self.act_idx)
+        conv_stride = cast(List[int], node.args[3])
+        if (
+            precision != ConfigPrecisionType.FP32
+            and len(conv_stride) == 1
+            and is_node(act_input)
+            and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
+            and len(act_input.users) == 1
+        ):
+            pad_value = act_input.args[2] if len(act_input.args) > 2 else 0
+            pad_amounts = cast(List[int], act_input.args[1])
+            temporal_only = len(pad_amounts) <= 2 or all(
+                a == 0 for a in pad_amounts[2:]
+            )
+            if (
+                pad_value == 0
+                and len(pad_amounts) % 2 == 0
+                and all(a >= 0 for a in pad_amounts)
+                and temporal_only
+            ):
+                valid, deps = super()._get_act_deps(act_input, ep, precision)
+                if valid:
+                    return (True, [act_input, *deps])
+
+        return super()._get_act_deps(node, ep, precision)
+
     def supported_precision_types(self):
         return [
             ConfigPrecisionType.FP32,
