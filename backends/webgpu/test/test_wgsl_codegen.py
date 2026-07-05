@@ -264,7 +264,7 @@ class WgslTemplateEngineTest(unittest.TestCase):
         )
 
     def test_preprocess_inline_substitution_uses_helper(self) -> None:
-        tmpl = "type: ${wgsl_buffer_type(DTYPE, VEC)};\n"
+        tmpl = "type: ${buffer_gvec_type(DTYPE, VEC)};\n"
         out = g.preprocess(tmpl, {**g.WGSL_HELPERS, "DTYPE": "float", "VEC": 4})
         self.assertEqual(out, "type: vec4<f32>;\n")
 
@@ -399,17 +399,19 @@ class WgslTemplateEngineTest(unittest.TestCase):
 
     # --- WGSL type-helpers -----------------------------------------------
 
-    def test_wgsl_scalar_type(self) -> None:
-        self.assertEqual(g.wgsl_scalar_type("half"), "f16")
-        self.assertEqual(g.wgsl_scalar_type("float"), "f32")
+    def test_buffer_scalar_type(self) -> None:
+        self.assertEqual(g.buffer_scalar_type("half"), "f16")
+        self.assertEqual(g.buffer_scalar_type("float"), "f32")
 
-    def test_wgsl_buffer_type(self) -> None:
-        self.assertEqual(g.wgsl_buffer_type("float", 1), "f32")
-        self.assertEqual(g.wgsl_buffer_type("float", 4), "vec4<f32>")
-        self.assertEqual(g.wgsl_buffer_type("half", 4), "vec4<f16>")
+    def test_buffer_gvec_type(self) -> None:
+        self.assertEqual(g.buffer_gvec_type("float", 1), "f32")
+        self.assertEqual(g.buffer_gvec_type("float", 4), "vec4<f32>")
+        self.assertEqual(g.buffer_gvec_type("half", 4), "vec4<f16>")
 
-    def test_wgsl_accum_type_is_f32(self) -> None:
-        self.assertEqual(g.wgsl_accum_type(), "f32")
+    def test_accum_scalar_type(self) -> None:
+        # The float family (incl. half) accumulates in f32.
+        self.assertEqual(g.accum_scalar_type("float"), "f32")
+        self.assertEqual(g.accum_scalar_type("half"), "f32")
 
     # --- byte-identity round-trip ----------------------------------------
 
@@ -430,6 +432,30 @@ class WgslTemplateEngineTest(unittest.TestCase):
             self.assertEqual(
                 got, want, f"{header_name} not reproduced from rms_norm.wgsl template"
             )
+
+    def test_rms_norm_half_variant_is_type_correct(self) -> None:
+        # A DTYPE=half expansion must emit compilable WGSL: `enable f16;`, an f32
+        # accumulator, loads widened to f32 for the reduction, and the store
+        # narrowed back to f16 -- f16 storage with f32 compute, no type mismatch.
+        template = (g.BACKEND_ROOT / "runtime/ops/rms_norm/rms_norm.wgsl").read_text()
+        cases = {
+            1: ("array<f16>", "f32(v) * f32(v)", "= f16(f32(v) * rstd * f32(w));"),
+            4: (
+                "array<vec4<f16>>",
+                "dot(vec4<f32>(v), vec4<f32>(v))",
+                "= vec4<f16>(vec4<f32>(t_in[base4 + x4]) * rstd"
+                " * vec4<f32>(t_weight[x4]));",
+            ),
+        }
+        for vec, (buf, widened_accum, narrowed_store) in cases.items():
+            out = g.preprocess(
+                template, {**g.WGSL_HELPERS, "DTYPE": "half", "VEC": vec}
+            )
+            self.assertTrue(out.startswith("enable f16;\n"))
+            self.assertIn(buf, out)
+            self.assertIn("local_sq_sum: f32", out)  # f32 accumulator for both dtypes
+            self.assertIn(widened_accum, out)
+            self.assertIn(narrowed_store, out)
 
 
 if __name__ == "__main__":
