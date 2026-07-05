@@ -1,6 +1,8 @@
-@group(0) @binding(0) var<storage, read_write> t_out: array<${wgsl_buffer_type(DTYPE, VEC)}>;
-@group(0) @binding(1) var<storage, read> t_in: array<${wgsl_buffer_type(DTYPE, VEC)}>;
-@group(0) @binding(2) var<storage, read> t_weight: array<${wgsl_buffer_type(DTYPE, VEC)}>;
+$if DTYPE == "half":
+  enable f16;
+@group(0) @binding(0) var<storage, read_write> t_out: array<${buffer_gvec_type(DTYPE, VEC)}>;
+@group(0) @binding(1) var<storage, read> t_in: array<${buffer_gvec_type(DTYPE, VEC)}>;
+@group(0) @binding(2) var<storage, read> t_weight: array<${buffer_gvec_type(DTYPE, VEC)}>;
 
 struct Params {
   num_rows: u32,
@@ -12,7 +14,7 @@ struct Params {
 
 const WG_SIZE: u32 = 64u;
 
-var<workgroup> shared_sum: array<${wgsl_accum_type()}, WG_SIZE>;
+var<workgroup> shared_sum: array<${accum_scalar_type(DTYPE)}, WG_SIZE>;
 
 fn reduce_shared(worker_id: u32) {
   workgroupBarrier();
@@ -50,7 +52,7 @@ fn main(
   $else:
     let base = row_idx * params.row_width;
 
-  var local_sq_sum: ${wgsl_accum_type()} = 0.0;
+  var local_sq_sum: ${accum_scalar_type(DTYPE)} = 0.0;
   $if VEC == 4:
     var x4: u32 = worker_id;
     loop {
@@ -58,7 +60,10 @@ fn main(
         break;
       }
       let v = t_in[base4 + x4];
-      local_sq_sum = local_sq_sum + dot(v, v);
+      $if DTYPE == "half":
+        local_sq_sum = local_sq_sum + dot(vec4<f32>(v), vec4<f32>(v));
+      $else:
+        local_sq_sum = local_sq_sum + dot(v, v);
       x4 = x4 + WG_SIZE;
     }
   $else:
@@ -68,7 +73,10 @@ fn main(
         break;
       }
       let v = t_in[base + x];
-      local_sq_sum = local_sq_sum + v * v;
+      $if DTYPE == "half":
+        local_sq_sum = local_sq_sum + f32(v) * f32(v);
+      $else:
+        local_sq_sum = local_sq_sum + v * v;
       x = x + WG_SIZE;
     }
 
@@ -84,7 +92,10 @@ fn main(
       if (x4 >= rw4) {
         break;
       }
-      t_out[base4 + x4] = t_in[base4 + x4] * rstd * t_weight[x4];
+      $if DTYPE == "half":
+        t_out[base4 + x4] = vec4<f16>(vec4<f32>(t_in[base4 + x4]) * rstd * vec4<f32>(t_weight[x4]));
+      $else:
+        t_out[base4 + x4] = t_in[base4 + x4] * rstd * t_weight[x4];
       x4 = x4 + WG_SIZE;
     }
   $else:
@@ -95,7 +106,10 @@ fn main(
       }
       let v = t_in[base + x];
       let w = t_weight[x];
-      t_out[base + x] = v * rstd * w;
+      $if DTYPE == "half":
+        t_out[base + x] = f16(f32(v) * rstd * f32(w));
+      $else:
+        t_out[base + x] = v * rstd * w;
       x = x + WG_SIZE;
     }
 }
