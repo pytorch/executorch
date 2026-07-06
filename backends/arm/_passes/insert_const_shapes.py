@@ -5,12 +5,12 @@
 
 from typing import Any, Optional
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm.tosa.dialect.shape import meta_has_shape_mark
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
-class InsertConstShapesPass(ArmPass):
+class InsertConstShapesPass(ArmOpTargetedPass):
     """Materialize literal shape arguments as CONST_SHAPE nodes.
 
     This pass targets ops such as `aten.view_copy` and `aten.repeat` whose shape
@@ -21,7 +21,7 @@ class InsertConstShapesPass(ArmPass):
     """
 
     _passes_required_after = set()
-    targeted_ops = {
+    target_ops = {
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.repeat.default,
     }
@@ -40,8 +40,15 @@ class InsertConstShapesPass(ArmPass):
             and all(isinstance(x, int) for x in arg)
         )
 
+    def call(self, graph_module):
+        self._const_shape_cache.clear()
+        try:
+            return super().call(graph_module)
+        finally:
+            self._const_shape_cache.clear()
+
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
         if any(InsertConstShapesPass._is_shape_arg(arg) for arg in args):
             new_args = []

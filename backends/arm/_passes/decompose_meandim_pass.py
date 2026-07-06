@@ -8,7 +8,7 @@ from math import prod
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
@@ -69,7 +69,7 @@ def get_quantization(op):
     return None
 
 
-class DecomposeMeanDimPass(ArmPass):
+class DecomposeMeanDimPass(ArmOpTargetedPass):
     """Decomposes a meandim into sum + mul (1/N).
 
     Each reduction dimension is handled via REDUCE_SUM followed by
@@ -94,6 +94,13 @@ class DecomposeMeanDimPass(ArmPass):
         DecomposeSumPass,
         SizeAdjustInputPass,
     }
+    target_ops = (
+        exir_ops.edge.aten.mean.dim,
+        torch.ops.aten.mean.dim,
+        exir_ops.edge.aten.mean.default,
+        torch.ops.aten.mean.default,
+    )
+    check_allowed_to_transform = True
 
     def __init__(self, graph_module, tosa_spec, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -101,12 +108,7 @@ class DecomposeMeanDimPass(ArmPass):
         self._tosa_spec = tosa_spec
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in (
-            exir_ops.edge.aten.mean.dim,
-            torch.ops.aten.mean.dim,
-            exir_ops.edge.aten.mean.default,
-            torch.ops.aten.mean.default,
-        ) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         x = get_node_arg(args, 0)

@@ -15,7 +15,7 @@ import torch
 from executorch.backends.qualcomm._passes import TagQuantIO
 from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
@@ -255,7 +255,7 @@ class AttentionSinkEvictor(Component):
             )
 
         self.evictor = self._prepare_model()
-        self.passes_job = get_capture_program_passes()
+        self.passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
 
     def _prepare_model(self) -> AttentionSinkRope:
         if self.mode == Mode.PREFILL and self.control_args.model_mode == "kv":

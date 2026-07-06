@@ -140,6 +140,20 @@ VkDevice create_logical_device(
       enabled_device_extensions,
       requested_device_extensions);
 
+  // Enable the base device features that ExecuTorch shaders rely on, but only
+  // those that the physical device reports as supported. With pEnabledFeatures
+  // left null, all base features are disabled; using a shader that performs
+  // e.g. int16 arithmetic without enabling shaderInt16 is invalid usage and
+  // crashes on drivers that enforce it. Unsupported features stay VK_FALSE, so
+  // this is a no-op on devices that lack them.
+  VkPhysicalDeviceFeatures enabled_features{};
+  enabled_features.shaderInt16 =
+      physical_device.supports_int16_shader_types ? VK_TRUE : VK_FALSE;
+  enabled_features.shaderInt64 =
+      physical_device.supports_int64_shader_types ? VK_TRUE : VK_FALSE;
+  enabled_features.shaderFloat64 =
+      physical_device.supports_float64_shader_types ? VK_TRUE : VK_FALSE;
+
   VkDeviceCreateInfo device_create_info{
       VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, // sType
       nullptr, // pNext
@@ -151,7 +165,7 @@ VkDevice create_logical_device(
       static_cast<uint32_t>(
           enabled_device_extensions.size()), // enabledExtensionCount
       enabled_device_extensions.data(), // ppEnabledExtensionNames
-      nullptr, // pEnabledFeatures
+      &enabled_features, // pEnabledFeatures
   };
 
   void* extension_list_top = nullptr;
@@ -234,41 +248,31 @@ VkDevice create_logical_device(
 bool test_linear_tiling_3d_image_support(
     VkDevice device,
     VkPhysicalDevice physical_device) {
-  // Test creating a 3D image with linear tiling to see if it is supported.
-  // According to the Vulkan spec, linear tiling may not be supported for 3D
-  // images.
-  VkExtent3D image_extents{1u, 1u, 1u};
-  const VkImageCreateInfo image_create_info{
-      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
-      nullptr, // pNext
-      0u, // flags
-      VK_IMAGE_TYPE_3D, // imageType
-      VK_FORMAT_R32G32B32A32_SFLOAT, // format
-      image_extents, // extents
-      1u, // mipLevels
-      1u, // arrayLayers
-      VK_SAMPLE_COUNT_1_BIT, // samples
-      VK_IMAGE_TILING_LINEAR, // tiling
-      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, // usage
-      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
-      0u, // queueFamilyIndexCount
-      nullptr, // pQueueFamilyIndices
-      VK_IMAGE_LAYOUT_UNDEFINED, // initialLayout
-  };
-  VkImage image = VK_NULL_HANDLE;
-  VkResult res = vkCreateImage(device, &image_create_info, nullptr, &image);
+  (void)device;
+  // ExecuTorch allocates 3D image tensors that are used as both sampled and
+  // storage images, with FP32 (VK_FORMAT_R32G32B32A32_SFLOAT) being the most
+  // demanding format. Linear tiling may only be used if the physical device
+  // supports creating such images; per the Vulkan spec, linear tiling support
+  // for 3D images is optional.
+  //
+  // vkGetPhysicalDeviceImageFormatProperties is the authoritative query for
+  // this exact (format, type, tiling, usage) combination. A vkCreateImage probe
+  // is unreliable: some drivers (e.g. NVIDIA) accept a trivial 1x1x1 linear 3D
+  // image even though larger linear 3D storage images of the same format are
+  // unsupported, and checking only the SAMPLED format feature misses that the
+  // STORAGE usage is unsupported -- both lead to VK_ERROR_FORMAT_NOT_SUPPORTED
+  // when allocating real tensors.
+  VkImageFormatProperties format_props;
+  const VkResult res = vkGetPhysicalDeviceImageFormatProperties(
+      physical_device,
+      VK_FORMAT_R32G32B32A32_SFLOAT,
+      VK_IMAGE_TYPE_3D,
+      VK_IMAGE_TILING_LINEAR,
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+      0u,
+      &format_props);
 
-  if (res == VK_SUCCESS) {
-    vkDestroyImage(device, image, nullptr);
-
-    VkFormatProperties props;
-    vkGetPhysicalDeviceFormatProperties(
-        physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &props);
-
-    return props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-  }
-
-  return false;
+  return res == VK_SUCCESS;
 }
 
 } // namespace

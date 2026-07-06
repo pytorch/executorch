@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 # mypy: allow-untyped-defs
 import itertools
 from typing import Callable, Optional
@@ -995,6 +1000,48 @@ def _annotate_mul(
     return annotated_partitions
 
 
+def _has_annotated_qparam_source(node: Node) -> bool:
+    """Check whether a node traces to annotated output qparams.
+
+    Walk backward through qparam-preserving view/layout ops to find an already
+    annotated activation producer.
+    """
+    visited: set[Node] = set()
+    while node not in visited:
+        visited.add(node)
+
+        quantization_annotation = node.meta.get(Q_ANNOTATION_KEY, None)
+        if (
+            quantization_annotation is not None
+            and quantization_annotation._annotated
+            and quantization_annotation.output_qspec is not None
+        ):
+            return True
+
+        if node.op != "call_function" or not _is_share_obs_or_fq_op(node.target):
+            return False
+
+        prev_node = node.args[0]
+        if not isinstance(prev_node, Node):
+            return False
+        node = prev_node
+
+    return False
+
+
+def _get_cat_qparam_source(inputs) -> object:
+    """Choose the input that should own a cat node's shared qparams.
+
+    Prefer the first input that traces to annotated output qparams. Fall back to
+    the first input otherwise.
+    """
+    for input_act in inputs:
+        if isinstance(input_act, Node) and _has_annotated_qparam_source(input_act):
+            return input_act
+
+    return inputs[0]
+
+
 # TODO: remove Optional in return type, fix annotated_partitions logic
 @register_annotator("cat")
 def _annotate_cat(
@@ -1014,18 +1061,20 @@ def _annotate_cat(
 
         input_act_qspec = get_input_act_qspec(quantization_config)
         inputs = cat_node.args[0]
+        input_act_qparam_source = _get_cat_qparam_source(inputs)
 
         input_qspec_map = {}
-        input_act0 = inputs[0]  # type: ignore[index]
-        if isinstance(input_act0, Node):
-            input_qspec_map[input_act0] = input_act_qspec
+        if isinstance(input_act_qparam_source, Node):
+            input_qspec_map[input_act_qparam_source] = input_act_qspec
 
-        shared_with_input0_qspec = SharedQuantizationSpec((input_act0, cat_node))  # type: ignore[arg-type]
-        for input_act in inputs[1:]:  # type: ignore[index, union-attr]
+        shared_with_source_qspec = SharedQuantizationSpec(
+            (input_act_qparam_source, cat_node)  # type: ignore[arg-type]
+        )
+        for input_act in inputs:  # type: ignore[union-attr]
             if input_act not in input_qspec_map:
-                input_qspec_map[input_act] = shared_with_input0_qspec  # type: ignore[index]
+                input_qspec_map[input_act] = shared_with_source_qspec  # type: ignore[index]
 
-        output_act_qspec = shared_with_input0_qspec
+        output_act_qspec = shared_with_source_qspec
 
         cat_node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
@@ -1056,6 +1105,7 @@ def _is_share_obs_or_fq_op(op: Callable) -> bool:
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.view_copy.default,
         torch.ops.aten.view.default,
+        torch.ops.aten.reshape.default,
         torch.ops.aten.slice_copy.Tensor,
         torch.ops.aten.flatten.using_ints,
     ]

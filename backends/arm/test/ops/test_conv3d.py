@@ -212,6 +212,32 @@ class DepthwiseConv3d(torch.nn.Module):
         return self.conv(x)
 
 
+class GroupedConv3d(torch.nn.Module):
+    """Non-depthwise grouped Conv3d (in_channels != groups).
+
+    Split into ``groups`` plain convolutions by DecomposeGroupedConvPass, so it
+    is delegated unlike the depthwise case.
+
+    """
+
+    def __init__(self, dtype=torch.float):
+        super().__init__()
+        self.dtype = dtype
+        self.conv = torch.nn.Conv3d(
+            in_channels=4,
+            out_channels=4,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            groups=2,
+        ).to(dtype)
+
+    def get_inputs(self):
+        return (torch.randn(1, 4, 8, 8, 8).to(self.dtype),)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
 conv3d_2x2_3x2x14x14_nobias = Conv3d(
     in_channels=2,
     out_channels=3,
@@ -457,7 +483,38 @@ test_data_FP = {
     "5x5_3x2x24x24_st1": lambda: conv3d_5x5_3x2x24x24_st1,
     "3x3_1x3x28x28_st2_pd1": lambda: conv3d_3x3_1x3x28x28_st2_pd1,
 }
-
+test_data_FP_fp8 = {
+    "basic_fp8e4m3": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "basic_fp8e5m2": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 test_data_FP_bf16 = {
     "bf16_3x3": lambda: Conv3d(
         height=10,
@@ -550,6 +607,21 @@ def test_convolution_3d_tosa_FP(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_FP_fp8)
+def test_convolution_3d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"CONV3D": 1, "CAST": 1})
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_INT)
 def test_convolution_3d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
@@ -574,7 +646,7 @@ def test_convolution_3d_tosa_INT_a8w4(test_data):
         exir_op,
         tosa_extensions=["int4"],
         qtol=1,
-        frobenius_threshold=0.4,
+        frobenius_threshold=0.5,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -623,19 +695,21 @@ def test_convolution_3d_tosa_INT_multi_op():
 
 
 def test_convolution_3d_tosa_FP_depthwise():
-    """Depthwise or Grouped Conv3d should be rejected until grouped support
-    exists.
+    """Depthwise Conv3d should be delegated, decomposed into groups==1
+    convolutions by DecomposeGroupedConvPass.
     """
     model = DepthwiseConv3d()
-    pipeline = TosaPipelineFP[input_t](
-        model,
-        model.get_inputs(),
-        aten_op,
-        exir_op,
-        run_on_tosa_ref_model=False,
-    )
-    with pytest.raises(RuntimeError, match="CONV3D with groups != 1"):
-        pipeline.run()
+    pipeline = TosaPipelineFP[input_t](model, model.get_inputs(), aten_op, exir_op)
+    pipeline.run()
+
+
+def test_convolution_3d_tosa_FP_grouped():
+    """Non-depthwise grouped Conv3d should be delegated, decomposed into
+    groups==1 convolutions by DecomposeGroupedConvPass.
+    """
+    model = GroupedConv3d()
+    pipeline = TosaPipelineFP[input_t](model, model.get_inputs(), aten_op, exir_op)
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_INT)

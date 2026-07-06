@@ -118,7 +118,9 @@ def create_zero_bias_int32(
     bias_scale: float,
 ) -> fx.Node:
     """
-    Creates a zero bias tensor with the shape of weight[0]
+    Creates a zero bias tensor with the shape of weight[0].
+    Caller is responsible for setting the graph insertion point
+    (e.g. ``with gm.graph.inserting_before(node):``).
     """
     try:
         attr_node = getattr(graph_module, weight_node.target)

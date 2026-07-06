@@ -177,6 +177,49 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "aten_to_dialect_pass",
+        srcs = [
+            "aten_to_dialect_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+            "//executorch/exir:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "channels_last_ops",
+        srcs = [
+            "channels_last_ops.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_library(
+        name = "decompose_channels_last_pass",
+        srcs = [
+            "decompose_channels_last_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
         name = "rank_0_to_rank_1",
         srcs = [
             "rank_0_to_rank_1.py",
@@ -243,6 +286,44 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_test(
+        name = "test_aten_to_dialect_pass",
+        srcs = [
+            "test/test_aten_to_dialect_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":aten_to_dialect_pass",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_channels_last_ops",
+        srcs = [
+            "test/test_channels_last_ops.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_decompose_channels_last_pass",
+        srcs = [
+            "test/test_decompose_channels_last_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            ":decompose_channels_last_pass",
+            "//executorch/exir:lib",
+            "//executorch/extension/pybindings:portable_lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
 
     runtime.python_test(
         name = "test_rank_0_to_rank_1",
@@ -372,6 +453,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             "//executorch/backends/test:graph_builder",
+            "//executorch/exir:lib",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
             ":fuse_cascaded_transpose_or_permute_ops",

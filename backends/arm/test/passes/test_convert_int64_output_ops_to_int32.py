@@ -5,12 +5,14 @@
 
 from typing import Callable, Dict, Tuple
 
+import pytest
 import torch
 from executorch.backends.arm._passes import ConvertInt64OutputOpsToInt32Pass
 
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
+from torch.fx import Graph, GraphModule
 
 input_t1 = Tuple[torch.Tensor]  # Input x
 
@@ -86,44 +88,86 @@ def test_convert_int64_output_ops_to_int32_tosa_FP_remove_casting(
     pipeline.run()
 
 
-#####################################################
-## Test arange(dtype=int64) -> arange(dtype=int32) ##
-#####################################################
+##########################################################
+## Test argmax/argmin int64 output -> int32 cast       ##
+##########################################################
 
 
-class Int64OutputModel(torch.nn.Module):
+@pytest.mark.parametrize(
+    "arg_op, aten_op_str",
+    [
+        (torch.argmax, "torch.ops.aten.argmax.default"),
+        (torch.argmin, "torch.ops.aten.argmin.default"),
+    ],
+    ids=["argmax", "argmin"],
+)
+def test_convert_int64_output_ops_to_int32_tosa_FP_insert_cast(arg_op, aten_op_str):
+    class ArgOpModel(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return (10 * arg_op(x, dim=-1) + 10) + 1.5
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # return torch.argmax(x)  # RuntimeError: Int did not match Long; But this is expected as we expect _argmax_i32 to generate int32 output
-        # return (10 * torch.argmax(x) + 10).to(dtype=torch.int32)  #  [1]. This behavior is deprecated, and in a future PyTorch release outputs will not be resized unless they have zero elements. You can explicitly reuse an out tensor t by resizing it, inplace, to zero elements with t.resize_(0). (function _resize_output_check)
-        return (10 * torch.argmax(x, dim=-1) + 10) + 1.5
-
-    def get_inputs(self) -> input_t1:
-        return (
-            torch.randint(
-                0,
-                10,
-                (2, 4, 6, 8),
-            ),
-        )
-
-
-def test_convert_int64_output_ops_to_int32_tosa_FP_insert_cast():
-    module = Int64OutputModel()
-    aten_ops_checks = [
-        "torch.ops.aten.argmax.default",
-        "torch.ops.aten.mul.Tensor",
-        "torch.ops.aten.add.Tensor",
-    ]
-    exir_ops_checks = [
-        "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
-        "executorch_exir_dialects_edge__ops_aten_add_Tensor",
-    ]
     pipeline = TosaPipelineFP[input_t1](
-        module,
-        module.get_inputs(),
-        aten_op=aten_ops_checks,
-        exir_op=exir_ops_checks,
+        ArgOpModel(),
+        (torch.randint(0, 10, (2, 4, 6, 8)),),
+        aten_op=[aten_op_str, "torch.ops.aten.mul.Tensor", "torch.ops.aten.add.Tensor"],
+        exir_op=[
+            "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+            "executorch_exir_dialects_edge__ops_aten_add_Tensor",
+        ],
         transform_passes=[ConvertInt64OutputOpsToInt32Pass()],
     )
     pipeline.run()
+
+
+##############################################################
+## Test on_overflow range check for argmax/argmin           ##
+##############################################################
+
+_OVERFLOW_DIM = torch.iinfo(torch.int32).max + 1
+
+
+def _make_argmax_graph_large_dim() -> GraphModule:
+    """Construct a minimal graph with an argmax over a dimension > INT32_MAX.
+
+    Uses FakeTensorMode so no memory is allocated for the large dimension.
+
+    """
+    from torch._subclasses import FakeTensorMode
+
+    graph = Graph()
+    with FakeTensorMode():
+        fake_input = torch.empty(_OVERFLOW_DIM, dtype=torch.float32)
+        fake_output = torch.empty((), dtype=torch.int64)
+    x = graph.placeholder("x")
+    x.meta["val"] = fake_input
+    out = graph.call_function(torch.ops.aten.argmax.default, (x, 0))
+    out.meta["val"] = fake_output
+    graph.output(out)
+    return GraphModule(torch.nn.Module(), graph)
+
+
+def test_on_overflow_raise():
+    gm = _make_argmax_graph_large_dim()
+    with pytest.raises(RuntimeError, match="cannot be safely cast to int32"):
+        ConvertInt64OutputOpsToInt32Pass(on_overflow="raise").call(gm)
+
+
+def test_on_overflow_warn(caplog):
+    import logging
+
+    gm = _make_argmax_graph_large_dim()
+    with caplog.at_level(logging.WARNING):
+        result = ConvertInt64OutputOpsToInt32Pass(on_overflow="warn").call(gm)
+    assert not result.modified
+    assert "cannot be safely cast to int32" in caplog.text
+
+
+def test_on_overflow_skip():
+    gm = _make_argmax_graph_large_dim()
+    result = ConvertInt64OutputOpsToInt32Pass(on_overflow="skip").call(gm)
+    assert not result.modified
+
+
+def test_on_overflow_invalid():
+    with pytest.raises(ValueError, match="on_overflow must be"):
+        ConvertInt64OutputOpsToInt32Pass(on_overflow="blah")

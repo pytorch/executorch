@@ -49,17 +49,6 @@ cmake_minimum_required(VERSION 3.24)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Hexagon toolchain with release build complains about code in third party
-# libraries.
-if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
-                                                     STREQUAL "Release"
-)
-  add_compile_options(
-    -Wno-error=format -Wno-error=implicit-int-conversion
-    -Wno-error=unused-variable -Wno-error=unused-function
-  )
-endif()
-
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -89,6 +78,18 @@ endif()
 project(executorch
         VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
 )
+
+# Hexagon toolchain with release build complains about code in third party
+# libraries. Must come after project(), which runs the toolchain file that sets
+# CMAKE_SYSTEM_PROCESSOR, and before add_subdirectory(third-party).
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
 
 message(
   STATUS
@@ -518,7 +519,11 @@ target_link_libraries(executorch_core PRIVATE program_schema)
 if(ANDROID)
   target_link_libraries(executorch_core PUBLIC log)
 endif()
-if(EXECUTORCH_USE_DL)
+# Skip when cross-compiling: find_library() resolves the host libdl even for a
+# bare-metal target (e.g. arm-none-eabi), which then links -ldl into the
+# baremetal runner and fails ("cannot find -ldl"). dladdr() isn't used on those
+# targets anyway. Per-target presets also set EXECUTORCH_USE_DL OFF explicitly.
+if(EXECUTORCH_USE_DL AND NOT CMAKE_CROSSCOMPILING)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
   # Check if the library was found
@@ -750,7 +755,7 @@ if(EXECUTORCH_BUILD_XNNPACK)
   list(APPEND _executorch_backends xnnpack_backend)
 endif()
 
-if(EXECUTORCH_BUILD_CORTEX_M)
+if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
@@ -762,6 +767,20 @@ if(EXECUTORCH_BUILD_CUDA
    OR EXECUTORCH_BUILD_PYBIND
 )
   find_package_torch()
+endif()
+
+# Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
+# vendored torch-tensorrt delegate). Built before backends/aoti and
+# backends/cuda, which link it.
+if(EXECUTORCH_BUILD_CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
+  install(
+    DIRECTORY extension/cuda/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/cuda
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_cuda)
 endif()
 
 # Build common AOTI functionality if needed by CUDA or Metal backends
@@ -862,6 +881,11 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
   list(APPEND _executorch_extensions extension_tensor)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_IMAGE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/image)
+  list(APPEND _executorch_extensions extension_image)
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
@@ -1021,6 +1045,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_VGF)
+    list(APPEND _dep_libs vgf_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_MPS)
     list(APPEND _dep_libs mpsdelegate)
   endif()
@@ -1054,6 +1082,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_VULKAN)
     list(APPEND _dep_libs vulkan_backend)
+  endif()
+
+  if(EXECUTORCH_BUILD_WEBGPU)
+    list(APPEND _dep_libs webgpu_backend)
   endif()
 
   # compile options for pybind

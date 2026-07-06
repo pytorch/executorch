@@ -120,7 +120,7 @@ ANDROID_MODE=false
 CMAKE_OUT_DIR="cmake-out"
 
 # Check for --android flag and adjust arguments accordingly
-if [[ "$1" == "--android" ]]; then
+if [[ "${1:-}" == "--android" ]]; then
     ANDROID_MODE=true
     CMAKE_OUT_DIR="cmake-android-out"
     shift  # Remove --android from arguments

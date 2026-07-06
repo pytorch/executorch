@@ -119,6 +119,23 @@ class ProgramTestFriend final {
       size_t nbytes) {
     return program->get_constant_buffer_data(buffer_index, nbytes);
   }
+
+  // Constructs a Program directly with a chosen segment_base_offset and a
+  // pre-built FlatBuffer body. Used to set up malformed states (e.g.
+  // segment_base_offset != 0 but segments == null) that Program::load cannot
+  // produce, since segment_base_offset is driven only by the extended header.
+  static Program MakeProgram(
+      DataLoader* loader,
+      size_t segment_base_offset,
+      const executorch_flatbuffer::Program* internal_program) {
+    return Program(
+        loader,
+        segment_base_offset,
+        FreeableBuffer{},
+        internal_program,
+        FreeableBuffer{},
+        std::nullopt);
+  }
 };
 } // namespace testing
 } // namespace runtime
@@ -324,6 +341,69 @@ TEST_F(ProgramTest, LoadSegmentWithNoSegments) {
   Result<FreeableBuffer> segment =
       ProgramTestFriend::LoadSegment(&program.get(), segment_info);
   EXPECT_NE(segment.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadSegmentWithNullSegmentsDoesNotCrash) {
+  // A non-zero segment_base_offset with an absent `segments` table must return
+  // InvalidProgram rather than dereferencing null.
+  flatbuffers::FlatBufferBuilder builder(256);
+  builder.Finish(
+      executorch_flatbuffer::CreateProgram(builder),
+      executorch_flatbuffer::ProgramIdentifier());
+  const auto* internal_program =
+      executorch_flatbuffer::GetProgram(builder.GetBufferPointer());
+
+  uint8_t dummy[16] = {};
+  BufferDataLoader loader(dummy, sizeof(dummy));
+  Program program =
+      ProgramTestFriend::MakeProgram(&loader, 16, internal_program);
+
+  Result<FreeableBuffer> result = ProgramTestFriend::LoadSegment(
+      &program,
+      DataLoader::SegmentInfo(
+          DataLoader::SegmentInfo::Type::Backend, /*segment_index=*/0, "b"));
+  EXPECT_EQ(result.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, LoadMutableSubsegmentWithNullSegmentsDoesNotCrash) {
+  // Same malformed state reached through load_mutable_subsegment_into:
+  // mutable_data_segments is populated so the function passes its own guards,
+  // but segments is absent.
+  flatbuffers::FlatBufferBuilder builder(256);
+  auto subsegment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+  builder.Finish(
+      executorch_flatbuffer::CreateProgram(
+          builder,
+          /*version=*/0,
+          /*execution_plan=*/0,
+          /*constant_buffer=*/0,
+          /*backend_delegate_data=*/0,
+          /*segments=*/0,
+          /*constant_segment=*/0,
+          builder.CreateVector(
+              std::vector<flatbuffers::Offset<
+                  executorch_flatbuffer::SubsegmentOffsets>>{subsegment})),
+      executorch_flatbuffer::ProgramIdentifier());
+  const auto* internal_program =
+      executorch_flatbuffer::GetProgram(builder.GetBufferPointer());
+
+  uint8_t dummy[16] = {};
+  BufferDataLoader loader(dummy, sizeof(dummy));
+  Program program =
+      ProgramTestFriend::MakeProgram(&loader, 16, internal_program);
+
+  uint8_t out[4] = {};
+  EXPECT_EQ(
+      ProgramTestFriend::load_mutable_subsegment_into(
+          &program,
+          /*mutable_data_segments_index=*/0,
+          /*offset_index=*/0,
+          sizeof(out),
+          out),
+      Error::InvalidProgram);
 }
 
 TEST_F(ProgramTest, ShortDataHeader) {

@@ -128,6 +128,22 @@ test_data_suite_fp16 = {
         "constant",
     ),
 }
+test_data_suite_fp8 = {
+    "4dim_last1dim_fp8e4m3": lambda: (
+        torch.rand(1, 1, 8, 8, dtype=torch.float32).to(torch.float8_e4m3fn),
+        (1, 1, 0, 0, 0, 0, 0, 0),
+        1.0,
+        "constant",
+        "fp8e4m3",
+    ),
+    "3dim_last1dim_fp8e5m2": lambda: (
+        torch.rand(1, 1, 8, dtype=torch.float32).to(torch.float8_e5m2),
+        (1, 0, 1, 0, 0, 0),
+        -0.5,
+        "constant",
+        "fp8e5m2",
+    ),
+}
 
 
 class ConstantPadND(torch.nn.Module):
@@ -285,6 +301,19 @@ def test_constant_pad_nd_tosa_FP(test_data: Tuple):
         aten_op,
         exir_op,
         tosa_extensions=["bf16"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_fp8)
+def test_constant_pad_nd_tosa_FP_fp8(test_data: Tuple):
+    test_data, padding, value, mode, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        ConstantPadND(padding, value, mode),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
     )
     pipeline.run()
 
