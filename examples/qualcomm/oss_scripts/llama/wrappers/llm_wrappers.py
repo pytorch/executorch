@@ -790,7 +790,16 @@ class HybridTextDecoder(Component):
                     attr = getattr(attr, target_atom)
                 return attr
 
-            setattr(
+            def _set_attr(
+                graph_module: torch.fx.GraphModule, target: str, replacement: Any
+            ) -> Any:
+                attr: Any = graph_module
+                target_list = target.split(".")
+                for target_atom in target_list[:-1]:
+                    attr = getattr(attr, target_atom)
+                setattr(attr, target_list[-1], replacement)
+
+            _set_attr(
                 unquantized_model,
                 unquantized_node.target,
                 _get_attr(quantized_model, quantized_node.target),
