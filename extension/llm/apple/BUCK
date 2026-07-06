@@ -16,7 +16,17 @@ non_fbcode_target(_kind = fb_apple_library,
     ],
     sdks = IOS,
     visibility = EXECUTORCH_CLIENTS,
-    test_labels = ["long_running"],
+    # `glacial` raises the per-XCTestCase timeout from 1800s -> 5400s (90 min)
+    # via fbobjc/Tools/xctest_runner: TEST_CASE_TIMEOUT(60s) * 30 * 3.
+    # Required because LLM inference (LLaMA, Phi4, Gemma, LLaVA, Voxtral)
+    # on iOS-sim CPU regularly exceeds 30 minutes for a full forward pass.
+    test_labels = ["glacial"],
+    # Rule-level wall-clock for the whole auto-generated test bundle:
+    # ExecuTorchLLMTests currently contains 13 XCTestCase methods, and
+    # individual methods can exceed 30 minutes on iOS-sim CPU. This 4h
+    # budget is intended as the total bundle/shard wall-clock, including
+    # xctest setup/teardown overhead; it is not based on "5 testcases".
+    test_test_rule_timeout_ms = 14400000,
     test_deps = [
         ":ExecuTorchLLMTestResource",
         "//xplat/executorch/backends/xnnpack:xnnpack_backendApple",

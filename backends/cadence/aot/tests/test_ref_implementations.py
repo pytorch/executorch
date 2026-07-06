@@ -670,10 +670,11 @@ class TestRefImplementations(unittest.TestCase):
                     0,  # unused out_shift
                     torch.uint8,  # dtype
                     torch.tensor(
-                        [[[[238]]]], dtype=torch.uint8
-                    ),  # (130 - 128) + (134 - 128) = 10
-                    # + bias -> 10 + 1 = 11
-                    # round(11 / 0.1 + 128) = 238,
+                        [[[[148]]]], dtype=torch.uint8
+                    ),  # conv_acc = sum((input - 128) * (weight - 128))
+                    #          = 2*1 + 4*0 + 6*0 + 8*1 = 10
+                    # float_out = bias_scale * (conv_acc + bias) = 0.1 * (10 + 10) = 2.0
+                    # round(2.0 / 0.1 + 128) = 148
                     memory_format,
                 )
                 for memory_format in [torch.contiguous_format, torch.channels_last]
@@ -914,6 +915,34 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [[[[2, 10, 8], [28, 68, 40], [26, 58, 32]]]], dtype=torch.int8
                     ),
+                    memory_format,
+                )
+                for memory_format in [torch.contiguous_format, torch.channels_last]
+            ],
+            # Zero-point overflow: int8 input minus a negative zero point exceeds
+            # the int8 range and wraps unless the subtraction is upcast first.
+            *[
+                (
+                    torch.tensor(
+                        [[[[120, 120], [120, 120]]]], dtype=torch.int8
+                    ),  # input
+                    torch.tensor([[[[1, 0], [0, 1]]]], dtype=torch.int8),  # weight
+                    torch.tensor([0], dtype=torch.int32),  # bias
+                    (1, 1),  # stride
+                    (0, 0),  # padding
+                    (1, 1),  # dilation
+                    1,  # groups
+                    -20,  # in_zero_point (120 - (-20) = 140 wraps to -116 in int8)
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
+                    4.0,  # output_scale
+                    0,  # output_zero_point
+                    0,  # unused out_multiplier
+                    0,  # unused out_shift
+                    torch.int8,  # dtype
+                    torch.tensor(
+                        [[[[70]]]], dtype=torch.int8
+                    ),  # (120 + 20) * 2 / 4 = 70
                     memory_format,
                 )
                 for memory_format in [torch.contiguous_format, torch.channels_last]
@@ -1406,6 +1435,23 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor([4, 2, 0, 0], dtype=dtype),
                 )
                 for dtype in [torch.uint8]
+            ],
+            # Zero-point overflow: int8 X minus a negative zero point exceeds the
+            # int8 range and wraps unless the subtraction is upcast first.
+            *[
+                (
+                    "int8_negative_zp_overflow",
+                    torch.tensor([120], dtype=dtype),  # input
+                    -20,  # X_zero_point (120 - (-20) = 140 wraps to -116 in int8)
+                    0,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [-70], dtype=dtype
+                    ),  # shifted = 140; 140 * (-0.5) = -70
+                )
+                for dtype in [torch.int8]
             ],
         ]
     )
@@ -2257,6 +2303,44 @@ class TestRefImplementations(unittest.TestCase):
                 (1, 1),
                 None,
                 False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 2, 4, 5, 10, 11, 13, 14],
+                            [2, 3, 5, 6, 11, 12, 14, 15],
+                            [4, 5, 7, 8, 13, 14, 16, 17],
+                            [5, 6, 8, 9, 14, 15, 17, 18],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # Multi-channel input, 2x2 kernel, stride 1, no padding, NHWC.
+            # Same channel values as nchw_multi_channel above, just laid out
+            # in NHWC order. Expected output is byte-for-byte identical to
+            # the NCHW case — this asserts that NHWC im2row produces the
+            # channel-major [c][kp] layout (matching torch.nn.functional.unfold
+            # after NHWC->NCHW conversion). A [kp][c] layout (the prior bug)
+            # would instead produce [1, 10, 2, 11, 4, 13, 5, 14, ...].
+            (
+                "nhwc_multi_channel",
+                torch.tensor(
+                    [
+                        [
+                            [[1, 10], [2, 11], [3, 12]],
+                            [[4, 13], [5, 14], [6, 15]],
+                            [[7, 16], [8, 17], [9, 18]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # (N=1, H=3, W=3, C=2)
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                None,
+                True,  # channel_last
                 False,
                 torch.tensor(
                     [

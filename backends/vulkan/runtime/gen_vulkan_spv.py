@@ -255,6 +255,61 @@ def texel_load_component_type(dtype: str, storage_type: str) -> str:
         return texel_component_type(dtype)
 
 
+def get_higher_precision_dtype(dtype_a: str, dtype_b: str) -> str:
+    """Return the higher-precision of two dtypes, intended for picking the type
+    in which to perform a mixed-dtype computation (e.g. a tensor of one dtype
+    combined with a scalar of another). The result is the operand dtype that can
+    represent the other without loss for the value ranges these shaders handle.
+
+    Ranking rule (highest first):
+      - The float family ALWAYS outranks the int family. So any float dtype
+        beats any int dtype (e.g. int32 + float -> float), because integer
+        values in these shaders are small enough to be exactly representable in
+        the float compute type.
+      - Within the float family: double > float > half.
+      - Within the int family: rank by bit width
+        (int64/uint64 > int32/uint32 > int16/uint16 > int8/uint8/bool).
+      - Signed-vs-unsigned tie at the same bit width resolves to the SIGNED
+        dtype (matches PyTorch's same-width promotion preference and keeps the
+        compute type able to hold negative operands).
+
+    Dtype aliases are normalized first: int<->int32, uint<->uint32, and bool is
+    treated as the lowest-ranked 8-bit integer.
+    """
+    alias_map = {"int": "int32", "uint": "uint32"}
+    a = alias_map.get(dtype_a, dtype_a)
+    b = alias_map.get(dtype_b, dtype_b)
+
+    if a == b:
+        return a
+
+    # (family_rank, bit_width, signed_rank). Higher tuple wins. family_rank 1 for
+    # the float family ensures it always outranks the int family (family_rank 0).
+    # signed_rank breaks same-width int ties in favor of signed.
+    float_ranks = {"half": 16, "float": 32, "double": 64}
+    int_ranks = {
+        "bool": 8,
+        "uint8": 8,
+        "int8": 8,
+        "uint16": 16,
+        "int16": 16,
+        "uint32": 32,
+        "int32": 32,
+        "uint64": 64,
+        "int64": 64,
+    }
+
+    def rank(dtype: str) -> tuple:
+        if dtype in float_ranks:
+            return (1, float_ranks[dtype], 0)
+        if dtype in int_ranks:
+            signed_rank = 0 if dtype in ("bool",) or dtype.startswith("uint") else 1
+            return (0, int_ranks[dtype], signed_rank)
+        raise AssertionError(f"Cannot rank precision of dtype: {dtype}")
+
+    return a if rank(a) >= rank(b) else b
+
+
 def get_access_qualifier(access_type: Optional[str]) -> str:
     if access_type is None:
         return ""
@@ -281,8 +336,9 @@ def layout_declare_buffer(
     dtype: str,
     precision: str = "PRECISION",
     is_scalar_array: bool = True,
+    vec_size: int = 4,
 ) -> str:
-    array_type = buffer_gvec_type(dtype, 4)
+    array_type = buffer_gvec_type(dtype, vec_size)
     if is_scalar_array:
         array_type = buffer_scalar_type(dtype)
 
@@ -341,6 +397,7 @@ def layout_declare_tensor(
     storage_type: str,
     is_scalar_array: bool = True,
     precision: str = "PRECISION",
+    vec_size: int = 4,
 ) -> str:
     assert storage_type.lower() in ["buffer", "texture3d", "texture2d"]
 
@@ -357,6 +414,7 @@ def layout_declare_tensor(
             dtype,
             precision,
             is_scalar_array=is_scalar_array,
+            vec_size=vec_size,
         )
 
     # Create image/sampler binding
@@ -494,6 +552,7 @@ UTILITY_FNS: Dict[str, Any] = {
     "texel_component_type": texel_component_type,
     "texel_load_type": texel_load_type,
     "texel_load_component_type": texel_load_component_type,
+    "get_higher_precision_dtype": get_higher_precision_dtype,
     "layout_declare_buffer": layout_declare_buffer,
     "layout_declare_image": layout_declare_image,
     "layout_declare_sampler": layout_declare_sampler,
@@ -663,6 +722,7 @@ class SPVGenerator:
         glslc_path: Optional[str],
         glslc_flags: str = "",
         replace_u16vecn: bool = False,
+        auto_use_mediump: bool = False,
     ) -> None:
         if isinstance(src_dir_paths, str):
             self.src_dir_paths = [src_dir_paths]
@@ -678,6 +738,7 @@ class SPVGenerator:
         if "-Os" in self.glslc_flags_no_opt:
             self.glslc_flags_no_opt.remove("-Os")
         self.replace_u16vecn = replace_u16vecn
+        self.auto_use_mediump = auto_use_mediump
 
         self.src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
@@ -785,6 +846,10 @@ class SPVGenerator:
                     "generate_variant_forall", None
                 )
 
+                reserved_yaml_keys = {
+                    "generate_variant_forall",
+                }
+
                 for variant in params_dict["shader_variants"]:
                     default_iterated_params_names = set(
                         default_iterated_params.keys()
@@ -797,7 +862,7 @@ class SPVGenerator:
                         variant_params_names
                         - default_iterated_params_names
                         - params_names
-                        - {"generate_variant_forall"}
+                        - reserved_yaml_keys
                     )
                     assert len(invalid_keys) == 0
 
@@ -813,7 +878,7 @@ class SPVGenerator:
                         for combination in variant_combinations:
                             default_params_copy = copy.deepcopy(default_params)
                             for key in variant:
-                                if key != "generate_variant_forall":
+                                if key not in reserved_yaml_keys:
                                     default_params_copy[key] = variant[key]
 
                             variant_name = variant["NAME"]
@@ -842,7 +907,8 @@ class SPVGenerator:
                     else:
                         default_params_copy = copy.deepcopy(default_params)
                         for key in variant:
-                            default_params_copy[key] = variant[key]
+                            if key not in reserved_yaml_keys:
+                                default_params_copy[key] = variant[key]
 
                         self.shader_template_params[template_name].append(
                             default_params_copy
@@ -856,6 +922,18 @@ class SPVGenerator:
         shader_params = copy.deepcopy(self.env)
         for key, value in variant_params.items():
             shader_params[key] = value
+
+        # Downgrade PRECISION to mediump for pure half-precision variants.
+        dtype_params = [
+            value for key, value in shader_params.items() if key.endswith("DTYPE")
+        ]
+        if (
+            self.auto_use_mediump
+            and dtype_params
+            and all(dtype == "half" for dtype in dtype_params)
+            and shader_params.get("PRECISION") == "highp"
+        ):
+            shader_params["PRECISION"] = "mediump"
 
         return shader_params
 
@@ -1026,6 +1104,27 @@ class SPVGenerator:
                 print(f"template_file_path: {template_file_path}")
                 output_text = preprocess(input_text, codegen_params)
 
+            # If the shader yaml declared a SUBGROUP_SIZE template parameter,
+            # embed it into the generated GLSL as a comment. getShaderInfo()
+            # parses it back out alongside TILE_SIZE, WEIGHT_STORAGE, etc.,
+            # avoiding a side-channel name -> value map.
+            subgroup_size = codegen_params.get("SUBGROUP_SIZE")
+            if subgroup_size is not None:
+                try:
+                    subgroup_size_int = int(subgroup_size)
+                except (TypeError, ValueError) as e:
+                    raise RuntimeError(
+                        f"Shader variant {src_file_name!r} declared "
+                        f"SUBGROUP_SIZE={subgroup_size!r}, which is not "
+                        f"parseable as an integer. Fix the SUBGROUP_SIZE "
+                        f"value in the shader's yaml."
+                    ) from e
+                if subgroup_size_int > 0:
+                    output_text = (
+                        f"// REQUIRED_SUBGROUP_SIZE = {subgroup_size_int}\n"
+                        + output_text
+                    )
+
             included_files = get_glsl_includes(output_text)
 
             with codecs.open(gen_out_path, "w", encoding="utf-8") as output_file:
@@ -1080,6 +1179,7 @@ class SPVGenerator:
             # Construct name of SPIR-V file to be compiled
             spv_out_path = os.path.join(output_dir, f"{src_file_name}.spv")
 
+            cached_spv_out_path = None
             if cache_dir is not None:
                 # Construct the file names of cached SPIR-V file to check if they exist
                 # in the cache.
@@ -1117,7 +1217,9 @@ class SPVGenerator:
                             subprocess.run(cmd_no_opt, check=True, capture_output=True)
                         except subprocess.CalledProcessError as e_no_opt:
                             # Delete any existing cached SPIR-V file if it exists
-                            if os.path.exists(cached_spv_out_path):
+                            if cached_spv_out_path is not None and os.path.exists(
+                                cached_spv_out_path
+                            ):
                                 os.remove(cached_spv_out_path)
 
                             raise RuntimeError(
@@ -1126,7 +1228,9 @@ class SPVGenerator:
 
                     else:
                         # Delete any existing cached SPIR-V file if it exists
-                        if os.path.exists(cached_spv_out_path):
+                        if cached_spv_out_path is not None and os.path.exists(
+                            cached_spv_out_path
+                        ):
                             os.remove(cached_spv_out_path)
 
                         raise RuntimeError(f"{err_msg_base} {e.stderr}") from e
@@ -1184,6 +1288,12 @@ class ShaderInfo:
     requires_integer_dot_product_ext: bool = False
     requires_shader_int64_ext: bool = False
     requires_shader_float64_ext: bool = False
+    # Subgroup size requirement (matches the C++ ShaderInfo encoding):
+    #   0  = no requirement
+    #   >0 = literal fixed size; sourced from the shader yaml's
+    #        `SUBGROUP_SIZE` template parameter (single source of truth for
+    #        both GLSL substitution and the Vulkan pipeline pin).
+    required_subgroup_size: int = 0
 
 
 def getName(filePath: str) -> str:
@@ -1206,6 +1316,17 @@ def findTileSizes(lineStr: str) -> List[int]:
     if matches is None:
         raise AssertionError("matches is None in findTileSizes")
     return [int(matches.group(1)), int(matches.group(2)), int(matches.group(3))]
+
+
+def isRequiredSubgroupSizeLine(lineStr: str) -> bool:
+    return re.search(r"^// REQUIRED_SUBGROUP_SIZE = ", lineStr) is not None
+
+
+def findRequiredSubgroupSize(lineStr: str) -> int:
+    matches = re.search(r"^// REQUIRED_SUBGROUP_SIZE = ([0-9]+)", lineStr)
+    if matches is None:
+        raise AssertionError("matches is None in findRequiredSubgroupSize")
+    return int(matches.group(1))
 
 
 def isWeightStorageTypeLine(lineStr: str) -> bool:
@@ -1281,6 +1402,8 @@ def getShaderInfo(srcFilePath: str) -> ShaderInfo:  # noqa: C901
                 shader_info.layouts.append(determineDescriptorType(line))
             if isTileSizeLine(line):
                 shader_info.tile_size = findTileSizes(line)
+            if isRequiredSubgroupSizeLine(line):
+                shader_info.required_subgroup_size = findRequiredSubgroupSize(line)
             if isWeightStorageTypeLine(line):
                 shader_info.weight_storage_type = getWeightStorageType(line)
             if isBiasStorageTypeLine(line):
@@ -1378,6 +1501,7 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         to_cpp_str(shader_info.requires_integer_dot_product_ext),
         to_cpp_str(shader_info.requires_shader_int64_ext),
         to_cpp_str(shader_info.requires_shader_float64_ext),
+        str(shader_info.required_subgroup_size),
     ]
 
     shader_info_str = textwrap.indent(
@@ -1406,7 +1530,9 @@ def generateShaderDispatchStr(shader_info: ShaderInfo, name: str) -> str:
 
 
 def genCppFiles(
-    spv_files: Dict[str, str], cpp_header_path: str, cpp_src_file_path: str
+    spv_files: Dict[str, str],
+    cpp_header_path: str,
+    cpp_src_file_path: str,
 ) -> None:
     spv_bin_strs = []
     register_shader_info_strs = []
@@ -1476,6 +1602,7 @@ def main(argv: List[str]) -> int:
     parser.add_argument("-o", "--output-path", required=True, help="")
     parser.add_argument("-f", "--force-rebuild", action="store_true", default=False)
     parser.add_argument("--replace-u16vecn", action="store_true", default=False)
+    parser.add_argument("--auto-use-mediump", action="store_true", default=False)
     parser.add_argument("--optimize_size", action="store_true", help="")
     parser.add_argument("--optimize", action="store_true", help="")
     parser.add_argument("--spv_debug", action="store_true", default=False)
@@ -1520,6 +1647,7 @@ def main(argv: List[str]) -> int:
         options.glslc_path,
         glslc_flags=glslc_flags_str,
         replace_u16vecn=options.replace_u16vecn,
+        auto_use_mediump=options.auto_use_mediump,
     )
     output_spv_files = shader_generator.generateSPV(
         options.output_path,

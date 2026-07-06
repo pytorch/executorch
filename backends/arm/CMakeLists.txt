@@ -39,6 +39,11 @@ set(ETHOSU_LINUX_DRIVER_SOURCE_DIR
       PATH
       "Optional local path to an existing ethos-u-linux-driver stack checkout"
 )
+set(ETHOS_SDK_PATH
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
+    CACHE PATH "Path to Ethos-U bare metal driver/env"
+)
+option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies" ON)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   message(
@@ -52,24 +57,38 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
 
   add_compile_options("-Wall" "-Werror")
 
-  set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
-
-  set(_arm_backend_sources backends/arm/runtime/EthosUBackend.cpp
-                           backends/arm/runtime/VelaBinStream.cpp
+  set(_arm_backend_sources
+      backends/arm/runtime/EthosUBackend.cpp
+      backends/arm/runtime/EthosUBackend_IoMemcpy.cpp
+      backends/arm/runtime/VelaBinStream.cpp
   )
   list(TRANSFORM _arm_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
 
   add_library(executorch_delegate_ethos_u STATIC ${_arm_backend_sources})
   target_link_libraries(executorch_delegate_ethos_u PUBLIC executorch_core)
+  target_include_directories(
+    executorch_delegate_ethos_u PRIVATE ${_common_include_directories}
+  )
 
   if(EXECUTORCH_BUILD_ARM_BAREMETAL)
     target_sources(
       executorch_delegate_ethos_u
       PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
     )
+    include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
+    if(FETCH_ETHOS_U_CONTENT)
+      fetch_ethos_u_content(${ETHOS_SDK_PATH} ${EXECUTORCH_ROOT})
+    endif()
     set(DRIVER_ETHOSU_INCLUDE_DIR
-        "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include"
+        "${ETHOS_SDK_PATH}/core_software/core_driver/include"
     )
+    if(NOT EXISTS "${DRIVER_ETHOSU_INCLUDE_DIR}/ethosu_driver.h")
+      message(
+        FATAL_ERROR
+          "Ethos-U core driver headers were not found in ${DRIVER_ETHOSU_INCLUDE_DIR}."
+          " Run examples/arm/setup.sh or enable FETCH_ETHOS_U_CONTENT."
+      )
+    endif()
     target_include_directories(
       executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
     )
@@ -108,7 +127,25 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     )
   endif()
 
-  install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
+  if(NOT CMAKE_SKIP_INSTALL_RULES)
+    install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
+
+    if(TARGET ethosu_core_driver)
+      get_property(
+        _et_ethosu_core_driver_exported GLOBAL
+        PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED
+      )
+      if(NOT _et_ethosu_core_driver_exported)
+        install(
+          TARGETS ethosu_core_driver
+          EXPORT ExecuTorchTargets
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+        set_property(GLOBAL PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED TRUE)
+      endif()
+    endif()
+  endif()
 
 endif()
 
@@ -160,6 +197,9 @@ if(EXECUTORCH_BUILD_VGF)
   set(_vgf_backend_sources backends/arm/runtime/VGFBackend.cpp
                            backends/arm/runtime/VGFSetup.cpp
   )
+  if(NOT EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _vgf_backend_sources backends/vulkan/third-party/volk/volk.c)
+  endif()
 
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")

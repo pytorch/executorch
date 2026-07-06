@@ -15,6 +15,7 @@ def define_common_targets():
         srcs = [
             "EthosUBackend.cpp",
             "EthosUBackend_Cortex_M.cpp",
+            "EthosUBackend_IoMemcpy.cpp",
         ],
         headers = ["EthosUBackend_Internal.h"],
         compatible_with = ["ovr_config//cpu:arm32-embedded", "ovr_config//cpu:arm32-embedded-fpu"],

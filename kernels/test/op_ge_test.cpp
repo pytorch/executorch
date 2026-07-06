@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -92,9 +93,9 @@ TEST_F(OpGeScalarOutTest, BoolInputDtype) {
 
 // Mismatched shape tests.
 TEST_F(OpGeScalarOutTest, MismatchedInOutShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shapes");
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -135,9 +136,9 @@ TEST_F(OpGeTensorOutTest, AllDtypesSupported) {
 }
 
 TEST_F(OpGeTensorOutTest, MismatchedInShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shapes");
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -149,9 +150,9 @@ TEST_F(OpGeTensorOutTest, MismatchedInShapesDies) {
 }
 
 TEST_F(OpGeTensorOutTest, MismatchedInOutShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shapes");
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Bool> tf_bool;
 

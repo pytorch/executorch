@@ -802,8 +802,19 @@ Error Method::resolve_operator(
   }
 
   // Find a kernel with the matching name and tensor meta.
-  Result<OpFunction> op_function =
-      get_op_function_from_registry(operator_name, {meta, count});
+  // Try method-scoped registry first (if provided), then fall back to global.
+  auto resolve_op_function = [&]() -> Result<OpFunction> {
+    if (!kernel_registry_.empty()) {
+      Result<OpFunction> method_scoped_op_function =
+          get_op_function_from_registry(
+              operator_name, {meta, count}, kernel_registry_);
+      if (method_scoped_op_function.ok()) {
+        return method_scoped_op_function;
+      }
+    }
+    return get_op_function_from_registry(operator_name, {meta, count});
+  };
+  Result<OpFunction> op_function = resolve_op_function();
   if (!op_function.ok()) {
     ET_LOG(
         Error,
@@ -831,7 +842,8 @@ Result<Method> Method::load(
     MemoryManager* memory_manager,
     EventTracer* event_tracer,
     const NamedDataMap* external_data_map,
-    const LoadBackendOptionsMap* backend_options) {
+    const LoadBackendOptionsMap* backend_options,
+    Span<const Kernel> kernel_registry) {
   MemoryAllocator* temp_allocator = memory_manager->temp_allocator();
   if (temp_allocator == nullptr) {
     PlatformMemoryAllocator* platform_allocator =
@@ -844,7 +856,8 @@ Result<Method> Method::load(
     new (platform_allocator) PlatformMemoryAllocator();
     temp_allocator = platform_allocator;
   }
-  Method method(program, memory_manager, event_tracer, temp_allocator);
+  Method method(
+      program, memory_manager, event_tracer, temp_allocator, kernel_registry);
   ET_LOG(Debug, "Loading method: %s.", s_plan->name()->c_str());
   Error err = method.init(s_plan, external_data_map, backend_options);
   if (err != Error::Ok) {

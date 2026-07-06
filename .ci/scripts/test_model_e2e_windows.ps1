@@ -159,18 +159,35 @@ try {
         }
         Write-Host "CUDA version check passed: $actualCudaVersion"
     }
+    $cmakeCudaArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:CUDA_HOME)) {
+        $cudaNvcc = Join-Path -Path $env:CUDA_HOME -ChildPath "bin\nvcc.exe"
+        if (-not (Test-Path -Path $cudaNvcc -PathType Leaf)) {
+            throw "CUDA compiler not found at '$cudaNvcc'"
+        }
+        $env:CUDACXX = $cudaNvcc
+        $cmakeCudaArgs = @(
+            "-T", "cuda=$env:CUDA_HOME",
+            "-DCMAKE_CUDA_COMPILER=$cudaNvcc",
+            "-DCUDAToolkit_ROOT=$env:CUDA_HOME"
+        )
+    }
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build ExecuTorch (CUDA)"
     $numCores = [Math]::Max([Environment]::ProcessorCount - 1, 1)
-    cmake --preset llm-release-cuda
+    # EXECUTORCH_BUILD_EXTENSION_IMAGE defaults OFF in the preset, so it must be
+    # enabled explicitly here (matching the Makefile CUDA target used on Linux).
+    # The dinov2 runner links the installed extension_image.lib; without this the
+    # main install never builds it and dinov2_runner fails to link (LNK1181).
+    cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON @cmakeCudaArgs
     cmake --build cmake-out --target install --config Release -j $numCores
     Write-Host "::endgroup::"
 
     Write-Host "::group::Build $runnerTarget"
     Push-Location (Join-Path -Path $executorchRoot -ChildPath "examples\models\$runnerPath")
     try {
-        cmake --preset $runnerPreset
+        cmake --preset $runnerPreset @cmakeCudaArgs
         cmake --build (Join-Path -Path $executorchRoot -ChildPath "cmake-out\examples\models\$runnerPath") --target $runnerTarget --config Release -j $numCores
     }
     finally {

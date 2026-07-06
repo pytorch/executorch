@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -45,11 +46,9 @@ class OpLinearOutTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
 
     if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      if (DTYPE == ScalarType::Half) {
-        GTEST_SKIP()
-            << "skip Half because torch::executor::aten::mm_out does not support Half";
-        return;
-      }
+      ET_SKIP_IF(
+          DTYPE == ScalarType::Half,
+          "skip Half because torch::executor::aten::mm_out does not support Half");
     }
 
     // matmul gives 19 * 2 * 3 = 114
@@ -218,9 +217,9 @@ TEST_F(OpLinearOutTest, MismatchedDimensionsDies) {
 }
 
 TEST_F(OpLinearOutTest, MismatchedDimensionSizeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimension size");
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.full({2, 2}, 3);
 
@@ -237,9 +236,9 @@ TEST_F(OpLinearOutTest, MismatchedDimensionSizeDies) {
 }
 
 TEST_F(OpLinearOutTest, WrongOutShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle wrong out shape");
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.ones({10, 3});
 
@@ -338,8 +337,8 @@ TEST_F(OpLinearOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLinearOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpLinearOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

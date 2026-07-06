@@ -19,8 +19,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Emits the list of changed files for the current PR or push commit.
+  # On PR: PR diff. On push: diff against `github.event.before`.
+  # On events without a diff base (workflow_dispatch, tag creation,
+  # initial push), emits '*' — note that `contains('*', 'path')` is
+  # false (literal substring match, not glob), so path-filtered jobs
+  # rely on run-decision's is-full-run output for those events.
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      # Opt in to push-event diff so path-filtered jobs can skip pushes
+      # that don't touch their relevant paths. Without this, push events
+      # emit '*' and `contains('*', 'path')` is always false.
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-models-macos-cpu:
     name: test-models-macos-cpu
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -40,6 +63,7 @@ jobs:
             backend: portable
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -61,7 +85,12 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
-        target: [ethos-u55, cortex-m55, ethos-u85]
+        include:
+          - { readme: zephyr/samples/hello-executorch/README.md, target: ethos-u55 }
+          - { readme: zephyr/samples/hello-executorch/README.md, target: cortex-m55 }
+          - { readme: zephyr/samples/hello-executorch/README.md, target: ethos-u85 }
+          - { readme: zephyr/samples/mv2-ethosu/README.md, target: ethos-u55 }
+          - { readme: zephyr/samples/mv2-ethosu/README.md, target: ethos-u85 }
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -72,149 +101,22 @@ jobs:
       script: |
         #!/bin/bash
 
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+        set -euo pipefail
+
+        # Zephyr requires a Python 3.12 venv; keep this independent of the
+        # base image's default ExecuTorch Python environment.
+        python3.12 -m venv zephyr_test_venv
+        source zephyr_test_venv/bin/activate
+
+        # The Zephyr SDK host tools carry their own runtime. The CI Docker image
+        # sets a global LD_LIBRARY_PATH for other jobs, which can make SDK tools
+        # pick host libs.
+        unset LD_LIBRARY_PATH
 
         # Test zephyr backend
-        set -e
-
-        # Support comma-separated TARGET_LIST or ${{ matrix.target }} list, e.g., TARGET_LIST="ethos-u55,cortex-m55,ethos-u85"
-        if [ -z "${TARGET_LIST:-}" ]; then
-          IFS=',' read -r -a TARGETS <<< "${{ matrix.target }}"
-        else
-          IFS=',' read -r -a TARGETS <<< "${TARGET_LIST}"
-        fi
-
-        export EXECUTORCH_PROJ_ROOT=$(realpath $(pwd))
-        ZEPHYR_README_PATH="zephyr/README.md"
-        ZEPHYR_SAMPLES_README_PATH="zephyr/samples/hello-executorch/README.md"
-
-        # Source utility scripts
-        . .ci/scripts/utils.sh
-        . .ci/scripts/zephyr-utils.sh
-
-        # check that zephyr/README.md and zephyr/executorch.yaml are in sync
-        verify_zephyr_readme
-
-        # Based on instructions in zephyr/README.md and zephyr/samples/hello-executorch/README.md
-
-        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN install_reqs -->"
-
-        # Make sure to backup the zephyr_scratch folder if it exists to allow for local
-        # testing that does not lose code/data
-        if [ -d "zephyr_scratch" ]; then
-          mv "zephyr_scratch" "zephyr_scratch.backup.$(date +%Y%m%d%H%M%S)"
-        fi
-        mkdir -p zephyr_scratch/
-
-        cd zephyr_scratch
-        export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
-
-        echo "---- Zephyr SDK ----"
-        # Use ZephyrSDK if on the disk (e.g. setup in the docker)
-        # Check for a zephyr-sdk-0.17.4 directory and make a symlink if found in parent directories
-        if sdk_dir=$(find ../../.. -maxdepth 4 -type d -name 'zephyr-sdk-0.17.4' -print -quit) && [ -n "${sdk_dir}" ]; then
-          echo "---- Found pre downloaded Zephyr SDK in ${sdk_dir} ----"
-          ln -s "${sdk_dir}" .
-        fi
-
-        # Download and setup Zephyr SDK 0.17.4 if not already present
-        if [ ! -d "zephyr-sdk-0.17.4" ]; then
-          echo "---- Downloading Zephyr SDK ----"
-          wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64.tar.xz
-          tar -xf zephyr-sdk-0.17.4_linux-x86_64.tar.xz
-          rm -f zephyr-sdk-0.17.4_linux-x86_64.tar.xz*
-        fi
-
-        ./zephyr-sdk-0.17.4/setup.sh -c -t arm-zephyr-eabi
-        export ZEPHYR_SDK_INSTALL_DIR=$(realpath ./zephyr-sdk-0.17.4)
-
-        cd ${ZEPHYR_PROJ_ROOT}
-
-        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_init -->"
-
-        cp ${EXECUTORCH_PROJ_ROOT}/zephyr/executorch.yaml zephyr/submanifests/
-
-        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN west_config -->"
-
-        # Switch to executorch in this PR e.g. replace modules/lib/executorch with the root folder of this repo
-        # instead of doing a re-checkout and figure out the correct commit hash etc
-        rm -Rf modules/lib/executorch
-        ln -s ${EXECUTORCH_PROJ_ROOT} modules/lib/executorch
-
-        # Setup git local user for Executorch git to allows modules/lib/executorch/examples/arm/setup.sh be run inside CI later
-        # Configure git user only if not already set
-        if ! git config --get user.name >/dev/null 2>&1; then
-          git config --global user.name "Github Executorch"
-        fi
-        if ! git config --get user.email >/dev/null 2>&1; then
-          git config --global user.email "github_executorch@arm.com"
-        fi
-
-        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN install_executorch -->"
-
-        run_command_block_from_readme "${ZEPHYR_README_PATH}" "<!-- RUN install_arm_tools -->"
-
-        for TARGET in "${TARGETS[@]}"; do
-          TARGET="$(echo "$TARGET" | xargs)" # trim whitespace
-
-          echo "---- ${TARGET} ----"
-          rm -Rf build
-
-          if [[ ${TARGET} == "ethos-u55" || ${TARGET} == "cortex-m55" ]]; then
-            BOARD="corstone300"
-          elif [[ ${TARGET} == "ethos-u85" ]]; then
-            BOARD="corstone320"
-          else
-            echo "Fail unsupport target selection ${TARGET}"
-            exit 1
-          fi
-
-          echo "---- ${TARGET} Board ${BOARD} FVP setup ----"
-          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN setup_${BOARD}_fvp -->"
-
-          echo "---- ${TARGET} Create PTE ----"
-          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_generate_pte -->"
-
-          echo "---- ${TARGET} Build and run ----"
-          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN test_${TARGET}_build_and_run -->"
-        done
-
-        # MV2 Ethos-U sample (NPU targets only — skips cortex-m55)
-        MV2_README_PATH="zephyr/samples/mv2-ethosu/README.md"
-
-        for TARGET in "${TARGETS[@]}"; do
-          TARGET="$(echo "$TARGET" | xargs)"
-
-          if [[ ${TARGET} == "cortex-m55" ]]; then
-            echo "---- Skipping MV2 for ${TARGET} (NPU-only sample) ----"
-            continue
-          fi
-
-          if [[ ${TARGET} == "ethos-u55" ]]; then
-            BOARD="corstone300"
-          elif [[ ${TARGET} == "ethos-u85" ]]; then
-            BOARD="corstone320"
-          else
-            echo "Fail unsupported target selection ${TARGET}"
-            exit 1
-          fi
-
-          echo "---- MV2 ${TARGET} ----"
-          rm -Rf build
-
-          echo "---- MV2 ${TARGET} Board ${BOARD} FVP setup ----"
-          run_command_block_from_readme "${ZEPHYR_SAMPLES_README_PATH}" "<!-- RUN setup_${BOARD}_fvp -->"
-
-          echo "---- MV2 ${TARGET} Create PTE ----"
-          run_command_block_from_readme "${MV2_README_PATH}" "<!-- RUN test_mv2_${TARGET}_generate_pte -->"
-
-          # Build only — FVP cycle-accurate simulation of MV2 is too slow
-          # for the CI timeout.  Corstone-300 also lacks enough ISRAM for
-          # the runtime pools.  The build step still catches link regressions.
-          echo "---- MV2 ${TARGET} Build only ----"
-          run_command_block_from_readme "${MV2_README_PATH}" "<!-- RUN test_mv2_${TARGET}_build -->"
-        done
+        .ci/scripts/test_zephyr.sh \
+          --targets "${TARGET_LIST:-${{ matrix.target }}}" \
+          --zephyr-samples-readme-path "${{ matrix.readme }}"
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
@@ -268,6 +170,10 @@ jobs:
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -275,6 +181,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -290,6 +197,10 @@ jobs:
 
   test-selective-build-macos:
     name: test-selective-build-macos
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -297,6 +208,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -346,14 +258,18 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_ethos_u55
-          - test_arm_baremetal: test_pytest_models_ethos_u55
-          - test_arm_baremetal: test_run_ethos_u55
-          - test_arm_baremetal: test_pytest_ops_ethos_u85
-          - test_arm_baremetal: test_pytest_models_ethos_u85
-          - test_arm_baremetal: test_run_ethos_u85
-          - test_arm_baremetal: test_smaller_stories_llama
-          - test_arm_baremetal: test_memory_allocation
+          - test_arm_backend: test_pytest_ops_ethos_u55
+          - test_arm_backend: test_pytest_models_ethos_u55
+          - test_arm_backend: test_run_ethos_u55
+          - test_arm_backend: test_pytest_ops_ethos_u85
+          - test_arm_backend: test_pytest_models_ethos_u85
+          - test_arm_backend: test_run_ethos_u85
+          - test_arm_backend: test_smaller_stories_llama_tosa
+          - test_arm_backend: test_model_smollm2_135M_ethos_u85
+          - test_arm_backend: test_memory_allocation
+          - test_arm_backend: test_ootb_tests_ethos_u
+          - test_arm_backend: test_ootb_tests_tosa
+          - test_arm_backend: test_deit_e2e_ethos_u
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -375,10 +291,15 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+              export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
+        # Test test_arm_backend.sh with test
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-vkml:
     name: test-arm-backend-vkml
@@ -389,7 +310,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops_vkml
+          - test_arm_backend: test_pytest_ops_vkml
+          - test_arm_backend: test_pytest_models_vkml
+          - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -410,53 +334,29 @@ jobs:
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_backend }}
 
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Output test report on pytest runs so that github can surface failing tests.
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+          export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
 
-  test-arm-ootb-linux:
-    name: test-arm-ootb-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        include:
-          - test_arm_ootb: run_ootb_tests_ethos_u
-          - test_arm_ootb: run_ootb_tests_tosa
-          - test_arm_ootb: run_deit_e2e_ethos_u
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        # Follow the steps required before running the notebooks
-        # Try to mirror these as closely as possible
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
-
-        .ci/scripts/setup-arm-baremetal-tools.sh
-        source examples/arm/arm-scratch/setup_path.sh
-
-        # Install requirements for converting notebooks
-        pip install notebook
-
-        # Run OOTB tests
-        OOTB_TEST=${{ matrix.test_arm_ootb }}
-        backends/arm/test/test_arm_ootb.sh $OOTB_TEST
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-coreml-delegate:
+    needs: [changed-files, run-decision]
+    # Path-filtered: see _ci-run-decision.yml for the sampling policy.
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-conda.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
@@ -472,9 +372,21 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/build_all.sh
 
   test-static-llama-ane:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_ane_static_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/utils.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -495,8 +407,13 @@ jobs:
 
   test-llama-torchao-lowbit:
     name: test-llama-torchao-lowbit
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -573,6 +490,23 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
   test-llama-runner-macos:
+    needs: [changed-files, run-decision]
+    # Whole-job gate (matrix cells can't be individually if'd):
+    # mps / coreml / xnnpack+custom+quantize_kv.
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/xnnpack') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/llama') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/custom_ops') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/sampler') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_llama.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-llama-runner-mac
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -581,6 +515,7 @@ jobs:
         mode: [mps, coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -655,7 +590,13 @@ jobs:
         bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} --test_with_runner ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
   test-multimodal-macos:
-    if: ${{ !github.event.pull_request.head.repo.fork }}
+    needs: run-decision
+    if: |
+      !github.event.pull_request.head.repo.fork &&
+      (
+        github.event_name == 'pull_request' ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     name: test-multimodal-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
@@ -667,6 +608,7 @@ jobs:
       matrix:
         model: ["gemma3-4b"] # llava gives segfault so not covering.
     with:
+      default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
       python-version: '3.11'
@@ -747,6 +689,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
   test-models-macos-coreml:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-models-macos-coreml
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
@@ -754,6 +705,7 @@ jobs:
         model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -788,11 +740,24 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-models-macos-mps:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/mps') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/apple/mps') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models') ||
+      contains(needs.changed-files.outputs.changed-files, 'devtools/bundled_program') ||
+      contains(needs.changed-files.outputs.changed-files, 'devtools/etrecord') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     name: test-models-macos-mps
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -901,8 +866,20 @@ jobs:
         echo "::endgroup::"
 
   test-huggingface-transformers-macos:
+    needs: [changed-files, run-decision]
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
-    if: ${{ !github.event.pull_request.head.repo.fork }}
+    if: |
+      !github.event.pull_request.head.repo.fork &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_huggingface_optimum_model.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.ci/docker/ci_commit_pins/optimum-executorch.txt') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_executorch.py') ||
+        contains(needs.changed-files.outputs.changed-files, 'install_requirements.py') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     name: test-huggingface-transformers-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
@@ -932,6 +909,7 @@ jobs:
         ]
       fail-fast: false
     with:
+      default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
       python-version: '3.11'
@@ -973,7 +951,8 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        pt2e_quantize: [qnn_16a16w, qnn_8a8w]
+        # TODO(T12345): re-enable qnn_16a16w once OOM on linux.2xlarge is resolved
+        pt2e_quantize: [qnn_8a8w]
         mode: [qnn]
       fail-fast: false
     with:
@@ -1067,7 +1046,25 @@ jobs:
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
+  llm-server:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: ./.github/workflows/_llm_server.yml
+    permissions:
+      id-token: write
+      contents: read
+
   test-models-windows:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     strategy:
       fail-fast: false
@@ -1100,3 +1097,13 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_e2e.yml
     with:
       models: '["mv2", "mv3"]'
+      targets: '["cortex-m55", "cortex-m7", "cortex-m0plus"]'
+
+  test-cortex-m-ops:
+    name: test-cortex-m-ops
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_ops.yml
+    with:
+      targets: '["cortex-m7", "cortex-m0plus"]'

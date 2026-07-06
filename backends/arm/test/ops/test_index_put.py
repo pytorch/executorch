@@ -333,6 +333,29 @@ test_data_suite_bf16 = {
         0,
     ),
 }
+test_data_suite_fp8 = {
+    "rank2_fp8e4m3": (
+        lambda: (
+            torch.rand((4, 5), dtype=torch.float32).to(torch.float8_e4m3fn),
+            (torch.tensor([0, 2], dtype=torch.int32),),
+            torch.rand((2, 5), dtype=torch.float32).to(torch.float8_e4m3fn),
+            False,
+        ),
+        "fp8e4m3",
+    ),
+    "rank3_fp8e5m2": (
+        lambda: (
+            torch.rand((3, 4, 2), dtype=torch.float32).to(torch.float8_e5m2),
+            (
+                torch.tensor([0, 2], dtype=torch.int32),
+                torch.tensor([1, 3], dtype=torch.int32),
+            ),
+            torch.rand((2, 2), dtype=torch.float32).to(torch.float8_e5m2),
+            False,
+        ),
+        "fp8e5m2",
+    ),
+}
 
 
 class IndexPut(torch.nn.Module):
@@ -375,6 +398,19 @@ def test_index_put_tosa_FP(test_module: input_t):
     pipeline.run()
 
 
+@common.parametrize("test_module", test_data_suite_fp8)
+def test_index_put_tosa_FP_fp8(test_module):
+    test_data, tosa_extension = test_module
+    pipeline = TosaPipelineFP(
+        IndexPut(),
+        test_data(),
+        aten_op=IndexPut.aten_op,
+        exir_op=IndexPut.exir_op,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_tosa_INT(test_module: input_t):
     pipeline = TosaPipelineINT[input_t](
@@ -404,7 +440,6 @@ def test_index_put_u55_INT(test_module: input_t):
 @common.parametrize(
     "test_module",
     test_data_suite_fp | test_data_int,
-    xfails={"none_indices_4": "Incorrect numerical behavior: MLBEDSW-11589"},
 )
 def test_index_put_u85_INT(test_module: input_t):
     """same_index test case already supported on u85 even though it is not

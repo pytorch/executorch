@@ -432,7 +432,7 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 
@@ -477,7 +477,7 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 
@@ -522,7 +522,7 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 
@@ -557,7 +557,7 @@ def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     )
 
     edge_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat
+        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
     ).exported_program()
 
     # Make sure that all nodes were delegated.
@@ -567,7 +567,7 @@ def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 
@@ -667,9 +667,6 @@ def test_torchao_native_conv_bn_qat_fusing(
     if not conv_bias:
         pytest.skip("Conv without bias is not supported.")
 
-    if len(input_shape) < 4 and transposed_conv:
-        pytest.skip("Conv1d transpose is not supported.")
-
     model = models.ConvBatchNormModule(
         bias=conv_bias,
         input_rank=len(input_shape),
@@ -713,4 +710,10 @@ def test_torchao_native_conv_bn_qat_fusing(
         )
         for arg in conv_node_args
     )
-    assert len(graph_nodes) == 15
+
+    # if model with `conv1d` or `conv_transpose1d` is used, then it is converted to the 2d variant
+    # and additional nodes, such as `squeeze` and `unsqueeze` are inserted.
+    if len(input_shape) == 3 or len(input_shape) == 2:
+        assert len(graph_nodes) == 21
+    else:
+        assert len(graph_nodes) == 15

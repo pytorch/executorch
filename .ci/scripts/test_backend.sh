@@ -35,6 +35,7 @@ export PYTHON_EXECUTABLE=python
 
 # CMake options to use, in addition to the defaults.
 EXTRA_BUILD_ARGS=""
+PYTEST_RETRY_ARGS=()
 
 if [[ "$FLOW" == *qnn* ]]; then
     # Setup QNN sdk and deps - note that this is a bit hacky due to the nature of the
@@ -50,13 +51,30 @@ if [[ "$FLOW" == *qnn* ]]; then
 fi
 
 if [[ "$FLOW" == *vulkan* ]]; then
-    # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate.
-    source .ci/scripts/setup-vulkan-linux-deps.sh
+    # Setup the Vulkan SDK and select an ICD: use the real system GPU ICD when one
+    # is present (real-GPU runner), otherwise fall back to SwiftShader (CPU
+    # runner). The Vulkan loader searches both standard ICD directories.
+    if ls /etc/vulkan/icd.d/*.json /usr/share/vulkan/icd.d/*.json \
+        >/dev/null 2>&1; then
+        source .ci/scripts/setup-vulkan-linux-deps.sh "real-gpu"
+    else
+        source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
+    fi
 
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *webgpu* ]]; then
+    # Dawn (Tint) + SwiftShader, the spec-faithful headless WebGPU backend.
+    source .ci/scripts/setup-webgpu-linux-deps.sh
+
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_WEBGPU=ON -DDawn_DIR=$Dawn_DIR"
+fi
+
 if [[ "$FLOW" == *arm* ]]; then
+    if [[ "$SUITE" == "operators" ]]; then
+        PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
+    fi
 
     # Setup ARM deps.
     if [[ "$FLOW" == *vgf* ]]; then
@@ -95,6 +113,11 @@ GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
 
 EXIT_CODE=0
-${CONDA_RUN_CMD} pytest -c /dev/null -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
+PYTEST_ARGS=(-c /dev/null -n auto)
+if [[ ${#PYTEST_RETRY_ARGS[@]} -gt 0 ]]; then
+    PYTEST_ARGS+=("${PYTEST_RETRY_ARGS[@]}")
+fi
+PYTEST_ARGS+=("backends/test/suite/$SUITE/" -m "flow_$FLOW" --json-report --json-report-file="$REPORT_FILE")
+${CONDA_RUN_CMD} pytest "${PYTEST_ARGS[@]}" || EXIT_CODE=$?
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE

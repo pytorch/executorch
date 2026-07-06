@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -20,7 +21,7 @@ bool validate_transpose_conv2d_arguments(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
-    const torch::executor::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     const Tensor& output,
     const Tensor& requantize_multipliers,
     const Tensor& requantize_shifts) {
@@ -82,11 +83,12 @@ bool validate_transpose_conv2d_arguments(
 }
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_transpose_conv2d_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
-    const torch::executor::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     const Int64ArrayRef stride,
     const Int64ArrayRef padding,
     const Int64ArrayRef output_padding,
@@ -97,6 +99,8 @@ Tensor& quantized_transpose_conv2d_out(
     const Tensor& requantize_shifts,
     const int64_t activation_min,
     const int64_t activation_max,
+    const Tensor& scratch,
+    const Tensor& output_scratch,
     Tensor& out) {
   if (!validate_transpose_conv2d_arguments(
           context,
@@ -179,44 +183,43 @@ Tensor& quantized_transpose_conv2d_out(
 
   cmsis_nn_context cmsis_context;
   cmsis_context.buf = nullptr;
-  cmsis_context.size = 0;
+  cmsis_context.size = scratch.nbytes();
+  if (cmsis_context.size > 0) {
+    cmsis_context.buf = scratch.mutable_data_ptr<int8_t>();
+  }
 
   cmsis_nn_context output_context;
   output_context.buf = nullptr;
-  output_context.size = 0;
-
+  output_context.size = output_scratch.nbytes();
+  if (output_context.size > 0) {
+    output_context.buf = output_scratch.mutable_data_ptr<int8_t>();
+  }
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
   const int32_t buffer_bytes = arm_transpose_conv_s8_get_buffer_size(
       &transpose_conv_params, &input_dims, &filter_dims, &output_dims);
-  auto buffer_or_error = context.allocate_temp(
-      static_cast<size_t>(buffer_bytes), kCortexMMveAlignment);
-  if (!buffer_or_error.ok()) {
+  if (scratch.nbytes() != static_cast<size_t>(buffer_bytes)) {
     ET_LOG(
         Error,
-        "quantized_transpose_conv2d_out: failed to allocate scratch buffer (%d bytes, error %d)",
-        buffer_bytes,
-        static_cast<int>(buffer_or_error.error()));
-    context.fail(buffer_or_error.error());
+        "quantized_transpose_conv2d_out: scratch buffer size incorrect - actual: (%d) needed: (%d)",
+        static_cast<int>(scratch.nbytes()),
+        buffer_bytes);
+    context.fail(Error::Internal);
     return out;
   }
-  cmsis_context.buf = buffer_or_error.get();
-  cmsis_context.size = buffer_bytes;
 
   const int32_t output_buffer_bytes =
       arm_transpose_conv_s8_get_reverse_conv_buffer_size(
           &transpose_conv_params, &input_dims, &filter_dims);
-  auto output_buffer_or_error = context.allocate_temp(
-      static_cast<size_t>(output_buffer_bytes), kCortexMMveAlignment);
-  if (!output_buffer_or_error.ok()) {
+  if (output_scratch.nbytes() != static_cast<size_t>(output_buffer_bytes)) {
     ET_LOG(
         Error,
-        "quantized_transpose_conv2d_out: failed to allocate output scratch buffer (%d bytes, error %d)",
-        output_buffer_bytes,
-        static_cast<int>(output_buffer_or_error.error()));
-    context.fail(output_buffer_or_error.error());
+        "quantized_transpose_conv2d_out: output scratch buffer size incorrect - actual: (%d) needed: (%d)",
+        static_cast<int>(output_scratch.nbytes()),
+        output_buffer_bytes);
+    context.fail(Error::Internal);
     return out;
   }
-  output_context.buf = output_buffer_or_error.get();
-  output_context.size = output_buffer_bytes;
+#endif
 
   const arm_cmsis_nn_status status = arm_transpose_conv_wrapper_s8(
       &cmsis_context,

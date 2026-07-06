@@ -15,6 +15,7 @@
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
+#include <algorithm>
 #include <cmath>
 
 using executorch::aten::RuntimeContext;
@@ -28,6 +29,33 @@ namespace HiFi {
 namespace native {
 
 namespace {
+
+[[maybe_unused]] bool tensor_has_zero(const Tensor& t) {
+  switch (t.scalar_type()) {
+    case ScalarType::Float:
+      return std::any_of(
+          t.const_data_ptr<float>(),
+          t.const_data_ptr<float>() + t.numel(),
+          [](float v) { return v == 0.0f; });
+    case ScalarType::Double:
+      return std::any_of(
+          t.const_data_ptr<double>(),
+          t.const_data_ptr<double>() + t.numel(),
+          [](double v) { return v == 0.0; });
+    case ScalarType::Int:
+      return std::any_of(
+          t.const_data_ptr<int32_t>(),
+          t.const_data_ptr<int32_t>() + t.numel(),
+          [](int32_t v) { return v == 0; });
+    case ScalarType::Long:
+      return std::any_of(
+          t.const_data_ptr<int64_t>(),
+          t.const_data_ptr<int64_t>() + t.numel(),
+          [](int64_t v) { return v == 0; });
+    default:
+      return false;
+  }
+}
 
 ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
   if (executorch::runtime::isFloatingType(a_type) &&
@@ -45,6 +73,8 @@ ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
 
 Tensor&
 div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
+  ET_DCHECK_MSG(!tensor_has_zero(b), "divisor tensor contains zero");
+
   ET_KERNEL_CHECK(
       ctx,
       torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,
@@ -179,6 +209,8 @@ Tensor& div_out_mode(
     const Tensor& b,
     std::optional<std::string_view> mode,
     Tensor& out) {
+  ET_DCHECK_MSG(!tensor_has_zero(b), "divisor tensor contains zero");
+
   ET_KERNEL_CHECK(
       ctx,
       torch::executor::resize_to_broadcast_target_size(a, b, out) == Error::Ok,

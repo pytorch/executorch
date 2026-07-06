@@ -28,6 +28,21 @@ Result<uint64_t> get_abs(int64_t num) {
   }
 }
 
+// Helpers that use ET_UNWRAP in expression position. They pin the macro's
+// expression-form contract (see result.h): a change that turns ET_UNWRAP back
+// into a statement-only macro (requiring a variable-name argument) would stop
+// these from compiling.
+Result<uint64_t> double_abs_unwrap(int64_t num) {
+  uint64_t value = ET_UNWRAP(get_abs(num));
+  return value * 2;
+}
+
+Result<uint64_t> double_abs_unwrap_with_message(int64_t num) {
+  uint64_t value =
+      ET_UNWRAP(get_abs(num), "get_abs failed for %d", static_cast<int>(num));
+  return value * 2;
+}
+
 Result<std::string> get_op_name(int64_t op) {
   auto abs_result = get_abs(op);
   if (!abs_result.ok()) {
@@ -241,6 +256,28 @@ TEST(ErrorHandlingTest, ResultUnwrap) {
   auto res = get_op_name(-1);
   ASSERT_FALSE(res.ok());
   ASSERT_EQ(res.error(), Error::InvalidArgument);
+}
+
+TEST(ErrorHandlingTest, EtUnwrapExpressionForm) {
+  auto ok = double_abs_unwrap(5);
+  ASSERT_TRUE(ok.ok());
+  EXPECT_EQ(*ok, 10u);
+
+  auto err = double_abs_unwrap(-1);
+  EXPECT_FALSE(err.ok());
+  EXPECT_EQ(err.error(), Error::InvalidArgument);
+}
+
+TEST(ErrorHandlingTest, EtUnwrapExpressionFormWithMessage) {
+  executorch::runtime::runtime_init();
+
+  auto ok = double_abs_unwrap_with_message(4);
+  ASSERT_TRUE(ok.ok());
+  EXPECT_EQ(*ok, 8u);
+
+  auto err = double_abs_unwrap_with_message(-2);
+  EXPECT_FALSE(err.ok());
+  EXPECT_EQ(err.error(), Error::InvalidArgument);
 }
 
 TEST(ErrorHandlingTest, ResultNoCopy) {

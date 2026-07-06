@@ -243,6 +243,18 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
 
     """
 
+    PARAMETER_TARGETS = {
+        torch.ops.aten.linear.default,
+        torch.ops.aten.convolution.default,
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.conv1d.padding,
+        torch.ops.aten.conv2d.default,
+        torch.ops.aten.conv2d.padding,
+        torch.ops.aten.conv3d.default,
+        torch.ops.aten.conv3d.padding,
+        torch.ops.aten.conv_transpose2d.input,
+    }
+
     def __init__(
         self,
         quantization_config: QuantizationConfig | None,
@@ -275,75 +287,59 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
             support_config_path,
         )
 
-    def is_parameter(self, node: Node, model: torch.fx.GraphModule) -> bool:
-        """Returns True if the given node is a parameter of the model."""
-        try:
-            _ = model.get_parameter(node.target)  # type: ignore[arg-type]
-            return True
-        except Exception:
+    def is_weight(self, node: Node) -> bool:
+        """Returns True if node is used as a weight by all users."""
+        if node.op != "get_attr":
             return False
 
-    def is_weight(
-        self, node: Node, params: list[Node], model: torch.fx.GraphModule
-    ) -> bool:
-        """Returns True if node is the first parameter of the given
-        parameters.
-        """
-        return len(params) > 0 and node == params[0]
+        # Ensure that the node is used as a weight by all users
+        for user_node in node.users:
+            if user_node.target not in self.PARAMETER_TARGETS:
+                return False
 
-    def is_bias(
-        self, node: Node, params: list[Node], model: torch.fx.GraphModule
-    ) -> bool:
-        """Returns True if node is the second parameter of the given
-        parameters.
-        """
-        return len(params) == 2 and node == params[1]
+            args = list(user_node.args)
+            if not (len(args) > 1 and node == args[1]):
+                return False
+
+        return True
+
+    def is_bias(self, node: Node) -> bool:
+        """Returns True if node is used as a bias by all users."""
+        if node.op != "get_attr":
+            return False
+
+        # Ensure that the node is used as a bias by all users
+        for user_node in node.users:
+            if user_node.target not in self.PARAMETER_TARGETS:
+                return False
+
+            args = list(user_node.args)
+            if not (len(args) > 2 and node == args[2]):
+                return False
+
+        return True
 
     def annotate_match(
         self,
         match: list[Node],
         config: QuantizationConfig | None,
-        model: torch.fx.GraphModule,
     ) -> None:
         """Annotates a matched pattern according to the given quantization
         config.
         """
-        parameter_targets = {
-            torch.ops.aten.linear.default,
-            torch.ops.aten.convolution.default,
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv1d.padding,
-            torch.ops.aten.conv2d.default,
-            torch.ops.aten.conv2d.padding,
-            torch.ops.aten.conv3d.default,
-            torch.ops.aten.conv3d.padding,
-            torch.ops.aten.conv_transpose2d.input,
-        }
 
         for node in match:
             input_qspec_map = {}
             output_qspec = None
 
-            params = [n for n in node.all_input_nodes if self.is_parameter(n, model)]
-            if node.target in parameter_targets:
-                if len(params) == 0 or len(params) > 2:
-                    logger.warning(
-                        f"{node.name} is expected to have parameter tensors for weight/bias but no such inputs found, which may cause unexpected quantization annotations. This is likely caused by incorrect tensor instantiations or non-constant weight/biases."
-                    )
-            else:
-                if len(params) > 0:
-                    logger.warning(
-                        f"{node.name} is not expected to not have parameter tensors but found {[n.name for n in params]}, which may cause unexpected quantization annotations."
-                    )
-
             for input_node in node.all_input_nodes:
                 if not has_float_output(input_node):
                     continue
-                if self.is_weight(input_node, params, model):
+                if self.is_weight(input_node):
                     input_qspec_map[input_node] = (
                         config.get_weight_qspec(node) if config else None
                     )
-                elif self.is_bias(input_node, params, model):
+                elif self.is_bias(input_node):
                     input_qspec_map[input_node] = (
                         config.get_bias_qspec(node) if config else None  # type: ignore[assignment]
                     )
@@ -370,7 +366,7 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         )
         for result in matches:
             if result.accepted:
-                self.annotate_match(result.pattern, self.quantization_config, model)
+                self.annotate_match(result.pattern, self.quantization_config)
                 self.report_accept(result.pattern)
             else:
                 self.report_reject(
@@ -424,6 +420,9 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.flip.default,
         torch.ops.aten.index_select.default,
         torch.ops.aten.index_put.default,
+        torch.ops.aten.index_put_.default,
+        torch.ops.aten.index_copy.default,
+        torch.ops.aten.index_copy_.default,
         torch.ops.aten.contiguous.default,
         torch.ops.aten.as_strided_copy.default,
         torch.ops.aten.pixel_shuffle.default,
@@ -481,6 +480,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
         QuantizerReporterUser.__init__(self)
+        self.global_config: Optional[QuantizationConfig] = None
         if targets is None:
             self.targets = self.SHARED_QSPEC_OPS_DEFAULT
             self.support_config_path = (
@@ -552,10 +552,24 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             return
         adjacent_qspecs.append(input_qspec)
 
-    def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any]]:
+    def _is_quantized_io_boundary(self, node: Node) -> bool:
+        """Return True if node is a model input/output annotated by the
+        quantizer.
+
+        Such a node sits on the quantized interface but its qspec is often
+        filtered out of shared-cluster propagation: a uint8 IO qspec is skipped
+        by _skip_shared_qspec_from_io, and an input-state placeholder may carry
+        an annotation with no output_qspec. Its presence still signals that the
+        cluster is on the quantized data path.
+
+        """
+        return node.op in ("placeholder", "output") and self._is_annotated(node)
+
+    def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any], bool]:
         shared_nodes = set()
         bfs_queue = [root_node]
         adjacent_qspecs: list[Any] = []
+        touches_quantized_io = False
 
         while bfs_queue:
             node = bfs_queue.pop(0)
@@ -564,12 +578,50 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             for input_node in node.all_input_nodes:
                 self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
                 self._append_output_qspec(input_node, adjacent_qspecs)
+                touches_quantized_io |= self._is_quantized_io_boundary(input_node)
 
             for output_node in node.users.keys():
                 self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
                 self._append_input_qspec(output_node, node, adjacent_qspecs)
+                touches_quantized_io |= self._is_quantized_io_boundary(output_node)
 
-        return shared_nodes, adjacent_qspecs
+        return shared_nodes, adjacent_qspecs, touches_quantized_io
+
+    def _should_skip_while_shared_qspec(self, node: Node) -> bool:
+        return node.target == torch.ops.higher_order.while_loop and bool(
+            node.meta.get("additional_inputs")
+        )
+
+    def _annotate_while_with_additional_inputs(
+        self,
+        root_node: Node,
+        adjacent_qspecs: list[Any],
+    ) -> bool:
+        if not self._should_skip_while_shared_qspec(root_node):
+            return False
+        if len(adjacent_qspecs) == 0:
+            self.report_reject(
+                [root_node],
+                "Couldn't find any adjacent quantization spec to annotate while_loop.",
+            )
+            return True
+
+        input_qspec = adjacent_qspecs[0]
+        input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
+            n: input_qspec for n in self._get_input_nodes_with_float_output(root_node)
+        }
+        output_qspec: Optional[QuantizationSpec] = None
+        if len(self._get_user_nodes_with_float_input(root_node)) > 0:
+            output_qspec = input_qspec
+
+        _mark_node_as_quantized(
+            root_node,
+            input_qspec_map,
+            output_qspec,
+            is_quantized=True,
+        )
+        self.report_accept([root_node])
+        return True
 
     def _annotate_shared_cluster(self, root_node: Node) -> None:
         if (
@@ -588,50 +640,65 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             )
             return
 
-        shared_nodes, adjacent_qspecs = self._get_shared_clique(root_node)
+        shared_nodes, adjacent_qspecs, touches_quantized_io = self._get_shared_clique(
+            root_node
+        )
+
+        # If there is no neighbor qspec to propagate but the cluster sits on the
+        # quantized I/O boundary (e.g. a state-passthrough cat whose only neighbors
+        # are a uint8 model input skipped by _skip_shared_qspec_from_io and an
+        # input-state placeholder with no output_qspec), initiate quantization from
+        # the global config rather than leaving the cluster in float. Without this,
+        # such clusters fall off the integer delegate onto CPU.
+        if (
+            len(adjacent_qspecs) == 0
+            and touches_quantized_io
+            and self.global_config is not None
+        ):
+            global_input_qspec = self.global_config.get_input_act_qspec()
+            if global_input_qspec is not None:
+                adjacent_qspecs = [global_input_qspec]
+
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
 
-        if len(adjacent_qspecs) > 0:
-            if len(adjacent_qspecs) > 1:
-                logger.warning(
-                    f"Multiple adjacent quantization specs found for {', '.join([n.name for n in ordered_nodes])}, all nodes will share the input quantization spec of {root_node.name}."
-                )
-
-            root_node_float_inputs = self._get_input_nodes_with_float_output(root_node)
-            if len(root_node_float_inputs) == 0:
-                self.report_reject(
-                    ordered_nodes,
-                    "Couldn't find any floating point input to base shared quantization spec on.",
-                )
-                return
-            root_node_first_input = root_node_float_inputs[0]
-
-            shared_qspec = SharedQuantizationSpec((root_node_first_input, root_node))
-            for node in shared_nodes:
-                input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
-                    n: shared_qspec  # type: ignore[misc]
-                    for n in self._get_input_nodes_with_float_output(node)
-                }
-                if len(self._get_user_nodes_with_float_input(node)) == 0:
-                    output_qspec = None
-                else:
-                    output_qspec = shared_qspec
-                _mark_node_as_quantized(
-                    node, input_qspec_map, output_qspec, is_quantized=True
-                )
-
-            root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[root_node_first_input] = (
-                adjacent_qspecs[0]
-            )
-            self.report_accept(ordered_nodes)
-
-        else:
-            self.report_reject(
-                ordered_nodes,
-                "Couldn't find any adjacent quantization spec to base shared quantization spec on. You may however quantize these nodes manually if required.",
-            )
+        if self._annotate_while_with_additional_inputs(root_node, adjacent_qspecs):
             return
+
+        # Ensure the root node is the first one in the graph.
+        root_node = ordered_nodes[0]
+        if len(adjacent_qspecs) > 0:
+            root_node_float_inputs = self._get_input_nodes_with_float_output(root_node)
+            if len(root_node_float_inputs) > 0:
+
+                root_node_first_input = root_node_float_inputs[0]
+                shared_qspec = SharedQuantizationSpec(
+                    (root_node_first_input, root_node)
+                )
+                for node in shared_nodes:
+                    input_qspec_map: dict[Node, Optional[QuantizationSpec]] = {
+                        n: shared_qspec  # type: ignore[misc]
+                        for n in self._get_input_nodes_with_float_output(node)
+                    }
+                    if len(self._get_user_nodes_with_float_input(node)) == 0:
+                        output_qspec = None
+                    else:
+                        output_qspec = shared_qspec
+                    _mark_node_as_quantized(
+                        node, input_qspec_map, output_qspec, is_quantized=True
+                    )
+
+                root_node.meta[Q_ANNOTATION_KEY].input_qspec_map[
+                    root_node_first_input
+                ] = adjacent_qspecs[0]
+                self.report_accept(ordered_nodes)
+                return
+
+        self.report_reject(
+            ordered_nodes,
+            "All inputs and outputs to these nodes are non-quantized.",
+        )
+        return
 
     def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
         for node in model.graph.nodes:

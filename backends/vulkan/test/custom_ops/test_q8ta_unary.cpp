@@ -35,10 +35,15 @@ TestCase create_test_case_from_config(
     utils::GPUMemoryLayout quant_layout) {
   TestCase test_case;
 
-  std::string shape_str = shape_string(config.shape);
-  std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
-      repr_str(storage_type, fp_memory_layout) + "->" +
+  std::string prefix = config.test_case_name; // "ACCU" or "PERF"
+  std::string storage_str = repr_str(storage_type, fp_memory_layout) + "->" +
       repr_str(utils::kBuffer, quant_layout);
+  std::string test_name = make_test_label(
+      prefix,
+      dtype_short(input_dtype),
+      dtype_short(input_dtype),
+      shape_bracket(config.shape),
+      storage_str);
   test_case.set_name(test_name);
 
   std::string operator_name = "test_etvk." + config.op_name + ".default";
@@ -298,13 +303,8 @@ int main(int argc, char* argv[]) {
       generate_q8ta_unary_test_cases,
 #endif
       "Q8taUnary",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      3,
-      10,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

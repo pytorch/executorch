@@ -51,6 +51,7 @@ android {
     }
     kotlinOptions {
         jvmTarget = "11"
+        freeCompilerArgs += ["-Xjvm-default=all"]
     }
 }
 
@@ -112,5 +113,19 @@ mavenPublishing {
 repositories {
     maven {
         url "https://central.sonatype.com/repository/maven-snapshots/"
+    }
+}
+
+android.libraryVariants.all { variant ->
+    task("generate${variant.name.substring(0, 1).toUpperCase()}${variant.name.substring(1)}Javadoc", type: Javadoc) {
+        source = variant.javaCompileProvider.get().source
+        classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+        classpath += variant.javaCompileProvider.get().classpath
+        options {
+            overview = "src/main/javadoc/overview.html"
+            windowTitle = "ExecuTorch Android Java API"
+            docTitle = "ExecuTorch Android Java API"
+            links("https://docs.oracle.com/en/java/javase/11/docs/api/")
+        }
     }
 }

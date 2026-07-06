@@ -8,7 +8,7 @@
 
 from typing import cast, Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -22,8 +22,8 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
-class MatchArgRanksPass(ArmPass):
-    """For ops in 'targeted_ops', make sure that the inputs share the same rank.
+class MatchArgRanksPass(ArmOpTargetedPass):
+    """For ops in 'target_ops', make sure that the inputs share the same rank.
     New dimensions are inserted from the beginning of the inputs that have a
     lower rank to match the input with the highest rank.
 
@@ -44,7 +44,7 @@ class MatchArgRanksPass(ArmPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
-    targeted_ops = [
+    target_ops = [
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.mul.Tensor,
@@ -57,6 +57,7 @@ class MatchArgRanksPass(ArmPass):
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.pow.Tensor_Tensor,
         exir_ops.edge.aten.remainder.Tensor,
         exir_ops.edge.aten.where.self,
@@ -84,10 +85,11 @@ class MatchArgRanksPass(ArmPass):
             node.replace_input_with(arg, view)
 
     def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
 
-            if node.op != "call_function" or node.target not in self.targeted_ops:
+            if node.op != "call_function" or node.target not in self.target_ops:
                 continue
 
             # Calculate max rank of all inputs to node
@@ -107,7 +109,8 @@ class MatchArgRanksPass(ArmPass):
                     continue
 
                 self._match_op_rank(graph_module, node, arg, max_rank)
+                modified = True
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

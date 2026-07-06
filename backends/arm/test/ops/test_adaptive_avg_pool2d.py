@@ -112,6 +112,19 @@ test_modules = {
     ),
 }
 
+test_modules_fp8 = {
+    "output_2x2_fp8e4m3": lambda: (
+        AdaptiveAvgPool2d((2, 2)),
+        (torch.rand(1, 4, 10, 10).to(torch.float8_e4m3fn),),
+        "fp8e4m3",
+    ),
+    "output_2x2_fp8e5m2": lambda: (
+        AdaptiveAvgPool2d((2, 2)),
+        (torch.rand(1, 4, 10, 10).to(torch.float8_e5m2),),
+        "fp8e5m2",
+    ),
+}
+
 
 @common.parametrize("test_module", test_modules)
 def test_adaptive_avg_pool2d_tosa_FP(test_module):
@@ -123,6 +136,22 @@ def test_adaptive_avg_pool2d_tosa_FP(test_module):
         aten_op=[],
         exir_op=exir_op,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_fp8)
+def test_adaptive_avg_pool2d_tosa_FP_fp8(test_module):
+    model, input_tensor, tosa_extension = test_module()
+
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        input_tensor,
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_extensions=[tosa_extension],
+        compare_tosa_ref_model_outputs=False,
+    )
+    pipeline.count_tosa_ops({"AVG_POOL2D": 4})
     pipeline.run()
 
 

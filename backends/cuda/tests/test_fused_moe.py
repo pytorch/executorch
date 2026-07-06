@@ -503,6 +503,11 @@ class TestFusedMoEBatchedInt8(unittest.TestCase):
         (55, 64, 64, 32, 4, 2, 32, "64tok"),
         (99, 128, 128, 64, 8, 2, 32, "128tok"),
         (0, 256, 128, 64, 8, 2, 32, "256tok"),
+        # Realistic-scale configs to catch precision/alignment issues with
+        # K > PREQUANT_BLOCK_K (matches Qwen3.5-MoE shapes: hidden=2048,
+        # intermediate=1024, num_experts=8, top_k=2, group_size=128).
+        (77, 512, 2048, 1024, 8, 2, 128, "512tok_real_dims"),
+        (21, 1, 2048, 1024, 8, 2, 128, "1tok_decode"),
     ]
 
     def test_int8_correctness(self):

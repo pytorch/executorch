@@ -2,24 +2,23 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 import importlib.resources as _resources
 import json
 import logging
+import numbers
 import os
 import re
 import shutil
 import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
 import sys
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-
 from types import NoneType
 from typing import Any, cast, Dict, List, Optional, Tuple
 
 import executorch.backends.arm.test as arm_test_package
 import executorch.backends.arm.tosa.schemas as tosa_schemas_package
-
 import numpy as np
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
@@ -30,7 +29,6 @@ from executorch.backends.arm.constants import (
     NNHWC_INVERSE_ORDER,
     NNHWC_ORDER,
 )
-
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
@@ -42,11 +40,44 @@ from executorch.backends.arm.vgf.model_converter import (
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
-
 from torch.overrides import TorchFunctionMode
 from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
 
 logger = logging.getLogger(__name__)
+
+# For Torch 2.12 and later overloads.
+_QDQ_TORCH_OVERLOADS = (
+    ("quantize_per_tensor", ("tensor", "tensor2", "default")),
+    ("dequantize_per_tensor", ("tensor", "tensor2", "default")),
+    ("quantize_per_channel", ("default",)),
+    ("dequantize_per_channel", ("default",)),
+)
+
+# For backward compatibility with Torch versions older than 2.12.
+_QDQ_BACKWARD_COMPAT_OVERLOADS = (
+    ("quantize_per_tensor", ("out",)),
+    ("dequantize_per_tensor", ("out",)),
+    ("quantize_per_channel", ("out",)),
+    ("dequantize_per_channel", ("out",)),
+)
+
+
+def _get_qdq_memory_format_ops() -> tuple[object, ...]:
+    qdq_ops = []
+    backward_compat = dict(_QDQ_BACKWARD_COMPAT_OVERLOADS)
+    ns = torch.ops.quantized_decomposed
+    for op_name, overload_names in _QDQ_TORCH_OVERLOADS:
+        op_packet = getattr(ns, op_name, None)
+        if op_packet is None:
+            continue
+        for overload_name in overload_names + backward_compat[op_name]:
+            if hasattr(op_packet, overload_name):
+                qdq_ops.append(getattr(op_packet, overload_name))
+
+    return tuple(qdq_ops)
+
+
+_QDQ_MEMORY_FORMAT_OPS = _get_qdq_memory_format_ops()
 
 # Copied from PyTorch.
 # From torch/testing/_internal/common_utils.py:torch_to_numpy_dtype_dict
@@ -61,6 +92,8 @@ _torch_to_numpy_dtype_dict = {
     torch.int16: np.int16,
     torch.int32: np.int32,
     torch.int64: np.int64,
+    torch.float8_e4m3fn: np.uint8,
+    torch.float8_e5m2: np.uint8,
     torch.float16: np.float16,
     torch.float32: np.float32,
     torch.float64: np.float64,
@@ -70,7 +103,13 @@ _torch_to_numpy_dtype_dict = {
     torch.complex128: np.complex128,
 }
 
-VALID_TARGET = {"corstone-300", "corstone-320", "vkml_emulation_layer"}
+VALID_TARGET = {
+    "corstone-300",
+    "corstone-300-u65",
+    "corstone-320",
+    "vkml_emulation_layer",
+}
+INFER_SHAPES_PATH = "infer_shapes"
 
 
 class QuantizationParams:
@@ -94,7 +133,9 @@ class QuantizationParams:
         self.dtype = dtype
 
 
-def get_input_names(program: ExportedProgram) -> list[str]:
+def get_input_names(
+    program: ExportedProgram, is_lowered_module: bool = False
+) -> list[str]:
     """Get a list[str] with the names of the inputs to this model.
 
     Args:
@@ -103,7 +144,15 @@ def get_input_names(program: ExportedProgram) -> list[str]:
         A list of strings with the names of the model input.
 
     """
-    return [spec.arg.name for spec in program.graph_signature.input_specs]
+
+    if not is_lowered_module:
+        return [spec.arg.name for spec in program.graph_signature.input_specs]
+    else:
+        return [
+            user_input
+            for user_input in program.graph_signature.user_inputs
+            if isinstance(user_input, str)
+        ]
 
 
 def get_input_quantization_params(
@@ -189,28 +238,66 @@ def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     if tensor.dtype == torch.bfloat16:
         # Numpy doesn't support bfloat16, use, uint16 instead. Dtype is inferred from model anyways.
         tensor = tensor.view(torch.uint16)
+    elif tensor.dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.float8_e5m2:
+        tensor = tensor.view(torch.uint8)
     return tensor.numpy()
+
+
+def torch_tensor_to_tosa_shape(tensor: torch.Tensor) -> list[int]:
+    shape = list(tensor.shape)
+    dim_order = tensor.dim_order()
+    if dim_order in (NHWC_ORDER, NNHWC_ORDER):
+        shape = [shape[index] for index in dim_order]
+    return [int(dim) for dim in shape]
+
+
+def user_inputs_need_shape_inference(program: ExportedProgram) -> bool:
+    user_inputs = {
+        user_input
+        for user_input in program.graph_signature.user_inputs
+        if isinstance(user_input, str)
+    }
+    for node in program.graph.nodes:
+        if node.op != "placeholder" or node.name not in user_inputs:
+            continue
+        input_tensor = get_first_fake_tensor(node)
+        if any(not isinstance(dim, numbers.Integral) for dim in input_tensor.shape):
+            return True
+    return False
 
 
 def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
     output_tensor = get_first_fake_tensor(output_node)
     shape = output_tensor.shape
     dim_order = output_tensor.dim_order()
-    if dim_order == NHWC_ORDER:
-        shape_with_dim_order = [shape[i] for i in NHWC_ORDER]
-        tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
-        return tensor.permute(NHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
-    elif dim_order == NNHWC_ORDER:
-        shape_with_dim_order = [shape[i] for i in NNHWC_ORDER]
-        tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
-        return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
-    else:
+
+    def is_concrete_shape(shape_like) -> bool:
+        return all(isinstance(dim, numbers.Integral) for dim in shape_like)
+
+    def to_torch_tensor() -> torch.Tensor:
         if array.dtype.type is np.void:
             # If dtype is void, "cheat" and use the output_tensor dtype.
-            tensor = torch.frombuffer(array, dtype=output_tensor.dtype)
-        else:
-            tensor = torch.from_numpy(array)
-        return tensor.reshape(shape)
+            return torch.frombuffer(array, dtype=output_tensor.dtype)
+        return torch.from_numpy(array)
+
+    if dim_order == NHWC_ORDER:
+        tensor = to_torch_tensor()
+        if is_concrete_shape(shape):
+            tensor = tensor.reshape([shape[i] for i in NHWC_ORDER])
+        return tensor.permute(NHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
+    elif dim_order == NNHWC_ORDER:
+        tensor = to_torch_tensor()
+        if is_concrete_shape(shape):
+            tensor = tensor.reshape([shape[i] for i in NNHWC_ORDER])
+        return tensor.permute(NNHWC_INVERSE_ORDER)
+    else:
+        tensor = to_torch_tensor()
+
+        if is_concrete_shape(shape):
+            return tensor.reshape(shape)
+        return tensor
 
 
 class TosaReferenceModelDispatch(TorchFunctionMode):
@@ -222,12 +309,65 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         self.ran_tosa_dispatch = False
         super().__init__()
 
+    def _generate_shape_inference_json(
+        self,
+        tosa_buffer: bytes,
+        artifact_path: Path,
+        test_case_path: Path,
+        input_names: list[str],
+        inputs: Tuple[torch.Tensor, ...],
+    ):
+        shapes = dict(
+            zip(input_names, [torch_tensor_to_tosa_shape(input) for input in inputs])
+        )
+        with open(test_case_path, "w", encoding="utf-8") as f:
+            json.dump({"tosa_file": str(artifact_path), "shapes": shapes}, f, indent=2)
+
+    def _run_infer_shapes(
+        self,
+        tosa_buffer: bytes,
+        input_names: list[str],
+        inputs: Tuple[torch.Tensor, ...],
+        temp_dir_path: Path,
+        infer_shapes_path: str = INFER_SHAPES_PATH,
+    ) -> bytes:
+        model_suffix = "model.tosa"
+        tosa_sym_int_model = temp_dir_path / model_suffix
+        tosa_sym_int_model.write_bytes(tosa_buffer)
+        test_case_file = temp_dir_path / "test_case.json"
+
+        self._generate_shape_inference_json(
+            tosa_buffer, tosa_sym_int_model, test_case_file, input_names, inputs
+        )
+        subprocess.run(
+            [
+                infer_shapes_path,
+                f"{test_case_file}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )  # nosec
+        resolved_file = temp_dir_path / f"resolved_{model_suffix}"
+        with open(resolved_file, "rb") as f:
+            return f.read()
+
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
         compile_spec = TosaCompileSpec._from_list(lowered_backend_module.compile_specs)
-
+        tosa_spec = compile_spec.tosa_spec
         output_node = lowered_backend_module.original_module.graph.output_node()
-        return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs, output_node)
+        if tosa_spec.support_extension("shape") and user_inputs_need_shape_inference(
+            lowered_backend_module.original_module
+        ):
+            input_names = get_input_names(lowered_backend_module.original_module, True)
+            # Generate json file for shape inference extension, which is required by the reference model.
+            with tempfile.TemporaryDirectory() as temp_dir:
+                tosa_buffer = self._run_infer_shapes(
+                    tosa_buffer, input_names, inputs, Path(temp_dir)
+                )
+
+        return run_tosa_graph(tosa_buffer, tosa_spec, inputs, output_node)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
@@ -252,12 +392,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
         # This is a hack since Q/DQ ops does not handle channels last input correctly: the simplest and most robust
         # workaround is to simply run them in channels first format and then convert back to channels last.
-        if func in (
-            torch.ops.quantized_decomposed.quantize_per_tensor.out,
-            torch.ops.quantized_decomposed.dequantize_per_tensor.out,
-            torch.ops.quantized_decomposed.quantize_per_channel.out,
-            torch.ops.quantized_decomposed.dequantize_per_channel.out,
-        ):
+        if func in _QDQ_MEMORY_FORMAT_OPS:
 
             input_dim_order = args[0].dim_order()
             if input_dim_order in (NHWC_ORDER, NNHWC_ORDER):
@@ -270,7 +405,7 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
 def run_target(
     executorch_program_manager: ExecutorchProgramManager,
-    inputs: Tuple[torch.Tensor],
+    inputs: Tuple[torch.Tensor, ...],
     intermediate_path: str | Path,
     target_board: str,
     elf_path: str | Path,
@@ -298,7 +433,7 @@ def run_target(
 
 def save_inputs_to_file(
     exported_program: ExportedProgram,
-    inputs: Tuple[torch.Tensor],
+    inputs: Tuple[torch.Tensor, ...],
     intermediate_path: str | Path,
 ):
     input_file_paths: list[str] = []
@@ -330,7 +465,7 @@ def get_output_from_file(
 
 def run_vkml_emulation_layer(
     executorch_program_manager: ExecutorchProgramManager,
-    inputs: Tuple[torch.Tensor],
+    inputs: Tuple[torch.Tensor, ...],
     intermediate_path: str | Path,
     elf_path: str | Path,
 ):
@@ -378,7 +513,7 @@ def run_vkml_emulation_layer(
 
 def run_corstone(
     executorch_program_manager: ExecutorchProgramManager,
-    inputs: Tuple[torch.Tensor],
+    inputs: Tuple[torch.Tensor, ...],
     intermediate_path: str | Path,
     target_board: str,
     elf_path: str | Path,
@@ -443,11 +578,17 @@ def run_corstone(
         )
 
     match target_board:
-        case "corstone-300":
+        case "corstone-300" | "corstone-300-u65":
+            if target_board == "corstone-300":
+                fvp = "FVP_Corstone_SSE-300_Ethos-U55"
+                num_macs = 128
+            else:
+                fvp = "FVP_Corstone_SSE-300_Ethos-U65"
+                num_macs = 256
             command_args = [
-                "FVP_Corstone_SSE-300_Ethos-U55",
+                fvp,
                 "-C",
-                "ethosu.num_macs=128",
+                f"ethosu.num_macs={num_macs}",
                 "-C",
                 "mps3_board.visualisation.disable-visualisation=1",
                 "-C",
@@ -798,10 +939,19 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
 
 
 def corstone300_installed() -> bool:
-    cmd = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    cmd_u55 = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
     try:
-        _run_cmd(cmd, check=True)
-    except:
+        _run_cmd(cmd_u55, check=True)
+    except Exception:
+        return False
+    return True
+
+
+def corstone300_u65_installed() -> bool:
+    cmd_u65 = ["FVP_Corstone_SSE-300_Ethos-U65", "--version"]
+    try:
+        _run_cmd(cmd_u65, check=True)
+    except Exception:
         return False
     return True
 
@@ -810,7 +960,7 @@ def corstone320_installed() -> bool:
     cmd = ["FVP_Corstone_SSE-320", "--version"]
     try:
         _run_cmd(cmd, check=True)
-    except:
+    except Exception:
         return False
     return True
 
@@ -838,55 +988,131 @@ def vkml_emulation_layer_installed() -> bool:
     existing_layers = set(vk_instance_layers.split(":"))
     layers_exists = required_layers.issubset(existing_layers)
 
-    # Check LD_LIBRARY_PATH for "emulation-layer/deploy"
+    # Check dynamic library search paths for the emulation layer deploy dir.
+    library_paths = []
     ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    dyld_library_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+    if ld_library_path:
+        library_paths.extend(ld_library_path.split(os.path.pathsep))
+    if dyld_library_path:
+        library_paths.extend(dyld_library_path.split(os.path.pathsep))
+
     deploy_exists = False
-    for path in ld_library_path.split(os.path.pathsep):
-        if "emulation-layer/deploy" in path and os.path.isdir(path):
+    deploy_markers = ("emulation-layer/deploy", "emulation_layer/deploy")
+    for path in library_paths:
+        if any(marker in path for marker in deploy_markers) and os.path.isdir(path):
             deploy_exists = True
 
     return layers_exists and deploy_exists
 
 
-def assert_elf_path_exists(elf_path):
-    if not os.path.exists(elf_path):
-        raise FileNotFoundError(
-            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, \
-            run setup_testing.sh or setup_testing_vkml.sh?"
-        )
+def _elf_search_roots() -> list[Path]:
+    roots: list[Path] = []
+
+    for env_var in (
+        "EXECUTORCH_ROOT",
+        "GITHUB_WORKSPACE",
+        "BUILD_WORKSPACE_DIRECTORY",
+    ):
+        env_root = os.environ.get(env_var)
+        if env_root:
+            roots.append(Path(env_root).expanduser())
+
+    cwd = Path.cwd().resolve()
+    search_parents = [cwd, *cwd.parents, *Path(__file__).resolve().parents]
+    for parent in search_parents:
+        if (parent / "examples" / "arm").is_dir() or (parent / "arm_test").exists():
+            roots.append(parent)
+
+    unique_roots: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        resolved = root.resolve()
+        if resolved not in seen:
+            unique_roots.append(resolved)
+            seen.add(resolved)
+    return unique_roots
 
 
-def get_elf_path(target_board: str, use_portable_ops: bool = False) -> str:
-    elf_path = ""
-
+def _elf_path_candidates(
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
+) -> list[Path]:
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
 
-    if use_portable_ops:
-        portable_ops_str = "portable-ops_"
-    else:
-        portable_ops_str = ""
-
-    if target_board in ("corstone-300", "corstone-320"):
-        elf_path = os.path.join(
+    portable_ops_str = "portable-ops_" if use_portable_ops else ""
+    if target_board in ("corstone-300", "corstone-300-u65", "corstone-320"):
+        build_dir = Path(
             "arm_test",
-            f"arm_semihosting_executor_runner_{portable_ops_str}{target_board}",
-            "arm_executor_runner",
+            f"arm_semihosting_executor_runner_"
+            f"{portable_ops_str}{target_board}{build_dir_suffix}",
         )
-    elif target_board == "vkml_emulation_layer":
-        elf_path = os.path.join(
-            f"arm_test/arm_executor_runner_{portable_ops_str}vkml",
-            "executor_runner",
+        binary_name = "arm_executor_runner"
+    else:
+        build_dir = Path(
+            "arm_test", f"arm_executor_runner_{portable_ops_str}vkml{build_dir_suffix}"
+        )
+        binary_name = "executor_runner"
+
+    candidates: list[Path] = []
+    for root in _elf_search_roots():
+        root_build_dir = root / build_dir
+        candidates.extend(
+            [
+                root_build_dir / binary_name,
+                root_build_dir / "Release" / binary_name,
+                root_build_dir / "examples" / "arm" / "executor_runner" / binary_name,
+                root_build_dir
+                / "examples"
+                / "arm"
+                / "executor_runner"
+                / "Release"
+                / binary_name,
+            ]
         )
 
-    assert_elf_path_exists(elf_path)
-    return elf_path
+    unique_candidates: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve(strict=False)
+        if resolved not in seen:
+            unique_candidates.append(resolved)
+            seen.add(resolved)
+    return unique_candidates
+
+
+def _resolve_existing_elf_path(elf_candidates: Iterable[Path]) -> Path:
+    checked: list[Path] = []
+    for elf_path in elf_candidates:
+        checked.append(elf_path)
+        if elf_path.exists():
+            return elf_path
+
+    checked_paths = ", ".join(str(path) for path in checked)
+    raise FileNotFoundError(
+        "Did not find build arm_executor_runner or executor_runner. "
+        f"Tried: {checked_paths}. "
+        "Run setup_testing.sh or setup_testing_vkml.sh?"
+    )
+
+
+def get_elf_path(
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
+) -> str:
+    elf_path = _resolve_existing_elf_path(
+        _elf_path_candidates(
+            target_board,
+            use_portable_ops=use_portable_ops,
+            build_dir_suffix=build_dir_suffix,
+        )
+    )
+    return str(elf_path)
 
 
 def arm_executor_runner_exists(target_board: str, use_portable_ops: bool = False):
     try:
         get_elf_path(target_board, use_portable_ops=use_portable_ops)
-    except:
+    except Exception:
         return False
     else:
         return True
@@ -938,6 +1164,8 @@ def get_target_board(compile_spec: ArmCompileSpec) -> str | None:
     if isinstance(compile_spec, EthosUCompileSpec):
         if "u55" in compile_spec.target:
             return "corstone-300"
+        if "u65" in compile_spec.target:
+            return "corstone-300-u65"
         if "u85" in compile_spec.target:
             return "corstone-320"
     return None

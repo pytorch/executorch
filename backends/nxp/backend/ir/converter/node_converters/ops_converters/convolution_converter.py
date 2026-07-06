@@ -15,7 +15,6 @@ from executorch.backends.nxp.backend.edge_helper import (
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
     common,
-    translator,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
@@ -24,6 +23,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared import (
     conv_utils,
@@ -42,7 +42,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     conv_2d_options,
     depthwise_conv_2d_options,
-    reshape_options,
     transpose_conv_options,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
@@ -50,7 +49,153 @@ from torch.fx import Node
 from torch.nn import Parameter
 
 
+# The arguments of the conv are:
+# convolution(
+#   Tensor input, Tensor weight, Tensor? bias,
+#   SymInt[] stride, SymInt[] padding, SymInt[] dilation,
+#   bool transposed, SymInt[] output_padding, SymInt groups
+# ) -> Tensor
+Stride = Padding = Dilation = OutPadding = list[int]
+Transposed = bool
+Groups = int
+ConvolutionArgs = tuple[
+    Node, Node, Node | None, Stride, Padding, Dilation, Transposed, OutPadding, Groups
+]
+
+
+@requires_channels_first_format
 class ConvolutionConverter(NodeConverter):
+    @staticmethod
+    def _is_supported_on_target_regular_conv(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
+        (
+            inp_node,
+            w_node,
+            b_node,
+            stride,
+            _,
+            dilation,
+            _,
+            _,
+            _,
+        ) = ConvolutionConverter._get_convolution_arguments(node)
+
+        # Input must be INT8/UINT8
+        # Output must be INT8/UINT8
+        inp_out_supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, inp_out_supported_types, [0], [0]
+        ):
+            return False
+
+        # Weights must be INT8
+        w_supported_types = [torch.int8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, w_supported_types, [1], []
+        ):
+            return False
+
+        # Bias must be INT32
+        if b_node is not None:
+            b_supported_types = [torch.int32]
+            if not NodeConverter.uses_quantization_type_for_io(
+                node, b_supported_types, [2], []
+            ):
+                return False
+
+        # Weights must be constant
+        if not node_is_effectively_static_tensor(w_node, parameters_mapping):
+            return False
+
+        # Bias must be constant (if present)
+        if b_node is not None and not node_is_effectively_static_tensor(
+            b_node, parameters_mapping
+        ):
+            return False
+
+        # kernelH <= 4096, kernelW <= 4096
+        # strideH <= 4096, strideW <= 4096
+        # dilationH <= 4096, dilationW <= 4096
+        w_node_shape = w_node.meta["val"].shape
+
+        kernel_h = w_node_shape[2]
+        kernel_w = w_node_shape[3]
+        stride_h = stride[0]
+        stride_w = stride[1]
+        dilation_h = dilation[0]
+        dilation_w = dilation[1]
+
+        dim_sizes = [kernel_h, kernel_w, stride_h, stride_w, dilation_h, dilation_w]
+
+        if any(dim > 4096 for dim in dim_sizes):
+            return False
+
+        # kernelH * kernelW * inpC <= 65535
+        inp_node_shape = inp_node.meta["val"].shape
+        inp_channels = (
+            inp_node_shape[1] if len(inp_node_shape) == 4 else inp_node_shape[0]
+        )
+
+        if kernel_h * kernel_w * inp_channels > 65535:
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_supported_on_target_transp_conv(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
+        # TODO: EIEX-894 update the requirements of delegation for new Neutron flow
+        _, w_node, _, stride, padding, dilation, transposed, _, groups = (
+            ConvolutionConverter._get_convolution_arguments(node)
+        )
+
+        num_macs = neutron_target_spec.get_num_macs()
+        node_t_params = get_node_tensor_params(node)
+
+        if node_t_params["batch_size"] != 1:
+            # Only TransposeConv2d with batch size = 1 is supported on neutron.
+            return False
+
+        # TransposeConv2d with groups > 1 is not supported
+        # TODO: split into multiple convs with groups = 1
+        if groups > 1:
+            return False
+        if not node_is_effectively_static_tensor(w_node, parameters_mapping):
+            # Only supported if the weights are static, because TFLite `TransposeConv` uses permuted
+            #  weights. In case the weights are dynamic, a Transpose operator would have to be added, which
+            #  is not supported on Neutron.
+            return False
+        # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#876 TransposeConv2DKernelKind
+        if (
+            dilation != [1, 1]
+            or padding[0] != 0
+            or padding[1] >= node_t_params["kernel_width"]
+            or (
+                padding[1] != 0 and node_t_params["inp_height"] != 1
+            )  # Slice added by explicit padding
+            or stride[0] != 1
+            or (
+                (
+                    stride[1] != node_t_params["kernel_width"] / 2
+                    or node_t_params["out_height"] != 1
+                )
+                and stride[1] != node_t_params["kernel_width"]
+            )
+            or stride[1] % 2 != 0
+            or node_t_params["inp_channels"] % num_macs != 0
+            or node_t_params["out_channels"] % num_macs != 0
+            or node_t_params["kernel_width"] % 2 != 0
+            or node_t_params["kernel_height"] != 1
+        ):
+            return False
+
+        return True
+
     @staticmethod
     def _is_supported_on_target(
         node: Node,
@@ -58,68 +203,17 @@ class ConvolutionConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        num_macs = neutron_target_spec.get_num_macs()
-        node_t_params = get_node_tensor_params(node)
-        weights = node.args[1]
-        conv_params = ConvParameters(
-            *ConvolutionConverter._get_convolution_arguments(node)
-        )
+        is_transposed = (ConvolutionConverter._get_convolution_arguments(node))[6]
 
-        if node_t_params["batch_size"] != 1:
-            # Only batch size 1 is supported on neutron.
-            return False
+        if is_transposed:
+            return ConvolutionConverter._is_supported_on_target_transp_conv(
+                node, neutron_target_spec, parameters_mapping
+            )
 
-        if conv_params.transposed:
-            # TransposeConv1d is not supported on Neutron
-            if len(conv_params.dilation) == 1:
-                return False
-            if not node_is_effectively_static_tensor(weights, parameters_mapping):
-                # Only supported if the weights are static, because TFLite `TransposeConv` uses permuted
-                #  weights. In case the weights are dynamic, a Transpose operator would have to be added, which
-                #  is not supported on Neutron.
-                return False
-            # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#876 TransposeConv2DKernelKind
-            if (
-                conv_params.dilation != [1, 1]
-                or conv_params.padding[0] != 0
-                or conv_params.padding[1] >= node_t_params["kernel_width"]
-                or (
-                    conv_params.padding[1] != 0 and node_t_params["inp_height"] != 1
-                )  # Slice added by explicit padding
-                or conv_params.stride[0] != 1
-                or (
-                    (
-                        conv_params.stride[1] != node_t_params["kernel_width"] / 2
-                        or node_t_params["out_height"] != 1
-                    )
-                    and conv_params.stride[1] != node_t_params["kernel_width"]
-                )
-                or conv_params.stride[1] % 2 != 0
-                or node_t_params["inp_channels"] % num_macs != 0
-                or node_t_params["out_channels"] % num_macs != 0
-                or node_t_params["kernel_width"] % 2 != 0
-                or node_t_params["kernel_height"] != 1
-            ):
-                return False
-        elif conv_params.groups == 1:  # Regular convolution.
-            pass
-        elif conv_utils.group_conv_convertible_as_depthwise(
-            node, conv_params.groups
-        ):  # Depthwise convolution.
-            # Only supported if the weights are static, because TFLite `DepthwiseConv2D` uses permuted
-            #  weights. In case the weights are dynamic, a Transpose operator would have to be added, which
-            #  is not supported on Neutron.
-            if not node_is_effectively_static_tensor(weights, parameters_mapping):
-                return False
-        elif conv_utils.group_conv_convertible_into_multiple_convolutions(
-            node, conv_params.groups
-        ):  # Separable conv.
-            # Requires addition of `Split` and `Concatenation` operators, which are not supported on Neutron.
-            return False
-        else:  # Unexpected case (should never happen).
-            return False
-
-        return True
+        else:
+            return ConvolutionConverter._is_supported_on_target_regular_conv(
+                node, parameters_mapping
+            )
 
     @staticmethod
     def _is_supported_in_IR(
@@ -150,10 +244,6 @@ class ConvolutionConverter(NodeConverter):
 
         return True
 
-    Stride = Padding = Dilation = OutPadding = list[int]
-    Transposed = bool
-    Groups = int
-
     def _compute_slicing_params(
         self, output_shape, explicit_padding
     ) -> tuple[list[int], list[int]]:
@@ -171,14 +261,14 @@ class ConvolutionConverter(NodeConverter):
     @staticmethod
     def _get_convolution_arguments(
         conv_node: Node,
-    ) -> (Stride, Padding, Dilation, Transposed, OutPadding, Groups):
-        # The arguments of the conv are:
-        # [x, w, b, stride, padding, dilation, transposed, output padding, groups]
-        # https://github.com/pytorch/pytorch/blob/v2.6.0/aten/src/ATen/native/Convolution.cpp#L286-L291
-        _, _, _, stride, padding, dilation, transposed, out_padding, groups = (
+    ) -> ConvolutionArgs:
+        x, w, b, stride, padding, dilation, transposed, out_padding, groups = (
             conv_node.args
         )
         return (
+            x,
+            w,
+            b,
             list(stride),
             list(padding),
             list(dilation),
@@ -186,99 +276,6 @@ class ConvolutionConverter(NodeConverter):
             list(out_padding),
             groups,
         )
-
-    def _convert_1d_conv(
-        self, t_op: tflite_model.Operator, conv_params: ConvParameters
-    ) -> list[tflite_model.Operator]:
-        """Convert the 'Conv' operator with a 1D kernel to TFLite 'Conv2D'.
-        TFLite doesn't support 1D convolution, but this behaviour can be represented using
-               Reshape -> Conv2D -> Reshape.
-        The first reshape introduces a 4th dimension with size 1. The second Reshape removes the temporary dimension.
-        """
-        # -- Calculate the shapes for equivalent 2D convolution --
-        conv_2d_input_shape = translator.nhc_dimensions_to_nhwc(
-            t_op.tmp_inputs[0].shape.vector
-        )
-        conv_2d_weight_shape = translator.nhc_dimensions_to_nhwc(
-            t_op.tmp_inputs[1].shape.vector
-        )
-        conv_2d_output_shape = translator.nhc_dimensions_to_nhwc(
-            t_op.tmp_outputs[0].shape.vector
-        )
-
-        # -- Generate tensors taking part in the conversion --
-        reshape1_input = t_op.tmp_inputs[0]
-
-        reshape1_output = self.builder.duplicate_tensor(
-            reshape1_input, name_suffix="_4D_"
-        )
-        reshape1_output.shape = tflite_model.Shape(conv_2d_input_shape)
-
-        reshape2_input = self.builder.duplicate_tensor(
-            t_op.tmp_outputs[0], name_suffix="_4D_"
-        )
-        reshape2_input.shape = tflite_model.Shape(conv_2d_output_shape)
-
-        reshape2_output = t_op.tmp_outputs[0]
-
-        pre_reshapes = []
-
-        # Extend the weights tensor to 4D
-        weights_tensor = t_op.tmp_inputs[1]
-        if tensor_has_data(weights_tensor):
-            # Do it statically
-            weights_tensor.shape = tflite_model.Shape(conv_2d_weight_shape)
-            weights_tensor.tmp_buffer.data = weights_tensor.tmp_buffer.data.reshape(
-                conv_2d_weight_shape
-            )
-
-        else:
-            # Add a Reshape before the weights tensor
-            new_weights_tensor = self.builder.duplicate_tensor(
-                weights_tensor, name_suffix="_4D_"
-            )
-            new_weights_tensor.shape = tflite_model.Shape(conv_2d_weight_shape)
-
-            weight_reshape = tflite_model.Operator(
-                builtin_options=reshape_options.Reshape(conv_2d_weight_shape)
-            )
-            weight_reshape.tmp_inputs = [weights_tensor]
-            weight_reshape.tmp_outputs = [new_weights_tensor]
-
-            pre_reshapes.append(weight_reshape)
-
-            # Save the new weights tensor, to assign it later.
-            weights_tensor = new_weights_tensor
-
-        # -- Create the new operators --
-        reshape1 = tflite_model.Operator(
-            builtin_options=reshape_options.Reshape(conv_2d_input_shape)
-        )
-        reshape1.tmp_inputs = [reshape1_input]
-        reshape1.tmp_outputs = [reshape1_output]
-        pre_reshapes.append(reshape1)
-
-        reshape2 = tflite_model.Operator(
-            builtin_options=reshape_options.Reshape(reshape2_output.shape.vector)
-        )
-        reshape2.tmp_inputs = [reshape2_input]
-        reshape2.tmp_outputs = [reshape2_output]
-
-        # Assign the new input and output of the Conv2D
-        t_op.tmp_inputs = [reshape1_output, weights_tensor] + t_op.tmp_inputs[
-            2:
-        ]  # Add bias as well, if present
-        t_op.tmp_outputs = [reshape2_input]
-
-        # Extend all Conv attributes to 2D
-        common.extend_1d_stride_to_2d(conv_params.stride)
-        common.extend_1d_dilation_to_2d(conv_params.dilation)
-        common.extend_1d_padding_to_2d(conv_params.padding)
-
-        # Convert the now 2D Conv
-        converted_conv_ops = self._convert_2d_conv(t_op, conv_params)
-
-        return pre_reshapes + converted_conv_ops + [reshape2]
 
     # noinspection PyPep8Naming
     def _convert_unpadded_2D(
@@ -474,16 +471,8 @@ class ConvolutionConverter(NodeConverter):
 
             elif conv_utils.group_conv_convertible_into_multiple_convolutions(
                 t_op, conv_params.groups
-            ):  # Convert to separated `Conv2D`.
-                t_op.builtin_options = conv_2d_options.Conv2D()
-
-                return conv_utils.create_separated_convolutions_based_on_group(
-                    t_op,
-                    conv_params,
-                    self.builder,
-                    self._convert_unpadded_2D,
-                    conv_utils.conv_op_factory,
-                )
+            ):
+                raise RuntimeError("NXP backend: Group convolution was not decomposed.")
 
             else:
                 # Convert to regular `Conv2D`.
@@ -513,7 +502,7 @@ class ConvolutionConverter(NodeConverter):
     def convert(self, node: Node):
         self.assert_convertible(node)
 
-        stride, padding, dilation, transposed, out_padding, groups = (
+        _, _, _, stride, padding, dilation, transposed, out_padding, groups = (
             self._get_convolution_arguments(node)
         )
 
@@ -523,9 +512,7 @@ class ConvolutionConverter(NodeConverter):
         )
 
         rank = t_op.tmp_inputs[1].shape.len()
-        if rank == 3:  # Conv1D
-            ops_to_add = self._convert_1d_conv(t_op, conv_params)
-        elif rank == 4:  # Conv2D
+        if rank == 4:  # Conv2D
             ops_to_add = self._convert_2d_conv(t_op, conv_params)
         else:
             raise NotImplementedError(

@@ -58,7 +58,6 @@ def test_convert_int64_const_ops_to_int32_tosa_FP_arange_default(
         "torch.ops.aten.view.default",
     ]
     exir_ops_checks = [
-        "executorch_exir_dialects_edge__ops_aten_lt_Tensor",
         "executorch_exir_dialects_edge__ops_aten_view_copy_default",
     ]
     pipeline = TosaPipelineFP[input_t1](
@@ -119,7 +118,6 @@ def test_convert_int64_const_ops_to_int32_tosa_FP_arange_start(
         "torch.ops.aten.view.default",
     ]
     exir_ops_checks = [
-        "executorch_exir_dialects_edge__ops_aten_lt_Tensor",
         "executorch_exir_dialects_edge__ops_aten_view_copy_default",
     ]
     pipeline = TosaPipelineFP[input_t1](
@@ -180,7 +178,6 @@ def test_convert_int64_const_ops_to_int32_tosa_FP_arange_start_step(
         "torch.ops.aten.view.default",
     ]
     exir_ops_checks = [
-        "executorch_exir_dialects_edge__ops_aten_lt_Tensor",
         "executorch_exir_dialects_edge__ops_aten_view_copy_default",
     ]
     pipeline = TosaPipelineFP[input_t1](
@@ -342,7 +339,6 @@ def test_convert_int64_const_ops_to_int32_tosa_FP_full(
         "executorch_exir_dialects_edge__ops_aten_add_Tensor",
         "executorch_exir_dialects_edge__ops_aten_view_copy_default",
         "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
-        "executorch_exir_dialects_edge__ops_aten_lt_Tensor",
     ]
     pipeline = TosaPipelineFP[input_t2](
         module,

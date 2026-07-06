@@ -3,7 +3,7 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-_ENABLE_VGF = False  # Disabled: memfd_create blocked by seccomp on Sandcastle causes segfaults before Python pre-flight check can run
+_ENABLE_VGF = True
 
 def define_arm_tests():
     # TODO [fbonly] Add more tests
@@ -11,8 +11,6 @@ def define_arm_tests():
 
     # Passes
     test_files += native.glob(["passes/test_*.py"])
-    # https://github.com/pytorch/executorch/issues/8606
-    test_files.remove("passes/test_ioquantization_pass.py")
 
     # Operators
     test_files += [
@@ -25,15 +23,29 @@ def define_arm_tests():
         "ops/test_log10.py",
         "ops/test_max_pool1d.py",
         "ops/test_mul.py",
+        "ops/test_mxfp_conv2d.py",
+        "ops/mxfp/test_mxfp_linear.py",
         "ops/test_permute.py",
         "ops/test_rsqrt.py",
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
+        "ops/test_softmax.py",
         "ops/test_sub.py",
+        "ops/test_sum.py",
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
         "ops/test_to_copy.py",
+        "ops/test_exp.py",
+        "ops/test_fft.py",
+        "ops/test_flip.py",
+        "ops/test_reciprocal.py",
+        "ops/test_mean_dim.py",
+        "ops/test_var.py",
+        "ops/test_conv1d.py",
+        "ops/test_gelu.py",
+        "ops/test_bmm.py",
+        "ops/test_split.py",
     ]
 
     # Quantization
@@ -47,12 +59,20 @@ def define_arm_tests():
         "misc/test_compile_spec.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
-        "misc/test_tosa_dialect_resize.py",
+        "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
+        "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
+        "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
+        "misc/tosa_dialect/test_tosa_resize.py",
         "misc/test_tosa_spec.py",
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
+        "misc/test_mxfp_conv2d_ao.py",
+        "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
+        "misc/test_vgf_check_env.py",
+        "misc/test_vgf_backend.py",
+        "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
 
@@ -60,6 +80,16 @@ def define_arm_tests():
     test_files += [
         "deprecation/test_arm_compile_spec_deprecation.py",
     ]
+
+    # These import the top-level executorch.backends.arm package, whose
+    # __init__ eagerly imports torch. Pulling that into pytest collection fails
+    # in the packaged (non-OSS) build, so build them in OSS only; the public API
+    # surface is covered by a dedicated backward-compatibility CI job.
+    if runtime.is_oss:
+        test_files += [
+            "misc/test_public_api_manifest.py",
+            "misc/test_validate_public_api_manifest.py",
+        ]
 
     TESTS = {}
 
@@ -76,7 +106,7 @@ def define_arm_tests():
             typing = False,
             skip_on_mode_mac = True,
             env = {} if runtime.is_oss else ({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.8.0:model-converter-bin)",
+                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
                 "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
                 "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
                 "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
@@ -84,23 +114,35 @@ def define_arm_tests():
                 "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
                 "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
             } if _ENABLE_VGF else {}),
-            preload_deps = [] if runtime.is_oss or not _ENABLE_VGF else [
+            preload_deps = [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
+            ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
                 "fbsource//third-party/khronos:vulkan",
                 "//executorch/backends/arm/runtime:vgf_backend",
-            ],
+            ]),
             deps = [
                 "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
                 "//executorch/backends/arm/test:conftest",
+                "//executorch/backends/arm/test:mxfp_test_common",
                 "//executorch/backends/arm/test/misc:dw_convs_shared_weights_module",
+                "//executorch/backends/arm:ao_ext",
                 "//executorch/backends/arm:ethosu",
                 "//executorch/backends/arm/tosa:compile_spec",
                 "//executorch/backends/arm/tosa:partitioner",
                 "//executorch/backends/arm:vgf",
                 "//executorch/backends/test:graph_builder",
+                "//executorch/backends/test:program_builder",
+                "//executorch/extension/export_util:export_util",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:serializer",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
-            ],
+            ] + ([
+                # Needed only by the OSS-only public API manifest tests above.
+                # Depending on them everywhere drags the top-level package
+                # __init__ (and its torch import) into pytest collection.
+                "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
+                "//executorch/backends/arm:public_api",
+            ] if runtime.is_oss else []),
         )

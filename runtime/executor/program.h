@@ -21,6 +21,7 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -151,7 +152,8 @@ class Program final {
       MemoryManager* memory_manager,
       EventTracer* event_tracer = nullptr,
       const NamedDataMap* named_data_map = nullptr,
-      const LoadBackendOptionsMap* backend_options = nullptr) const;
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      Span<const Kernel> kernel_registry = {}) const;
 
   /**
    * Gathers metadata for the named method.

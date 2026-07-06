@@ -368,7 +368,7 @@ Please help update following table if you are contributing new operators:
 + &#128683; = Deprecated, supported with other QNN Ops
 
 
-| Operators | HTP - 98/119 Enabled |
+| Operators | HTP - 100/120 Enabled |
 |-----------|---------|
 | Argmax | &check; |
 | Argmin | &check; |
@@ -457,7 +457,8 @@ Please help update following table if you are contributing new operators:
 | PoolMax2d | &check; |
 | Prelu | &check; |
 | Quantize | &check; |
-| Rand | &check; |
+| RandomUniformLike | &check; |
+| RandomNormalLike | &check; |
 | ReduceMax | &check; |
 | ReduceMean | &check; |
 | ReduceMin | &check; |
@@ -472,7 +473,7 @@ Please help update following table if you are contributing new operators:
 | ResizeNearestNeighbor | &check; |
 | RoiAlign | &cross; |
 | RmsNorm | &check; |
-| ScatterElements | &cross; |
+| ScatterElements | &check; |
 | ScatterNd | &check; |
 | Sigmoid | &check; |
 | Softmax | &check; |
@@ -497,14 +498,23 @@ The following PyTorch operators are supported through decomposition or annotatio
 | PyTorch Op | Decomposition Pass |
 |---|---|
 | `aten.acos` | `DecomposeAcos` |
+| `aten.acosh` | `DecomposeHyperbolicVariants` |
+| `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
+| `aten.asinh` | `DecomposeHyperbolicVariants` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
+| `aten.atanh` | `DecomposeHyperbolicVariants` |
 | `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
-| `aten.cdist` | `DecomposeCDist` |
+| `aten.cdist`, `aten._cdist_forward` | `DecomposeCDist` |
+| `aten.cosh` | `DecomposeHyperbolicVariants` |
+| `aten.diagonal` | `DecomposeDiagonal` |
+| `aten.div.Tensor_mode` | `DecomposeDivMode` |
+| `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
 | `aten.special_expm1` | `DecomposeExpM1` |
+| `aten.fill.Scalar` | `DecomposeFill` |
 | `aten.floor_divide` | `DecomposeFloorDivide` |
 | `aten.glu` | `DecomposeGlu` |
 | `aten.linalg_vector_norm` | `DecomposeLinalgVectorNorm` |
@@ -516,10 +526,14 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.reflection_pad2d` | `DecomposePad` |
 | `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
 | `aten.roll` | `DecomposeRoll` |
+| `aten.select_scatter` | `DecomposeSelectScatter` |
 | `aten.silu` | `DecomposeSilu` |
+| `aten.sinh` | `DecomposeHyperbolicVariants` |
+| `aten.tan` | `DecomposeTan` |
 | `aten.threshold` | `DecomposeThreshold` |
 | `aten.triu` | `DecomposeTriu` |
 | `aten.trunc` | `DecomposeTrunc` |
+| `aten.var.correction`, `aten.var.dim` | `DecomposeVar` |
 
 ## Issues
 Please refer to the [issue section](../README.md#issues) for more information.

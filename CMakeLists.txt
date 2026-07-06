@@ -46,20 +46,8 @@
 #
 
 cmake_minimum_required(VERSION 3.24)
-project(executorch)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-
-# Hexagon toolchain with release build complains about code in third party
-# libraries.
-if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
-                                                     STREQUAL "Release"
-)
-  add_compile_options(
-    -Wno-error=format -Wno-error=implicit-int-conversion
-    -Wno-error=unused-variable -Wno-error=unused-function
-  )
-endif()
 
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
@@ -84,6 +72,22 @@ if("${ET_VERSION_MAJOR}" STREQUAL ""
       "Failed to parse version from ${EXECUTORCH_ROOT}/version.txt. "
       "Expected format: MAJOR.MINOR.PATCH (e.g., '1.2.0' or '1.2.0a0'), "
       "but got: '${ET_VERSION_STRING}'"
+  )
+endif()
+
+project(executorch
+        VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
+)
+
+# Hexagon toolchain with release build complains about code in third party
+# libraries. Must come after project(), which runs the toolchain file that sets
+# CMAKE_SYSTEM_PROCESSOR, and before add_subdirectory(third-party).
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
   )
 endif()
 
@@ -160,6 +164,27 @@ announce_configured_options(BUILD_TESTING)
 load_build_preset()
 include(${PROJECT_SOURCE_DIR}/tools/cmake/preset/default.cmake)
 
+# Keep bare-metal installs enabled only when ExecuTorch owns the top-level
+# build. Standalone consumers (e.g., the runner) set
+# EXECUTORCH_BAREMETAL_SKIP_INSTALL=ON but still add ExecuTorch as a subproject,
+# which cannot satisfy our install() export dependencies until their own targets
+# are configured.
+if(DEFINED EXECUTORCH_BAREMETAL_SKIP_INSTALL
+   AND EXECUTORCH_BAREMETAL_SKIP_INSTALL
+   AND NOT (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+)
+  set(CMAKE_SKIP_INSTALL_RULES
+      ON
+      CACHE BOOL
+            "Skip install() rules when ExecuTorch is consumed as a subproject"
+            FORCE
+  )
+endif()
+
+if(EXECUTORCH_BUILD_SHARED)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # Enable ccache if available
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -188,6 +213,9 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   # directory, and for all subdirectories included after this point.
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
+
+# Disable the deprecated constant_buffer path.
+add_definitions(-DET_ENABLE_DEPRECATED_CONSTANT_BUFFER=0)
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
@@ -491,7 +519,11 @@ target_link_libraries(executorch_core PRIVATE program_schema)
 if(ANDROID)
   target_link_libraries(executorch_core PUBLIC log)
 endif()
-if(EXECUTORCH_USE_DL)
+# Skip when cross-compiling: find_library() resolves the host libdl even for a
+# bare-metal target (e.g. arm-none-eabi), which then links -ldl into the
+# baremetal runner and fails ("cannot find -ldl"). dladdr() isn't used on those
+# targets anyway. Per-target presets also set EXECUTORCH_USE_DL OFF explicitly.
+if(EXECUTORCH_USE_DL AND NOT CMAKE_CROSSCOMPILING)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
   # Check if the library was found
@@ -723,7 +755,7 @@ if(EXECUTORCH_BUILD_XNNPACK)
   list(APPEND _executorch_backends xnnpack_backend)
 endif()
 
-if(EXECUTORCH_BUILD_CORTEX_M)
+if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
@@ -735,6 +767,20 @@ if(EXECUTORCH_BUILD_CUDA
    OR EXECUTORCH_BUILD_PYBIND
 )
   find_package_torch()
+endif()
+
+# Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
+# vendored torch-tensorrt delegate). Built before backends/aoti and
+# backends/cuda, which link it.
+if(EXECUTORCH_BUILD_CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
+  install(
+    DIRECTORY extension/cuda/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/cuda
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_cuda)
 endif()
 
 # Build common AOTI functionality if needed by CUDA or Metal backends
@@ -835,6 +881,11 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
   list(APPEND _executorch_extensions extension_tensor)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_IMAGE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/image)
+  list(APPEND _executorch_extensions extension_image)
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
@@ -994,6 +1045,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_VGF)
+    list(APPEND _dep_libs vgf_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_MPS)
     list(APPEND _dep_libs mpsdelegate)
   endif()
@@ -1027,6 +1082,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_VULKAN)
     list(APPEND _dep_libs vulkan_backend)
+  endif()
+
+  if(EXECUTORCH_BUILD_WEBGPU)
+    list(APPEND _dep_libs webgpu_backend)
   endif()
 
   # compile options for pybind
@@ -1143,6 +1202,49 @@ if(EXECUTORCH_BUILD_KERNELS_LLM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
   list(APPEND _executorch_kernels custom_ops_aot_lib)
+endif()
+
+# Consolidated shared library: bundles executorch_core plus commonly used
+# extensions into a single libexecutorch.so.
+if(EXECUTORCH_BUILD_SHARED)
+  executorch_add_shared_library(executorch_shared)
+  set_target_properties(
+    executorch_shared
+    PROPERTIES OUTPUT_NAME executorch
+               ARCHIVE_OUTPUT_NAME executorch_shared
+               EXPORT_NAME executorch-shared
+  )
+  target_include_directories(
+    executorch_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_definitions(
+    executorch_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  )
+  # Link executorch without WHOLE_ARCHIVE because its INTERFACE link options
+  # (from executorch_target_link_options_shared_lib) already force
+  # whole-archive. Link executorch_core explicitly since executorch only has a
+  # PRIVATE dep on it (symbols wouldn't propagate otherwise).
+  target_link_libraries(
+    executorch_shared PRIVATE executorch
+                              $<LINK_LIBRARY:WHOLE_ARCHIVE,executorch_core>
+  )
+  foreach(_ext_target
+          extension_data_loader extension_flat_tensor extension_named_data_map
+          extension_module_static extension_tensor
+  )
+    if(TARGET ${_ext_target})
+      target_link_libraries(
+        executorch_shared PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,${_ext_target}>
+      )
+    endif()
+  endforeach()
+  configure_file(
+    tools/cmake/executorch.pc.in ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
+    @ONLY
+  )
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+  )
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)

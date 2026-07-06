@@ -10,6 +10,7 @@
 - Inception v3 (IC3)
 - Llama
 - Gemma3n
+- Qwen3-VL
 - Long Short-Term Memory (LSTM)
 - MobileNet V1 0.25
 - MobileNet v2 (MV2)

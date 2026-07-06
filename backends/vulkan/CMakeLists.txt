@@ -41,6 +41,24 @@ set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
+# These third-party dependencies are git submodules. They are not part of the
+# default submodule set checked out by install_executorch.py, so fail early with
+# an actionable message rather than a confusing missing-header error.
+if(NOT EXISTS "${VOLK_PATH}/volk.c"
+   OR NOT EXISTS "${VULKAN_HEADERS_PATH}/include/vulkan/vulkan.h"
+   OR NOT EXISTS "${VMA_PATH}/include/vk_mem_alloc.h"
+)
+  message(
+    FATAL_ERROR
+      "The Vulkan backend third-party submodules are missing. "
+      "Run the following from the repository root:\n"
+      "  git submodule update --init "
+      "backends/vulkan/third-party/Vulkan-Headers "
+      "backends/vulkan/third-party/volk "
+      "backends/vulkan/third-party/VulkanMemoryAllocator"
+  )
+endif()
+
 set(COMMON_INCLUDES
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
     $<BUILD_INTERFACE:${VULKAN_HEADERS_PATH}/include>
@@ -49,7 +67,11 @@ set(COMMON_INCLUDES
 
 # Compile settings
 
-set(VULKAN_CXX_FLAGS "-fexceptions")
+# Exceptions are required: the vk_api layer throws on Vulkan errors (see
+# vk_api/Exception.h). MSVC does not understand -fexceptions and enables C++
+# exceptions via /EHsc instead, so select the flag per compiler.
+set(VULKAN_CXX_FLAGS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions>")
+list(APPEND VULKAN_CXX_FLAGS "$<$<CXX_COMPILER_ID:MSVC>:/EHsc>")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 
@@ -123,7 +145,13 @@ add_library(vulkan_backend ${vulkan_backend_cpp})
 target_include_directories(
   vulkan_backend PRIVATE ${SCHEMA_INCLUDE_DIR} ${COMMON_INCLUDES}
 )
-target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch_core)
+# volk (bundled into this library) calls dlopen/dlsym/dlclose to load libvulkan
+# at runtime. On glibc < 2.34 those live in libdl, so consumers linking an
+# executable against libvulkan_backend.a need -ldl; CMAKE_DL_LIBS provides it
+# (and is harmless where dlopen is already in libc). Matches the other backends.
+target_link_libraries(
+  vulkan_backend PRIVATE vulkan_schema executorch_core ${CMAKE_DL_LIBS}
+)
 # Optionally link boost for stacktraces if boost is available
 if(DEFINED Boost_STACKTRACE_BASIC_LIBRARY)
   target_link_libraries(

@@ -18,11 +18,22 @@ namespace extension {
 
 namespace {
 void check_tensor_meta(const at::Tensor& a, const executorch::aten::Tensor& b) {
-  // Check sizes/strides pointers
-  ET_CHECK_MSG(
-      b.sizes().data() != nullptr, "ETensor must have valid sizes array");
-  ET_CHECK_MSG(
-      b.strides().data() != nullptr, "ETensor must have valid strides array");
+  // 0-dim (scalar) tensors legitimately have empty sizes/strides arrays;
+  // their `.data()` may return nullptr depending on the underlying container.
+  // Only require non-null sizes/strides/dim_order storage when the tensor
+  // actually has at least one dimension. The nullptr check is meant to catch
+  // malformed metadata for ranked tensors (where these arrays MUST be
+  // addressable because dim_order_to_stride_nocheck below indexes into them);
+  // it must not abort on valid 0-dim inputs.
+  if (b.dim() > 0) {
+    ET_CHECK_MSG(
+        b.sizes().data() != nullptr, "ETensor must have valid sizes array");
+    ET_CHECK_MSG(
+        b.strides().data() != nullptr, "ETensor must have valid strides array");
+    ET_CHECK_MSG(
+        b.dim_order().data() != nullptr,
+        "ETensor must have valid dim_order array");
+  }
   // Check disabled because in ASR model we get 1 element tensor with different
   // rank.
   /*

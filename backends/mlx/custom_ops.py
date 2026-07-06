@@ -228,8 +228,16 @@ def rope(
         # final angles: [1, 1, T, half]
         angles = (pos_range * inv_freq) * float(scale)
     else:
-        # assume freqs is already per-position, just reshape to [1,1,T,half]
-        angles = freqs.to(torch.float32).view(1, 1, T, half)
+        if freqs.ndim == 1:
+            # 1D raw frequencies: compute angles = positions * (1/freqs)
+            inv_freq = (1.0 / freqs.to(torch.float32)).view(1, 1, 1, half)
+            pos_range = torch.arange(
+                pos, pos + T, device=x.device, dtype=torch.float32
+            ).view(1, 1, T, 1)
+            angles = (pos_range * inv_freq) * float(scale)
+        else:
+            # 2D per-position angles: reshape to [1,1,T,half]
+            angles = freqs.to(torch.float32).view(1, 1, T, half)
 
     cos = angles.cos().to(x.dtype)  # [1,1,T,half]
     sin = angles.sin().to(x.dtype)  # [1,1,T,half]
@@ -383,3 +391,66 @@ def gather_qmm_fake(
     else:
         batch = w.shape[:-2]
     return x.new_empty((*batch, M, N))
+
+
+@torch.library.custom_op("mlx::sample", mutates_args=())
+def sample(
+    logits: Tensor,
+    temperature: Tensor,
+    top_k: Tensor,
+    top_p: Tensor,
+    seed: Optional[Tensor] = None,
+) -> Tensor:
+    """
+    Gumbel-max sampling from softmax(logits / temperature), with top-k and
+    top-p (nucleus) filtering.
+    logits:      [B, vocab]
+    temperature: scalar float tensor    (runtime input). temperature <= 0 is
+                 greedy: return argmax(logits) directly (matches the device,
+                 which branches on temperature > 0).
+    top_k:       scalar int tensor. It is clipped to the vocab size; using the
+                 max int default keeps every token.
+    top_p:       scalar float tensor in (0, 1]. top_p=1.0 keeps every
+                 token, i.e. it is off.
+    seed:        scalar int tensor or None
+                 - tensor -> deterministic, keyed RNG (random::key(seed))
+                 - None   -> MLX global KeySequence (non-deterministic)
+    -> token_id: [B] int64
+
+    Host/CPU reference used for export (shape/meta) and distributional checks
+    only. It is NOT bit-identical to the lowered on-device graph: this uses torch
+    RNG (plain torch.rand, no uint32/nextafter uniform) while the delegate uses
+    MLX RNG, so a given seed does not reproduce the same tokens host vs. device.
+    """
+    if float(temperature) <= 0:  # matches the device cond (temperature > 0)
+        return torch.argmax(logits, dim=-1)
+    # whole chain in fp32 to match the lowered graph (bf16 sums mis-rank ties).
+    scaled = logits.float() / temperature
+
+    k = min(int(top_k.item()), scaled.shape[-1])
+    s_scaled, _ = torch.sort(scaled, dim=-1, descending=True)
+    kth = s_scaled[..., k - 1 : k]
+    scaled = torch.where(scaled >= kth, scaled, scaled.new_tensor(float("-inf")))
+
+    # Apply top-p after top-k so the probabilities are renormalized over the
+    # top-k subset.
+    probs = torch.softmax(scaled, dim=-1)
+    s_probs, _ = torch.sort(probs, dim=-1, descending=True)
+    cum = torch.cumsum(s_probs, dim=-1)
+    keep = (cum - s_probs) <= top_p
+    thresh = torch.where(keep, s_probs, s_probs.new_tensor(float("inf"))).amin(
+        dim=-1, keepdim=True
+    )
+    scaled = torch.where(probs >= thresh, scaled, scaled.new_tensor(float("-inf")))
+    if seed is None:
+        u = torch.rand(scaled.shape)  # global RNG
+    else:
+        gen = torch.Generator().manual_seed(int(seed.item()))
+        u = torch.rand(scaled.shape, generator=gen)
+    gumbel = -torch.log(-torch.log(u))
+    return torch.argmax(scaled + gumbel, dim=-1)
+
+
+@torch.library.register_fake("mlx::sample")
+def sample_fake(logits, temperature, top_k, top_p, seed=None):
+    return logits.new_empty(logits.shape[:-1], dtype=torch.long)

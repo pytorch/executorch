@@ -18,6 +18,7 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import (
+    PermuteCopyConverter,
     ViewCopyConverter,
 )
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
@@ -41,10 +42,8 @@ from executorch.backends.nxp.tests.executors import (
     EdgeProgramExecutor,
     OverrideTargetSupportCheck,
 )
-from executorch.backends.nxp.tests.ir.converter.node_converter.test_permute_copy_converter import (
-    Conv2dPermuteModule,
-)
 from executorch.backends.nxp.tests.models import (
+    Conv2dModule,
     ConvActivationModule,
     ConvFCFCSoftmaxModuleWithoutReshape,
     LinearActivationModule,
@@ -84,6 +83,23 @@ def _assert_nodes_form_a_view_copy_qdq_cluster(graph: Graph, node_indices: list[
     # Make sure the nodes are properly connected.
     assert view_copy.args[0] == dequantize
     assert quantize.args[0] == view_copy
+
+
+class Conv2dPermuteModule(torch.nn.Module):
+    def __init__(self, in_channels: int, perm: tuple[int, ...]):
+        super().__init__()
+        self.perm = perm
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            stride=1,
+            kernel_size=3,
+            padding=1,
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.permute(x, self.perm)
 
 
 class TestEdgePasses(unittest.TestCase):
@@ -239,19 +255,19 @@ class TestEdgePasses(unittest.TestCase):
 
             # Check linear and activation are in separate QDQ clusters
             nodes = list(exported_program.graph.nodes)
-            assert len(nodes) == 13
+            assert len(nodes) == 15
             assert _is_dequantize(nodes[5])
             assert (
                 neutron_target_spec.neutron_target_info.is_fusable_conv_or_linear__edge(
-                    nodes[7]
+                    nodes[9]
                 )
             )
-            assert _is_quantize(nodes[8])
-            assert _is_dequantize(nodes[9])
+            assert _is_quantize(nodes[10])
+            assert _is_dequantize(nodes[11])
             assert neutron_target_spec.neutron_target_info.is_supported_fused_activation__edge(
-                nodes[10]
+                nodes[12]
             )
-            assert _is_quantize(nodes[11])
+            assert _is_quantize(nodes[13])
 
     @parameterized.expand(
         [
@@ -324,7 +340,11 @@ class TestEdgePasses(unittest.TestCase):
             compile_spec, neutron_target_spec, custom_delegation_options
         )
 
-        edge_program_manager = edge_program_manager.to_backend(partitioner)
+        # Make sure the `permute_copy` is not delegated.
+        with OverrideTargetSupportCheck(
+            PermuteCopyConverter, new_target_support_check=lambda *_: False
+        ):
+            edge_program_manager = edge_program_manager.to_backend(partitioner)
 
         # Make sure QDQ cluster for permute_copy is present.
         edge_program_with_qdq_cluster = copy.deepcopy(

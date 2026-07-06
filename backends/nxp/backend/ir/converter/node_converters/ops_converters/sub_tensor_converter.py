@@ -1,11 +1,11 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.nxp.backend.ir.converter.conversion.common import (
-    node_uses_shape_broadcasting,
-)
+import torch
+
+from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
@@ -26,8 +26,13 @@ class SubTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if node_uses_shape_broadcasting(node):
-            # Shape broadcasting may require the addition of `Transpose` ops during conversion.
+        if not NodeConverter.at_least_one_input_shape_matches_the_output_shape(node):
+            return False
+
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0, 1], [0]
+        ):
             return False
 
         return True
@@ -48,12 +53,19 @@ class SubTensorConverter(NodeConverter):
 
         return True
 
-    # sub.Tensor Node format: (Tensor self, Tensor other, *, Scalar alpha=1)
     def convert(self, node: Node):
-        """Convert 'sub_tensor' operator to NeutronIR 'Sub'."""
+        """Convert 'sub_tensor' operator to NeutronIR 'Sub'.
+        The ExecuTorch schema is:
+            sub.Tensor(Tensor self, Tensor other, *, Scalar alpha=1)
+        """
+
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
 
         t_op.builtin_options = sub_options.Sub()
-        self.builder.append_operators([t_op])
+
+        ops = OpsList(middle_op=t_op)
+        # Create additional ops in case of shape broadcasting
+        ops.add_pre(self.builder.ensure_correct_broadcasting(t_op, t_op.tmp_outputs[0]))
+        self.builder.append_operators(ops.flatten())
