@@ -275,6 +275,8 @@ const Q4gswConfig kQ4gswConfigs[] = {
     // scale over 64-256 K-groups). q4gsw requires N % 8 == 0, so odd-N is not
     // exportable; bicol's has1 odd-N guard is defensive (mirrors coop4
     // general-N robustness).
+    // M>1: steel GEMM on a >=256-invocation device (K%16==0), else shmem/tiled.
+    {"steel", 96, 2048, 256, 1e-4f, 1e-3f, true, false}, // steel-isolating
     {"gate_proj_pf", 128, 2048, 8192, 1e-4f, 1e-3f, true, false}, // shmem via N
     {"down_proj_pf", 128, 8192, 2048, 1e-3f, 1e-2f, true, false}, // shmem via K
     {"shmem_edge", 130, 4096, 2056, 1e-4f, 1e-3f, true, false}, // partial tiles
