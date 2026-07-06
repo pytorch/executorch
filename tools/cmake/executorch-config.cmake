@@ -127,6 +127,8 @@ set(optional_lib_list
     openvino_backend
     torchao_ops_executorch
     torchao_kernels_aarch64
+    enn_backend
+    enn_logging
 )
 
 foreach(lib ${optional_lib_list})
