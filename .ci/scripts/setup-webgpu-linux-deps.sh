@@ -10,8 +10,9 @@
 #   * Dawn  : Google's official nightly prebuilt, downloaded directly from
 #             github.com/google/dawn/releases (pinned tag+rev+sha256) -- the same
 #             "fetch a pinned upstream prebuilt" pattern used for other CI deps.
-#   * SwiftShader : built from source at a pinned rev compatible with the Dawn
-#             above (the ossci prebuilt is from 2020, too old for current Dawn). No S3.
+#   * SwiftShader : a cached prebuilt (gha-artifacts, keyed by rev) when present,
+#             else built from source at a pinned rev compatible with the Dawn above
+#             (the ossci prebuilt is from 2020, too old for current Dawn).
 # Dawn (Chrome's WebGPU impl; its WGSL compiler Tint is the spec reference) on
 # SwiftShader gives a headless, deterministic, spec-faithful CLI backend.
 #
@@ -75,17 +76,30 @@ fi
 # current Dawn; build a matching modern SwiftShader instead. Self-contained
 # cmake build (vendored LLVM); the ICD lands under build/<OS>/.
 if [[ ! -d "${_ss_dir}/build" ]]; then
-  if [[ ! -d "${_ss_dir}/.git" ]]; then
-    git clone https://github.com/google/swiftshader "${_ss_dir}"
+  # Try a cached prebuilt (keyed by rev) before the expensive from-source build;
+  # mirrors the gha-artifacts download-or-build pattern in .ci/scripts/utils.sh.
+  _ss_key="swiftshader-${SWIFTSHADER_REV}-ubuntu-latest"
+  _ss_cache_url="https://gha-artifacts.s3.us-east-1.amazonaws.com/cached_artifacts/pytorch/executorch/webgpu/${_ss_key}.tar.gz"
+  if curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
+      --output "/tmp/${_ss_key}.tar.gz" "${_ss_cache_url}"; then
+    # Cache hit: restore the prebuilt build/ tree (ICD + libs).
+    mkdir -p "${_ss_dir}/build"
+    tar -C "${_ss_dir}/build" -xzf "/tmp/${_ss_key}.tar.gz"
+  else
+    # Cache miss: build from source. After a rev bump, seed the key in S3
+    # (tar -C build/ . -> the cache URL above) to skip this next run.
+    if [[ ! -d "${_ss_dir}/.git" ]]; then
+      git clone https://github.com/google/swiftshader "${_ss_dir}"
+    fi
+    git -C "${_ss_dir}" checkout "${SWIFTSHADER_REV}"
+    # vk_swiftshader's deps are vendored in-tree; tolerate unreachable
+    # disabled-feature submodules (angle, test-only) failing to fetch.
+    git -C "${_ss_dir}" submodule update --init --recursive || true
+    cmake -S "${_ss_dir}" -B "${_ss_dir}/build" -DCMAKE_BUILD_TYPE=Release \
+      -DSWIFTSHADER_BUILD_TESTS=OFF -DSWIFTSHADER_BUILD_PVR=OFF \
+      -DSWIFTSHADER_BUILD_BENCHMARKS=OFF
+    cmake --build "${_ss_dir}/build" --parallel "$(nproc)" --target vk_swiftshader
   fi
-  git -C "${_ss_dir}" checkout "${SWIFTSHADER_REV}"
-  # vk_swiftshader's deps are vendored in-tree; tolerate unreachable
-  # disabled-feature submodules (angle, test-only) failing to fetch.
-  git -C "${_ss_dir}" submodule update --init --recursive || true
-  cmake -S "${_ss_dir}" -B "${_ss_dir}/build" -DCMAKE_BUILD_TYPE=Release \
-    -DSWIFTSHADER_BUILD_TESTS=OFF -DSWIFTSHADER_BUILD_PVR=OFF \
-    -DSWIFTSHADER_BUILD_BENCHMARKS=OFF
-  cmake --build "${_ss_dir}/build" --parallel "$(nproc)" --target vk_swiftshader
 fi
 _ss_icd="$(find "${_ss_dir}/build" -name vk_swiftshader_icd.json 2>/dev/null | head -1)"
 [[ -n "${_ss_icd}" ]] || { echo "ERROR: SwiftShader ICD not found after build" >&2; exit 1; }

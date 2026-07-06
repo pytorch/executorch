@@ -9,7 +9,8 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -17,6 +18,8 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -38,6 +41,72 @@ static_assert(sizeof(Q4gswParams) == 32, "Q4gswParams must be 32 bytes");
 // Register-tile dims; MUST match TM/TN in q4gsw_linear.wgsl.
 constexpr int64_t kQ4gswTileM = 4;
 constexpr int64_t kQ4gswTileN = 4;
+
+// Shmem-GEMM tile dims; MUST match WG_M/WG_N in q4gsw_linear_gemm_shmem.wgsl.
+constexpr int64_t kQ4gswShmemTileM = 32;
+constexpr int64_t kQ4gswShmemTileN = 32;
+// Prefill route: shmem GEMM wins large K/N; the square 2048^2 (q/o proj,
+// N=2048) also wins on shmem (+~50% Canary, 10-warm/50-run; the earlier -27%
+// did not reproduce), so route it via a lower N threshold while k/v (N=512)
+// stays on register-tiled.
+constexpr uint32_t kQ4gswShmemMinDim = 4096u;
+constexpr uint32_t kQ4gswShmemNMinDim = 2048u;
+
+// Workgroup count for a linear_q4gsw dispatch (bicol GEMV / shmem GEMM / tiled
+// GEMM), with the range/limit guards shared by the build-time path and the
+// resize hook. use_gemv/use_shmem_gemm are the build-time routing decision (the
+// shader/pipeline is fixed at build); the resize hook re-runs this with live m.
+uint32_t compute_q4gsw_workgroup_count(
+    WGPUDevice device,
+    bool use_gemv,
+    bool use_shmem_gemm,
+    uint32_t m,
+    uint32_t n,
+    uint32_t wg_size,
+    const char* op_name) {
+  if (use_gemv) {
+    // bicol: fixed 64 lanes, 2 output columns/workgroup, grid-strided over
+    // ceil(N/2) column-pairs (M == 1 on this decode path).
+    const uint64_t pairs = (static_cast<uint64_t>(n) + 1u) / 2u;
+    if (pairs == 0u || pairs > UINT32_MAX) {
+      throw std::runtime_error(
+          std::string("WebGPU ") + op_name + ": N/2 out of range");
+    }
+    const uint32_t wgc =
+        utils::clamp_workgroup_count(device, static_cast<uint32_t>(pairs));
+    if (wgc == 0u) {
+      throw std::runtime_error(
+          std::string("WebGPU ") + op_name + ": zero GEMV dispatch");
+    }
+    return wgc;
+  }
+  if (use_shmem_gemm) {
+    // shmem GEMM: one workgroup per tile, no grid-stride -> throw over limit.
+    const int64_t total_wgs = utils::div_up<int64_t>(m, kQ4gswShmemTileM) *
+        utils::div_up<int64_t>(n, kQ4gswShmemTileN);
+    WGPULimits limits = {};
+    const uint32_t max_wgs =
+        wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+            limits.maxComputeWorkgroupsPerDimension > 0
+        ? limits.maxComputeWorkgroupsPerDimension
+        : 65535u;
+    if (total_wgs > static_cast<int64_t>(max_wgs)) {
+      throw std::runtime_error(
+          std::string("WebGPU ") + op_name +
+          ": shmem GEMM tile count exceeds the 1D dispatch limit");
+    }
+    return static_cast<uint32_t>(total_wgs);
+  }
+  const int64_t total_tiles = utils::div_up<int64_t>(m, kQ4gswTileM) *
+      utils::div_up<int64_t>(n, kQ4gswTileN);
+  if (total_tiles > static_cast<int64_t>(UINT32_MAX)) {
+    throw std::runtime_error(
+        std::string("WebGPU ") + op_name +
+        ": tile count exceeds the 1D dispatch limit");
+  }
+  return utils::compute_1d_workgroup_count(
+      device, static_cast<uint32_t>(total_tiles), wg_size, op_name);
+}
 
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
 void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -117,34 +186,17 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU linear_q4gsw: scales dims too small for K/N");
   }
 
-  // M==1 decode -> coop4 GEMV (needs K%8==0 && gs%8==0); else tiled GEMM.
+  // M==1 -> bicol GEMV; M>1 -> shmem GEMM (large K/N) else tiled GEMM.
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
-  const char* shader_src = use_gemv ? kQ4gswLinearCoop4WGSL : kQ4gswLinearWGSL;
-  uint32_t workgroup_count;
-  if (use_gemv) {
-    // coop4: fixed 64 lanes, 1 workgroup per output, grid-strided over M*N.
-    const uint64_t outputs =
-        static_cast<uint64_t>(M) * static_cast<uint64_t>(N);
-    if (outputs == 0u || outputs > UINT32_MAX) {
-      throw std::runtime_error("WebGPU linear_q4gsw: M*N out of range");
-    }
-    workgroup_count =
-        utils::clamp_workgroup_count(device, static_cast<uint32_t>(outputs));
-    if (workgroup_count == 0u) {
-      throw std::runtime_error("WebGPU linear_q4gsw: zero GEMV dispatch");
-    }
-  } else {
-    const int64_t total_tiles = utils::div_up<int64_t>(M, kQ4gswTileM) *
-        utils::div_up<int64_t>(N, kQ4gswTileN);
-    if (total_tiles > static_cast<int64_t>(UINT32_MAX)) {
-      throw std::runtime_error(
-          "WebGPU linear_q4gsw: tile count exceeds the 1D dispatch limit");
-    }
-    workgroup_count = utils::compute_1d_workgroup_count(
-        device, static_cast<uint32_t>(total_tiles), wg_size, "linear_q4gsw");
-  }
+  const bool use_shmem_gemm =
+      !use_gemv && (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
+  const char* shader_src = use_gemv ? kQ4gswLinearCoop4BicolWGSL
+      : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
+                                    : kQ4gswLinearWGSL;
+  const uint32_t workgroup_count = compute_q4gsw_workgroup_count(
+      device, use_gemv, use_shmem_gemm, M, N, wg_size, "linear_q4gsw");
 
   // Optional bias: real buffer if present, else a dummy for the fixed layout.
   uint32_t has_bias = 0;
@@ -224,9 +276,10 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  // coop4 GEMV uses fixed @workgroup_size(64); only the GEMM has an override.
-  pipeline_desc.compute.constantCount = use_gemv ? 0u : 1u;
-  pipeline_desc.compute.constants = use_gemv ? nullptr : &wg_size_constant;
+  // Only the tiled GEMM has a wg_size override; GEMV + shmem are fixed 64.
+  const bool fixed_wg = use_gemv || use_shmem_gemm;
+  pipeline_desc.compute.constantCount = fixed_wg ? 0u : 1u;
+  pipeline_desc.compute.constants = fixed_wg ? nullptr : &wg_size_constant;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
@@ -256,12 +309,78 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count, "linear_q4gsw"});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count, "linear_q4gsw"});
+
+  // Dynamic shapes: recompute dispatch + params.M for the live M. use_gemv and
+  // use_shmem_gemm are captured (routing is fixed at build); the helper re-runs
+  // the same path's workgroup-count formula with the live m.
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id,
+       out_id,
+       M,
+       K,
+       N,
+       K_packed,
+       gs,
+       padded_N,
+       has_bias,
+       wg_size,
+       use_gemv,
+       use_shmem_gemm,
+       dispatch_idx,
+       uniform_buffer](WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        if (d.empty()) {
+          throw std::runtime_error(
+              "WebGPU linear_q4gsw(resize): empty input dims");
+        }
+        const uint64_t numel = utils::numel_of(d);
+        if (numel % static_cast<uint64_t>(K) != 0u) {
+          throw std::runtime_error(
+              "WebGPU linear_q4gsw(resize): live input numel not a multiple "
+              "of K");
+        }
+        const uint32_t m =
+            static_cast<uint32_t>(numel / static_cast<uint64_t>(K));
+        if (m == 0u) {
+          throw std::runtime_error("WebGPU linear_q4gsw(resize): live M == 0");
+        }
+        // Buffers/bind-groups were sized for the build-time max M; a larger
+        // live M would write out of bounds.
+        if (m > M) {
+          throw std::runtime_error(
+              "WebGPU linear_q4gsw(resize): live M exceeds the build-time max");
+        }
+        const uint32_t wgc = compute_q4gsw_workgroup_count(
+            g.device(),
+            use_gemv,
+            use_shmem_gemm,
+            m,
+            N,
+            wg_size,
+            "linear_q4gsw(resize)");
+        Q4gswParams p = {};
+        p.M = m;
+        p.N = N;
+        p.K = K;
+        p.K_packed = K_packed;
+        p.group_size = gs;
+        p.padded_N = padded_N;
+        p.has_bias = has_bias;
+        wgpuQueueWriteBuffer(g.queue(), uniform_buffer, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc;
+        std::vector<int64_t> od(d.begin(), d.end());
+        od.back() = static_cast<int64_t>(N);
+        g.set_cur_dims(out_id, od);
+      });
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace

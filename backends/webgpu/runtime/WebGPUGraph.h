@@ -23,8 +23,14 @@ namespace executorch::backends::webgpu {
 
 struct WebGPUTensor {
   WGPUBuffer buffer = nullptr;
+  // Max (allocation) dims/nbytes: the serialized upper-bound shape. The GPU
+  // buffer is sized from these and never reallocated (Vulkan allocate-at-max).
   std::vector<int64_t> dims;
   size_t nbytes = 0;
+  // Live dims/nbytes for dynamic shapes; always <= the max. == max on a static
+  // graph, so dynamic-resize logic keyed off these is inert there.
+  std::vector<int64_t> cur_dims;
+  size_t cur_nbytes = 0;
   // Serialized (GPU-side) element type, used to narrow wider host inputs.
   size_t elem_size = 0;
   bool is_int = false;
@@ -42,6 +48,7 @@ struct WebGPUDispatch {
   WGPUBindGroup bind_group = nullptr;
   uint32_t workgroup_count_x = 1;
   std::string kernel_name; // bench label
+  uint32_t workgroup_count_y = 1; // 2D fold (>65535); 1 = unchanged 1D path
   // DMA copy command; default Compute keeps existing positional inits valid.
   enum class Kind { Compute, Copy };
   Kind kind = Kind::Compute;
@@ -131,12 +138,17 @@ class WebGPUGraph {
   int64_t get_int(int id) const {
     return ints_[id];
   }
-  bool get_bool(int id) const {
-    return bools_[id];
+  // Int values of a serialized IntList (e.g. permute dims). int64 (FlatBuffer
+  // [long]) to match the schema and the get_int convention.
+  const std::vector<int64_t>& get_int_list(int id) const {
+    return int_lists_[id];
   }
   // Member value ids of a serialized ValueList (op multi-output list).
   const std::vector<int>& get_value_list(int id) const {
     return value_lists_[id];
+  }
+  bool get_bool(int id) const {
+    return bools_[id];
   }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
@@ -166,6 +178,17 @@ class WebGPUGraph {
     return symint_sources_;
   }
 
+  // Records that a SymInt is a tensor's live dim size (sym_size.int), read from
+  // cur_dims at execute; distinct from SymIntSource (a scalar data element).
+  struct SymIntDimSource {
+    int symint_id;
+    int tensor_id;
+    int dim;
+  };
+  void add_symint_dim_source(int symint_id, int tensor_id, int dim) {
+    symint_dim_sources_.push_back({symint_id, tensor_id, dim});
+  }
+
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
   void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
@@ -173,7 +196,25 @@ class WebGPUGraph {
   void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
     resize_hooks_.push_back({symint_id, std::move(fn)});
   }
-  // Run hooks for changed SymInts then clear; call before execute().
+
+  // Set a graph input's live dims (<= max) + dirty it; static path stays inert.
+  void resize_input(int value_id, const std::vector<int64_t>& new_dims);
+  // Set a tensor's live dims (an op resize hook calls this for its output to
+  // cascade to consumers); validates the new dims fit the max, never reallocs.
+  void set_cur_dims(int value_id, const std::vector<int64_t>& new_dims);
+  const std::vector<int64_t>& cur_dims(int value_id) const {
+    return tensors_[value_id].cur_dims;
+  }
+
+  // Per-tensor resize hook; mirrors Vulkan ExecuteNode::resize_fn. Runs in
+  // propagate_resize when trigger_tensor_id is dirty.
+  void add_tensor_resize_hook(
+      int trigger_tensor_id,
+      std::function<void(WebGPUGraph&)> fn) {
+    tensor_resize_hooks_.push_back({trigger_tensor_id, std::move(fn)});
+  }
+
+  // Run hooks for changed SymInts and tensors, then clear; call before execute.
   void propagate_resize();
 
   // Mutable dispatch access for resize hooks (to rewrite workgroup_count_x).
@@ -191,12 +232,14 @@ class WebGPUGraph {
     return queue_;
   }
 
-  void add_dispatch(WebGPUDispatch dispatch) {
+  // Returns the new dispatch's index (resize hooks rewrite it via dispatch_at).
+  size_t add_dispatch(WebGPUDispatch dispatch) {
     dispatches_.push_back(dispatch);
+    return dispatches_.size() - 1;
   }
 
-  // Record an in-graph-order buffer-to-buffer DMA (e.g. a flat copy).
-  void add_buffer_copy(WGPUBuffer src, WGPUBuffer dst, size_t nbytes) {
+  // In-graph buffer-to-buffer DMA (e.g. flat copy); returns the dispatch index.
+  size_t add_buffer_copy(WGPUBuffer src, WGPUBuffer dst, size_t nbytes) {
     WebGPUDispatch d;
     d.kind = WebGPUDispatch::Kind::Copy;
     d.copy_src = src;
@@ -204,6 +247,7 @@ class WebGPUGraph {
     d.copy_nbytes = nbytes;
     d.kernel_name = "flat_copy";
     dispatches_.push_back(d);
+    return dispatches_.size() - 1;
   }
 
   // Materialize a recorded prepack-routed constant into dst via one CPU->GPU
@@ -222,6 +266,10 @@ class WebGPUGraph {
 
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
+
+  // Create a mapped-at-creation uniform buffer from `size` bytes and track it
+  // in the memory stats. Shared helper for ops needing a uniform Params buffer.
+  WGPUBuffer make_uniform_buffer(const void* data, size_t size);
 
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
@@ -258,7 +306,8 @@ class WebGPUGraph {
     Null,
     String,
     SymInt,
-    ValueList
+    ValueList,
+    IntList
   };
 
   ValueType get_value_type(int id) const {
@@ -275,9 +324,10 @@ class WebGPUGraph {
   std::vector<ValueType> value_types_;
   std::vector<WebGPUTensor> tensors_;
   std::vector<int64_t> ints_;
+  std::vector<std::vector<int64_t>> int_lists_;
+  std::vector<std::vector<int>> value_lists_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
-  std::vector<std::vector<int>> value_lists_;
 
   // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
   struct SymIntSlot {
@@ -286,6 +336,7 @@ class WebGPUGraph {
   };
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
+  std::vector<SymIntDimSource> symint_dim_sources_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
   struct ResizeHook {
@@ -294,6 +345,15 @@ class WebGPUGraph {
   };
   std::vector<ResizeHook> resize_hooks_;
   std::unordered_set<int> dirty_symints_;
+
+  // Tensor-shape resize hooks + the set of tensors changed since the last
+  // propagate_resize (mirrors the SymInt pair above, for dynamic shapes).
+  struct TensorResizeHook {
+    int trigger_tensor_id;
+    std::function<void(WebGPUGraph&)> fn;
+  };
+  std::vector<TensorResizeHook> tensor_resize_hooks_;
+  std::unordered_set<int> dirty_tensors_;
 
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;

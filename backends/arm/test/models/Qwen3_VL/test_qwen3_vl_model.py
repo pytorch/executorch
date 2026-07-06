@@ -11,10 +11,12 @@ from typing import Tuple
 import pytest
 import torch
 import torch.nn.functional as F
+from executorch.backends.arm.ao_ext import MXFPOpConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.Qwen3_VL.qwen3_vl_test_config import (
     get_qwen3_vl_2b_instruct_checkpoint_config,
 )
+from executorch.backends.arm.test.ops.mxfp.common import MXFPTosaPipelineFP
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     VgfPipeline,
@@ -25,6 +27,7 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
 )
 
 input_t = Tuple[torch.Tensor, ...]
+aten_op_mxfp_linear = "torch.ops.tosa_mxfp.linear.default"
 
 
 def _make_qwen3_vl_2b_instruct_layer_config():
@@ -85,7 +88,7 @@ def _make_pixel_values(config, device: torch.device) -> torch.Tensor:
 
 class Qwen3VLModelTestModule(torch.nn.Module):
     @classmethod
-    def prepare_model_and_inputs(cls):
+    def prepare_model_and_inputs(cls, config_factory=_make_qwen3_vl_e2e_test_config):
         raise NotImplementedError
 
 
@@ -102,6 +105,10 @@ def _to_bfloat16_model_and_floating_inputs(
         )
         for x in inputs
     )
+
+
+def _is_linear(module: torch.nn.Module, _fqn: str) -> bool:
+    return isinstance(module, torch.nn.Linear)
 
 
 class TextModelWrapper(Qwen3VLModelTestModule):
@@ -123,9 +130,9 @@ class TextModelWrapper(Qwen3VLModelTestModule):
         return outputs.last_hidden_state
 
     @classmethod
-    def prepare_model_and_inputs(cls):
+    def prepare_model_and_inputs(cls, config_factory=_make_qwen3_vl_e2e_test_config):
         torch.manual_seed(0)
-        config = _make_qwen3_vl_e2e_test_config()
+        config = config_factory()
         model = cls(config).eval()
         input_ids = torch.randint(0, 128, (2, 8), dtype=torch.long)
         attention_mask = torch.ones_like(input_ids)
@@ -186,9 +193,9 @@ class LowerableVisionModelWrapper(Qwen3VLModelTestModule):
         return hidden_states + deepstack_residual
 
     @classmethod
-    def prepare_model_and_inputs(cls):
+    def prepare_model_and_inputs(cls, config_factory=_make_qwen3_vl_e2e_test_config):
         torch.manual_seed(0)
-        config = _make_qwen3_vl_e2e_test_config()
+        config = config_factory()
         model = cls(config).eval()
         pixel_values = _make_pixel_values(config, torch.device("cpu"))
         return model, (pixel_values,)
@@ -225,10 +232,11 @@ VGF_NO_QUANT_TEST_CASES: dict[str, Qwen3VLModelTestCase] = {
 }
 
 
-@pytest.mark.slow
-@common.parametrize("test_case", TOSA_FP_TEST_CASES)
-def test_qwen3_vl_full_models_tosa_FP(test_case: Qwen3VLModelTestCase):
-    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+def _test_qwen3_vl_full_models_tosa_FP(
+    test_case: Qwen3VLModelTestCase,
+    config_factory=_make_qwen3_vl_e2e_test_config,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs(config_factory)
     with torch.no_grad():
         pipeline = TosaPipelineFP[input_t](
             model,
@@ -241,10 +249,11 @@ def test_qwen3_vl_full_models_tosa_FP(test_case: Qwen3VLModelTestCase):
         pipeline.run()
 
 
-@pytest.mark.slow
-@common.parametrize("test_case", TOSA_FP_TEST_CASES)
-def test_qwen3_vl_full_models_tosa_FP_bf16(test_case: Qwen3VLModelTestCase):
-    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+def _test_qwen3_vl_full_models_tosa_FP_bf16(
+    test_case: Qwen3VLModelTestCase,
+    config_factory=_make_qwen3_vl_e2e_test_config,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs(config_factory)
     model, inputs = _to_bfloat16_model_and_floating_inputs(model, inputs)
     # Slightly higher atol for TOSA BF16 on aarch64 (MLETORCH-2048: numeric mismatch)
     atol = (
@@ -266,11 +275,11 @@ def test_qwen3_vl_full_models_tosa_FP_bf16(test_case: Qwen3VLModelTestCase):
         pipeline.run()
 
 
-@pytest.mark.slow
-@common.SkipIfNoModelConverter
-@common.parametrize("test_case", VGF_NO_QUANT_TEST_CASES)
-def test_qwen3_vl_full_models_vgf_no_quant(test_case: Qwen3VLModelTestCase):
-    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+def _test_qwen3_vl_full_models_vgf_no_quant(
+    test_case: Qwen3VLModelTestCase,
+    config_factory=_make_qwen3_vl_e2e_test_config,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs(config_factory)
     with torch.no_grad():
         pipeline = VgfPipeline[input_t](
             model,
@@ -283,11 +292,11 @@ def test_qwen3_vl_full_models_vgf_no_quant(test_case: Qwen3VLModelTestCase):
         pipeline.run()
 
 
-@pytest.mark.slow
-@common.SkipIfNoModelConverter
-@common.parametrize("test_case", VGF_NO_QUANT_TEST_CASES)
-def test_qwen3_vl_full_models_vgf_no_quant_bf16(test_case: Qwen3VLModelTestCase):
-    model, inputs = test_case.model_cls.prepare_model_and_inputs()
+def _test_qwen3_vl_full_models_vgf_no_quant_bf16(
+    test_case: Qwen3VLModelTestCase,
+    config_factory=_make_qwen3_vl_e2e_test_config,
+):
+    model, inputs = test_case.model_cls.prepare_model_and_inputs(config_factory)
     model, inputs = _to_bfloat16_model_and_floating_inputs(model, inputs)
     with torch.no_grad():
         pipeline = VgfPipeline[input_t](
@@ -300,3 +309,96 @@ def test_qwen3_vl_full_models_vgf_no_quant_bf16(test_case: Qwen3VLModelTestCase)
             tosa_spec="TOSA-1.0+FP+bf16",
         )
         pipeline.run()
+
+
+def _test_qwen3_vl_text_model_tosa_mxfp8_bf16(
+    config_factory=_make_qwen3_vl_e2e_test_config,
+):
+    # The Qwen 3 VL FP8 model only quantizes the TextModel
+    model, inputs = TextModelWrapper.prepare_model_and_inputs(config_factory)
+    model, inputs = _to_bfloat16_model_and_floating_inputs(model, inputs)
+    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+    with torch.no_grad():
+        pipeline = MXFPTosaPipelineFP[input_t](
+            model,
+            inputs,
+            aten_op=aten_op_mxfp_linear,
+            exir_op=[],
+            filter_fn=_is_linear,
+            frobenius_threshold=0.1,
+            cosine_threshold=0.98,
+            mxfp_config=mxfp_config,
+            tosa_version="1.1",
+            tosa_extensions=["bf16", "mxfp"],
+        )
+        # Check all linear layers are converted to MXFP
+        linear_count = sum(
+            _is_linear(submodule, name) for name, submodule in model.named_modules()
+        )
+        pipeline.add_stage_after(
+            "export",
+            pipeline.tester.check_count,
+            {aten_op_mxfp_linear: linear_count},
+            suffix="mxfp_linear",
+        )
+        pipeline.run()
+
+
+@pytest.mark.slow
+@common.parametrize("test_case", TOSA_FP_TEST_CASES)
+def test_qwen3_vl_full_models_tosa_FP(test_case: Qwen3VLModelTestCase):
+    _test_qwen3_vl_full_models_tosa_FP(test_case)
+
+
+@pytest.mark.slow
+@common.parametrize("test_case", TOSA_FP_TEST_CASES)
+def test_qwen3_vl_full_models_tosa_FP_bf16(test_case: Qwen3VLModelTestCase):
+    _test_qwen3_vl_full_models_tosa_FP_bf16(test_case)
+
+
+@pytest.mark.slow
+@common.SkipIfNoModelConverter
+@common.parametrize("test_case", VGF_NO_QUANT_TEST_CASES)
+def test_qwen3_vl_full_models_vgf_no_quant(test_case: Qwen3VLModelTestCase):
+    _test_qwen3_vl_full_models_vgf_no_quant(test_case)
+
+
+@pytest.mark.slow
+@common.SkipIfNoModelConverter
+@common.parametrize("test_case", VGF_NO_QUANT_TEST_CASES)
+def test_qwen3_vl_full_models_vgf_no_quant_bf16(test_case: Qwen3VLModelTestCase):
+    _test_qwen3_vl_full_models_vgf_no_quant_bf16(test_case)
+
+
+@pytest.mark.slow
+def test_qwen3_vl_text_model_tosa_mxfp8_bf16():
+    _test_qwen3_vl_text_model_tosa_mxfp8_bf16()
+
+
+@pytest.mark.slow
+@pytest.mark.xlarge
+@common.parametrize("test_case", TOSA_FP_TEST_CASES)
+def test_qwen3_vl_2b_instruct_full_models_tosa_FP_bf16(
+    test_case: Qwen3VLModelTestCase,
+):
+    _test_qwen3_vl_full_models_tosa_FP_bf16(
+        test_case, _make_qwen3_vl_2b_instruct_layer_config
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.xlarge
+@common.SkipIfNoModelConverter
+@common.parametrize("test_case", VGF_NO_QUANT_TEST_CASES)
+def test_qwen3_vl_2b_instruct_full_models_vgf_no_quant_bf16(
+    test_case: Qwen3VLModelTestCase,
+):
+    _test_qwen3_vl_full_models_vgf_no_quant_bf16(
+        test_case, _make_qwen3_vl_2b_instruct_layer_config
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.xlarge
+def test_qwen3_vl_2b_instruct_text_model_tosa_mxfp8_bf16():
+    _test_qwen3_vl_text_model_tosa_mxfp8_bf16(_make_qwen3_vl_2b_instruct_layer_config)

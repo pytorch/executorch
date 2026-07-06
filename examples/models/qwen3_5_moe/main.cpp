@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <fstream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,22 @@ DEFINE_string(
     "",
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = greedy).");
+DEFINE_int32(
+    top_k,
+    0,
+    "Top-k sampling; keep the k most likely tokens. 0 (default) = off (keep "
+    "all). Requires a model exported with --sample (MLX on-device sampling).");
+DEFINE_double(
+    top_p,
+    1.0,
+    "Nucleus sampling top_p in (0, 1]; 1.0 = off. Requires a model exported "
+    "with --sample (MLX on-device sampling).");
+DEFINE_int64(
+    seed,
+    -1,
+    "Base RNG seed for on-device sampling; the runner increments it per token. "
+    "-1 (default) draws a random seed each run; set a value for reproducible "
+    "output. Requires a model exported with --sample.");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_int32(
     warmup,
@@ -149,6 +166,21 @@ int main(int argc, char** argv) {
   // printed only on the first iteration (coherence check).
   llm::SamplingConfig sampling;
   sampling.temperature = static_cast<float>(FLAGS_temperature);
+  sampling.top_k = FLAGS_top_k;
+  sampling.top_p = static_cast<float>(FLAGS_top_p);
+  // Only a --sample model uses the seed; randomize an unset seed for those and
+  // leave non-sample models at 0 so they don't trip the top_p/seed guard.
+  const auto& md = engine->metadata();
+  const auto us_it = md.find("use_sampling");
+  const bool model_samples = us_it != md.end() && us_it->second != 0;
+  uint64_t base_seed = FLAGS_seed < 0 ? 0 : static_cast<uint64_t>(FLAGS_seed);
+  if (model_samples && FLAGS_seed < 0) {
+    base_seed = static_cast<uint64_t>(std::random_device{}());
+  }
+  sampling.seed = base_seed;
+  if (model_samples) {
+    ET_LOG(Info, "Sampling base seed: %" PRIu64, base_seed);
+  }
   const int total_iters = FLAGS_warmup + std::max(1, FLAGS_num_iters);
   std::vector<double> prefill_tps_samples;
   std::vector<double> decode_tps_samples;

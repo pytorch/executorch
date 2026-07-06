@@ -25,20 +25,28 @@ from executorch.backends.webgpu.test.op_tests.test_suite import (
     WebGPUTestSuite,
     XS,
 )
-from executorch.backends.webgpu.test.ops.add.test_add import (
+from executorch.backends.webgpu.test.ops.test_add import (
     AddChainedModule,
     AddModule,
     AddSelfModule,
 )
-from executorch.backends.webgpu.test.ops.rms_norm.test_rms_norm import (
-    _CASES,
-    _linspace_weight,
-    _ramp,
-    RmsNormModule,
+from executorch.backends.webgpu.test.ops.test_cat import (
+    CatModule,
+    CONFIGS as _CAT_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
+)
+from executorch.backends.webgpu.test.ops.test_permute import (
+    CONFIGS as _PERMUTE_CONFIGS,
+    PermuteModule,
+)
+from executorch.backends.webgpu.test.ops.test_rms_norm import (
+    _CASES,
+    _linspace_weight,
+    _ramp,
+    RmsNormModule,
 )
 from executorch.backends.webgpu.test.ops.test_select import (
     CONFIGS as _SELECT_CONFIGS,
@@ -48,6 +56,11 @@ from executorch.backends.webgpu.test.ops.test_sigmoid import (
     _det_input as _sigmoid_det_input,
     N as _SIGMOID_N,
     SigmoidModule,
+)
+
+from executorch.backends.webgpu.test.ops.test_slice import (
+    CONFIGS as _SLICE_CONFIGS,
+    SliceModule,
 )
 
 from executorch.backends.webgpu.test.ops.test_squeeze import (
@@ -79,7 +92,7 @@ def _add_factory(variant: str = "regular") -> torch.nn.Module:
 @register_op_test("add")
 def _add_suite() -> WebGPUTestSuite:
     # Same-shape numeric coverage only: broadcast adds stay export-smoke in
-    # ops/add/test_add.py because the kernel can't broadcast.
+    # ops/test_add.py because the kernel can't broadcast.
     return WebGPUTestSuite(
         module_factory=_add_factory,
         cases=[
@@ -219,4 +232,35 @@ def _unsqueeze_suite() -> WebGPUTestSuite:
             for n, (shape, dim) in _UNSQUEEZE_CONFIGS.items()
         ],
         golden_dtype="float32",  # reshape copies values; fp64 bit-identical
+    )
+
+
+@register_op_test("slice")
+def _slice_suite() -> WebGPUTestSuite:
+    return _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+
+
+@register_op_test("permute")
+def _permute_suite() -> WebGPUTestSuite:
+    # CONFIGS: name -> (shape, perm-tuple).
+    return WebGPUTestSuite(
+        module_factory=lambda perm: PermuteModule(perm),
+        cases=[
+            Case(name=n, construct={"perm": perm}, inputs=(shape,))
+            for n, (shape, perm) in _PERMUTE_CONFIGS.items()
+        ],
+        golden_dtype="float32",  # permutation reorders values; fp64 bit-identical
+    )
+
+
+@register_op_test("cat")
+def _cat_suite() -> WebGPUTestSuite:
+    # CONFIGS: name -> (list_of_input_shapes, dim). Variadic input count per case.
+    return WebGPUTestSuite(
+        module_factory=lambda dim: CatModule(dim),
+        cases=[
+            Case(name=n, construct={"dim": dim}, inputs=tuple(shapes))
+            for n, (shapes, dim) in _CAT_CONFIGS.items()
+        ],
+        golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
