@@ -13,19 +13,19 @@
 //   scale : [N, K//gs] uint8 code + a per-256-super-block fp16 step
 //           scale_step[N, K/256]. The group scale is scale_code * scale_step[b],
 //           b = super-block index = k >> 8.
-//   zero  : [N, K//gs] uint8 code + a per-row bf16 step zero_step[N, 1];
-//           zero = zero_code * zero_step (UNCHANGED).
-// The finer per-256 scale step (vs a per-row step) lifts whole-weight dequant
-// SNR to ~45 dB (vs 44.37 for a per-row step) at ~4.5625 bpw.
+//   zero  : [N, K//gs] uint8 code + a per-256-super-block fp16 step
+//           zero_step[N, K/256]. The group zero is zero_code * zero_step[b].
+// The finer per-256 scale AND zero steps (vs per-row) lift whole-weight dequant
+// SNR to ~45.89 dB (vs 45.15 for a per-row zero step) at ~4.625 bpw.
 //
-// T3 super-block-cooperative scale reuse: the per-256 fp16 scale_step lives in a
-// separate [N, K/256] tensor, so a naive per-group load of it costs a distant
-// global access every group (measured -8% decode). Instead, the 32 warp lanes
-// form 8-lane subgroups that each cover ONE super-block per iteration; only the
-// subgroup leader loads + converts scale_step and __shfl-broadcasts it to its 7
-// followers (8x fewer scale_step loads, fp16 convert hoisted out of the
-// per-weight path), register-only (no smem, so no occupancy cliff). Mirrors
-// llama.cpp's per-super-block metadata amortization.
+// T3 super-block-cooperative step reuse: the per-256 fp16 scale_step and
+// zero_step live in separate [N, K/256] tensors, so a naive per-group load costs
+// a distant global access every group. Instead, the 32 warp lanes form 8-lane
+// subgroups that each cover ONE super-block per iteration; only the subgroup
+// leader loads + PACKS both fp16 steps into one 32-bit word and __shfl-
+// broadcasts that ONE word to its 7 followers (z_pack: 8x fewer step loads, no
+// extra shuffle vs the scale-only baseline, register-only, no smem => no
+// occupancy cliff). Mirrors llama.cpp's per-super-block metadata amortization.
 //
 // Dynamically quantizes bf16 activations to INT8 (per-32-element blocks),
 // then uses dp4a for fused int4×int8 dot products with 16-byte vectorized
@@ -122,16 +122,16 @@ __global__ void quantize_activations_q8_kernel(
 }
 
 // ---------------------------------------------------------------------------
-// Coalesced-metadata W4A8 dp4a matvec (T3 super-block-cooperative scale reuse)
+// Coalesced-metadata W4A8 dp4a matvec (T3 super-block-cooperative step reuse)
 //
 // Reads scale/zero in the transposed [N, n_groups] layout (transposed AOT at
-// export time) as uint8 codes. The scale is decoded with a per-256-super-block
-// fp16 step, shared across each 8-lane subgroup via __shfl (see file header);
-// the zero is decoded with a per-row bf16 step. With group_size >= 32, one uint4
-// (32 weights) maps to exactly one activation block and one weight group, so
-// within a warp the 32 lanes touch 32 consecutive groups (4 super-blocks). In
-// [N, n_groups] layout those 32 group codes are contiguous => a single coalesced
-// load.
+// export time) as uint8 codes. Both the scale and the zero are decoded with a
+// per-256-super-block fp16 step; the leader packs BOTH fp16 steps into the ONE
+// 32-bit warp-shuffle word and broadcasts it across each 8-lane subgroup
+// (z_pack, see file header). With group_size >= 32, one uint4 (32 weights) maps
+// to exactly one activation block and one weight group, so within a warp the 32
+// lanes touch 32 consecutive groups (4 super-blocks). In [N, n_groups] layout
+// those 32 group codes are contiguous => a single coalesced load.
 // ---------------------------------------------------------------------------
 
 __global__ void __launch_bounds__(MV_THREADS)
@@ -140,7 +140,7 @@ __global__ void __launch_bounds__(MV_THREADS)
         const uint8_t* __restrict__ w_scale_t, // [N, n_groups] uint8 codes
         const __half* __restrict__ w_scale_step, // [N, n_super] fp16
         const uint8_t* __restrict__ w_zero_t, // [N, n_groups] uint8 codes
-        const __nv_bfloat16* __restrict__ w_zero_step, // [N, 1] bf16
+        const __half* __restrict__ w_zero_step, // [N, n_super] fp16
         const Q8Block* __restrict__ q8,
         __nv_bfloat16* __restrict__ out,
         int32_t N,
@@ -162,11 +162,11 @@ __global__ void __launch_bounds__(MV_THREADS)
   const __half* scale_step_row =
       w_scale_step + static_cast<int64_t>(n) * n_super;
   const uint8_t* zero_row = w_zero_t + static_cast<int64_t>(n) * n_groups;
-  // Per-row zero step (bf16 constant, unchanged): zero = zero_code * zero_step.
-  // It factors out of the dp4a sum just like scale, so the dp4a dot products
-  // below are bit-identical to the prior kernel.
-  const float zero_step =
-      __bfloat162float(__ldg(&w_zero_step[static_cast<int64_t>(n)]));
+  // Per-256 fp16 zero step (z_pack): decoded via the SAME 8-lane leader
+  // broadcast as the scale step (both packed into one 32-bit shuffle word
+  // below), so the dp4a dot products stay bit-identical to the scale-only
+  // kernel. zero = zero_code * zero_step[super-block].
+  const __half* zero_step_row = w_zero_step + static_cast<int64_t>(n) * n_super;
   const Q8Block* q8_row = q8 + static_cast<int64_t>(m) * n_q8_blocks;
 
   const uint4* qrow16 = reinterpret_cast<const uint4*>(qrow);
@@ -177,9 +177,10 @@ __global__ void __launch_bounds__(MV_THREADS)
   // T3: within a warp iteration the 32 lanes cover groups i0..i0+31 = 4
   // consecutive super-blocks, split into 8-lane subgroups (lanes 8s..8s+7 share
   // super-block b = g >> sb_shift). Only each subgroup leader (lane_id % 8 == 0)
-  // does the distant fp16 scale_step __ldg + __half2float; __shfl broadcasts it
-  // to the 7 followers. 8x fewer scale_step loads, fp16 convert hoisted out of
-  // the per-weight path, register-only (no smem => no occupancy cliff).
+  // loads + converts the two fp16 steps, PACKS them into one 32-bit word, and
+  // __shfl-broadcasts that single word to the 7 followers. 8x fewer step loads,
+  // ONE shuffle (same count as the scale-only baseline), register-only (no smem
+  // => no occupancy cliff).
   const int32_t sb_shift = SUPER_BLOCK_SHIFT - gs_shift; // group g -> super-block
   const int32_t leader = lane_id & ~7; // base lane of this 8-lane subgroup
 
@@ -202,14 +203,24 @@ __global__ void __launch_bounds__(MV_THREADS)
 
     // Group index for this uint4 (constant across its 4 dp4a words at gs=32).
     int32_t g = k_base >> gs_shift;
-    // Subgroup leader loads the per-256 fp16 step once; broadcast to followers.
-    // All lanes reach this shuffle (warp-aligned loop), so the full mask is safe.
-    float scale_step = 0.0f;
-    if (lane_id == leader)
-      scale_step = __half2float(__ldg(&scale_step_row[g >> sb_shift]));
-    scale_step = __shfl_sync(0xffffffff, scale_step, leader);
+    // Subgroup leader packs BOTH per-256 fp16 steps (scale low16, zero high16)
+    // into one 32-bit word and broadcasts it once; followers unpack. All lanes
+    // reach this shuffle (warp-aligned loop), so the full mask is safe.
+    uint32_t steps_packed = 0;
+    if (lane_id == leader) {
+      int32_t sb = g >> sb_shift;
+      unsigned short s_bits = __half_as_ushort(__ldg(&scale_step_row[sb]));
+      unsigned short z_bits = __half_as_ushort(__ldg(&zero_step_row[sb]));
+      steps_packed = static_cast<uint32_t>(s_bits) |
+          (static_cast<uint32_t>(z_bits) << 16);
+    }
+    steps_packed = __shfl_sync(0xffffffff, steps_packed, leader);
     if (!active)
       continue;
+    float scale_step = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps_packed & 0xFFFF)));
+    float zero_step = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps_packed >> 16)));
     // Effective per-group scale/zero (one coalesced code byte each per group).
     float ws = static_cast<float>(__ldg(&scale_row[g])) * scale_step;
     float wz = static_cast<float>(__ldg(&zero_row[g])) * zero_step;
@@ -299,7 +310,7 @@ void _int4_plain_mm_cuda(
     const Tensor& scale, // [N, K//gs] uint8 codes
     const Tensor& scale_step, // [N, K//256] fp16
     const Tensor& zero, // [N, K//gs] uint8 codes
-    const Tensor& zero_step, // [N, 1] bf16
+    const Tensor& zero_step, // [N, K//256] fp16
     int64_t group_size,
     Tensor* output) { // [M, N] bf16, pre-allocated
   int32_t M = A.size(0);
@@ -317,7 +328,7 @@ void _int4_plain_mm_cuda(
   ET_CHECK(
       zero.dtype() == c10::ScalarType::Byte ||
       zero.dtype() == c10::ScalarType::Char);
-  ET_CHECK(zero_step.dtype() == c10::ScalarType::BFloat16);
+  ET_CHECK(zero_step.dtype() == c10::ScalarType::Half);
   ET_CHECK(A.dim() == 2);
   ET_CHECK(qdata.dim() == 2);
   ET_CHECK(qdata.size(1) == K / 2);
@@ -329,7 +340,7 @@ void _int4_plain_mm_cuda(
   ET_CHECK(zero.size(0) == N);
   ET_CHECK(zero_step.dim() == 2);
   ET_CHECK(zero_step.size(0) == N);
-  ET_CHECK(zero_step.size(1) == 1);
+  ET_CHECK(zero_step.size(1) == scale_step.size(1));
 
   int32_t gs = static_cast<int32_t>(group_size);
   ET_CHECK_MSG(
@@ -374,7 +385,7 @@ void _int4_plain_mm_cuda(
       reinterpret_cast<const uint8_t*>(scale.data_ptr()),
       reinterpret_cast<const __half*>(scale_step.data_ptr()),
       reinterpret_cast<const uint8_t*>(zero.data_ptr()),
-      reinterpret_cast<const __nv_bfloat16*>(zero_step.data_ptr()),
+      reinterpret_cast<const __half*>(zero_step.data_ptr()),
       q8_buf,
       reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
       N, K, gs_shift, n_groups, n_super);

@@ -113,13 +113,14 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       static_cast<long long>(scale_step->dim() == 2 ? scale_step->size(0) : -1),
       static_cast<long long>(scale_step->dim() == 2 ? scale_step->size(1) : -1));
 
-  // Zero step: per-row bf16, [N, 1].
+  // Zero step: per-256-super-block fp16, [N, K/256] (same grid as scale_step).
   ET_CHECK_OR_RETURN_ERROR(
       zero_step->dim() == 2 && zero_step->size(0) == N &&
-          zero_step->size(1) == 1,
+          zero_step->size(1) == n_super,
       InvalidArgument,
-      "aoti_torch_cuda_int4_plain_mm: zero_step must be [N, 1] bf16. Expected size(0)=N=%lld size(1)=1, got dim()=%lld size(0)=%lld size(1)=%lld",
+      "aoti_torch_cuda_int4_plain_mm: zero_step must be [N, K/256] fp16. Expected size(0)=N=%lld size(1)=%lld, got dim()=%lld size(0)=%lld size(1)=%lld",
       static_cast<long long>(N),
+      static_cast<long long>(n_super),
       static_cast<long long>(zero_step->dim()),
       static_cast<long long>(zero_step->dim() == 2 ? zero_step->size(0) : -1),
       static_cast<long long>(zero_step->dim() == 2 ? zero_step->size(1) : -1));

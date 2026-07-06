@@ -56,9 +56,9 @@ def _meta(self, qdata, scale, scale_step, zero, zero_step, group_size):
 def _cuda(self, qdata, scale, scale_step, zero, zero_step, group_size):
     # Metadata is stored in the coalesced [N, n_groups] layout (transposed at
     # pack time, see pack_cuda.pack_linear_for_cuda). The scale is a uint8 code
-    # with a per-256 fp16 scale_step; the zero is a uint8 code with a per-row
-    # bf16 zero_step. _dequant_matmul reconstructs scale = code*scale_step[g//8],
-    # zero = code*zero_step.
+    # with a per-256 fp16 scale_step; the zero is a uint8 code with a per-256
+    # fp16 zero_step. _dequant_matmul reconstructs scale = code*scale_step[g//8],
+    # zero = code*zero_step[g//8].
     return _dequant_matmul(
         self, qdata, scale, scale_step, zero, zero_step, group_size
     )
@@ -87,8 +87,8 @@ def _dequant_matmul(
     constant at pack time), aligned row-for-row with qdata's [N, *]. The scale is
     a uint8 code with a per-256-super-block fp16 ``scale_step`` ([N, K/256]); the
     real per-group scale is ``scale_code * scale_step[:, g // 8]``. The zero is a
-    uint8 code with a per-row bf16 ``zero_step`` ([N, 1]);
-    ``zero = zero_code * zero_step``.
+    uint8 code with a per-256-super-block fp16 ``zero_step`` ([N, K/256]); the
+    real per-group zero is ``zero_code * zero_step[:, g // 8]``.
 
     Large weights (N > threshold, i.e. the lm_head) are chunked along N to bound
     the dequant intermediate (see note above); smaller weights take the original
@@ -111,8 +111,10 @@ def _dequant_matmul(
         # each super-block).
         scale_step_g = s_step.to(dtype).repeat_interleave(groups_per_super, dim=1)
         s = (sc.to(dtype) * scale_step_g).unsqueeze(-1)
-        # Zero: uint8 code * per-row bf16 step (unchanged).
-        z = (ze.to(dtype) * z_step.to(dtype).reshape(rows, 1)).unsqueeze(-1)
+        # Zero: uint8 code * per-256 fp16 step (broadcast over the 8 groups in
+        # each super-block).
+        zero_step_g = z_step.to(dtype).repeat_interleave(groups_per_super, dim=1)
+        z = (ze.to(dtype) * zero_step_g).unsqueeze(-1)
         w_deq = ((data - z) * s).reshape(rows, K)
         return F.linear(x, w_deq)
 
@@ -166,7 +168,7 @@ def _(func, types, args, kwargs):
         # The metadata is already in the coalesced [N, n_groups] layout the
         # decode kernel reads directly (baked into the weight constant at pack
         # time): scale as uint8 codes + per-256 fp16 scale_step; zero as uint8
-        # codes + per-row bf16 zero_step. Passing them straight through keeps the
+        # codes + per-256 fp16 zero_step. Passing them straight through keeps the
         # export graph free of any per-step transpose/clone, so the coalesced
         # layout is realized without recomputing it every decode step.
         out = torch.ops.executorch_cuda.int4_plain_mm(

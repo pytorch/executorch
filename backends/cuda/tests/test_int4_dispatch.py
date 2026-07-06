@@ -320,13 +320,14 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertEqual(tuple(t.scale.shape), (n_groups, 24))  # torchao layout
         self.assertEqual(tuple(c.scale.shape), (24, n_groups))  # coalesced layout
         # Scale is a uint8 code + a per-256 fp16 step; zero is a uint8 code + a
-        # per-row bf16 step. Decoding must recover the transposed torchao
+        # per-256 fp16 step. Decoding must recover the transposed torchao
         # scale/zero (within code quant error).
         n_super = int(c.scale_step.shape[1])
         gps = n_groups // n_super
         scale_step_g = c.scale_step.to(torch.bfloat16).repeat_interleave(gps, dim=1)
         dec_scale = c.scale.to(torch.bfloat16) * scale_step_g
-        dec_zero = c.zero_point.to(torch.bfloat16) * c.zero_step.to(torch.bfloat16)
+        zero_step_g = c.zero_step.to(torch.bfloat16).repeat_interleave(gps, dim=1)
+        dec_zero = c.zero_point.to(torch.bfloat16) * zero_step_g
         torch.testing.assert_close(
             dec_scale, t.scale.t().contiguous().to(torch.bfloat16), rtol=0.05, atol=0
         )
