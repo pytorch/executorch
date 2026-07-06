@@ -1344,6 +1344,8 @@ def to_edge_transform_and_lower(  # noqa: C901
 
     if transform_passes is not None:
         edge_manager = edge_manager.transform(transform_passes)
+        for method in edge_manager.methods:
+            lift_constant_tensor_pass(edge_manager.exported_program(method))
 
         if generate_etrecord:
             edge_manager._etrecord.add_extra_export_modules(

@@ -135,7 +135,9 @@ class I64toI32(ExportPass):
                 if param.dtype == torch.int64:
                     # QNN does not support int64
                     self._update_meta(n)
-            elif n.op == "placeholder":
+            elif n.op == "placeholder" or n.op == "get_attr":
+                # A `get_attr` node may be introduced after the `LiftConstantScalarOperands` pass.
+                # If the scalar operand has an int64 data type, it should be explicitly cast to int32.
                 node_val = n.meta["val"]
                 if self._is_tensor_of_dtype(node_val, torch.int64):
                     with graph_module.graph.inserting_after(n):
