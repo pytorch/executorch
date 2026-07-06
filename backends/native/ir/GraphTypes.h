@@ -36,8 +36,7 @@
  *     outputs:         [uint];        // graph output value_ids
  *     mutable_buffers: [uint];        // values that persist across executes
  *     operators:       [OperatorDef]; // op-name registry (deduped)
- *     chains:          [Chain];       // chains[0] is main; others used by
- *                                     // future control flow (if/while/call)
+ *     chains:          [Chain];       // chains[0] is main
  *   }
  *
  *   table OperatorDef {
@@ -50,9 +49,7 @@
  *   }
  *
  *   table Instruction {
- *     // Today only one variant; future variants for control flow
- *     // (if/while/call) would extend this union.
- *     body: KernelCall;
+ *     body: KernelCall;  // Only Kernel instructions are supported.
  *   }
  *
  *   table KernelCall {
@@ -193,42 +190,16 @@ enum class ValueType : uint8_t {
 };
 
 /**
- * Kind of an Instruction in a Chain. Mirrors ET's InstructionArguments
- * union but as an adapter-level enum (no flatbuffer types in the API).
+ * Kind of an Instruction in a Chain.
  *
- * See CONTROL_FLOW_DESIGN.md §4.
- *
- * - Kernel: the only kind a CompiledSegment may contain.
- * - JumpFalse: control-flow boundary; segment break.
- * - Move: copies one EValue into another; segment break (host-host
- *   transfer).
- * - Free: informational hint to release a value's storage; v2 ignores
- *   (memory plan handles deallocation at delegate destroy).
- * - Delegate: nested executorch_call_delegate inside our chain.
- *   REJECTED at init; partitioner contract forbids nested delegates.
+ * Only Kernel instructions are supported; the native backend
+ * partitioner guarantees that no control-flow, move, free, or
+ * delegate instructions appear in the delegated subgraph.
+ * Encountering any other kind during deserialization is a fatal
+ * error.
  */
 enum class InstructionKind : uint8_t {
   Kernel = 0,
-  JumpFalse,
-  Move,
-  Free,
-  Delegate,
-};
-
-/**
- * Decoded JumpFalseCall payload. Backing-agnostic.
- */
-struct JumpFalseInfo {
-  uint32_t cond_value_id; // EValue index whose value is the predicate
-  uint32_t destination_pc; // Source-PC of the jump target
-};
-
-/**
- * Decoded MoveCall payload. Backing-agnostic.
- */
-struct MoveInfo {
-  uint32_t src_value_id;
-  uint32_t dst_value_id;
 };
 
 /**
@@ -437,22 +408,13 @@ class Graph {
     // overlap). Only semantic groups need the "all touching ops on same
     // runtime else home=host" coordination.
     {
-      // Collect all op-output value_ids across all chains. Skip non-Kernel
-      // instructions (JumpFalseCall, MoveCall, FreeCall, DelegateCall) —
-      // see CONTROL_FLOW_DESIGN.md §4.3. MoveCall's dst is a special case:
-      // it appears here under produced_vids only if MoveCall handling is
-      // wired through the router (currently MoveCall is treated as a
-      // host->host TransferStep, which does not classify the dst as
-      // "produced by an op"). Tolerable today; revisit if MoveCall-only
-      // mutable-buffer patterns appear.
+      // Collect all op-output value_ids across all chains.
       std::unordered_set<uint32_t> produced_vids;
       for (size_t ci = 0; ci < num_chains(); ++ci) {
         auto chains = plan_->chains();
         auto instrs = chains->Get(ci)->instructions();
         size_t n_instr = instrs ? instrs->size() : 0;
         for (size_t oi = 0; oi < n_instr; ++oi) {
-          if (instruction_kind(ci, oi) != InstructionKind::Kernel)
-            continue;
           OperatorCall op = get_op(ci, oi);
           for (size_t k = 0; k < op.num_outputs(); ++k) {
             produced_vids.insert(op.output(k));
@@ -497,40 +459,14 @@ class Graph {
       for (size_t ii = 0; ii < n_instr; ++ii) {
         InstructionRef ref{
             static_cast<uint32_t>(ci), static_cast<uint32_t>(ii)};
-        auto kind = instruction_kind(ci, ii);
-        switch (kind) {
-          case InstructionKind::Kernel: {
-            OperatorCall op = get_op(ci, ii);
-            for (size_t j = 0; j < op.num_inputs(); ++j)
-              record_user(op.input(j));
-            for (size_t j = 0; j < op.num_outputs(); ++j)
-              record_producer(op.output(j), ref);
-            const char* op_name = op.name();
-            if (op_name)
-              op_name_index_[op_name].push_back(ref);
-            break;
-          }
-          case InstructionKind::Move: {
-            MoveInfo mv = get_move(ci, ii);
-            record_user(mv.src_value_id);
-            record_producer(mv.dst_value_id, ref);
-            break;
-          }
-          case InstructionKind::JumpFalse: {
-            JumpFalseInfo jf = get_jump_false(ci, ii);
-            record_user(jf.cond_value_id);
-            break;
-          }
-          case InstructionKind::Free: {
-            auto instrs_fb = plan_->chains()->Get(ci)->instructions();
-            auto* fc = instrs_fb->Get(ii)->instr_args_as_FreeCall();
-            if (fc)
-              record_user(static_cast<uint32_t>(fc->value_index()));
-            break;
-          }
-          case InstructionKind::Delegate:
-            break;
-        }
+        OperatorCall op = get_op(ci, ii);
+        for (size_t j = 0; j < op.num_inputs(); ++j)
+          record_user(op.input(j));
+        for (size_t j = 0; j < op.num_outputs(); ++j)
+          record_producer(op.output(j), ref);
+        const char* op_name = op.name();
+        if (op_name)
+          op_name_index_[op_name].push_back(ref);
       }
     }
 
@@ -558,34 +494,9 @@ class Graph {
       for (size_t ii = 0; ii < n_instr; ++ii) {
         InstructionRef ref{
             static_cast<uint32_t>(ci), static_cast<uint32_t>(ii)};
-        auto kind = instruction_kind(ci, ii);
-        switch (kind) {
-          case InstructionKind::Kernel: {
-            OperatorCall op = get_op(ci, ii);
-            for (size_t j = 0; j < op.num_inputs(); ++j)
-              emit_user(op.input(j), ref);
-            break;
-          }
-          case InstructionKind::Move: {
-            MoveInfo mv = get_move(ci, ii);
-            emit_user(mv.src_value_id, ref);
-            break;
-          }
-          case InstructionKind::JumpFalse: {
-            JumpFalseInfo jf = get_jump_false(ci, ii);
-            emit_user(jf.cond_value_id, ref);
-            break;
-          }
-          case InstructionKind::Free: {
-            auto instrs_fb = plan_->chains()->Get(ci)->instructions();
-            auto* fc = instrs_fb->Get(ii)->instr_args_as_FreeCall();
-            if (fc)
-              emit_user(static_cast<uint32_t>(fc->value_index()), ref);
-            break;
-          }
-          case InstructionKind::Delegate:
-            break;
-        }
+        OperatorCall op = get_op(ci, ii);
+        for (size_t j = 0; j < op.num_inputs(); ++j)
+          emit_user(op.input(j), ref);
       }
     }
   }
@@ -865,10 +776,9 @@ class Graph {
   }
 
   //===------------------------------------------------------------------===//
-  // Typed instruction accessors (kind-aware; see CONTROL_FLOW_DESIGN.md §4)
+  // Typed instruction accessors
   //===------------------------------------------------------------------===//
 
-  // Returns the InstructionKind at (chain_idx, op_idx).
   InstructionKind instruction_kind(size_t chain_idx, size_t op_idx) const {
     auto chains = plan_->chains();
     ET_CHECK_MSG(
@@ -884,84 +794,22 @@ class Graph {
         chain_idx);
     auto instr = instrs->Get(op_idx);
     using IA = executorch_flatbuffer::InstructionArguments;
-    switch (instr->instr_args_type()) {
-      case IA::KernelCall:
-        return InstructionKind::Kernel;
-      case IA::JumpFalseCall:
-        return InstructionKind::JumpFalse;
-      case IA::MoveCall:
-        return InstructionKind::Move;
-      case IA::FreeCall:
-        return InstructionKind::Free;
-      case IA::DelegateCall:
-        return InstructionKind::Delegate;
-      default:
-        ET_CHECK_MSG(
-            false,
-            "Graph::instruction_kind: unsupported InstructionArguments type %u",
-            static_cast<unsigned>(instr->instr_args_type()));
-    }
+    ET_CHECK_MSG(
+        instr->instr_args_type() == IA::KernelCall,
+        "Graph: non-Kernel instruction at chain=%zu op_idx=%zu (type=%u). "
+        "Control flow is not supported in the native backend.",
+        chain_idx,
+        op_idx,
+        static_cast<unsigned>(instr->instr_args_type()));
+    return InstructionKind::Kernel;
   }
 
-  // Convenience: main-chain shortcut.
   InstructionKind instruction_kind(size_t op_idx) const {
     return instruction_kind(main_chain_idx(), op_idx);
   }
 
-  // Typed accessors per kind. ET_CHECK if the kind doesn't match.
   OperatorCall get_kernel_call(size_t chain_idx, size_t op_idx) const {
     return get_op(chain_idx, op_idx);
-  }
-
-  JumpFalseInfo get_jump_false(size_t chain_idx, size_t op_idx) const {
-    auto chains = plan_->chains();
-    ET_CHECK_MSG(
-        chains && chain_idx < chains->size(),
-        "Graph::get_jump_false: chain_idx=%zu out of range",
-        chain_idx);
-    auto instrs = chains->Get(chain_idx)->instructions();
-    ET_CHECK_MSG(
-        instrs && op_idx < instrs->size(),
-        "Graph::get_jump_false: op_idx=%zu out of range in chain %zu",
-        op_idx,
-        chain_idx);
-    auto instr = instrs->Get(op_idx);
-    auto* jf = instr->instr_args_as_JumpFalseCall();
-    ET_CHECK_MSG(
-        jf != nullptr,
-        "Graph::get_jump_false: instruction at chain=%zu op_idx=%zu is not a "
-        "JumpFalseCall",
-        chain_idx,
-        op_idx);
-    JumpFalseInfo info;
-    info.cond_value_id = static_cast<uint32_t>(jf->cond_value_index());
-    info.destination_pc = static_cast<uint32_t>(jf->destination_instruction());
-    return info;
-  }
-
-  MoveInfo get_move(size_t chain_idx, size_t op_idx) const {
-    auto chains = plan_->chains();
-    ET_CHECK_MSG(
-        chains && chain_idx < chains->size(),
-        "Graph::get_move: chain_idx=%zu out of range",
-        chain_idx);
-    auto instrs = chains->Get(chain_idx)->instructions();
-    ET_CHECK_MSG(
-        instrs && op_idx < instrs->size(),
-        "Graph::get_move: op_idx=%zu out of range in chain %zu",
-        op_idx,
-        chain_idx);
-    auto instr = instrs->Get(op_idx);
-    auto* mv = instr->instr_args_as_MoveCall();
-    ET_CHECK_MSG(
-        mv != nullptr,
-        "Graph::get_move: instruction at chain=%zu op_idx=%zu is not a MoveCall",
-        chain_idx,
-        op_idx);
-    MoveInfo info;
-    info.src_value_id = static_cast<uint32_t>(mv->move_from());
-    info.dst_value_id = static_cast<uint32_t>(mv->move_to());
-    return info;
   }
 
   //===------------------------------------------------------------------===//

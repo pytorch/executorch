@@ -10,6 +10,7 @@
 
 if(BUILD_TESTING)
   # This contains the list of tests which are always built
+  add_subdirectory(backends/native/ir/test)
   add_subdirectory(extension/evalue_util/test)
   add_subdirectory(extension/kernel_util/test)
   add_subdirectory(extension/memory_allocator/test)
