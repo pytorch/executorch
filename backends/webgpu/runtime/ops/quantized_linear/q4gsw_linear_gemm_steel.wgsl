@@ -18,8 +18,8 @@ struct Params {
 
 // "steel" prefill GEMM (M>1): 64x64 tile, 256 threads; K%16==0 host-guarded.
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
-var<workgroup> As: array<f32, 1024>;   // BM*BK
-var<workgroup> Bs: array<f32, 1024>;   // BK*BN
+var<workgroup> As: array<${buffer_scalar_type(DTYPE)}, 1024>;   // BM*BK
+var<workgroup> Bs: array<${buffer_scalar_type(DTYPE)}, 1024>;   // BK*BN
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -47,10 +47,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let arow = row0 + ar;
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
-      As[ar * BK + ac + 0u] = f32(t_input[base]);
-      As[ar * BK + ac + 1u] = f32(t_input[base + 1u]);
-      As[ar * BK + ac + 2u] = f32(t_input[base + 2u]);
-      As[ar * BK + ac + 3u] = f32(t_input[base + 3u]);
+      As[ar * BK + ac + 0u] = ${buffer_scalar_type(DTYPE)}(t_input[base]);
+      As[ar * BK + ac + 1u] = ${buffer_scalar_type(DTYPE)}(t_input[base + 1u]);
+      As[ar * BK + ac + 2u] = ${buffer_scalar_type(DTYPE)}(t_input[base + 2u]);
+      As[ar * BK + ac + 3u] = ${buffer_scalar_type(DTYPE)}(t_input[base + 3u]);
     } else {
       As[ar * BK + ac + 0u] = 0.0; As[ar * BK + ac + 1u] = 0.0;
       As[ar * BK + ac + 2u] = 0.0; As[ar * BK + ac + 3u] = 0.0;
@@ -60,7 +60,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let scale_row = (kk / params.group_size) * params.padded_N;
     for (var j: u32 = 0u; j < 4u; j = j + 1u) {
       let n = col0 + bc + j;
-      var dqv: f32 = 0.0;
+      var dqv: ${buffer_scalar_type(DTYPE)} = 0.0;
       if (n < params.N) {
         let byte_idx = n * params.K_packed + (kk >> 1u);
         let word = t_weight[byte_idx >> 2u];
@@ -73,8 +73,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     }
     workgroupBarrier();
     for (var k: u32 = 0u; k < BK; k = k + 1u) {
-      var a: array<f32, 4>;
-      var bvec: array<f32, 4>;
+      var a: array<${buffer_scalar_type(DTYPE)}, 4>;
+      var bvec: array<${buffer_scalar_type(DTYPE)}, 4>;
       for (var m: u32 = 0u; m < 4u; m = m + 1u) { a[m] = As[(lid.y * 4u + m) * BK + k]; }
       for (var n: u32 = 0u; n < 4u; n = n + 1u) { bvec[n] = Bs[k * BN + lid.x * 4u + n]; }
       for (var m: u32 = 0u; m < 4u; m = m + 1u) {
