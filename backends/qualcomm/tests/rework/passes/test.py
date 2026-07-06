@@ -25,6 +25,12 @@ def test_annotate_avg_pool1d(request, kwargs):
 
 @enumerate_backends_quantized()
 @repack_pass_fixtures
+def test_annotate_get_attr(request, kwargs):
+    AnnotateGetAttr.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends_quantized()
+@repack_pass_fixtures
 def test_annotate_quant_attrs(request, kwargs):
     AnnotateQuantAttrs.test(request, kwargs)  # noqa: F405
 
