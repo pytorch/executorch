@@ -4,10 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import itertools
+import logging
 import operator
 from dataclasses import dataclass
 from enum import IntEnum, unique
-from functools import partial, reduce
+from functools import partial
 from operator import attrgetter
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -15,12 +16,9 @@ from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 try:
     import executorch.kernels.quantized  # noqa[F401]
 except:
-    import logging
-
     logging.info(
         "Failed to load quantized_aot_lib. To run on LPAI backend, please make sure that quantized_aot_lib is accessible."
     )
-    del logging
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
@@ -47,7 +45,7 @@ from torch._ops import OpOverload
 from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
-from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer import Quantizer, SharedQuantizationSpec
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
@@ -401,21 +399,26 @@ class QnnQuantizer(Quantizer):
     def _get_quant_range(self, node):
         if quant_info := node.meta.get(QCOM_QUANT_ANNOTATION_KEY, None):
             try:
-                dtype_info = torch.iinfo(
-                    reduce(getattr, ["output_qspec", "dtype"], quant_info)
-                )
+                # SharedQuantizationSpec has not quant info, so we need to find source node
+                # that this node is sharing quant info with and use source node's quant info.
+                qspec = quant_info.output_qspec
+                while isinstance(qspec, SharedQuantizationSpec):
+                    edge_or_node = qspec.edge_or_node
+                    if isinstance(edge_or_node, tuple):
+                        input_node, user_node = edge_or_node
+                        shared_info = user_node.meta[QCOM_QUANT_ANNOTATION_KEY]
+                        qspec = shared_info.input_qspec_map[input_node]
+                    else:
+                        shared_info = edge_or_node.meta[QCOM_QUANT_ANNOTATION_KEY]
+                        qspec = shared_info.output_qspec
+                dtype_info = torch.iinfo(qspec.dtype)
             except:
+                logging.warning(f"Could not resolve quant range for node: {node.name}")
                 return
 
             quant_range = (
-                dtype_info.max
-                if quant_info.output_qspec.quant_max is None
-                else quant_info.output_qspec.quant_max
-            ) - (
-                dtype_info.min
-                if quant_info.output_qspec.quant_min is None
-                else quant_info.output_qspec.quant_min
-            )
+                dtype_info.max if qspec.quant_max is None else qspec.quant_max
+            ) - (dtype_info.min if qspec.quant_min is None else qspec.quant_min)
             return quant_range
 
     def _get_candidates_with_infinity_args(self, graph_module: GraphModule):
