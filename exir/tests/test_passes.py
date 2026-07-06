@@ -1935,13 +1935,84 @@ class TestPasses(unittest.TestCase):
         #     %b_direct_copy_from_input : [num_users=1] = placeholder[target=b_direct_copy_from_input]
         #     %_lifted_tensor_constant2 : [num_users=1] = placeholder[target=_lifted_tensor_constant2]
         #     %x : [num_users=2] = placeholder[target=x]
+        #     %copy__default_1 : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_direct_copy_from_input, %x), kwargs = {})
         #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%x, %b_state), kwargs = {})
         #     %dim_order_ops__to_dim_order_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.dim_order_ops._to_dim_order_copy.default](args = (%_lifted_tensor_constant2,), kwargs = {dtype: torch.float32, dim_order: []})
         #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%b_state, %dim_order_ops__to_dim_order_copy_default), kwargs = {})
         #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_state, %aten_add_tensor_1), kwargs = {})
-        #     %copy__default_1 : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%b_direct_copy_from_input, %x), kwargs = {})
         #     return (copy__default, copy__default_1, aten_add_tensor)
         self.assertEqual(count_copies(gm), 2)
+
+    def test_mutable_buffers_write_back_is_inserted_early(self) -> None:
+        class EarlyMutationModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                # The buffer's new value is computed at the very start, so its
+                # write-back can happen immediately, letting the memory
+                # planner reuse the space during the rest of the graph.
+                self.state.add_(1)
+                y = x + 1
+                y = y + 1
+                y = y + 1
+                return y
+
+        model = to_edge(
+            export(EarlyMutationModule(), (torch.zeros(1),), strict=True)
+        )
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        # The copy_ comes right after the value it writes back, not at the end
+        # of the graph: every user computation (the adds on x) is after it.
+        self.assertEqual(node_order[copy], node_order[copy.args[1]] + 1)
+        output_node = gm.graph.output_node()
+        user_return = output_node.args[0][1]
+        self.assertLess(node_order[copy], node_order[user_return])
+
+    def test_mutable_buffers_write_back_after_old_value_reads(self) -> None:
+        class ReadOldValueModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                # The buffer's new value is computed before the old value is
+                # read, so the write-back must not simply follow the value it
+                # writes: it must wait for the read of the old value.
+                new_state = x * 2
+                old_plus = self.state + x
+                self.state.copy_(new_state)
+                return old_plus
+
+        model = to_edge(
+            export(ReadOldValueModule(), (torch.zeros(1),), strict=True)
+        )
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        buffer_placeholder = copy.args[0]
+        self.assertEqual(buffer_placeholder.op, "placeholder")
+        # Every read of the buffer's old value stays before the write-back.
+        for user in buffer_placeholder.users:
+            if user is not copy and user.op != "output":
+                self.assertLess(node_order[user], node_order[copy])
 
     def test_remove_quantized_op_noop_pass(self) -> None:
         class TestAddSliceNoop(torch.nn.Module):
