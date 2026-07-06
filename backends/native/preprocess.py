@@ -118,8 +118,8 @@ class NativeBackend(BackendDetails):
         ]
         for name in names:
             spec_program = copy.deepcopy(program)
-            payload = _SPECIALIZATION_REGISTRY[name](spec_program)
-            results.append((name, PreprocessResult(processed_bytes=payload)))
+            result = _SPECIALIZATION_REGISTRY[name](spec_program)
+            results.append((name, result))
 
         return build_fat_result(results)
 

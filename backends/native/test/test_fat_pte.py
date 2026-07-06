@@ -15,6 +15,7 @@ from executorch.backends.native.fat_pte import (
     FAT_VERSION,
     pack_fat_blob,
 )
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
 
 
@@ -96,6 +97,36 @@ class TestBuildFatResult(unittest.TestCase):
         result = build_fat_result([("Solo", r)])
         _, _, count = struct.unpack_from("<4sII", result.processed_bytes, 0)
         self.assertEqual(count, 1)
+
+    def test_shared_constants_deduped(self):
+        """Two results with identical constant data share one buffer."""
+        weight_data = b"\x01\x02\x03\x04" * 64
+
+        store_a = NamedDataStore()
+        store_a.add_named_data("model.weight", weight_data, alignment=16)
+        r_native = PreprocessResult(
+            processed_bytes=b"native",
+            data_store_output=store_a.get_named_data_store_output(),
+        )
+
+        store_b = NamedDataStore()
+        store_b.add_named_data("ab12/model.weight", weight_data, alignment=16)
+        r_accel = PreprocessResult(
+            processed_bytes=b"accel",
+            data_store_output=store_b.get_named_data_store_output(),
+        )
+
+        result = build_fat_result([("Native", r_native), ("Accel", r_accel)])
+        merged = result.data_store_output
+
+        self.assertIn("model.weight", merged.pte_data)
+        self.assertIn("ab12/model.weight", merged.pte_data)
+        # Different keys, but same buffer index (deduped by content).
+        self.assertEqual(
+            merged.pte_data["model.weight"].buffer_index,
+            merged.pte_data["ab12/model.weight"].buffer_index,
+        )
+        self.assertEqual(len(merged.buffers), 1)
 
 
 if __name__ == "__main__":

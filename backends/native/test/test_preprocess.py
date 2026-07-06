@@ -18,6 +18,7 @@ from executorch.backends.native.specializations import (
 )
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir._serialize._flatbuffer_program import _flatbuffer_to_program
+from executorch.exir.backend.backend_details import PreprocessResult
 
 
 def _lower(model, example_inputs, specializations=None):
@@ -46,7 +47,9 @@ class TestSpecializationRegistry(unittest.TestCase):
         _SPECIALIZATION_REGISTRY.update(self._saved)
 
     def test_register_and_lookup(self):
-        register_specialization("TestBackend", lambda ep: b"test")
+        register_specialization(
+            "TestBackend", lambda ep: PreprocessResult(processed_bytes=b"test")
+        )
         self.assertIn("TestBackend", _SPECIALIZATION_REGISTRY)
 
     def test_unregistered_backend_rejected(self):
@@ -67,7 +70,9 @@ class TestSpecializationRegistry(unittest.TestCase):
         self.assertGreater(len(program.execution_plan[0].operators), 0)
 
     def test_registered_backend_produces_fat_pte(self):
-        register_specialization("TestAccel", lambda ep: b"accel_payload")
+        register_specialization(
+            "TestAccel", lambda ep: PreprocessResult(processed_bytes=b"accel_payload")
+        )
         edge = _lower(
             nn.Linear(2, 2), (torch.randn(1, 2),), specializations=["TestAccel"]
         )
@@ -113,7 +118,9 @@ class TestPreprocessSerialization(unittest.TestCase):
 
     def test_fat_pte_contains_both_payloads(self):
         saved = dict(_SPECIALIZATION_REGISTRY)
-        register_specialization("FakeAccel", lambda ep: b"FAKE_ACCEL_DATA")
+        register_specialization(
+            "FakeAccel", lambda ep: PreprocessResult(processed_bytes=b"FAKE_ACCEL_DATA")
+        )
         try:
             edge = _lower(
                 nn.Linear(2, 2),
@@ -132,7 +139,9 @@ class TestPreprocessSerialization(unittest.TestCase):
     def test_fat_pte_native_payload_is_valid(self):
         """The native slice inside a fat PTE is a valid flatbuffer program."""
         saved = dict(_SPECIALIZATION_REGISTRY)
-        register_specialization("FakeAccel", lambda ep: b"FAKE")
+        register_specialization(
+            "FakeAccel", lambda ep: PreprocessResult(processed_bytes=b"FAKE")
+        )
         try:
             edge = _lower(
                 nn.Linear(2, 2),
