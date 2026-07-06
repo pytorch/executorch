@@ -136,6 +136,7 @@ def define_arm_tests():
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:serializer",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
             ] + ([
                 # Needed only by the OSS-only public API manifest tests above.

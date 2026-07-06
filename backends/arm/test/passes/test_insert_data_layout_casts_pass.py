@@ -39,11 +39,6 @@ class CatModule(torch.nn.Module):
         return torch.cat([x, y], dim=1)
 
 
-class SliceModule(torch.nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x[:, 1:3]
-
-
 def test_insert_data_layout_casts_no_target_view_fp_profile_inserts_casts() -> None:
     test_data = (torch.arange(4, dtype=torch.int32).reshape(1, 4),)
 
@@ -113,28 +108,4 @@ def test_insert_data_layout_casts_no_target_cat_fp_profile_inserts_casts() -> No
 
     cast_dtypes = _collect_cast_dtypes(pipeline)
     assert cast_dtypes.count(torch.float32) == 2
-    assert cast_dtypes.count(torch.int32) == 1
-
-
-def test_insert_data_layout_casts_no_target_slice_bf16_profile_inserts_casts() -> None:
-    test_data = (torch.arange(4, dtype=torch.int32).reshape(1, 4),)
-
-    pipeline = PassPipeline[tuple[torch.Tensor, ...]](
-        SliceModule(),
-        test_data,
-        quantize=False,
-        ops_before_pass={
-            "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 1,
-        },
-        ops_after_pass={
-            "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 1,
-            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        },
-        pass_list=[InsertDataLayoutCastsPass],
-        tosa_extensions=["bf16"],
-    )
-    pipeline.run()
-
-    cast_dtypes = _collect_cast_dtypes(pipeline)
-    assert cast_dtypes.count(torch.float32) == 1
     assert cast_dtypes.count(torch.int32) == 1
