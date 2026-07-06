@@ -10,6 +10,8 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <functional>
 #include <stdexcept>
 
 namespace executorch::backends::webgpu {
@@ -38,10 +40,102 @@ void select_as_symint_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<int>(graph.get_int(index_id)));
 }
 
+// aten.sym_size.int(self, dim) -> SymInt = self.size(dim). The WebGPU ops read
+// live sizes from cur_dims directly, so this SymInt is usually unused.
+void sym_size_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  if (args.size() < 3) {
+    throw std::runtime_error("sym_size.int: expected [self, dim, out] args");
+  }
+  const int self_id = args.at(0);
+  const int dim_id = args.at(1);
+  const int out_id = args.at(2);
+  if (graph.get_value_type(out_id) != WebGPUGraph::ValueType::SymInt) {
+    return; // folded to a static Int -> nothing live to source
+  }
+  if (graph.get_value_type(dim_id) != WebGPUGraph::ValueType::Int) {
+    throw std::runtime_error("sym_size.int: dim arg is not an Int");
+  }
+  if (graph.get_value_type(self_id) != WebGPUGraph::ValueType::Tensor) {
+    throw std::runtime_error("sym_size.int: self arg is not a Tensor");
+  }
+  graph.add_symint_dim_source(
+      out_id, self_id, static_cast<int>(graph.get_int(dim_id)));
+}
+
+// An operand is a live SymInt or a static Int constant.
+int32_t read_scalar(WebGPUGraph& graph, int id) {
+  if (graph.get_value_type(id) == WebGPUGraph::ValueType::SymInt) {
+    return graph.read_symint(id);
+  }
+  return static_cast<int32_t>(graph.get_int(id));
+}
+
+// SymInt arithmetic; mirrors Vulkan SymIntOps.cpp, recomputed on resize.
+void register_sym_binary(
+    WebGPUGraph& graph,
+    const std::vector<int>& args,
+    std::function<int32_t(int32_t, int32_t)> op) {
+  if (args.size() < 3) {
+    throw std::runtime_error("sym binary op: expected [a, b, out] args");
+  }
+  const int a = args.at(0);
+  const int b = args.at(1);
+  const int out = args.at(2);
+  if (graph.get_value_type(out) != WebGPUGraph::ValueType::SymInt) {
+    return; // folded to a static Int -> nothing live to compute
+  }
+  auto recompute = [a, b, out, op](WebGPUGraph& g) {
+    g.set_symint(out, op(read_scalar(g, a), read_scalar(g, b)));
+  };
+  recompute(graph); // seed the build-time value
+  if (graph.get_value_type(a) == WebGPUGraph::ValueType::SymInt) {
+    graph.add_resize_hook(a, recompute);
+  }
+  // b != a: for a self-op (e.g. x + x) both operands share one id; register the
+  // recompute hook once, not twice.
+  if (b != a && graph.get_value_type(b) == WebGPUGraph::ValueType::SymInt) {
+    graph.add_resize_hook(b, recompute);
+  }
+}
+
+void sym_add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  register_sym_binary(graph, args, [](int32_t x, int32_t y) { return x + y; });
+}
+
+void sym_sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  register_sym_binary(graph, args, [](int32_t x, int32_t y) { return x - y; });
+}
+
+void sym_mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  register_sym_binary(graph, args, [](int32_t x, int32_t y) { return x * y; });
+}
+
+void sym_floordiv_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  register_sym_binary(graph, args, [](int32_t x, int32_t y) {
+    if (y == 0) {
+      throw std::runtime_error("sym floordiv: division by zero");
+    }
+    if (x == INT32_MIN && y == -1) {
+      throw std::runtime_error(
+          "sym floordiv: signed overflow (INT32_MIN / -1)");
+    }
+    int32_t q = x / y;
+    if ((x % y != 0) && ((x < 0) != (y < 0))) {
+      q--; // round toward negative infinity (Python floor division)
+    }
+    return q;
+  });
+}
+
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(et_vk.select_as_symint.default, select_as_symint_impl);
+  WEBGPU_REGISTER_OP(sym_size.int, sym_size_impl);
+  WEBGPU_REGISTER_OP(add, sym_add_impl);
+  WEBGPU_REGISTER_OP(sub, sym_sub_impl);
+  WEBGPU_REGISTER_OP(mul, sym_mul_impl);
+  WEBGPU_REGISTER_OP(floordiv, sym_floordiv_impl);
 }
 
 } // namespace executorch::backends::webgpu

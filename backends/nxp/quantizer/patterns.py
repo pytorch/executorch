@@ -1141,6 +1141,15 @@ class SqueezeDimsPattern(SharedSpecPattern):
         return [torch.ops.aten.squeeze.dims]
 
 
+class SumDimIntListPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.dim_IntList` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.dim_IntList]
+
+
 class TanhPattern(QuantizationPattern):
     """
     Quantizer for Tanh operator.
