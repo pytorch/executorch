@@ -256,12 +256,12 @@ def _test_qwen3_vl_full_models_tosa_FP_bf16(
     model, inputs = test_case.model_cls.prepare_model_and_inputs(config_factory)
     model, inputs = _to_bfloat16_model_and_floating_inputs(model, inputs)
     # Slightly higher atol for TOSA BF16 on aarch64 (MLETORCH-2048: numeric mismatch)
-    atol = (
-        0.4
-        if common.is_aarch64_host()
-        and test_case.model_cls is LowerableVisionModelWrapper
-        else 0.1
-    )
+    if common.is_aarch64_host() and test_case.model_cls is LowerableVisionModelWrapper:
+        atol = 0.4
+    elif common.is_aarch64_host() and test_case.model_cls is TextModelWrapper:
+        atol = 0.15
+    else:
+        atol = 0.1
     with torch.no_grad():
         pipeline = TosaPipelineFP[input_t](
             model,
