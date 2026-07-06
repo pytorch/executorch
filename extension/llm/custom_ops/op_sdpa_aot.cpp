@@ -143,6 +143,23 @@ at::Tensor update_cache_with_indices_aten(
     const int64_t start_pos,
     const at::Tensor& indices);
 
+Tensor& recurrent_gated_delta_rule_out_no_context(
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& g,
+    const Tensor& beta,
+    Tensor& recurrent_state,
+    Tensor& output);
+
+at::Tensor recurrent_gated_delta_rule_aten(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& g,
+    const at::Tensor& beta,
+    at::Tensor& recurrent_state);
+
 Tensor& sdpa_with_kv_cache_out_no_context(
     const Tensor& q_projected,
     const Tensor& k_projected,
@@ -377,6 +394,32 @@ at::Tensor update_cache_with_indices_aten(
   return output;
 }
 
+Tensor& recurrent_gated_delta_rule_out_no_context(
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& g,
+    const Tensor& beta,
+    Tensor& recurrent_state,
+    Tensor& output) {
+  executorch::aten::RuntimeContext context{};
+  return torch::executor::native::recurrent_gated_delta_rule_out(
+      context, query, key, value, g, beta, recurrent_state, output);
+}
+
+at::Tensor recurrent_gated_delta_rule_aten(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& g,
+    const at::Tensor& beta,
+    at::Tensor& recurrent_state) {
+  auto output = at::empty_like(value);
+  WRAP_TO_ATEN(recurrent_gated_delta_rule_out_no_context, 6)
+  (query, key, value, g, beta, recurrent_state, output);
+  return output;
+}
+
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -410,6 +453,12 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
       "update_cache_with_indices.out(Tensor value, Tensor(a!) cache, "
       "SymInt start_pos, Tensor indices, *, Tensor(b!) out) -> Tensor(b!)");
+  m.def(
+      "recurrent_gated_delta_rule(Tensor query, Tensor key, Tensor value, Tensor g, "
+      "Tensor beta, Tensor(a!) recurrent_state) -> Tensor");
+  m.def(
+      "recurrent_gated_delta_rule.out(Tensor query, Tensor key, Tensor value, Tensor g, "
+      "Tensor beta, Tensor(a!) recurrent_state, *, Tensor(b!) out) -> Tensor(b!)");
   m.def(
       "custom_quantized_sdpa(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
@@ -448,6 +497,14 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
       WRAP_TO_ATEN(
           torch::executor::native::update_cache_with_indices_out_no_context,
           4));
+  m.impl(
+      "recurrent_gated_delta_rule",
+      torch::executor::native::recurrent_gated_delta_rule_aten);
+  m.impl(
+      "recurrent_gated_delta_rule.out",
+      WRAP_TO_ATEN(
+          torch::executor::native::recurrent_gated_delta_rule_out_no_context,
+          6));
   m.impl(
       "custom_quantized_sdpa",
       torch::executor::native::custom_quantized_sdpa_aten);

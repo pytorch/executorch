@@ -11,7 +11,8 @@
 # pyre-unsafe
 
 import logging
-
+import os
+from pathlib import Path
 from typing import Tuple
 
 import torch
@@ -27,6 +28,8 @@ try:
     assert op is not None
     op2 = torch.ops.llama.fast_hadamard_transform.default
     assert op2 is not None
+    op3 = torch.ops.llama.recurrent_gated_delta_rule.default
+    assert op3 is not None
 except:
     # This is needed to ensure that custom ops are registered
     from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
@@ -34,12 +37,14 @@ except:
     # Ideally package is installed in only one location but usage of
     # PYATHONPATH can result in multiple locations.
     # ATM this is mainly used in CI for qnn runner. Will need to revisit this
-    from pathlib import Path
-
     package_path = Path(__file__).parent.resolve()
+    override = os.environ.get("EXECUTORCH_CUSTOM_OPS_AOT_LIB")
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 
-    libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
+    if override:
+        libs = [Path(override).expanduser().resolve()]
+    else:
+        libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
 
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
@@ -48,6 +53,8 @@ except:
     assert op is not None
     op2 = torch.ops.llama.fast_hadamard_transform.default
     assert op2 is not None
+    op3 = torch.ops.llama.recurrent_gated_delta_rule.default
+    assert op3 is not None
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
 
@@ -269,6 +276,87 @@ def update_cache_with_indices_meta(
     # workaround. Should we just return cache instead? But I am afraid that
     # will result in extra memory allocation
     return torch.empty((1,), dtype=value.dtype, device="meta")
+
+
+def _validate_recurrent_gated_delta_rule_params(
+    query,
+    key,
+    value,
+    g,
+    beta,
+    recurrent_state,
+):
+    assert (
+        query.dim() == 4
+    ), f"Expected query to be 4 dimensional but got {query.dim()} dimensions."
+    assert (
+        key.dim() == 4
+    ), f"Expected key to be 4 dimensional but got {key.dim()} dimensions."
+    assert (
+        value.dim() == 4
+    ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
+    assert g.dim() == 3, f"Expected g to be 3 dimensional but got {g.dim()} dimensions."
+    assert (
+        beta.dim() == 3
+    ), f"Expected beta to be 3 dimensional but got {beta.dim()} dimensions."
+    assert (
+        recurrent_state.dim() == 4
+    ), f"Expected recurrent_state to be 4 dimensional but got {recurrent_state.dim()} dimensions."
+
+    for name, tensor in {
+        "query": query,
+        "key": key,
+        "value": value,
+        "g": g,
+        "beta": beta,
+        "recurrent_state": recurrent_state,
+    }.items():
+        assert (
+            tensor.dtype == torch.float32
+        ), f"Expected {name} to be float32 but got {tensor.dtype}"
+
+    assert (
+        query.shape == key.shape
+    ), f"Expected query and key to have matching shapes but got {query.shape} and {key.shape}"
+    assert (
+        query.shape[:3] == value.shape[:3]
+    ), f"Expected query and value to match in batch/head/sequence dims but got {query.shape} and {value.shape}"
+    assert (
+        g.shape == query.shape[:3]
+    ), f"Expected g to match query batch/head/sequence dims but got {g.shape} and {query.shape}"
+    assert (
+        beta.shape == query.shape[:3]
+    ), f"Expected beta to match query batch/head/sequence dims but got {beta.shape} and {query.shape}"
+    assert recurrent_state.shape == (
+        query.size(0),
+        query.size(1),
+        query.size(3),
+        value.size(3),
+    ), (
+        "Expected recurrent_state to have shape "
+        f"{(query.size(0), query.size(1), query.size(3), value.size(3))} "
+        f"but got {recurrent_state.shape}"
+    )
+
+
+@impl(custom_ops_lib, "recurrent_gated_delta_rule", "Meta")
+def recurrent_gated_delta_rule_meta(
+    query,
+    key,
+    value,
+    g,
+    beta,
+    recurrent_state,
+):
+    _validate_recurrent_gated_delta_rule_params(
+        query,
+        key,
+        value,
+        g,
+        beta,
+        recurrent_state,
+    )
+    return torch.empty_like(value)
 
 
 def _validate_quantized_sdpa_params(
