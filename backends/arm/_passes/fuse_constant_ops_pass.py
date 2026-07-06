@@ -93,6 +93,20 @@ class FuseConstantArgsPass(ArmPass):
         )
 
     @staticmethod
+    def _has_real_tosa_dialect_impl(target) -> bool:
+        schema = getattr(target, "_schema", None)
+        op_name = getattr(schema, "name", None)
+        if op_name is None:
+            return False
+
+        try:
+            return torch._C._dispatch_has_kernel_for_dispatch_key(
+                op_name, "CompositeExplicitAutograd"
+            )
+        except RuntimeError:
+            return False
+
+    @staticmethod
     def _arg_contains_symbolic_shape(arg) -> bool:
         if isinstance(arg, torch.fx.Node):
             if meta_has_shape_mark(arg.meta):
@@ -197,19 +211,31 @@ class FuseConstantArgsPass(ArmPass):
 
         return True
 
+    def maybe_delete(self, input_nodes_to_maybe_delete):
+        for input_node in input_nodes_to_maybe_delete:
+            if input_node.meta.get("is_input", False):
+                # Never delete submodule inputs, they need to match the parameters from the outer module.
+                continue
+            if len(input_node.users) == 0:
+                self._delete_constant_placeholder(input_node)
+
     def call(self, graph_module):
         modified = False
         input_nodes_to_maybe_delete = set()
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            # Don't fuse TOSA dialect ops as they do not have eager forward functions.
-            # Also don't fuse ops whose explicit args/kwargs include symbolic shape values.
-            if (
-                self._is_tosa_dialect_op(node.target)
-                or self._arg_contains_symbolic_shape(node.args)
-                or self._arg_contains_symbolic_shape(node.kwargs)
-            ):
+            if node.target == exir_ops.backend.tosa.RESCALE.default:
+                # Leave fusing of RESCALES to the compiler.
+                continue
+            if self._is_tosa_dialect_op(
+                node.target
+            ) and not self._has_real_tosa_dialect_impl(node.target):
+                continue
+            # Don't fuse ops whose explicit args/kwargs include symbolic shape values.
+            if self._arg_contains_symbolic_shape(
+                node.args
+            ) or self._arg_contains_symbolic_shape(node.kwargs):
                 continue
 
             input_nodes = node.all_input_nodes
@@ -241,10 +267,7 @@ class FuseConstantArgsPass(ArmPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            for input_node in input_nodes_to_maybe_delete:
-                if len(input_node.users) == 0:
-                    self._delete_constant_placeholder(input_node)
-
+            self.maybe_delete(input_nodes_to_maybe_delete)
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
