@@ -57,7 +57,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
     def _model_call(self, inps):
         actual_bsz = inps.shape[0]
         inps = F.pad(inps, (0, 0, 0, self._batch_size - actual_bsz))
-        logits = self._runner.prediction_step(
+        logits = self._runner.predict_step(
             self._model,
             input_ids=inps,
         )
