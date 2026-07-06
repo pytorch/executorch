@@ -15,6 +15,10 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/kernel/operator_registry.h>
+#include <algorithm>
+#include <cmath>
+#include <vector>
 
 #ifdef ET_USE_THREADPOOL
 #include <executorch/extension/threadpool/threadpool.h>
@@ -174,6 +178,68 @@ bool validate_cache_params(
   ET_CHECK_OR_RETURN_FALSE(
       is_contiguous_dim_order(v_cache.dim_order().data(), v_cache.dim()),
       "value cache must be in contiguous dim order");
+
+  return true;
+}
+
+bool validate_recurrent_gated_delta_rule_args(
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& g,
+    const Tensor& beta,
+    const Tensor& recurrent_state) {
+  ET_CHECK_OR_RETURN_FALSE(query.dim() == 4, "query must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(key.dim() == 4, "key must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(value.dim() == 4, "value must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(g.dim() == 3, "g must be a 3D tensor");
+  ET_CHECK_OR_RETURN_FALSE(beta.dim() == 3, "beta must be a 3D tensor");
+  ET_CHECK_OR_RETURN_FALSE(
+      recurrent_state.dim() == 4, "recurrent_state must be a 4D tensor");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      query.scalar_type() == ScalarType::Float, "query must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      key.scalar_type() == ScalarType::Float, "key must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      value.scalar_type() == ScalarType::Float, "value must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      g.scalar_type() == ScalarType::Float, "g must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      beta.scalar_type() == ScalarType::Float, "beta must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      recurrent_state.scalar_type() == ScalarType::Float,
+      "recurrent_state must be float32");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      query.size(0) == key.size(0) && query.size(1) == key.size(1) &&
+          query.size(2) == key.size(2) && query.size(3) == key.size(3),
+      "query and key must have matching shapes");
+  ET_CHECK_OR_RETURN_FALSE(
+      query.size(0) == value.size(0) && query.size(1) == value.size(1) &&
+          query.size(2) == value.size(2),
+      "query and value must match in batch/head/sequence dims");
+  ET_CHECK_OR_RETURN_FALSE(
+      g.size(0) == query.size(0) && g.size(1) == query.size(1) &&
+          g.size(2) == query.size(2),
+      "g must match query batch/head/sequence dims");
+  ET_CHECK_OR_RETURN_FALSE(
+      beta.size(0) == query.size(0) && beta.size(1) == query.size(1) &&
+          beta.size(2) == query.size(2),
+      "beta must match query batch/head/sequence dims");
+  ET_CHECK_OR_RETURN_FALSE(
+      recurrent_state.size(0) == query.size(0) &&
+          recurrent_state.size(1) == query.size(1) &&
+          recurrent_state.size(2) == query.size(3) &&
+          recurrent_state.size(3) == value.size(3),
+      "recurrent_state shape must match [B, H, K, V]");
+
+  for (const Tensor* tensor :
+       {&query, &key, &value, &g, &beta, &recurrent_state}) {
+    ET_CHECK_OR_RETURN_FALSE(
+        is_contiguous_dim_order((*tensor).dim_order().data(), (*tensor).dim()),
+        "recurrent gated delta rule expects contiguous inputs");
+  }
 
   return true;
 }
@@ -610,6 +676,133 @@ Tensor& sdpa_with_kv_cache_out(
 
   return output;
 }
+
+Tensor& recurrent_gated_delta_rule_out(
+    RuntimeContext& ctx,
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& g,
+    const Tensor& beta,
+    Tensor& recurrent_state,
+    Tensor& output) {
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(output, value.sizes()) == Error::Ok,
+      InvalidArgument,
+      output,
+      "Failed to resize recurrent_gated_delta_rule output tensor.");
+  ET_KERNEL_CHECK(
+      ctx,
+      validate_recurrent_gated_delta_rule_args(
+          query, key, value, g, beta, recurrent_state),
+      InvalidArgument,
+      output);
+  ET_KERNEL_CHECK(
+      ctx, output.scalar_type() == ScalarType::Float, InvalidArgument, output);
+  ET_KERNEL_CHECK(
+      ctx,
+      is_contiguous_dim_order(output.dim_order().data(), output.dim()),
+      InvalidArgument,
+      output);
+
+  const auto batch_size = query.size(0);
+  const auto num_heads = query.size(1);
+  const auto sequence_length = query.size(2);
+  const auto k_head_dim = query.size(3);
+  const auto v_head_dim = value.size(3);
+
+  const auto q_batch_stride = num_heads * sequence_length * k_head_dim;
+  const auto q_head_stride = sequence_length * k_head_dim;
+  const auto q_seq_stride = k_head_dim;
+
+  const auto value_batch_stride = num_heads * sequence_length * v_head_dim;
+  const auto value_head_stride = sequence_length * v_head_dim;
+  const auto value_seq_stride = v_head_dim;
+
+  const auto gv_batch_stride = num_heads * sequence_length;
+  const auto gv_head_stride = sequence_length;
+
+  const auto state_batch_stride = num_heads * k_head_dim * v_head_dim;
+  const auto state_head_stride = k_head_dim * v_head_dim;
+
+  const auto* query_data = query.const_data_ptr<float>();
+  const auto* key_data = key.const_data_ptr<float>();
+  const auto* value_data = value.const_data_ptr<float>();
+  const auto* g_data = g.const_data_ptr<float>();
+  const auto* beta_data = beta.const_data_ptr<float>();
+  auto* recurrent_state_data = recurrent_state.mutable_data_ptr<float>();
+  auto* output_data = output.mutable_data_ptr<float>();
+  std::vector<float> kv_mem(v_head_dim);
+  std::vector<float> delta(v_head_dim);
+
+  for (int64_t batch = 0; batch < batch_size; ++batch) {
+    for (int64_t head = 0; head < num_heads; ++head) {
+      const auto q_offset = batch * q_batch_stride + head * q_head_stride;
+      const auto value_offset =
+          batch * value_batch_stride + head * value_head_stride;
+      const auto gv_offset = batch * gv_batch_stride + head * gv_head_stride;
+      const auto state_offset =
+          batch * state_batch_stride + head * state_head_stride;
+
+      const auto* q_head = query_data + q_offset;
+      const auto* k_head = key_data + q_offset;
+      const auto* value_head = value_data + value_offset;
+      const auto* g_head = g_data + gv_offset;
+      const auto* beta_head = beta_data + gv_offset;
+      auto* state_head = recurrent_state_data + state_offset;
+      auto* output_head = output_data + value_offset;
+
+      for (int64_t token = 0; token < sequence_length; ++token) {
+        const auto* q_t = q_head + token * q_seq_stride;
+        const auto* k_t = k_head + token * q_seq_stride;
+        const auto* v_t = value_head + token * value_seq_stride;
+        auto* output_t = output_head + token * value_seq_stride;
+
+        const float g_t = std::exp(g_head[token]);
+        const float beta_t = beta_head[token];
+
+        if (g_t != 1.0f) {
+          for (int64_t idx = 0; idx < state_head_stride; ++idx) {
+            state_head[idx] *= g_t;
+          }
+        }
+
+        std::fill(kv_mem.begin(), kv_mem.end(), 0.0f);
+        for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+          const float key_value = k_t[k_idx];
+          const auto* state_row = state_head + k_idx * v_head_dim;
+          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+            kv_mem[v_idx] += state_row[v_idx] * key_value;
+          }
+        }
+
+        for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+          delta[v_idx] = (v_t[v_idx] - kv_mem[v_idx]) * beta_t;
+        }
+
+        for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+          const float key_value = k_t[k_idx];
+          auto* state_row = state_head + k_idx * v_head_dim;
+          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+            state_row[v_idx] += key_value * delta[v_idx];
+          }
+        }
+
+        std::fill(output_t, output_t + v_head_dim, 0.0f);
+        for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+          const float query_value = q_t[k_idx];
+          const auto* state_row = state_head + k_idx * v_head_dim;
+          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+            output_t[v_idx] += state_row[v_idx] * query_value;
+          }
+        }
+      }
+    }
+  }
+
+  return output;
+}
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -628,3 +821,36 @@ EXECUTORCH_LIBRARY(
     llama,
     "custom_quantized_sdpa.out",
     torch::executor::native::custom_quantized_sdpa_out);
+
+namespace {
+
+void recurrent_gated_delta_rule_out_boxed(
+    executorch::runtime::KernelRuntimeContext& ctx,
+    executorch::runtime::Span<executorch::runtime::EValue*> stack) {
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      stack.size() == 7,
+      InvalidProgram,
+      /* void */,
+      "Expected %zu args, got %zu",
+      static_cast<size_t>(7),
+      stack.size());
+
+  auto& query = stack[0]->toTensor();
+  auto& key = stack[1]->toTensor();
+  auto& value = stack[2]->toTensor();
+  auto& g = stack[3]->toTensor();
+  auto& beta = stack[4]->toTensor();
+  auto& recurrent_state = stack[5]->toTensor();
+  auto& output = stack[6]->toTensor();
+
+  (void)torch::executor::native::recurrent_gated_delta_rule_out(
+      ctx, query, key, value, g, beta, recurrent_state, output);
+}
+
+const auto recurrent_gated_delta_rule_out_registration =
+    executorch::runtime::register_kernel(executorch::runtime::Kernel(
+        "llama::recurrent_gated_delta_rule.out",
+        recurrent_gated_delta_rule_out_boxed));
+
+} // namespace

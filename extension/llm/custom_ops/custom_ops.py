@@ -11,7 +11,9 @@
 # pyre-unsafe
 
 import logging
+import os
 
+from pathlib import Path
 from typing import Tuple
 
 import torch
@@ -21,33 +23,84 @@ from torch._inductor.lowering import lowerings as L, register_lowering
 from torch.library import impl
 
 aten = torch.ops.aten
+_CUSTOM_OPS_DLL_DIR_HANDLES = []
 
-try:
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
-except:
-    # This is needed to ensure that custom ops are registered
-    from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
 
-    # Ideally package is installed in only one location but usage of
-    # PYATHONPATH can result in multiple locations.
-    # ATM this is mainly used in CI for qnn runner. Will need to revisit this
-    from pathlib import Path
+def _is_custom_ops_registered() -> bool:
+    try:
+        torch.ops.llama.sdpa_with_kv_cache.default
+        torch.ops.llama.fast_hadamard_transform.default
+        return True
+    except (AttributeError, RuntimeError):
+        return False
+
+
+def _get_custom_ops_library_override() -> Path | None:
+    override = os.environ.get("EXECUTORCH_CUSTOM_OPS_AOT_LIB")
+    if override is None:
+        return None
+
+    lib_path = Path(override).expanduser().resolve()
+    if not lib_path.is_file():
+        raise FileNotFoundError(
+            "EXECUTORCH_CUSTOM_OPS_AOT_LIB must point to an existing "
+            f"custom_ops_aot_lib, but got {lib_path}"
+        )
+    return lib_path
+
+
+def _find_custom_ops_library() -> Path:
+    override = _get_custom_ops_library_override()
+    if override is not None:
+        return override
 
     package_path = Path(__file__).parent.resolve()
-    logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
+    candidates = []
+    patterns = (
+        "**/custom_ops_aot_lib.dll",
+        "**/libcustom_ops_aot_lib.so",
+        "**/libcustom_ops_aot_lib.dylib",
+    )
 
-    libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
+    for pattern in patterns:
+        candidates.extend(package_path.glob(pattern))
 
-    assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
-    logging.info(f"Loading custom ops library: {libs[0]}")
-    torch.ops.load_library(libs[0])
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-    op2 = torch.ops.llama.fast_hadamard_transform.default
-    assert op2 is not None
+    libs = sorted({path.resolve() for path in candidates if path.is_file()})
+    if not libs:
+        raise FileNotFoundError(
+            f"Could not find custom_ops_aot_lib under {package_path}"
+        )
+    return max(libs, key=lambda path: path.stat().st_mtime)
+
+
+def _load_custom_ops_library() -> None:
+    try:
+        # This is needed to ensure that custom ops are registered when
+        # portable_lib is available in the current environment.
+        from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+    except ImportError:
+        portable_lib = None
+
+    lib_path = _find_custom_ops_library()
+    logging.info(f"Loading custom ops library: {lib_path}")
+
+    if os.name == "nt":
+        _CUSTOM_OPS_DLL_DIR_HANDLES.append(os.add_dll_directory(str(lib_path.parent)))
+        torch_lib_dir = Path(torch.__file__).resolve().parent / "lib"
+        if torch_lib_dir.is_dir():
+            _CUSTOM_OPS_DLL_DIR_HANDLES.append(os.add_dll_directory(str(torch_lib_dir)))
+
+    torch.ops.load_library(lib_path)
+
+    # Keep the import alive to avoid lint complaints in environments where
+    # portable_lib is needed for symbol resolution.
+    _ = portable_lib
+
+
+if not _is_custom_ops_registered():
+    _load_custom_ops_library()
+    if not _is_custom_ops_registered():
+        raise RuntimeError("Failed to register ExecuTorch custom ops library")
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
 
@@ -269,6 +322,87 @@ def update_cache_with_indices_meta(
     # workaround. Should we just return cache instead? But I am afraid that
     # will result in extra memory allocation
     return torch.empty((1,), dtype=value.dtype, device="meta")
+
+
+def _validate_recurrent_gated_delta_rule_params(
+    query,
+    key,
+    value,
+    g,
+    beta,
+    recurrent_state,
+):
+    assert (
+        query.dim() == 4
+    ), f"Expected query to be 4 dimensional but got {query.dim()} dimensions."
+    assert (
+        key.dim() == 4
+    ), f"Expected key to be 4 dimensional but got {key.dim()} dimensions."
+    assert (
+        value.dim() == 4
+    ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
+    assert g.dim() == 3, f"Expected g to be 3 dimensional but got {g.dim()} dimensions."
+    assert (
+        beta.dim() == 3
+    ), f"Expected beta to be 3 dimensional but got {beta.dim()} dimensions."
+    assert (
+        recurrent_state.dim() == 4
+    ), f"Expected recurrent_state to be 4 dimensional but got {recurrent_state.dim()} dimensions."
+
+    for name, tensor in {
+        "query": query,
+        "key": key,
+        "value": value,
+        "g": g,
+        "beta": beta,
+        "recurrent_state": recurrent_state,
+    }.items():
+        assert (
+            tensor.dtype == torch.float32
+        ), f"Expected {name} to be float32 but got {tensor.dtype}"
+
+    assert (
+        query.shape == key.shape
+    ), f"Expected query and key to have matching shapes but got {query.shape} and {key.shape}"
+    assert (
+        query.shape[:3] == value.shape[:3]
+    ), f"Expected query and value to match in batch/head/sequence dims but got {query.shape} and {value.shape}"
+    assert (
+        g.shape == query.shape[:3]
+    ), f"Expected g to match query batch/head/sequence dims but got {g.shape} and {query.shape}"
+    assert (
+        beta.shape == query.shape[:3]
+    ), f"Expected beta to match query batch/head/sequence dims but got {beta.shape} and {query.shape}"
+    assert recurrent_state.shape == (
+        query.size(0),
+        query.size(1),
+        query.size(3),
+        value.size(3),
+    ), (
+        "Expected recurrent_state to have shape "
+        f"{(query.size(0), query.size(1), query.size(3), value.size(3))} "
+        f"but got {recurrent_state.shape}"
+    )
+
+
+@impl(custom_ops_lib, "recurrent_gated_delta_rule", "Meta")
+def recurrent_gated_delta_rule_meta(
+    query,
+    key,
+    value,
+    g,
+    beta,
+    recurrent_state,
+):
+    _validate_recurrent_gated_delta_rule_params(
+        query,
+        key,
+        value,
+        g,
+        beta,
+        recurrent_state,
+    )
+    return torch.empty_like(value)
 
 
 def _validate_quantized_sdpa_params(
