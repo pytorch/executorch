@@ -31,18 +31,20 @@ using Tensor = executorch::backends::aoti::slim::SlimTensor;
 //   scale      : [N, K/gs] uint8 per-group scale codes
 //   scale_step : [N, K/256] fp16 per-256-super-block step; group scale =
 //                scale_code * scale_step[:, g/(256/gs)] (step loaded once per
-//                super-block in the kernel, register-cached across its 8 groups).
+//                super-block in the kernel, register-cached across its 8
+//                groups).
 //   zero       : [N, K/gs] uint8 per-group zero codes
 //   zero_step  : [N, K/256] fp16 per-256-super-block step; group zero =
 //                zero_code * zero_step[:, g/(256/gs)]. Both fp16 steps are
-//                packed into ONE 32-bit warp-shuffle word by the subgroup leader
-//                (z_pack) and broadcast to the 8-lane subgroup.
+//                packed into ONE 32-bit warp-shuffle word by the subgroup
+//                leader (z_pack) and broadcast to the 8-lane subgroup.
 // Test vectors are generated from the production pack path (Int4Tensor ->
 // CudaCoalescedInt4Tensor) and expected[] from the tensor's own bf16 dequant @
-// F.linear (same math the M>4 dispatch reference computes). The kernel runs W4A8
-// (it also quantizes activations to int8), so a 0.5 atol absorbs the
-// activation-quant noise. These cover the uint8-scale + per-256-fp16-step decode
-// (single and multi super-block) — the previous planar ql/qh format is gone.
+// F.linear (same math the M>4 dispatch reference computes). The kernel runs
+// W4A8 (it also quantizes activations to int8), so a 0.5 atol absorbs the
+// activation-quant noise. These cover the uint8-scale + per-256-fp16-step
+// decode (single and multi super-block) — the previous planar ql/qh format is
+// gone.
 class AOTITorchInt4PlainMMTest : public ::testing::Test {
  protected:
   void SetUp() override {

@@ -27,15 +27,15 @@ extern "C" {
  * Weight format: [N, K//2] uint8, two INT4 values per byte
  * (low nibble = even k, high nibble = odd k).
  * Encoding: the per-group scale is a uint8 code with a per-256-super-block fp16
- * step; the per-group zero is a uint8 code with a per-256-super-block fp16 step.
- *   scale      : [N, K//gs]  uint8 — per-group scale codes (coalesced layout)
- *   scale_step : [N, K//256] fp16  — per-256-super-block scale step; the group
- *                scale is decoded as scale_code * scale_step[:, g//(256/gs)].
- *   zero       : [N, K//gs]  uint8 — per-group zero codes (coalesced layout)
- *   zero_step  : [N, K//256] fp16  — per-256-super-block zero step; the group
- *                zero is decoded as zero_code * zero_step[:, g//(256/gs)].
- * W4A8 dp4a matvec: dynamically quantizes activations to INT8, then uses dp4a
- * for fused int4×int8 dot products.
+ * step; the per-group zero is a uint8 code with a per-256-super-block fp16
+ * step. scale      : [N, K//gs]  uint8 — per-group scale codes (coalesced
+ * layout) scale_step : [N, K//256] fp16  — per-256-super-block scale step; the
+ * group scale is decoded as scale_code * scale_step[:, g//(256/gs)]. zero : [N,
+ * K//gs]  uint8 — per-group zero codes (coalesced layout) zero_step  : [N,
+ * K//256] fp16  — per-256-super-block zero step; the group zero is decoded as
+ * zero_code * zero_step[:, g//(256/gs)]. W4A8 dp4a matvec: dynamically
+ * quantizes activations to INT8, then uses dp4a for fused int4×int8 dot
+ * products.
  *
  * @param self       Input activation [M, K] bf16
  * @param qdata      Packed weights [N, K//2] uint8

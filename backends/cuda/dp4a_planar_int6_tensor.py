@@ -172,7 +172,9 @@ def _encode_int8_per_super(
         )
     n_super = n_groups // groups_per_super
     xb = xf.reshape(N, n_super, groups_per_super)  # (N, n_super, gps)
-    block_absmax = xb.abs().amax(dim=2, keepdim=True).clamp_min(1e-30)  # (N, n_super, 1)
+    block_absmax = (
+        xb.abs().amax(dim=2, keepdim=True).clamp_min(1e-30)
+    )  # (N, n_super, 1)
     step = (block_absmax / _CODE_ABSMAX).to(torch.float16)  # (N, n_super, 1) fp16
     step_f = step.float().clamp_min(1e-30)
     codes = torch.round(xb / step_f).clamp_(-127, 127).to(torch.int8)

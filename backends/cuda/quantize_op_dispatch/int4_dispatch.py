@@ -59,9 +59,7 @@ def _cuda(self, qdata, scale, scale_step, zero, zero_step, group_size):
     # with a per-256 fp16 scale_step; the zero is a uint8 code with a per-256
     # fp16 zero_step. _dequant_matmul reconstructs scale = code*scale_step[g//8],
     # zero = code*zero_step[g//8].
-    return _dequant_matmul(
-        self, qdata, scale, scale_step, zero, zero_step, group_size
-    )
+    return _dequant_matmul(self, qdata, scale, scale_step, zero, zero_step, group_size)
 
 
 # Chunked dequant for the export GPU budget. The lm_head dequant (N = vocab_size,
@@ -78,9 +76,7 @@ _DEQUANT_N_THRESHOLD = 65536
 _DEQUANT_N_CHUNK = 32768
 
 
-def _dequant_matmul(
-    x, qdata, scale, scale_step, zero, zero_step, group_size
-):
+def _dequant_matmul(x, qdata, scale, scale_step, zero, zero_step, group_size):
     """Dequant INT4 weights to input dtype and call F.linear.
 
     Metadata is in the coalesced [N, n_groups] layout (baked into the weight
@@ -175,9 +171,7 @@ def _(func, types, args, kwargs):
             x_2d, qdata, scale, scale_step, zero, zero_step, gs
         )
     else:
-        out = _dequant_matmul(
-            x_2d, qdata, scale, scale_step, zero, zero_step, gs
-        )
+        out = _dequant_matmul(x_2d, qdata, scale, scale_step, zero, zero_step, gs)
 
     out = out.reshape(*orig_shape[:-1], -1)
     if bias is not None:
