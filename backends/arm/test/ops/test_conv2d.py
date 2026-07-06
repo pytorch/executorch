@@ -718,18 +718,25 @@ def test_convolution_2d_u85_INT_a8w4(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_no_quant(test_data):
     model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 2e-2
+            rtol = 2e-2
+        case _:
+            atol = 3e-3
+            rtol = 3e-3
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op,
         exir_op,
         quantize=False,
-        atol=3e-3,
-        rtol=3e-3,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
