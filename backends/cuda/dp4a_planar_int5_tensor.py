@@ -33,14 +33,16 @@ can reuse the INT4 even/odd extraction verbatim:
                  nibble and its odd weights in the high nibble
                  (``hi_even_nibble | (hi_odd_nibble << 4)``, ``hi = (u >> 4) & 1``).
     scale      : (N, n_groups) uint8 — per-group scale *codes*, coalesced.
+    scale_step : (N, K/256) fp16 — per-256-super-block scale step; the real
+                 per-group scale is ``scale_code * scale_step[:, g // 8]``.
     zero_point : (N, n_groups) uint8 — per-group zero *codes*, coalesced.
-    steps      : (N, 2) bf16 — per-row super-scales (scale_step, zero_step); the
-                 real per-group values are ``code * step``. This compacts the
-                 metadata from bf16 scale + bf16 zero (4 B/group, 5.625 bpw) to
-                 uint8 scale + uint8 zero + a tiny per-row step (2 B/group,
-                 5.125 bpw) at ~baseline accuracy — Q5_K group scales/zeros are
-                 non-negative and fit an 8-bit per-row-normalized code (measured
-                 dequant SNR ~50 dB, matching the bf16 metadata it replaces).
+    zero_step  : (N, K/256) fp16 — per-256-super-block zero step; the real
+                 per-group zero is ``zero_code * zero_step[:, g // 8]``. Both
+                 per-256 fp16 steps mirror GGUF Q5_K's per-super-block fp16
+                 ``d`` / ``dmin`` and are packed into ONE 32-bit warp-shuffle
+                 word by the decode kernel (z_pack), exactly like the INT4 path.
+                 The finer per-256 step (vs the previous per-row step) improves
+                 whole-weight dequant SNR at ~5.625 bpw.
 
 The pack/unpack helpers (:func:`pack_int5`, :func:`unpack_int5`) must stay in
 lockstep with ``int5_plain_mm.cuh`` (the decode kernel) — the per-32-weight
@@ -58,6 +60,9 @@ __all__ = [
     "pack_int5",
     "unpack_int5",
 ]
+
+_CODE_MAX = 255  # uint8 code range [0, 255] (both scale and zero)
+_SUPER_BLOCK = 256  # weights per super-block (GGUF Q5_K QK_K); steps are per this
 
 
 def pack_int5(q: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -130,24 +135,43 @@ def unpack_int5(ql: torch.Tensor, qh: torch.Tensor, N: int, K: int) -> torch.Ten
     return lo | (hi << 4)  # [0, 31] uint8
 
 
-def _encode_uint8_per_row(
+def _encode_uint8_per_super(
     x: torch.Tensor,
+    group_size: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Encode a (N, n_groups) non-negative per-group tensor to per-row uint8 codes.
+    """Encode a (N, n_groups) non-negative per-group tensor to per-256 uint8 codes.
 
-    Q5_K per-group scales and zeros are both non-negative (``d``/``dmin`` >= 0),
-    so an unsigned code is exact at the endpoints and ~baseline elsewhere.
-    Returns ``(codes, step)`` where ``codes`` is ``(N, n_groups)`` uint8 and
-    ``step`` is ``(N, 1)`` bf16, with ``code * step`` reconstructing the value.
-    The step is the per-row max / 255 rounded to bf16, so the largest group in
-    each row maps to ~255 and the 8-bit code spans the row's dynamic range.
+    Used for both the scale and the zero. A super-block is ``_SUPER_BLOCK``
+    (256) weights = ``groups_per_super = 256 // group_size`` groups (8 for
+    group_size=32). Q5_K per-group scales/zeros are non-negative (``d``/``dmin``
+    >= 0), so an unsigned code is exact at the endpoints. Returns
+    ``(codes, step)`` where ``codes`` is ``(N, n_groups)`` uint8 and ``step`` is
+    ``(N, n_super)`` fp16 with ``n_super = n_groups // groups_per_super = K //
+    256``, such that ``code * step[:, g // groups_per_super] ≈ x``. The step is
+    the per-256-super-block max / 255 rounded to fp16 (what the kernel reads), so
+    encode and decode agree. Mirrors the INT4 ``_encode_uint8_per_super`` (the
+    int5 scale/zero are already row-major (N, n_groups), so no transpose).
     """
     xf = x.contiguous().float()  # (N, n_groups), non-negative
-    row_max = xf.amax(dim=1, keepdim=True).clamp_min(1e-30)  # (N, 1)
-    step = (row_max / 255.0).to(torch.bfloat16)  # (N, 1) bf16
+    N, n_groups = int(xf.shape[0]), int(xf.shape[1])
+    groups_per_super = _SUPER_BLOCK // int(group_size)
+    if groups_per_super < 1:
+        raise ValueError(
+            f"group_size={group_size} must be <= {_SUPER_BLOCK} for the per-256 step"
+        )
+    if n_groups % groups_per_super != 0:
+        raise ValueError(
+            f"n_groups={n_groups} must be a multiple of {groups_per_super} "
+            f"(K must be a multiple of {_SUPER_BLOCK}) for group_size={group_size}"
+        )
+    n_super = n_groups // groups_per_super
+    xb = xf.reshape(N, n_super, groups_per_super)  # (N, n_super, gps)
+    block_max = xb.amax(dim=2, keepdim=True).clamp_min(1e-30)  # (N, n_super, 1)
+    step = (block_max / _CODE_MAX).to(torch.float16)  # (N, n_super, 1) fp16
     step_f = step.float().clamp_min(1e-30)
-    codes = torch.round(xf / step_f).clamp_(0, 255).to(torch.uint8)
-    return codes.contiguous(), step.contiguous()
+    codes = torch.round(xb / step_f).clamp_(0, _CODE_MAX).to(torch.uint8)
+    codes = codes.reshape(N, n_groups).contiguous()
+    return codes, step.squeeze(2).contiguous()
 
 
 class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
@@ -158,7 +182,7 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
     this class only.
     """
 
-    tensor_data_names = ["ql", "qh", "scale", "zero_point", "steps"]
+    tensor_data_names = ["ql", "qh", "scale", "scale_step", "zero_point", "zero_step"]
     tensor_attribute_names = ["block_size", "shape"]
 
     def __new__(
@@ -166,14 +190,15 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         ql: torch.Tensor,
         qh: torch.Tensor,
         scale: torch.Tensor,
+        scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        steps: torch.Tensor,
+        zero_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
     ):
         kwargs = {}
         kwargs["device"] = ql.device
-        kwargs["dtype"] = steps.dtype
+        kwargs["dtype"] = torch.bfloat16
         kwargs["requires_grad"] = False
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)  # type: ignore[attr-defined]
 
@@ -182,8 +207,9 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         ql: torch.Tensor,
         qh: torch.Tensor,
         scale: torch.Tensor,
+        scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        steps: torch.Tensor,
+        zero_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
     ):
@@ -191,8 +217,9 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         self.ql = ql
         self.qh = qh
         self.scale = scale
+        self.scale_step = scale_step
         self.zero_point = zero_point
-        self.steps = steps
+        self.zero_step = zero_step
         self.block_size = block_size
 
     def _quantization_type(self):
@@ -207,7 +234,8 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         (dequant = ``scale * (qdata - zero_point)``). We shift back to the raw
         unsigned ``u = qdata + 16`` in ``[0, 31]`` and the unsigned zero
         ``zero_u = zero_point + 16`` (both non-negative), bit-pack the ql/qh
-        planes, and re-encode scale/zero to per-row uint8 codes. All of this is
+        planes, and re-encode scale/zero to per-group uint8 codes each with a
+        per-256-super-block fp16 step (mirroring the INT4 z_pack). All of this is
         baked into the serialized weight constant here, once at pack time.
         """
         q_centered = t.qdata
@@ -221,16 +249,17 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         zero_u = (t.zero_point.float() + 16.0).clamp_min(0.0)  # (N, n_groups)
         scale = t.scale.float()  # (N, n_groups), non-negative
 
+        gs = int(t.block_size[-1])
         ql, qh = pack_int5(u)
-        scale_codes, scale_step = _encode_uint8_per_row(scale)
-        zero_codes, zero_step = _encode_uint8_per_row(zero_u)
-        steps = torch.cat([scale_step, zero_step], dim=1).contiguous()  # (N, 2)
+        scale_codes, scale_step = _encode_uint8_per_super(scale, gs)
+        zero_codes, zero_step = _encode_uint8_per_super(zero_u, gs)
         return cls(
             ql,
             qh,
             scale_codes,
+            scale_step,
             zero_codes,
-            steps,
+            zero_step,
             list(t.block_size),
             t.shape,
         )
@@ -255,18 +284,27 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> torch.Tensor:
         """Dequantize to a dense tensor (asymmetric: ``w = scale * (u - zero)``).
 
-        Used for the tied lm_head / token embedding (which can't gather a packed
-        tensor) and as the numerical reference.
+        Reconstructs the per-group scale/zero from the uint8 codes and their
+        per-256-super-block fp16 steps (broadcast over the 8 groups per
+        super-block). Used for the tied lm_head / token embedding (which can't
+        gather a packed tensor) and as the numerical reference.
         """
-        dtype = output_dtype if output_dtype is not None else self.steps.dtype
+        dtype = output_dtype if output_dtype is not None else torch.bfloat16
         N, K = int(self.shape[0]), int(self.shape[1])
         gs = self.block_size[-1]
-        u = unpack_int5(self.ql, self.qh, N, K).to(dtype)
-        scale_step = self.steps[:, 0].to(dtype).reshape(N, 1)
-        zero_step = self.steps[:, 1].to(dtype).reshape(N, 1)
-        scale = (self.scale.to(dtype) * scale_step).repeat_interleave(gs, dim=-1)
-        zero = (self.zero_point.to(dtype) * zero_step).repeat_interleave(gs, dim=-1)
-        return ((u - zero) * scale).to(dtype)
+        n_groups = K // gs
+        n_super = int(self.scale_step.shape[1])
+        groups_per_super = n_groups // n_super
+
+        u = unpack_int5(self.ql, self.qh, N, K).to(torch.float32)
+        scale_code = self.scale.to(torch.float32)  # (N, n_groups)
+        scale_step = self.scale_step.float().repeat_interleave(groups_per_super, dim=1)
+        scale = (scale_code * scale_step).repeat_interleave(gs, dim=1)  # (N, K)
+
+        zero_code = self.zero_point.to(torch.float32)  # (N, n_groups)
+        zero_step = self.zero_step.float().repeat_interleave(groups_per_super, dim=1)
+        zero = (zero_code * zero_step).repeat_interleave(gs, dim=1)  # (N, K)
+        return (scale * (u - zero)).to(dtype)
 
 
 # Allow a model with CudaDp4aPlanarInt5Tensor weights to be loaded with

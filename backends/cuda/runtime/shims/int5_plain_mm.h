@@ -37,29 +37,34 @@ extern "C" {
  *           four 1-bit highs of that word's even weights in the low nibble and
  *           its odd weights in the high nibble.
  *   scale : [N, K//group_size] uint8 per-group scale codes (row-major).
- *   zero  : [N, K//group_size] uint8 per-group zero codes (row-major).
- *           with a per-row [N, 2] bf16 super-scale ``steps`` so the group
- *           scale/zero are decoded as code*scale_step / code*zero_step
- *           (5.625 -> 5.125 bpw).
- * W5A8 dp4a matvec: dynamically quantizes activations to INT8, reconstructs
- * full 5-bit weight bytes, then uses dp4a for fused int5×int8 dot products.
+ *   scale_step : [N, K//256] fp16 per-256-super-block scale step; the group
+ *                scale is ``scale_code * scale_step[:, g //
+ * (256/group_size)]``. zero  : [N, K//group_size] uint8 per-group zero codes
+ * (row-major). zero_step  : [N, K//256] fp16 per-256-super-block zero step; the
+ * group zero is ``zero_code * zero_step[:, g // (256/group_size)]``. Both fp16
+ * steps are packed into ONE 32-bit warp-shuffle word by the subgroup leader
+ * (z_pack) and broadcast, mirroring the INT4 path. W5A8 dp4a matvec:
+ * dynamically quantizes activations to INT8, reconstructs full 5-bit weight
+ * bytes, then uses dp4a for fused int5×int8 dot products.
  *
- * @param self     Input activation [M, K] bf16
- * @param ql       Low-nibble plane [N, K/2] uint8
- * @param qh       High-1-bit plane [N, K/8] uint8
- * @param scale    Per-group scale codes [N, K//group_size] uint8
- * @param zero     Per-group zero codes [N, K//group_size] uint8
- * @param steps    Per-row super-scale [N, 2] bf16 (scale_step, zero_step)
+ * @param self       Input activation [M, K] bf16
+ * @param ql         Low-nibble plane [N, K/2] uint8
+ * @param qh         High-1-bit plane [N, K/8] uint8
+ * @param scale      Per-group scale codes [N, K//group_size] uint8
+ * @param scale_step Per-256-super-block scale step [N, K//256] fp16
+ * @param zero       Per-group zero codes [N, K//group_size] uint8
+ * @param zero_step  Per-256-super-block zero step [N, K//256] fp16
  * @param group_size Quantization group size (multiple of 32; e.g. 32 for Q5_K)
- * @param ret0     Output [M, N] bf16
+ * @param ret0       Output [M, N] bf16
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_int5_plain_mm(
     Tensor* self,
     Tensor* ql,
     Tensor* qh,
     Tensor* scale,
+    Tensor* scale_step,
     Tensor* zero,
-    Tensor* steps,
+    Tensor* zero_step,
     int64_t group_size,
     Tensor** ret0);
 

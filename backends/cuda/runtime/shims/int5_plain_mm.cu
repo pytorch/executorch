@@ -10,10 +10,10 @@
 #include <cuda_runtime.h>
 
 #include <executorch/backends/aoti/utils.h>
-#include <executorch/backends/cuda/runtime/shims/int5_plain_mm.cuh>
 #include <executorch/backends/cuda/runtime/shims/int5_plain_mm.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/backends/cuda/runtime/shims/int5_plain_mm.cuh>
 
 namespace executorch::backends::cuda {
 #ifdef __cplusplus
@@ -25,8 +25,9 @@ AOTITorchError aoti_torch_cuda_int5_plain_mm(
     Tensor* ql,
     Tensor* qh,
     Tensor* scale,
+    Tensor* scale_step,
     Tensor* zero,
-    Tensor* steps,
+    Tensor* zero_step,
     int64_t group_size,
     Tensor** ret0) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -50,14 +51,19 @@ AOTITorchError aoti_torch_cuda_int5_plain_mm(
       "aoti_torch_cuda_int5_plain_mm: scale is null");
 
   ET_CHECK_OR_RETURN_ERROR(
+      scale_step != nullptr,
+      InvalidArgument,
+      "aoti_torch_cuda_int5_plain_mm: scale_step is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
       zero != nullptr,
       InvalidArgument,
       "aoti_torch_cuda_int5_plain_mm: zero is null");
 
   ET_CHECK_OR_RETURN_ERROR(
-      steps != nullptr,
+      zero_step != nullptr,
       InvalidArgument,
-      "aoti_torch_cuda_int5_plain_mm: steps is null");
+      "aoti_torch_cuda_int5_plain_mm: zero_step is null");
 
   ET_CHECK_OR_RETURN_ERROR(
       ret0 != nullptr,
@@ -80,7 +86,8 @@ AOTITorchError aoti_torch_cuda_int5_plain_mm(
       0,
       &C);
 
-  _int5_plain_mm_cuda(*self, *ql, *qh, *scale, *zero, *steps, group_size, C);
+  _int5_plain_mm_cuda(
+      *self, *ql, *qh, *scale, *scale_step, *zero, *zero_step, group_size, C);
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
 
   *ret0 = C;
