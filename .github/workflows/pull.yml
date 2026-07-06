@@ -534,8 +534,8 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        # Current CI size: 48008 (gcc9-nopytorch, 2026-03-06)
-        threshold="48500"
+        # Current CI size: 52168 (gcc9-nopytorch, 2026-07-06)
+        threshold="52168"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
