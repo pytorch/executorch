@@ -193,6 +193,12 @@ def test_argmin(request, kwargs):
     ArgMin.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_activation_dtype([Tolerance(), Tolerance(), pytest.raises(AssertionError)])
+@with_htp_context
+def test_as_strided(request, kwargs):
+    AsStrided.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype(
     [
         Tolerance(),
