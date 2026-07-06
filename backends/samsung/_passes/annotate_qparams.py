@@ -221,16 +221,26 @@ class AnnotateQparamsPass(ExportPass):
                 node.meta["in_quantize_attrs"] = in_quantize_attrs
 
     def _annotate_decomposed_mm(self, graph_module: GraphModule):
-        for source_list in get_source_partitions(graph_module.graph, ["matmul"]).get(
-            "matmul", {}
-        ):
-            final_view = source_list.output_nodes[0]
-            if not (quantize_attrs := final_view.meta.get("quantize_attrs")):
-                continue
-            for node in source_list.nodes:
-                if node.target == exir_ops.edge.aten.bmm.default:
-                    node.meta["quantize_attrs"] = quantize_attrs
-                    break
+        partitions = get_source_partitions(
+            graph_module.graph,
+            [
+                "matmul",
+                torch.ops.aten.matmul.default,
+                operator.matmul,
+                torch.matmul,
+                torch.bmm,
+            ],
+        )
+
+        for _, src_partitions in partitions.items():
+            for src_partition in src_partitions:
+                final_view = src_partition.output_nodes[0]
+                if not (quantize_attrs := final_view.meta.get("quantize_attrs")):
+                    continue
+                for node in src_partition.nodes:
+                    if node.target == exir_ops.edge.aten.bmm.default:
+                        node.meta["quantize_attrs"] = quantize_attrs
+                        break
 
     def call(self, graph_module: GraphModule):
         self._annotate(graph_module)

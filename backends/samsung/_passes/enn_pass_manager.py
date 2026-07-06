@@ -13,7 +13,6 @@ from executorch.backends.samsung._passes import (
     DecomposeEinsum,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
-    DecomposeMatmul,
     DecomposeRoll,
     FoldQDQPass,
     FuseActivationPass,
@@ -52,7 +51,6 @@ class EnnPassManager(PassManager):
         self.add_pass(DecomposeGlu())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeRoll())
-        self.add_pass(DecomposeMatmul())
         self.add_pass(DecomposeLinalgVectorNorm())
         self.add_pass(ReplaceInfValues())
         return self._transform(graph_module)

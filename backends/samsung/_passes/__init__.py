@@ -13,7 +13,6 @@ from .customized_constant_prop import ConstantPropPass
 from .decompose_einsum import DecomposeEinsum
 from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
-from .decompose_matmul import DecomposeMatmul
 from .decompose_roll import DecomposeRoll
 from .fold_qdq import FoldQDQPass
 from .fuse_activation import FuseActivationPass
@@ -32,7 +31,6 @@ __all__ = [
     DecomposeEinsum,
     DecomposeGlu,
     DecomposeLinalgVectorNorm,
-    DecomposeMatmul,
     DecomposeRoll,
     FoldQDQPass,
     FuseActivationPass,
