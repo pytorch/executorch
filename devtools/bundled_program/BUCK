@@ -1,5 +1,52 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/devtools/bundled_program/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "core",
+    srcs = [
+        "core.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":config",
+        ":version",
+        "//caffe2:torch",
+        "//executorch/devtools/bundled_program/schema:bundled_program_schema_py",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "config",
+    srcs = [
+        "config.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "version",
+    srcs = [
+        "version.py",
+    ],
+    visibility = [
+        "//executorch/devtools/...",
+    ],
+)
