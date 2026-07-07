@@ -59,7 +59,17 @@ CONFIGS = [
     # requires N % 8 == 0 (torchao pads N for the scale layout), so odd-N / N=1 are
     # not exportable -- bicol's has1 odd-N guard is defensive (mirrors coop4's
     # general-N robustness) and unreachable through this op.
-    # Prefill shapes routing to the shmem GEMM (K>=4096 or N>=2048); M=128.
+    # M>1 prefill: prefer the steel GEMM (K%16==0) on a >=256-invocation device
+    # (e.g. lvp); else shmem (K>=4096 or N>=2048) or register-tiled (SwiftShader
+    # caps at 128). Same fp64 golden regardless of which kernel runs.
+    Q4gswConfig("steel", 96, 2048, 256),  # steel-isolating (K<4096, N<2048)
+    # Same shape as "steel"; the .pte is dtype-independent, so this fixture feeds
+    # the f16-multiply steel kernel in a -DWGPU_BACKEND_STEEL_F16 build (goldened
+    # at a looser f16 tol in the native test). The default f32 build ignores it.
+    Q4gswConfig("steel_f16", 96, 2048, 256),  # f16-multiply steel (opt-in build)
+    # Partial M and N steel tiles under the f16 kernel; exercises f16 boundary
+    # masking (the exact-N "steel_f16" shape does not). N%8==0, steel-isolating.
+    Q4gswConfig("steel_f16_edge", 70, 1024, 136),  # f16 partial-tile (opt-in)
     Q4gswConfig("gate_proj_pf", 128, 2048, 8192),  # gate/up prefill (shmem via N)
     Q4gswConfig("down_proj_pf", 128, 8192, 2048),  # down prefill (shmem via K)
     Q4gswConfig("shmem_edge", 130, 4096, 2056),  # partial 32-tile bounds
