@@ -1,6 +1,21 @@
-enable f16;
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
-// f16 K-cache variant of sdpa_compute_attn_weights.wgsl (f32 compute).
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from sdpa_compute_attn_weights.wgsl - DO NOT EDIT.
+// wgsl-sha256: c8795d66b9b51516795fb0113b21fd55086b4a54d9a4b81c7f394ffd96d117b3
+inline constexpr const char* kSdpaComputeAttnWeightsHalfWGSL = R"(
+enable f16;
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
 @group(0) @binding(1) var<storage, read> t_q: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> t_k_cache: array<vec4<f16>>;
@@ -121,3 +136,10 @@ fn main(
     m = m + 1u;
   }
 }
+)";
+
+inline constexpr uint32_t kSdpaComputeAttnWeightsHalfWorkgroupSizeX = 64;
+inline constexpr uint32_t kSdpaComputeAttnWeightsHalfWorkgroupSizeY = 1;
+inline constexpr uint32_t kSdpaComputeAttnWeightsHalfWorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
