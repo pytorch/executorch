@@ -15,9 +15,9 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
 #ifdef WGPU_BACKEND_KV_F16
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_f16_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_f16_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_f16_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_half_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_half_wgsl.h>
 #endif
 
 #include <webgpu/webgpu.h>
@@ -263,7 +263,7 @@ static WGPUBuffer record_update_cache_dispatch(
   const char* uc_src = kUpdateCacheWGSL;
 #ifdef WGPU_BACKEND_KV_F16
   if (graph.kv_f16()) {
-    uc_src = kUpdateCacheF16WGSL;
+    uc_src = kUpdateCacheHalfWGSL;
   }
 #endif
   build_dispatch(
@@ -508,7 +508,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     const char* qk_src = kSdpaComputeAttnWeightsWGSL;
 #ifdef WGPU_BACKEND_KV_F16
     if (graph.kv_f16()) {
-      qk_src = kSdpaComputeAttnWeightsF16WGSL;
+      qk_src = kSdpaComputeAttnWeightsHalfWGSL;
     }
 #endif
     build_dispatch(
@@ -567,7 +567,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     const char* av_src = kSdpaComputeOutWGSL;
 #ifdef WGPU_BACKEND_KV_F16
     if (graph.kv_f16()) {
-      av_src = kSdpaComputeOutF16WGSL;
+      av_src = kSdpaComputeOutHalfWGSL;
     }
 #endif
     build_dispatch(

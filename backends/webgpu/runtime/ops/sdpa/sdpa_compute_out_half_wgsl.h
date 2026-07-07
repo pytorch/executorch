@@ -1,6 +1,21 @@
-enable f16;
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
-// f16 V-cache variant of sdpa_compute_out.wgsl (f32 compute).
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from sdpa_compute_out.wgsl - DO NOT EDIT.
+// wgsl-sha256: ed9709c966538edf2cbc6be97c284b89a9d921b6a4dbf115c6cbd76af301a1be
+inline constexpr const char* kSdpaComputeOutHalfWGSL = R"(
+enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> t_attn_weights_softmax: array<f32>;
 @group(0) @binding(2) var<storage, read> t_v_cache: array<vec4<f16>>;
@@ -139,3 +154,10 @@ fn main(
     m = m + 1u;
   }
 }
+)";
+
+inline constexpr uint32_t kSdpaComputeOutHalfWorkgroupSizeX = 64;
+inline constexpr uint32_t kSdpaComputeOutHalfWorkgroupSizeY = 1;
+inline constexpr uint32_t kSdpaComputeOutHalfWorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
