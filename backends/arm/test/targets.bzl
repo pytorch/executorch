@@ -38,6 +38,7 @@ def define_arm_tests():
         "ops/test_to_copy.py",
         "ops/test_exp.py",
         "ops/test_fft.py",
+        "ops/test_flip.py",
         "ops/test_reciprocal.py",
         "ops/test_mean_dim.py",
         "ops/test_var.py",
@@ -140,6 +141,7 @@ def define_arm_tests():
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:serializer",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
             ] + ([
                 # Needed only by the OSS-only public API manifest tests above.

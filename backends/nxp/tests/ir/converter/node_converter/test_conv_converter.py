@@ -201,7 +201,10 @@ class TestConv:
             expected_delegated_ops={Convolution: 1},
             expected_non_delegated_ops={},
         )
-        dataset = RandomDatasetCreator(low=-256, high=256)
+        dataset = RandomDatasetCreator(low=-1, high=1)
+
+        # Use quantized dataset and allow single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -212,6 +215,7 @@ class TestConv:
             dataset,
             comparator,
             use_qat=use_qat,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     @staticmethod
@@ -248,40 +252,24 @@ class TestConv:
                 oc := 16,
                 qat := True,
                 id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (8, 16, 8, 32),
                 oc := 16,
                 qat := False,
                 id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (16, 8, 32, 64),
                 oc := 32,
                 qat := True,
                 id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (16, 8, 32, 64),
                 oc := 32,
                 qat := False,
                 id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (1, 8, 32, 64),
@@ -300,10 +288,6 @@ class TestConv:
                 oc := 24,
                 qat := True,
                 id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (1, 32, 48, 8),
@@ -347,30 +331,18 @@ class TestConv:
                 qat := False,
                 id=f"qat={qat}, basic inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (16, 8, 32, 64),
                 qat := True,
                 id=f"qat={qat}, basic inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (16, 8, 32, 64),
                 qat := False,
                 id=f"qat={qat}, basic inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (1, 16, 32, 64),
@@ -398,9 +370,7 @@ class TestConv:
             ),
         ],
     )
-    def test__basic_nsys_inference_depthwise(
-        self, input_shape, is_qat, request, mocker
-    ):
+    def test__depthwise(self, input_shape, is_qat, request, mocker):
         out_channels = input_shape[1]
         group = input_shape[1]
         model = Conv2dModule(
@@ -483,16 +453,10 @@ class TestConv:
                 oc := 27,
                 qat := False,
                 id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
         ],
     )
-    def test__basic_nsys_inference__unusual_shapes(
-        self, input_shape, out_channels, is_qat, request, mocker
-    ):
+    def test__unusual_shapes(self, input_shape, out_channels, is_qat, request, mocker):
         model = Conv2dModule(in_channels=input_shape[1], out_channels=out_channels)
 
         self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
@@ -565,10 +529,6 @@ class TestConv:
                 qat := True,
                 id=f"qat={qat}, unusual shape inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (4, 21, 13, 17),
@@ -578,9 +538,7 @@ class TestConv:
             ),
         ],
     )
-    def test__basic_nsys_inference_depthwise__unusual_shapes(
-        self, input_shape, is_qat, request, mocker
-    ):
+    def test__depthwise__unusual_shapes(self, input_shape, is_qat, request, mocker):
         out_channels = input_shape[1]
         group = input_shape[1]
 
@@ -607,9 +565,7 @@ class TestConv:
             ),
         ],
     )
-    def test__basic_nsys_inference__implicit_batch(
-        self, input_shape, out_channels, is_qat, mocker, request
-    ):
+    def test__implicit_batch(self, input_shape, out_channels, is_qat, mocker, request):
         in_channels = input_shape[0]
 
         model = Conv2dModule(in_channels=in_channels, out_channels=out_channels)
@@ -716,10 +672,6 @@ class TestConv:
                 d := (1, 4096),
                 qat := True,
                 id=f"qat={qat}, bounds of dilation width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (3, 3, 3, 8500),
@@ -729,10 +681,6 @@ class TestConv:
                 d := (1, 4096),
                 qat := False,
                 id=f"qat={qat}, bounds of dilation width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (4, 3, 8500, 3),
@@ -742,10 +690,6 @@ class TestConv:
                 d := (4096, 1),
                 qat := True,
                 id=f"qat={qat}, bounds of dilation height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (4, 3, 8500, 3),
@@ -755,10 +699,6 @@ class TestConv:
                 d := (4096, 1),
                 qat := False,
                 id=f"qat={qat}, bounds of dilation height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (2, 80, 35, 34),
@@ -788,7 +728,7 @@ class TestConv:
             ),
         ],
     )
-    def test__basic_nsys_inference__big(
+    def test__big(
         self,
         input_shape,
         out_channels,
@@ -907,10 +847,6 @@ class TestConv:
                 d := (4096, 1),
                 qat := False,
                 id=f"qat={qat}, bounds of dilation height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (2, 80, 35, 34),
@@ -919,10 +855,6 @@ class TestConv:
                 d := 1,
                 qat := True,
                 id=f"qat={qat}, bounds of kernel_h * kernel_w * input_channels: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (2, 80, 35, 34),
@@ -931,14 +863,10 @@ class TestConv:
                 d := 1,
                 qat := False,
                 id=f"qat={qat}, bounds of kernel_h * kernel_w * input_channels: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
         ],
     )
-    def test__basic_nsys_inference_depthwise__big(
+    def test__depthwise__big(
         self, input_shape, kernel_size, stride, dilation, is_qat, request, mocker
     ):
         out_channels = input_shape[1]
@@ -968,10 +896,6 @@ class TestConv:
                 b := True,
                 qat := True,
                 id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (1, 8, 32, 32),
@@ -1038,10 +962,6 @@ class TestConv:
                 b := False,
                 qat := True,
                 id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (3, 2, 40, 20),
@@ -1053,10 +973,6 @@ class TestConv:
                 b := False,
                 qat := False,
                 id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (4, 6, 30, 30),
@@ -1068,10 +984,6 @@ class TestConv:
                 b := True,
                 qat := True,
                 id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (4, 6, 30, 30),
@@ -1130,7 +1042,7 @@ class TestConv:
             ),
         ],
     )
-    def test__nsys_inference__non_default_params(
+    def test__non_default_params(
         self,
         input_shape,
         out_channels,
@@ -1207,10 +1119,6 @@ class TestConv:
                 b := True,
                 qat := True,
                 id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
             ),
             pytest.param(
                 ins := (2, 12, 28, 28),
@@ -1230,10 +1138,6 @@ class TestConv:
                 p := (0, 2),
                 b := False,
                 qat := True,
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
                 id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
@@ -1244,10 +1148,6 @@ class TestConv:
                 p := (0, 2),
                 b := False,
                 qat := False,
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
                 id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
@@ -1258,10 +1158,6 @@ class TestConv:
                 p := (2, 2),
                 b := True,
                 qat := True,
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
                 id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
@@ -1316,7 +1212,7 @@ class TestConv:
             ),
         ],
     )
-    def test__nsys_inference_depthwise__non_default_params(
+    def test__depthwise__non_default_params(
         self,
         input_shape,
         kernel_size,
