@@ -26,7 +26,6 @@ from torchvision.models.mobilenetv2 import (  # type: ignore[import-untyped]
     MobileNet_V2_Weights,
 )
 
-
 mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
 mv2 = mv2.eval()
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])

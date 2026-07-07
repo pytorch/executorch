@@ -21,7 +21,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-
 aten_op = "torch.ops.aten.conv2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 

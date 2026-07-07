@@ -19,7 +19,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-
 input_t = Tuple[torch.Tensor]
 
 
