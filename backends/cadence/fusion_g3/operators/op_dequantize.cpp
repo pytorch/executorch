@@ -612,9 +612,15 @@ Tensor& dequantize_per_tensor_out(
       const int8_t* __restrict__ input_data = input.const_data_ptr<int8_t>();
 #if defined(__XTENSA__)
       // Direct inline PDX SIMD dequantization for per-tensor int8->float32.
-      // 4x-unrolled to improve ILP: the Fusion G3 scheduler can interleave
-      // independent loads, converts, and FP MACs across unrolled iterations,
-      // hiding load-to-use latency and reducing loop overhead.
+      // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
+      // it issues on the integer unit and overlaps the float pipe; the widened
+      // int32 codes feed straight into the mixed-type PDX_MUL_MXF32. That
+      // intrinsic takes an xb_vecMxf32, so the compiler still emits an
+      // int->float convert -- writing it mixed-type only keeps the source
+      // concise, it does not remove the convert. q - zp cannot overflow int32
+      // (inputs are <=16-bit and zp is in the same quant range) and converts
+      // exactly to float, so the result is bit-identical to
+      // float(q) - float(zp). 4x-unrolled to hide load-to-use latency.
       if (dequant_simd_aligned(input_data, out_data)) {
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMx8*>(input_data);
@@ -622,24 +628,24 @@ Tensor& dequantize_per_tensor_out(
         const xb_vecMxf32 v_scale{
             scale_data, scale_data, scale_data, scale_data};
         int i = 0;
+        // 4x unrolled main loop: 16 elements per iteration
+        const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
+          const xb_vecMx32 v_zp{
+              zero_point_data,
+              zero_point_data,
+              zero_point_data,
+              zero_point_data};
           const float zp_f = static_cast<float>(zero_point_data);
-          const xb_vecMxf32 v_zp{zp_f, zp_f, zp_f, zp_f};
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMx32 vP0 = PDX_LV32_MX8_I(vIn, 0);
             xb_vecMx32 vP1 = PDX_LV32_MX8_I(vIn + 1, 0);
             xb_vecMx32 vP2 = PDX_LV32_MX8_I(vIn + 2, 0);
             xb_vecMx32 vP3 = PDX_LV32_MX8_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF0, v_zp), v_scale);
-            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF1, v_zp), v_scale);
-            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF2, v_zp), v_scale);
-            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF3, v_zp), v_scale);
+            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MX32(vP0, v_zp), v_scale);
+            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MX32(vP1, v_zp), v_scale);
+            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MX32(vP2, v_zp), v_scale);
+            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MX32(vP3, v_zp), v_scale);
             vIn += 4;
             vOut += 4;
           }
@@ -649,21 +655,15 @@ Tensor& dequantize_per_tensor_out(
                 (static_cast<float>(input_data[i]) - zp_f) * scale_data;
           }
         } else {
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMx32 vP0 = PDX_LV32_MX8_I(vIn, 0);
             xb_vecMx32 vP1 = PDX_LV32_MX8_I(vIn + 1, 0);
             xb_vecMx32 vP2 = PDX_LV32_MX8_I(vIn + 2, 0);
             xb_vecMx32 vP3 = PDX_LV32_MX8_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(vF0, v_scale);
-            vOut[1] = PDX_MUL_MXF32(vF1, v_scale);
-            vOut[2] = PDX_MUL_MXF32(vF2, v_scale);
-            vOut[3] = PDX_MUL_MXF32(vF3, v_scale);
+            vOut[0] = PDX_MUL_MXF32(vP0, v_scale);
+            vOut[1] = PDX_MUL_MXF32(vP1, v_scale);
+            vOut[2] = PDX_MUL_MXF32(vP2, v_scale);
+            vOut[3] = PDX_MUL_MXF32(vP3, v_scale);
             vIn += 4;
             vOut += 4;
           }
@@ -704,9 +704,15 @@ Tensor& dequantize_per_tensor_out(
       const uint8_t* __restrict__ input_data = input.const_data_ptr<uint8_t>();
 #if defined(__XTENSA__)
       // Direct inline PDX SIMD dequantization for per-tensor uint8->float32.
-      // 4x-unrolled to improve ILP: the Fusion G3 scheduler can interleave
-      // independent loads, converts, and FP MACs across unrolled iterations,
-      // hiding load-to-use latency and reducing loop overhead.
+      // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
+      // it issues on the integer unit and overlaps the float pipe; the widened
+      // int32 codes feed straight into the mixed-type PDX_MUL_MXF32. That
+      // intrinsic takes an xb_vecMxf32, so the compiler still emits an
+      // int->float convert -- writing it mixed-type only keeps the source
+      // concise, it does not remove the convert. q - zp cannot overflow int32
+      // (inputs are <=16-bit and zp is in the same quant range) and converts
+      // exactly to float, so the result is bit-identical to
+      // float(q) - float(zp). 4x-unrolled to hide load-to-use latency.
       if (dequant_simd_aligned(input_data, out_data)) {
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMxu8*>(input_data);
@@ -714,24 +720,24 @@ Tensor& dequantize_per_tensor_out(
         const xb_vecMxf32 v_scale{
             scale_data, scale_data, scale_data, scale_data};
         int i = 0;
+        // 4x unrolled main loop: 16 elements per iteration
+        const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
+          const xb_vecMxu32 v_zp{
+              static_cast<uint32_t>(zero_point_data),
+              static_cast<uint32_t>(zero_point_data),
+              static_cast<uint32_t>(zero_point_data),
+              static_cast<uint32_t>(zero_point_data)};
           const float zp_f = static_cast<float>(zero_point_data);
-          const xb_vecMxf32 v_zp{zp_f, zp_f, zp_f, zp_f};
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMxu32 vP0 = PDX_LVU32_MX8_I(vIn, 0);
             xb_vecMxu32 vP1 = PDX_LVU32_MX8_I(vIn + 1, 0);
             xb_vecMxu32 vP2 = PDX_LVU32_MX8_I(vIn + 2, 0);
             xb_vecMxu32 vP3 = PDX_LVU32_MX8_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF0, v_zp), v_scale);
-            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF1, v_zp), v_scale);
-            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF2, v_zp), v_scale);
-            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF3, v_zp), v_scale);
+            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MX32(vP0, v_zp), v_scale);
+            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MX32(vP1, v_zp), v_scale);
+            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MX32(vP2, v_zp), v_scale);
+            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MX32(vP3, v_zp), v_scale);
             vIn += 4;
             vOut += 4;
           }
@@ -741,21 +747,15 @@ Tensor& dequantize_per_tensor_out(
                 (static_cast<float>(input_data[i]) - zp_f) * scale_data;
           }
         } else {
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMxu32 vP0 = PDX_LVU32_MX8_I(vIn, 0);
             xb_vecMxu32 vP1 = PDX_LVU32_MX8_I(vIn + 1, 0);
             xb_vecMxu32 vP2 = PDX_LVU32_MX8_I(vIn + 2, 0);
             xb_vecMxu32 vP3 = PDX_LVU32_MX8_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(vF0, v_scale);
-            vOut[1] = PDX_MUL_MXF32(vF1, v_scale);
-            vOut[2] = PDX_MUL_MXF32(vF2, v_scale);
-            vOut[3] = PDX_MUL_MXF32(vF3, v_scale);
+            vOut[0] = PDX_MUL_MXF32(vP0, v_scale);
+            vOut[1] = PDX_MUL_MXF32(vP1, v_scale);
+            vOut[2] = PDX_MUL_MXF32(vP2, v_scale);
+            vOut[3] = PDX_MUL_MXF32(vP3, v_scale);
             vIn += 4;
             vOut += 4;
           }
@@ -796,9 +796,15 @@ Tensor& dequantize_per_tensor_out(
       const int16_t* __restrict__ input_data = input.const_data_ptr<int16_t>();
 #if defined(__XTENSA__)
       // Direct inline PDX SIMD dequantization for per-tensor int16->float32.
-      // 4x-unrolled to improve ILP: the Fusion G3 scheduler can interleave
-      // independent loads, converts, and FP MACs across unrolled iterations,
-      // hiding load-to-use latency and reducing loop overhead.
+      // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
+      // it issues on the integer unit and overlaps the float pipe; the widened
+      // int32 codes feed straight into the mixed-type PDX_MUL_MXF32. That
+      // intrinsic takes an xb_vecMxf32, so the compiler still emits an
+      // int->float convert -- writing it mixed-type only keeps the source
+      // concise, it does not remove the convert. q - zp cannot overflow int32
+      // (inputs are <=16-bit and zp is in the same quant range) and converts
+      // exactly to float, so the result is bit-identical to
+      // float(q) - float(zp). 4x-unrolled to hide load-to-use latency.
       if (dequant_simd_aligned(input_data, out_data)) {
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMx16*>(input_data);
@@ -806,24 +812,24 @@ Tensor& dequantize_per_tensor_out(
         const xb_vecMxf32 v_scale{
             scale_data, scale_data, scale_data, scale_data};
         int i = 0;
+        // 4x unrolled main loop: 16 elements per iteration
+        const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
+          const xb_vecMx32 v_zp{
+              zero_point_data,
+              zero_point_data,
+              zero_point_data,
+              zero_point_data};
           const float zp_f = static_cast<float>(zero_point_data);
-          const xb_vecMxf32 v_zp{zp_f, zp_f, zp_f, zp_f};
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMx32 vP0 = PDX_LV32_MX16_I(vIn, 0);
             xb_vecMx32 vP1 = PDX_LV32_MX16_I(vIn + 1, 0);
             xb_vecMx32 vP2 = PDX_LV32_MX16_I(vIn + 2, 0);
             xb_vecMx32 vP3 = PDX_LV32_MX16_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF0, v_zp), v_scale);
-            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF1, v_zp), v_scale);
-            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF2, v_zp), v_scale);
-            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF3, v_zp), v_scale);
+            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MX32(vP0, v_zp), v_scale);
+            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MX32(vP1, v_zp), v_scale);
+            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MX32(vP2, v_zp), v_scale);
+            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MX32(vP3, v_zp), v_scale);
             vIn += 4;
             vOut += 4;
           }
@@ -833,21 +839,15 @@ Tensor& dequantize_per_tensor_out(
                 (static_cast<float>(input_data[i]) - zp_f) * scale_data;
           }
         } else {
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMx32 vP0 = PDX_LV32_MX16_I(vIn, 0);
             xb_vecMx32 vP1 = PDX_LV32_MX16_I(vIn + 1, 0);
             xb_vecMx32 vP2 = PDX_LV32_MX16_I(vIn + 2, 0);
             xb_vecMx32 vP3 = PDX_LV32_MX16_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(vF0, v_scale);
-            vOut[1] = PDX_MUL_MXF32(vF1, v_scale);
-            vOut[2] = PDX_MUL_MXF32(vF2, v_scale);
-            vOut[3] = PDX_MUL_MXF32(vF3, v_scale);
+            vOut[0] = PDX_MUL_MXF32(vP0, v_scale);
+            vOut[1] = PDX_MUL_MXF32(vP1, v_scale);
+            vOut[2] = PDX_MUL_MXF32(vP2, v_scale);
+            vOut[3] = PDX_MUL_MXF32(vP3, v_scale);
             vIn += 4;
             vOut += 4;
           }
@@ -889,9 +889,15 @@ Tensor& dequantize_per_tensor_out(
           input.const_data_ptr<uint16_t>();
 #if defined(__XTENSA__)
       // Direct inline PDX SIMD dequantization for per-tensor uint16->float32.
-      // 4x-unrolled to improve ILP: the Fusion G3 scheduler can interleave
-      // independent loads, converts, and FP MACs across unrolled iterations,
-      // hiding load-to-use latency and reducing loop overhead.
+      // The zero-point subtract is kept in the int32 domain (PDX_SUB_MX32) so
+      // it issues on the integer unit and overlaps the float pipe; the widened
+      // int32 codes feed straight into the mixed-type PDX_MUL_MXF32. That
+      // intrinsic takes an xb_vecMxf32, so the compiler still emits an
+      // int->float convert -- writing it mixed-type only keeps the source
+      // concise, it does not remove the convert. q - zp cannot overflow int32
+      // (inputs are <=16-bit and zp is in the same quant range) and converts
+      // exactly to float, so the result is bit-identical to
+      // float(q) - float(zp). 4x-unrolled to hide load-to-use latency.
       if (dequant_simd_aligned(input_data, out_data)) {
         const int numel = inp_shape[0];
         auto vIn = reinterpret_cast<const xb_vecMxu16*>(input_data);
@@ -899,24 +905,24 @@ Tensor& dequantize_per_tensor_out(
         const xb_vecMxf32 v_scale{
             scale_data, scale_data, scale_data, scale_data};
         int i = 0;
+        // 4x unrolled main loop: 16 elements per iteration
+        const int e16 = (numel >> 4) << 4;
         if (zero_point_data != 0) {
+          const xb_vecMxu32 v_zp{
+              static_cast<uint32_t>(zero_point_data),
+              static_cast<uint32_t>(zero_point_data),
+              static_cast<uint32_t>(zero_point_data),
+              static_cast<uint32_t>(zero_point_data)};
           const float zp_f = static_cast<float>(zero_point_data);
-          const xb_vecMxf32 v_zp{zp_f, zp_f, zp_f, zp_f};
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMxu32 vP0 = PDX_LVU32_MX16_I(vIn, 0);
             xb_vecMxu32 vP1 = PDX_LVU32_MX16_I(vIn + 1, 0);
             xb_vecMxu32 vP2 = PDX_LVU32_MX16_I(vIn + 2, 0);
             xb_vecMxu32 vP3 = PDX_LVU32_MX16_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF0, v_zp), v_scale);
-            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF1, v_zp), v_scale);
-            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF2, v_zp), v_scale);
-            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MXF32(vF3, v_zp), v_scale);
+            vOut[0] = PDX_MUL_MXF32(PDX_SUB_MX32(vP0, v_zp), v_scale);
+            vOut[1] = PDX_MUL_MXF32(PDX_SUB_MX32(vP1, v_zp), v_scale);
+            vOut[2] = PDX_MUL_MXF32(PDX_SUB_MX32(vP2, v_zp), v_scale);
+            vOut[3] = PDX_MUL_MXF32(PDX_SUB_MX32(vP3, v_zp), v_scale);
             vIn += 4;
             vOut += 4;
           }
@@ -926,21 +932,15 @@ Tensor& dequantize_per_tensor_out(
                 (static_cast<float>(input_data[i]) - zp_f) * scale_data;
           }
         } else {
-          // 4x unrolled main loop: 16 elements per iteration
-          const int e16 = (numel >> 4) << 4;
           for (; i < e16; i += 16) {
             xb_vecMxu32 vP0 = PDX_LVU32_MX16_I(vIn, 0);
             xb_vecMxu32 vP1 = PDX_LVU32_MX16_I(vIn + 1, 0);
             xb_vecMxu32 vP2 = PDX_LVU32_MX16_I(vIn + 2, 0);
             xb_vecMxu32 vP3 = PDX_LVU32_MX16_I(vIn + 3, 0);
-            xb_vecMxf32 vF0 = (xb_vecMxf32)vP0;
-            xb_vecMxf32 vF1 = (xb_vecMxf32)vP1;
-            xb_vecMxf32 vF2 = (xb_vecMxf32)vP2;
-            xb_vecMxf32 vF3 = (xb_vecMxf32)vP3;
-            vOut[0] = PDX_MUL_MXF32(vF0, v_scale);
-            vOut[1] = PDX_MUL_MXF32(vF1, v_scale);
-            vOut[2] = PDX_MUL_MXF32(vF2, v_scale);
-            vOut[3] = PDX_MUL_MXF32(vF3, v_scale);
+            vOut[0] = PDX_MUL_MXF32(vP0, v_scale);
+            vOut[1] = PDX_MUL_MXF32(vP1, v_scale);
+            vOut[2] = PDX_MUL_MXF32(vP2, v_scale);
+            vOut[3] = PDX_MUL_MXF32(vP3, v_scale);
             vIn += 4;
             vOut += 4;
           }
