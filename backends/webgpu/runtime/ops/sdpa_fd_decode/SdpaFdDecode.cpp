@@ -13,6 +13,9 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_wgsl.h>
+#ifdef WGPU_BACKEND_KV_F16
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_f16_wgsl.h>
+#endif
 
 #include <webgpu/webgpu.h>
 
@@ -218,9 +221,15 @@ void sdpa_fd_decode_dispatch(
       static_cast<uint32_t>(split_threads),
       kSdpaFdSplitWorkgroupSizeX,
       "fd_split");
+  const char* split_shader = kSdpaFdSplitWGSL;
+#ifdef WGPU_BACKEND_KV_F16
+  if (graph.kv_f16()) {
+    split_shader = kSdpaFdSplitF16WGSL;
+  }
+#endif
   build_dispatch(
       graph,
-      kSdpaFdSplitWGSL,
+      split_shader,
       split_bindings,
       5,
       2,
