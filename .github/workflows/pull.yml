@@ -852,8 +852,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        # TODO(T12345): re-enable qnn_16a16w once OOM on linux.2xlarge is resolved
-        pt2e_quantize: [qnn_8a8w]
+        pt2e_quantize: [qnn_16a16w, qnn_8a8w]
         mode: [qnn]
       fail-fast: false
     with:
