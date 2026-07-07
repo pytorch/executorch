@@ -34,7 +34,6 @@ import torch.nn as nn
 
 from .pack import ModulePackerFn, pack_model  # noqa: F401
 
-
 # ---------------------------------------------------------------------------
 # Per-module packers
 
