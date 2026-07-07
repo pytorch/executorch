@@ -64,17 +64,21 @@ fn store_out_vec4(s: u32, d0: u32, h: u32, val: vec4<f32>) {
 }
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   let nrt = (params.S + TM - 1u) / TM;
   let nct = (params.D + TN - 1u) / TN;
   let tiles = nrt * nct;
   let total = tiles * params.Hq;
-  if (gid.x >= total) {
+  // 2D dispatch fold: recover the linear tile index across x/y.
+  let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
+  if (idx >= total) {
     return;
   }
 
-  let h = gid.x / tiles;
-  let rem = gid.x % tiles;
+  let h = idx / tiles;
+  let rem = idx % tiles;
   let row_tile = rem / nct;
   let col_tile = rem % nct;
   let kvh = h / params.g;

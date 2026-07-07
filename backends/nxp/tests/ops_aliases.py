@@ -51,6 +51,7 @@ Squeeze = exir_ops.edge.aten.squeeze.default
 SqueezeDim = exir_ops.edge.aten.squeeze.dim
 SqueezeDims = exir_ops.edge.aten.squeeze.dims
 SubTensor = exir_ops.edge.aten.sub.Tensor
+SumDimIntList = exir_ops.edge.aten.sum.dim_IntList
 Tanh = exir_ops.edge.aten.tanh.default
 Tanh_ = exir_ops.edge.aten.tanh_.default
 Unsqueeze = exir_ops.edge.aten.unsqueeze.default

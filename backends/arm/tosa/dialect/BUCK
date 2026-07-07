@@ -6,6 +6,7 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "lib.py",
         "ops_registration.py",
+        "real_impl.py",
         "shape.py",
     ],
     deps = [
