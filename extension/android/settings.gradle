@@ -21,4 +21,9 @@ plugins {
 
 rootProject.name = 'executorch'
 
-include('executorch_android')
+if (System.getenv("ANDROID_HOME") != null || System.getenv("ANDROID_SDK_ROOT") != null || new java.io.File(rootDir, "local.properties").exists()) {
+    include('executorch_android')
+} else {
+    logger.warn("WARNING: ANDROID_HOME is not set, skipping Android subproject.")
+}
+include('executorch_jvm')

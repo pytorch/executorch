@@ -1,0 +1,81 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+plugins {
+    alias(libs.plugins.jetbrains.kotlin.jvm)
+    id 'java-library'
+    id "com.vanniktech.maven.publish" version "0.31.0"
+}
+
+def execuTorchVersion = System.properties['execuTorchVersion']
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:${libs.versions.kotlin.get()}"
+    implementation "com.facebook.fbjni:fbjni-java-only:${fbjniJavaOnlyVersion}"
+    implementation "com.facebook.soloader:nativeloader:${soLoaderNativeLoaderVersion}"
+}
+
+sourceSets {
+    main {
+        kotlin {
+            srcDirs = ['../executorch_android/src/main/java']
+            exclude '**/androidTest/**'
+            exclude '**/test/**'
+        }
+    }
+}
+
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += ["-Xjvm-default=all"]
+    }
+}
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+
+    coordinates("org.pytorch", "executorch-jvm", execuTorchVersion ? execuTorchVersion : "1.2.0-SNAPSHOT")
+
+    pom {
+        name = "ExecuTorch JVM"
+        description = "ExecuTorch Java/Kotlin bindings for standard desktop JVM (Linux, macOS, Windows)"
+        inceptionYear = "2026"
+        url = "https://github.com/pytorch/executorch/"
+        licenses {
+            license {
+                name = "BSD 3-Clause"
+                url = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+                distribution = "https://github.com/pytorch/executorch/blob/main/LICENSE"
+            }
+        }
+        developers {
+            developer {
+                id = "pytorch"
+                name = "pytorch"
+                url = "https://github.com/pytorch/executorch/"
+            }
+        }
+        scm {
+            url = "https://github.com/pytorch/executorch.git"
+            connection = "scm:git:https://github.com/pytorch/executorch"
+            developerConnection = "scm:git:git@github.com:pytorch/executorch.git"
+        }
+    }
+}

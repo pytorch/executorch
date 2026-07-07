@@ -15,3 +15,4 @@ junit = { module = "junit:junit", version.ref = "junit" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
 [plugins]
 jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
