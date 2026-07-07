@@ -299,18 +299,14 @@ execute_process(
 )
 target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
 
-# Apply whole-archive helper where available to keep static initializers.
-executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
-executorch_target_link_options_shared_lib(quantized_kernels)
-executorch_target_link_options_shared_lib(cortex_m_kernels)
-executorch_target_link_options_shared_lib(portable_kernels)
-
 set(arm_executor_runner_link)
 list(
   APPEND
   arm_executor_runner_link
+  -Wl,--start-group
   extension_runner_util
   ethosu_target_init
+  -Wl,--whole-archive
   executorch
   quantized_ops_lib
   cortex_m_ops_lib
@@ -318,6 +314,16 @@ list(
   quantized_kernels
   cortex_m_kernels
   portable_kernels
+  executorch_core
+  cmsis-nn
+  ethosu_core_driver
+  timing_adapter
+  ethosu_mhu_dummy
+  ethosu_mailbox
+  ethosu_uart_cmsdk_apb
+  -Wl,--no-whole-archive
+  kernels_util_all_deps
+  -Wl,--end-group
   -Xlinker
   -Map=arm_executor_runner.map
 )
@@ -397,7 +403,12 @@ if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
     DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
-  list(APPEND arm_executor_runner_link arm_portable_ops_lib)
+  list(FIND arm_executor_runner_link -Wl,--no-whole-archive
+       _arm_runner_no_whole_archive_idx
+  )
+  list(INSERT arm_executor_runner_link ${_arm_runner_no_whole_archive_idx}
+       arm_portable_ops_lib
+  )
 endif()
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
@@ -454,8 +465,42 @@ if(ET_BUNDLE_IO)
   endif()
 endif()
 
-# Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
-# bin size as we link in a number of other symbols
+# Keep static registration libraries force-loaded, but do it in the executable
+# link list rather than through INTERFACE_LINK_OPTIONS. The latter is emitted
+# before this target's objects and before the runner's dependency closure, which
+# breaks bare-metal archive resolution for the runner.
+set(_arm_runner_whole_archive_targets
+    executorch
+    quantized_ops_lib
+    cortex_m_ops_lib
+    executorch_delegate_ethos_u
+    quantized_kernels
+    cortex_m_kernels
+    portable_kernels
+    executorch_core
+    cmsis-nn
+    ethosu_core_driver
+    timing_adapter
+    ethosu_mhu_dummy
+    ethosu_mailbox
+    ethosu_uart_cmsdk_apb
+)
+if(TARGET arm_portable_ops_lib)
+  list(APPEND _arm_runner_whole_archive_targets arm_portable_ops_lib)
+endif()
+foreach(_arm_runner_whole_archive_target IN
+        LISTS _arm_runner_whole_archive_targets
+)
+  if(TARGET ${_arm_runner_whole_archive_target})
+    set_property(
+      TARGET ${_arm_runner_whole_archive_target} PROPERTY INTERFACE_LINK_OPTIONS
+                                                          ""
+    )
+  endif()
+endforeach()
+
+# Need whole-archive to ensure C++ ctors are called. This may be wasteful for
+# binary size as we link in a number of other symbols.
 target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 # Ensure the ELF lands next to the CMake build tree so run.sh (and downstream
