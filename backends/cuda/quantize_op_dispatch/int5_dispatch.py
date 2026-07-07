@@ -156,9 +156,7 @@ def _(func, types, args, kwargs):
             x_2d, ql, qh, scale, scale_step, zero, zero_step, gs
         )
     else:
-        out = _dequant_matmul_int5(
-            x_2d, ql, qh, scale, scale_step, zero, zero_step, gs
-        )
+        out = _dequant_matmul_int5(x_2d, ql, qh, scale, scale_step, zero, zero_step, gs)
 
     out = out.reshape(*orig_shape[:-1], -1)
     if bias is not None:

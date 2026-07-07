@@ -519,9 +519,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         else:
             # Linux platform
 
-            assert shim_library_path is None, (
-                "shim_library_path should not be set for Linux"
-            )
+            assert (
+                shim_library_path is None
+            ), "shim_library_path should not be set for Linux"
         return options
 
     @classmethod
