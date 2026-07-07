@@ -456,6 +456,7 @@ class TextDecoder(Component):
         atten_mask_shape = {
             (
                 self.meta["get_max_batch_size"],
+                1,  # num_heads=1: the mask broadcasts across all heads.
                 self.meta["get_ar_len"],
                 self.meta["get_max_context_len"],
             ),
@@ -609,6 +610,7 @@ class TextDecoder(Component):
                     use_i64_token=self.control_args.embedding_quantize is not None,
                     num_fewshot=self.control_args.eval_num_fewshot,
                     limit=self.control_args.eval_limit,
+                    max_batch_size=self.meta["get_max_batch_size"],
                     event_name="export_tasks",
                 )
 
@@ -674,6 +676,7 @@ class TextDecoder(Component):
                     use_i64_token=self.control_args.embedding_quantize is not None,
                     num_fewshot=self.control_args.eval_num_fewshot,
                     limit=self.control_args.eval_limit,
+                    max_batch_size=self.meta["get_max_batch_size"],
                     event_name="convert_pt2e_tasks",
                 )
 
@@ -1186,8 +1189,9 @@ class Modality(Component):
             outputs.append(outputs_each_batch)
         return DataLoader(
             ModalityEncoderDataset(outputs),
-            batch_size=1,
+            batch_size=self.control_args.batch_size,
             shuffle=False,
+            drop_last=self.control_args.batch_size > 1,
         )
 
     def quantize(self, request: Request):
