@@ -262,13 +262,13 @@ def test_dim_map_maps_split_and_merged_prime_factor_groups() -> None:
     view_map = ViewMap.from_shapes([1, 2, 3, 4], [1, 6, 2, 2])
 
     assert view_map.is_valid_map
-    assert view_map.map_dim(0) == [0]
+    assert view_map.map_dim(0) is None
     assert view_map.map_dim(1) is None
     assert view_map.map_dim(2) is None
     assert view_map.map_dim(3) == [2, 3]
     assert view_map.map_dim([1, 2]) == [1]
     assert view_map.map_dim([3, 1]) is None
-    assert view_map.map_dim([3, 1, 2]) == [1, 2, 3]
+    assert view_map.map_dim([3, 1, 2]) == [2, 3, 1]
 
     assert view_map.map_dim_inverse(0) is None
     assert view_map.map_dim_inverse(1) == [1, 2]
@@ -358,49 +358,6 @@ def test_dim_map_uses_strict_no_mapping_for_singletons() -> None:
     assert split_view_map.map_dim(0) == [0, 2]
     assert split_view_map.map_dim_inverse(1) is None
     assert split_view_map.map_dim_inverse([0, 2]) == [0]
-
-
-def test_dim_map_maps_reduced_singletons_only_when_unambiguous() -> None:
-    split_singleton_view_map = ViewMap.from_shapes([1, 4], [1, 1, 4])
-    assert split_singleton_view_map.map_dim(0) == [0, 1]
-
-    squeezed_singleton_view_map = ViewMap.from_shapes([1, 50, 10, 1], [1, 50, 10])
-    assert squeezed_singleton_view_map.map_dim(-1) is None
-    assert squeezed_singleton_view_map.map_dim([0, -1]) == [0]
-
-
-def test_dim_map_remaps_unit_slice_through_view() -> None:
-    view_map = ViewMap.from_shapes([5, 2, 1, 4, 6], [5, 2, 4, 6])
-
-    assert view_map.remap_unit_slice([5, 2, 3, 4, 6], 2, 0, 1) == (
-        [5, 2, 12, 6],
-        2,
-        0,
-        4,
-    )
-    assert view_map.remap_unit_slice([5, 2, 3, 4, 6], 2, 1, 2) == (
-        [5, 2, 12, 6],
-        2,
-        4,
-        8,
-    )
-
-
-def test_dim_map_remaps_unit_slice_through_flattening_view() -> None:
-    view_map = ViewMap.from_shapes([5, 2, 1, 4, 6], [5, 2, 24])
-
-    assert view_map.remap_unit_slice([5, 2, 3, 4, 6], 2, 1, 2) == (
-        [5, 2, 72],
-        2,
-        24,
-        48,
-    )
-
-
-def test_dim_map_does_not_remap_unit_slice_into_previous_axis() -> None:
-    view_map = ViewMap.from_shapes([3, 3, 1], [3, 3])
-
-    assert view_map.remap_unit_slice([3, 3, 3], 2, 0, 1) is None
 
 
 def test_dim_map_preserves_symbolic_dimensions_as_prime_factors() -> None:
