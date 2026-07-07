@@ -63,7 +63,7 @@ jobs:
 
             // List of organization logins (lowercased) to exclude members of
             const excludedOrgs = new Set([
-              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung", "arm ltd."
+              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung", "arm ltd.",
               "@meta", "@facebook", "@pytorch", "@arm", "@apple", "@qualcomm", "@nxp", "@mediatek", "@cadence", "@intel", "@samsung"
             ]);
 
