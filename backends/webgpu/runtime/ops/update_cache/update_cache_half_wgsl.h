@@ -12,12 +12,10 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from update_cache_f16.wgsl - DO NOT EDIT.
-// wgsl-sha256: e115bcc12d0b0d09e9f72e1f63fee21c0ce56f787dfbd728b9f4adebb1bf5630
-inline constexpr const char* kUpdateCacheF16WGSL = R"(
+// @generated from update_cache.wgsl - DO NOT EDIT.
+// wgsl-sha256: 390daabe0d4545311dd5c6768d427fc9d133125bb1143869184c7d7631a88954
+inline constexpr const char* kUpdateCacheHalfWGSL = R"(
 enable f16;
-
-// f16 KV-cache variant of update_cache.wgsl: cache stored as f16, source f32.
 @group(0) @binding(0) var<storage, read_write> t_cache: array<f16>;
 @group(0) @binding(1) var<storage, read> t_value: array<f32>;
 
@@ -44,8 +42,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 )";
 
-inline constexpr uint32_t kUpdateCacheF16WorkgroupSizeX = 256;
-inline constexpr uint32_t kUpdateCacheF16WorkgroupSizeY = 1;
-inline constexpr uint32_t kUpdateCacheF16WorkgroupSizeZ = 1;
+inline constexpr uint32_t kUpdateCacheHalfWorkgroupSizeX = 256;
+inline constexpr uint32_t kUpdateCacheHalfWorkgroupSizeY = 1;
+inline constexpr uint32_t kUpdateCacheHalfWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
