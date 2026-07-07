@@ -229,6 +229,15 @@ bool sdpa_within_tol(
     int n,
     float* ma,
     float* mr) {
+  float atol = 1e-4f, rtol = 1e-3f;
+#ifdef WGPU_BACKEND_KV_F16
+  // f16 KV opt-in: looser tol for f16 K/V read precision (shader-f16 device).
+  const WebGPUContext* kv_ctx = get_default_webgpu_context();
+  if (kv_ctx != nullptr && kv_ctx->shader_f16_supported) {
+    atol = 2e-3f;
+    rtol = 1e-2f;
+  }
+#endif
   float max_abs = 0.0f, max_rel = 0.0f;
   bool ok = true;
   for (int i = 0; i < n; i++) {
@@ -236,7 +245,7 @@ bool sdpa_within_tol(
     const float re = ae / std::max(std::abs(golden[i]), 1e-6f);
     max_abs = std::max(max_abs, ae);
     max_rel = std::max(max_rel, re);
-    if (ae > 1e-4f && re > 1e-3f) {
+    if (ae > atol && re > rtol) {
       ok = false;
     }
   }
