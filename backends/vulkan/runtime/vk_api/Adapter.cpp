@@ -217,15 +217,25 @@ VkDevice create_logical_device(
 #endif /* VK_NV_cooperative_matrix2 */
 
 #ifdef VK_EXT_subgroup_size_control
-  // Only enable the feature struct if the extension was actually requested
-  // and the feature flag is set on the physical device. The extension itself
-  // is filtered into enabled_device_extensions by
-  // find_requested_device_extensions.
+  // Only enable the feature struct if the extension was actually requested,
+  // supported, and successfully enabled.
+  bool subgroup_size_control_extension_enabled = false;
+  for (const auto& ext : enabled_device_extensions) {
+    if (strcmp(ext, VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME) == 0) {
+      subgroup_size_control_extension_enabled = true;
+      break;
+    }
+  }
+
   VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroup_size_control_features{
       physical_device.subgroup_size_control_features};
-  if (physical_device.supports_subgroup_size_control) {
+  if (physical_device.supports_subgroup_size_control &&
+      subgroup_size_control_extension_enabled) {
     subgroup_size_control_features.pNext = extension_list_top;
     extension_list_top = &subgroup_size_control_features;
+  } else {
+    const_cast<PhysicalDevice&>(physical_device).supports_subgroup_size_control = false;
+    const_cast<PhysicalDevice&>(physical_device).supports_compute_full_subgroups = false;
   }
 #endif /* VK_EXT_subgroup_size_control */
 
