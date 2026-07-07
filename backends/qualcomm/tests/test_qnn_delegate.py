@@ -44,6 +44,10 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     validate_context_binary,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_greater_than,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ANNOTATION,
     QCOM_MODULE,
@@ -61,8 +65,6 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    is_qnn_sdk_version_greater_than,
-    is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
     skip_annotation,
