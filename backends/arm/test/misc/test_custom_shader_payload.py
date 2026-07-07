@@ -12,6 +12,7 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
     build_grid_sampler_2d_payload,
     decode_payload,
     encode_payload,
+    GRID_SAMPLER_2D_QUANTIZED_GRID_VK_FORMAT,
     GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_BINARY,
     GRID_SAMPLER_2D_SAMPLER_ALIGN_CORNERS_SHADER_SOURCE,
     GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY,
@@ -109,6 +110,8 @@ def test_grid_sampler_2d_custom_shader_payload_no_target_uses_int8_sampler_for_c
         output_shape=(1, 4, 4, 4),
         input_dtype=torch.int8,
         output_dtype=torch.int8,
+        grid_dtype=torch.int8,
+        extra_tensor_input_vkformats=["VK_FORMAT_R32_SFLOAT", "VK_FORMAT_R32_SINT"],
     )
 
     assert payload["shader_language"] == GRID_SAMPLER_2D_SHADER_LANGUAGE
@@ -121,11 +124,44 @@ def test_grid_sampler_2d_custom_shader_payload_no_target_uses_int8_sampler_for_c
         == "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER"
     )
     assert payload["input_1_type"] == "Tensor"
-    assert payload["input_1_vkformat"] == GRID_SAMPLER_2D_VK_FORMAT
+    assert payload["input_1_vkformat"] == GRID_SAMPLER_2D_QUANTIZED_GRID_VK_FORMAT
     assert payload["input_1_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_TENSOR_ARM"
+    assert payload["input_2_type"] == "Tensor"
+    assert payload["input_2_vkformat"] == "VK_FORMAT_R32_SFLOAT"
+    assert payload["input_2_binding"] == 3
+    assert payload["input_3_type"] == "Tensor"
+    assert payload["input_3_vkformat"] == "VK_FORMAT_R32_SINT"
+    assert payload["input_3_binding"] == 4
     assert payload["output_0_type"] == "Image"
     assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
     assert payload["output_0_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE"
+
+
+def test_grid_sampler_2d_custom_shader_payload_uses_quantized_grid_for_int8_sampler():
+    payload = build_grid_sampler_2d_payload(
+        interpolation_mode=0,
+        padding_mode=0,
+        align_corners=False,
+        input_shape=(1, 4, 8, 8),
+        output_shape=(1, 4, 4, 4),
+        input_dtype=torch.int8,
+        output_dtype=torch.int8,
+        grid_dtype=torch.int8,
+        extra_tensor_input_vkformats=["VK_FORMAT_R32_SFLOAT", "VK_FORMAT_R32_SINT"],
+    )
+
+    assert payload["input_0_type"] == "Image"
+    assert payload["input_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    assert payload["input_1_type"] == "Tensor"
+    assert payload["input_1_vkformat"] == GRID_SAMPLER_2D_QUANTIZED_GRID_VK_FORMAT
+    assert payload["input_1_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_TENSOR_ARM"
+    assert payload["input_2_type"] == "Tensor"
+    assert payload["input_2_vkformat"] == "VK_FORMAT_R32_SFLOAT"
+    assert payload["input_3_type"] == "Tensor"
+    assert payload["input_3_vkformat"] == "VK_FORMAT_R32_SINT"
+    assert payload["output_0_type"] == "Image"
+    assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    assert payload["output_0_binding"] == 2
 
 
 def test_grid_sampler_2d_custom_shader_payload_no_target_keeps_c3_on_buffer():
@@ -212,6 +248,8 @@ def test_grid_sampler_2d_custom_shader_payload_no_target_int8_align_corners_samp
         output_shape=(1, 4, 8, 8),
         input_dtype=torch.int8,
         output_dtype=torch.int8,
+        grid_dtype=torch.int8,
+        extra_tensor_input_vkformats=["VK_FORMAT_R32_SFLOAT", "VK_FORMAT_R32_SINT"],
     )
 
     assert payload["input_0_type"] == "Image"
@@ -226,6 +264,22 @@ def test_grid_sampler_2d_custom_shader_payload_no_target_int8_align_corners_samp
     assert payload["shader_code"] == _shader_code_from_resource(
         GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY
     )
+
+
+def test_grid_sampler_2d_custom_shader_payload_rejects_float_grid_for_int8_sampler():
+    with pytest.raises(
+        ValueError,
+        match="Int8 sampler grid-sample payload requires an int8 grid",
+    ):
+        build_grid_sampler_2d_payload(
+            interpolation_mode=0,
+            padding_mode=0,
+            align_corners=False,
+            input_shape=(1, 4, 8, 8),
+            output_shape=(1, 4, 4, 4),
+            input_dtype=torch.int8,
+            output_dtype=torch.int8,
+        )
 
 
 def test_grid_sampler_2d_custom_shader_payload_no_target_bicubic_buffer():
