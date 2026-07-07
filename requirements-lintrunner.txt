@@ -9,7 +9,7 @@ pycodestyle==2.11.1
 torchfix==0.6.0
 
 # UFMT
-black==26.3.0
+black==24.4.2
 ufmt==2.8.0
 usort==1.0.8.post1
 
