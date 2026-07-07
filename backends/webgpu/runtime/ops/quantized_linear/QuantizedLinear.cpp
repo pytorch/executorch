@@ -13,6 +13,10 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
+#ifdef WGPU_BACKEND_STEEL_F16
+#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
+#endif
 
 #include <webgpu/webgpu.h>
 
@@ -263,6 +267,16 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       : use_steel                   ? kQ4gswLinearGemmSteelWGSL
       : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
                                     : kQ4gswLinearWGSL;
+#ifdef WGPU_BACKEND_STEEL_F16
+  // Opt-in f16-multiply steel: only when the device negotiated shader-f16;
+  // else the f32 steel kernel runs (fail-closed). Same bindings and tile.
+  if (use_steel) {
+    const WebGPUContext* ctx = get_default_webgpu_context();
+    if (ctx != nullptr && ctx->shader_f16_supported) {
+      shader_src = kQ4gswLinearGemmSteelHalfWGSL;
+    }
+  }
+#endif
   const uint32_t workgroup_count = compute_q4gsw_workgroup_count(
       device,
       use_gemv,
