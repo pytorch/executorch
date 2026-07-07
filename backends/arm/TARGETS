@@ -90,6 +90,7 @@ runtime.python_library(
         "vgf/_passes/__init__.py",
         "vgf/_passes/rewrite_grid_sampler_to_tosa_custom.py",
         "vgf/backend.py",
+        "vgf/check_env.py",
         "vgf/compile_spec.py",
         "vgf/model_converter.py",
         "vgf/partitioner.py",
@@ -99,6 +100,14 @@ runtime.python_library(
     resources = [
         "vgf/shaders/grid_sampler.glsl",
         "vgf/shaders/grid_sampler.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler.glsl",
+        "vgf/shaders/grid_sampler_sampler.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_align_corners.glsl",
+        "vgf/shaders/grid_sampler_sampler_align_corners.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_int8.glsl",
+        "vgf/shaders/grid_sampler_sampler_int8.spirv.b64",
+        "vgf/shaders/grid_sampler_sampler_int8_align_corners.glsl",
+        "vgf/shaders/grid_sampler_sampler_int8_align_corners.spirv.b64",
     ],
     deps = [
         ":arm_compile_spec",
@@ -108,6 +117,15 @@ runtime.python_library(
         "//executorch/backends/arm/tosa:specification",
         "//executorch/backends/arm/tosa:partitioner",
         "//executorch/exir:lib",
+    ],
+)
+runtime.python_library(
+    name = "public_api",
+    srcs = ["__init__.py"],
+    deps = [
+        ":ethosu",
+        ":vgf",
+        "//executorch/backends/arm/quantizer:lib",
     ],
 )
 

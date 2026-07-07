@@ -2,6 +2,8 @@
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
 # across different CUDA versions (12.6, 13.0) using the command:
 #   ./install_executorch.sh
+# 
+# Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
 # installs the appropriate PyTorch wheel. No manual CUDA/PyTorch installation needed.
@@ -211,6 +213,40 @@ jobs:
         pip install gguf
         python -m pytest examples/models/gemma4_31b/quant/tests/ examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
+  unittest-cuda-runtime:
+    name: unittest-cuda-runtime
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 90
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "13.0"
+      use-custom-docker-registry: false
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+        bash ./install_executorch.sh
+        conda install -y -c conda-forge 'libstdcxx-ng>=12'
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+
+        cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state -j$(nproc)
+        ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
+
   export-model-cuda-artifact:
     name: export-model-cuda-artifact
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
@@ -229,7 +265,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -258,8 +294,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
-            name: "gemma-4-31B-it-HQQ-INT4"
+          - repo: "unsloth"
+            name: "gemma-4-31B-it-GGUF"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -281,12 +317,12 @@ jobs:
             quant: "quantized-int4-weight-only"
           # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "non-quantized"
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -340,9 +376,9 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
-      timeout: 90
+      timeout: 150
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
@@ -353,6 +389,14 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch"
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         # Disable MKL to avoid duplicate target error when conda has multiple MKL installations
         export USE_MKL=OFF
         ./install_executorch.sh
@@ -390,7 +434,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -416,8 +460,8 @@ jobs:
             name: "dinov2-small-imagenet1k-1-layer"
           - repo: "SocialLocalMobile"
             name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "SocialLocalMobile"
-            name: "gemma-4-31B-it-HQQ-INT4"
+          - repo: "unsloth"
+            name: "gemma-4-31B-it-GGUF"
         quant:
           - "non-quantized"
           - "quantized-int4-tile-packed"
@@ -439,12 +483,12 @@ jobs:
             quant: "quantized-int4-weight-only"
           # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "non-quantized"
           - model:
-              repo: "SocialLocalMobile"
-              name: "gemma-4-31B-it-HQQ-INT4"
+              repo: "unsloth"
+              name: "gemma-4-31B-it-GGUF"
             quant: "quantized-int4-weight-only"
           # Voxtral Realtime only supports int4-tile-packed on CUDA
           - model:
@@ -494,7 +538,7 @@ jobs:
             quant: "non-quantized"
     with:
       timeout: 90
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-HQQ-INT4') && 'linux.aws.a100' || 'linux.g5.4xlarge.nvidia.gpu' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
       use-custom-docker-registry: false
@@ -502,6 +546,14 @@ jobs:
       download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
+        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
+        # transitive deps resolve to. Pre-install torch's pure-python deps from the
+        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
+        # torch wheel is the only candidate.
+        export PIP_EXTRA_INDEX_URL=
+        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
+        # examples install doesn't try to downgrade it from the public CDN.
+        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
   test-cuda-pybind:

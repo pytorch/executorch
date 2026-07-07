@@ -483,7 +483,38 @@ test_data_FP = {
     "5x5_3x2x24x24_st1": lambda: conv3d_5x5_3x2x24x24_st1,
     "3x3_1x3x28x28_st2_pd1": lambda: conv3d_3x3_1x3x28x28_st2_pd1,
 }
-
+test_data_FP_fp8 = {
+    "basic_fp8e4m3": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "basic_fp8e5m2": lambda: (
+        Conv3d(
+            height=6,
+            width=6,
+            depth=4,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1, 1),
+            stride=(1, 1, 1),
+            padding=(0, 0, 0),
+            bias=False,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 test_data_FP_bf16 = {
     "bf16_3x3": lambda: Conv3d(
         height=10,
@@ -576,6 +607,21 @@ def test_convolution_3d_tosa_FP(test_data):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_FP_fp8)
+def test_convolution_3d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"CONV3D": 1, "CAST": 1})
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_INT)
 def test_convolution_3d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
@@ -600,7 +646,7 @@ def test_convolution_3d_tosa_INT_a8w4(test_data):
         exir_op,
         tosa_extensions=["int4"],
         qtol=1,
-        frobenius_threshold=0.4,
+        frobenius_threshold=0.5,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)

@@ -49,17 +49,6 @@ cmake_minimum_required(VERSION 3.24)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Hexagon toolchain with release build complains about code in third party
-# libraries.
-if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
-                                                     STREQUAL "Release"
-)
-  add_compile_options(
-    -Wno-error=format -Wno-error=implicit-int-conversion
-    -Wno-error=unused-variable -Wno-error=unused-function
-  )
-endif()
-
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -89,6 +78,18 @@ endif()
 project(executorch
         VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
 )
+
+# Hexagon toolchain with release build complains about code in third party
+# libraries. Must come after project(), which runs the toolchain file that sets
+# CMAKE_SYSTEM_PROCESSOR, and before add_subdirectory(third-party).
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
 
 message(
   STATUS
@@ -155,6 +156,13 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
+
+# pybind11 >=3.0 uses find_package(Python) which looks for Python_EXECUTABLE,
+# not the legacy PYTHON_EXECUTABLE variable. Bridge the two so pybind11 picks up
+# the interpreter that setup.py (or the user) specified.
+if(PYTHON_EXECUTABLE AND NOT Python_EXECUTABLE)
+  set(Python_EXECUTABLE "${PYTHON_EXECUTABLE}")
+endif()
 
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
@@ -258,6 +266,27 @@ else()
 endif()
 
 add_subdirectory(third-party)
+
+# On Apple, pybind11 SHARED extension modules must not link libpython directly.
+# When python_add_library creates a SHARED library, it links Python::Python (via
+# pybind11::embed) which pulls in libpython. This conflicts with pybind11
+# >=3.0's multi-phase module init — the duplicate Python runtime causes a GIL
+# state crash at import time. This function replaces pybind11::embed with
+# pybind11::module (which links Python::Module instead of Python::Python —
+# headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
+# symbol resolution. No-op on non-Apple platforms.
+function(strip_python_lib target)
+  if(NOT APPLE)
+    return()
+  endif()
+  get_target_property(_libs ${target} LINK_LIBRARIES)
+  if(_libs)
+    list(REMOVE_ITEM _libs Python::Python pybind11::embed)
+    list(APPEND _libs pybind11::module)
+    set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_libs}")
+  endif()
+  target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+endfunction()
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
 # ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
@@ -518,7 +547,11 @@ target_link_libraries(executorch_core PRIVATE program_schema)
 if(ANDROID)
   target_link_libraries(executorch_core PUBLIC log)
 endif()
-if(EXECUTORCH_USE_DL)
+# Skip when cross-compiling: find_library() resolves the host libdl even for a
+# bare-metal target (e.g. arm-none-eabi), which then links -ldl into the
+# baremetal runner and fails ("cannot find -ldl"). dladdr() isn't used on those
+# targets anyway. Per-target presets also set EXECUTORCH_USE_DL OFF explicitly.
+if(EXECUTORCH_USE_DL AND NOT CMAKE_CROSSCOMPILING)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
   # Check if the library was found
@@ -750,7 +783,7 @@ if(EXECUTORCH_BUILD_XNNPACK)
   list(APPEND _executorch_backends xnnpack_backend)
 endif()
 
-if(EXECUTORCH_BUILD_CORTEX_M)
+if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
@@ -762,6 +795,20 @@ if(EXECUTORCH_BUILD_CUDA
    OR EXECUTORCH_BUILD_PYBIND
 )
   find_package_torch()
+endif()
+
+# Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
+# vendored torch-tensorrt delegate). Built before backends/aoti and
+# backends/cuda, which link it.
+if(EXECUTORCH_BUILD_CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
+  install(
+    DIRECTORY extension/cuda/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/cuda
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_cuda)
 endif()
 
 # Build common AOTI functionality if needed by CUDA or Metal backends
@@ -862,6 +909,11 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TENSOR)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/tensor)
   list(APPEND _executorch_extensions extension_tensor)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_IMAGE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/image)
+  list(APPEND _executorch_extensions extension_image)
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
@@ -1021,6 +1073,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_VGF)
+    list(APPEND _dep_libs vgf_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_MPS)
     list(APPEND _dep_libs mpsdelegate)
   endif()
@@ -1056,6 +1112,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs vulkan_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_WEBGPU)
+    list(APPEND _dep_libs webgpu_backend)
+  endif()
+
   # compile options for pybind
   set(_pybind_compile_options
       $<$<CXX_COMPILER_ID:MSVC>:/EHsc
@@ -1082,6 +1142,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
+  strip_python_lib(portable_lib)
   # The actual output file needs a leading underscore so it can coexist with
   # portable_lib.py in the same python package. PyTorch requires C++20, so
   # pybindings must be compiled with C++20.
@@ -1123,6 +1184,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   pybind11_add_module(
     data_loader SHARED extension/pybindings/pybindings_data_loader.cpp
   )
+  strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
   target_link_libraries(data_loader PRIVATE executorch)

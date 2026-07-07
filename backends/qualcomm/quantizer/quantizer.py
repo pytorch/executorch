@@ -3,23 +3,26 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import itertools
+import logging
+import operator
 from dataclasses import dataclass
 from enum import IntEnum, unique
 from functools import partial
+from operator import attrgetter
 from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 # To support quantize op lowering in AOT
 try:
     import executorch.kernels.quantized  # noqa[F401]
 except:
-    import logging
-
     logging.info(
         "Failed to load quantized_aot_lib. To run on LPAI backend, please make sure that quantized_aot_lib is accessible."
     )
-    del logging
 import torch
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 
 from executorch.backends.qualcomm.quantizer.backend_opinfo_adapter import (
     constraints_loader,
@@ -36,14 +39,17 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ANNOTATION_KEY
 from torch._ops import OpOverload
 
 from torch.fx import GraphModule
+from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
-from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer import Quantizer, SharedQuantizationSpec
 
 from .qconfig import (
     get_16a16w_qnn_ptq_config,
+    get_16a2w_qnn_ptq_config,
     get_16a4w_qnn_ptq_config,
     get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
@@ -51,6 +57,10 @@ from .qconfig import (
     get_8a4w_qnn_ptq_config,
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
+    get_fp16a8w_per_channel_quant_config,
+    get_fp16a8w_qat_per_channel_quant_config,
+    get_fp16a8w_qnn_ptq_config,
+    get_fp16a8w_qnn_qat_config,
     get_ptq_per_block_quant_config,
     get_ptq_per_channel_quant_config,
     get_qat_per_block_quant_config,
@@ -65,6 +75,7 @@ get_default_16bit_qnn_ptq_config = get_16a16w_qnn_ptq_config
 __all__ = [
     "QnnQuantizer",
     "QuantDtype",
+    "get_16a2w_qnn_ptq_config",
     "get_16a4w_qnn_ptq_config",
     "get_16a8w_qnn_ptq_config",
     "get_16a8w_qnn_qat_config",
@@ -89,6 +100,8 @@ class QuantDtype(IntEnum):
     use_16a4w_block = 3
     use_8a8w = 4
     use_8a4w = 5
+    use_fp16a8w = 6
+    use_16a2w = 7
 
 
 QUANT_CONFIG_DICT = {
@@ -120,6 +133,15 @@ QUANT_CONFIG_DICT = {
         ),
         None,
     ),
+    (QuantDtype.use_16a2w, False): (
+        get_16a2w_qnn_ptq_config,
+        partial(
+            get_ptq_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int2,
+        ),
+        None,
+    ),
     (QuantDtype.use_16a4w_block, False): (
         get_16a4w_qnn_ptq_config,
         partial(
@@ -145,6 +167,16 @@ QUANT_CONFIG_DICT = {
             act_dtype=torch.uint8,
             weight_dtype=torch.int4,
         ),
+        None,
+    ),
+    (QuantDtype.use_fp16a8w, False): (
+        get_fp16a8w_qnn_ptq_config,
+        get_fp16a8w_per_channel_quant_config,
+        None,
+    ),
+    (QuantDtype.use_fp16a8w, True): (
+        get_fp16a8w_qnn_qat_config,
+        get_fp16a8w_qat_per_channel_quant_config,
         None,
     ),
     # QAT,
@@ -337,18 +369,18 @@ class QnnQuantizer(Quantizer):
     ):
         super().__init__()
         self.strict = strict
-        self.backend = str(backend)
+        self.backend = backend
         self.soc_info = _soc_info_table[soc_model]
 
         # Lazy load rules and constraints of current backend
         self._rules_map, self._constraint_cache = load_backend_rules_and_constraints(
-            self.backend
+            str(backend)
         )
         self.supported_ops: Set[OpOverload] = set(self._rules_map.keys())
         self.quant_ops: Set[OpOverload] = self.supported_ops.copy()
 
         # Load backend_opinfo of current backend and soc_model
-        self.backend_opinfo = get_backend_opinfo(self.backend, soc_model)
+        self.backend_opinfo = get_backend_opinfo(str(backend), soc_model)
 
         self.default_quant_config = ModuleQConfig()
         self.submodule_qconfig_list: List[
@@ -363,6 +395,98 @@ class QnnQuantizer(Quantizer):
     @property
     def recipe(self):
         return self._recipe
+
+    def _get_quant_range(self, node):
+        if quant_info := node.meta.get(QCOM_QUANT_ANNOTATION_KEY, None):
+            try:
+                # SharedQuantizationSpec has not quant info, so we need to find source node
+                # that this node is sharing quant info with and use source node's quant info.
+                qspec = quant_info.output_qspec
+                while isinstance(qspec, SharedQuantizationSpec):
+                    edge_or_node = qspec.edge_or_node
+                    if isinstance(edge_or_node, tuple):
+                        input_node, user_node = edge_or_node
+                        shared_info = user_node.meta[QCOM_QUANT_ANNOTATION_KEY]
+                        qspec = shared_info.input_qspec_map[input_node]
+                    else:
+                        shared_info = edge_or_node.meta[QCOM_QUANT_ANNOTATION_KEY]
+                        qspec = shared_info.output_qspec
+                dtype_info = torch.iinfo(qspec.dtype)
+            except:
+                logging.warning(f"Could not resolve quant range for node: {node.name}")
+                return
+
+            quant_range = (
+                dtype_info.max if qspec.quant_max is None else qspec.quant_max
+            ) - (dtype_info.min if qspec.quant_min is None else qspec.quant_min)
+            return quant_range
+
+    def _get_candidates_with_infinity_args(self, graph_module: GraphModule):
+        binary_op_sources = [
+            operator.add,
+            operator.sub,
+            operator.mul,
+            operator.truediv,
+            torch.add,
+            torch.sub,
+            torch.mul,
+            torch.div,
+            "add",
+            "sub",
+            "mul",
+            "truediv",
+        ]
+        src_partitions = get_source_partitions(graph_module.graph, binary_op_sources)
+        src_partitions = list(itertools.chain(*src_partitions.values()))
+        return {sp.nodes[0].target for sp in src_partitions} | {
+            torch.ops.aten.masked_fill.Scalar,
+            torch.ops.aten.masked_fill.Tensor,
+            torch.ops.aten.scalar_tensor.default,
+        }
+
+    def _replace_inf(self, graph_module: GraphModule) -> GraphModule:
+        candidates = self._get_candidates_with_infinity_args(graph_module)
+        for node in graph_module.graph.nodes:
+            if all(
+                [
+                    node.op == "call_function",
+                    node.target in candidates,
+                    quant_range := self._get_quant_range(node),
+                ]
+            ):
+                arg_list = list(node.args)
+                for index, arg in enumerate(arg_list):
+                    if isinstance(arg, (int, float)):
+                        if arg >= torch.finfo(torch.float16).max:
+                            arg_list[index] = quant_range
+                        elif arg <= torch.finfo(torch.float16).min:
+                            arg_list[index] = -quant_range
+
+                node.args = tuple(arg_list)
+            elif node.op == "get_attr":
+                constant_tensor = attrgetter(node.target)(graph_module)
+                if (
+                    torch.is_tensor(constant_tensor)
+                    and constant_tensor.is_floating_point()
+                ):
+                    # Anything smaller than float16.min, which covers float32.min and float(-inf)
+                    min_value = torch.finfo(torch.float16).min
+                    # Anything larger than float16.max, which covers float32.max and float(inf)
+                    max_value = torch.finfo(torch.float16).max
+
+                    quant_min, quant_max = float("inf"), float("-inf")
+                    for source_node in node.users:
+                        if quant_range := self._get_quant_range(source_node):
+                            quant_min = min(quant_min, -quant_range)
+                            quant_max = max(quant_max, quant_range)
+
+                    if quant_min != float("inf") and quant_max != float("-inf"):
+                        # Inplace update
+                        with torch.no_grad():
+                            constant_tensor[constant_tensor <= min_value] = quant_min
+                            constant_tensor[constant_tensor >= max_value] = quant_max
+
+        graph_module.recompile()
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """
@@ -383,6 +507,10 @@ class QnnQuantizer(Quantizer):
             self._annotate(model)
             self._annotate_custom_annotation(model)
 
+        # This is the only place we have sufficient information for min-max ranges.
+        # This has to be done before calibration since this affects scale/offset.
+        self._replace_inf(model)
+
         return model
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
@@ -395,7 +523,9 @@ class QnnQuantizer(Quantizer):
         Returns:
             GraphModule: The transformed model.
         """
-        return QnnPassManager().transform_for_annotation_pipeline(model)
+        return get_qnn_pass_manager_cls(
+            self.backend
+        )().transform_for_annotation_pipeline(model)
 
     def validate(self, model: GraphModule) -> None:
         # Validate: only for mapped nodes (qnn_op present); unmapped → skip validation

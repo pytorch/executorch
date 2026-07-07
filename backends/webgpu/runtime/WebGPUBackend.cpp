@@ -14,7 +14,10 @@
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/log.h>
+
+#include <vector>
 
 #include <new>
 
@@ -35,6 +38,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::register_backend;
+using executorch::runtime::resize_tensor;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
@@ -76,7 +80,7 @@ Result<DelegateHandle*> WebGPUBackend::init(
   }
 
   try {
-    graph->build(flatbuffer_data, constant_data);
+    graph->build(flatbuffer_data, constant_data, context.get_named_data_map());
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
@@ -98,13 +102,43 @@ Error WebGPUBackend::execute(
   const size_t num_outputs = graph->output_ids().size();
 
   // Copy inputs from EValue tensors to GPU buffers
-  std::vector<std::pair<const void*, size_t>> inputs;
+  std::vector<InputData> inputs;
   inputs.reserve(num_inputs);
-  for (size_t i = 0; i < num_inputs; i++) {
-    const auto& tensor = args[i]->toTensor();
-    inputs.emplace_back(tensor.const_data_ptr(), tensor.nbytes());
+  // Fail loud as a runtime Error so a throw never crosses the backend boundary.
+  try {
+    // Build the input list and, for dynamic shapes, shrink each input to its
+    // live sizes before upload (mirrors Vulkan maybe_resize_input). No-op when
+    // unchanged, so a static graph is byte-identical.
+    for (size_t i = 0; i < num_inputs; i++) {
+      const auto& tensor = args[i]->toTensor();
+      const bool host_is_int64 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Long;
+      inputs.push_back(
+          {tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
+      const auto sizes = tensor.sizes();
+      std::vector<int64_t> new_dims(sizes.begin(), sizes.end());
+      graph->resize_input(graph->input_ids()[i], new_dims);
+    }
+    graph->copy_inputs(inputs);
+    graph->update_symints_from_inputs(inputs);
+    graph->propagate_resize();
+    // Resize each output EValue to its live shape so the readback length is
+    // correct (mirrors Vulkan maybe_resize_output).
+    for (size_t i = 0; i < num_outputs; i++) {
+      const auto& cd = graph->cur_dims(graph->output_ids()[i]);
+      std::vector<executorch::aten::SizesType> osizes(cd.begin(), cd.end());
+      Error e = resize_tensor(
+          args[num_inputs + i]->toTensor(),
+          ArrayRef<executorch::aten::SizesType>(osizes.data(), osizes.size()));
+      if (e != Error::Ok) {
+        ET_LOG(Error, "WebGPU: output %zu resize failed", i);
+        return Error::Internal;
+      }
+    }
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "WebGPU input/output resize / copy failed: %s", e.what());
+    return Error::Internal;
   }
-  graph->copy_inputs(inputs);
 
   // Execute the compute graph
   graph->execute();

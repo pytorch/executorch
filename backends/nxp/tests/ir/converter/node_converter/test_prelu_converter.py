@@ -50,7 +50,7 @@ def test_prelu_with_linear_quant_conversion(mocker, input_shape):
     ).exported_program()
 
     # Capture generated entities
-    neutron_ir_model, _ = converter_spy.spy_return
+    neutron_ir_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     # Check `prelu` was not decomposed into simpler edge operators

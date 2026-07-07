@@ -95,6 +95,9 @@ define_overridable_option(
   ON # Required by executor_runner
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_IMAGE "Build the Image extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF
 )
 define_overridable_option(
@@ -180,6 +183,10 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_CORTEX_M "Build the Cortex-M backend" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_CMSIS_NN_PYBINDS "Build the CMSIS-NN Python bindings" BOOL
+  OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
@@ -405,6 +412,11 @@ check_required_options_on(
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
   EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_IMAGE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 

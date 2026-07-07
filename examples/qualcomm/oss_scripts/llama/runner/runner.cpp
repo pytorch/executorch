@@ -227,8 +227,8 @@ Error Runner::load() {
 
   ET_LOG(Info, "Reading metadata from model");
   // retrieve any method meta, can be either prefill or kv
-  int64_t num_layers =
-      ET_UNWRAP(module_->get("get_n_layers")).toScalar().to<int64_t>();
+  ET_ASSIGN_OR_RETURN(num_layers_evalue__, module_->get("get_n_layers"));
+  int64_t num_layers = num_layers_evalue__.toScalar().to<int64_t>();
 
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
   // k_cache: [1, n_heads, head_dim, seq_len]
@@ -244,10 +244,10 @@ Error Runner::load() {
   int32_t token_generator_ar_len = 0;
   int32_t max_cache_len = 0;
   int32_t max_ar_len = 0;
-  // atten mask: [1, AR-N, CL]
+  // atten mask: [1, 1, AR-N, CL]
   auto atten_mask_meta_token = method_meta->input_tensor_meta(1);
-  token_generator_ar_len = atten_mask_meta_token->sizes()[1];
-  context_len_ = atten_mask_meta_token->sizes()[2];
+  token_generator_ar_len = atten_mask_meta_token->sizes()[2];
+  context_len_ = atten_mask_meta_token->sizes()[3];
   if (eval_mode_ == EvalMode::kKVCached) {
     prompt_processor_ar_len = token_generator_ar_len;
   } else if (
@@ -256,7 +256,7 @@ Error Runner::load() {
     auto atten_mask_meta_prompt =
         module_->method_meta(prompt_processor_method_name)
             ->input_tensor_meta(1);
-    prompt_processor_ar_len = atten_mask_meta_prompt->sizes()[1];
+    prompt_processor_ar_len = atten_mask_meta_prompt->sizes()[2];
   }
   if (prompt_processor_ar_len == context_len_)
     max_cache_len = context_len_;
@@ -270,7 +270,9 @@ Error Runner::load() {
   // attention
   int32_t sliding_window = context_len_;
   if (module_->method_names()->count("get_sliding_window") > 0) {
-    sliding_window = ET_UNWRAP(module_->get("get_sliding_window")).toInt();
+    ET_ASSIGN_OR_RETURN(
+        sliding_window_evalue__, module_->get("get_sliding_window"));
+    sliding_window = sliding_window_evalue__.toInt();
   }
   kv_manager_ = std::make_unique<KVManager>(
       KVManager::Metadata{
@@ -461,8 +463,9 @@ Error Runner::generate_from_prompt_or_file(
   // print the first token from prefill. No prev_token so use cur_token for
   // it.
   if (token_callback) {
-    token_callback(
-        ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));
+    ET_ASSIGN_OR_RETURN_TOKENIZER(
+        decoded_token__, tokenizer_->decode(cur_token, cur_token));
+    token_callback(decoded_token__);
   }
   ET_LOG(
       Info,
@@ -471,13 +474,15 @@ Error Runner::generate_from_prompt_or_file(
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
-  int64_t num_generated_tokens = ET_UNWRAP(token_generator_->generate(
-      prompt_tokens,
-      cur_pos_,
-      seq_len,
-      token_callback,
-      dump_logits,
-      attention_sink_rope_runner_.get()));
+  ET_ASSIGN_OR_RETURN(
+      num_generated_tokens,
+      token_generator_->generate(
+          prompt_tokens,
+          cur_pos_,
+          seq_len,
+          token_callback,
+          dump_logits,
+          attention_sink_rope_runner_.get()));
   stats_.inference_end_ms = time_in_ms();
   ET_LOG(
       Info,

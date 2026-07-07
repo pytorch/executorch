@@ -5,6 +5,17 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 oncall("executorch")
 
 fbcode_target(_kind = runtime.python_library,
+    name = "ops_aliases",
+    srcs = [
+        "ops_aliases.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "models",
     srcs = [
         "models.py",
@@ -34,6 +45,9 @@ fbcode_target(_kind = python_pytest,
     name = "test_quantizer",
     srcs = [
         "generic_tests/test_quantizer.py",
+    ],
+    resources = [
+        "generic_tests/conftest.py",
     ],
     deps = [
         "//executorch/backends/nxp:quantizer",

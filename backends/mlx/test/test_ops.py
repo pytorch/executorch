@@ -27,6 +27,7 @@ See README.md in this directory for full documentation.
 import os
 from typing import Callable, Dict, List, Optional, Tuple
 
+import executorch.exir as exir
 import torch
 import torch.nn as nn
 
@@ -35,6 +36,7 @@ from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa:
     custom_ops,
     ops,
 )
+from executorch.backends.mlx.llm.sampling import SamplingHead
 from torch.export import Dim
 
 from .test_utils import OpTestCase, register_test
@@ -110,6 +112,62 @@ class AddTest(OpTestCase):
         else:
             y = torch.randn(self.shape)
             return (x, y)
+
+
+class ReinplaceChainModel(nn.Module):
+    """Elementwise chain the reinplace pass converts to in-place ops.
+
+    Mixes a pure unary op (exp), activations (sigmoid/relu/clamp/gelu), and
+    binary ops (add/mul/sub) so the chain exercises the unary, activation, and
+    binary in-place handlers. Every op after the first sigmoid consumes a
+    single-use temp, so all become in-place (sigmoid_/add_/relu_/mul_/clamp_/
+    exp_/gelu_/sub_) and run on one rolling buffer; the terminal neg writes the
+    graph output. Inputs are kept NaN/Inf-free: sigmoid -> bounded, clamp to
+    [-2, 2] before exp so exp stays in [e^-2, e^2].
+    """
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        s = torch.sigmoid(x)  # reads input -> fresh temp
+        s = s + y  # add_
+        s = torch.relu(s)  # relu_ (activation)
+        s = s * y  # mul_
+        s = torch.clamp(s, -2.0, 2.0)  # clamp_ (activation), bounds exp below
+        s = torch.exp(s)  # exp_ (pure unary)
+        s = torch.nn.functional.gelu(s)  # gelu_ (activation)
+        s = s - y  # sub_
+        return torch.neg(s)  # terminal output (not in-place)
+
+
+@register_test
+class ReinplaceChainTest(OpTestCase):
+    """On-device numeric check that reinplaced (out==in) ops are correct.
+
+    Lowers with get_default_passes() so the MLXReinplacePass + in-place handlers
+    (out == in buffer donation) run through the actual MLX runtime. The
+    build-level aliasing is unit-tested in test_passes.py; only on-device
+    execution catches a read-after-overwrite bug from buffer reuse.
+    """
+
+    name = "reinplace_chain"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def create_model(self) -> nn.Module:
+        return ReinplaceChainModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(2, 16, 64), torch.randn(2, 16, 64))
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # Reinplace introduces non-core-ATen in-place ops (add_, sigmoid_, ...),
+        # so disable the strict edge verifier — matching the production export
+        # path (which also runs get_default_passes with this config).
+        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
 
 class SubModel(nn.Module):
@@ -402,6 +460,60 @@ class HardtanhTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         # Values span well beyond the bounds so clamping is actually exercised
         x = torch.randn(self.shape) * 4
+        return (x,)
+
+
+class LeakyReLUModel(nn.Module):
+    """Model that applies leaky_relu with an optional negative slope."""
+
+    def __init__(self, negative_slope: Optional[float] = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.negative_slope is None:
+            return torch.nn.functional.leaky_relu(x)
+        return torch.nn.functional.leaky_relu(x, negative_slope=self.negative_slope)
+
+
+@register_test
+class LeakyReLUTest(OpTestCase):
+    """Test case for leaky_relu activation with various negative slopes."""
+
+    name = "leaky_relu"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        negative_slope: Optional[float] = 0.01,
+    ):
+        self.shape = shape
+        self.negative_slope = negative_slope
+        shape_str = "x".join(str(s) for s in shape)
+        slope_str = "default" if negative_slope is None else f"slope{negative_slope}"
+        self.name = f"leaky_relu_{slope_str}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["LeakyReLUTest"]:
+        return [
+            cls(shape=(2, 3, 4), negative_slope=0.01),
+            cls(shape=(2, 3, 4), negative_slope=None),
+            cls(shape=(4, 8), negative_slope=0.1),
+            cls(shape=(10,), negative_slope=0.2),
+            cls(shape=(10,), negative_slope=1.5),
+            cls(shape=(2, 8, 16), negative_slope=0.01),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return LeakyReLUModel(self.negative_slope)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        numel = 1
+        for size in self.shape:
+            numel *= size
+        x = torch.linspace(-4.0, 4.0, steps=numel).reshape(self.shape)
         return (x,)
 
 
@@ -2704,6 +2816,7 @@ class RingBufferKVCacheModel(nn.Module):
         max_context_length: int,
         n_heads: int,
         head_dim: int,
+        max_write_len: Optional[int] = None,
     ):
         super().__init__()
         from executorch.backends.mlx.llm.cache import RingBufferKVCache
@@ -2713,6 +2826,7 @@ class RingBufferKVCacheModel(nn.Module):
             max_context_length=max_context_length,
             n_heads=n_heads,
             head_dim=head_dim,
+            max_write_len=max_write_len,
         )
 
     def forward(
@@ -2749,18 +2863,31 @@ class RingBufferKVCacheTest(OpTestCase):
         head_dim: int = 64,
         max_context_length: int = 64,
         seq_step: int = 4,
+        max_write_len: Optional[int] = None,
     ):
         self.max_batch_size = max_batch_size
         self.n_heads = n_heads
         self.head_dim = head_dim
         self.max_context_length = max_context_length
         self.seq_step = seq_step
+        self.max_write_len = max_write_len
 
     @classmethod
     def get_test_configs(cls) -> List["RingBufferKVCacheTest"]:
         return [
             cls(),
             cls(n_heads=8, head_dim=32, max_context_length=32, seq_step=2),
+            # Reduced buffer (max_write_len < window) with a wrapping write:
+            # window=8, max_write_len=4 -> buffer_size=11. The test write of 4
+            # tokens at start_pos=8 wraps the ring (slots 8,9,10 then 0),
+            # exercising the tighter buffer
+            cls(
+                n_heads=8,
+                head_dim=32,
+                max_context_length=8,
+                seq_step=2,
+                max_write_len=4,
+            ),
         ]
 
     def create_model(self) -> nn.Module:
@@ -2769,6 +2896,7 @@ class RingBufferKVCacheTest(OpTestCase):
             max_context_length=self.max_context_length,
             n_heads=self.n_heads,
             head_dim=self.head_dim,
+            max_write_len=self.max_write_len,
         )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
@@ -2793,7 +2921,13 @@ class RingBufferKVCacheTest(OpTestCase):
         return (input_pos, k_val, v_val)
 
     def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
-        seq_dim = Dim("seq_step", min=1, max=self.max_context_length)
+        # A single write can't exceed max_write_len (defaults to the window).
+        seq_max = (
+            self.max_write_len
+            if self.max_write_len is not None
+            else self.max_context_length
+        )
+        seq_dim = Dim("seq_step", min=1, max=seq_max)
         return {
             "input_pos": None,
             "k_val": {2: seq_dim},
@@ -4603,6 +4737,21 @@ def _nan_input_fn(nan_frac: float = 0.3):
     return fn
 
 
+def _inf_input_fn():
+    """Return a callable(shape, dtype) that generates inputs with some inf values."""
+
+    def fn(shape, dtype):
+        x = torch.randn(shape, dtype=dtype)
+        # Insert ~20% +inf and ~10% -inf using non-overlapping masks
+        mask_pos = torch.rand(shape) > 0.8  # ~20% -> +inf
+        mask_neg = (~mask_pos) & (torch.rand(shape) > 0.9)  # ~10% of remaining -> -inf
+        x[mask_pos] = float("inf")
+        x[mask_neg] = float("-inf")
+        return (x,)
+
+    return fn
+
+
 # Standard shape and dtype configs used by unary tests.
 _SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
 _SHAPES_2 = [(16,), (4, 4)]
@@ -4696,6 +4845,7 @@ _UNARY_OP_TESTS = [
     {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
     {"op_name": "bitwise_not_int", "op_fn": torch.bitwise_not, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn": _int_input_fn()},
     {"op_name": "isnan",      "op_fn": torch.isnan,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _nan_input_fn()},
+    {"op_name": "isinf",      "op_fn": torch.isinf,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _inf_input_fn()},
     # activations
     {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
@@ -4806,6 +4956,10 @@ _BINARY_OP_TESTS = [
     # logical
     {"op_name": "bitwise_and_bool", "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
     {"op_name": "bitwise_and_int",  "op_fn": torch.bitwise_and, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
+    {"op_name": "bitwise_or_bool",  "op_fn": torch.bitwise_or,  "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "bitwise_or_int",   "op_fn": torch.bitwise_or,  "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
+    {"op_name": "bitwise_xor_bool", "op_fn": torch.bitwise_xor, "shapes": _SHAPES_3, "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
+    {"op_name": "bitwise_xor_int",  "op_fn": torch.bitwise_xor, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn_a": _int_input_fn(0, 256), "input_fn_b": _int_input_fn(0, 256)},
     {"op_name": "logical_and",   "op_fn": torch.logical_and, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
     {"op_name": "logical_or",    "op_fn": torch.logical_or,  "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn_a": _bool_input_fn(), "input_fn_b": _bool_input_fn()},
 ]
@@ -4861,6 +5015,96 @@ class BitwiseAndScalarTest(OpTestCase):
 
     def create_model(self) -> nn.Module:
         return BitwiseAndScalarModel(self.scalar)
+
+
+class BitwiseOrScalarModel(nn.Module):
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        return torch.bitwise_or(a, self.scalar)
+
+
+@register_test
+class BitwiseOrScalarTest(OpTestCase):
+    """Test case for aten.bitwise_or op (Tensor_Scalar variant)."""
+
+    name = "bitwise_or_scalar"
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype,
+        scalar,
+    ):
+        self.shape = shape
+        self.dtype = dtype
+        self.scalar = scalar
+        shape_str = "x".join(str(s) for s in shape)
+        dtype_str = str(dtype).replace("torch.", "")
+        self.name = f"bitwise_or_scalar_{shape_str}_{dtype_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["BitwiseOrScalarTest"]:
+        return [
+            cls(shape=(16,), dtype=torch.bool, scalar=True),
+            cls(shape=(4, 4), dtype=torch.int32, scalar=7),
+            cls(shape=(2, 3, 4), dtype=torch.int64, scalar=13),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dtype == torch.bool:
+            return _bool_input_fn()(self.shape, self.dtype)
+        return _int_input_fn(0, 256)(self.shape, self.dtype)
+
+    def create_model(self) -> nn.Module:
+        return BitwiseOrScalarModel(self.scalar)
+
+
+class BitwiseXorScalarModel(nn.Module):
+    def __init__(self, scalar):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        return torch.bitwise_xor(a, self.scalar)
+
+
+@register_test
+class BitwiseXorScalarTest(OpTestCase):
+    """Test case for aten.bitwise_xor op (Tensor_Scalar variant)."""
+
+    name = "bitwise_xor_scalar"
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype,
+        scalar,
+    ):
+        self.shape = shape
+        self.dtype = dtype
+        self.scalar = scalar
+        shape_str = "x".join(str(s) for s in shape)
+        dtype_str = str(dtype).replace("torch.", "")
+        self.name = f"bitwise_xor_scalar_{shape_str}_{dtype_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["BitwiseXorScalarTest"]:
+        return [
+            cls(shape=(16,), dtype=torch.bool, scalar=True),
+            cls(shape=(4, 4), dtype=torch.int32, scalar=7),
+            cls(shape=(2, 3, 4), dtype=torch.int64, scalar=13),
+        ]
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if self.dtype == torch.bool:
+            return _bool_input_fn()(self.shape, self.dtype)
+        return _int_input_fn(0, 256)(self.shape, self.dtype)
+
+    def create_model(self) -> nn.Module:
+        return BitwiseXorScalarModel(self.scalar)
 
 
 @register_test
@@ -6075,6 +6319,8 @@ class QuantizedLinearTest(OpTestCase):
             cls(group_size=128),
             cls(qdtype=torch.int2),
             cls(qdtype=torch.int8),
+            cls(qdtype=torch.int6),
+            cls(qdtype=torch.int6, group_size=128),
             # group_size=16: exercises the non-fused dequantize+matmul path
             # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
             cls(qdtype=torch.int8, group_size=16),
@@ -7308,3 +7554,376 @@ class NVFP4QuantizedLinearTest(OpTestCase):
             self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
         )
         return (x,)
+
+
+def _make_int4_quantized_weight(weight: torch.Tensor, group_size: int) -> torch.Tensor:
+    """Groupwise affine 4-bit quantize a ``(N, K)`` weight into an
+    ``ExportableInt4Tensor`` (torchao ``Int4Tensor`` packed layout)."""
+    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+    N, K = weight.shape
+    dtype = weight.dtype
+    w = weight.float().reshape(N, K // group_size, group_size)
+    wmin = w.amin(dim=-1)
+    wmax = w.amax(dim=-1)
+    scale = ((wmax - wmin) / 15.0).clamp(min=1e-8)
+    # Fractional zero-point (HQQ-style), exercises the float zero_point repack path.
+    zero = (-wmin / scale).clamp(0, 15)
+    q = torch.round(w / scale.unsqueeze(-1) + zero.unsqueeze(-1)).clamp(0, 15)
+    q = q.reshape(N, K).to(torch.uint8)
+    # Two nibbles/byte: even index -> low nibble.
+    packed = (q[:, 0::2] | (q[:, 1::2] << 4)).to(torch.uint8)
+    it = Int4Tensor(
+        qdata=packed,
+        scale=scale.t().contiguous().to(dtype),
+        zero_point=zero.t().contiguous().to(dtype),
+        block_size=[1, group_size],
+        shape=torch.Size([N, K]),
+    )
+    return ExportableInt4Tensor.from_int4_tensor(it)
+
+
+class Int4QuantizedLinearModel(nn.Module):
+    """Linear layer whose weight is an ``ExportableInt4Tensor``."""
+
+    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
+
+
+@register_test
+class Int4QuantizedLinearTest(OpTestCase):
+    """ExportableInt4Tensor nn.Linear -> MLX 4-bit affine quantized matmul."""
+
+    name = "int4_quantized_linear"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        in_features: int = 64,
+        out_features: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        bias: bool = True,
+        group_size: int = 32,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.bias = bias
+        self.group_size = group_size
+        self.dtype = dtype
+
+        parts = ["int4_quantized_linear", f"g{group_size}"]
+        if not bias:
+            parts.append("no_bias")
+        if dtype != torch.bfloat16:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["Int4QuantizedLinearTest"]:
+        return [
+            cls(),
+            cls(bias=False),
+            cls(group_size=64),
+            cls(dtype=torch.float32),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = Int4QuantizedLinearModel(
+            self.in_features, self.out_features, bias=self.bias
+        ).to(self.dtype)
+        model.linear.weight = nn.Parameter(
+            _make_int4_quantized_weight(model.linear.weight.data, self.group_size),
+            requires_grad=False,
+        )
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
+        )
+        return (x,)
+
+
+@register_test
+class Int4QuantizedEmbeddingTest(OpTestCase):
+    """ExportableInt4Tensor nn.Embedding -> MLX 4-bit affine quantized gather."""
+
+    name = "int4_quantized_embedding"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        num_embeddings: int = 1000,
+        embedding_dim: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        group_size: int = 32,
+        dtype: torch.dtype = torch.bfloat16,
+    ):
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.group_size = group_size
+        self.dtype = dtype
+        self.name = f"int4_quantized_embedding_g{group_size}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["Int4QuantizedEmbeddingTest"]:
+        return [
+            cls(),
+            cls(group_size=64),
+            cls(group_size=128),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = EmbeddingModel(self.num_embeddings, self.embedding_dim)
+        model = model.to(self.dtype)
+        model.embedding.weight = nn.Parameter(
+            _make_int4_quantized_weight(model.embedding.weight.data, self.group_size),
+            requires_grad=False,
+        )
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
+        return (x,)
+
+
+class _LogitsPassthrough(nn.Module):
+    """Stand-in for a model returning logits [B, vocab]."""
+
+    def forward(self, logits: torch.Tensor) -> torch.Tensor:
+        return logits
+
+
+# Baked constants for sampling params a fixture does not expose as a runtime
+# input: keep-all top_k and top_p=off.
+_KEEP_ALL_TOP_K = torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64)
+_TOP_P_OFF = torch.tensor(1.0)
+
+
+class SeededSampleModel(nn.Module):
+    """SamplingHead with temperature AND seed as runtime forward inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, seed)
+
+
+class UnseededSampleModel(nn.Module):
+    """SamplingHead with temperature as a runtime input and no seed."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, None)
+
+
+class TopPSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_p as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_p):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, top_p, seed)
+
+
+class TopKSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_k as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_k):
+        return self.head(logits, temperature, top_k, _TOP_P_OFF, seed)
+
+
+@register_test
+class SampleSeededTest(OpTestCase):
+    """Seeded sample lowers to one MLX segment; seed threads in via ItemIntNode."""
+
+    name = "sample_seeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,  # temperature==0 greedy branch
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,  # sampling branch + greedy branch
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,  # top-p nucleus chain
+        "SortNode": 2,  # top-k threshold + top-p nucleus chain
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return SeededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+        )
+
+
+@register_test
+class SampleUnseededTest(OpTestCase):
+    """Unseeded sample lowers without a seed field (only the cond ItemIntNode)."""
+
+    name = "sample_unseeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 2,  # top_k + temperature>0 condition only (no seed)
+        "SoftmaxNode": 1,  # top-p nucleus chain (top_p defaults to 1.0)
+    }
+
+    def create_model(self) -> nn.Module:
+        return UnseededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(1, 256), torch.tensor(0.8))
+
+
+@register_test
+class SampleTopPTest(OpTestCase):
+    """Top-p sample emits the nucleus chain (softmax/sort/cumsum/min/where)."""
+
+    name = "sample_top_p"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,
+        "SoftmaxNode": 1,
+        "SortNode": 2,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopPSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(0.9),
+        )
+
+
+@register_test
+class SampleTopKTest(OpTestCase):
+    """Top-k sample emits the threshold before the top-p nucleus chain."""
+
+    name = "sample_top_k"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,
+        "SortNode": 2,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "LogicalOrNode": 0,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopKSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(2, dtype=torch.int64),
+        )
+
+
+@register_test
+class SampleGreedyTest(OpTestCase):
+    """Greedy argmax(logits) is bit-exact host/device, so verify the token with the
+    normal compare. Covers temperature=0, tiny temperature, bf16 logits, and a
+    batch (per-row argmax -> [B] on device)."""
+
+    name = "sample_greedy"
+
+    def __init__(
+        self,
+        temperature: float = 0.0,
+        dtype: torch.dtype = torch.float32,
+        batch: int = 1,
+        tag: str = "",
+    ):
+        self.temperature = temperature
+        self.dtype = dtype
+        self.batch = batch
+        self.name = f"sample_greedy_{tag}" if tag else "sample_greedy"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SampleGreedyTest"]:
+        return [
+            cls(temperature=0.0),
+            cls(temperature=1e-4, tag="eps"),
+            cls(temperature=-1.0, tag="neg"),  # negative -> greedy on both paths
+            cls(temperature=1e-4, dtype=torch.bfloat16, tag="bf16"),
+            cls(temperature=0.0, batch=4, tag="batch"),  # per-row argmax over a batch
+        ]
+
+    def create_model(self) -> nn.Module:
+        return SeededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        logits = torch.randn(self.batch, 1024, dtype=self.dtype)
+        if self.dtype == torch.bfloat16:
+            logits[0, 512] = 50.0  # dominant -> unambiguous bf16 argmax
+        return (
+            logits,
+            torch.tensor(self.temperature),
+            torch.tensor(0, dtype=torch.int64),
+        )

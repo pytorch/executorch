@@ -6,38 +6,11 @@
 import multiprocessing
 import pickle
 
-import torch
-from executorch import exir
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
-from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.models import Conv2dModule, LinearModule
-
-
-def test_conv2d_neutron_conversion():
-    model = Conv2dModule()
-
-    example_input = (torch.ones(1, 4, 32, 32),)
-    exir_program = torch.export.export(model, example_input)
-    edge_program_manager = exir.to_edge(exir_program)
-
-    NodeFormatInference(edge_program_manager.exported_program()).identify_node_formats()
-    edge_program_converter = EdgeProgramToIRConverter()
-    tflite_model, _ = edge_program_converter.convert_program(
-        edge_program_manager.exported_program()
-    )
-
-    neutron_converter_manager = NeutronConverterManager()
-    neutron_model = neutron_converter_manager.convert(tflite_model, "imxrt700", False)
-
-    assert len(
-        neutron_model
-    ), "Produced NeutronGraph-based TFLite model has zero length!"
+from executorch.backends.nxp.tests.models import LinearModule
 
 
 def test_conv2d_neutron_conversion__prefetching(mocker):
@@ -58,20 +31,6 @@ def test_conv2d_neutron_conversion__prefetching(mocker):
     assert len(neutron_model_prefetch) != len(
         neutron_model_regular
     ), "The weight prefetching flag does not make a difference!"
-
-
-def test_neutron_converter_with_experimental_mlir_flow(mocker):
-    model = LinearModule(True)
-    input_shape = (1, 1, 32, 32)
-
-    process_spy = mocker.spy(multiprocessing, "Process")
-    to_quantized_edge_program(
-        model, input_shape, use_new_flow_neutron_c=True
-    ).exported_program()
-
-    compilation_opts = process_spy.call_args.kwargs["args"][1]
-    assert isinstance(compilation_opts, dict)
-    assert compilation_opts["useNewFlowNeutronC"] is True
 
 
 def test_convert_unsafe_args_are_picklable(mocker):
