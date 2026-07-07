@@ -128,7 +128,12 @@ def test_pow_tensor_tensor_tosa_FP(test_data: Pow_TensorTensor.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorTensor.test_data, x_fail, strict=False)
+@common.parametrize(
+    "test_data",
+    Pow_TensorTensor.test_data | Pow_TensorTensor.test_data_bf16,
+    x_fail,
+    strict=False,
+)
 @common.SkipIfNoModelConverter
 def test_pow_tensor_tensor_vgf_no_quant(test_data: Pow_TensorTensor.input_t):
     pipeline = VgfPipeline[Pow_TensorTensor.input_t](
@@ -199,7 +204,9 @@ def test_pow_tensor_scalar_u85_INT(test_data: Pow_TensorScalar.input_t):
 
 @common.parametrize(
     "test_data",
-    Pow_TensorScalar.test_data | Pow_TensorScalar.test_data_fp16,
+    Pow_TensorScalar.test_data
+    | Pow_TensorScalar.test_data_bf16
+    | Pow_TensorScalar.test_data_fp16,
 )
 @common.SkipIfNoModelConverter
 def test_pow_tensor_scalar_vgf_no_quant(test_data: Pow_TensorScalar.input_t):
