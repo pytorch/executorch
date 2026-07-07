@@ -319,6 +319,15 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class AminPattern(SharedSpecPattern):
+    """
+    Quantizer for Amin operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amin.default]
+
+
 class BMMPattern(QuantizationPattern):
     """
     Quantizer for BatchMatMul operator.
@@ -1130,6 +1139,15 @@ class SqueezeDimsPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.squeeze.dims]
+
+
+class SumDimIntListPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.dim_IntList` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.dim_IntList]
 
 
 class TanhPattern(QuantizationPattern):
