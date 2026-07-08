@@ -388,8 +388,10 @@ jobs:
       script: |
         set -eux
 
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect it to a writable dir.
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
         export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
         mkdir -p "${HF_HOME}"
 
         echo "::group::Setup ExecuTorch"
@@ -557,8 +559,10 @@ jobs:
         # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
         # examples install doesn't try to downgrade it from the public CDN.
         pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect it to a writable dir.
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
         export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
         mkdir -p "${HF_HOME}"
         source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
 
@@ -611,8 +615,10 @@ jobs:
       script: |
         set -eux
 
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect it to a writable dir.
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
         export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
         mkdir -p "${HF_HOME}"
 
         echo "::group::Setup ExecuTorch"

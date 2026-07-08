@@ -145,8 +145,10 @@ jobs:
       script: |
         set -eux
 
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect it to a writable dir.
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
         export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
         mkdir -p "${HF_HOME}"
 
         echo "::group::Setup ExecuTorch"
@@ -224,8 +226,10 @@ jobs:
       script: |
         set -eux
 
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect it to a writable dir.
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
+        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
         export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
         mkdir -p "${HF_HOME}"
 
         echo "::group::Setup environment"
