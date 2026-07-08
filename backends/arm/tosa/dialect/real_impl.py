@@ -9,8 +9,6 @@ from typing import Any, Callable
 
 import numpy as np
 import torch
-import tosa_reference_model as reference_model  # type: ignore[import-not-found, import-untyped]
-import tosa_serializer as ts
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -56,6 +54,11 @@ def make_tosa_reference_model_impl(
     op_name = op_schema.split("(")[0]
 
     def real_impl(*args, **kwargs) -> torch.Tensor:
+        # Import lazily: the reference model is only needed to execute an op,
+        # not to import the dialect. Linking the native extension into every
+        # dialect consumer overflows the ELF relocation limit in large builds.
+        import tosa_reference_model as reference_model  # type: ignore[import-not-found, import-untyped]
+        import tosa_serializer as ts
 
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()

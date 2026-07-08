@@ -126,7 +126,7 @@ def _q6k_matvec_source(has_bias: bool) -> str:
             const float d = (float) blk->d;
 
             float4 sums = {{0.f, 0.f, 0.f, 0.f}};
-            for (short l = 0; l < 4; ++l) {{
+            FOR_UNROLL (short l = 0; l < 4; ++l) {{
                 sums[0] += yl[4*l + 0] * (float)((int8_t)((q1[l] & 0xF) | ((qh[l] & 0x03) << 4)) - 32);
                 sums[1] += yl[4*l + 1] * (float)((int8_t)((q2[l] & 0xF) | ((qh[l] & 0x0C) << 2)) - 32);
                 sums[2] += yl[4*l + 2] * (float)((int8_t)((q1[l] >> 4)  | ((qh[l] & 0x30) << 0)) - 32);
@@ -228,9 +228,9 @@ def _q6k_matmul_source(has_bias: bool) -> str:
         const short ly_b = (tid / NL1) % 8;
         const short ib_b = 4 * sx_b + sy_b;
 
-        for (short i = 0; i < 8; ++i) {{
-            *(sb + 64 * ib_b + 8 * ly_b + i) = (half) *(yp + i);
-        }}
+        using InT2x4 = typename vec2x4<InT>::type;
+        *(threadgroup half2x4 *)(sb + 64 * ib_b + 8 * ly_b) =
+            (half2x4)(*(device const InT2x4 *)(yp));
 
         // Advance weight pointer through Q6_K sub-blocks.
         il = (il + 2 < NL) ? il + 2 : il % 2;

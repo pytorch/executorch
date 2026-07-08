@@ -401,6 +401,40 @@ static Kernel prim_ops[] = {
 #endif
 
 #if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SYM_INT_SCALAR)
+    // executorch_prim::sym_int.Scalar(Scalar) -> Scalar
+    Kernel(
+        "executorch_prim::sym_int.Scalar",
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isInt()) {
+            out = EValue(a.toInt());
+          } else if (a.isDouble()) {
+            out = EValue(static_cast<int64_t>(a.toDouble()));
+          } else if (a.isBool()) {
+            out = EValue(static_cast<int64_t>(a.toBool()));
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_int only supports int, double, or bool inputs, got %zu",
+                (size_t)a.tag);
+          }
+        }),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
     defined(INCLUDE_EXECUTORCH_PRIM_EQ_SCALAR)
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
     Kernel(
@@ -503,6 +537,48 @@ static Kernel prim_ops[] = {
                 /* void */,
                 "sym_not only supports bool inputs, got %zu",
                 (size_t)a.tag);
+          }
+        }),
+#endif
+
+#if !defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD) || \
+    defined(INCLUDE_EXECUTORCH_PRIM_SYM_ITE_SCALAR)
+    // executorch_prim::sym_ite.Scalar(bool b, Scalar t, Scalar f) -> Scalar
+    Kernel(
+        "executorch_prim::sym_ite.Scalar",
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 4,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)4,
+              stack.size());
+          EValue& b = *stack[0];
+          EValue& out = *stack[3];
+          ET_KERNEL_CHECK_MSG(
+              context,
+              b.isBool(),
+              InvalidType,
+              /* void */,
+              "sym_ite condition must be bool, got %zu",
+              (size_t)b.tag);
+          EValue& selected = b.toBool() ? *stack[1] : *stack[2];
+          if (selected.isInt()) {
+            out = EValue(selected.toInt());
+          } else if (selected.isDouble()) {
+            out = EValue(selected.toDouble());
+          } else if (selected.isBool()) {
+            out = EValue(selected.toBool());
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_ite value must be int, double, or bool, got %zu",
+                (size_t)selected.tag);
           }
         }),
 #endif

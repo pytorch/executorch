@@ -621,6 +621,15 @@ def _build_parser():
     )
 
     parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Batch size for text decoder quantization. Larger values increase throughput "
+        "but require more host memory. Only affects the CALIBRATE graph; DECODE and "
+        "PREFILL graphs always use batch size 1.",
+    )
+
+    parser.add_argument(
         "-F",
         "--use_fp16",
         help="If specified, will run in fp16 precision and discard ptq setting",
