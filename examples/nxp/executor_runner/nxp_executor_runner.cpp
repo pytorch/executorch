@@ -463,9 +463,6 @@ int main(int argc, char* argv[]) {
     // Create ETDumpGen before inference
     auto etdump_gen_ptr = std::make_unique<executorch::etdump::ETDumpGen>();
     executorch::etdump::ETDumpGen* etdump_gen = etdump_gen_ptr.get();
-    printf("ET_EVENT_TRACER_ENABLED\n");
-#else
-    printf(" NO ET_EVENT_TRACER_ENABLED\n");
 #endif
     Result<torch::executor::Method> method = program->load_method(
         method_name,
