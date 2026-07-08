@@ -60,7 +60,6 @@ if(NOT TARGET nd)
   )
 
   add_library(nd STATIC IMPORTED GLOBAL)
-  add_library(flatccrt STATIC IMPORTED GLOBAL)
   set_target_properties(
     nd PROPERTIES IMPORTED_LOCATION ${EIQ_NEUTRON_TARGET_DRIVER}
   )
@@ -89,6 +88,31 @@ if(NOT TARGET executorch)
   )
 else()
   message(STATUS "Looking for executorch target -- found")
+endif()
+
+message(STATUS "Looking for flatccrt")
+if(NOT TARGET flatccrt)
+  message(STATUS "Looking for flatccrt -- not found, adding")
+  add_subdirectory(
+          "${EXECUTORCH_PATH}/third-party/flatcc"
+          "${CMAKE_CURRENT_BINARY_DIR}/flatcc"
+          EXCLUDE_FROM_ALL
+  )
+else()
+  message(STATUS "Looking for flatcc --found")
+endif()
+
+message(STATUS "Looking for etdump")
+if(NOT TARGET etdump)
+  message(STATUS "Looking for etdump -- not found, adding")
+  include_directories("${EXECUTORCH_PATH}/third-party/flatcc/include")
+  add_subdirectory(
+          "${EXECUTORCH_PATH}/devtools"
+          "${CMAKE_CURRENT_BINARY_DIR}/devtools"
+          EXCLUDE_FROM_ALL
+  )
+else()
+  message(STATUS "Looking for etdump --found")
 endif()
 
 message(STATUS "Looking for gflags")
@@ -120,6 +144,7 @@ target_link_libraries(
           executorch
           executorch_kernels
           nd
+          flatccrt
           gflags::gflags
           "-Wl,--whole-archive"
           executorch_delegate_neutron
