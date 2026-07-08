@@ -406,8 +406,7 @@ jobs:
         if [ "${{ matrix.model.name }}" != "parakeet-tdt" ] && [ "${{ matrix.model.name }}" != "dinov2-small-imagenet1k-1-layer" ]; then
           echo "::group::Setup Huggingface"
           pip install -U "huggingface_hub[cli]>=1.2.1,<2.0" accelerate "optimum~=2.0.0" "transformers==5.0.0rc1"
-          HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
-          hf auth login --token "$HF_AUTH_TOKEN"
+          export HF_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
           OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
           pip install --no-deps git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
           echo "::endgroup::"
@@ -626,8 +625,7 @@ jobs:
 
         echo "::group::Setup Huggingface"
         pip install -U "huggingface_hub[cli]>=1.2.1,<2.0"
-        HF_AUTH_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
-        hf auth login --token "$HF_AUTH_TOKEN"
+        export HF_TOKEN="$(printf '%s' "$SECRET_EXECUTORCH_HF_TOKEN" | tr -d '\r\n')"
         echo "::endgroup::"
 
         echo "::group::Install optimum-executorch"
