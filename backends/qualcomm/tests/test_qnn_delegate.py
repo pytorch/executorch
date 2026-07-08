@@ -44,6 +44,10 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     validate_context_binary,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_greater_than,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ANNOTATION,
     QCOM_MODULE,
@@ -61,8 +65,6 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    is_qnn_sdk_version_greater_than,
-    is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
     skip_annotation,
@@ -3929,18 +3931,20 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(modules[i], sample_input)
 
-    # TODO: Once the accuracy issue is fixed, enable this test.
-    @unittest.skip("Bad accuracy for HTP")
+    @unittest.skipIf(is_qnn_sdk_version_less_than("2.48"), "UT pass after QNN 2.48")
     def test_qnn_backend_embedding_per_channel(self):
         module = Embedding()  # noqa: F405
         sample_input = (torch.Tensor([1, 2, 4, 5]).to(torch.int32),)
-        qdq_module = self.get_qdq_module(
-            module,
-            sample_input,
-            quant_dtype=QuantDtype.use_16a8w,
-            is_embedding_per_channel=True,
-        )
-        self.lower_module_and_test_output(qdq_module, sample_input)
+        quant_dtype = [QuantDtype.use_16a8w, QuantDtype.use_16a4w]
+        for i, qdtype in enumerate(quant_dtype):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=qdtype,
+                    is_embedding_per_channel=True,
+                )
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_equal(self):
         test_comb = [

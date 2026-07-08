@@ -3,6 +3,20 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 runtime.python_library(
+    name = "int4_dispatch",
+    srcs = [
+        "int4_dispatch.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+runtime.python_library(
     name = "cuda_passes",
     srcs = [
         "passes/__init__.py",
