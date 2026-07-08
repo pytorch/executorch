@@ -99,6 +99,10 @@ jobs:
       script: |
         set -eux
 
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect it to a writable dir.
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}"
+
         echo "::group::Fix libstdc++ GLIBCXX version"
         # The executorch pybindings require GLIBCXX_3.4.30 which conda's libstdc++ doesn't have.
         # Replace conda's libstdc++ with the system version to fix ImportError.
