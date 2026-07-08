@@ -36,6 +36,8 @@ class DecomposeCoshPass(ArmOpTargetedPass):
     }
     target_ops = (edge_cosh,)
 
+    targeted_ops = {edge_cosh}
+
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)

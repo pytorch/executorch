@@ -74,6 +74,7 @@ class DecomposeAddSubAlphaPass(ArmOpTargetedPass):
             isinstance(child, GraphModule) and self.should_run_pass(child)
             for child in graph_module.children()
         )
+    targeted_ops = {*_ADD_OPS, *_SUB_OPS}
 
     def call_operator(self, op, args, kwargs, meta, updated: bool | None = False):
         if op not in self.target_ops:

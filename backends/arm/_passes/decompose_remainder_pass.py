@@ -51,6 +51,8 @@ class DecomposeRemainderPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivTensorModePass}
     target_ops = tuple(_decomposition_ops)
 
+    targeted_ops = set(_decomposition_ops.keys())
+
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
