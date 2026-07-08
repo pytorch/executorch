@@ -94,9 +94,8 @@ message(STATUS "Looking for flatccrt")
 if(NOT TARGET flatccrt)
   message(STATUS "Looking for flatccrt -- not found, adding")
   add_subdirectory(
-          "${EXECUTORCH_PATH}/third-party/flatcc"
-          "${CMAKE_CURRENT_BINARY_DIR}/flatcc"
-          EXCLUDE_FROM_ALL
+    "${EXECUTORCH_PATH}/third-party/flatcc"
+    "${CMAKE_CURRENT_BINARY_DIR}/flatcc" EXCLUDE_FROM_ALL
   )
 else()
   message(STATUS "Looking for flatcc --found")
@@ -107,9 +106,8 @@ if(NOT TARGET etdump)
   message(STATUS "Looking for etdump -- not found, adding")
   include_directories("${EXECUTORCH_PATH}/third-party/flatcc/include")
   add_subdirectory(
-          "${EXECUTORCH_PATH}/devtools"
-          "${CMAKE_CURRENT_BINARY_DIR}/devtools"
-          EXCLUDE_FROM_ALL
+    "${EXECUTORCH_PATH}/devtools" "${CMAKE_CURRENT_BINARY_DIR}/devtools"
+    EXCLUDE_FROM_ALL
   )
 else()
   message(STATUS "Looking for etdump --found")
