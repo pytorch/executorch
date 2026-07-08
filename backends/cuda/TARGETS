@@ -3,9 +3,15 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 runtime.python_library(
-    name = "int4_dispatch",
+    name = "quantize_op_dispatch",
     srcs = [
-        "int4_dispatch.py",
+        "coalesced_int4_tensor.py",
+        "dp4a_planar_int6_tensor.py",
+        "quantize_op_dispatch/__init__.py",
+        "quantize_op_dispatch/_library.py",
+        "quantize_op_dispatch/int4_dispatch.py",
+        "quantize_op_dispatch/int6_dispatch.py",
+        "quantize_op_dispatch/int8_dispatch.py",
     ],
     visibility = [
         "//executorch/...",
