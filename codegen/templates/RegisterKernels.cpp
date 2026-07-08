@@ -7,8 +7,8 @@
  */
 
 // ${generated_comment}
-// This implements ${manual_registration_function_name}() API that is declared in
-// RegisterKernels.h
+// This implements ${manual_registration_function_name}() API that is declared
+// in RegisterKernels.h
 #include "RegisterKernels.h"
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include "${fn_header}" // Generated Function import headers

@@ -207,19 +207,15 @@ function(generate_bindings_for_kernels)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
   if(GEN_MANUAL_REGISTRATION)
-    list(
-      APPEND
-      _gen_command
-      --manual-registration
-      --manual-registration-lib-name=${GEN_LIB_NAME}
+    list(APPEND _gen_command --manual-registration
+         --manual-registration-lib-name=${GEN_LIB_NAME}
     )
   endif()
 
   if(GEN_MANUAL_REGISTRATION)
     set(_gen_command_sources
-        ${_out_dir}/RegisterKernelsEverything.cpp
-        ${_out_dir}/RegisterKernels.h ${_out_dir}/Functions.h
-        ${_out_dir}/NativeFunctions.h
+        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
     )
   else()
     set(_gen_command_sources
@@ -305,9 +301,8 @@ function(gen_operators_lib)
 
   if(GEN_MANUAL_REGISTRATION)
     set(_srcs_list
-        ${_out_dir}/RegisterKernelsEverything.cpp
-        ${_out_dir}/RegisterKernels.h ${_out_dir}/Functions.h
-        ${_out_dir}/NativeFunctions.h
+        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
     )
   else()
     set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp

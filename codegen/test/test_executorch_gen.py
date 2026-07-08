@@ -394,9 +394,7 @@ class TestManualRegistrationTemplates(unittest.TestCase):
                 loc=Location(__file__, 1),
                 valid_tags=set(),
             )
-            backend_indices: dict[
-                DispatchKey, dict[OperatorName, BackendMetadata]
-            ] = {
+            backend_indices: dict[DispatchKey, dict[OperatorName, BackendMetadata]] = {
                 DispatchKey.CPU: {},
                 DispatchKey.QuantizedCPU: {},
             }
