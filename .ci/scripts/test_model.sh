@@ -48,6 +48,16 @@ prepare_artifacts_upload() {
   fi
 }
 
+install_model_requirements() {
+  if [[ "${MODEL_NAME}" == "yolo26" ]]; then
+    local torch_url="https://download.pytorch.org/whl/cpu"
+    "${PYTHON_EXECUTABLE}" -m pip install \
+      --upgrade-strategy only-if-needed \
+      --extra-index-url "${torch_url}" \
+      -r examples/models/yolo26/requirements.txt
+  fi
+}
+
 
 build_cmake_executor_runner() {
   local backend_string_select="${1:-}"
@@ -338,6 +348,8 @@ test_model_with_cuda() {
   ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte" --data_path "./aoti_cuda_blob.ptd"
 }
 
+
+install_model_requirements
 
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
