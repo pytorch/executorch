@@ -40,8 +40,17 @@ def _conv(
 
 
 def _avg_pool2d(
-    input, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override
+    input,
+    kernel_size,
+    stride=None,
+    padding=0,
+    ceil_mode=False,
+    count_include_pad=True,
+    divisor_override=None,
 ):
+    if stride is None:
+        stride = []  # Default value of avg_pool2d.
+
     nchw = input.permute(0, 3, 1, 2)
     out = torch.ops.aten.avg_pool2d(
         nchw,
@@ -106,8 +115,8 @@ lib.impl("convolution", _conv, "CompositeExplicitAutograd")
 register_fake("channels_last::convolution", _conv, lib=lib)
 
 lib.define(
-    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride, int[2] padding, "
-    "bool ceil_mode, bool count_include_pad, int? divisor_override) -> Tensor"
+    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=0, "
+    "bool ceil_mode=False, bool count_include_pad=True, int? divisor_override=None) -> Tensor"
 )
 lib.impl("avg_pool2d", _avg_pool2d, "CompositeExplicitAutograd")
 register_fake("channels_last::avg_pool2d", _avg_pool2d, lib=lib)
