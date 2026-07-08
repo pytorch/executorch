@@ -223,6 +223,11 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
+
+        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect it to a writable dir.
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "${HF_HOME}"
+
         echo "::group::Setup environment"
         # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
         # transitive deps resolve to. Pre-install torch's pure-python deps from the
