@@ -91,7 +91,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu llava-cpu gemma3-cuda gemma3-cpu qwen3_5_moe-cuda qwen3_5_moe-metal clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -123,11 +123,15 @@ help:
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
 	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
 	@echo "  llama-cpu           - Build Llama runner with CPU backend"
+	@echo "  lfm_2_5-mlx         - Build LFM2.5 runner with MLX backend"
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
+	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner and worker with CUDA backend"
+	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner and worker with MLX backend"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
+	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
 	@echo "  clean               - Clean build artifacts"
 
 voxtral-cuda:
@@ -258,7 +262,8 @@ parakeet-vulkan:
 
 dinov2-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
-	cmake --workflow --preset llm-release-cuda
+	cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-release-cuda-install
 	@echo "==> Building DINOv2 runner with CUDA..."
 	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda
 	@echo ""
@@ -267,7 +272,8 @@ dinov2-cuda:
 
 dinov2-cuda-debug:
 	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
-	cmake --workflow --preset llm-debug-cuda
+	cmake --preset llm-debug-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-debug-cuda-install
 	@echo "==> Building DINOv2 runner with CUDA (debug mode)..."
 	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda-debug
 	@echo ""
@@ -371,6 +377,15 @@ llama-cuda-debug:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
 
+lfm_2_5-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building LFM2.5 runner with MLX..."
+	cd examples/models/llama && cmake --workflow --preset llama-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+
 llava-cpu:
 	@echo "==> Building and installing ExecuTorch..."
 	cmake --workflow --preset llm-release
@@ -419,17 +434,48 @@ voxtral_tts-cuda:
 qwen3_5_moe-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
-	@echo "==> Building Qwen3.5 MoE runner with CUDA..."
+	@echo "==> Building Qwen3.5 MoE runner and no-bleed test with CUDA..."
 	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+	@echo "  Test:   cmake-out/examples/models/qwen3_5_moe/test_qwen35_moe_nobleed"
+
+gemma4_31b-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Gemma 4 31B runner, worker, and no-bleed test with CUDA..."
+	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
+	@echo "  Test:   cmake-out/examples/models/gemma4_31b/test_gemma4_31b_nobleed"
+
+gemma4_31b-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Gemma 4 31B runner and worker with MLX..."
+	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
 
 qwen3_5_moe-metal:
 	@echo "==> Building and installing ExecuTorch with Metal..."
 	cmake --workflow --preset llm-release-metal
 	@echo "==> Building Qwen3.5 MoE runner with Metal..."
 	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+
+qwen3_5_moe-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Qwen3.5 MoE runner with MLX..."
+	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-mlx
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"

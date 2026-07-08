@@ -26,7 +26,8 @@ struct VulkanDelegateHeader {
   bool is_valid() const;
 
   static executorch::runtime::Result<VulkanDelegateHeader> parse(
-      const void* data);
+      const void* data,
+      size_t buffer_size);
 
   uint32_t header_size;
   uint32_t flatbuffer_offset;

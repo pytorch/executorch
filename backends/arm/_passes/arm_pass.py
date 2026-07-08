@@ -7,14 +7,17 @@
 import copy
 import traceback
 from abc import abstractmethod
+from collections.abc import Collection
 from typing import Any, List, Optional, Set, Type
 
+import torch
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
-from torch.fx import GraphModule
+from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassResult
+from torch.utils import _pytree as pytree
 
 
 class ArmPass(ExportPass):
@@ -79,6 +82,13 @@ class ArmPass(ExportPass):
             )
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
+        if (
+            op == exir_ops.edge.aten.bmm.default
+            and isinstance(meta, NodeMetadata)
+            and len(meta.data.get("input_qparams", {})) > 0
+        ):
+            return self._call_quantized_bmm_without_fake_kernel(op, args, kwargs, meta)
+
         if not updated:
             return super().call_operator(op, args, kwargs, meta)
 
@@ -90,6 +100,35 @@ class ArmPass(ExportPass):
         old_stack_trace = new_meta.get("stack_trace", "")
         new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
         return super().call_operator(op, args, kwargs, NodeMetadata(new_meta))
+
+    def _call_quantized_bmm_without_fake_kernel(
+        self,
+        op,
+        args: tuple[ProxyValue, ...],
+        kwargs: dict[str, Any],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        old_val = meta.data["val"]
+        output_qparams = meta.data.get("output_qparams", {})
+        dtype = (
+            next(iter(output_qparams.values())).dtype
+            if len(output_qparams) > 0
+            else old_val.dtype
+        )
+        res_data = torch.empty_like(old_val, dtype=dtype)
+
+        args_proxy, kwargs_proxy = pytree.tree_map_only(
+            ProxyValue, lambda x: x.proxy, (args, kwargs)
+        )
+        res_proxy = self.tracer.create_proxy(
+            "call_function",
+            op,
+            args_proxy,
+            kwargs_proxy,
+        )
+        res_proxy.node.meta.update(meta.data)
+        self.tracer.set_metadata(res_proxy.node, res_data)
+        return ProxyValue(res_data, res_proxy)
 
     def call_submodule(
         self, graph_module: GraphModule, inputs: tuple[Any, ...]
@@ -153,3 +192,99 @@ class ArmPass(ExportPass):
             meta=meta,
             updated=True,
         )
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        """Return whether this pass should run on the graph module.
+
+        Subclasses can override this to cheaply skip the pass before
+        ``call()`` starts the normal ``ExportPass`` retracing path.
+
+        Args:
+            graph_module (GraphModule): The graph module to inspect.
+
+        Returns:
+            bool: True when the pass should run.
+
+        """
+        return True
+
+    def __call__(self, graph_module: GraphModule) -> PassResult | None:
+        self.requires(graph_module)
+        if not self.should_run_pass(graph_module):
+            self.ensures(graph_module)
+            return PassResult(graph_module, False)
+        res = self.call(graph_module)
+        self.ensures(graph_module)
+        return res
+
+
+class ArmOpTargetedPass(ArmPass):
+    """Base class for passes that only transform selected operators.
+
+    Subclasses set ``target_ops`` to the call_function targets they can
+    transform. If the current graph and nested control-flow subgraphs do not
+    contain any target, the pass returns immediately without paying the default
+    ExportPass retracing cost.
+
+    Set ``check_allowed_to_transform`` to ``True`` when the target pre-scan
+    should also apply ``allowed_to_transform()`` to matching target nodes. This
+    is useful for TFA passes whose ``call_operator()`` leaves disallowed target
+    nodes unchanged. If all matching targets are disallowed, the pass can
+    return before entering the normal ``ExportPass`` path.
+
+    """
+
+    target_ops: Collection[Any] = ()
+    check_allowed_to_transform = False
+
+    def has_target_node(self, graph_module: GraphModule) -> bool:
+        """Return whether the graph module tree contains a target node.
+
+        Args:
+            graph_module (GraphModule): The graph module tree to inspect.
+
+        Returns:
+            bool: True if a matching call_function node is present.
+
+        """
+        visited_graph_modules = set()
+
+        def target_node_can_trigger_pass(node: Node) -> bool:
+            if not self.check_allowed_to_transform:
+                return True
+            if self.allowed_to_transform(node.meta):
+                return True
+            return False
+
+        def graph_has_target(module: GraphModule) -> bool:
+            if id(module) in visited_graph_modules:
+                return False
+            visited_graph_modules.add(id(module))
+
+            for target in self.target_ops:
+                for node in module.graph.find_nodes(
+                    op="call_function",
+                    target=target,
+                    sort=False,
+                ):
+                    if target_node_can_trigger_pass(node):
+                        return True
+
+            return any(
+                isinstance(child, GraphModule) and graph_has_target(child)
+                for child in module.children()
+            )
+
+        return graph_has_target(graph_module)
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        """Return whether this pass has a target node to transform.
+
+        Args:
+            graph_module (GraphModule): The graph module tree to inspect.
+
+        Returns:
+            bool: True when a matching target node is present.
+
+        """
+        return self.has_target_node(graph_module)

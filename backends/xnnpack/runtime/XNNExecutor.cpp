@@ -23,6 +23,28 @@ using executorch::runtime::is_contiguous_dim_order;
 using executorch::runtime::kTensorDimensionLimit;
 using executorch::runtime::Span;
 
+namespace {
+class InUseGuard {
+ public:
+  explicit InUseGuard(std::atomic<bool>& flag) : flag_(flag) {}
+  ~InUseGuard() {
+    if (!dismissed_) {
+      flag_.store(false, std::memory_order_release);
+    }
+  }
+  void dismiss() {
+    dismissed_ = true;
+  }
+
+  InUseGuard(const InUseGuard&) = delete;
+  InUseGuard& operator=(const InUseGuard&) = delete;
+
+ private:
+  std::atomic<bool>& flag_;
+  bool dismissed_ = false;
+};
+} // namespace
+
 /**
  * Initializes the XNNExecutor with the runtime and given number of
  * inputs/outputs externals_ is resized to the total number of inputs and
@@ -71,6 +93,21 @@ ET_NODISCARD Error XNNExecutor::initialize(
  * delegate->execute()
  */
 ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
+  ET_DCHECK_MSG(
+      !destroyed_.load(std::memory_order_acquire),
+      "XNNExecutor::prepare_args called after destroy");
+
+  bool was_in_use = in_use_.exchange(true, std::memory_order_acquire);
+  if (was_in_use) {
+    ET_LOG(Error, "XNNExecutor::prepare_args called concurrently");
+  }
+  ET_DCHECK_MSG(!was_in_use, "XNNExecutor::prepare_args called concurrently");
+
+  InUseGuard in_use_guard(in_use_);
+  if (was_in_use) {
+    in_use_guard.dismiss();
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       runtime_ != nullptr,
       Internal,
@@ -142,6 +179,7 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
     return err;
   }
 
+  in_use_guard.dismiss();
   return Error::Ok;
 }
 
@@ -152,6 +190,8 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
  * After which we then execute the runtime through invoke_runtime.
  */
 ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
+  InUseGuard in_use_guard(in_use_);
+
   ET_CHECK_OR_RETURN_ERROR(
       runtime_ != nullptr,
       Internal,
@@ -160,11 +200,13 @@ ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
   xnn_status status = xnn_setup_runtime_v2(
       runtime_.get(), externals_.size(), externals_.data());
 
-  ET_CHECK_OR_RETURN_ERROR(
-      status == xnn_status_success,
-      Internal,
-      "Internal Error: Setting up the runtime failed with code: %s",
-      xnn_status_to_string(status));
+  if (status != xnn_status_success) {
+    ET_LOG(
+        Error,
+        "Internal Error: Setting up the runtime failed with code: %s",
+        xnn_status_to_string(status));
+    return Error::Internal;
+  }
 
   auto error = profiler_.start(context.event_tracer());
   if (error != Error::Ok) {

@@ -80,13 +80,50 @@ communicate state to developers.
   <tr>
    <td><strong>Language</strong>
    </td>
+   <td><strong>API state</strong>
+   </td>
    <td><strong>Code</strong>
    </td>
    <td><strong>Documentation</strong>
    </td>
   </tr>
   <tr>
+   <td>All
+   </td>
+   <td>Stable
+   </td>
+   <td>
+
+No annotation is required. APIs are considered stable if they are not marked as
+experimental or deprecated.
+
+   </td>
+   <td>
+
+No warning is required.
+
+   </td>
+  </tr>
+  <tr>
+   <td>All
+   </td>
+   <td>Deleted
+   </td>
+   <td>
+
+Remove the API from code after the deprecation period has passed.
+
+   </td>
+   <td>
+
+Remove references to the deleted API from documentation.
+
+   </td>
+  </tr>
+  <tr>
    <td>Python
+   </td>
+   <td>Deprecated
    </td>
    <td>
 
@@ -94,7 +131,21 @@ Use the
 <a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.deprecated</a>
 decorator.
 
-<p>
+   </td>
+   <td>
+
+Use <code>.. warning::</code> in the docstring. Clearly point to the
+replacement API when one exists.
+
+   </td>
+  </tr>
+  <tr>
+   <td>Python
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+
 Use the
 <a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.experimental</a>
 decorator.
@@ -102,25 +153,22 @@ decorator.
    </td>
    <td>
 
-Use <code>.. warning::</code> in the docstrings of deprecated and experimental
-APIs. See
+Use <code>.. warning::</code> in the docstring. State that the API is
+experimental and may change or be removed without notice. See
 <a href="https://github.com/pytorch/pytorch/blob/main/torch/nn/utils/stateless.py#L176">example
 usage</a>.
 
-</ul>
    </td>
   </tr>
   <tr>
    <td>C++
    </td>
+   <td>Deprecated
+   </td>
    <td>
 
 Use the <code>ET_DEPRECATED</code> annotation macro. See <a href="https://github.com/pytorch/executorch/blob/main/runtime/executor/program.h#L92">example usage</a>.
 
-<p>
-<p>
-Use the <code>ET_EXPERIMENTAL</code> annotation macro.
-</ul>
    </td>
    <td>
 
@@ -128,22 +176,32 @@ Start Doxygen comments with <code>DEPRECATED:</code> See
 <a href="https://github.com/pytorch/executorch/blob/main/runtime/executor/program.h#L164">example
 usage</a>.
 
-<p>
-<p>
+   </td>
+  </tr>
+  <tr>
+   <td>C++
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+
+Use the <code>ET_EXPERIMENTAL</code> annotation macro.
+
+   </td>
+   <td>
+
 Start Doxygen comments with <code>EXPERIMENTAL:</code>.
+
    </td>
   </tr>
   <tr>
    <td>Java
    </td>
+   <td>Deprecated
+   </td>
    <td>
 
 Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a>.
-
-<p>
-<p>
-
-Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>.
 
    </td>
    <td>
@@ -152,6 +210,19 @@ Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/andro
 * @deprecated Use {@link #newMethod()} instead.
 */
 </code></pre>
+   </td>
+  </tr>
+  <tr>
+   <td>Java
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+
+Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>.
+
+   </td>
+   <td>
 <p>
 <pre><code>/**
 * Warning: This API is experimental.
@@ -161,12 +232,11 @@ Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/andro
   <tr>
    <td>Objective-C
    </td>
+   <td>Deprecated
+   </td>
    <td>
 <p>
 <code>__attribute__((deprecated("Use newMethod instead")));</code>
-<p>
-<p>
-<code>__attribute__((deprecated("This API is experimental and may change without notice.")));</code>
    </td>
    <td>
 <p>
@@ -175,6 +245,18 @@ Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/andro
 * @deprecated Use `newMethod` instead.
 */
 </code></pre>
+   </td>
+  </tr>
+  <tr>
+   <td>Objective-C
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+<p>
+<code>__attribute__((deprecated("This API is experimental and may change without notice.")));</code>
+   </td>
+   <td>
 <p>
 <pre><code>
 /**
@@ -186,16 +268,27 @@ Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/andro
   <tr>
    <td>Swift
    </td>
+   <td>Deprecated
+   </td>
    <td>
 <p>
 <code>@available(*, deprecated, message: "Use newMethod instead")</code>
-<p>
-<p>
-<code>@available(*, message: "This API is experimental")</code>
    </td>
    <td>
 <p>
 <code>/// - Warning: Deprecated. Use `newMethod()` instead.</code>
+   </td>
+  </tr>
+  <tr>
+   <td>Swift
+   </td>
+   <td>Experimental
+   </td>
+   <td>
+<p>
+<code>@available(*, message: "This API is experimental")</code>
+   </td>
+   <td>
 <p>
 <code>/// - Warning: This API is experimental.</code>
    </td>

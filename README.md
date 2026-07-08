@@ -41,7 +41,7 @@ Deploy **LLMs, vision, speech, and multimodal models** with the same PyTorch API
 - **🔒 Native PyTorch Export** — Direct export from PyTorch. No .onnx, .tflite, or intermediate format conversions. Preserve model semantics.
 - **⚡ Production-Proven** — Powers billions of users at [Meta with real-time on-device inference](https://engineering.fb.com/2025/07/28/android/executorch-on-device-ml-meta-family-of-apps/).
 - **💾 Tiny Runtime** — 50KB base footprint. Runs on microcontrollers to high-end smartphones.
-- **🚀 [12+ Hardware Backends](https://docs.pytorch.org/executorch/main/backends-overview.html)** — Open-source acceleration for Apple, Qualcomm, ARM, MediaTek, Vulkan, and more.
+- **🚀 [12+ Hardware Backends](https://docs.pytorch.org/executorch/main/backends-overview.html)** — Open-source acceleration for Apple, Samsung, Qualcomm, ARM, MediaTek, Vulkan, and more.
 - **🎯 One Export, Multiple Backends** — Switch hardware targets with a single line change. Deploy the same model everywhere.
 
 ## How It Works
@@ -236,6 +236,21 @@ We welcome contributions from the community!
 - 🎮 [**Discord**](https://discord.gg/Dh43CKSAdc) — Chat with the team and community
 - 🐛 [**Issues**](https://github.com/pytorch/executorch/issues) — Report bugs or request features
 - 🤝 [**Contributing Guide**](CONTRIBUTING.md) — Guidelines and codebase structure
+
+## Citing ExecuTorch
+
+If you found ExecuTorch helpful in your research and would like to acknowledge it, please cite us using the following BibTeX:
+
+```bibtex
+@article{executorch2026,
+    title={{ExecuTorch} - A Unified {PyTorch} Solution to Run {AI} Models On-Device},
+    author={Nachin, Mergen and Desai, Digant and Jia, Sicheng Stephen and Lai, Chen and Liu, Mengwei and Szwejbka, Jacob and Alvarez, Raziel and Ascani, RJ and Bort, Dave and Candales, Manuel and
+  others},
+    journal={arXiv preprint arXiv:2605.08195},
+    url={https://github.com/pytorch/executorch},
+    year={2026}
+  }
+```
 
 ## License
 

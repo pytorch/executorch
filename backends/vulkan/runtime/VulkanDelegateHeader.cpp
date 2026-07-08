@@ -84,7 +84,15 @@ bool VulkanDelegateHeader::is_valid() const {
   return true;
 }
 
-Result<VulkanDelegateHeader> VulkanDelegateHeader::parse(const void* data) {
+Result<VulkanDelegateHeader> VulkanDelegateHeader::parse(
+    const void* data,
+    size_t buffer_size) {
+  // Ensure the buffer is large enough to read all header fields.
+  // The last field (bytes_size) ends at offset 22 + 8 = 30 = kExpectedSize.
+  if (buffer_size < kExpectedSize) {
+    return Error::InvalidArgument;
+  }
+
   const uint8_t* header_data = (const uint8_t*)data;
 
   const uint8_t* magic_start = header_data + kMagic.offset;
@@ -101,6 +109,16 @@ Result<VulkanDelegateHeader> VulkanDelegateHeader::parse(const void* data) {
   };
 
   if (!header.is_valid()) {
+    return Error::InvalidArgument;
+  }
+
+  // Validate that header offsets do not extend beyond the buffer.
+  if (header.flatbuffer_offset > buffer_size ||
+      header.flatbuffer_size > buffer_size - header.flatbuffer_offset) {
+    return Error::InvalidArgument;
+  }
+  if (header.bytes_offset > buffer_size ||
+      header.bytes_size > buffer_size - header.bytes_offset) {
     return Error::InvalidArgument;
   }
 

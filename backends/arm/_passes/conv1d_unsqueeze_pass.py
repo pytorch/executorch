@@ -8,16 +8,17 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from torch.fx import GraphModule
 
 
-class Conv1dUnsqueezePass(ArmPass):
+class Conv1dUnsqueezePass(ArmOpTargetedPass):
     """This pass is used to change conv1d ops into conv2d since TOSA only
     supports 2d and 3d convolution.
 
@@ -34,9 +35,21 @@ class Conv1dUnsqueezePass(ArmPass):
         RewriteConvPass,
         SizeAdjustInputPass,
     }
+    target_ops = (exir_ops.edge.aten.convolution.default,)
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function" or node.target not in self.target_ops:
+                continue
+            if len(node.args) > 3 and len(node.args[3]) == 1:
+                return True
+        return any(
+            isinstance(child, GraphModule) and self.should_run_pass(child)
+            for child in graph_module.children()
+        )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.convolution.default:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
         stride = list(args[3])
         if len(stride) != 1:

@@ -9,6 +9,9 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
+runner_source_dir=${et_root_dir}/examples/arm/executor_runner/standalone
+runner_source_dir=$(realpath ${runner_source_dir})
+preset_file=${et_root_dir}/tools/cmake/preset/arm_baremetal.cmake
 toolchain=arm-none-eabi-gcc
 setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
@@ -40,18 +43,18 @@ help() {
     echo "  --target=<TARGET>                    Target to build and run for Default: ${target}"
     echo "  --build_type=<TYPE>                  Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --bundleio                           Support both pte and Bundle IO bpte using Devtools BundelIO with Input/RefOutput included"
-    echo "  --system_config=<CONFIG>             System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
+    echo "  --system_config=<CONFIG>             System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U65_High_End for EthosU65 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                         NOTE: If given, this option must match the given target. This option along with the memory_mode sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
     echo "  --memory_mode=<CONFIG>               Vela memory mode, used for setting the Timing Adapter parameters of the Corstone platforms."
     echo "                                       Valid values are Shared_Sram(for Ethos-U55, Ethos-U65, Ethos-85), Sram_Only(for Ethos-U55, Ethos-U65, Ethos-U85) or Dedicated_Sram(for Ethos-U65, Ethos-U85)."
-    echo "                                       Default: Shared_Sram for the Ethos-U55 and Sram_Only for the Ethos-U85"
+    echo "                                       Default: Shared_Sram for the Ethos-U55, Sram_Only for the Ethos-U65 and Dedicated_Sram_384KB for the Ethos-U85"
     echo "  --etdump                             Adds Devtools etdump support to track timing and output, etdump area will be base64 encoded in the log"
     echo "  --extra_build_flags=<FLAGS>          Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --output=<FOLDER>                    Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
     echo "  --et_build_root=<FOLDER>             Build output root folder to use, defaults to ${et_build_root}"
     echo "  --ethosu_tools_dir=<FOLDER>          Path to your Ethos-U tools dir if you not using default: ${ethosu_tools_dir}"
     echo "  --toolchain=<TOOLCHAIN>              Toolchain can be specified (arm-none-eabi-gcc, arm-zephyr-eabi-gcc). Default: ${toolchain}"
-    echo "  --select_ops_list=<OPS>              Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
+    echo "  --select_ops_list=<OPS>              Comma separated list of portable (non-delegated) kernels to include Default: ${select_ops_list}"
     echo "                                         NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                         See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     exit 0
@@ -101,6 +104,9 @@ toolchain_cmake=$(realpath ${toolchain_cmake})
 
 source ${setup_path_script}
 
+[[ -f ${preset_file} ]] \
+    || { echo "Missing ${preset_file}. ${_setup_msg}"; exit 1; }
+
 if [[ ${pte_file} == "semihosting" ]]; then
     pte_data="-DSEMIHOSTING=ON"
 else
@@ -122,17 +128,21 @@ else
     fi
 fi
 ethosu_tools_dir=$(realpath ${ethosu_tools_dir})
-ethos_u_root_dir="$ethosu_tools_dir/ethos-u"
+ethos_u_root_dir="${ethosu_tools_dir}/ethos-u"
 mkdir -p "${ethos_u_root_dir}"
-ethosu_tools_dir=$(realpath ${ethos_u_root_dir})
-
-et_build_dir=${et_build_root}/cmake-out
-mkdir -p ${et_build_dir}
-et_build_dir=$(realpath ${et_build_dir})
+ethos_u_root_dir=$(realpath ${ethos_u_root_dir})
+cmsis_nn_local_path=""
+if [[ -d "${ethos_u_root_dir}/core_software/cmsis-nn" ]]; then
+    cmsis_nn_local_path=$(realpath "${ethos_u_root_dir}/core_software/cmsis-nn")
+fi
 
 if [[ ${system_config} == "" ]]
 then
     system_config="Ethos_U55_High_End_Embedded"
+    if [[ ${target} =~ "ethos-u65" ]]
+    then
+        system_config="Ethos_U65_High_End"
+    fi
     if [[ ${target} =~ "ethos-u85" ]]
     then
         system_config="Ethos_U85_SYS_DRAM_Mid"
@@ -142,6 +152,10 @@ fi
 if [[ ${memory_mode} == "" ]]
 then
     memory_mode="Shared_Sram"
+    if [[ ${target} =~ "ethos-u65" ]]
+    then
+        memory_mode="Sram_Only"
+    fi
     if [[ ${target} =~ "ethos-u85" ]]
     then
         memory_mode="Dedicated_Sram_384KB"
@@ -151,43 +165,66 @@ fi
 mkdir -p "${output_folder}"
 output_folder=$(realpath ${output_folder})
 
-if [[ ${target} == *"ethos-u55"*  ]]; then
+if [[ ${target} =~ ^cortex-m([0-9]+(plus|p)?)(\+|$) ]]; then
+    # NPU isn't used at runtime, but core_platform's ethosu_get_architecture()
+    # parser rejects non-ethos-u strings — pass a dummy.
+    target_cpu="cortex-m${BASH_REMATCH[1]}"
+    npu_target_config="ethos-u55-128"
+elif [[ ${target} == *"ethos-u55"* ]]; then
     target_cpu=cortex-m55
+    npu_target_config="${target}"
+elif [[ ${target} == *"ethos-u65"* ]]; then
+    target_cpu=cortex-m55
+    npu_target_config="${target}"
 else
     target_cpu=cortex-m85
+    npu_target_config="${target}"
 fi
 echo "--------------------------------------------------------------------------------"
 echo "Build Arm ${toolchain/-gcc/} executor_runner for ${target} PTE: ${pte_file} using ${system_config} ${memory_mode} ${extra_build_flags} to '${output_folder}'"
 echo "--------------------------------------------------------------------------------"
 
-cd ${et_root_dir}/examples/arm/executor_runner
-
 if [ "$bundleio" = true ] ; then
     build_bundleio_flags=" -DET_BUNDLE_IO=ON "
+    candidate_build_dir="${et_build_root}/cmake-out"
+    if [[ -d "${candidate_build_dir}" ]]; then
+        candidate_build_dir=$(realpath "${candidate_build_dir}")
+        build_bundleio_flags+=" -DET_BUILD_DIR_PATH=${candidate_build_dir} "
+    fi
+    if [[ -n "${BUNDLED_PROGRAM_LIBRARY_DIR:-}" ]]; then
+        build_bundleio_flags+=" -DBUNDLED_PROGRAM_LIBRARY_DIR=${BUNDLED_PROGRAM_LIBRARY_DIR} "
+    fi
 fi
 
 if [ "$build_with_etdump" = true ] ; then
     build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=ON -DET_DUMP_INTERMEDIATE_OUTPUTS=ON "
 fi
+devtools_flags=""
+if [ "$bundleio" = true ] || [ "$build_with_etdump" = true ] ; then
+    devtools_flags=" -DEXECUTORCH_BUILD_DEVTOOLS=ON "
+fi
 
-echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"
+echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${devtools_flags} ${extra_build_flags}"
 cmake \
-    -DCMAKE_BUILD_TYPE=${build_type}            \
-    -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}   \
-    -DTARGET_CPU=${target_cpu}                  \
-    -DET_DIR_PATH:PATH=${et_root_dir}           \
-    -DET_BUILD_DIR_PATH:PATH=${et_build_dir}    \
-    -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}   \
-    -DETHOSU_TARGET_NPU_CONFIG=${target}        \
-    ${pte_data}                                 \
-    ${build_bundleio_flags}                     \
-    ${build_with_etdump_flags}                  \
-    -DPYTHON_EXECUTABLE=$(which python3)        \
-    -DSYSTEM_CONFIG=${system_config}            \
-    -DMEMORY_MODE=${memory_mode}                \
+    -S ${runner_source_dir}                    \
+    -B ${output_folder}                        \
+    -DEXECUTORCH_ROOT=${et_root_dir}           \
+    -DCMAKE_BUILD_TYPE=${build_type}           \
+    -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake}  \
+    -DTARGET_CPU=${target_cpu}                 \
+    -DETHOSU_TARGET_NPU_CONFIG=${npu_target_config} \
+    -DEXECUTORCH_BUILD_PRESET_FILE=${preset_file} \
+    -DEXECUTORCH_BAREMETAL_SKIP_INSTALL=OFF    \
+    ${pte_data}                                \
+    ${build_bundleio_flags}                    \
+    ${build_with_etdump_flags}                 \
+    ${devtools_flags}                          \
+    -DSYSTEM_CONFIG=${system_config}           \
+    -DMEMORY_MODE=${memory_mode}               \
     -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}" \
-    ${extra_build_flags}                        \
-    -B ${output_folder}
+    -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir}  \
+    ${cmsis_nn_local_path:+-DCMSIS_NN_LOCAL_PATH:PATH=${cmsis_nn_local_path}} \
+    ${extra_build_flags}
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 

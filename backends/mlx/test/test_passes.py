@@ -630,7 +630,14 @@ class TestPassComposition(unittest.TestCase):
 
         gm = _to_edge_gm(M(), (torch.randn(1, 16),))
 
+        from executorch.exir.pass_base import ExportedProgramPassBase
+
         for p in get_default_passes():
+            # EP-aware passes (e.g. MLXReinplacePass) require a full
+            # ExportedProgram (graph_signature), not a bare GraphModule; they are
+            # exercised in the reinplace tests.
+            if isinstance(p, ExportedProgramPassBase):
+                continue
             p(gm)
 
         gm.graph.lint()
@@ -651,7 +658,13 @@ class TestPassComposition(unittest.TestCase):
 
         gm = _to_edge_gm(module, (x,))
 
+        from executorch.exir.pass_base import ExportedProgramPassBase
+
         for p in get_default_passes():
+            # EP-aware passes (e.g. MLXReinplacePass) require a full
+            # ExportedProgram, not a bare GraphModule; skip here.
+            if isinstance(p, ExportedProgramPassBase):
+                continue
             p(gm)
 
         actual = gm(x)
@@ -659,6 +672,156 @@ class TestPassComposition(unittest.TestCase):
         if isinstance(actual, tuple):
             actual = actual[0]
         torch.testing.assert_close(actual, expected)
+
+
+class TestReinplacePass(unittest.TestCase):
+    """MLXReinplacePass rewrites functional elementwise chains into in-place edge
+    ops; the in-place handlers alias out == in to enable MLX buffer donation."""
+
+    def _lower_and_get_ep(self, module, example_inputs, dynamic_shapes=None):
+        from executorch.backends.mlx.passes import get_default_passes
+
+        module.eval()
+        ep = export(module, example_inputs, dynamic_shapes=dynamic_shapes, strict=False)
+        edge = exir.to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,
+            ),
+        )
+        edge = edge.transform(get_default_passes())
+        return edge.exported_program()
+
+    def test_unary_chain_is_reinplaced_and_aliased(self):
+        """exp(log(exp(x))): the dead middle temp is reinplaced and aliased."""
+        from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+
+        class M(nn.Module):
+            def forward(self, x):
+                return torch.exp(torch.log(torch.exp(x)))
+
+        eep = self._lower_and_get_ep(M(), (torch.randn(4, 4),))
+
+        # The pass introduced an in-place edge op for the dead temp (log_).
+        targets = [str(n.target) for n in eep.graph.nodes if n.op == "call_function"]
+        self.assertTrue(any("aten.log_" in t for t in targets), targets)
+
+        # In the built MLX program, at least one link must alias out == in.
+        g = MLXProgramBuilder(eep).build()
+        aliased = []
+        for chain in g.instruction_chains:
+            for instr in chain.instructions:
+                op = instr.op
+                if type(op).__name__ in ("ExpNode", "LogNode"):
+                    aliased.append(op.x.idx == op.out.idx)
+        self.assertTrue(any(aliased), f"expected an in-place (out==in) link: {aliased}")
+
+    def test_full_size_binary_is_reinplaced_and_aliased(self):
+        """A full-size, dtype-matching dead-temp binary op is reinplaced+aliased."""
+        from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+
+        class M(nn.Module):
+            def forward(self, x, y):
+                h = torch.exp(x)  # full-size dead temp
+                s = h + y  # intermediate full-size add
+                return torch.neg(s)
+
+        eep = self._lower_and_get_ep(M(), (torch.randn(4, 8), torch.randn(4, 8)))
+        targets = [str(n.target) for n in eep.graph.nodes if n.op == "call_function"]
+        self.assertTrue(any("aten.add_" in t for t in targets), targets)
+
+        g = MLXProgramBuilder(eep).build()
+        add_ops = [
+            instr.op
+            for chain in g.instruction_chains
+            for instr in chain.instructions
+            if type(instr.op).__name__ == "AddNode"
+        ]
+        self.assertTrue(
+            any(op.a.idx == op.out.idx for op in add_ops),
+            f"expected an in-place AddNode (out==a): {[(o.a.idx, o.out.idx) for o in add_ops]}",
+        )
+
+    def test_dynamic_shapes_lower_and_alias(self):
+        """Reinplace must work (and not raise) under dynamic shapes: a full-size
+        chain reinplaces+aliases, building the MLX program cleanly."""
+        from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+
+        class M(nn.Module):
+            def forward(self, x, y):
+                h = torch.exp(x)  # [B, D] dynamic B, dead temp
+                s = h + y  # full-size, same symbol B
+                return torch.neg(s)
+
+        x = torch.randn(3, 8)
+        y = torch.randn(3, 8)
+        dynamic_shapes = {
+            "x": {0: torch.export.Dim("B")},
+            "y": {0: torch.export.Dim("B")},
+        }
+        eep = self._lower_and_get_ep(M(), (x, y), dynamic_shapes=dynamic_shapes)
+
+        targets = [str(n.target) for n in eep.graph.nodes if n.op == "call_function"]
+        self.assertTrue(any("aten.add_" in t for t in targets), targets)
+
+        # Build must succeed and produce an in-place AddNode.
+        g = MLXProgramBuilder(eep).build()
+        add_ops = [
+            instr.op
+            for chain in g.instruction_chains
+            for instr in chain.instructions
+            if type(instr.op).__name__ == "AddNode"
+        ]
+        self.assertTrue(any(op.a.idx == op.out.idx for op in add_ops))
+
+    def test_extra_ops_build_with_inplace_handlers(self):
+        """clamp / pow / activations: the in-place edge op is produced and the
+        MLX builder lowers it via the in-place handler (build succeeds).
+
+        Numerics are covered by the upstream reinplace tests; here we only
+        verify the MLX-specific path — that an in-place handler exists for each
+        and the program builds.
+        """
+        import torch.nn.functional as F
+
+        from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
+
+        cases = {
+            "clamp": lambda x: torch.neg(torch.clamp(torch.exp(x), -1.0, 1.0)),
+            "pow": lambda x: torch.neg(torch.exp(x) ** 2),
+            "gelu": lambda x: torch.neg(F.gelu(torch.exp(x))),
+            "relu": lambda x: torch.neg(torch.relu(torch.exp(x))),
+            "leaky_relu": lambda x: torch.neg(F.leaky_relu(torch.exp(x), 0.1)),
+            "hardtanh": lambda x: torch.neg(F.hardtanh(torch.exp(x))),
+        }
+        for name, fn in cases.items():
+            with self.subTest(op=name):
+
+                class M(nn.Module):
+                    def __init__(self, fn):
+                        super().__init__()
+                        self.fn = fn
+
+                    def forward(self, x):
+                        return self.fn(x)
+
+                eep = self._lower_and_get_ep(M(fn), (torch.randn(4, 8),))
+                targets = [
+                    str(n.target) for n in eep.graph.nodes if n.op == "call_function"
+                ]
+                # An in-place edge op (other than the terminal neg) is present.
+                self.assertTrue(
+                    any(
+                        "aten." in t
+                        and "_." in t.split("aten.")[-1]
+                        and "neg_" not in t
+                        for t in targets
+                    ),
+                    f"{name}: expected an in-place op, got {targets}",
+                )
+                # The MLX builder must lower the in-place op (handler registered).
+                MLXProgramBuilder(eep).build()
 
 
 if __name__ == "__main__":

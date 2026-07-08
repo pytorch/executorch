@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -262,10 +263,39 @@ void OpMeanOutTest::
   test_mean_dim_out_bool<ScalarType::Double>();
 }
 
+TEST_F(OpMeanOutTest, BFloat16GenericPathAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Reducing dim=0 of {512, 1} is not the last dim, so the generic path is
+  // taken. Without fp32 accumulation the sum saturates at ~256, giving
+  // 256/512 = 0.5 instead of 1.0.
+  constexpr int N = 512;
+  Tensor x = tf.ones({N, 1});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 0;
+  op_mean_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, 1.0f);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpMeanOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // N=512, all-ones input: without fp32 accumulation the sum saturates at
+  // ~256 in BFloat16, giving 256/512 = 0.5 instead of 1.0.
+  constexpr int N = 512;
+  Tensor x = tf.ones({1, N});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 1;
+  op_mean_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, 1.0f);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 TEST_F(OpMeanOutTest, InvalidDimensionListDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_mean_dim_out_invalid_dimensions<                                   \
@@ -281,9 +311,9 @@ TEST_F(OpMeanOutTest, InvalidDimensionListDies) {
 }
 
 TEST_F(OpMeanOutTest, InvalidShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_mean_dim_out_invalid_shape<                                        \
@@ -299,9 +329,9 @@ TEST_F(OpMeanOutTest, InvalidShapeDies) {
 }
 
 TEST_F(OpMeanOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Int> tf_int;
 
@@ -351,9 +381,9 @@ TEST_F(OpMeanOutTest, AllRealInputFloatOutputPasses) {
 }
 
 TEST_F(OpMeanOutTest, HalfSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Test Half support only for ExecuTorch mode");
 #define TEST_ENTRY(ctype, dtype) \
   test_mean_dim_out_dtype<ScalarType::dtype, ScalarType::Half>();
   ET_FORALL_REALH_TYPES(TEST_ENTRY);

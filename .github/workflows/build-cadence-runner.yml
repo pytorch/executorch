@@ -10,14 +10,27 @@ on:
     tags:
       - ciflow/nightly/*
   pull_request:
+  pull_request_target:
+    types: [labeled]
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
+  # Same-repo PRs run on pull_request, which reads the PR's own workflow AND code
+  # -- so CI changes, new test jobs, code, and tests are all validated pre-merge.
+  # Fork PRs can't get credentials (OIDC) on pull_request, so Meta-exported forks
+  # (labeled CLA Signed + meta-exported) run on pull_request_target instead. The
+  # run condition is inlined per job (GitHub Actions has no YAML anchors and env
+  # is unavailable in job-level if), so keep the copies in sync.
   cpu-build:
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -27,7 +40,7 @@ jobs:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       upload-artifact: cadence-runner-build
       script: |
@@ -44,9 +57,65 @@ jobs:
 
   cpu-test:
     needs: cpu-build
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/_test_cadence.yml
     with:
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+
+  # Cross-compile cadence_executor_runner for each Cadence Xtensa core, one job
+  # per backend so they show as separate lines (no matrix grouping). Shared logic
+  # lives in _xtensa_build.yml. fusion_g3 is omitted until the upstream fusion_g3
+  # <-> nnlib-FusionG3 API skew is fixed (its runner does not link).
+  hifi-build:
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_build.yml
+    with:
+      backend: hifi4
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+
+  # Op-level gtest tests on the Xtensa ISS, mirroring cpu-build -> cpu-test. The
+  # op tests are a self-contained cross-compile (the gtests need exceptions and
+  # RTTI that the runner build disables), so this does not consume hifi-build's
+  # artifact; needs: hifi-build only to fail fast when the backend cannot build.
+  hifi-op-test:
+    needs: hifi-build
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_test.yml
+    with:
+      backend: hifi4
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+
+  vision-build:
+    if: >-
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_xtensa_build.yml
+    with:
+      backend: vision
+      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}

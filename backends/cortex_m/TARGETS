@@ -19,3 +19,24 @@ python_library(
         "fbsource//third-party/pypi/tabulate:tabulate",
     ],
 )
+
+python_library(
+    name = "cmsis_nn",
+    srcs = [
+        "library/__init__.py",
+        "library/cmsis_nn.py",
+    ],
+    deps = [
+        "fbsource//third-party/cmsis-nn:cmsis_nn_py",
+    ],
+)
+
+python_library(
+    name = "target_config",
+    srcs = [
+        "target_config.py",
+    ],
+    deps = [
+        ":cmsis_nn",
+    ],
+)

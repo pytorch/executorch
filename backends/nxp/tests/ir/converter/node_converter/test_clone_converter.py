@@ -182,7 +182,7 @@ class TestCloneConverter(unittest.TestCase):
                 use_neutron_for_format_conversion=False,
             ).exported_program()
 
-            tflite_flatbuffers_model, _ = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
 
             assert not graph_contains_any(
@@ -235,10 +235,13 @@ class TestCloneConverter(unittest.TestCase):
             owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             quantized_program = to_quantized_edge_program(
-                model, input_shape, use_qat=use_qat
+                model,
+                input_shape,
+                use_qat=use_qat,
+                use_neutron_for_format_conversion=False,
             ).exported_program()
 
-            tflite_flatbuffers_model, _ = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
 
             assert not graph_contains_any(
@@ -308,7 +311,7 @@ class TestCloneConverter(unittest.TestCase):
         ).identify_node_formats()
 
         # Convert to the IR.
-        converted_model, _ = EdgeProgramToIRConverter().convert_program(
+        converted_model, *_ = EdgeProgramToIRConverter().convert_program(
             edge_program_manager.exported_program()
         )
 

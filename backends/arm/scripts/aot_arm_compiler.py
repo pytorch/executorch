@@ -39,6 +39,7 @@ from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.devtools import BundledProgram, generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -465,7 +466,16 @@ TARGETS = [
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
     "TOSA-1.0+INT+int16",
-    "cortex-m55+int8",
+    "cortex-m0",
+    "cortex-m0plus",
+    "cortex-m3",
+    "cortex-m4",
+    "cortex-m7",
+    "cortex-m23",
+    "cortex-m33",
+    "cortex-m35p",
+    "cortex-m55",
+    "cortex-m85",
 ]
 
 
@@ -521,6 +531,51 @@ def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
         )
         with open(delegation_file_path, "w") as file:
             file.write(delegation_info_string)
+    print_delegation_summary(delegation_info, intermediate_files_folder)
+
+
+def print_delegation_summary(
+    delegation_info,
+    intermediate_files_folder: Optional[str] = None,
+) -> None:
+    non_delegated_ops = sorted(
+        (
+            (breakdown.op_type, breakdown.non_delegated)
+            for breakdown in delegation_info.delegation_by_operator.values()
+            if breakdown.non_delegated > 0
+        ),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+    summary_lines = ["Delegation summary:"]
+    if delegation_info.num_delegated_nodes == 0:
+        summary_lines.append("  Model was not delegated.")
+    elif delegation_info.num_non_delegated_nodes == 0:
+        summary_lines.append("  Model was fully delegated.")
+    else:
+        summary_lines.append("  Model was partially delegated.")
+
+    summary_lines.append(
+        f"  Delegated partitions for silicon acceleration: {delegation_info.num_delegated_subgraphs}"
+    )
+    summary_lines.append(
+        f"  Non-delegated ops: {delegation_info.num_non_delegated_nodes}"
+    )
+
+    if non_delegated_ops:
+        summary_lines.append("  Non-delegated operators:")
+        for op_type, count in non_delegated_ops:
+            summary_lines.append(f"    - {op_type}: {count}")
+
+    if intermediate_files_folder is not None:
+        delegation_file_path = os.path.join(
+            intermediate_files_folder, "delegation_info.txt"
+        )
+        summary_lines.append("")
+        summary_lines.append("Full delegation report:")
+        summary_lines.append(f"  {delegation_file_path}")
+
+    print("\n".join(summary_lines))
 
 
 def _get_args():
@@ -566,7 +621,7 @@ def _get_args():
         required=False,
         default="ethos-u55-128",
         choices=TARGETS,
-        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m55+int8 (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
+        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m<variant> (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
     )
     # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
     # They are deprecated and no longer functional in this script.
@@ -860,9 +915,13 @@ def _to_edge_cortex_m(
     model: GraphModule,
     example_inputs: Tuple[torch.Tensor],
     calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
+    target_config: CortexMTargetConfig,
 ):
     """Cortex-M/CMSIS-NN compilation path with no delegation."""
-    logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
+    logging.info(
+        f"Using Cortex-M/CMSIS-NN compilation path for cpu={target_config.cpu.name} "
+        f"backend={target_config.backend.name}"
+    )
 
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
@@ -915,7 +974,9 @@ def _to_edge_cortex_m(
         ),
     )
 
-    pass_manager = CortexMPassManager(edge.exported_program())
+    pass_manager = CortexMPassManager(
+        edge.exported_program(), target_config=target_config
+    )
     edge._edge_programs["forward"] = pass_manager.transform()
 
     return model_quant, edge
@@ -973,6 +1034,7 @@ def main() -> None:  # noqa: C901
         args.calibration_data, example_inputs
     )
     model = original_model.eval()
+    model.requires_grad_(False)
 
     # export under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
@@ -1007,11 +1069,12 @@ def main() -> None:  # noqa: C901
     else:
         quant_mode = None
 
-    if args.target == "cortex-m55+int8":
+    if args.target.startswith("cortex-m"):
         # Cortex-M path: CMSIS-NN portable kernels, no delegation
+        target_config = CortexMTargetConfig.from_target_string(args.target)
         if args.delegate:
             logging.warning(
-                "--delegate is ignored for target 'cortex-m55+int8' "
+                f"--delegate is ignored for target {args.target!r} "
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
@@ -1021,6 +1084,7 @@ def main() -> None:  # noqa: C901
             model,
             example_inputs,
             calibration_samples,
+            target_config,
         )
     elif args.delegate:
         # As we can target multiple output encodings, one must
@@ -1051,8 +1115,6 @@ def main() -> None:  # noqa: C901
         )
 
     dump_delegation_info(edge, args.intermediates)
-
-    edge_program_manager_copy = copy.deepcopy(edge)
 
     try:
         exec_prog = edge.to_executorch(
@@ -1112,6 +1174,7 @@ def main() -> None:  # noqa: C901
     if args.bundleio or args.etrecord:
         etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
         try:
+            edge_program_manager_copy = copy.deepcopy(edge)
             generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
             print(f"ETRecord saved as {etrecord_file_name}")
         except Exception as e:

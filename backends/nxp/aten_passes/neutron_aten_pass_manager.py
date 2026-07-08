@@ -52,7 +52,7 @@ def _get_default_passes(neutron_target_spec, qat_mode: bool = False) -> list[Pas
         FuseLinearAndAddPass(),
         MoveActivationBeforeConcat(neutron_target_spec),
         ConvertDivToMulPass(),
-        ConvertConv1dToConv2dPass(),
+        ConvertConv1dToConv2dPass(neutron_target_spec),
     ]
 
     if not qat_mode:

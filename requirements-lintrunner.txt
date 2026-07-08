@@ -19,6 +19,11 @@ cmakelang==0.6.13
 cmakelint==1.4.1
 bandit==1.9.2
 docformatter==1.7.5
+ruff==0.15.4
 
 # MyPy
 mypy==1.14.1
+
+# Cppcheck and dependencies
+cppcheck==1.5.1
+defusedxml==0.7.1

@@ -129,3 +129,42 @@ def test_exp_vgf_quant(test_data: Tuple):
         quantize=True,
     )
     pipeline.run()
+
+
+a16w8_exp_test_parameters = {
+    "rank1_rand": lambda: torch.rand(10),
+    "rank2_rand": lambda: torch.rand(8, 8) - 0.5,
+    "rank3_rand": lambda: torch.rand(1, 4, 4) * 2 - 1,
+}
+
+
+@common.parametrize("test_data", a16w8_exp_test_parameters)
+@common.XfailIfNoCorstone300
+def test_exp_a16w8_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        symmetric_io_quantization=True,
+        a16w8_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", a16w8_exp_test_parameters)
+@common.XfailIfNoCorstone320
+def test_exp_a16w8_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Exp(),
+        (test_data(),),
+        aten_op,
+        exir_ops=[],
+        symmetric_io_quantization=True,
+        a16w8_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
+    )
+    pipeline.run()

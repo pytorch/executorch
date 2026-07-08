@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
-import os
-import re
 import warnings
 from collections import defaultdict, OrderedDict
 from enum import Enum
@@ -17,7 +15,9 @@ import executorch.exir as exir
 import torch
 
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
@@ -53,6 +53,11 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
     option_to_flatbuffer,
+)
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    get_qnn_lib_name,
+    get_sdk_build_id,
+    is_qnn_sdk_version_less_than,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_QNN_COMPILE_SPEC,
@@ -400,6 +405,21 @@ def to_edge_transform_and_lower_to_qnn(
             return value
         return {graph_name: value for graph_name in graph_names}
 
+    # Ensure if user is using intermediate debugger, user only lower 1 method.
+    # This restriction is caused by conflict handle_id among graphs.
+    # This could be resolved with generating random debug_id(e.g., uuid).
+    for compiler_spec in (
+        compiler_specs.values()
+        if isinstance(compiler_specs, Dict)
+        else [compiler_specs]
+    ):
+        option = generate_qnn_executorch_option(compiler_spec)
+        obj_options = flatbuffer_to_option(option)
+        if obj_options.dump_intermediate_outputs and isinstance(module, Dict):
+            assert (
+                len(module) == 1
+            ), "Intermediate Tensor Dump does not support multi-methods."
+
     if not isinstance(module, dict):
         module = {"forward": module}
 
@@ -433,6 +453,10 @@ def to_edge_transform_and_lower_to_qnn(
             dynamic_shapes=dynamic_shapes[graph_name],
             strict=True,
         )
+        option = generate_qnn_executorch_option(compiler_specs[graph_name])
+        python_options = flatbuffer_to_option(option)
+        backend_type = python_options.backend_options.backend_type
+        pass_manager = get_qnn_pass_manager_cls(backend_type)()
         # This transformation is primarily intended for the LiftConstantScalarOperands pass
         # to avoid creating temporary tensors in the operation builder.
         # However, this pass will create a get_attr node, which should be converted
@@ -440,17 +464,17 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(
-            ep, convert_linear_to_conv2d=convert_linear_to_conv2d
+        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(
+            ep,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
-        option = generate_qnn_executorch_option(compiler_specs[graph_name])
-        python_options = flatbuffer_to_option(option)
-        backend_type = python_options.backend_options.backend_type
-        transform_passes[graph_name] = QnnPassManager().get_to_edge_transform_passes(
+        transform_passes[graph_name] = pass_manager.get_to_edge_transform_passes(
             ep,
             passes_job=passes_job[graph_name],
             dep_table=dep_table[graph_name],
-            backend_type=backend_type,
+            compiler_specs=compiler_specs[graph_name],
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
         )
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(
@@ -491,14 +515,15 @@ def capture_program(
         stacklevel=1,
     )
     ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
-    ep = QnnPassManager().transform_for_export_pipeline(ep)
+    pass_manager = get_qnn_pass_manager_cls(QnnExecuTorchBackendType.kHtpBackend)()
+    ep = pass_manager.transform_for_export_pipeline(ep)
     # TODO: Handle stack op. If we want to run annotate_decomposed pass for stack op,
     # we need to make stack op decompose, which means we need to find a method to
     # remove it from skip_decomp table
     decomposed_ep = ep.run_decompositions(get_decomp_table(passes_job))
     core_ep = ExirExportedProgram(decomposed_ep, False)
     edge_ep = core_ep.to_edge(qnn_edge_config())
-    transform_passes = QnnPassManager().get_to_edge_transform_passes(
+    transform_passes = pass_manager.get_to_edge_transform_passes(
         edge_ep.exported_program,
         passes_job=passes_job,
         dep_table=dep_table,
@@ -1189,7 +1214,7 @@ def generate_qnn_executorch_compiler_spec(  # noqa: C901
     qnn_executorch_options.dump_intermediate_outputs = dump_intermediate_outputs
 
     if saver:
-        qnn_executorch_options.library_path = "libQnnSaver.so"
+        qnn_executorch_options.library_path = get_qnn_lib_name("QnnSaver")
         qnn_executorch_options.saver = True
         qnn_executorch_options.saver_output_dir = "saver_output"
 
@@ -1398,47 +1423,6 @@ def rewrite_prepared_observer(
             continue
         for target_name in module_name_list[old_module]:
             setattr(graph_module, target_name, new_observer)
-
-
-def get_sdk_build_id():
-    htp_library_path = (
-        os.environ.get("QNN_SDK_ROOT", None) + "/lib/x86_64-linux-clang/libQnnHtp.so"
-    )
-    # The GetQnnSdkBuildId API can be used without needing to create a backend first, so it works regardless of which backend is used.
-    sdk_build_id = PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
-    return sdk_build_id
-
-
-def is_qnn_sdk_version_less_than(target_version):
-    current_version = get_sdk_build_id()
-
-    match = re.search(r"v(\d+)\.(\d+)", current_version)
-    if match:
-        current_major, current_minor = map(int, match.groups()[:2])
-    else:
-        raise ValueError(
-            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
-        )
-
-    target_major, target_minor = map(int, target_version.split(".")[:2])
-
-    return current_major == target_major and current_minor < target_minor
-
-
-def is_qnn_sdk_version_greater_than(target_version):
-    current_version = get_sdk_build_id()
-
-    match = re.search(r"v(\d+)\.(\d+)", current_version)
-    if match:
-        current_major, current_minor = map(int, match.groups()[:2])
-    else:
-        raise ValueError(
-            f"Failed to get current major and minor version from QNN SDK Build id {current_version}"
-        )
-
-    target_major, target_minor = map(int, target_version.split(".")[:2])
-
-    return current_major == target_major and current_minor > target_minor
 
 
 def get_qnn_context_binary_alignment() -> int:

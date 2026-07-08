@@ -54,7 +54,11 @@ def define_common_targets():
         exported_headers = [
             "pattern.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = select({
+            "DEFAULT": ["-Wno-missing-prototypes"],
+            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
+            "ovr_config//os:zephyr": [],
+        }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         exported_deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",

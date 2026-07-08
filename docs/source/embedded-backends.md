@@ -13,7 +13,7 @@ Available hardware acceleration backends for embedded systems.
 
 ## NPU Acceleration
 
-- {doc}`embedded-arm-ethos-u` — ARM Ethos-U NPU acceleration
+- {doc}`embedded-arm-ethos-u` — Arm Ethos-U NPU acceleration
 - {doc}`embedded-nxp` — NXP eIQ Neutron Backend
 
 
@@ -23,3 +23,4 @@ embedded-arm-cortex-m
 embedded-cadence
 embedded-arm-ethos-u
 embedded-nxp
+```

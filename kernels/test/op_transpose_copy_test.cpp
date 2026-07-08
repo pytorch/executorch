@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -158,9 +159,9 @@ TEST_F(OpTransposeIntCopyTest, OutOfBoundDimDies) {
 
 // transpose a 3d tensor into a 2d one
 TEST_F(OpTransposeIntCopyTest, MismatchedDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimensions");
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.ones(/*sizes=*/{4, 2, 3});
@@ -196,9 +197,9 @@ TEST_F(OpTransposeIntCopyTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 TEST_F(OpTransposeIntCopyTest, DynamicShapeUpperBoundLargerThanExpected) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -215,9 +216,9 @@ TEST_F(OpTransposeIntCopyTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpTransposeIntCopyTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op) */

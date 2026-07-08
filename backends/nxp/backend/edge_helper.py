@@ -8,27 +8,49 @@ import operator
 
 import torch
 
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.ops_aliases import (
+    AddTensor,
+    Amin,
+    Cat,
+    Clone,
+    CloneDimOrder,
+    DequantizePerChannel,
+    DequantizePerTensor,
+    MulTensor,
+    PermuteCopy,
+    QuantizePerChannel,
+    QuantizePerTensor,
+    SubTensor,
+    SumDimIntList,
+    ViewCopy,
+)
 from torch.fx import GraphModule, Node
 from torch.fx.node import Argument
 from torch.nn import Parameter
 
 QUANTIZE_OPERATORS = [
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    QuantizePerChannel,
+    QuantizePerTensor,
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_channel.default,
 ]
 
 DEQUANTIZE_OPERATORS = [
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    DequantizePerChannel,
+    DequantizePerTensor,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_channel.default,
 ]
 
 # A set of operators which could possibly be no-ops in certain conditions. The operators in this set will be proclaimed
 #  as no-ops (and potentially not delegated), if their input and output tensors are equal (when run on random data).
 no_op_candidates = {
-    exir_ops.edge.aten.add.Tensor,
-    exir_ops.edge.aten.mul.Tensor,
-    exir_ops.edge.aten.sub.Tensor,
+    AddTensor,
+    Amin,
+    MulTensor,
+    PermuteCopy,
+    SubTensor,
+    SumDimIntList,
 }
 
 
@@ -91,6 +113,43 @@ def node_is_effectively_static_tensor(
     )
 
 
+def weights_are_effectively_static(
+    node: Node, parameters_mapping: dict[str, Parameter], weight_index: int = 1
+) -> bool:
+    """Neutron IR sometimes requires some weights to be static. This method checks if this is the case for the
+        provided `node`.
+
+    Sometimes a `permute_copy` is inserted to transpose the weights during edge lowering. The `permute_copy` is
+    then removed during conversion to Neutron IR if it transposes static data. In those cases, the weights will be
+    static. Therefore, it is ok if the weights are produced by a `permute_copy` with a static input.
+
+    :param node: Tensor node to check for data.
+    :param parameters_mapping: Dict mapping tensor names to their static data. Should be inferred from the
+                                `state_dict` attribute of an edge program.
+    :param weight_index: Index to the `node.args` where the weight is located. Defaults to 1.
+    :return: True if the weight at the given index is effectively static.
+    """
+
+    def _is_permute_copy(node_: Node) -> bool:
+        return hasattr(node_, "target") and node_.target == PermuteCopy
+
+    if (
+        _is_dequantize(dq_node := node.args[weight_index])
+        and _is_quantize(q_node := dq_node.args[0])
+        and _is_permute_copy(permute_copy_node := q_node.args[0])
+    ):
+        # The weights are produced by a `permute_copy`. Its input (the weights) must be static.
+        return node_is_effectively_static_tensor(
+            permute_copy_node.args[0], parameters_mapping
+        )
+
+    else:
+        # There is no `permute_copy`. The weights must be static directly.
+        return node_is_effectively_static_tensor(
+            node.args[weight_index], parameters_mapping
+        )
+
+
 def try_get_tensor_constant_from_node(
     graph_module: GraphModule, node: Node
 ) -> Parameter | None:
@@ -108,21 +167,11 @@ def try_get_tensor_constant_from_node(
 
 
 def _is_dequantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in [
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
-        torch.ops.quantized_decomposed.dequantize_per_channel.default,
-    ]
+    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS
 
 
 def _is_quantize(node_: Node) -> bool:
-    return node_.op == "call_function" and node_.target in [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
-        torch.ops.quantized_decomposed.quantize_per_channel.default,
-    ]
+    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS
 
 
 def previous_non_qdq_node(node: Node, input_index: int = 0) -> Node | None:
@@ -172,21 +221,11 @@ def get_non_qdq_users(node: Node) -> list[Node]:
     """
 
     quant_nodes = list(node.users)
-    if len(quant_nodes) != 1 or quant_nodes[0].target not in [
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    ]:
+    if len(quant_nodes) != 1 or not _is_quantize(quant_nodes[0]):
         return []
 
     dequant_nodes = list(quant_nodes[0].users)
-    if any(
-        dequant_node.target
-        not in [
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        ]
-        for dequant_node in dequant_nodes
-    ):
+    if any(not _is_dequantize(dequant_node) for dequant_node in dequant_nodes):
         return []
 
     res = []
@@ -277,14 +316,14 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
         )
 
     if node.target in [
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.dim_order_ops._clone_dim_order.default,
-        exir_ops.edge.aten.clone.default,
+        Clone,
+        ViewCopy,
+        CloneDimOrder,
     ]:
         # Known operators which are always no-ops on Neutron.
         return True
 
-    if node.target == exir_ops.edge.aten.cat.default and len(node.args[0]) == 1:
+    if node.target == Cat and len(node.args[0]) == 1:
         # Concatenation with 1 input is a no-op.
         return True
 
@@ -318,7 +357,7 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
                         input_data = torch.rand(val.shape, dtype=val.dtype) * 10 - 5
                         args_with_random_data.append(input_data)
 
-                case list():
+                case list() if any(isinstance(a, Node) for a in arg):
                     # Lists of input nodes are not supported to keep the code simple. It is not crucial to support this
                     #  case as the affected operators are either not supported on Neutron, or are extremely unlikely to
                     #  be no-ops (e.g. GRU). One exception is `aten.cat`, which is explicitly supported above.
@@ -336,6 +375,8 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
         if (
             output_data.dtype == val.dtype
             and output_data.shape == val.shape
+            and output_data.dtype == input_data.dtype
+            and output_data.shape == input_data.shape
             and torch.all(input_data == output_data)
         ):
             # The operator preserves the shape, data type, and data. Therefore, it is a no-op from the perspective of

@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -48,7 +49,7 @@ class OpSliceCopyTensorOutTest : public OperatorTest {
         5,   6,   7,   8, // [1, :]
         9,  10,  11,  12, // [2, :]
       });
-  
+
     // op_slice_copy_tensor_out(input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out),
     // The result should equal to input[0:2:1, :]
     Tensor expect_ret = tf.make(
@@ -428,9 +429,9 @@ TEST_F(OpSliceCopyTensorOutTest, LegalStepsSupported) {
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
 TEST_F(OpSliceCopyTensorOutTest, AllDtypesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -541,9 +542,9 @@ TEST_F(OpSliceCopyTensorOutTest, MismatchedDtypesDies) {
 }
 
 TEST_F(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle out with mismatched dimensions");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -649,9 +650,9 @@ TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -694,9 +695,9 @@ TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op) */
