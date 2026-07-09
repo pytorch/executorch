@@ -314,6 +314,18 @@ class WebGPUGraph {
     return value_types_[id];
   }
 
+#ifdef WGPU_BACKEND_KV_F16
+ public:
+  // True when the sdpa K/V cache is stored f16-packed (opt-in build).
+  bool kv_f16() const {
+    return kv_f16_;
+  }
+
+ private:
+  bool kv_f16_ = false;
+  std::unordered_set<int> kv_cache_ids_;
+#endif
+
  private:
   WGPUInstance instance_ = nullptr;
   WGPUDevice device_ = nullptr;
