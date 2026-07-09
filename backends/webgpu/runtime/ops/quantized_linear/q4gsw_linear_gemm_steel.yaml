@@ -16,3 +16,7 @@ q4gsw_linear_gemm_steel:
       DTYPE: half
       PWDQ: true
       ACC: float
+    - NAME: q4gsw_linear_gemm_steel_half_pwdq_f16acc
+      DTYPE: half
+      PWDQ: true
+      ACC: half
