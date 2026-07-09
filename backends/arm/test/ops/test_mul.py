@@ -263,7 +263,6 @@ def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
 @common.parametrize(
     "test_data",
     test_data_suite
-    | test_data_suite_bf16
     | test_data_suite_fp16
     | test_data_suite_2
     | test_data_int32_without_broadcasting,

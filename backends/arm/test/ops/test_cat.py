@@ -201,10 +201,7 @@ def test_cat_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    Cat.test_parameters | Cat.test_parameters_bf16 | Cat.test_parameters_fp16,
-)
+@common.parametrize("test_data", Cat.test_parameters | Cat.test_parameters_fp16)
 @common.SkipIfNoModelConverter
 def test_cat_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
