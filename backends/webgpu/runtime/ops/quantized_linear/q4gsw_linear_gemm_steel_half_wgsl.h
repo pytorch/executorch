@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: e3c21e7db7c18f6e085de71e283988f0bd3b2543807ddc17774a1c607e69c766
+// wgsl-sha256: 00cdd2f2fb98a5c7343d16fdf7e59f1b840e180cec3f82bf9b569513c0a45396
 inline constexpr const char* kQ4gswLinearGemmSteelHalfWGSL = R"(
 enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
@@ -37,7 +37,16 @@ struct Params {
 // "steel" prefill GEMM (M>1): 64x64 tile, 256 threads; K%16==0 host-guarded.
 // The "steel" name + register-tiled dequant-to-shared GEMM structure are
 // inspired by MLX's steel GEMM kernels (github.com/ml-explore/mlx,
-// mlx/backend/metal/kernels/steel).
+// mlx/backend/metal/kernels/steel). One template, four variants:
+//   DTYPE=float           f32 storage/multiply, per-nibble weight staging.
+//   DTYPE=half            f16 storage/multiply, per-nibble weight staging.
+//   PWDQ (half only)      packed-word dequant: load each u32 weight word ONCE,
+//     unpack all 16 nibbles of a column + hoist the per-column scale to one read
+//     (the per-nibble path re-reads each word ~8x). Requires K%BK==0 (steel
+//     route guarantees it) and group_size%BK==0 (hoisted scale across the tile).
+//   ACC=half (PWDQ only)  f16 accumulate with fma(), cast to f32 in the epilogue
+//     -- LOSSY, perplexity-gated, opt-in via a runtime spec. ACC=float is f32
+//     accumulate -- BIT-EXACT to the per-nibble half kernel.
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
 var<workgroup> As: array<f16, 1024>;   // BM*BK
 var<workgroup> Bs: array<f16, 1024>;   // BK*BN
