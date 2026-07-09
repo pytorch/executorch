@@ -554,20 +554,16 @@ def to_mlx_qparams(
         q = qdata.view(torch.uint8) + offset
         Q = q.contiguous().view(torch.uint32).reshape(rows, -1)
     else:
-        # Contiguous bit-packing for widths that don't divide 32 (e.g. 6-bit),
-        # matching MLX's affine pack_and_quantize (ops.cpp): each value
-        # contributes `bits` LSB-first bits to a continuous stream that is
-        # chunked into uint32 words (also LSB-first), straddling word
-        # boundaries -> (rows, cols*bits//32) uint32.
+        # Contiguous LSB-first bit-packing for widths that don't divide 32
+        # (e.g. 6-bit), matching MLX's affine pack_and_quantize (ops.cpp).
         #
-        # Rather than expand to a per-bit stream (which materializes an
-        # int64 (rows, cols, bits) tensor -> tens of GB for lm_head and OOMs),
-        # scatter each column's value directly into its uint32 word(s). Column
-        # j occupies global bits [j*bits, (j+1)*bits): word j*bits//32 at shift
-        # j*bits%32, plus a carry into the next word when it straddles. For any
-        # bits <= 32 a value straddles at most one boundary, so a single carry
-        # suffices. Within a word the columns' bit-ranges are disjoint, so
-        # index_add_ (sum) is equivalent to OR.
+        # We scatter each column's value directly into its uint32 word(s)
+        # rather than expanding to a per-bit stream, which would materialize an
+        # int64 (rows, cols, bits) tensor (tens of GB for lm_head -> OOM).
+        # Column j occupies global bits [j*bits, (j+1)*bits): word j*bits//32 at
+        # shift j*bits%32, plus a carry into the next word when it straddles the
+        # boundary (at most one carry since bits <= 32). Column bit-ranges within
+        # a word are disjoint, so index_add_ (sum) is equivalent to OR.
         n_words = cols * bits // 32
         q = qdata.to(torch.int64) + offset  # 0 .. 2**bits-1
         pos = torch.arange(cols, dtype=torch.int64) * bits
