@@ -92,16 +92,13 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
 
 WGPUBuffer WebGPUGraph::acquire_scratch(size_t nbytes) {
   nbytes = nbytes > 0 ? nbytes : 4;
-  // A/B bypass: dedicated per-call buffer (old behavior, held to teardown).
-  if (std::getenv("WEBGPU_NO_SCRATCH_POOL") != nullptr) {
-    return create_scratch_buffer(nbytes);
-  }
   // Best-fit reuse: smallest free slot with size in [nbytes, 2*nbytes] -- the
   // 2x cap stops a large Cmax-sized buffer from backing a tiny request. Never
   // reuse an in_use slot (co-live safety).
   ScratchSlot* best = nullptr;
   for (auto& s : scratch_pool_) {
-    if (!s.in_use && s.size >= nbytes && s.size <= 2 * nbytes) {
+    // s.size - nbytes (safe: s.size >= nbytes) avoids overflowing 2 * nbytes.
+    if (!s.in_use && s.size >= nbytes && s.size - nbytes <= nbytes) {
       if (best == nullptr || s.size < best->size) {
         best = &s;
       }
@@ -133,8 +130,7 @@ void WebGPUGraph::release_scratch(WGPUBuffer buffer) {
       return;
     }
   }
-  // Not a pooled buffer (WEBGPU_NO_SCRATCH_POOL path) -> no-op; the dtor frees
-  // it via scratch_buffers_.
+  // Not a pooled buffer -> no-op; the dtor frees it via scratch_buffers_.
 }
 
 WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
@@ -362,7 +358,9 @@ WebGPUGraph::~WebGPUGraph() {
 void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data,
-    const executorch::runtime::NamedDataMap* named_data_map) {
+    const executorch::runtime::NamedDataMap* named_data_map,
+    bool f16_kv_cache,
+    bool f16_accumulate_gemm) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -383,11 +381,14 @@ void WebGPUGraph::build(
   constant_data_ = constant_data;
   named_data_map_ = named_data_map;
 
-#ifdef WGPU_BACKEND_KV_F16
-  // f16 KV cache (opt-in): store K/V caches as f16 iff shader-f16 negotiated.
+  // f16 KV cache (runtime opt-in): store K/V caches as f16 iff the opt-in is
+  // set AND the device negotiated shader-f16 (fail-closed).
   const WebGPUContext* kv_ctx = get_default_webgpu_context();
-  kv_f16_ = (kv_ctx != nullptr && kv_ctx->shader_f16_supported);
-#endif
+  kv_f16_ = f16_kv_cache && (kv_ctx != nullptr && kv_ctx->shader_f16_supported);
+
+  // f16-accumulate q4gsw steel prefill GEMM (runtime opt-in). QuantizedLinear
+  // additionally gates the kernel on the negotiated shader-f16 feature.
+  f16_accumulate_gemm_ = f16_accumulate_gemm;
 
   // Phase 1: Create all values
   const auto* values = graph->values();
@@ -416,14 +417,13 @@ void WebGPUGraph::build(
       if (!a) {
         continue;
       }
-#ifdef WGPU_BACKEND_KV_F16
       // f16 KV: tag sdpa K/V cache values (args[3],[4]) for half-size alloc.
+      // Inert unless kv_f16_ (runtime opt-in) is set.
       if (kv_f16_ && a->size() > 4 &&
           oc->name()->str() == "sdpa_with_kv_cache.default") {
         kv_cache_ids_.insert(static_cast<int>(a->Get(3)));
         kv_cache_ids_.insert(static_cast<int>(a->Get(4)));
       }
-#endif
       for (unsigned j = 0; j < a->size(); j++) {
         int id = static_cast<int>(a->Get(j));
         if (is_prepack && j == 0) {
@@ -444,8 +444,8 @@ void WebGPUGraph::build(
     }
   }
 
-#ifdef WGPU_BACKEND_KV_F16
   // f16 KV defensive guard: fail loud if a non-sdpa op reads an f16 cache.
+  // Inert unless kv_f16_ (runtime opt-in) is set.
   if (kv_f16_ && !kv_cache_ids_.empty() && chain_prescan) {
     for (unsigned ci = 0; ci < chain_prescan->size(); ci++) {
       const auto* oc = chain_prescan->Get(ci);
@@ -466,7 +466,6 @@ void WebGPUGraph::build(
       }
     }
   }
-#endif
 
   for (int i = 0; i < num_vals; i++) {
     const auto* val = values->Get(i);
@@ -497,8 +496,9 @@ void WebGPUGraph::build(
         tensor.cur_dims = tensor.dims;
         tensor.cur_nbytes = tensor.nbytes;
 
-#ifdef WGPU_BACKEND_KV_F16
-        // f16 KV cache: dedicated half-size array<f16> buffer, zero-init.
+        // f16 KV cache: dedicated half-size array<f16> buffer. WebGPU
+        // zero-initializes freshly-created buffers, so no explicit clear is
+        // needed. Inert unless kv_f16_ (runtime opt-in) is set.
         if (kv_f16_ && kv_cache_ids_.count(i) != 0) {
           tensor.elem_size = 2;
           tensor.nbytes = numel * 2;
@@ -510,12 +510,8 @@ void WebGPUGraph::build(
               WGPUBufferUsage_CopySrc;
           buf_desc.mappedAtCreation = false;
           tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
-          std::vector<uint8_t> zeros(tensor.nbytes, 0);
-          wgpuQueueWriteBuffer(
-              queue_, tensor.buffer, 0, zeros.data(), tensor.nbytes);
           break;
         }
-#endif
 
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
