@@ -38,8 +38,8 @@ using Tensor = executorch::backends::aoti::slim::SlimTensor;
 //                super-block, register-cached across its 8 groups).
 //   zero       : [N, K/gs] uint8 per-group zero codes
 //   zero_point_step  : [N, K/256] fp16 per-256-super-block step; group zero =
-//                zero_code * zero_point_step[:, g/(256/gs)]. Both fp16 steps are
-//                packed into ONE 32-bit warp-shuffle word by the subgroup
+//                zero_code * zero_point_step[:, g/(256/gs)]. Both fp16 steps
+//                are packed into ONE 32-bit warp-shuffle word by the subgroup
 //                leader (z_pack) and broadcast to the 8-lane subgroup — the
 //                single most format-critical detail this test covers.
 // Q5_K is asymmetric: the stored 5-bit value is the raw unsigned u in [0, 31]
@@ -117,7 +117,15 @@ class AOTITorchInt5PlainMMTest : public ::testing::Test {
       int64_t group_size) {
     Tensor* output = nullptr;
     AOTITorchError error = aoti_torch_cuda_int5_plain_mm(
-        A, ql, qh, scale, scale_step, zero, zero_point_step, group_size, &output);
+        A,
+        ql,
+        qh,
+        scale,
+        scale_step,
+        zero,
+        zero_point_step,
+        group_size,
+        &output);
     EXPECT_EQ(error, Error::Ok);
     EXPECT_NE(output, nullptr);
     return output;
@@ -341,7 +349,8 @@ TEST_F(AOTITorchInt5PlainMMTest, SingleSuperBlock) {
   upload(zero, zero_codes, sizeof(zero_codes));
   upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
+  Tensor* output =
+      run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -574,7 +583,8 @@ TEST_F(AOTITorchInt5PlainMMTest, MultiSuperBlock) {
   upload(zero, zero_codes, sizeof(zero_codes));
   upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
+  Tensor* output =
+      run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -894,7 +904,8 @@ TEST_F(AOTITorchInt5PlainMMTest, WideN) {
   upload(zero, zero_codes, sizeof(zero_codes));
   upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
+  Tensor* output =
+      run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -1549,7 +1560,8 @@ TEST_F(AOTITorchInt5PlainMMTest, PackedShuffleMultiSuper) {
   upload(zero, zero_codes, sizeof(zero_codes));
   upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
+  Tensor* output =
+      run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -1572,15 +1584,39 @@ TEST_F(AOTITorchInt5PlainMMTest, NullInputHandling) {
 
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          nullptr, ql, qh, scale, scale_step, zero, zero_point_step, gs, &output),
+          nullptr,
+          ql,
+          qh,
+          scale,
+          scale_step,
+          zero,
+          zero_point_step,
+          gs,
+          &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, nullptr, qh, scale, scale_step, zero, zero_point_step, gs, &output),
+          A,
+          nullptr,
+          qh,
+          scale,
+          scale_step,
+          zero,
+          zero_point_step,
+          gs,
+          &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, ql, nullptr, scale, scale_step, zero, zero_point_step, gs, &output),
+          A,
+          ql,
+          nullptr,
+          scale,
+          scale_step,
+          zero,
+          zero_point_step,
+          gs,
+          &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
