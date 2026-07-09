@@ -22,6 +22,7 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
 using std::optional;
+using torch::executor::native::quantized_embedding_2bit_dtype_out;
 using torch::executor::native::quantized_embedding_2bit_out;
 
 using torch::executor::testing::TensorFactory;
@@ -102,6 +103,50 @@ TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbedding) {
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingBFloat16) {
+  et_pal_init();
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::BFloat16> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  int64_t quant_min = -2;
+  int64_t quant_max = 1;
+
+  Tensor weight_scales = tf.make({3}, {0.5, 1.0, 1.5});
+  Tensor weight_zero_points = tf.make({3}, {1, -2, 0});
+  Tensor qweight = tfb.make({3, 1}, {236, 134, 228});
+  Tensor indices = tfl.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 4});
+  Tensor expected = tf.make(
+      {3, 4}, {-1.5, 0.0, -0.5, 0.0, -3.0, -1.5, 0.0, 1.5, 2.0, 1.0, 0.0, 2.0});
+
+  quantized_embedding_2bit_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+
+  // Same values through the dtype_out variant.
+  out = tf.zeros({3, 4});
+  quantized_embedding_2bit_dtype_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      ScalarType::BFloat16,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
 }
 
 TEST(OpQuantizedEmbedding2bTest, TestGroupWiseQuantizedEmbeddingInt32Indices) {
