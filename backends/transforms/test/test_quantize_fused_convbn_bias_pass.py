@@ -4,16 +4,28 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree..
 
+import sys
 from typing import Tuple
+from unittest.mock import MagicMock
+
+# Stub modules that are transitively imported by arm_quantizer but never
+# exercised by these tests.
+for _mod in ("tosa_serializer", "tosa", "tosa.TosaGraph"):
+    if _mod not in sys.modules:
+        try:
+            __import__(_mod)
+        except ModuleNotFoundError:
+            sys.modules[_mod] = MagicMock()
 
 import pytest
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+)
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
     QuantizeFusedConvBnBiasAtenPass,
-)
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
 )
 from torch import nn
 from torch.export import export
@@ -89,7 +101,7 @@ class ConvNoBnNoBias(nn.Module):
 
 def _qat_prepare_convert(model, per_channel):
     """QAT prepare -> calibrate -> convert_pt2e, returns GraphModule with get_attr nodes."""
-    quantizer = XNNPACKQuantizer()
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
     quantizer.set_global(
         get_symmetric_quantization_config(is_qat=True, is_per_channel=per_channel)
     )

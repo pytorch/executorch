@@ -349,7 +349,7 @@ table BackendDelegate {
 // abstraction is not currently leveraged, all current programs are 1 chain.
 // We are leaving chains as part of the program definition for future use cases
 // around graph level async where different threads will be represented as
-// separate chains.
+// seperate chains.
 table Chain {
   // Indices of the values that are (non-static) inputs into this Chain.
   inputs: [int];
@@ -518,7 +518,7 @@ table Program {
   // [Optional] Describes the offsets into various segments for each mutable
   // tensor. Only mutable tensors with a meaningful initial state are
   // serialized here (for example weights that will be trained on-device as
-  // opposed to just layer activations). Separate from the constant_segment to
+  // opposed to just layer activations). Seperate from the constant_segment to
   // reduce peak memory usage by letting us read directly from the PTE file
   // into the mutable tensor, as opposed to loading the .pte data into
   // constant memory, copying it over, and then being unable to release the

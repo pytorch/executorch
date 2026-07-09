@@ -7,7 +7,7 @@ from typing import Optional
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -105,7 +105,7 @@ def conv_output_dim(
     return (input_dim + total_pad - receptive_field) // stride + 1
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "CONV2D(Tensor input, "
     "Tensor weight, "
     "Tensor bias, "
