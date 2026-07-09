@@ -11,6 +11,8 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
 
 #include <gtest/gtest.h>
 
@@ -300,6 +302,14 @@ const Q4gswConfig kQ4gswConfigs[] = {
     // gs=8 (< BK=16) falls back to the per-nibble steel_half kernel.
     {"pwdq_gs64", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
     {"pwdq_gs8", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
+    // f16-ACCUMULATE steel (pwdqf16acc): lossy, so a wider gate than the
+    // f16-multiply steel_f16 (2.3e-4). f16 accumulation error grows with K, so
+    // the deep-K down shape (K=8192) gets the loosest tol. Perplexity is the
+    // primary quality gate (see the kernel diff); this catches gross bit/index
+    // bugs. gs=32 (% BK == 0) selects pwdqf16acc; the sweep loads these rows
+    // with the enable_f16_accumulate_gemm runtime spec set.
+    {"pwdqf16acc", 96, 2048, 256, 2e-2f, 3e-2f, true, false},
+    {"pwdqf16acc_down", 128, 8192, 2048, 5e-2f, 8e-2f, true, false},
     {"gate_proj_pf", 128, 2048, 8192, 1e-4f, 1e-3f, true, false}, // shmem via N
     {"down_proj_pf", 128, 8192, 2048, 1e-3f, 1e-2f, true, false}, // shmem via K
     {"shmem_edge", 130, 4096, 2056, 1e-4f, 1e-3f, true, false}, // partial tiles
@@ -563,7 +573,18 @@ void test_q4gsw_config(
       cfg.n);
 
   Module module(pte);
-  ASSERT_EQ(module.load_forward(), Error::Ok) << "could not load " << pte;
+  // pwdqf16acc rows exercise the lossy f16-accumulate kernel, a runtime opt-in
+  // (default off); enable it via the backend option keyed by the registered id.
+  if (std::string(cfg.name).rfind("pwdqf16acc", 0) == 0) {
+    BackendOptions<1> opts;
+    opts.set_option("enable_f16_accumulate_gemm", true);
+    LoadBackendOptionsMap map;
+    ASSERT_EQ(map.set_options("VulkanBackend", opts.view()), Error::Ok);
+    ASSERT_EQ(module.load_forward(nullptr, nullptr, &map), Error::Ok)
+        << "could not load " << pte;
+  } else {
+    ASSERT_EQ(module.load_forward(), Error::Ok) << "could not load " << pte;
+  }
 
   const int in_numel = cfg.m * cfg.k;
   const int out_numel = cfg.m * cfg.n;
