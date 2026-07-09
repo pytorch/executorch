@@ -66,10 +66,10 @@ def _meta_int8(self, qdata, scale, zero, group_size):
 
 @impl(_lib, "int8_plain_mm", "CUDA")
 def _cuda_int8(self, qdata, scale, zero, group_size):
-    return _dequant_matmul_int8(self, qdata, scale, zero, group_size)
+    return _unit_dq_mm_int8(self, qdata, scale, zero, group_size)
 
 
-def _dequant_matmul_int8(x, qdata, scale, zero, group_size):
+def _unit_dq_mm_int8(x, qdata, scale, zero, group_size):
     """Dequant INT8 weights to input dtype and call F.linear.
 
     qdata [N, K] int8, scale/zero [N, K//gs]. Per-group asymmetric:
@@ -124,7 +124,7 @@ def _(func, types, args, kwargs):
     if M <= 4:
         out = torch.ops.executorch_cuda.int8_plain_mm(x_2d, qdata, scale, zero, gs)
     else:
-        out = _dequant_matmul_int8(x_2d, qdata, scale, zero, gs)
+        out = _unit_dq_mm_int8(x_2d, qdata, scale, zero, gs)
 
     out = out.reshape(*orig_shape[:-1], -1)
     if bias is not None:

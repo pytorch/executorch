@@ -56,6 +56,9 @@ class TestSubTensor:
             mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -65,7 +68,7 @@ class TestSubTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     def test__basic_nsys_inference_qat(self, mocker, request):
@@ -75,6 +78,9 @@ class TestSubTensor:
             mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -85,7 +91,7 @@ class TestSubTensor:
             dataset_creator,
             comparator,
             use_qat=True,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     @pytest.mark.parametrize(
@@ -113,6 +119,9 @@ class TestSubTensor:
             mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -122,7 +131,7 @@ class TestSubTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     @pytest.mark.parametrize(
@@ -225,6 +234,9 @@ class TestSubTensor:
             expected_non_delegated_ops={},
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -234,5 +246,5 @@ class TestSubTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
