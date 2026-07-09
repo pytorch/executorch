@@ -310,7 +310,8 @@ WebGPUGraph::~WebGPUGraph() {
 void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data,
-    const executorch::runtime::NamedDataMap* named_data_map) {
+    const executorch::runtime::NamedDataMap* named_data_map,
+    bool f16_kv_cache) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -330,6 +331,11 @@ void WebGPUGraph::build(
   // .pte byte sources for prepack-time constant materialization (build-only).
   constant_data_ = constant_data;
   named_data_map_ = named_data_map;
+
+  // f16 KV cache (runtime opt-in): store K/V caches as f16 iff the opt-in is
+  // set AND the device negotiated shader-f16 (fail-closed).
+  const WebGPUContext* kv_ctx = get_default_webgpu_context();
+  kv_f16_ = f16_kv_cache && (kv_ctx != nullptr && kv_ctx->shader_f16_supported);
 
   // Phase 1: Create all values
   const auto* values = graph->values();
@@ -358,6 +364,13 @@ void WebGPUGraph::build(
       if (!a) {
         continue;
       }
+      // f16 KV: tag sdpa K/V cache values (args[3],[4]) for half-size alloc.
+      // Inert unless kv_f16_ (runtime opt-in) is set.
+      if (kv_f16_ && a->size() > 4 &&
+          oc->name()->str() == "sdpa_with_kv_cache.default") {
+        kv_cache_ids_.insert(static_cast<int>(a->Get(3)));
+        kv_cache_ids_.insert(static_cast<int>(a->Get(4)));
+      }
       for (unsigned j = 0; j < a->size(); j++) {
         int id = static_cast<int>(a->Get(j));
         if (is_prepack && j == 0) {
@@ -373,6 +386,29 @@ void WebGPUGraph::build(
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  // f16 KV defensive guard: fail loud if a non-sdpa op reads an f16 cache.
+  // Inert unless kv_f16_ (runtime opt-in) is set.
+  if (kv_f16_ && !kv_cache_ids_.empty() && chain_prescan) {
+    for (unsigned ci = 0; ci < chain_prescan->size(); ci++) {
+      const auto* oc = chain_prescan->Get(ci);
+      const std::string nm = oc->name()->str();
+      if (nm == "sdpa_with_kv_cache.default" || nm == kPrepackOpName) {
+        continue;
+      }
+      const auto* a = oc->args();
+      if (!a) {
+        continue;
+      }
+      for (unsigned j = 0; j < a->size(); j++) {
+        if (kv_cache_ids_.count(static_cast<int>(a->Get(j))) != 0) {
+          throw std::runtime_error(
+              "WebGPU f16 KV: cache tensor consumed by non-sdpa op '" + nm +
+              "' would misread the f16 buffer");
         }
       }
     }
@@ -406,6 +442,23 @@ void WebGPUGraph::build(
         // them per call. Static graphs keep cur == max forever.
         tensor.cur_dims = tensor.dims;
         tensor.cur_nbytes = tensor.nbytes;
+
+        // f16 KV cache: dedicated half-size array<f16> buffer. WebGPU
+        // zero-initializes freshly-created buffers, so no explicit clear is
+        // needed. Inert unless kv_f16_ (runtime opt-in) is set.
+        if (kv_f16_ && kv_cache_ids_.count(i) != 0) {
+          tensor.elem_size = 2;
+          tensor.nbytes = numel * 2;
+          tensor.cur_nbytes = tensor.nbytes;
+          tensor_mem_obj_ids_[i] = -1;
+          WGPUBufferDescriptor buf_desc = {};
+          buf_desc.size = std::max(tensor.nbytes, size_t(4));
+          buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+              WGPUBufferUsage_CopySrc;
+          buf_desc.mappedAtCreation = false;
+          tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+          break;
+        }
 
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
