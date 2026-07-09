@@ -669,10 +669,10 @@ def parse_dequant_node(
         return None
 
     # MLX supports 2,3,4,5,6,8-bit affine quantization. to_mlx_qparams packs
-    # 2/4/8 via fast paths and other widths (e.g. 6) via a general contiguous
-    # bit-packer, so enable 6 here too.
+    # 2/4/8 via fast paths and other widths (e.g. 5, 6) via a general
+    # contiguous bit-packer, so enable 5 and 6 here too.
     bits = (qmax - qmin + 1).bit_length() - 1
-    if bits not in [2, 4, 6, 8]:
+    if bits not in [2, 4, 5, 6, 8]:
         return None
     return qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim
 
