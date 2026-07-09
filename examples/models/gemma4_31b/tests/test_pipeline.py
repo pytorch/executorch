@@ -46,7 +46,10 @@ from torchao.prototype.safetensors.safetensors_support import (
 
 TINY_CONFIG = Gemma4_31BConfig(
     vocab_size=256,
-    hidden_size=128,
+    # hidden_size must be a multiple of 256: CUDA int4/int6 superscale packing
+    # uses a per-256-weight scale step, so in-features (K) must be divisible by
+    # 256. Keeps the CUDA pipeline tests on the same shared fixture.
+    hidden_size=256,
     intermediate_size=256,
     num_hidden_layers=6,
     num_attention_heads=4,
