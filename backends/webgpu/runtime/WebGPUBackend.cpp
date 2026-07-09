@@ -89,13 +89,22 @@ Result<DelegateHandle*> WebGPUBackend::init(
       enable_f16_kv_cache = spec.get();
     }
   }
+  bool enable_f16_accumulate_gemm = false;
+  {
+    Result<bool> spec =
+        context.get_runtime_spec<bool>("enable_f16_accumulate_gemm");
+    if (spec.ok()) {
+      enable_f16_accumulate_gemm = spec.get();
+    }
+  }
 
   try {
     graph->build(
         flatbuffer_data,
         constant_data,
         context.get_named_data_map(),
-        enable_f16_kv_cache);
+        enable_f16_kv_cache,
+        enable_f16_accumulate_gemm);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
