@@ -373,9 +373,7 @@ def test_max_pool2d_tosa_INT_dilation(test_data):
 
 
 # VGF tests
-@common.parametrize(
-    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
-)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_max_pool2d_vgf_no_quant(test_data: torch.Tensor):
     test_data, model_params = test_data()

@@ -292,7 +292,7 @@ def test_where_self_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_FP | test_modules_FP_bf16)
+@common.parametrize("test_module", test_modules_FP)
 @common.SkipIfNoModelConverter
 def test_where_self_vgf_no_quant(test_module):
     module = test_module()

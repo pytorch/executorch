@@ -7,14 +7,14 @@
 import torch
 
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "GATHER(Tensor values, Tensor indices) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
