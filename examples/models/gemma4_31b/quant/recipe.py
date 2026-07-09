@@ -24,7 +24,7 @@ class QuantConfig:
     carry their own metadata. This is purely for driving ``quantize_weight``.
     """
 
-    bits: int  # 4 or 8
+    bits: int  # 4, 6, or 8
     group_size: int
     symmetric: bool  # True = no zero point
     method: str  # "min_max" | "hqq"

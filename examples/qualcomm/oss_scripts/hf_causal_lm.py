@@ -33,7 +33,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logging.getLogger().setLevel(logging.INFO)
 
-PTE_FILENAME = "qwen_qnn_q16"
+PTE_FILENAME = "hf_causal_lm_qnn"
 
 
 def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
@@ -195,7 +195,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example.",
-        default="qwen2_5",
+        default="hf_causal_lm",
         type=str,
     )
 
@@ -216,8 +216,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--decoder_model",
-        choices=["qwen2.5_0.5B", "qwen2.5_0.5B_instruct", "qwen2.5_1.5B_instruct"],
-        help="The Qwen model to export. Current available options are: [qwen2.5_0.5B, qwen2.5_0.5B_instruct, qwen2.5_1.5B_instruct]",
+        choices=list(HUGGING_FACE_REPO_IDS.keys()),
+        help=f"The Hugging Face decoder model to export. Available options are: {list(HUGGING_FACE_REPO_IDS.keys())}",
         required=True,
     )
 

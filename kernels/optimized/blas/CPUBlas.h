@@ -44,7 +44,7 @@ inline char to_blas(TransposeType trans) {
 }
 
 // clang-format off
-template <typename scalar_t, typename opmath_t>
+template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
 void gemm_impl(
     TransposeType transa, TransposeType transb,
     int64_t m, int64_t n, int64_t k,
@@ -52,7 +52,7 @@ void gemm_impl(
     const scalar_t *a, int64_t lda,
     const scalar_t *b, int64_t ldb,
     opmath_t beta,
-    scalar_t *c, int64_t ldc) {
+    out_t *c, int64_t ldc) {
   if (transa == TransposeType::NoTranspose &&
       transb == TransposeType::NoTranspose) {
     return gemm_notrans_(m, n, k, alpha, a, lda, b, ldb, beta, c, ldc);
@@ -111,6 +111,25 @@ void gemm(
     const executorch::aten::BFloat16 *b, int64_t ldb,
     const executorch::aten::BFloat16 beta,
     executorch::aten::BFloat16 *c, int64_t ldc);
+
+// Reduced-precision inputs accumulated into a full-precision (float) output.
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const executorch::aten::BFloat16 *a, int64_t lda,
+    const executorch::aten::BFloat16 *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc);
+
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const executorch::aten::Half *a, int64_t lda,
+    const executorch::aten::Half *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc);
 
 void gemm(
     TransposeType transa, TransposeType transb,
