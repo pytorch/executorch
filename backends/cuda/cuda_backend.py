@@ -385,6 +385,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_cuda_randint_low_out": None,
             "executorch_cuda::int4_plain_mm": None,
             "aoti_torch_cuda_int4_plain_mm": None,
+            "executorch_cuda::int5_plain_mm": None,
+            "aoti_torch_cuda_int5_plain_mm": None,
             "executorch_cuda::int6_plain_mm": None,
             "aoti_torch_cuda_int6_plain_mm": None,
             "executorch_cuda::int8_plain_mm": None,
