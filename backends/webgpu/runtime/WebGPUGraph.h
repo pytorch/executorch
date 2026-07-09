@@ -104,7 +104,8 @@ class WebGPUGraph {
   void build(
       const void* flatbuffer_data,
       const uint8_t* constant_data,
-      const executorch::runtime::NamedDataMap* named_data_map = nullptr);
+      const executorch::runtime::NamedDataMap* named_data_map = nullptr,
+      bool f16_kv_cache = false);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
@@ -314,9 +315,8 @@ class WebGPUGraph {
     return value_types_[id];
   }
 
-#ifdef WGPU_BACKEND_KV_F16
  public:
-  // True when the sdpa K/V cache is stored f16-packed (opt-in build).
+  // True when the sdpa K/V cache is stored f16-packed (runtime opt-in).
   bool kv_f16() const {
     return kv_f16_;
   }
@@ -324,7 +324,6 @@ class WebGPUGraph {
  private:
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
-#endif
 
  private:
   WGPUInstance instance_ = nullptr;
