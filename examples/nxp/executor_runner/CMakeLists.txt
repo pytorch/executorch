@@ -74,7 +74,7 @@ else()
   message(STATUS "Neutron Driver -- found")
 endif()
 
-# Check if the ExecuTorch Target is aleady defined, what indicate this
+# Check if the ExecuTorch Target is already defined, what indicate this
 # CMakeLists.txt is involved as subproject:
 message(STATUS "Looking for executorch target")
 if(NOT TARGET executorch)
@@ -82,6 +82,8 @@ if(NOT TARGET executorch)
   set(EXECUTORCH_BUILD_NXP_NEUTRON ON)
   set(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
   set(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
+  set(EXECUTORCH_BUILD_DEVTOOLS ON)
+  set(EXECUTORCH_ENABLE_EVENT_TRACER ON)
   add_subdirectory(
     "${EXECUTORCH_PATH}" "${CMAKE_CURRENT_BINARY_DIR}/executorch"
     EXCLUDE_FROM_ALL
@@ -99,18 +101,6 @@ if(NOT TARGET flatccrt)
   )
 else()
   message(STATUS "Looking for flatcc --found")
-endif()
-
-message(STATUS "Looking for etdump")
-if(NOT TARGET etdump)
-  message(STATUS "Looking for etdump -- not found, adding")
-  include_directories("${EXECUTORCH_PATH}/third-party/flatcc/include")
-  add_subdirectory(
-    "${EXECUTORCH_PATH}/devtools" "${CMAKE_CURRENT_BINARY_DIR}/devtools"
-    EXCLUDE_FROM_ALL
-  )
-else()
-  message(STATUS "Looking for etdump --found")
 endif()
 
 message(STATUS "Looking for gflags")
@@ -132,8 +122,7 @@ add_executable(
 )
 
 target_compile_options(
-  nxp_executor_runner PRIVATE -DNEUTRON_CMODEL -DEXECUTORCH_BUILD_DEVTOOLS=ON
-                              -DEXECUTORCH_ENABLE_EVENT_TRACER=ON
+  nxp_executor_runner PRIVATE -DNEUTRON_CMODEL -DET_EVENT_TRACER_ENABLED
 )
 
 target_link_libraries(
