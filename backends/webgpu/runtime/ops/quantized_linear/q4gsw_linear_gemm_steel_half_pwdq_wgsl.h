@@ -13,8 +13,9 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: dd771b9ab096410f3ad0d9259bef7816e41330a434325ea28baa5abbfb2841d2
-inline constexpr const char* kQ4gswLinearGemmSteelWGSL = R"(
+// wgsl-sha256: 1f916bcd30dbbbcc7eca37e795ecc26e3c72e645ccd2c361fa0ac4e66f1a174a
+inline constexpr const char* kQ4gswLinearGemmSteelHalfPwdqWGSL = R"(
+enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_input: array<f32>;
 @group(0) @binding(2) var<storage, read> t_weight: array<u32>;
@@ -47,8 +48,8 @@ struct Params {
 //     -- LOSSY, perplexity-gated, opt-in via a runtime spec. ACC=float is f32
 //     accumulate -- BIT-EXACT to the per-nibble half kernel.
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
-var<workgroup> As: array<f32, 1024>;   // BM*BK
-var<workgroup> Bs: array<f32, 1024>;   // BK*BN
+var<workgroup> As: array<f16, 1024>;   // BM*BK
+var<workgroup> Bs: array<f16, 1024>;   // BK*BN
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -65,9 +66,6 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
   // A staging coords: 256 threads load 64x16 = 1024 f32 -> 4 rows each (4 contiguous K).
   let ar = tid / 4u;          // 0..63 (row in tile)
   let ac = (tid % 4u) * 4u;   // 0,4,8,12 (K offset, 4 contiguous)
-  // B staging coords: 256 threads load 16x64 = 1024 dequant weights -> 4 cols each.
-  let br = tid / 16u;         // 0..15 (K within BK)
-  let bc = (tid % 16u) * 4u;  // 0,4,..60 (N offset, 4 contiguous)
 
   var k0: u32 = 0u;
   loop {
@@ -76,38 +74,45 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let arow = row0 + ar;
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
-      As[ar * BK + ac + 0u] = f32(t_input[base]);
-      As[ar * BK + ac + 1u] = f32(t_input[base + 1u]);
-      As[ar * BK + ac + 2u] = f32(t_input[base + 2u]);
-      As[ar * BK + ac + 3u] = f32(t_input[base + 3u]);
+      As[ar * BK + ac + 0u] = f16(t_input[base]);
+      As[ar * BK + ac + 1u] = f16(t_input[base + 1u]);
+      As[ar * BK + ac + 2u] = f16(t_input[base + 2u]);
+      As[ar * BK + ac + 3u] = f16(t_input[base + 3u]);
     } else {
-      As[ar * BK + ac + 0u] = 0.0; As[ar * BK + ac + 1u] = 0.0;
-      As[ar * BK + ac + 2u] = 0.0; As[ar * BK + ac + 3u] = 0.0;
+      As[ar * BK + ac + 0u] = 0.0h; As[ar * BK + ac + 1u] = 0.0h;
+      As[ar * BK + ac + 2u] = 0.0h; As[ar * BK + ac + 3u] = 0.0h;
     }
-    // stage DEQUANTIZED weights into Bs[k][n]: 4 contiguous N per thread.
-    let kk = k0 + br;               // K index for this shmem row
-    let scale_row = (kk / params.group_size) * params.padded_N;
-    for (var j: u32 = 0u; j < 4u; j = j + 1u) {
-      let n = col0 + bc + j;
-      var dqv: f32 = 0.0;
+    // Packed-word dequant: threads [0,BN) each stage one full BK-column of Bs.
+    if (tid < BN) {
+      let c = tid;                 // Bs column within this tile
+      let n = col0 + c;            // global output column
       if (n < params.N) {
-        let byte_idx = n * params.K_packed + (kk >> 1u);
-        let word = t_weight[byte_idx >> 2u];
-        let b = (word >> ((byte_idx & 3u) * 8u)) & 0xFFu;
-        var nib: u32;
-        if ((kk & 1u) == 0u) { nib = b & 0x0Fu; } else { nib = (b >> 4u) & 0x0Fu; }
-        dqv = f32(i32(nib) - 8) * t_scales[scale_row + n];
+        // Scale is constant across the BK tile (group_size % BK == 0 for all real
+        // group sizes; K%BK==0 on the steel route), so hoist it to one read.
+        let scale_row = (k0 / params.group_size) * params.padded_N;
+        let scale = f16(t_scales[scale_row + n]);
+        // Column n's 16-nibble K-slice for this tile = two consecutive words.
+        // K_packed multiple of 8 => base_word stays inside column n's own region.
+        let base_word = n * (params.K_packed >> 2u) + (k0 >> 3u);
+        let w0 = t_weight[base_word];
+        let w1 = t_weight[base_word + 1u];
+        for (var br: u32 = 0u; br < BK; br = br + 1u) {
+          let word = select(w1, w0, br < 8u);        // word0 holds K-slice [0,8)
+          let nib = (word >> ((br & 7u) * 4u)) & 0x0Fu;
+          Bs[br * BN + c] = f16(i32(nib) - 8) * scale;
+        }
+      } else {
+        for (var br: u32 = 0u; br < BK; br = br + 1u) { Bs[br * BN + c] = 0.0h; }
       }
-      Bs[br * BN + bc + j] = dqv;
     }
     workgroupBarrier();
     for (var k: u32 = 0u; k < BK; k = k + 1u) {
-      var a: array<f32, 4>;
-      var bvec: array<f32, 4>;
+      var a: array<f16, 4>;
+      var bvec: array<f16, 4>;
       for (var m: u32 = 0u; m < 4u; m = m + 1u) { a[m] = As[(lid.y * 4u + m) * BK + k]; }
       for (var n: u32 = 0u; n < 4u; n = n + 1u) { bvec[n] = Bs[k * BN + lid.x * 4u + n]; }
       for (var m: u32 = 0u; m < 4u; m = m + 1u) {
-        for (var n: u32 = 0u; n < 4u; n = n + 1u) { acc[m][n] = acc[m][n] + a[m] * bvec[n]; }
+        for (var n: u32 = 0u; n < 4u; n = n + 1u) { acc[m][n] = acc[m][n] + f32(a[m] * bvec[n]); }
       }
     }
     workgroupBarrier();
@@ -127,8 +132,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 }
 )";
 
-inline constexpr uint32_t kQ4gswLinearGemmSteelWorkgroupSizeX = 16;
-inline constexpr uint32_t kQ4gswLinearGemmSteelWorkgroupSizeY = 16;
-inline constexpr uint32_t kQ4gswLinearGemmSteelWorkgroupSizeZ = 1;
+inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqWorkgroupSizeX = 16;
+inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqWorkgroupSizeY = 16;
+inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
