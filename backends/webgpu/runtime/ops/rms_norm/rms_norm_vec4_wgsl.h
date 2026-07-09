@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from rms_norm_vec4.wgsl - DO NOT EDIT.
+// @generated from rms_norm.wgsl - DO NOT EDIT.
 // wgsl-sha256: 4c0ba56708bf125a7ec6ea3c51d1288e05ac00a8e2cfa10e38e9a208e230b8df
 inline constexpr const char* kRmsNormVec4WGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;

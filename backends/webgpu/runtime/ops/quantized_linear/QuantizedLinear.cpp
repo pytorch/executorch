@@ -11,7 +11,13 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
+#ifdef WGPU_BACKEND_STEEL_F16
+#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
+#endif
 
 #include <webgpu/webgpu.h>
 
@@ -52,6 +58,62 @@ constexpr int64_t kQ4gswShmemTileN = 32;
 constexpr uint32_t kQ4gswShmemMinDim = 4096u;
 constexpr uint32_t kQ4gswShmemNMinDim = 2048u;
 
+// steel GEMM: 64x64 tile, 256 threads (16x16), fixed wg (no override).
+constexpr uint32_t kQ4gswSteelTile = 64u;
+constexpr uint32_t kQ4gswSteelBK = 16u;
+constexpr uint32_t kQ4gswSteelInvocations = 256u;
+
+// Max workgroups per 1D dispatch dimension: the device limit, or 65535 when the
+// query fails / reports 0.
+uint32_t max_workgroups_per_dim(WGPUDevice device) {
+  WGPULimits limits = {};
+  return (wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+          limits.maxComputeWorkgroupsPerDimension > 0)
+      ? limits.maxComputeWorkgroupsPerDimension
+      : 65535u;
+}
+
+// One workgroup per (tile_m x tile_n) tile, no grid-stride: throw when the tile
+// count would exceed the 1D dispatch limit. Shared by the steel + shmem GEMM
+// routes; `kind` names the route in the error message.
+uint32_t tiled_wg_count(
+    WGPUDevice device,
+    uint32_t m,
+    uint32_t n,
+    int64_t tile_m,
+    int64_t tile_n,
+    const char* op_name,
+    const char* kind) {
+  const int64_t total_wgs =
+      utils::div_up<int64_t>(m, tile_m) * utils::div_up<int64_t>(n, tile_n);
+  if (total_wgs > static_cast<int64_t>(max_workgroups_per_dim(device))) {
+    throw std::runtime_error(
+        std::string("WebGPU ") + op_name + ": " + kind +
+        " tile count exceeds the 1D dispatch limit");
+  }
+  return static_cast<uint32_t>(total_wgs);
+}
+
+// steel needs 256-thread workgroups; fail-closed (query ok AND >=256).
+bool steel_supported(WGPUDevice device) {
+  WGPULimits limits = {};
+  return wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeInvocationsPerWorkgroup >= kQ4gswSteelInvocations;
+}
+
+// Not grid-strided: 0 (fall back) when K%BK != 0 or over the 1D dispatch limit.
+uint32_t
+steel_workgroup_count(WGPUDevice device, uint32_t m, uint32_t n, uint32_t K) {
+  if (K % kQ4gswSteelBK != 0u) {
+    return 0u;
+  }
+  const uint64_t total =
+      static_cast<uint64_t>((m + kQ4gswSteelTile - 1u) / kQ4gswSteelTile) *
+      static_cast<uint64_t>((n + kQ4gswSteelTile - 1u) / kQ4gswSteelTile);
+  const uint32_t max_count = max_workgroups_per_dim(device);
+  return (total == 0u || total > max_count) ? 0u : static_cast<uint32_t>(total);
+}
+
 // Workgroup count for a linear_q4gsw dispatch (bicol GEMV / shmem GEMM / tiled
 // GEMM), with the range/limit guards shared by the build-time path and the
 // resize hook. use_gemv/use_shmem_gemm are the build-time routing decision (the
@@ -59,6 +121,7 @@ constexpr uint32_t kQ4gswShmemNMinDim = 2048u;
 uint32_t compute_q4gsw_workgroup_count(
     WGPUDevice device,
     bool use_gemv,
+    bool use_steel,
     bool use_shmem_gemm,
     uint32_t m,
     uint32_t n,
@@ -80,22 +143,24 @@ uint32_t compute_q4gsw_workgroup_count(
     }
     return wgc;
   }
+  if (use_steel) {
+    // steel: one workgroup per 64x64 tile. Over-limit THROWS here -- unlike the
+    // build-time steel_workgroup_count, which returns 0 so the caller falls
+    // back to shmem/tiled. The routed kernel is baked into the pipeline at
+    // build, so the resize path cannot switch kernels for a larger live M.
+    return tiled_wg_count(
+        device, m, n, kQ4gswSteelTile, kQ4gswSteelTile, op_name, "steel GEMM");
+  }
   if (use_shmem_gemm) {
-    // shmem GEMM: one workgroup per tile, no grid-stride -> throw over limit.
-    const int64_t total_wgs = utils::div_up<int64_t>(m, kQ4gswShmemTileM) *
-        utils::div_up<int64_t>(n, kQ4gswShmemTileN);
-    WGPULimits limits = {};
-    const uint32_t max_wgs =
-        wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
-            limits.maxComputeWorkgroupsPerDimension > 0
-        ? limits.maxComputeWorkgroupsPerDimension
-        : 65535u;
-    if (total_wgs > static_cast<int64_t>(max_wgs)) {
-      throw std::runtime_error(
-          std::string("WebGPU ") + op_name +
-          ": shmem GEMM tile count exceeds the 1D dispatch limit");
-    }
-    return static_cast<uint32_t>(total_wgs);
+    // shmem GEMM: one workgroup per tile.
+    return tiled_wg_count(
+        device,
+        m,
+        n,
+        kQ4gswShmemTileM,
+        kQ4gswShmemTileN,
+        op_name,
+        "shmem GEMM");
   }
   const int64_t total_tiles = utils::div_up<int64_t>(m, kQ4gswTileM) *
       utils::div_up<int64_t>(n, kQ4gswTileN);
@@ -186,17 +251,48 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU linear_q4gsw: scales dims too small for K/N");
   }
 
-  // M==1 -> bicol GEMV; M>1 -> shmem GEMM (large K/N) else tiled GEMM.
+  // M==1 -> bicol GEMV; M>1 -> steel GEMM (preferred) else shmem else tiled.
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
-  const bool use_shmem_gemm =
-      !use_gemv && (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
+  // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
+  const bool use_steel = !use_gemv && steel_supported(device) &&
+      steel_workgroup_count(device, M, N, K) > 0u;
+  // shmem GEMM is now a FALLBACK, not dead: steel shadows it whenever eligible,
+  // so shmem only wins when steel is ineligible (K % 16 != 0, or a
+  // <256-invocation device such as SwiftShader) and the shape still hits the
+  // large K/N thresholds; otherwise the register-tiled path handles it.
+  const bool use_shmem_gemm = !use_gemv && !use_steel &&
+      (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
   const char* shader_src = use_gemv ? kQ4gswLinearCoop4BicolWGSL
+      : use_steel                   ? kQ4gswLinearGemmSteelWGSL
       : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
                                     : kQ4gswLinearWGSL;
+#ifdef WGPU_BACKEND_STEEL_F16
+  // Opt-in f16-multiply steel: only when the device negotiated shader-f16;
+  // else the f32 steel kernel runs (fail-closed). Same bindings and tile.
+  if (use_steel) {
+    const WebGPUContext* ctx = get_default_webgpu_context();
+    if (ctx != nullptr && ctx->shader_f16_supported) {
+      // Packed-word dequant: bit-exact to the steel `half` kernel but loads
+      // each u32 weight word once + hoists the per-column scale (half re-reads
+      // them ~8x/~16x). Needs group_size % BK == 0 so the hoisted scale is
+      // constant across the BK tile; else the per-nibble `half` kernel.
+      shader_src = (gs % kQ4gswSteelBK == 0u)
+          ? kQ4gswLinearGemmSteelHalfPwdqWGSL
+          : kQ4gswLinearGemmSteelHalfWGSL;
+    }
+  }
+#endif
   const uint32_t workgroup_count = compute_q4gsw_workgroup_count(
-      device, use_gemv, use_shmem_gemm, M, N, wg_size, "linear_q4gsw");
+      device,
+      use_gemv,
+      use_steel,
+      use_shmem_gemm,
+      M,
+      N,
+      wg_size,
+      "linear_q4gsw");
 
   // Optional bias: real buffer if present, else a dummy for the fixed layout.
   uint32_t has_bias = 0;
@@ -276,8 +372,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  // Only the tiled GEMM has a wg_size override; GEMV + shmem are fixed 64.
-  const bool fixed_wg = use_gemv || use_shmem_gemm;
+  // Only tiled GEMM overrides wg_size; GEMV/shmem (64) + steel (256) are fixed.
+  const bool fixed_wg = use_gemv || use_steel || use_shmem_gemm;
   pipeline_desc.compute.constantCount = fixed_wg ? 0u : 1u;
   pipeline_desc.compute.constants = fixed_wg ? nullptr : &wg_size_constant;
   WGPUComputePipeline pipeline =
@@ -328,6 +424,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        has_bias,
        wg_size,
        use_gemv,
+       use_steel,
        use_shmem_gemm,
        dispatch_idx,
        uniform_buffer](WebGPUGraph& g) {
@@ -356,6 +453,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         const uint32_t wgc = compute_q4gsw_workgroup_count(
             g.device(),
             use_gemv,
+            use_steel,
             use_shmem_gemm,
             m,
             N,
