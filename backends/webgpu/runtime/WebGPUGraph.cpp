@@ -90,6 +90,53 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   return buffer;
 }
 
+WGPUBuffer WebGPUGraph::acquire_scratch(size_t nbytes) {
+  nbytes = nbytes > 0 ? nbytes : 4;
+  // A/B bypass: dedicated per-call buffer (old behavior, held to teardown).
+  if (std::getenv("WEBGPU_NO_SCRATCH_POOL") != nullptr) {
+    return create_scratch_buffer(nbytes);
+  }
+  // Best-fit reuse: smallest free slot with size in [nbytes, 2*nbytes] -- the
+  // 2x cap stops a large Cmax-sized buffer from backing a tiny request. Never
+  // reuse an in_use slot (co-live safety).
+  ScratchSlot* best = nullptr;
+  for (auto& s : scratch_pool_) {
+    if (!s.in_use && s.size >= nbytes && s.size <= 2 * nbytes) {
+      if (best == nullptr || s.size < best->size) {
+        best = &s;
+      }
+    }
+  }
+  if (best != nullptr) {
+    best->in_use = true;
+    return best->buffer;
+  }
+  // None reusable -> create a new slot (freed in the dtor, like
+  // scratch_buffers_).
+  WGPUBufferDescriptor buf_desc = {};
+  buf_desc.size = nbytes;
+  buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+      WGPUBufferUsage_CopySrc;
+  buf_desc.mappedAtCreation = false;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+  scratch_pool_.push_back({buffer, nbytes, true});
+  return buffer;
+}
+
+void WebGPUGraph::release_scratch(WGPUBuffer buffer) {
+  if (!buffer) {
+    return;
+  }
+  for (auto& s : scratch_pool_) {
+    if (s.buffer == buffer) {
+      s.in_use = false;
+      return;
+    }
+  }
+  // Not a pooled buffer (WEBGPU_NO_SCRATCH_POOL path) -> no-op; the dtor frees
+  // it via scratch_buffers_.
+}
+
 WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
   WGPUBufferDescriptor desc = {};
   desc.size = size;
@@ -265,6 +312,11 @@ WebGPUGraph::~WebGPUGraph() {
   for (auto& buf : scratch_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& s : scratch_pool_) {
+    if (s.buffer) {
+      wgpuBufferRelease(s.buffer);
     }
   }
   for (auto& buf : owned_uniform_buffers_) {

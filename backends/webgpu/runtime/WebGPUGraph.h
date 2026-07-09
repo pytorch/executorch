@@ -267,6 +267,37 @@ class WebGPUGraph {
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
 
+  // Reusable scratch pool for SINGLE-OP-LIFETIME fused-op scratch (SDPA
+  // attn_weights/softmax, FlashDecoding partials). acquire_scratch() reuses a
+  // free slot (best-fit, size in [n,2n]) or creates one; the caller RELEASES it
+  // at op-lowering scope exit (use ScopedScratch), so N layers' scratch reuses
+  // a small constant of buffers instead of N x held to graph teardown.
+  // Correctness: WebGPU/Dawn auto-inserts RAW hazard barriers between
+  // dispatches on a shared storage buffer regardless of pass structure -- the
+  // SAME guarantee mem_obj_id aliasing already relies on -- so reuse is
+  // bit-identical. Env WEBGPU_NO_SCRATCH_POOL falls back to a dedicated
+  // per-call buffer (A/B). Never hand a still-in_use slot to a co-live
+  // requester.
+  WGPUBuffer acquire_scratch(size_t nbytes);
+  void release_scratch(WGPUBuffer buffer);
+  // RAII: releases an acquired scratch slot when the op-lowering scope exits
+  // (leak-safe vs early returns).
+  struct ScopedScratch {
+    WebGPUGraph* g = nullptr;
+    WGPUBuffer buf = nullptr;
+    ScopedScratch(WebGPUGraph* graph, WGPUBuffer b) : g(graph), buf(b) {}
+    ~ScopedScratch() {
+      if (g && buf) {
+        g->release_scratch(buf);
+      }
+    }
+    ScopedScratch(const ScopedScratch&) = delete;
+    ScopedScratch& operator=(const ScopedScratch&) = delete;
+    operator WGPUBuffer() const {
+      return buf;
+    }
+  };
+
   // Create a mapped-at-creation uniform buffer from `size` bytes and track it
   // in the memory stats. Shared helper for ops needing a uniform Params buffer.
   WGPUBuffer make_uniform_buffer(const void* data, size_t size);
@@ -377,6 +408,16 @@ class WebGPUGraph {
 
   // Long-lived scratch storage buffers for fused ops (e.g. SDPA temporaries).
   std::vector<WGPUBuffer> scratch_buffers_;
+
+  // Reusable scratch pool: single-op-lifetime buffers recycled across ops
+  // (acquire_scratch/release_scratch). Each slot is freed in the dtor. See
+  // acquire_scratch() for the reuse policy.
+  struct ScratchSlot {
+    WGPUBuffer buffer = nullptr;
+    size_t size = 0;
+    bool in_use = false;
+  };
+  std::vector<ScratchSlot> scratch_pool_;
 
   // Uniform buffers owned for the graph's lifetime; released in the dtor.
   std::vector<WGPUBuffer> owned_uniform_buffers_;

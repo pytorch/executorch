@@ -188,8 +188,10 @@ void sdpa_fd_decode_dispatch(
       static_cast<uint64_t>(kSdpaFdMaxSplits) * static_cast<uint64_t>(D);
   const uint64_t pml_floats = static_cast<uint64_t>(Hq) *
       static_cast<uint64_t>(kSdpaFdMaxSplits) * 2ull;
-  WGPUBuffer part_o = graph.create_scratch_buffer(po_floats * sizeof(float));
-  WGPUBuffer part_ml = graph.create_scratch_buffer(pml_floats * sizeof(float));
+  WGPUBuffer part_o = graph.acquire_scratch(po_floats * sizeof(float));
+  WebGPUGraph::ScopedScratch part_o_guard(&graph, part_o);
+  WGPUBuffer part_ml = graph.acquire_scratch(pml_floats * sizeof(float));
+  WebGPUGraph::ScopedScratch part_ml_guard(&graph, part_ml);
 
   // Pass 1: split (Hq*num_splits WGs) -> writes part_o, part_ml.
   FdSplitParams sp = {};
