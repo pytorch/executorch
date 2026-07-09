@@ -105,7 +105,8 @@ class WebGPUGraph {
       const void* flatbuffer_data,
       const uint8_t* constant_data,
       const executorch::runtime::NamedDataMap* named_data_map = nullptr,
-      bool f16_kv_cache = false);
+      bool f16_kv_cache = false,
+      bool f16_accumulate_gemm = false);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
@@ -350,9 +351,16 @@ class WebGPUGraph {
     return kv_f16_;
   }
 
+  // True when the q4gsw steel prefill GEMM uses the lossy f16-accumulate kernel
+  // (runtime opt-in; perplexity-gated, not bit-exact).
+  bool f16_accumulate_gemm() const {
+    return f16_accumulate_gemm_;
+  }
+
  private:
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
+  bool f16_accumulate_gemm_ = false;
 
  private:
   WGPUInstance instance_ = nullptr;
