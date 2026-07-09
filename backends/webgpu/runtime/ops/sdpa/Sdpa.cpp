@@ -481,8 +481,11 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   // QK/softmax scratch — allocated only on the non-FD path (Hq*S*Cmax prefill).
-  WGPUBuffer attn_weights = graph.create_scratch_buffer(aw_bytes);
-  WGPUBuffer attn_weights_softmax = graph.create_scratch_buffer(aw_bytes);
+  WGPUBuffer attn_weights = graph.acquire_scratch(aw_bytes);
+  WebGPUGraph::ScopedScratch attn_weights_guard(&graph, attn_weights);
+  WGPUBuffer attn_weights_softmax = graph.acquire_scratch(aw_bytes);
+  WebGPUGraph::ScopedScratch attn_weights_softmax_guard(
+      &graph, attn_weights_softmax);
 
   // --- Dispatch 3: QK -> attn_weights. One thread per TM x TN tile.
   {
