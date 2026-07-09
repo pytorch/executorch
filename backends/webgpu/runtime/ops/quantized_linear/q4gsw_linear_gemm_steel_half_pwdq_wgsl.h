@@ -12,11 +12,10 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from q4gsw_linear_gemm_steel_half_pwdq.wgsl - DO NOT EDIT.
-// wgsl-sha256: 9ba15b2fe5dd05fe19d94725f83b3efeed3ebac521fafc217d823e2e9a1c6f8e
+// @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
+// wgsl-sha256: 1f916bcd30dbbbcc7eca37e795ecc26e3c72e645ccd2c361fa0ac4e66f1a174a
 inline constexpr const char* kQ4gswLinearGemmSteelHalfPwdqWGSL = R"(
 enable f16;
-
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_input: array<f32>;
 @group(0) @binding(2) var<storage, read> t_weight: array<u32>;
@@ -35,20 +34,22 @@ struct Params {
 }
 @group(0) @binding(5) var<uniform> params: Params;
 
-// Packed-word-dequant f16 "steel" GEMM (the `half` variant of
-// q4gsw_linear_gemm_steel). Loads each u32 weight word ONCE, unpacks all 16
-// nibbles of one BN column, and hoists the per-column scale to one read (the
-// per-nibble steel `half` re-reads each ~8x/~16x). 64x64 tile / 256-thread /
-// BK=16 geometry. Two ACC variants from this one template:
-//   ACC=float ("pwdq"): f32 accumulate -- BIT-EXACT to the steel `half` kernel.
-//   ACC=half  ("pwdqf16acc"): f16 accumulate with fma(), cast to f32 in the
-//     epilogue -- LOSSY, perplexity-gated, opt-in via a runtime spec.
-// Requires K%BK==0 (steel route guarantees it, so K_packed=K/2 is a multiple of 8
-// and every column is u32-aligned) and group_size%BK==0 (hoisted scale constant
-// across the BK tile).
+// "steel" prefill GEMM (M>1): 64x64 tile, 256 threads; K%16==0 host-guarded.
+// The "steel" name + register-tiled dequant-to-shared GEMM structure are
+// inspired by MLX's steel GEMM kernels (github.com/ml-explore/mlx,
+// mlx/backend/metal/kernels/steel). One template, four variants:
+//   DTYPE=float           f32 storage/multiply, per-nibble weight staging.
+//   DTYPE=half            f16 storage/multiply, per-nibble weight staging.
+//   PWDQ (half only)      packed-word dequant: load each u32 weight word ONCE,
+//     unpack all 16 nibbles of a column + hoist the per-column scale to one read
+//     (the per-nibble path re-reads each word ~8x). Requires K%BK==0 (steel
+//     route guarantees it) and group_size%BK==0 (hoisted scale across the tile).
+//   ACC=half (PWDQ only)  f16 accumulate with fma(), cast to f32 in the epilogue
+//     -- LOSSY, perplexity-gated, opt-in via a runtime spec. ACC=float is f32
+//     accumulate -- BIT-EXACT to the per-nibble half kernel.
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
-var<workgroup> As: array<f16, 1024>;   // BM*BK, staged as f16 (multiply operand only)
-var<workgroup> Bs: array<f16, 1024>;   // BK*BN, dequantized straight to f16
+var<workgroup> As: array<f16, 1024>;   // BM*BK
+var<workgroup> Bs: array<f16, 1024>;   // BK*BN
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -62,12 +63,14 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
   for (var m: u32 = 0u; m < 4u; m = m + 1u) {
     for (var n: u32 = 0u; n < 4u; n = n + 1u) { acc[m][n] = 0.0; }
   }
-  let ar = tid / 4u;
-  let ac = (tid % 4u) * 4u;
+  // A staging coords: 256 threads load 64x16 = 1024 f32 -> 4 rows each (4 contiguous K).
+  let ar = tid / 4u;          // 0..63 (row in tile)
+  let ac = (tid % 4u) * 4u;   // 0,4,8,12 (K offset, 4 contiguous)
 
   var k0: u32 = 0u;
   loop {
     if (k0 >= params.K) { break; }
+    // stage activations (edge-masked on M; K is a multiple of BK for our shapes)
     let arow = row0 + ar;
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
