@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
-from executorch.backends.qualcomm.utils.check_qnn_version import (
+from executorch.backends.qualcomm.utils.utils import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
@@ -90,6 +90,7 @@ def process_model_args(
         config: LLMModelConfig object to be used.
         mode: Mode of operation (PREFILL, DECODE, or CALIBRATE).
     """
+    # TODO: support batch inputs if necessary
     if mode == Mode.DECODE:
         ar_len = (
             # To get better performance, we round up to the nearest power of 2.
@@ -106,8 +107,8 @@ def process_model_args(
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
-    # TODO: support batch inputs for runtime mode if necessary
-    model_args.max_batch_size = control_args.batch_size if mode == Mode.CALIBRATE else 1
+    # TODO: support multi_batch for CALIBRATION MODE
+    model_args.max_batch_size = 1
     model_args.max_seq_len = control_args.max_seq_len
     model_args.max_context_len = control_args.max_context_len
     model_args.use_kv_cache = (

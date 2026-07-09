@@ -316,8 +316,8 @@ int main(int argc, char** argv) {
     auto duration = duration_cast<microseconds>(end_exec_time - start_exec_time);
     exec_times.push_back(duration.count());
     if (FLAGS_profile) {
-      const float milliseconds = static_cast<float>(duration.count()) / 1000.f;
-      ET_LOG(Info, "[Run %d] Inference time: %.3f milliseconds", i, milliseconds);
+      const float miliseconds = static_cast<float>(duration.count()) / 1000.f;
+      ET_LOG(Info, "[Run %d] Inference time: %.3f miliseconds", i, miliseconds);
     }
     ET_CHECK_MSG(
         status == Error::Ok,
@@ -331,7 +331,7 @@ int main(int argc, char** argv) {
       itr++;
 
     const float avg_time = (std::reduce(itr, exec_times.end()) / static_cast<float>(FLAGS_num_runs)) / 1000.f;
-    std::cout << "Average inference time: " << std::setprecision(2) << std::fixed << avg_time << " milliseconds\n";
+    std::cout << "Average inference time: " << std::setprecision(2) << std::fixed << avg_time << " miliseconds\n";
   }
   ET_LOG(Info, "Model executed successfully.");
 

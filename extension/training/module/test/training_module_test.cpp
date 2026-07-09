@@ -121,7 +121,7 @@ TEST_F(TrainingModuleTest, NonTrainingModuleTest) {
   ASSERT_EQ(res.error(), Error::InvalidArgument);
 }
 
-TEST_F(TrainingModuleTest, SeparateDataTest) {
+TEST_F(TrainingModuleTest, SeperateDataTest) {
   // Load data map.
   // The eager linear model is defined at:
   // //executorch/test/models/linear_model.py
