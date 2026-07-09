@@ -95,11 +95,13 @@ class WgslCodegenTest(unittest.TestCase):
         wgsls = g.discover()
         self.assertGreater(len(wgsls), 0, "no .wgsl shaders discovered")
         for wgsl in wgsls:
-            want = g.render_header(wgsl, wgsl.read_text())
-            got = wgsl.with_name(wgsl.stem + "_wgsl.h").read_text()
-            self.assertEqual(
-                got, want, f"{wgsl.stem}_wgsl.h stale; run scripts/gen_wgsl_headers.py"
-            )
+            # headers_for_shader handles both verbatim shaders and templates
+            # (a template emits one header per expanded variant).
+            for header, want in g.headers_for_shader(wgsl):
+                got = header.read_text()
+                self.assertEqual(
+                    got, want, f"{header.name} stale; run scripts/gen_wgsl_headers.py"
+                )
 
     def test_parse_workgroup_allows_space(self) -> None:
         # @workgroup_size (64) — the spec-legal spaced form must still parse.
