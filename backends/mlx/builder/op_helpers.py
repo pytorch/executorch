@@ -559,13 +559,27 @@ def to_mlx_qparams(
         # contributes `bits` LSB-first bits to a continuous stream that is
         # chunked into uint32 words (also LSB-first), straddling word
         # boundaries -> (rows, cols*bits//32) uint32.
-        q = qdata.to(torch.int32) + offset  # 0 .. 2**bits-1
-        bit_ids = torch.arange(bits, dtype=torch.int32)
-        stream = (q.unsqueeze(-1) >> bit_ids) & 1  # (rows, cols, bits) LSB-first
-        stream = stream.reshape(rows, -1, 32)  # (rows, n_words, 32)
-        word_shifts = torch.arange(32, dtype=torch.int64)
-        packed = (stream.to(torch.int64) << word_shifts).sum(-1)  # (rows, n_words)
-        Q = packed.to(torch.int32).contiguous().view(torch.uint32)
+        #
+        # Rather than expand to a per-bit stream (which materializes an
+        # int64 (rows, cols, bits) tensor -> tens of GB for lm_head and OOMs),
+        # scatter each column's value directly into its uint32 word(s). Column
+        # j occupies global bits [j*bits, (j+1)*bits): word j*bits//32 at shift
+        # j*bits%32, plus a carry into the next word when it straddles. For any
+        # bits <= 32 a value straddles at most one boundary, so a single carry
+        # suffices. Within a word the columns' bit-ranges are disjoint, so
+        # index_add_ (sum) is equivalent to OR.
+        n_words = cols * bits // 32
+        q = qdata.to(torch.int64) + offset  # 0 .. 2**bits-1
+        pos = torch.arange(cols, dtype=torch.int64) * bits
+        word = pos // 32
+        shift = pos % 32
+        packed = torch.zeros(rows, n_words, dtype=torch.int64)
+        packed.index_add_(1, word, q << shift)  # low bits (+ overflow)
+        straddle = (shift + bits) > 32
+        if bool(straddle.any()):
+            carry = torch.where(straddle, q >> (32 - shift), torch.zeros_like(q))
+            packed.index_add_(1, (word + 1).clamp(max=n_words - 1), carry)
+        Q = (packed & 0xFFFFFFFF).to(torch.int32).contiguous().view(torch.uint32)
 
     if compute_biases:
         B = -scale * (zero_point.to(scale.dtype) + offset)
