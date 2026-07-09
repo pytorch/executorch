@@ -13,6 +13,9 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_wgsl.h>
+#ifdef WGPU_BACKEND_KV_F16
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_half_wgsl.h>
+#endif
 
 #include <webgpu/webgpu.h>
 
@@ -185,8 +188,10 @@ void sdpa_fd_decode_dispatch(
       static_cast<uint64_t>(kSdpaFdMaxSplits) * static_cast<uint64_t>(D);
   const uint64_t pml_floats = static_cast<uint64_t>(Hq) *
       static_cast<uint64_t>(kSdpaFdMaxSplits) * 2ull;
-  WGPUBuffer part_o = graph.create_scratch_buffer(po_floats * sizeof(float));
-  WGPUBuffer part_ml = graph.create_scratch_buffer(pml_floats * sizeof(float));
+  WGPUBuffer part_o = graph.acquire_scratch(po_floats * sizeof(float));
+  WebGPUGraph::ScopedScratch part_o_guard(&graph, part_o);
+  WGPUBuffer part_ml = graph.acquire_scratch(pml_floats * sizeof(float));
+  WebGPUGraph::ScopedScratch part_ml_guard(&graph, part_ml);
 
   // Pass 1: split (Hq*num_splits WGs) -> writes part_o, part_ml.
   FdSplitParams sp = {};
@@ -218,9 +223,15 @@ void sdpa_fd_decode_dispatch(
       static_cast<uint32_t>(split_threads),
       kSdpaFdSplitWorkgroupSizeX,
       "fd_split");
+  const char* split_shader = kSdpaFdSplitWGSL;
+#ifdef WGPU_BACKEND_KV_F16
+  if (graph.kv_f16()) {
+    split_shader = kSdpaFdSplitHalfWGSL;
+  }
+#endif
   build_dispatch(
       graph,
-      kSdpaFdSplitWGSL,
+      split_shader,
       split_bindings,
       5,
       2,
