@@ -1,9 +1,0 @@
-q4gsw_linear_gemm_steel_half_pwdq:
-  parameter_names_with_default_values:
-    ACC: float
-  generate_variant_forall:
-    ACC:
-      - VALUE: float
-        SUFFIX: ""
-  shader_variants:
-    - NAME: q4gsw_linear_gemm_steel_half_pwdq
