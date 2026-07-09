@@ -9,16 +9,14 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
-#include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
-#ifdef WGPU_BACKEND_KV_F16
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_half_wgsl.h>
-#endif
+#include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
@@ -261,11 +259,9 @@ static WGPUBuffer record_update_cache_dispatch(
   BufferBinding bindings[2] = {
       {cache.buffer, cache.nbytes}, {src.buffer, src.nbytes}};
   const char* uc_src = kUpdateCacheWGSL;
-#ifdef WGPU_BACKEND_KV_F16
   if (graph.kv_f16()) {
     uc_src = kUpdateCacheHalfWGSL;
   }
-#endif
   build_dispatch(
       graph,
       uc_src,
@@ -509,11 +505,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         {q.buffer, q.nbytes},
         {k_cache.buffer, k_cache.nbytes}};
     const char* qk_src = kSdpaComputeAttnWeightsWGSL;
-#ifdef WGPU_BACKEND_KV_F16
     if (graph.kv_f16()) {
       qk_src = kSdpaComputeAttnWeightsHalfWGSL;
     }
-#endif
     build_dispatch(
         graph,
         qk_src,
@@ -568,11 +562,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         {attn_weights_softmax, aw_bytes},
         {v_cache.buffer, v_cache.nbytes}};
     const char* av_src = kSdpaComputeOutWGSL;
-#ifdef WGPU_BACKEND_KV_F16
     if (graph.kv_f16()) {
       av_src = kSdpaComputeOutHalfWGSL;
     }
-#endif
     build_dispatch(
         graph,
         av_src,
