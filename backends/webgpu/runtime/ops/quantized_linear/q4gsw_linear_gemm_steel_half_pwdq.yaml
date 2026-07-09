@@ -5,5 +5,7 @@ q4gsw_linear_gemm_steel_half_pwdq:
     ACC:
       - VALUE: float
         SUFFIX: ""
+      - VALUE: half
+        SUFFIX: f16acc
   shader_variants:
     - NAME: q4gsw_linear_gemm_steel_half_pwdq

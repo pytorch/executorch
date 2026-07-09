@@ -18,6 +18,10 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
 #endif
+#ifdef WGPU_BACKEND_STEEL_F16ACC
+#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_f16acc_wgsl.h>
+#endif
 
 #include <webgpu/webgpu.h>
 
@@ -281,6 +285,20 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       shader_src = (gs % kQ4gswSteelBK == 0u)
           ? kQ4gswLinearGemmSteelHalfPwdqWGSL
           : kQ4gswLinearGemmSteelHalfWGSL;
+    }
+  }
+#endif
+#ifdef WGPU_BACKEND_STEEL_F16ACC
+  // f16-accumulate: pwdq staging with an MLC-style f16 register accumulator.
+  // Lossy (f16 accumulate over K) -> ships on a perplexity bar (Llama-3.2-1B
+  // int4: 13.32 -> 13.37, +0.05), behind its own build option (default off).
+  // Overrides the f32-accumulate steel kernels when the device negotiated
+  // shader-f16 and group_size % BK == 0 (same hoisted-scale requirement as
+  // pwdq).
+  if (use_steel && (gs % kQ4gswSteelBK == 0u)) {
+    const WebGPUContext* ctx = get_default_webgpu_context();
+    if (ctx != nullptr && ctx->shader_f16_supported) {
+      shader_src = kQ4gswLinearGemmSteelHalfPwdqF16accWGSL;
     }
   }
 #endif
