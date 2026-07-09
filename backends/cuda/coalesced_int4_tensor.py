@@ -37,8 +37,8 @@ Layout difference from torchao ``Int4Tensor``:
     scale_step : (N, K/256) fp16 — per-256-super-block scale step; the real
                  per-group scale is ``scale_code * scale_step[:, g // 8]``.
     zero_point : (N, n_groups) uint8 — per-group zero codes
-    zero_step  : (N, K/256) fp16 — per-256-super-block zero step; the real
-                 per-group zero is ``zero_code * zero_step[:, g // 8]``.
+    zero_point_step : (N, K/256) fp16 — per-256-super-block zero step; the real
+                 per-group zero is ``zero_code * zero_point_step[:, g // 8]``.
 
 Bits-per-weight: 4.0 (qdata) + 8/32 (scale codes) + 16/256 (fp16 scale step) +
 8/32 (uint8 zero codes) + 16/256 (fp16 zero step) = 4.625 bpw.
@@ -124,7 +124,7 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         "scale",
         "scale_step",
         "zero_point",
-        "zero_step",
+        "zero_point_step",
     ]
     tensor_attribute_names = ["block_size", "shape"]
     optional_tensor_data_names = ["act_pre_scale"]
@@ -136,7 +136,7 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         scale: torch.Tensor,
         scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        zero_step: torch.Tensor,
+        zero_point_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
         act_pre_scale: Optional[torch.Tensor] = None,
@@ -156,7 +156,7 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         scale: torch.Tensor,
         scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        zero_step: torch.Tensor,
+        zero_point_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
         act_pre_scale: Optional[torch.Tensor] = None,
@@ -167,7 +167,7 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         self.scale = scale
         self.scale_step = scale_step
         self.zero_point = zero_point
-        self.zero_step = zero_step
+        self.zero_point_step = zero_point_step
         self.block_size = block_size
         self.activation_dtype = (
             activation_dtype if activation_dtype is not None else torch.bfloat16
@@ -187,19 +187,21 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         Owns the transpose AND the uint8 re-encoding: torchao stores
         scale/zero_point as (n_groups, N) bf16. The CUDA decode kernel reads the
         (N, n_groups) uint8 scale/zero *codes* plus per-256-super-block
-        (N, K/256) fp16 ``scale_step`` / ``zero_step`` (scale = scale_code *
-        scale_step[:, g//8], zero = zero_code * zero_step[:, g//8]). The
+        (N, K/256) fp16 ``scale_step`` / ``zero_point_step`` (scale = scale_code *
+        scale_step[:, g//8], zero = zero_code * zero_point_step[:, g//8]). The
         transpose + encode here is baked into the serialized weight constant so
         the exported decode graph has no per-step transpose/clone.
         """
         scale_codes, scale_step = _encode_uint8_per_super(t.scale, t.block_size[-1])
-        zero_codes, zero_step = _encode_uint8_per_super(t.zero_point, t.block_size[-1])
+        zero_codes, zero_point_step = _encode_uint8_per_super(
+            t.zero_point, t.block_size[-1]
+        )
         return cls(
             t.qdata,
             scale_codes,
             scale_step,
             zero_codes,
-            zero_step,
+            zero_point_step,
             t.block_size,
             t.shape,
             t.act_pre_scale,
@@ -227,8 +229,10 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         scale = (scale_code * scale_step).repeat_interleave(gs, dim=1)  # (N, K)
 
         zero_code = self.zero_point.to(torch.float32)  # (N, n_groups)
-        zero_step = self.zero_step.float().repeat_interleave(groups_per_super, dim=1)
-        zero = (zero_code * zero_step).repeat_interleave(gs, dim=1)  # (N, K)
+        zero_point_step = self.zero_point_step.float().repeat_interleave(
+            groups_per_super, dim=1
+        )
+        zero = (zero_code * zero_point_step).repeat_interleave(gs, dim=1)  # (N, K)
         return ((q - zero) * scale).to(dtype)
 
 

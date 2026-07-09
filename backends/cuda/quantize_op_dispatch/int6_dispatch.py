@@ -60,12 +60,12 @@ def _meta_int6(self, ql, qh, scale, steps, group_size):
 @impl(_lib, "int6_plain_mm", "CUDA")
 def _cuda_int6(self, ql, qh, scale, steps, group_size):
     # scale is int8 codes in the [N, n_groups] layout; steps is the per-256
-    # super-block [N, K/256] fp16 scale step. _dequant_matmul_int6 reconstructs
+    # super-block [N, K/256] fp16 scale step. _unit_dq_mm_int6 reconstructs
     # scale = code * steps[:, g // (256 // gs)].
-    return _dequant_matmul_int6(self, ql, qh, scale, steps, group_size)
+    return _unit_dq_mm_int6(self, ql, qh, scale, steps, group_size)
 
 
-def _dequant_matmul_int6(x, ql, qh, scale, steps, group_size):
+def _unit_dq_mm_int6(x, ql, qh, scale, steps, group_size):
     """Dequant packed-INT6 weights to input dtype and call F.linear.
 
     ql [N, K/2] / qh [N, K/4] pack symmetric Q6_K values q in [-32, 31].
@@ -120,7 +120,7 @@ def _(func, types, args, kwargs):
     if M <= 4:
         out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, steps, gs)
     else:
-        out = _dequant_matmul_int6(x_2d, ql, qh, scale, steps, gs)
+        out = _unit_dq_mm_int6(x_2d, ql, qh, scale, steps, gs)
 
     out = out.reshape(*orig_shape[:-1], -1)
     if bias is not None:

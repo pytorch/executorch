@@ -35,9 +35,7 @@ from executorch.backends.cuda.dp4a_planar_int6_tensor import (
     pack_int6,
     unpack_int6,
 )
-from executorch.backends.cuda.quantize_op_dispatch.int6_dispatch import (
-    _dequant_matmul_int6,
-)
+from executorch.backends.cuda.quantize_op_dispatch.int6_dispatch import _unit_dq_mm_int6
 
 
 def _require_cuda(tc: unittest.TestCase) -> None:
@@ -90,7 +88,7 @@ def _record_int6_plain_mm():
 
     def _fake(self, ql, qh, scale, steps, group_size):
         calls.append((tuple(self.shape), group_size))
-        return _dequant_matmul_int6(self, ql, qh, scale, steps, group_size)
+        return _unit_dq_mm_int6(self, ql, qh, scale, steps, group_size)
 
     with mock.patch.object(torch.ops.executorch_cuda, "int6_plain_mm", _fake):
         yield calls

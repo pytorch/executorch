@@ -26,7 +26,7 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
     Tensor* scale,
     Tensor* scale_step,
     Tensor* zero,
-    Tensor* zero_step,
+    Tensor* zero_point_step,
     int64_t group_size,
     Tensor** ret0) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -55,9 +55,9 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       "aoti_torch_cuda_int4_plain_mm: zero is null");
 
   ET_CHECK_OR_RETURN_ERROR(
-      zero_step != nullptr,
+      zero_point_step != nullptr,
       InvalidArgument,
-      "aoti_torch_cuda_int4_plain_mm: zero_step is null");
+      "aoti_torch_cuda_int4_plain_mm: zero_point_step is null");
 
   ET_CHECK_OR_RETURN_ERROR(
       ret0 != nullptr,
@@ -115,15 +115,17 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
 
   // Zero step: per-256-super-block fp16, [N, K/256] (same grid as scale_step).
   ET_CHECK_OR_RETURN_ERROR(
-      zero_step->dim() == 2 && zero_step->size(0) == N &&
-          zero_step->size(1) == n_super,
+      zero_point_step->dim() == 2 && zero_point_step->size(0) == N &&
+          zero_point_step->size(1) == n_super,
       InvalidArgument,
-      "aoti_torch_cuda_int4_plain_mm: zero_step must be [N, K/256] fp16. Expected size(0)=N=%lld size(1)=%lld, got dim()=%lld size(0)=%lld size(1)=%lld",
+      "aoti_torch_cuda_int4_plain_mm: zero_point_step must be [N, K/256] fp16. Expected size(0)=N=%lld size(1)=%lld, got dim()=%lld size(0)=%lld size(1)=%lld",
       static_cast<long long>(N),
       static_cast<long long>(n_super),
-      static_cast<long long>(zero_step->dim()),
-      static_cast<long long>(zero_step->dim() == 2 ? zero_step->size(0) : -1),
-      static_cast<long long>(zero_step->dim() == 2 ? zero_step->size(1) : -1));
+      static_cast<long long>(zero_point_step->dim()),
+      static_cast<long long>(
+          zero_point_step->dim() == 2 ? zero_point_step->size(0) : -1),
+      static_cast<long long>(
+          zero_point_step->dim() == 2 ? zero_point_step->size(1) : -1));
 
   int32_t M = self->size(0);
   Tensor* C = nullptr;
@@ -141,7 +143,7 @@ AOTITorchError aoti_torch_cuda_int4_plain_mm(
       &C);
 
   _int4_plain_mm_cuda(
-      *self, *qdata, *scale, *scale_step, *zero, *zero_step, group_size, C);
+      *self, *qdata, *scale, *scale_step, *zero, *zero_point_step, group_size, C);
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
 
   *ret0 = C;

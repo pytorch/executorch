@@ -31,7 +31,6 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.nn.attention import SDPBackend
 
-
 # ---------------------------------------------------------------------------
 # AOTI compile-time CPU clones for mutated buffers
 # ---------------------------------------------------------------------------

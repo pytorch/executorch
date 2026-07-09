@@ -238,10 +238,10 @@ def _record_int4_plain_mm():
     """
     calls = []
 
-    def _fake(self, qdata, scale, scale_step, zero, zero_step, group_size):
+    def _fake(self, qdata, scale, scale_step, zero, zero_point_step, group_size):
         calls.append((tuple(self.shape), group_size))
         return _dequant_matmul(
-            self, qdata, scale, scale_step, zero, zero_step, group_size
+            self, qdata, scale, scale_step, zero, zero_point_step, group_size
         )
 
     with mock.patch.object(torch.ops.executorch_cuda, "int4_plain_mm", _fake):
@@ -326,8 +326,10 @@ class TestDispatchRouting(unittest.TestCase):
         gps = n_groups // n_super
         scale_step_g = c.scale_step.to(torch.bfloat16).repeat_interleave(gps, dim=1)
         dec_scale = c.scale.to(torch.bfloat16) * scale_step_g
-        zero_step_g = c.zero_step.to(torch.bfloat16).repeat_interleave(gps, dim=1)
-        dec_zero = c.zero_point.to(torch.bfloat16) * zero_step_g
+        zero_point_step_g = c.zero_point_step.to(torch.bfloat16).repeat_interleave(
+            gps, dim=1
+        )
+        dec_zero = c.zero_point.to(torch.bfloat16) * zero_point_step_g
         torch.testing.assert_close(
             dec_scale, t.scale.t().contiguous().to(torch.bfloat16), rtol=0.05, atol=0
         )
