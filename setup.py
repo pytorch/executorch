@@ -192,9 +192,9 @@ def _base_dependencies() -> List[str]:
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-        "coremltools==9.0; (platform_system == 'Darwin' or platform_system == 'Linux') and python_version < '3.14'",
+        "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
         # scikit-learn is used to support palettization in the coreml backend.
-        "scikit-learn>=1.7.1",
+        "scikit-learn==1.7.1",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]

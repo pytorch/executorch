@@ -35,8 +35,7 @@ def create_causal_attn_mask(max_batch_size: int, ar_len: int, max_context_len: i
             ],
             dim=-1,
         )
-    # num_heads=1: the mask broadcasts across all heads.
-    mask = mask[None, None, :, :].expand(max_batch_size, 1, ar_len, max_context_len)
+    mask = mask[None, :, :].expand(max_batch_size, ar_len, max_context_len)
     return mask
 
 
@@ -69,8 +68,7 @@ def create_sliding_window_attn_mask(
             ],
             dim=-1,
         )
-    # num_heads=1: the mask broadcasts across all heads.
-    mask = mask[None, None, :, :].expand(max_batch_size, 1, ar_len, max_context_len)
+    mask = mask[None, :, :].expand(max_batch_size, ar_len, max_context_len)
     return mask
 
 
@@ -125,8 +123,8 @@ class BaseAttentionMask(ABC):
     ) -> None:
         """Mask positions beyond each sequence's actual length."""
         actual_lens = torch.tensor([len(seq) for seq in input_ids])
-        pad_rows = torch.arange(max_seq_length) >= actual_lens.unsqueeze(1)
-        self.mask.masked_fill_(pad_rows[:, None, :, None], PADDING_MASK_VALUE)
+        pad_rows = torch.arange(max_seq_length).unsqueeze(0) >= actual_lens.unsqueeze(1)
+        self.mask.masked_fill_(pad_rows.unsqueeze(-1), PADDING_MASK_VALUE)
 
 
 class CausalAttentionMask(BaseAttentionMask):

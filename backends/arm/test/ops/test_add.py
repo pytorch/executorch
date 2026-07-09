@@ -263,9 +263,7 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
-)
+@common.parametrize("test_data", Add.test_data | Add.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](

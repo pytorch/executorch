@@ -25,7 +25,6 @@ AOTITorchError aoti_torch_cuda_int6_plain_mm(
     Tensor* ql,
     Tensor* qh,
     Tensor* scale,
-    Tensor* steps,
     int64_t group_size,
     Tensor** ret0) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -49,11 +48,6 @@ AOTITorchError aoti_torch_cuda_int6_plain_mm(
       "aoti_torch_cuda_int6_plain_mm: scale is null");
 
   ET_CHECK_OR_RETURN_ERROR(
-      steps != nullptr,
-      InvalidArgument,
-      "aoti_torch_cuda_int6_plain_mm: steps is null");
-
-  ET_CHECK_OR_RETURN_ERROR(
       ret0 != nullptr,
       InvalidArgument,
       "aoti_torch_cuda_int6_plain_mm: ret0 is null");
@@ -74,7 +68,7 @@ AOTITorchError aoti_torch_cuda_int6_plain_mm(
       0,
       &C);
 
-  _int6_plain_mm_cuda(*self, *ql, *qh, *scale, *steps, group_size, C);
+  _int6_plain_mm_cuda(*self, *ql, *qh, *scale, group_size, C);
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
 
   *ret0 = C;

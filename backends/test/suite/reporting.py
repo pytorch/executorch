@@ -196,10 +196,10 @@ class TestCaseSummary:
     """ The total runtime of the to_edge_transform_and_lower stage, or none, if the test did not run the quantize stage. """
 
     delegated_op_counts: Counter | None = None
-    """ The number of delegated occurrences of each operator in the graph. """
+    """ The number of delegated occurances of each operator in the graph. """
 
     undelegated_op_counts: Counter | None = None
-    """ The number of undelegated occurrences of each operator in the graph. """
+    """ The number of undelegated occurances of each operator in the graph. """
 
     pte_size_bytes: int | None = None
     """ The size of the PTE file in bytes. """

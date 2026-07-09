@@ -100,9 +100,7 @@ gemm_notrans_(
 }
 
 // std::is_same<scalar_t, at::BFloat16> || std::is_same<scalar_t, at::Half>
-// out_t defaults to scalar_t; pass a wider out_t (e.g. float) to accumulate a
-// reduced-precision matmul into a full-precision output.
-template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
+template <typename scalar_t, typename opmath_t>
 typename std::enable_if<!std::is_same<scalar_t, opmath_t>::value, void>::type
 gemm_notrans_(
     int64_t m,
@@ -114,7 +112,7 @@ gemm_notrans_(
     const scalar_t* b,
     int64_t ldb,
     opmath_t beta,
-    out_t* c,
+    scalar_t* c,
     int64_t ldc) {
   // c += alpha * (a @ b)
   for (size_t i = 0; i < m; ++i) {
@@ -124,31 +122,23 @@ gemm_notrans_(
             static_cast<opmath_t>(b[j * ldb + l]);
       });
       if (beta == opmath_t(0)) {
-        c[j * ldc + i] = static_cast<out_t>(alpha * dot);
+        c[j * ldc + i] = alpha * dot;
       } else {
-        c[j * ldc + i] = static_cast<out_t>(
-            beta * static_cast<opmath_t>(c[j * ldc + i]) + alpha * dot);
+        c[j * ldc + i] = beta * c[j * ldc + i] + alpha * dot;
       }
     }
   }
 }
 
-namespace internal {
-float bf16_dot_with_fp32_arith(
-    const torch::executor::BFloat16* vec1,
-    const torch::executor::BFloat16* vec2,
-    int64_t len);
-} // namespace internal
-
 // clang-format off
-template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
+template <typename scalar_t, typename opmath_t>
 void gemm_transa_(
     int64_t m, int64_t n, int64_t k,
     opmath_t alpha,
     const scalar_t *a, int64_t lda,
     const scalar_t *b, int64_t ldb,
     opmath_t beta,
-    out_t *c, int64_t ldc) {
+    scalar_t *c, int64_t ldc) {
   // c = alpha * (a.T @ b) + beta * c
   const scalar_t *a_ = a;
   for (size_t i = 0; i < m; ++i) {
@@ -159,17 +149,21 @@ void gemm_transa_(
       });
       b_ += ldb;
       if (beta == opmath_t(0)) {
-        c[j*ldc+i] = static_cast<out_t>(alpha*dot);
+        c[j*ldc+i] = alpha*dot;
       } else {
-        c[j*ldc+i] = static_cast<out_t>(beta*static_cast<opmath_t>(c[j*ldc+i])+alpha*dot);
+        c[j*ldc+i] = beta*c[j*ldc+i]+alpha*dot;
       }
     }
     a_ += lda;
   }
 }
 
+namespace internal {
+float bf16_dot_with_fp32_arith(const torch::executor::BFloat16* vec1, const torch::executor::BFloat16* vec2, int64_t len);
+} // namespace internal
+
 template <>
-inline void gemm_transa_<torch::executor::BFloat16, torch::executor::BFloat16, torch::executor::BFloat16>(
+inline void gemm_transa_<torch::executor::BFloat16, torch::executor::BFloat16>(
     int64_t m, int64_t n, int64_t k,
     torch::executor::BFloat16 alpha,
     const torch::executor::BFloat16 *a, int64_t lda,
@@ -209,6 +203,7 @@ inline void gemm_transa_<torch::executor::BFloat16, torch::executor::BFloat16, t
     }
   });
 }
+
 // clang-format on
 
 template <typename scalar_t, typename opmath_t>
@@ -248,7 +243,7 @@ gemm_transb_(
 }
 
 // std::is_same<scalar_t, at::BFloat16> || std::is_same<scalar_t, at::Half>
-template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
+template <typename scalar_t, typename opmath_t>
 typename std::enable_if<!std::is_same<scalar_t, opmath_t>::value, void>::type
 gemm_transb_(
     int64_t m,
@@ -260,7 +255,7 @@ gemm_transb_(
     const scalar_t* b,
     int64_t ldb,
     opmath_t beta,
-    out_t* c,
+    scalar_t* c,
     int64_t ldc) {
   // c += alpha * (a @ b.T)
   for (size_t i = 0; i < m; ++i) {
@@ -270,24 +265,23 @@ gemm_transb_(
             static_cast<opmath_t>(b[l * ldb + j]);
       });
       if (beta == opmath_t(0)) {
-        c[j * ldc + i] = static_cast<out_t>(alpha * dot);
+        c[j * ldc + i] = alpha * dot;
       } else {
-        c[j * ldc + i] = static_cast<out_t>(
-            beta * static_cast<opmath_t>(c[j * ldc + i]) + alpha * dot);
+        c[j * ldc + i] = beta * c[j * ldc + i] + alpha * dot;
       }
     }
   }
 }
 
 // clang-format off
-template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
+template <typename scalar_t, typename opmath_t>
 void gemm_transab_(
     int64_t m, int64_t n, int64_t k,
     opmath_t alpha,
     const scalar_t *a, int64_t lda,
     const scalar_t *b, int64_t ldb,
     opmath_t beta,
-    out_t *c, int64_t ldc) {
+    scalar_t *c, int64_t ldc) {
   // c = beta * c + alpha * (a.T @ b.T)
   for (size_t i = 0; i < m; ++i) {
     for (size_t j = 0; j < n; ++j) {
@@ -297,11 +291,9 @@ void gemm_transab_(
       });
 
       if (beta == opmath_t(0)) {
-        c[j * ldc + i] = static_cast<out_t>(alpha * dot);
+        c[j * ldc + i] = alpha * dot;
       } else {
-        c[j * ldc + i] =
-            static_cast<out_t>(beta * static_cast<opmath_t>(c[j * ldc + i]) +
-                               alpha * dot);
+        c[j * ldc + i] = beta * c[j * ldc + i] + alpha * dot;
       }
     }
   }
