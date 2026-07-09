@@ -277,6 +277,13 @@ const Q4gswConfig kQ4gswConfigs[] = {
     // general-N robustness).
     // M>1: steel GEMM on a >=256-invocation device (K%16==0), else shmem/tiled.
     {"steel", 96, 2048, 256, 1e-4f, 1e-3f, true, false}, // steel-isolating
+    // Same shape as "steel" run under the f16-multiply steel kernel; the f16
+    // rounding floor (~2.3e-4, uniform in K -- not an accumulate bug) needs a
+    // looser abs gate than the strict f32 1e-4. Runs whenever the device
+    // negotiated shader-f16 (else the f32 steel kernel; the looser gate holds).
+    {"steel_f16", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
+    // Partial M and N steel tiles under the f16 kernel (f16 boundary masking).
+    {"steel_f16_edge", 70, 1024, 136, 2.3e-4f, 1e-3f, true, false},
     {"gate_proj_pf", 128, 2048, 8192, 1e-4f, 1e-3f, true, false}, // shmem via N
     {"down_proj_pf", 128, 8192, 2048, 1e-3f, 1e-2f, true, false}, // shmem via K
     {"shmem_edge", 130, 4096, 2056, 1e-4f, 1e-3f, true, false}, // partial tiles
