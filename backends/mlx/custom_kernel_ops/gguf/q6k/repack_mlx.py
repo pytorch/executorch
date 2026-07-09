@@ -58,17 +58,20 @@ def repack_mlx(
     if group_size < _MIN_MLX_GROUP_SIZE:
         return None
 
-    packed, biases = to_mlx_qparams(intx.qdata, intx.scale, intx.zero_point, _BITS)
+    qdata, scale, zero_point = intx.qdata, intx.scale, intx.zero_point
+    del intx  # drop the tensor-subclass wrapper; keep only the fields we need
+    packed, biases = to_mlx_qparams(qdata, scale, zero_point, _BITS)
+    del qdata  # the (N, K) int8 is no longer needed once packed
 
     packed_slot = P.make_or_get_constant(f"{weight_target}_q6k_packed", packed)
-    scales_slot = P.make_or_get_constant(f"{weight_target}_q6k_scales", intx.scale)
+    scales_slot = P.make_or_get_constant(f"{weight_target}_q6k_scales", scale)
     # Q6_K is symmetric (zero-point 0): emit_quantized_biases computes
     # biases = -scale * 2^(bits-1) in the init chain instead of serializing them.
     biases_slot = emit_quantized_biases(
         P,
         f"{weight_target}_q6k",
-        intx.scale,
-        intx.zero_point,
+        scale,
+        zero_point,
         _BITS,
         biases,
         scales_slot,

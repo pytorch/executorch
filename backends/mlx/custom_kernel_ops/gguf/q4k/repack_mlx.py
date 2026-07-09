@@ -39,9 +39,12 @@ def repack_mlx(P: MLXProgramBuilder, weight_node: Node) -> Tuple[Slot, Slot, Slo
         max_group_size=128
     )
     group_size = int(intx.block_size[-1])
-    packed, biases = to_mlx_qparams(intx.qdata, intx.scale, intx.zero_point, _BITS)
+    qdata, scale, zero_point = intx.qdata, intx.scale, intx.zero_point
+    del intx  # drop the tensor-subclass wrapper; keep only the fields we need
+    packed, biases = to_mlx_qparams(qdata, scale, zero_point, _BITS)
+    del qdata  # the (N, K) int8 is no longer needed once packed
 
     packed_slot = P.make_or_get_constant(f"{weight_target}_q4k_packed", packed)
-    scales_slot = P.make_or_get_constant(f"{weight_target}_q4k_scales", intx.scale)
+    scales_slot = P.make_or_get_constant(f"{weight_target}_q4k_scales", scale)
     biases_slot = P.make_or_get_constant(f"{weight_target}_q4k_biases", biases)
     return packed_slot, scales_slot, biases_slot, group_size
