@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,16 +14,22 @@ from torchgen.model import FunctionSchema
 tosa_lib = Library("tosa", "DEF")
 
 
-def register_tosa_dialect_op(op_schema, func) -> Callable:
+def register_tosa_dialect_op(
+    op_schema,
+    fake_func,
+    real_func: Callable | None = None,
+    real_dispatch_key: str = "CompositeExplicitAutograd",
+) -> Callable:
     """Register a TOSA dialect operator with the backend op library.
 
     Args:
         op_schema (str): Operator schema without namespace or overload name.
-        func (Callable): Fake implementation used for registration.
+        fake_func (Callable): Fake implementation used for registration.
+        real_func (Optional[Callable]): Optional eager implementation.
+        real_dispatch_key (str): Dispatch key used for the eager implementation.
 
     Returns:
-        Callable: Backend dialect operator handle exposed via ``exir_ops`` and
-        marked ``not_callable`` for runtime use.
+        Callable: Backend dialect operator handle exposed via ``exir_ops``.
 
     """
     if tosa_lib.ns not in _BACKEND_OP_LIB:
@@ -46,18 +52,10 @@ def register_tosa_dialect_op(op_schema, func) -> Callable:
     overload_name = "default"
     op_qualified_name = f"{tosa_lib.ns}::{opname}"
 
-    register_fake(op_qualified_name, func, lib=tosa_lib)
-
+    register_fake(op_qualified_name, fake_func, lib=tosa_lib)
+    if real_func is not None:
+        tosa_lib.impl(opname, real_func, real_dispatch_key)
     op = getattr(getattr(getattr(exir_ops.backend, tosa_lib.ns), opname), overload_name)
-
-    # For now, since the TOSA operators are only used for lowering and serialization in the backend
-    # the op doesn't need to be callable. This can be changed in the future if needed to support
-    # execution of TOSA ops directly.
-    def not_callable():
-        """Raise when the dialect op handle is invoked at runtime."""
-        raise RuntimeError("TOSA dialect op is not callable")
-
-    op.__equvalent_callable__ = not_callable
 
     return op
 
