@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel_half_pwdq.wgsl - DO NOT EDIT.
-// wgsl-sha256: d4e3ce11f873b8cec80b1a9457915d0e50a334e286f1d75753f9f3b023728ac4
+// wgsl-sha256: 9ba15b2fe5dd05fe19d94725f83b3efeed3ebac521fafc217d823e2e9a1c6f8e
 inline constexpr const char* kQ4gswLinearGemmSteelHalfPwdqWGSL = R"(
 enable f16;
 
@@ -41,8 +41,8 @@ struct Params {
 // per-nibble steel `half` re-reads each ~8x/~16x). 64x64 tile / 256-thread /
 // BK=16 geometry. Two ACC variants from this one template:
 //   ACC=float ("pwdq"): f32 accumulate -- BIT-EXACT to the steel `half` kernel.
-//   ACC=half  ("pwdqf16acc"): f16 accumulate with fma() (MLC-style), cast to f32
-//     in the epilogue -- LOSSY, perplexity-gated, opt-in via STEEL_F16ACC.
+//   ACC=half  ("pwdqf16acc"): f16 accumulate with fma(), cast to f32 in the
+//     epilogue -- LOSSY, perplexity-gated, opt-in via a runtime spec.
 // Requires K%BK==0 (steel route guarantees it, so K_packed=K/2 is a multiple of 8
 // and every column is u32-aligned) and group_size%BK==0 (hoisted scale constant
 // across the BK tile).
