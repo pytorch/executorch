@@ -20,7 +20,6 @@ import torch.nn as nn
 
 from .recipe import QuantConfig, QuantRecipe
 
-
 # ---------------------------------------------------------------------------
 # Per-weight quantization
 
