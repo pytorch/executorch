@@ -78,7 +78,9 @@ class TestBackendAPI(unittest.TestCase):
         expected_res = sin_module(*model_inputs)
         edgeir_m = to_edge(
             export(sin_module, model_inputs, strict=True),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
         )
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -115,7 +117,9 @@ class TestBackendAPI(unittest.TestCase):
             models.ModelWithUnusedArg(),
         ]
 
-        edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
+        edge_compile_config = exir.EdgeCompileConfig(
+            _check_ir_validity=False, _use_edge_ops=True
+        )
 
         for model in module_list:
             model_inputs = model.get_random_inputs()
@@ -166,7 +170,9 @@ class TestBackendAPI(unittest.TestCase):
             models.ModelWithUnusedArg(),
         ]
 
-        edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
+        edge_compile_config = exir.EdgeCompileConfig(
+            _check_ir_validity=False, _use_edge_ops=True
+        )
 
         for model in module_list:
             model_inputs = model.get_random_inputs()

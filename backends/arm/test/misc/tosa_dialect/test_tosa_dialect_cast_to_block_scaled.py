@@ -7,6 +7,7 @@ import pytest
 import torch
 from executorch.backends.arm.ao_ext.mxfp import mxfp_dtype_to_str
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
+from executorch.backends.arm.tosa.dialect.ops import cast_to_block_scaled  # noqa: F401
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,

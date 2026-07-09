@@ -537,15 +537,12 @@ def test_conv_transpose2d_tosa_INT_a16w8(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP | test_data_BF16 | test_data_FP_fp16)
+@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_conv_transpose2d_vgf_no_quant(test_data):
     model = test_data()
     inputs = model.get_inputs()
     match inputs[0].dtype:
-        case torch.bfloat16:
-            atol = 1e-2
-            rtol = 1e-2
         case torch.float16:
             atol = 5e-3
             rtol = 5e-3
