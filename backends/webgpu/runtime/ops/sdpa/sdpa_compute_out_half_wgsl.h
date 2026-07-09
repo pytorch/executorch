@@ -1,8 +1,24 @@
-$if DTYPE == "half":
-  enable f16;
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from sdpa_compute_out.wgsl - DO NOT EDIT.
+// wgsl-sha256: ed9709c966538edf2cbc6be97c284b89a9d921b6a4dbf115c6cbd76af301a1be
+inline constexpr const char* kSdpaComputeOutHalfWGSL = R"(
+enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> t_attn_weights_softmax: array<f32>;
-@group(0) @binding(2) var<storage, read> t_v_cache: array<${buffer_gvec_type(DTYPE, 4)}>;
+@group(0) @binding(2) var<storage, read> t_v_cache: array<vec4<f16>>;
 
 struct Params {
   S: u32,
@@ -40,10 +56,7 @@ fn load_v_d4(c: u32, kvh: u32, d0: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = c * params.Hkv * params.D + kvh * params.D + d0;
-  $if DTYPE == "half":
-    return vec4<f32>(t_v_cache[base / 4u]);
-  $else:
-    return t_v_cache[base / 4u];
+  return vec4<f32>(t_v_cache[base / 4u]);
 }
 
 // Branch-free loaders for the aligned body: caller guarantees c4..c4+3 < context_len.
@@ -57,10 +70,7 @@ fn load_a_vec4_nc(s: u32, h: u32, c4: u32) -> vec4<f32> {
 
 fn load_v_d4_nc(c: u32, kvh: u32, d0: u32) -> vec4<f32> {
   let base = c * params.Hkv * params.D + kvh * params.D + d0;
-  $if DTYPE == "half":
-    return vec4<f32>(t_v_cache[base / 4u]);
-  $else:
-    return t_v_cache[base / 4u];
+  return vec4<f32>(t_v_cache[base / 4u]);
 }
 
 fn store_out_vec4(s: u32, d0: u32, h: u32, val: vec4<f32>) {
@@ -144,3 +154,10 @@ fn main(
     m = m + 1u;
   }
 }
+)";
+
+inline constexpr uint32_t kSdpaComputeOutHalfWorkgroupSizeX = 64;
+inline constexpr uint32_t kSdpaComputeOutHalfWorkgroupSizeY = 1;
+inline constexpr uint32_t kSdpaComputeOutHalfWorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
