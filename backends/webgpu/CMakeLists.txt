@@ -104,17 +104,6 @@ if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
   )
 endif()
 
-# Opt-in f16-multiply steel q4gsw prefill GEMM (QuantizedLinear.cpp); OFF so
-# default builds keep the f32 kernel + strict golden. Runtime-gated on the
-# negotiated shader-f16 feature (fail-closed). Mirrors the profiling gate above.
-option(EXECUTORCH_WEBGPU_STEEL_F16
-       "Enable the f16-multiply steel q4gsw prefill GEMM (needs shader-f16)"
-       OFF
-)
-if(EXECUTORCH_WEBGPU_STEEL_F16)
-  target_compile_definitions(webgpu_backend PRIVATE WGPU_BACKEND_STEEL_F16)
-endif()
-
 # Link with --whole-archive for static registration of backend + ops
 executorch_target_link_options_shared_lib(webgpu_backend)
 
@@ -157,9 +146,6 @@ function(add_webgpu_native_test test_name test_src)
     target_compile_definitions(
       ${test_name} PRIVATE WGPU_BACKEND_ENABLE_PROFILING
     )
-  endif()
-  if(EXECUTORCH_WEBGPU_STEEL_F16)
-    target_compile_definitions(${test_name} PRIVATE WGPU_BACKEND_STEEL_F16)
   endif()
   set_property(TARGET ${test_name} PROPERTY CXX_STANDARD 17)
 endfunction()
