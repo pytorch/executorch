@@ -230,14 +230,14 @@ bool sdpa_within_tol(
     float* ma,
     float* mr) {
   float atol = 1e-4f, rtol = 1e-3f;
-#ifdef WGPU_BACKEND_KV_F16
-  // f16 KV opt-in: looser tol for f16 K/V read precision (shader-f16 device).
+  // f16 KV (runtime opt-in) reads K/V at reduced precision; loosen the tol on a
+  // shader-f16 device to cover that rounding. Harmless for f32 KV (looser
+  // gate).
   const WebGPUContext* kv_ctx = get_default_webgpu_context();
   if (kv_ctx != nullptr && kv_ctx->shader_f16_supported) {
     atol = 2e-3f;
     rtol = 1e-2f;
   }
-#endif
   float max_abs = 0.0f, max_rel = 0.0f;
   bool ok = true;
   for (int i = 0; i < n; i++) {
@@ -286,14 +286,13 @@ const Q4gswConfig kQ4gswConfigs[] = {
     // general-N robustness).
     // M>1: steel GEMM on a >=256-invocation device (K%16==0), else shmem/tiled.
     {"steel", 96, 2048, 256, 1e-4f, 1e-3f, true, false}, // steel-isolating
-#ifdef WGPU_BACKEND_STEEL_F16
     // Same shape as "steel" run under the f16-multiply steel kernel; the f16
     // rounding floor (~2.3e-4, uniform in K -- not an accumulate bug) needs a
-    // looser abs gate than the strict f32 1e-4. Opt-in build only.
+    // looser abs gate than the strict f32 1e-4. Runs whenever the device
+    // negotiated shader-f16 (else the f32 steel kernel; the looser gate holds).
     {"steel_f16", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
     // Partial M and N steel tiles under the f16 kernel (f16 boundary masking).
     {"steel_f16_edge", 70, 1024, 136, 2.3e-4f, 1e-3f, true, false},
-#endif
     {"gate_proj_pf", 128, 2048, 8192, 1e-4f, 1e-3f, true, false}, // shmem via N
     {"down_proj_pf", 128, 8192, 2048, 1e-3f, 1e-2f, true, false}, // shmem via K
     {"shmem_edge", 130, 4096, 2056, 1e-4f, 1e-3f, true, false}, // partial tiles
