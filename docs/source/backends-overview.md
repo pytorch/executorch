@@ -33,7 +33,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [OpenVINO](build-run-openvino)                               | Embedded    | CPU/GPU/NPU   | Intel SoCs                      |
 | [NXP](backends/nxp/nxp-overview.md)                          | Embedded    | NPU           | NXP SoCs                        |
 | [Cadence](backends-cadence)                                  | Embedded    | DSP           | DSP-optimized workloads         |
-| [Samsung Exynos](backends/samsung/samsung-overview.md)       | Android     | CPU/GPU/NPU   | Samsung Devices, Samsung SoCs; High Performance |
+| [Samsung Exynos](backends/samsung/samsung-overview.md)       | Android     | NPU           | Samsung SoCs                    |
 
 **Tip:** For best performance, export a `.pte` file for each backend you plan to support.
 
