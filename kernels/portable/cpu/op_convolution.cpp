@@ -192,6 +192,117 @@ void conv2d_impl(
 }
 
 template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
+void conv3d_impl(
+    const CTYPE* const in_ptr,
+    SizesArrayRef in_sizes,
+    StridesArrayRef in_strides,
+    const CTYPE* const w_ptr,
+    SizesArrayRef w_sizes,
+    StridesArrayRef w_strides,
+    const std::optional<Tensor>& bias,
+    const char* const bias_ptr,
+    LoadFn load_bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    const int64_t groups,
+    CTYPE* const out_ptr,
+    SizesArrayRef out_sizes,
+    StridesArrayRef out_strides,
+    const size_t batch,
+    const size_t group,
+    const size_t out_c) {
+  size_t in_C = in_sizes[1];
+  size_t out_D = out_sizes[2];
+  size_t in_D = in_sizes[2];
+  size_t w_D = w_sizes[2];
+
+  size_t out_H = out_sizes[3];
+  size_t in_H = in_sizes[3];
+  size_t w_H = w_sizes[3];
+
+  size_t out_W = out_sizes[4];
+  size_t in_W = in_sizes[4];
+  size_t w_W = w_sizes[4];
+
+  size_t in_C_per_group = in_C / groups;
+  size_t in_c_start = group * in_C_per_group;
+
+  executorch::aten::SizesType in_coord[kTensorDimensionLimit];
+  in_coord[0] = batch;
+  executorch::aten::SizesType out_coord[kTensorDimensionLimit];
+  out_coord[0] = batch;
+  out_coord[1] = out_c;
+  executorch::aten::SizesType w_coord[kTensorDimensionLimit];
+
+  const int64_t stride_z = val_at(stride, 0);
+  const int64_t padding_z = val_at(padding, 0, /*default_value=*/0);
+  const int64_t dilation_z = val_at(dilation, 0);
+  const int64_t stride_y = val_at(stride, 1);
+  const int64_t padding_y = val_at(padding, 1, /*default_value=*/0);
+  const int64_t dilation_y = val_at(dilation, 1);
+  const int64_t stride_x = val_at(stride, 2);
+  const int64_t padding_x = val_at(padding, 2, /*default_value=*/0);
+  const int64_t dilation_x = val_at(dilation, 2);
+
+  w_coord[0] = out_c;
+  for (const auto out_z : c10::irange(out_D)) {
+    out_coord[2] = out_z;
+    for (const auto out_y : c10::irange(out_H)) {
+      out_coord[3] = out_y;
+      for (const auto out_x : c10::irange(out_W)) {
+        out_coord[4] = out_x;
+
+        CTYPE accum = 0.0f;
+        for (const auto in_c :
+             c10::irange(in_c_start, in_c_start + in_C_per_group)) {
+          in_coord[1] = in_c;
+          w_coord[1] = in_c - in_c_start;
+
+          for (const auto w_z : c10::irange(w_D)) {
+            w_coord[2] = w_z;
+            ssize_t in_z = stride_z * out_z + dilation_z * w_z - padding_z;
+            in_coord[2] = in_z;
+            if (in_z < 0 || in_z >= static_cast<ssize_t>(in_D)) {
+              continue;
+            }
+
+            for (const auto w_y : c10::irange(w_H)) {
+              w_coord[3] = w_y;
+              ssize_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
+              in_coord[3] = in_y;
+              if (in_y < 0 || in_y >= static_cast<ssize_t>(in_H)) {
+                continue;
+              }
+
+              for (const auto w_x : c10::irange(w_W)) {
+                w_coord[4] = w_x;
+                ssize_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
+                in_coord[4] = in_x;
+                if (in_x >= 0 && in_x < static_cast<ssize_t>(in_W)) {
+                  size_t in_idx =
+                      calculate_linear_index(in_coord, in_strides.data(), 5);
+                  size_t w_idx =
+                      calculate_linear_index(w_coord, w_strides.data(), 5);
+                  accum += in_ptr[in_idx] * w_ptr[w_idx];
+                }
+              }
+            }
+          }
+        }
+
+        if (bias_ptr != nullptr) {
+          accum += load_bias(&bias_ptr[out_c * bias.value().element_size()]);
+        }
+        size_t out_idx =
+            calculate_linear_index(out_coord, out_strides.data(), 5);
+        out_ptr[out_idx] = accum;
+      }
+    }
+  }
+}
+
+template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
 void convolution_wrapper(
     const Tensor& in,
     const Tensor& weight,
@@ -294,6 +405,7 @@ void convolution_wrapper(
   size_t out_N = out.size(0);
   size_t out_C = out.size(1);
   size_t out_C_per_group = out_C / groups;
+  const bool is_conv3d = in_sizes.size() == 5;
 
   if (transposed) {
     // For transposed convolution, we need to initialized the output before we
@@ -318,27 +430,50 @@ void convolution_wrapper(
       // Populate all the out channels in the group
       for (const auto out_c :
            c10::irange(out_c_start, out_c_start + out_C_per_group)) {
-        conv2d_impl(
-            in_ptr,
-            in_sizes,
-            {in_strides, 4},
-            w_ptr,
-            weight_sizes,
-            {weight_strides, 4},
-            bias,
-            bias_ptr,
-            load_bias,
-            stride_,
-            padding_,
-            dilation_,
-            groups,
-            out_ptr,
-            out_sizes,
-            {out_strides, 4},
-            batch,
-            group,
-            out_c,
-            transposed);
+        if (is_conv3d) {
+          conv3d_impl(
+              in_ptr,
+              in_sizes,
+              {in_strides, 5},
+              w_ptr,
+              weight_sizes,
+              {weight_strides, 5},
+              bias,
+              bias_ptr,
+              load_bias,
+              stride_,
+              padding_,
+              dilation_,
+              groups,
+              out_ptr,
+              out_sizes,
+              {out_strides, 5},
+              batch,
+              group,
+              out_c);
+        } else {
+          conv2d_impl(
+              in_ptr,
+              in_sizes,
+              {in_strides, 4},
+              w_ptr,
+              weight_sizes,
+              {weight_strides, 4},
+              bias,
+              bias_ptr,
+              load_bias,
+              stride_,
+              padding_,
+              dilation_,
+              groups,
+              out_ptr,
+              out_sizes,
+              {out_strides, 4},
+              batch,
+              group,
+              out_c,
+              transposed);
+        }
       }
     }
   }
