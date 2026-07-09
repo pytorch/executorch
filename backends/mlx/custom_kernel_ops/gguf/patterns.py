@@ -44,7 +44,8 @@ from executorch.backends.mlx.pattern_utils import has_single_user, match_target
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 
-# Quant types each pattern can lower (both via fused custom Metal kernels).
+# Quant types each pattern can lower (MLX-native repack by default, or fused
+# custom Metal kernels via ``ET_MLX_EMIT_DIRECT_GGUF=1``).
 _LINEAR_TYPES = {"q4_k", "q5_k", "q6_k"}
 _EMBEDDING_TYPES = {"q4_k", "q5_k", "q6_k"}
 
