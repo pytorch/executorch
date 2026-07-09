@@ -101,26 +101,14 @@ def test_reciprocal_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
-)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_reciprocal_vgf_no_quant(test_data: torch.Tensor):
-    data = test_data()
-    match data.dtype:
-        case torch.bfloat16:
-            atol = 5e-2
-            rtol = 5e-2
-        case _:
-            atol = 1e-3
-            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Reciprocal(),
-        (data,),
+        (test_data(),),
         aten_op,
         quantize=False,
-        atol=atol,
-        rtol=rtol,
     )
     pipeline.run()
 

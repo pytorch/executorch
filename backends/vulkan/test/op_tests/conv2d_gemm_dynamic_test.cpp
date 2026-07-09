@@ -247,6 +247,7 @@ std::vector<float> conv2d_ref_xnnpack(
       out_min,
       out_max,
       /*flags=*/0,
+      /*code_cache=*/nullptr,
       /*weights_cache=*/nullptr,
       &op);
   if (create_status != xnn_status_success || op == nullptr) {
@@ -257,7 +258,7 @@ std::vector<float> conv2d_ref_xnnpack(
   }
 
   size_t workspace_size = 0;
-  const size_t workspace_alignment = 128;
+  size_t workspace_alignment = 0;
   size_t out_h = 0;
   size_t out_w = 0;
   const xnn_status reshape_status = xnn_reshape_convolution2d_nhwc_f32(
@@ -266,6 +267,7 @@ std::vector<float> conv2d_ref_xnnpack(
       static_cast<size_t>(H_in),
       static_cast<size_t>(W_in),
       &workspace_size,
+      &workspace_alignment,
       &out_h,
       &out_w,
       /*threadpool=*/nullptr);

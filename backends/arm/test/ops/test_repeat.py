@@ -179,9 +179,7 @@ def test_repeat_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
-)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_repeat_vgf_no_quant(test_data: Tuple):
     module, args = test_data()

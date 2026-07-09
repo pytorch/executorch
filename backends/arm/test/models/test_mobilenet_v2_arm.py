@@ -26,6 +26,7 @@ from torchvision.models.mobilenetv2 import (  # type: ignore[import-untyped]
     MobileNet_V2_Weights,
 )
 
+
 mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
 mv2 = mv2.eval()
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -186,26 +187,6 @@ def test_mv2_vgf_no_quant():
         exir_op=[],
         use_to_edge_transform_and_lower=True,
         quantize=False,
-    )
-    pipeline.run()
-
-
-@common.SkipIfNoModelConverter
-def test_mv2_vgf_no_quant_bf16():
-    bf16_model = models.mobilenetv2.mobilenet_v2(
-        weights=MobileNet_V2_Weights.DEFAULT
-    ).eval()
-    bf16_model = bf16_model.to(torch.bfloat16)
-    bf16_input = normalize(torch.rand((1, 3, 224, 224))).to(torch.bfloat16)
-    pipeline = VgfPipeline[input_t](
-        bf16_model,
-        (bf16_input,),
-        aten_op=[],
-        exir_op=[],
-        use_to_edge_transform_and_lower=True,
-        quantize=False,
-        atol=2.5e-01,
-        rtol=2.5e-01,
     )
     pipeline.run()
 

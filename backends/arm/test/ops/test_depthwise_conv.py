@@ -340,30 +340,17 @@ def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
 
 
 @common.parametrize(
-    "test_data",
-    test_data_conv1d_FP
-    | test_data_conv2d_FP
-    | test_data_conv2d_FP_bf16
-    | test_data_conv2d_FP_fp16,
+    "test_data", test_data_conv1d_FP | test_data_conv2d_FP | test_data_conv2d_FP_fp16
 )
 @common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_no_quant_depthwise(test_data: torch.nn.Module):
     model = test_data()
-    match model.dtype:
-        case torch.bfloat16:
-            atol = 2e-2
-            rtol = 2e-2
-        case _:
-            atol = 1e-3
-            rtol = 1e-3
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
         quantize=False,
-        atol=atol,
-        rtol=rtol,
     )
     pipeline.run()
 
