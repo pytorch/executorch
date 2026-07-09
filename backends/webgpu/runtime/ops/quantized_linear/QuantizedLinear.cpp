@@ -12,6 +12,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_f16acc_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
@@ -278,6 +279,17 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       shader_src = (gs % kQ4gswSteelBK == 0u)
           ? kQ4gswLinearGemmSteelHalfPwdqWGSL
           : kQ4gswLinearGemmSteelHalfWGSL;
+    }
+  }
+  // f16-accumulate: pwdq staging with an f16 register accumulator.
+  // Lossy (f16 accumulate over K) -> opt-in via the enable_f16_accumulate_gemm
+  // runtime spec (default off), gated on the negotiated shader-f16 feature and
+  // group_size % BK == 0 (same hoisted-scale requirement as pwdq). Overrides
+  // the f32-accumulate steel kernels.
+  if (use_steel && graph.f16_accumulate_gemm() && (gs % kQ4gswSteelBK == 0u)) {
+    const WebGPUContext* ctx = get_default_webgpu_context();
+    if (ctx != nullptr && ctx->shader_f16_supported) {
+      shader_src = kQ4gswLinearGemmSteelHalfPwdqF16accWGSL;
     }
   }
   const uint32_t workgroup_count = compute_q4gsw_workgroup_count(

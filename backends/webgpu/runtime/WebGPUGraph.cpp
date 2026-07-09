@@ -359,7 +359,8 @@ void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data,
     const executorch::runtime::NamedDataMap* named_data_map,
-    bool f16_kv_cache) {
+    bool f16_kv_cache,
+    bool f16_accumulate_gemm) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -384,6 +385,10 @@ void WebGPUGraph::build(
   // set AND the device negotiated shader-f16 (fail-closed).
   const WebGPUContext* kv_ctx = get_default_webgpu_context();
   kv_f16_ = f16_kv_cache && (kv_ctx != nullptr && kv_ctx->shader_f16_supported);
+
+  // f16-accumulate q4gsw steel prefill GEMM (runtime opt-in). QuantizedLinear
+  // additionally gates the kernel on the negotiated shader-f16 feature.
+  f16_accumulate_gemm_ = f16_accumulate_gemm;
 
   // Phase 1: Create all values
   const auto* values = graph->values();
