@@ -66,6 +66,7 @@ enum class FormatScalarKind {
   Uint,
   Sint,
   Float,
+  BFloat,
 };
 
 struct FormatInfo {
@@ -157,6 +158,7 @@ static uint32_t get_format_component_count(VkFormat format) {
     case VK_FORMAT_R16_UINT:
     case VK_FORMAT_R16_SINT:
     case VK_FORMAT_R16_SFLOAT:
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
     case VK_FORMAT_R32_UINT:
     case VK_FORMAT_R32_SINT:
     case VK_FORMAT_R32_SFLOAT:
@@ -208,6 +210,9 @@ static bool get_format_info(VkFormat format, FormatInfo* info) {
       return true;
     case VK_FORMAT_R16_SFLOAT:
       *info = FormatInfo{1, 2, FormatScalarKind::Float};
+      return true;
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
+      *info = FormatInfo{1, 2, FormatScalarKind::BFloat};
       return true;
     case VK_FORMAT_R32_UINT:
       *info = FormatInfo{1, 4, FormatScalarKind::Uint};
@@ -3696,6 +3701,7 @@ static uint32_t get_format_size(VkFormat format) {
     case VK_FORMAT_R16_UINT:
     case VK_FORMAT_R16_SINT:
     case VK_FORMAT_R16_SFLOAT:
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
     case VK_FORMAT_R8G8_UINT:
     case VK_FORMAT_R8G8_SINT:
       return 2;

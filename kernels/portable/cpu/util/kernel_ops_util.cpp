@@ -45,6 +45,16 @@ bool param_array_is_valid(
   return true;
 }
 
+void fill_convolution_kernel_size(
+    const Tensor& weight,
+    int64_t* kernel_size,
+    size_t* kernel_ndim) {
+  *kernel_ndim = weight.dim() - 2;
+  for (const auto i : c10::irange(*kernel_ndim)) {
+    kernel_size[i] = weight.size(i + 2);
+  }
+}
+
 } // namespace
 
 bool int_array_all_ge(IntArrayRef array, int64_t val) {
@@ -381,17 +391,28 @@ bool check_convolution_args(
     const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
-  ET_LOG_AND_RETURN_IF_FALSE(
-      tensor_is_default_or_channels_last_dim_order(weight));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
-
   ET_CHECK_OR_RETURN_FALSE(
-      in.dim() == 3 || in.dim() == 4,
-      "Expect input tensor to be 3-D or 4-D, but got, %zu.",
+      in.dim() == 3 || in.dim() == 4 || in.dim() == 5,
+      "Expect input tensor to be 3-D, 4-D or 5-D, but got, %zu.",
       static_cast<size_t>(in.dim()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, in.dim()));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, in.dim()));
+
+  if (in.dim() == 5) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(in));
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(weight));
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_dim_order(out));
+    ET_CHECK_OR_RETURN_FALSE(
+        !transposed,
+        "Transposed 3D convolution is not yet supported on portable.");
+  } else {
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_is_default_or_channels_last_dim_order(in));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_is_default_or_channels_last_dim_order(weight));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_is_default_or_channels_last_dim_order(out));
+  }
 
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
@@ -404,15 +425,11 @@ bool check_convolution_args(
         transposed ? groups * weight.size(1) : weight.size(0));
   }
 
-  int64_t kernel_size[2];
-  size_t kernel_ndim = 2;
-  if (weight.dim() == 3) {
-    kernel_size[0] = weight.size(2);
-    kernel_ndim = 1;
-  } else {
-    kernel_size[0] = weight.size(2);
-    kernel_size[1] = weight.size(3);
-  }
+  int64_t kernel_size[3];
+  size_t kernel_ndim = 0;
+  fill_convolution_kernel_size(weight, kernel_size, &kernel_ndim);
+  ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid({kernel_size, kernel_ndim}, kernel_ndim));
   ET_LOG_AND_RETURN_IF_FALSE(
       stride_is_valid(stride, kernel_ndim, /*allow_empty=*/false));
   ET_LOG_AND_RETURN_IF_FALSE(
@@ -482,15 +499,9 @@ void get_convolution_out_target_size(
     out_sizes[1] = in.size(1) == 0 ? 0 : groups * weight.size(1);
   }
 
-  int64_t kernel_size[2];
-  size_t kernel_ndim = 2;
-  if (weight.dim() == 3) {
-    kernel_size[0] = weight.size(2);
-    kernel_ndim = 1;
-  } else {
-    kernel_size[0] = weight.size(2);
-    kernel_size[1] = weight.size(3);
-  }
+  int64_t kernel_size[3];
+  size_t kernel_ndim = 0;
+  fill_convolution_kernel_size(weight, kernel_size, &kernel_ndim);
   calculate_kernel_output_sizes(
       in,
       kernel_ndim,
