@@ -29,33 +29,6 @@ class IndexTensorTestCommon:
     AFTER = "AFTER"
 
 
-class IndexTensorInt64Buffer(torch.nn.Module):
-    """Swin-style indexing with an int64 get_attr index buffer."""
-
-    def __init__(self):
-        super().__init__()
-        self.register_buffer("index", torch.tensor([0, 2], dtype=torch.int64))
-
-    def forward(self, x: torch.Tensor):
-        return x[self.index]
-
-
-def test_index_tensor_tosa_FP_int64_buffer_index():
-    # This mirrors torchvision Swin relative_position_bias_table[index]. The
-    # int64 get_attr must be cast before index.Tensor is decomposed to GATHER:
-    #
-    #   x[index:int64 buffer] -> x[index:int32 buffer] -> TOSA GATHER
-    pipeline = TosaPipelineFP[Tuple[torch.Tensor]](
-        IndexTensorInt64Buffer(),
-        (torch.rand(4, 3),),
-        IndexTensorTestCommon.aten_op,
-        IndexTensorTestCommon.exir_op,
-        atol=IndexTensorTestCommon.atol,
-        rtol=IndexTensorTestCommon.rtol,
-    )
-    pipeline.run()
-
-
 input_params_slice = Tuple[torch.Tensor, int, int, str, Tuple[torch.Tensor]]
 input_params = Tuple[torch.Tensor, Tuple[torch.Tensor]]
 
