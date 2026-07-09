@@ -97,7 +97,7 @@ class ReplaceEdgeOpWithTritonOpPass(PassBase):
         allocating partial buffers and running the reduction kernel.
 
         TODO(gasoonjia): Benchmarking to determine the optimal
-        implmentation for each shape.
+        implementation for each shape.
         """
         q_shape = node.args[0].meta["val"].shape
         k_shape = node.args[1].meta["val"].shape
