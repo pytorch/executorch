@@ -50,6 +50,36 @@ class OpConvOutTest : public OperatorTest {
         out);
   }
 
+  template <class CTYPE, ScalarType DTYPE>
+  void test_conv3d_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Tensor input = tf.full({1, 2, 3, 3, 3}, static_cast<CTYPE>(1));
+    Tensor weight = tf.full({4, 2, 2, 2, 2}, static_cast<CTYPE>(1));
+    optional<Tensor> bias;
+    Tensor expected = tf.full({1, 4, 2, 2, 2}, static_cast<CTYPE>(16));
+    Tensor out = tf.zeros({1, 4, 2, 2, 2});
+
+    int64_t stride[] = {1, 1, 1};
+    int64_t padding[] = {0, 0, 0};
+    int64_t dilation[] = {1, 1, 1};
+    int64_t output_padding[] = {0, 0, 0};
+
+    op_convolution_out(
+        input,
+        weight,
+        bias,
+        executorch::aten::ArrayRef<int64_t>{stride, 3},
+        executorch::aten::ArrayRef<int64_t>{padding, 3},
+        executorch::aten::ArrayRef<int64_t>{dilation, 3},
+        false,
+        executorch::aten::ArrayRef<int64_t>{output_padding, 3},
+        1,
+        out);
+
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+
   /* Correctness Test Template for test code generation via Python */
   /* %python
   correctness_test_template = f"""
@@ -454,6 +484,190 @@ TEST_F(OpConvCorrectnessTest, 2DSanityCheckChannelsLast) {
       out);
 
   EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, Conv3dDefaultParams) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({1, 2, 3, 3, 3}, 1.0);
+  Tensor weight = tf.full({4, 2, 2, 2, 2}, 1.0);
+  optional<Tensor> bias;
+  Tensor expected = tf.full({1, 4, 2, 2, 2}, 16.0);
+  Tensor out = tf.zeros({1, 4, 2, 2, 2});
+
+  int64_t stride[] = {1, 1, 1};
+  int64_t padding[] = {0, 0, 0};
+  int64_t dilation[] = {1, 1, 1};
+  int64_t output_padding[] = {0, 0, 0};
+
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      false,
+      output_padding,
+      1,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, Conv3dPadding) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({1, 1, 2, 2, 2}, 1.0);
+  Tensor weight = tf.full({1, 1, 3, 3, 3}, 1.0);
+  optional<Tensor> bias;
+  Tensor expected = tf.full({1, 1, 2, 2, 2}, 8.0);
+  Tensor out = tf.zeros({1, 1, 2, 2, 2});
+
+  int64_t stride[] = {1, 1, 1};
+  int64_t padding[] = {1, 1, 1};
+  int64_t dilation[] = {1, 1, 1};
+  int64_t output_padding[] = {0, 0, 0};
+
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      false,
+      output_padding,
+      1,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, Conv3dGroupedStrideAndBias) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({1, 4, 4, 4, 4}, 1.0);
+  Tensor weight = tf.full({4, 2, 2, 2, 2}, 0.5);
+  optional<Tensor> bias(tf.make({4}, {1.0, 2.0, 3.0, 4.0}));
+  std::vector<float> expected_data;
+  for (float value : {9.0f, 10.0f, 11.0f, 12.0f}) {
+    expected_data.insert(expected_data.end(), 8, value);
+  }
+  Tensor expected = tf.make({1, 4, 2, 2, 2}, expected_data);
+  Tensor out = tf.zeros({1, 4, 2, 2, 2});
+
+  int64_t stride[] = {2, 2, 2};
+  int64_t padding[] = {0, 0, 0};
+  int64_t dilation[] = {1, 1, 1};
+  int64_t output_padding[] = {0, 0, 0};
+
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      false,
+      output_padding,
+      2,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, Conv3dDilation) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({1, 1, 7, 7, 7}, 1.0);
+  Tensor weight = tf.full({1, 1, 2, 2, 2}, 1.0);
+  optional<Tensor> bias;
+  Tensor expected = tf.full({1, 1, 5, 5, 5}, 8.0);
+  Tensor out = tf.zeros({1, 1, 5, 5, 5});
+
+  int64_t stride[] = {1, 1, 1};
+  int64_t padding[] = {0, 0, 0};
+  int64_t dilation[] = {2, 2, 2};
+  int64_t output_padding[] = {0, 0, 0};
+
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      false,
+      output_padding,
+      1,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+/// A generic Conv3d smoke test that works for all supported real/half/bfloat16
+/// dtypes.
+TEST_F(OpConvCorrectnessTest, Conv3dAllDtypesSupported) {
+#define TEST_ENTRY(ctype, dtype) test_conv3d_dtype<ctype, ScalarType::dtype>();
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST_F(OpConvCorrectnessTest, Conv3dTransposedUnsupported) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({1, 2, 2, 2, 2}, 1.0);
+  Tensor weight = tf.full({2, 1, 2, 2, 2}, 1.0);
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 2, 3, 3, 3});
+
+  int64_t stride[] = {1, 1, 1};
+  int64_t padding[] = {0, 0, 0};
+  int64_t dilation[] = {1, 1, 1};
+  int64_t output_padding[] = {0, 0, 0};
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          weight,
+          bias,
+          stride,
+          padding,
+          dilation,
+          true,
+          output_padding,
+          2,
+          out));
+}
+
+TEST_F(OpConvCorrectnessTest, Conv3dChannelsLastUnsupported) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full_channels_last({1, 1, 3, 3, 3}, 1.0);
+  Tensor weight = tf.full_channels_last({1, 1, 2, 2, 2}, 1.0);
+  optional<Tensor> bias;
+  Tensor out = tf.zeros_channels_last({1, 1, 2, 2, 2});
+
+  int64_t stride[] = {1, 1, 1};
+  int64_t padding[] = {0, 0, 0};
+  int64_t dilation[] = {1, 1, 1};
+  int64_t output_padding[] = {0, 0, 0};
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          weight,
+          bias,
+          stride,
+          padding,
+          dilation,
+          false,
+          output_padding,
+          1,
+          out));
 }
 
 TEST_F(OpConvOutTest, DynamicShapeUpperBoundSameAsExpected) {
