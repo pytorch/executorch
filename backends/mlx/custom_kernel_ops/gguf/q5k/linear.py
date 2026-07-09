@@ -521,7 +521,7 @@ def emit_linear(
     weight_node: Node,
     bias_node: Optional[Node],
 ) -> Slot:
-    """Dispatch to fused Metal kernels or the legacy MLX-native repack path."""
+    """Dispatch to fused Metal kernels or the MLX-native repack path."""
     from executorch.backends.mlx.custom_kernel_ops.gguf.q5k import emit_direct_gguf
 
     if emit_direct_gguf():

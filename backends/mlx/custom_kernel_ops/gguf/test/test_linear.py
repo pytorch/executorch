@@ -328,7 +328,7 @@ class GGUFLinearTest(OpTestCase):
         # fits CI-runner GPU buffer limits; the mat-vec N-tiling path is the
         # same at any N.
         cfgs.append(cls(M=1, N=16384, K=5376, dtype=torch.bfloat16))  # lm_head
-        # Q4_K: exercise both the fused direct path and the legacy MLX-native
+        # Q4_K: exercise both the fused direct path and the MLX-native
         # repack path on each shape. Each path uses its own reference oracle
         # (see compute_expected_outputs).
         q4k_shapes = [
@@ -477,7 +477,7 @@ class GGUFLinearDynamicTest(OpTestCase):
             cls(export_M=4, test_M=1, dtype=torch.float16),
             cls(export_M=4, test_M=40, N=300, K=256, dtype=torch.bfloat16),  # ragged
         ]
-        # Q4_K: exercise both the fused direct path and the legacy MLX-native
+        # Q4_K: exercise both the fused direct path and the MLX-native
         # repack path on each shape. Each path needs its own reference oracle
         # (see compute_expected_outputs).
         for emit_direct in (True, False):

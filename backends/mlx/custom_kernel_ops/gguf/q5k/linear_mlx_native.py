@@ -9,8 +9,9 @@
 """GGUF **Q5_K** linear lowering via MLX's native 5-bit quantized matmul.
 
 Lowers a ``dequantize_gguf -> linear`` pattern to a ``QuantizedMatmulNode``
-(mode "affine", group_size 32); the GGUF blob is repacked into MLX qparams at
-export time (see :mod:`.repack_mlx`).
+(mode "affine"); the GGUF blob is repacked into MLX qparams at export time (see
+:mod:`.repack_mlx`). The group size is 32 by default, or the merged 64/128 when
+adjacent sub-blocks are identical.
 """
 
 from __future__ import annotations

@@ -125,8 +125,12 @@ class TestExportableGGUFTensor(unittest.TestCase):
 
     def test_to_intx_unpacked_matches_reference(self):
         # Reference is the gguf-package dequant (ExportableGGUFTensor.dequantize);
-        # the Intx tensor's dequantize exercises our unpacking. Covers Q4_K & Q6_K.
-        for ggml_type, make in (("q4_k", _make_q4k_raw), ("q6_k", _make_q6k_raw)):
+        # the Intx tensor's dequantize exercises our unpacking (Q4_K/Q5_K/Q6_K).
+        for ggml_type, make in (
+            ("q4_k", _make_q4k_raw),
+            ("q5_k", _make_q5k_raw),
+            ("q6_k", _make_q6k_raw),
+        ):
             raw = make(N=3, nb=2)
             t = ExportableGGUFTensor.from_raw(raw, ggml_type)
             ix = t.to_intx_unpacked_to_int8_tensor()
@@ -152,6 +156,18 @@ class TestExportableGGUFTensor(unittest.TestCase):
             t = ExportableGGUFTensor.from_raw(make(N=2, nb=2), ggml_type)
             ix = t.to_intx_unpacked_to_int8_tensor()
             self.assertEqual(ix.block_size[1], native_gs, ggml_type)
+
+    def test_group_upgrade_noop_on_nonuniform(self):
+        # Non-uniform sub-block scales must not merge even with max_group_size
+        # set, so Q6_K stays at its native group size 16 (< 32) -- the signal
+        # repack_mlx uses to return None and fall back to the fused kernels.
+        raw = _make_q6k_raw(N=3, nb=2)
+        blk = raw.reshape(3 * 2, _Q6_K_BLOCK_BYTES)
+        # Distinct int8 sub-block scales so adjacent groups differ.
+        blk[:, 192:208] = torch.arange(1, 17, dtype=torch.int8).view(torch.uint8)
+        t = ExportableGGUFTensor.from_raw(raw, "q6_k")
+        ix = t.to_intx_unpacked_to_int8_tensor(max_group_size=128)
+        self.assertEqual(ix.block_size[1], Q6_K_GROUP_SIZE)
 
     def test_group_upgrade_is_lossless(self):
         # The crafted blobs use fixed sub-scales/mins that are uniform within

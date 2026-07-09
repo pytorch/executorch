@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""Q6_K -> MLX qparam repack for the legacy MLX-native lowering path.
+"""Q6_K -> MLX qparam repack for the MLX-native lowering path.
 
 Used when ``ET_MLX_EMIT_DIRECT_GGUF=0``: the GGUF blob is unpacked and repacked
 into MLX affine 6-bit qparams at export time instead of being consumed directly
