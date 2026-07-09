@@ -1258,15 +1258,13 @@ class VgfPipeline(BasePipeline, Generic[T]):
     ):
         if tosa_spec is None:
             if tosa_version is None:
-                tosa_version = str(VgfCompileSpec().tosa_spec)
-            if tosa_extensions is None:
-                if "FP" in tosa_version:
-                    tosa_extensions = ["bf16"]
-                else:
+                tosa_spec = VgfCompileSpec().tosa_spec
+            else:
+                if tosa_extensions is None:
                     tosa_extensions = []
-            tosa_spec = TosaSpecification.create_from_string(
-                tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
-            )
+                tosa_spec = TosaSpecification.create_from_string(
+                    tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
+                )
         elif isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
         compile_spec = common.get_vgf_compile_spec(

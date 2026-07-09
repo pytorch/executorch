@@ -108,8 +108,7 @@ def embedding_weight_checks(weight, weight_scales, weight_zero_points):
     assert weight_scales.dtype in [
         torch.float16,
         torch.float32,
-        torch.bfloat16,
-    ], f"Expecting weight_scales to be of dtype in [torch.float16, torch.float32, torch.bfloat16], but got {weight_scales.dtype}"
+    ], f"Expecting weight_scales to be of dtype in [torch.float16, torch.float32], but got {weight_scales.dtype}"
     assert (
         weight_scales.dim() == 1 or weight_scales.dim() == 2
     ), f"Expecting weight_scales tensor to have rank 1 or 2, but found {weight_scales.dim()}"
