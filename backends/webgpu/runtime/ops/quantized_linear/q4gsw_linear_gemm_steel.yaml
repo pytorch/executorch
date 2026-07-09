@@ -5,5 +5,7 @@ q4gsw_linear_gemm_steel:
     DTYPE:
       - VALUE: float
         SUFFIX: ""
+      - VALUE: half
+        SUFFIX: half
   shader_variants:
     - NAME: q4gsw_linear_gemm_steel
