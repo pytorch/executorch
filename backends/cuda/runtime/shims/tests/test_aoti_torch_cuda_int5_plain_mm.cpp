@@ -37,8 +37,8 @@ using Tensor = executorch::backends::aoti::slim::SlimTensor;
 //                scale_code * scale_step[:, g/(256/gs)] (step loaded once per
 //                super-block, register-cached across its 8 groups).
 //   zero       : [N, K/gs] uint8 per-group zero codes
-//   zero_step  : [N, K/256] fp16 per-256-super-block step; group zero =
-//                zero_code * zero_step[:, g/(256/gs)]. Both fp16 steps are
+//   zero_point_step  : [N, K/256] fp16 per-256-super-block step; group zero =
+//                zero_code * zero_point_step[:, g/(256/gs)]. Both fp16 steps are
 //                packed into ONE 32-bit warp-shuffle word by the subgroup
 //                leader (z_pack) and broadcast to the 8-lane subgroup — the
 //                single most format-critical detail this test covers.
@@ -52,6 +52,12 @@ using Tensor = executorch::backends::aoti::slim::SlimTensor;
 // cases cover a single super-block, multiple super-blocks (exercising the
 // per-256 step advance), wide N, and a 4-super-block case that stresses the
 // z_pack packed-shuffle-word broadcast across full warps.
+//
+// These arrays are machine-generated; do NOT hand-edit them. Regenerate with
+//   python backends/cuda/runtime/shims/tests/gen_plain_mm_test_vectors.py \
+//         --dtype int5
+// and paste the emitted blocks; verify with `--dtype int5 --check` (the
+// generator uses a single fixed seed and draw order, so the output is exact).
 class AOTITorchInt5PlainMMTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -107,11 +113,11 @@ class AOTITorchInt5PlainMMTest : public ::testing::Test {
       Tensor* scale,
       Tensor* scale_step,
       Tensor* zero,
-      Tensor* zero_step,
+      Tensor* zero_point_step,
       int64_t group_size) {
     Tensor* output = nullptr;
     AOTITorchError error = aoti_torch_cuda_int5_plain_mm(
-        A, ql, qh, scale, scale_step, zero, zero_step, group_size, &output);
+        A, ql, qh, scale, scale_step, zero, zero_point_step, group_size, &output);
     EXPECT_EQ(error, Error::Ok);
     EXPECT_NE(output, nullptr);
     return output;
@@ -278,7 +284,7 @@ TEST_F(AOTITorchInt5PlainMMTest, SingleSuperBlock) {
       0x7F, 0xD7, 0xFF, 0xDB, 0xDF, 0xFA, 0x89, 0xD6, 0xFF, 0x92, 0x74, 0xAE,
       0xC2, 0xC8, 0xDD, 0xCC,
   };
-  uint16_t zero_step[] = {
+  uint16_t zero_point_step[] = {
       0x2CE1, 0x2C95, 0x2D6B, 0x2DA2, 0x2CD4, 0x2D4D, 0x2CF6, 0x2D23,
   };
   uint16_t A_host[] = {
@@ -326,16 +332,16 @@ TEST_F(AOTITorchInt5PlainMMTest, SingleSuperBlock) {
   Tensor* scale = create_uint8({N, ng});
   Tensor* scale_step_t = create_fp16({N, n_super});
   Tensor* zero = create_uint8({N, ng});
-  Tensor* zero_step_t = create_fp16({N, n_super});
+  Tensor* zero_point_step_t = create_fp16({N, n_super});
   upload(A, A_host, sizeof(A_host));
   upload(ql, ql_host, sizeof(ql_host));
   upload(qh, qh_host, sizeof(qh_host));
   upload(scale, scale_codes, sizeof(scale_codes));
   upload(scale_step_t, scale_step, sizeof(scale_step));
   upload(zero, zero_codes, sizeof(zero_codes));
-  upload(zero_step_t, zero_step, sizeof(zero_step));
+  upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_step_t, gs);
+  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -479,7 +485,7 @@ TEST_F(AOTITorchInt5PlainMMTest, MultiSuperBlock) {
       0xB2, 0x8B, 0xD6, 0xEE, 0xDC, 0xCC, 0xDE, 0xFF, 0xBF, 0xFE, 0xB9, 0xED,
       0xE4, 0xC6, 0xFF, 0xB3,
   };
-  uint16_t zero_step[] = {
+  uint16_t zero_point_step[] = {
       0x2CAB, 0x2C93, 0x2E1E, 0x2C88, 0x2C9F, 0x2D1D, 0x2CC8, 0x2C89,
   };
   uint16_t A_host[] = {
@@ -559,16 +565,16 @@ TEST_F(AOTITorchInt5PlainMMTest, MultiSuperBlock) {
   Tensor* scale = create_uint8({N, ng});
   Tensor* scale_step_t = create_fp16({N, n_super});
   Tensor* zero = create_uint8({N, ng});
-  Tensor* zero_step_t = create_fp16({N, n_super});
+  Tensor* zero_point_step_t = create_fp16({N, n_super});
   upload(A, A_host, sizeof(A_host));
   upload(ql, ql_host, sizeof(ql_host));
   upload(qh, qh_host, sizeof(qh_host));
   upload(scale, scale_codes, sizeof(scale_codes));
   upload(scale_step_t, scale_step, sizeof(scale_step));
   upload(zero, zero_codes, sizeof(zero_codes));
-  upload(zero_step_t, zero_step, sizeof(zero_step));
+  upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_step_t, gs);
+  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -829,7 +835,7 @@ TEST_F(AOTITorchInt5PlainMMTest, WideN) {
       0xDA, 0xAA, 0xE2, 0xFF, 0xC3, 0xED, 0xA6, 0x9F, 0xF8, 0xE7, 0xFF, 0xED,
       0xFF, 0xD6, 0xF0, 0x9E, 0xF0, 0xF9, 0xF4, 0xCB,
   };
-  uint16_t zero_step[] = {
+  uint16_t zero_point_step[] = {
       0x2CF7, 0x2D2F, 0x2CC4, 0x2C94, 0x2C63, 0x2D71, 0x2D02, 0x2CBF,
       0x2C90, 0x2C8F, 0x2D27, 0x2CFB, 0x2CC9, 0x2C8A, 0x2CC8, 0x2C78,
   };
@@ -879,16 +885,16 @@ TEST_F(AOTITorchInt5PlainMMTest, WideN) {
   Tensor* scale = create_uint8({N, ng});
   Tensor* scale_step_t = create_fp16({N, n_super});
   Tensor* zero = create_uint8({N, ng});
-  Tensor* zero_step_t = create_fp16({N, n_super});
+  Tensor* zero_point_step_t = create_fp16({N, n_super});
   upload(A, A_host, sizeof(A_host));
   upload(ql, ql_host, sizeof(ql_host));
   upload(qh, qh_host, sizeof(qh_host));
   upload(scale, scale_codes, sizeof(scale_codes));
   upload(scale_step_t, scale_step, sizeof(scale_step));
   upload(zero, zero_codes, sizeof(zero_codes));
-  upload(zero_step_t, zero_step, sizeof(zero_step));
+  upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_step_t, gs);
+  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -1387,7 +1393,7 @@ TEST_F(AOTITorchInt5PlainMMTest, PackedShuffleMultiSuper) {
       0xCB, 0x83, 0x6E, 0xB6, 0x9F, 0xB4, 0xFF, 0xAD, 0xAE, 0x8F, 0xA3, 0xE2,
       0x82, 0xFA, 0xFF, 0xBD,
   };
-  uint16_t zero_step[] = {
+  uint16_t zero_point_step[] = {
       0x2DA2, 0x2C4F, 0x2C48, 0x2CF0, 0x2D1B, 0x2C3B, 0x2CC7, 0x2D0F,
       0x2C31, 0x2C4E, 0x2CC0, 0x2CC4, 0x2CB5, 0x2C53, 0x2CD6, 0x2D03,
       0x2C55, 0x2CB4, 0x2D04, 0x2D11, 0x2D13, 0x2C99, 0x2C95, 0x2C97,
@@ -1534,16 +1540,16 @@ TEST_F(AOTITorchInt5PlainMMTest, PackedShuffleMultiSuper) {
   Tensor* scale = create_uint8({N, ng});
   Tensor* scale_step_t = create_fp16({N, n_super});
   Tensor* zero = create_uint8({N, ng});
-  Tensor* zero_step_t = create_fp16({N, n_super});
+  Tensor* zero_point_step_t = create_fp16({N, n_super});
   upload(A, A_host, sizeof(A_host));
   upload(ql, ql_host, sizeof(ql_host));
   upload(qh, qh_host, sizeof(qh_host));
   upload(scale, scale_codes, sizeof(scale_codes));
   upload(scale_step_t, scale_step, sizeof(scale_step));
   upload(zero, zero_codes, sizeof(zero_codes));
-  upload(zero_step_t, zero_step, sizeof(zero_step));
+  upload(zero_point_step_t, zero_point_step, sizeof(zero_point_step));
 
-  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_step_t, gs);
+  Tensor* output = run(A, ql, qh, scale, scale_step_t, zero, zero_point_step_t, gs);
   ASSERT_NE(output, nullptr);
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
@@ -1561,32 +1567,32 @@ TEST_F(AOTITorchInt5PlainMMTest, NullInputHandling) {
   Tensor* scale = create_uint8({N, ng});
   Tensor* scale_step = create_fp16({N, n_super});
   Tensor* zero = create_uint8({N, ng});
-  Tensor* zero_step = create_fp16({N, n_super});
+  Tensor* zero_point_step = create_fp16({N, n_super});
   Tensor* output = nullptr;
 
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          nullptr, ql, qh, scale, scale_step, zero, zero_step, gs, &output),
+          nullptr, ql, qh, scale, scale_step, zero, zero_point_step, gs, &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, nullptr, qh, scale, scale_step, zero, zero_step, gs, &output),
+          A, nullptr, qh, scale, scale_step, zero, zero_point_step, gs, &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, ql, nullptr, scale, scale_step, zero, zero_step, gs, &output),
+          A, ql, nullptr, scale, scale_step, zero, zero_point_step, gs, &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, ql, qh, nullptr, scale_step, zero, zero_step, gs, &output),
+          A, ql, qh, nullptr, scale_step, zero, zero_point_step, gs, &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, ql, qh, scale, nullptr, zero, zero_step, gs, &output),
+          A, ql, qh, scale, nullptr, zero, zero_point_step, gs, &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, ql, qh, scale, scale_step, nullptr, zero_step, gs, &output),
+          A, ql, qh, scale, scale_step, nullptr, zero_point_step, gs, &output),
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
@@ -1594,6 +1600,6 @@ TEST_F(AOTITorchInt5PlainMMTest, NullInputHandling) {
       Error::InvalidArgument);
   EXPECT_EQ(
       aoti_torch_cuda_int5_plain_mm(
-          A, ql, qh, scale, scale_step, zero, zero_step, gs, nullptr),
+          A, ql, qh, scale, scale_step, zero, zero_point_step, gs, nullptr),
       Error::InvalidArgument);
 }

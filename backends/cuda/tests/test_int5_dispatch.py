@@ -101,10 +101,10 @@ def _record_int5_plain_mm():
     """
     calls = []
 
-    def _fake(self, ql, qh, scale, scale_step, zero, zero_step, group_size):
+    def _fake(self, ql, qh, scale, scale_step, zero, zero_point_step, group_size):
         calls.append((tuple(self.shape), group_size))
         return _dequant_matmul_int5(
-            self, ql, qh, scale, scale_step, zero, zero_step, group_size
+            self, ql, qh, scale, scale_step, zero, zero_point_step, group_size
         )
 
     with mock.patch.object(torch.ops.executorch_cuda, "int5_plain_mm", _fake):
@@ -139,10 +139,10 @@ class TestPacker(unittest.TestCase):
         t, _ = _make_int5_tensor(16, 512)
         self.assertEqual(
             t.tensor_data_names,
-            ["ql", "qh", "scale", "scale_step", "zero_point", "zero_step"],
+            ["ql", "qh", "scale", "scale_step", "zero_point", "zero_point_step"],
         )
         self.assertEqual(t.scale_step.dtype, torch.float16)
-        self.assertEqual(t.zero_step.dtype, torch.float16)
+        self.assertEqual(t.zero_point_step.dtype, torch.float16)
         self.assertEqual(tuple(t.scale_step.shape), (16, 512 // 256))
 
 

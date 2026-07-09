@@ -40,8 +40,8 @@ extern "C" {
  *   scale_step : [N, K//256] fp16 per-256-super-block scale step; the group
  *                scale is ``scale_code * scale_step[:, g //
  * (256/group_size)]``. zero  : [N, K//group_size] uint8 per-group zero codes
- * (row-major). zero_step  : [N, K//256] fp16 per-256-super-block zero step; the
- * group zero is ``zero_code * zero_step[:, g // (256/group_size)]``. Both fp16
+ * (row-major). zero_point_step  : [N, K//256] fp16 per-256-super-block zero step; the
+ * group zero is ``zero_code * zero_point_step[:, g // (256/group_size)]``. Both fp16
  * steps are packed into ONE 32-bit warp-shuffle word by the subgroup leader
  * (z_pack) and broadcast, mirroring the INT4 path. W5A8 dp4a matvec:
  * dynamically quantizes activations to INT8, reconstructs full 5-bit weight
@@ -53,7 +53,7 @@ extern "C" {
  * @param scale      Per-group scale codes [N, K//group_size] uint8
  * @param scale_step Per-256-super-block scale step [N, K//256] fp16
  * @param zero       Per-group zero codes [N, K//group_size] uint8
- * @param zero_step  Per-256-super-block zero step [N, K//256] fp16
+ * @param zero_point_step  Per-256-super-block zero step [N, K//256] fp16
  * @param group_size Quantization group size (multiple of 32; e.g. 32 for Q5_K)
  * @param ret0       Output [M, N] bf16
  */
@@ -64,7 +64,7 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_int5_plain_mm(
     Tensor* scale,
     Tensor* scale_step,
     Tensor* zero,
-    Tensor* zero_step,
+    Tensor* zero_point_step,
     int64_t group_size,
     Tensor** ret0);
 

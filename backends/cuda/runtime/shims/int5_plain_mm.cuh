@@ -22,9 +22,9 @@
 //   the group
 //                scale is scale_code * scale_step[b], b = super-block = k >> 8.
 //   zero       : [N, K/gs] uint8 codes — per-group zero points, row-major.
-//   zero_step  : [N, K/256] fp16 — per-256-super-block zero step; the group
+//   zero_point_step  : [N, K/256] fp16 — per-256-super-block zero step; the group
 //   zero
-//                is zero_code * zero_step[b]. Both fp16 steps are packed into
+//                is zero_code * zero_point_step[b]. Both fp16 steps are packed into
 //                ONE 32-bit warp-shuffle word by the 8-lane subgroup leader
 //                (z_pack) and broadcast, exactly like the INT4 path — no extra
 //                shuffle.
@@ -149,7 +149,7 @@ __global__ void quantize_activations_q8_i5_kernel(
 // is subtracted as out += scale * a_scale * (dp - zero * a_sum) (like INT4).
 //
 // Both the scale and the zero are decoded with a per-256-super-block fp16 step
-// (scale_step / zero_step, [N, K/256]). The 32 warp lanes form 8-lane subgroups
+// (scale_step / zero_point_step, [N, K/256]). The 32 warp lanes form 8-lane subgroups
 // that each cover ONE super-block per iteration; only the subgroup leader loads
 // + PACKS both fp16 steps into one 32-bit word and __shfl-broadcasts that ONE
 // word to its 7 followers (z_pack: 8x fewer step loads, ONE shuffle, no extra
@@ -162,7 +162,7 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
     const uint8_t* __restrict__ w_scale, // [N, n_groups] uint8 codes
     const __half* __restrict__ w_scale_step, // [N, n_super] fp16
     const uint8_t* __restrict__ w_zero, // [N, n_groups] uint8 codes
-    const __half* __restrict__ w_zero_step, // [N, n_super] fp16
+    const __half* __restrict__ w_zero_point_step, // [N, n_super] fp16
     const Q8Block_i5* __restrict__ q8,
     __nv_bfloat16* __restrict__ out,
     int32_t N,
@@ -189,8 +189,8 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
   // Per-256 fp16 zero step (z_pack): decoded via the SAME 8-lane leader
   // broadcast as the scale step (both packed into one 32-bit shuffle word
   // below), so the dp4a dot products stay bit-identical to the scale-only
-  // kernel. zero = zero_code * zero_step[super-block].
-  const __half* zero_step_row = w_zero_step + static_cast<int64_t>(n) * n_super;
+  // kernel. zero = zero_code * zero_point_step[super-block].
+  const __half* zero_point_step_row = w_zero_point_step + static_cast<int64_t>(n) * n_super;
   const Q8Block_i5* q8_row = q8 + static_cast<int64_t>(m) * n_q8_blocks;
 
   // Vectorized loads: one uint4 of ql (32 weights) + one uint (the 4 high-bit
@@ -241,7 +241,7 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
     if (lane_id == leader) {
       int32_t sb = g >> sb_shift;
       unsigned short s_bits = __half_as_ushort(__ldg(&scale_step_row[sb]));
-      unsigned short z_bits = __half_as_ushort(__ldg(&zero_step_row[sb]));
+      unsigned short z_bits = __half_as_ushort(__ldg(&zero_point_step_row[sb]));
       steps_packed =
           static_cast<uint32_t>(s_bits) | (static_cast<uint32_t>(z_bits) << 16);
     }
@@ -250,11 +250,11 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
       continue;
     float scale_step = __half2float(
         __ushort_as_half(static_cast<unsigned short>(steps_packed & 0xFFFF)));
-    float zero_step = __half2float(
+    float zero_point_step = __half2float(
         __ushort_as_half(static_cast<unsigned short>(steps_packed >> 16)));
     // Effective per-group scale/zero (one coalesced code byte each per group).
     float ws = static_cast<float>(__ldg(&scale_row[g])) * scale_step;
-    float wz = static_cast<float>(__ldg(&zero_row[g])) * zero_step;
+    float wz = static_cast<float>(__ldg(&zero_row[g])) * zero_point_step;
 
     // One uint4 (32 weights) maps to exactly one Q8 activation block (32
     // activations), i.e. q8_block_idx == i. Load the whole block with two
@@ -355,7 +355,7 @@ inline void _int5_plain_mm_cuda(
     const Tensor& scale, // [N, K/gs] uint8 codes
     const Tensor& scale_step, // [N, K/256] fp16
     const Tensor& zero, // [N, K/gs] uint8 codes
-    const Tensor& zero_step, // [N, K/256] fp16
+    const Tensor& zero_point_step, // [N, K/256] fp16
     int64_t group_size,
     Tensor* output) { // [M, N] bf16, pre-allocated
   int32_t M = A.size(0);
@@ -376,7 +376,7 @@ inline void _int5_plain_mm_cuda(
   ET_CHECK(
       zero.dtype() == c10::ScalarType::Byte ||
       zero.dtype() == c10::ScalarType::Char);
-  ET_CHECK(zero_step.dtype() == c10::ScalarType::Half);
+  ET_CHECK(zero_point_step.dtype() == c10::ScalarType::Half);
   ET_CHECK(A.dim() == 2);
   ET_CHECK(ql.dim() == 2);
   ET_CHECK(ql.size(1) == K / 2);
@@ -388,9 +388,9 @@ inline void _int5_plain_mm_cuda(
   ET_CHECK(scale_step.size(0) == N);
   ET_CHECK(zero.dim() == 2);
   ET_CHECK(zero.size(0) == N);
-  ET_CHECK(zero_step.dim() == 2);
-  ET_CHECK(zero_step.size(0) == N);
-  ET_CHECK(zero_step.size(1) == scale_step.size(1));
+  ET_CHECK(zero_point_step.dim() == 2);
+  ET_CHECK(zero_point_step.size(0) == N);
+  ET_CHECK(zero_point_step.size(1) == scale_step.size(1));
 
   int32_t gs = static_cast<int32_t>(group_size);
   ET_CHECK_MSG(
@@ -442,7 +442,7 @@ inline void _int5_plain_mm_cuda(
       reinterpret_cast<const uint8_t*>(scale.data_ptr()),
       reinterpret_cast<const __half*>(scale_step.data_ptr()),
       reinterpret_cast<const uint8_t*>(zero.data_ptr()),
-      reinterpret_cast<const __half*>(zero_step.data_ptr()),
+      reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
       q8_buf,
       reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
       N,

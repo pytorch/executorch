@@ -36,8 +36,8 @@ can reuse the INT4 even/odd extraction verbatim:
     scale_step : (N, K/256) fp16 — per-256-super-block scale step; the real
                  per-group scale is ``scale_code * scale_step[:, g // 8]``.
     zero_point : (N, n_groups) uint8 — per-group zero *codes*, coalesced.
-    zero_step  : (N, K/256) fp16 — per-256-super-block zero step; the real
-                 per-group zero is ``zero_code * zero_step[:, g // 8]``. Both
+    zero_point_step  : (N, K/256) fp16 — per-256-super-block zero step; the real
+                 per-group zero is ``zero_code * zero_point_step[:, g // 8]``. Both
                  per-256 fp16 steps mirror GGUF Q5_K's per-super-block fp16
                  ``d`` / ``dmin`` and are packed into ONE 32-bit warp-shuffle
                  word by the decode kernel (z_pack), exactly like the INT4 path.
@@ -182,7 +182,14 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
     this class only.
     """
 
-    tensor_data_names = ["ql", "qh", "scale", "scale_step", "zero_point", "zero_step"]
+    tensor_data_names = [
+        "ql",
+        "qh",
+        "scale",
+        "scale_step",
+        "zero_point",
+        "zero_point_step",
+    ]
     tensor_attribute_names = ["block_size", "shape"]
 
     def __new__(
@@ -192,7 +199,7 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         scale: torch.Tensor,
         scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        zero_step: torch.Tensor,
+        zero_point_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
     ):
@@ -209,7 +216,7 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         scale: torch.Tensor,
         scale_step: torch.Tensor,
         zero_point: torch.Tensor,
-        zero_step: torch.Tensor,
+        zero_point_step: torch.Tensor,
         block_size: List[int],
         shape: torch.Size,
     ):
@@ -219,7 +226,7 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         self.scale = scale
         self.scale_step = scale_step
         self.zero_point = zero_point
-        self.zero_step = zero_step
+        self.zero_point_step = zero_point_step
         self.block_size = block_size
 
     def _quantization_type(self):
@@ -252,14 +259,14 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         gs = int(t.block_size[-1])
         ql, qh = pack_int5(u)
         scale_codes, scale_step = _encode_uint8_per_super(scale, gs)
-        zero_codes, zero_step = _encode_uint8_per_super(zero_u, gs)
+        zero_codes, zero_point_step = _encode_uint8_per_super(zero_u, gs)
         return cls(
             ql,
             qh,
             scale_codes,
             scale_step,
             zero_codes,
-            zero_step,
+            zero_point_step,
             list(t.block_size),
             t.shape,
         )
@@ -302,8 +309,10 @@ class CudaDp4aPlanarInt5Tensor(TorchAOBaseTensor):
         scale = (scale_code * scale_step).repeat_interleave(gs, dim=1)  # (N, K)
 
         zero_code = self.zero_point.to(torch.float32)  # (N, n_groups)
-        zero_step = self.zero_step.float().repeat_interleave(groups_per_super, dim=1)
-        zero = (zero_code * zero_step).repeat_interleave(gs, dim=1)  # (N, K)
+        zero_point_step = self.zero_point_step.float().repeat_interleave(
+            groups_per_super, dim=1
+        )
+        zero = (zero_code * zero_point_step).repeat_interleave(gs, dim=1)  # (N, K)
         return (scale * (u - zero)).to(dtype)
 
 

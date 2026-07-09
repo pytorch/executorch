@@ -27,7 +27,7 @@ AOTITorchError aoti_torch_cuda_int5_plain_mm(
     Tensor* scale,
     Tensor* scale_step,
     Tensor* zero,
-    Tensor* zero_step,
+    Tensor* zero_point_step,
     int64_t group_size,
     Tensor** ret0) {
   ET_CHECK_OR_RETURN_ERROR(
@@ -61,9 +61,9 @@ AOTITorchError aoti_torch_cuda_int5_plain_mm(
       "aoti_torch_cuda_int5_plain_mm: zero is null");
 
   ET_CHECK_OR_RETURN_ERROR(
-      zero_step != nullptr,
+      zero_point_step != nullptr,
       InvalidArgument,
-      "aoti_torch_cuda_int5_plain_mm: zero_step is null");
+      "aoti_torch_cuda_int5_plain_mm: zero_point_step is null");
 
   ET_CHECK_OR_RETURN_ERROR(
       ret0 != nullptr,
@@ -87,7 +87,7 @@ AOTITorchError aoti_torch_cuda_int5_plain_mm(
       &C);
 
   _int5_plain_mm_cuda(
-      *self, *ql, *qh, *scale, *scale_step, *zero, *zero_step, group_size, C);
+      *self, *ql, *qh, *scale, *scale_step, *zero, *zero_point_step, group_size, C);
   ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
 
   *ret0 = C;
