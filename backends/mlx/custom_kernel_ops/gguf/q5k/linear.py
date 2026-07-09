@@ -454,7 +454,7 @@ def _emit_q5k_matmul(
     )
 
 
-def emit_linear(
+def _emit_linear_fused(
     P: MLXProgramBuilder,
     head: Node,
     x_node: Node,
@@ -512,3 +512,23 @@ def emit_linear(
         ),
     )
     return out
+
+
+def emit_linear(
+    P: MLXProgramBuilder,
+    head: Node,
+    x_node: Node,
+    weight_node: Node,
+    bias_node: Optional[Node],
+) -> Slot:
+    """Dispatch to fused Metal kernels or the legacy MLX-native repack path."""
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q5k import emit_direct_gguf
+
+    if emit_direct_gguf():
+        return _emit_linear_fused(P, head, x_node, weight_node, bias_node)
+
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.linear_mlx_native import (
+        emit_linear as emit_linear_mlx_native,
+    )
+
+    return emit_linear_mlx_native(P, head, x_node, weight_node, bias_node)
