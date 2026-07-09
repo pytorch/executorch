@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: 22617bb5a5d2bf629a76833a5b55007173b1301a430e014337e9f4f04cf57baa
+// wgsl-sha256: e3c21e7db7c18f6e085de71e283988f0bd3b2543807ddc17774a1c607e69c766
 inline constexpr const char* kQ4gswLinearGemmSteelHalfWGSL = R"(
 enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
@@ -35,6 +35,9 @@ struct Params {
 @group(0) @binding(5) var<uniform> params: Params;
 
 // "steel" prefill GEMM (M>1): 64x64 tile, 256 threads; K%16==0 host-guarded.
+// The "steel" name + register-tiled dequant-to-shared GEMM structure are
+// inspired by MLX's steel GEMM kernels (github.com/ml-explore/mlx,
+// mlx/backend/metal/kernels/steel).
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
 var<workgroup> As: array<f16, 1024>;   // BM*BK
 var<workgroup> Bs: array<f16, 1024>;   // BK*BN
