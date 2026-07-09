@@ -428,6 +428,19 @@ def embedded_sha256(header_text: str) -> str:
     return m.group(1) if m else ""
 
 
+def _wg_size_const(base: str, axis: str, val: int) -> str:
+    """One WorkgroupSize constant; wrap to <=80 cols so CLANGFORMAT accepts it.
+
+    Long shader names push the single-line form past the 80-col limit (clang-format
+    then breaks after '=' with a 4-space continuation indent); emit that wrapped
+    form up front so the generated header matches lintrunner's CLANGFORMAT.
+    """
+    decl = f"inline constexpr uint32_t k{base}WorkgroupSize{axis} ="
+    if len(decl) + len(f" {val};") > 80:
+        return f"{decl}\n    {val};\n"
+    return f"{decl} {val};\n"
+
+
 def render_header(
     name_or_path, wgsl_text: str, provenance_stem: Optional[str] = None
 ) -> str:
@@ -470,9 +483,10 @@ def render_header(
         + wgsl_text
         + ')";'
         + "\n\n"
-        + f"inline constexpr uint32_t k{base}WorkgroupSizeX = {x};\n"
-        + f"inline constexpr uint32_t k{base}WorkgroupSizeY = {y};\n"
-        + f"inline constexpr uint32_t k{base}WorkgroupSizeZ = {z};\n\n"
+        + _wg_size_const(base, "X", x)
+        + _wg_size_const(base, "Y", y)
+        + _wg_size_const(base, "Z", z)
+        + "\n"
         + "} // namespace executorch::backends::webgpu\n"
     )
 
