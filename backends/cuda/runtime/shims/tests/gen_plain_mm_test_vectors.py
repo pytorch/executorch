@@ -276,7 +276,8 @@ def _parse_cpp_array(text: str, test_class: str, case_name: str, arr: str) -> Li
     if not m:
         raise AssertionError(f"TEST_F {case_name} not found in .cpp")
     body = text[m.end() :]
-    am = re.search(rf"\b{re.escape(arr)}\[\]\s*=\s*\{{(.*?)\}};", body, re.DOTALL)
+    pattern = r"\b" + re.escape(arr) + r"\[\]\s*=\s*\{(.*?)\};"
+    am = re.search(pattern, body, re.DOTALL)
     if not am:
         raise AssertionError(f"array {arr} not found in TEST_F {case_name}")
     return [int(x, 0) for x in re.findall(r"-?0[xX][0-9a-fA-F]+|-?\d+", am.group(1))]
