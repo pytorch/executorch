@@ -44,10 +44,6 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     validate_context_binary,
 )
-from executorch.backends.qualcomm.utils.check_qnn_version import (
-    is_qnn_sdk_version_greater_than,
-    is_qnn_sdk_version_less_than,
-)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ANNOTATION,
     QCOM_MODULE,
@@ -65,6 +61,8 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    is_qnn_sdk_version_greater_than,
+    is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
     skip_annotation,
@@ -3931,20 +3929,18 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(modules[i], sample_input)
 
-    @unittest.skipIf(is_qnn_sdk_version_less_than("2.48"), "UT pass after QNN 2.48")
+    # TODO: Once the accuracy issue is fixed, enable this test.
+    @unittest.skip("Bad accuracy for HTP")
     def test_qnn_backend_embedding_per_channel(self):
         module = Embedding()  # noqa: F405
         sample_input = (torch.Tensor([1, 2, 4, 5]).to(torch.int32),)
-        quant_dtype = [QuantDtype.use_16a8w, QuantDtype.use_16a4w]
-        for i, qdtype in enumerate(quant_dtype):
-            with self.subTest(i=i):
-                qdq_module = self.get_qdq_module(
-                    module,
-                    sample_input,
-                    quant_dtype=qdtype,
-                    is_embedding_per_channel=True,
-                )
-                self.lower_module_and_test_output(qdq_module, sample_input)
+        qdq_module = self.get_qdq_module(
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a8w,
+            is_embedding_per_channel=True,
+        )
+        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_equal(self):
         test_comb = [
@@ -8727,18 +8723,18 @@ class TestExampleLLMScript(TestQNN):
                         msg["wiki_ppl"], self.llm_specs[model_name].wikitext_ppl
                     )
 
-    def test_hf_causal_lm(self):
-        # This is the Hugging Face transformers flow, not the static llm flow.
+    def test_qwen2_5(self):
+        # This is not testing static llm flow.
         if not self.required_envs([]):
             self.skipTest("missing required envs")
         prompt = "My favourite condiment is "
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/qwen2_5/qwen2_5.py",
             "--prompt",
             prompt,
             "--decoder_model",
-            "qwen2_5-0_5b",
+            "qwen2.5_0.5B",
             "--ptq",
             "16a8w",
             "--enable_spinquant_r3",

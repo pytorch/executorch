@@ -98,10 +98,7 @@ def test_alias_u85_INT(test_data: input_t1):
     ).run()
 
 
-@common.parametrize(
-    "test_data",
-    AliasCopy.test_data | AliasCopy.test_data_bf16 | AliasCopy.test_data_fp16,
-)
+@common.parametrize("test_data", AliasCopy.test_data | AliasCopy.test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_alias_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](

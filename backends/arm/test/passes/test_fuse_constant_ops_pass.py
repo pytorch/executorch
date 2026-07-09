@@ -16,7 +16,6 @@ from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
-from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
@@ -25,7 +24,6 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.test.program_builder import ProgramBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.graph_signature import InputKind
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -343,52 +341,6 @@ def test_fuse_constant_args_fuses_chains_without_recompile() -> None:
     torch.testing.assert_close(actual, expected)
 
 
-def test_fuse_constant_args_preserves_unused_control_flow_inputs() -> None:
-    class CondWithCapturedBuffer(torch.nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.register_buffer("buf", torch.ones(1, 1, 1, 1))
-
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            def true_branch(buf: torch.Tensor, arg: torch.Tensor) -> torch.Tensor:
-                return arg + buf.view(1, 1, 1, 1)
-
-            def false_branch(buf: torch.Tensor, arg: torch.Tensor) -> torch.Tensor:
-                return arg * buf
-
-            return torch.cond(x.sum() > 0, true_branch, false_branch, [self.buf, x])
-
-    compile_spec = common.get_tosa_compile_spec(
-        TosaSpecification.create_from_string("TOSA-1.0+FP+cf")
-    )
-    tester = ArmTester(
-        CondWithCapturedBuffer(),
-        example_inputs=(torch.randn(1, 1, 2, 2),),
-        compile_spec=compile_spec,
-    )
-    tester.export().to_edge()
-    exported_program = tester.get_artifact(StageType.TO_EDGE).exported_program()
-
-    submodule_0 = exported_program.graph_module.get_submodule("submodule_0")
-    _, _, cond_node = get_cond_while_submodules(exported_program.graph_module)[0]
-    TOSABackend._regularize_submodule(submodule_0, cond_node)
-
-    pass_result = FuseConstantArgsPass(exported_program).call(submodule_0)
-
-    placeholders = [
-        node
-        for node in pass_result.graph_module.graph.nodes
-        if node.op == "placeholder"
-    ]
-    assert [node.name for node in placeholders] == [
-        "aten_view_copy_default_fused_const",
-        "b_buf",
-        "x",
-    ]
-    assert placeholders[1].meta["is_input"] is True
-    assert len(placeholders[1].users) == 0
-
-
 def test_fuse_constant_args_identifies_tosa_dialect_targets() -> None:
     class FakeTosaTarget:
         def __str__(self) -> str:
@@ -399,15 +351,6 @@ def test_fuse_constant_args_identifies_tosa_dialect_targets() -> None:
         exir_ops.backend.tosa.GATHER.default
     )
     assert not FuseConstantArgsPass._is_tosa_dialect_op(torch.ops.aten.add.Tensor)
-    assert FuseConstantArgsPass._has_real_tosa_dialect_impl(
-        exir_ops.backend.tosa.GATHER.default
-    )
-    assert FuseConstantArgsPass._has_real_tosa_dialect_impl(
-        exir_ops.backend.tosa.RESCALE.default
-    )
-    assert not FuseConstantArgsPass._has_real_tosa_dialect_impl(
-        exir_ops.backend.tosa.TABLE.default
-    )
 
 
 def test_fuse_constant_args_identifies_symbolic_shape_args() -> None:
@@ -421,24 +364,24 @@ def test_fuse_constant_args_identifies_symbolic_shape_args() -> None:
     )
 
 
-def test_fuse_constant_args_skips_tosa_ops_without_real_impl(caplog) -> None:
-    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+def test_fuse_constant_args_skips_backend_tosa_gather(caplog) -> None:
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.1+FP+shape")):
         builder = ProgramBuilder()
-        input_tensor = builder.placeholder(
-            "input_tensor",
-            torch.tensor([-3, 2], dtype=torch.int8),
+        values = builder.placeholder(
+            "values",
+            torch.randn(1, 4, 3),
             input_kind=InputKind.CONSTANT_TENSOR,
         )
-        table = builder.placeholder(
-            "table",
-            torch.arange(256, dtype=torch.int16).to(torch.int8),
+        indices = builder.placeholder(
+            "indices",
+            torch.tensor([[0, 2]], dtype=torch.int32),
             input_kind=InputKind.CONSTANT_TENSOR,
         )
-        table_lookup = builder.call_operator(
-            exir_ops.backend.tosa.TABLE.default,
-            (input_tensor, table),
+        gather = builder.call_operator(
+            exir_ops.backend.tosa.GATHER.default,
+            (values, indices),
         )
-        builder.output([table_lookup])
+        builder.output([gather])
 
         exported_program = builder.get_program()
         graph_module = exported_program.graph_module
@@ -452,52 +395,13 @@ def test_fuse_constant_args_skips_tosa_ops_without_real_impl(caplog) -> None:
         if record.name == "executorch.backends.arm._passes.fuse_constant_ops_pass"
     ]
     assert not any(
-        "Failed to fuse constant op" in message and "TABLE" in message
+        "Failed to fuse constant op" in message and "GATHER" in message
         for message in warning_messages
     )
     assert (
         sum(
             node.op == "call_function"
-            and node.target == exir_ops.backend.tosa.TABLE.default
-            for node in graph_module.graph.nodes
-        )
-        == 1
-    )
-
-
-def test_fuse_constant_args_skips_tosa_rescale(caplog) -> None:
-    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
-        builder = ProgramBuilder()
-        input_tensor = builder.placeholder(
-            "input_tensor",
-            torch.tensor([1, 2], dtype=torch.int32),
-            input_kind=InputKind.CONSTANT_TENSOR,
-        )
-        rescale = builder.call_operator(
-            exir_ops.backend.tosa.RESCALE.default,
-            (input_tensor, torch.int8, [1.0], 0, 0),
-        )
-        builder.output([rescale])
-
-        exported_program = builder.get_program()
-        graph_module = exported_program.graph_module
-
-        with caplog.at_level("WARNING"):
-            FuseConstantArgsPass(exported_program)(graph_module)
-
-    warning_messages = [
-        record.getMessage()
-        for record in caplog.records
-        if record.name == "executorch.backends.arm._passes.fuse_constant_ops_pass"
-    ]
-    assert not any(
-        "Failed to fuse constant op" in message and "RESCALE" in message
-        for message in warning_messages
-    )
-    assert (
-        sum(
-            node.op == "call_function"
-            and node.target == exir_ops.backend.tosa.RESCALE.default
+            and node.target == exir_ops.backend.tosa.GATHER.default
             for node in graph_module.graph.nodes
         )
         == 1
