@@ -534,8 +534,8 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        # Current CI size: 52168 (gcc9-nopytorch, 2026-07-06)
-        threshold="52168"
+        # Current CI size: 48008 (gcc9-nopytorch, 2026-03-06)
+        threshold="48500"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -852,7 +852,8 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        pt2e_quantize: [qnn_16a16w, qnn_8a8w]
+        # TODO(T12345): re-enable qnn_16a16w once OOM on linux.2xlarge is resolved
+        pt2e_quantize: [qnn_8a8w]
         mode: [qnn]
       fail-fast: false
     with:

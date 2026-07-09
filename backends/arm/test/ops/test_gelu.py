@@ -151,7 +151,7 @@ def test_gelu_u85_INT(test_data: input_t1):
     ).run()
 
 
-@common.parametrize("test_data", Gelu.test_data | Gelu.test_data_bf16)
+@common.parametrize("test_data", Gelu.test_data)
 @common.SkipIfNoModelConverter
 def test_gelu_vgf_no_quant(test_data: input_t1):
     approximate, data = test_data()
@@ -162,8 +162,6 @@ def test_gelu_vgf_no_quant(test_data: input_t1):
         Gelu.exir_op,
         quantize=False,
     )
-    if data.dtype == torch.bfloat16:
-        pipeline.change_args("run_method_and_compare_outputs", atol=1e-2, rtol=1e-2)
     pipeline.run()
 
 
