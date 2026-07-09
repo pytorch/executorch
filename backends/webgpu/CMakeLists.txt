@@ -104,6 +104,40 @@ if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
   )
 endif()
 
+# Opt-in f16-multiply steel q4gsw prefill GEMM (QuantizedLinear.cpp); OFF so
+# default builds keep the f32 kernel + strict golden. Runtime-gated on the
+# negotiated shader-f16 feature (fail-closed). Mirrors the profiling gate above.
+option(EXECUTORCH_WEBGPU_STEEL_F16
+       "Enable the f16-multiply steel q4gsw prefill GEMM (needs shader-f16)"
+       OFF
+)
+if(EXECUTORCH_WEBGPU_STEEL_F16)
+  target_compile_definitions(webgpu_backend PRIVATE WGPU_BACKEND_STEEL_F16)
+endif()
+
+# Opt-in f16-ACCUMULATE steel q4gsw prefill GEMM (QuantizedLinear.cpp); OFF so
+# default builds keep f32 accumulation + the strict golden. LOSSY (f16
+# accumulate over K) -- ships on a perplexity bar, not a bit-exact gate.
+# Runtime-gated on the negotiated shader-f16 feature (fail-closed). Mirrors the
+# steel-f16 gate above.
+option(EXECUTORCH_WEBGPU_STEEL_F16ACC
+       "Enable the f16-accumulate steel q4gsw prefill GEMM (needs shader-f16)"
+       OFF
+)
+if(EXECUTORCH_WEBGPU_STEEL_F16ACC)
+  target_compile_definitions(webgpu_backend PRIVATE WGPU_BACKEND_STEEL_F16ACC)
+endif()
+
+# Opt-in native f16 KV cache (Sdpa.cpp/WebGPUGraph.cpp); OFF so default builds
+# keep the f32 cache + a byte-identical graph. Runtime-gated on the negotiated
+# shader-f16 feature (fail-closed). Mirrors the steel-f16 gate above.
+option(EXECUTORCH_WEBGPU_KV_F16 "Enable native f16 KV cache (needs shader-f16)"
+       OFF
+)
+if(EXECUTORCH_WEBGPU_KV_F16)
+  target_compile_definitions(webgpu_backend PRIVATE WGPU_BACKEND_KV_F16)
+endif()
+
 # Link with --whole-archive for static registration of backend + ops
 executorch_target_link_options_shared_lib(webgpu_backend)
 
@@ -146,6 +180,15 @@ function(add_webgpu_native_test test_name test_src)
     target_compile_definitions(
       ${test_name} PRIVATE WGPU_BACKEND_ENABLE_PROFILING
     )
+  endif()
+  if(EXECUTORCH_WEBGPU_STEEL_F16)
+    target_compile_definitions(${test_name} PRIVATE WGPU_BACKEND_STEEL_F16)
+  endif()
+  if(EXECUTORCH_WEBGPU_STEEL_F16ACC)
+    target_compile_definitions(${test_name} PRIVATE WGPU_BACKEND_STEEL_F16ACC)
+  endif()
+  if(EXECUTORCH_WEBGPU_KV_F16)
+    target_compile_definitions(${test_name} PRIVATE WGPU_BACKEND_KV_F16)
   endif()
   set_property(TARGET ${test_name} PROPERTY CXX_STANDARD 17)
 endfunction()
