@@ -51,9 +51,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10,<3.15"
 
 # Runtime dependencies are declared dynamically (see `dynamic` above) and
 # computed in setup.py, so the EXECUTORCH_BUILD_MINIMAL wheel can ship a slimmer
@@ -61,10 +62,6 @@ requires-python = ">=3.10,<3.14"
 # in setup.py.
 
 [project.optional-dependencies]
-cortex_m = [
-  # Keep this in sync with AoT deps from backends/cortex_m/requirements-cortex-m.txt
-  "cmsis_nn @ git+https://github.com/ARM-software/CMSIS-NN.git@d933672e7ca97eec70ef43230baee7b20c2a28ae",
-]
 vgf = [
   # AoT vgf dependencies
   # Keep this in sync with AoT deps from backends/arm/requirements-arm-vgf.txt and
@@ -78,7 +75,7 @@ ethos_u = [
   # AoT ethos_u dependencies
   # Keep this in sync with AoT deps backends/arm/requirements-arm-ethos-u.txt and
   # backends/arm/requirements-arm-tosa.txt.
-  "ethos-u-vela==5.0.0",
+  "ethos-u-vela==5.1.0",
   "ml_dtypes==0.5.1",
   "tosa-tools==2026.5.0",
 ]
@@ -143,6 +140,9 @@ first_party_detection = false
 # Emit syntax compatible with older versions of python instead of only the range
 # specified by `requires-python`. TODO: Remove this once we support these older
 # versions of python and can expand the `requires-python` range.
+# py314 is intentionally omitted: black 24.4.2 does not recognize it, and the
+# newer black that does (>=26) reformats the whole repo. Add py314 here when the
+# tree is reformatted to the newer black stable style.
 target-version = ["py38", "py39", "py310", "py311", "py312", "py313"]
 
 [tool.docformatter]
@@ -152,3 +152,27 @@ wrap-descriptions = 80
 style = "sphinx"
 close-quotes-on-newline = true
 blank = true
+
+[tool.ruff.lint]
+select = ["D"]
+ignore = [
+  # Allow incremental adoption on legacy modules.
+  "D100",
+  "D104",
+  "D107",
+  # Keep the formatter-compatible rule pair for class docstring spacing.
+  "D203",
+  "D213",
+  # Numpy-style section rules conflict with Google-style docstrings.
+  "D406",
+  "D407",
+  "D408",
+  "D409",
+  "D410",
+  "D411",
+  "D412",
+  "D413",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

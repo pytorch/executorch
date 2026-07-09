@@ -14,13 +14,12 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from functools import wraps
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional
 
-import torch
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
-from executorch.backends.qualcomm.utils.utils import (
+from executorch.backends.qualcomm.utils.check_qnn_version import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
@@ -34,12 +33,17 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     StaticLLMQuantRecipe,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch.utils.data import DataLoader
 from transformers import AutoConfig
 
 
 class Mode(Enum):
+    # AR-N graph compiled and deployed for runtime.
     PREFILL = 1
+    # AR-1 graph compiled and deployed for runtime.
     DECODE = 2
+    # Full AR sequence mode; used for quantization, never deployed.
+    # After convert_pt2e, its scale/zp are propagated to DECODE and PREFILL via _encoding_override.
     CALIBRATE = 3
 
 
@@ -86,7 +90,6 @@ def process_model_args(
         config: LLMModelConfig object to be used.
         mode: Mode of operation (PREFILL, DECODE, or CALIBRATE).
     """
-    # TODO: support batch inputs if necessary
     if mode == Mode.DECODE:
         ar_len = (
             # To get better performance, we round up to the nearest power of 2.
@@ -103,7 +106,8 @@ def process_model_args(
     else:
         raise ValueError(f"Unsupported mode: {mode}")
 
-    model_args.max_batch_size = 1
+    # TODO: support batch inputs for runtime mode if necessary
+    model_args.max_batch_size = control_args.batch_size if mode == Mode.CALIBRATE else 1
     model_args.max_seq_len = control_args.max_seq_len
     model_args.max_context_len = control_args.max_context_len
     model_args.use_kv_cache = (
@@ -162,9 +166,9 @@ class Processor:
 class Request:
     @dataclass
     class CalibrationData:
-        datasets: List[Tuple[torch.Tensor]] = None
-        intermediate_outputs: List[Tuple[torch.Tensor]] = None
-        qdq_intermediate_outputs: List[Tuple[torch.Tensor]] = None
+        datasets: Optional[DataLoader] = None
+        intermediate_outputs: Optional[DataLoader] = None
+        qdq_intermediate_outputs: Optional[DataLoader] = None
 
     @dataclass
     class Data:

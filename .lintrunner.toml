@@ -139,7 +139,6 @@ exclude_patterns = [
     'backends/cuda/**',
     'backends/mediatek/**',
     'backends/mlx/**',
-    'backends/nxp/**',
     'backends/openvino/**',
     'backends/qualcomm/**',
     'backends/samsung/**',
@@ -151,7 +150,6 @@ exclude_patterns = [
     # Backend-owned examples to onboard with those backends.
     'examples/demo-apps/**',
     'examples/mediatek/**',
-    'examples/nxp/**',
     'examples/qualcomm/**',
     'examples/samsung/**',
 
@@ -681,6 +679,41 @@ command = [
     """,
     '--',
     '@{{PATHSFILE}}',
+]
+
+[[linter]]
+code = 'RUFF_DOCS'
+include_patterns = [
+  'backends/arm/__init__.py',
+  'backends/arm/common/arm_compile_spec.py',
+  'backends/arm/ethosu/**/*.py',
+  'backends/arm/quantizer/__init__.py',
+  'backends/arm/quantizer/arm_quantizer.py',
+  'backends/arm/tosa/partitioner.py',
+  'backends/arm/vgf/**/*.py',
+]
+exclude_patterns = [
+  'third-party/**',
+  '**/third-party/**',
+]
+command = [
+  'python',
+  '-m',
+  'lintrunner_adapters',
+  'run',
+  'ruff_linter',
+  '--config=pyproject.toml',
+  '--',
+  '@{{PATHSFILE}}',
+]
+init_command = [
+  'python',
+  '-m',
+  'lintrunner_adapters',
+  'run',
+  'pip_init',
+  '--dry-run={{DRYRUN}}',
+  '--requirement=requirements-lintrunner.txt',
 ]
 
 [[linter]]

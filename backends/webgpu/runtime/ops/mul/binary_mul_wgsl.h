@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from binary_mul.wgsl - DO NOT EDIT.
-// wgsl-sha256: e7f77426cbaf48e6085e0d882522c027302ec97ef017b86a2275eed9820f7891
+// wgsl-sha256: cca69c3428f37f293942637e23f664225dec81a56f184bcb63185b6629dd155e
 inline constexpr const char* kBinaryMulWGSL = R"(
 @group(0) @binding(0) var<storage, read> input1: array<f32>;
 @group(0) @binding(1) var<storage, read> input2: array<f32>;
@@ -32,8 +32,11 @@ struct TensorMeta {
 override wg_size: u32 = 64u;
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    // 2D-folded flat index (lifts the 65535 1D-dispatch cap for large numel).
+    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (idx >= out_meta.numel) {
         return;
     }

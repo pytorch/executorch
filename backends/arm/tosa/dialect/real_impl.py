@@ -9,8 +9,6 @@ from typing import Any, Callable
 
 import numpy as np
 import torch
-import tosa_reference_model as reference_model  # type: ignore[import-not-found, import-untyped]
-import tosa_serializer as ts
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -56,6 +54,11 @@ def make_tosa_reference_model_impl(
     op_name = op_schema.split("(")[0]
 
     def real_impl(*args, **kwargs) -> torch.Tensor:
+        # Import lazily: the reference model is only needed to execute an op,
+        # not to import the dialect. Linking the native extension into every
+        # dialect consumer overflows the ELF relocation limit in large builds.
+        import tosa_reference_model as reference_model  # type: ignore[import-not-found, import-untyped]
+        import tosa_serializer as ts
 
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
@@ -75,22 +78,31 @@ def make_tosa_reference_model_impl(
 
         graph = torch.fx.Graph()
         node_args: list[Any] = []
+        node_kwargs: dict[str, Any] = {}
         placeholder_nodes: list[torch.fx.Node] = []
         op_handle = getattr(exir_ops.backend.tosa, op_name).default
-
         with FakeTensorMode(allow_non_fake_inputs=True) as mode:
             for parameter, arg in zip(signature.parameters.values(), normalized_args):
                 if isinstance(arg, torch.Tensor):
                     placeholder = graph.placeholder(parameter.name)
                     placeholder.meta["val"] = mode.from_tensor(arg.detach().cpu())
                     placeholder_nodes.append(placeholder)
-                    node_args.append(placeholder)
+                    fx_arg = placeholder
                 else:
-                    node_args.append(arg)
-
-            op_node = graph.call_function(op_handle, tuple(node_args), {})
+                    fx_arg = arg
+                if parameter.kind in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                ):
+                    node_args.append(fx_arg)
+                elif parameter.kind == inspect.Parameter.KEYWORD_ONLY:
+                    node_kwargs[parameter.name] = fx_arg
+                else:
+                    raise NotImplementedError(
+                        f"Unsupported parameter kind for tosa.{op_name}: {parameter.kind}"
+                    )
+            op_node = graph.call_function(op_handle, tuple(node_args), node_kwargs)
             op_node.meta["val"] = mode.from_tensor(fake_output.detach().cpu())
-            graph.output((op_node,))
 
         tosa_spec = get_context_spec()
         version = tosa_spec.version

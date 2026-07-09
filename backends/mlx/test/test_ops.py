@@ -27,6 +27,7 @@ See README.md in this directory for full documentation.
 import os
 from typing import Callable, Dict, List, Optional, Tuple
 
+import executorch.exir as exir
 import torch
 import torch.nn as nn
 
@@ -35,6 +36,7 @@ from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa:
     custom_ops,
     ops,
 )
+from executorch.backends.mlx.llm.sampling import SamplingHead
 from torch.export import Dim
 
 from .test_utils import OpTestCase, register_test
@@ -110,6 +112,62 @@ class AddTest(OpTestCase):
         else:
             y = torch.randn(self.shape)
             return (x, y)
+
+
+class ReinplaceChainModel(nn.Module):
+    """Elementwise chain the reinplace pass converts to in-place ops.
+
+    Mixes a pure unary op (exp), activations (sigmoid/relu/clamp/gelu), and
+    binary ops (add/mul/sub) so the chain exercises the unary, activation, and
+    binary in-place handlers. Every op after the first sigmoid consumes a
+    single-use temp, so all become in-place (sigmoid_/add_/relu_/mul_/clamp_/
+    exp_/gelu_/sub_) and run on one rolling buffer; the terminal neg writes the
+    graph output. Inputs are kept NaN/Inf-free: sigmoid -> bounded, clamp to
+    [-2, 2] before exp so exp stays in [e^-2, e^2].
+    """
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        s = torch.sigmoid(x)  # reads input -> fresh temp
+        s = s + y  # add_
+        s = torch.relu(s)  # relu_ (activation)
+        s = s * y  # mul_
+        s = torch.clamp(s, -2.0, 2.0)  # clamp_ (activation), bounds exp below
+        s = torch.exp(s)  # exp_ (pure unary)
+        s = torch.nn.functional.gelu(s)  # gelu_ (activation)
+        s = s - y  # sub_
+        return torch.neg(s)  # terminal output (not in-place)
+
+
+@register_test
+class ReinplaceChainTest(OpTestCase):
+    """On-device numeric check that reinplaced (out==in) ops are correct.
+
+    Lowers with get_default_passes() so the MLXReinplacePass + in-place handlers
+    (out == in buffer donation) run through the actual MLX runtime. The
+    build-level aliasing is unit-tested in test_passes.py; only on-device
+    execution catches a read-after-overwrite bug from buffer reuse.
+    """
+
+    name = "reinplace_chain"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def create_model(self) -> nn.Module:
+        return ReinplaceChainModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(2, 16, 64), torch.randn(2, 16, 64))
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # Reinplace introduces non-core-ATen in-place ops (add_, sigmoid_, ...),
+        # so disable the strict edge verifier — matching the production export
+        # path (which also runs get_default_passes with this config).
+        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
 
 class SubModel(nn.Module):
@@ -402,6 +460,60 @@ class HardtanhTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         # Values span well beyond the bounds so clamping is actually exercised
         x = torch.randn(self.shape) * 4
+        return (x,)
+
+
+class LeakyReLUModel(nn.Module):
+    """Model that applies leaky_relu with an optional negative slope."""
+
+    def __init__(self, negative_slope: Optional[float] = 0.01):
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.negative_slope is None:
+            return torch.nn.functional.leaky_relu(x)
+        return torch.nn.functional.leaky_relu(x, negative_slope=self.negative_slope)
+
+
+@register_test
+class LeakyReLUTest(OpTestCase):
+    """Test case for leaky_relu activation with various negative slopes."""
+
+    name = "leaky_relu"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (2, 3, 4),
+        negative_slope: Optional[float] = 0.01,
+    ):
+        self.shape = shape
+        self.negative_slope = negative_slope
+        shape_str = "x".join(str(s) for s in shape)
+        slope_str = "default" if negative_slope is None else f"slope{negative_slope}"
+        self.name = f"leaky_relu_{slope_str}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["LeakyReLUTest"]:
+        return [
+            cls(shape=(2, 3, 4), negative_slope=0.01),
+            cls(shape=(2, 3, 4), negative_slope=None),
+            cls(shape=(4, 8), negative_slope=0.1),
+            cls(shape=(10,), negative_slope=0.2),
+            cls(shape=(10,), negative_slope=1.5),
+            cls(shape=(2, 8, 16), negative_slope=0.01),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return LeakyReLUModel(self.negative_slope)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        numel = 1
+        for size in self.shape:
+            numel *= size
+        x = torch.linspace(-4.0, 4.0, steps=numel).reshape(self.shape)
         return (x,)
 
 
@@ -4625,6 +4737,21 @@ def _nan_input_fn(nan_frac: float = 0.3):
     return fn
 
 
+def _inf_input_fn():
+    """Return a callable(shape, dtype) that generates inputs with some inf values."""
+
+    def fn(shape, dtype):
+        x = torch.randn(shape, dtype=dtype)
+        # Insert ~20% +inf and ~10% -inf using non-overlapping masks
+        mask_pos = torch.rand(shape) > 0.8  # ~20% -> +inf
+        mask_neg = (~mask_pos) & (torch.rand(shape) > 0.9)  # ~10% of remaining -> -inf
+        x[mask_pos] = float("inf")
+        x[mask_neg] = float("-inf")
+        return (x,)
+
+    return fn
+
+
 # Standard shape and dtype configs used by unary tests.
 _SHAPES_3 = [(16,), (4, 4), (2, 3, 4)]
 _SHAPES_2 = [(16,), (4, 4)]
@@ -4718,6 +4845,7 @@ _UNARY_OP_TESTS = [
     {"op_name": "logical_not","op_fn": torch.logical_not, "shapes": [(2, 3, 4), (10,), (4, 8)], "dtypes": [torch.bool], "input_fn": _bool_input_fn()},
     {"op_name": "bitwise_not_int", "op_fn": torch.bitwise_not, "shapes": _SHAPES_3, "dtypes": [torch.int32, torch.int64], "input_fn": _int_input_fn()},
     {"op_name": "isnan",      "op_fn": torch.isnan,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _nan_input_fn()},
+    {"op_name": "isinf",      "op_fn": torch.isinf,      "shapes": _SHAPES_3, "dtypes": [torch.float32, torch.float16, torch.bfloat16], "input_fn": _inf_input_fn()},
     # activations
     {"op_name": "relu",    "op_fn": torch.relu,    "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 128, 64)], "dtypes": [torch.float32], "input_fn": _input_fn(scale=2, offset=-1)},
     {"op_name": "sigmoid", "op_fn": torch.sigmoid, "shapes": [(2, 3, 4), (10,), (4, 8), (2, 8, 16), (1, 1, 128)],  "dtypes": [torch.float32], "input_fn": _input_fn(scale=2)},
@@ -6191,6 +6319,8 @@ class QuantizedLinearTest(OpTestCase):
             cls(group_size=128),
             cls(qdtype=torch.int2),
             cls(qdtype=torch.int8),
+            cls(qdtype=torch.int6),
+            cls(qdtype=torch.int6, group_size=128),
             # group_size=16: exercises the non-fused dequantize+matmul path
             # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
             cls(qdtype=torch.int8, group_size=16),
@@ -7579,3 +7709,221 @@ class Int4QuantizedEmbeddingTest(OpTestCase):
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randint(0, self.num_embeddings, (self.batch_size, self.seq_len))
         return (x,)
+
+
+class _LogitsPassthrough(nn.Module):
+    """Stand-in for a model returning logits [B, vocab]."""
+
+    def forward(self, logits: torch.Tensor) -> torch.Tensor:
+        return logits
+
+
+# Baked constants for sampling params a fixture does not expose as a runtime
+# input: keep-all top_k and top_p=off.
+_KEEP_ALL_TOP_K = torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64)
+_TOP_P_OFF = torch.tensor(1.0)
+
+
+class SeededSampleModel(nn.Module):
+    """SamplingHead with temperature AND seed as runtime forward inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, seed)
+
+
+class UnseededSampleModel(nn.Module):
+    """SamplingHead with temperature as a runtime input and no seed."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, _TOP_P_OFF, None)
+
+
+class TopPSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_p as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_p):
+        return self.head(logits, temperature, _KEEP_ALL_TOP_K, top_p, seed)
+
+
+class TopKSampleModel(nn.Module):
+    """SamplingHead with temperature, seed, and top_k as runtime inputs."""
+
+    def __init__(self):
+        super().__init__()
+        self.head = SamplingHead(_LogitsPassthrough())
+
+    def forward(self, logits, temperature, seed, top_k):
+        return self.head(logits, temperature, top_k, _TOP_P_OFF, seed)
+
+
+@register_test
+class SampleSeededTest(OpTestCase):
+    """Seeded sample lowers to one MLX segment; seed threads in via ItemIntNode."""
+
+    name = "sample_seeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,  # temperature==0 greedy branch
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,  # sampling branch + greedy branch
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,  # top-p nucleus chain
+        "SortNode": 2,  # top-k threshold + top-p nucleus chain
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return SeededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+        )
+
+
+@register_test
+class SampleUnseededTest(OpTestCase):
+    """Unseeded sample lowers without a seed field (only the cond ItemIntNode)."""
+
+    name = "sample_unseeded"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 2,  # top_k + temperature>0 condition only (no seed)
+        "SoftmaxNode": 1,  # top-p nucleus chain (top_p defaults to 1.0)
+    }
+
+    def create_model(self) -> nn.Module:
+        return UnseededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(1, 256), torch.tensor(0.8))
+
+
+@register_test
+class SampleTopPTest(OpTestCase):
+    """Top-p sample emits the nucleus chain (softmax/sort/cumsum/min/where)."""
+
+    name = "sample_top_p"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,
+        "SoftmaxNode": 1,
+        "SortNode": 2,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopPSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(0.9),
+        )
+
+
+@register_test
+class SampleTopKTest(OpTestCase):
+    """Top-k sample emits the threshold before the top-p nucleus chain."""
+
+    name = "sample_top_k"
+    skip_comparison = True  # sampling RNG is not host/device bit-identical
+    expected_node_counts = {
+        "IfNode": 1,
+        "RandomBitsNode": 1,
+        "ArgmaxNode": 2,
+        "ItemIntNode": 3,  # seed + top_k + temperature>0 condition
+        "SoftmaxNode": 1,
+        "SortNode": 2,
+        "CumsumNode": 1,
+        "MinNode": 1,
+        "TakeNode": 1,  # top-k threshold gather
+        "ExpandDimsNode": 1,
+        "LogicalOrNode": 0,
+        "WhereNode": 3,
+    }
+
+    def create_model(self) -> nn.Module:
+        return TopKSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, 256),
+            torch.tensor(0.8),
+            torch.tensor(0, dtype=torch.int64),
+            torch.tensor(2, dtype=torch.int64),
+        )
+
+
+@register_test
+class SampleGreedyTest(OpTestCase):
+    """Greedy argmax(logits) is bit-exact host/device, so verify the token with the
+    normal compare. Covers temperature=0, tiny temperature, bf16 logits, and a
+    batch (per-row argmax -> [B] on device)."""
+
+    name = "sample_greedy"
+
+    def __init__(
+        self,
+        temperature: float = 0.0,
+        dtype: torch.dtype = torch.float32,
+        batch: int = 1,
+        tag: str = "",
+    ):
+        self.temperature = temperature
+        self.dtype = dtype
+        self.batch = batch
+        self.name = f"sample_greedy_{tag}" if tag else "sample_greedy"
+
+    @classmethod
+    def get_test_configs(cls) -> List["SampleGreedyTest"]:
+        return [
+            cls(temperature=0.0),
+            cls(temperature=1e-4, tag="eps"),
+            cls(temperature=-1.0, tag="neg"),  # negative -> greedy on both paths
+            cls(temperature=1e-4, dtype=torch.bfloat16, tag="bf16"),
+            cls(temperature=0.0, batch=4, tag="batch"),  # per-row argmax over a batch
+        ]
+
+    def create_model(self) -> nn.Module:
+        return SeededSampleModel()
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        logits = torch.randn(self.batch, 1024, dtype=self.dtype)
+        if self.dtype == torch.bfloat16:
+            logits[0, 512] = 50.0  # dominant -> unambiguous bf16 argmax
+        return (
+            logits,
+            torch.tensor(self.temperature),
+            torch.tensor(0, dtype=torch.int64),
+        )
