@@ -157,13 +157,6 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
 
-# pybind11 >=3.0 uses find_package(Python) which looks for Python_EXECUTABLE,
-# not the legacy PYTHON_EXECUTABLE variable. Bridge the two so pybind11 picks up
-# the interpreter that setup.py (or the user) specified.
-if(PYTHON_EXECUTABLE AND NOT Python_EXECUTABLE)
-  set(Python_EXECUTABLE "${PYTHON_EXECUTABLE}")
-endif()
-
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUILD_TESTING)
@@ -266,27 +259,6 @@ else()
 endif()
 
 add_subdirectory(third-party)
-
-# On Apple, pybind11 SHARED extension modules must not link libpython directly.
-# When python_add_library creates a SHARED library, it links Python::Python (via
-# pybind11::embed) which pulls in libpython. This conflicts with pybind11
-# >=3.0's multi-phase module init — the duplicate Python runtime causes a GIL
-# state crash at import time. This function replaces pybind11::embed with
-# pybind11::module (which links Python::Module instead of Python::Python —
-# headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
-# symbol resolution. No-op on non-Apple platforms.
-function(strip_python_lib target)
-  if(NOT APPLE)
-    return()
-  endif()
-  get_target_property(_libs ${target} LINK_LIBRARIES)
-  if(_libs)
-    list(REMOVE_ITEM _libs Python::Python pybind11::embed)
-    list(APPEND _libs pybind11::module)
-    set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_libs}")
-  endif()
-  target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
-endfunction()
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
 # ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
@@ -1142,7 +1114,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
-  strip_python_lib(portable_lib)
   # The actual output file needs a leading underscore so it can coexist with
   # portable_lib.py in the same python package. PyTorch requires C++20, so
   # pybindings must be compiled with C++20.
@@ -1184,7 +1155,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   pybind11_add_module(
     data_loader SHARED extension/pybindings/pybindings_data_loader.cpp
   )
-  strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
   target_link_libraries(data_loader PRIVATE executorch)
