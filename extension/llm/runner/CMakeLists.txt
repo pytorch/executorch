@@ -112,7 +112,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   pybind11_add_module(
     _llm_runner SHARED ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
   )
-  strip_python_lib(_llm_runner)
 
   find_package_torch()
   find_library(
