@@ -104,7 +104,9 @@ class WebGPUGraph {
   void build(
       const void* flatbuffer_data,
       const uint8_t* constant_data,
-      const executorch::runtime::NamedDataMap* named_data_map = nullptr);
+      const executorch::runtime::NamedDataMap* named_data_map = nullptr,
+      bool f16_kv_cache = false,
+      bool f16_accumulate_gemm = false);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
@@ -267,6 +269,35 @@ class WebGPUGraph {
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
 
+  // Reusable scratch pool for SINGLE-OP-LIFETIME fused-op scratch (SDPA
+  // attn_weights/softmax, FlashDecoding partials). acquire_scratch() reuses a
+  // free slot (best-fit, size in [n,2n]) or creates one; the caller RELEASES it
+  // at op-lowering scope exit (use ScopedScratch), so N layers' scratch reuses
+  // a small constant of buffers instead of N x held to graph teardown.
+  // Correctness: WebGPU/Dawn auto-inserts RAW hazard barriers between
+  // dispatches on a shared storage buffer regardless of pass structure -- the
+  // SAME guarantee mem_obj_id aliasing already relies on -- so reuse is
+  // bit-identical. Never hand a still-in_use slot to a co-live requester.
+  WGPUBuffer acquire_scratch(size_t nbytes);
+  void release_scratch(WGPUBuffer buffer);
+  // RAII: releases an acquired scratch slot when the op-lowering scope exits
+  // (leak-safe vs early returns).
+  struct ScopedScratch {
+    WebGPUGraph* g = nullptr;
+    WGPUBuffer buf = nullptr;
+    ScopedScratch(WebGPUGraph* graph, WGPUBuffer b) : g(graph), buf(b) {}
+    ~ScopedScratch() {
+      if (g && buf) {
+        g->release_scratch(buf);
+      }
+    }
+    ScopedScratch(const ScopedScratch&) = delete;
+    ScopedScratch& operator=(const ScopedScratch&) = delete;
+    operator WGPUBuffer() const {
+      return buf;
+    }
+  };
+
   // Create a mapped-at-creation uniform buffer from `size` bytes and track it
   // in the memory stats. Shared helper for ops needing a uniform Params buffer.
   WGPUBuffer make_uniform_buffer(const void* data, size_t size);
@@ -313,6 +344,23 @@ class WebGPUGraph {
   ValueType get_value_type(int id) const {
     return value_types_[id];
   }
+
+ public:
+  // True when the sdpa K/V cache is stored f16-packed (runtime opt-in).
+  bool kv_f16() const {
+    return kv_f16_;
+  }
+
+  // True when the q4gsw steel prefill GEMM uses the lossy f16-accumulate kernel
+  // (runtime opt-in; perplexity-gated, not bit-exact).
+  bool f16_accumulate_gemm() const {
+    return f16_accumulate_gemm_;
+  }
+
+ private:
+  bool kv_f16_ = false;
+  std::unordered_set<int> kv_cache_ids_;
+  bool f16_accumulate_gemm_ = false;
 
  private:
   WGPUInstance instance_ = nullptr;
@@ -365,6 +413,16 @@ class WebGPUGraph {
 
   // Long-lived scratch storage buffers for fused ops (e.g. SDPA temporaries).
   std::vector<WGPUBuffer> scratch_buffers_;
+
+  // Reusable scratch pool: single-op-lifetime buffers recycled across ops
+  // (acquire_scratch/release_scratch). Each slot is freed in the dtor. See
+  // acquire_scratch() for the reuse policy.
+  struct ScratchSlot {
+    WGPUBuffer buffer = nullptr;
+    size_t size = 0;
+    bool in_use = false;
+  };
+  std::vector<ScratchSlot> scratch_pool_;
 
   // Uniform buffers owned for the graph's lifetime; released in the dtor.
   std::vector<WGPUBuffer> owned_uniform_buffers_;

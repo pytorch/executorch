@@ -1,8 +1,24 @@
-$if DTYPE == "half":
-  enable f16;
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from sdpa_compute_attn_weights.wgsl - DO NOT EDIT.
+// wgsl-sha256: c8795d66b9b51516795fb0113b21fd55086b4a54d9a4b81c7f394ffd96d117b3
+inline constexpr const char* kSdpaComputeAttnWeightsHalfWGSL = R"(
+enable f16;
 @group(0) @binding(0) var<storage, read_write> t_attn_weights: array<f32>;
 @group(0) @binding(1) var<storage, read> t_q: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read> t_k_cache: array<${buffer_gvec_type(DTYPE, 4)}>;
+@group(0) @binding(2) var<storage, read> t_k_cache: array<vec4<f16>>;
 
 struct Params {
   S: u32,
@@ -38,10 +54,7 @@ fn load_k_vec4(c: u32, kvh: u32, d4: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = c * params.Hkv * params.D + kvh * params.D + d4;
-  $if DTYPE == "half":
-    return vec4<f32>(t_k_cache[base / 4u]);
-  $else:
-    return t_k_cache[base / 4u];
+  return vec4<f32>(t_k_cache[base / 4u]);
 }
 
 fn store_qk(s: u32, c: u32, h: u32, raw: f32) {
@@ -123,3 +136,10 @@ fn main(
     m = m + 1u;
   }
 }
+)";
+
+inline constexpr uint32_t kSdpaComputeAttnWeightsHalfWorkgroupSizeX = 64;
+inline constexpr uint32_t kSdpaComputeAttnWeightsHalfWorkgroupSizeY = 1;
+inline constexpr uint32_t kSdpaComputeAttnWeightsHalfWorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
