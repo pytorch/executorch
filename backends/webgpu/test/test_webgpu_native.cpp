@@ -293,6 +293,13 @@ const Q4gswConfig kQ4gswConfigs[] = {
     {"steel_f16", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
     // Partial M and N steel tiles under the f16 kernel (f16 boundary masking).
     {"steel_f16_edge", 70, 1024, 136, 2.3e-4f, 1e-3f, true, false},
+    // pwdq (packed-word dequant) backs the f16 steel path at group_size % BK ==
+    // 0
+    // (bit-exact to steel_half; the steel_f16 configs above run it at gs=32).
+    // These lock the gs gate at group sizes those omit: gs=64 stays on pwdq;
+    // gs=8 (< BK=16) falls back to the per-nibble steel_half kernel.
+    {"pwdq_gs64", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
+    {"pwdq_gs8", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
     {"gate_proj_pf", 128, 2048, 8192, 1e-4f, 1e-3f, true, false}, // shmem via N
     {"down_proj_pf", 128, 8192, 2048, 1e-3f, 1e-2f, true, false}, // shmem via K
     {"shmem_edge", 130, 4096, 2056, 1e-4f, 1e-3f, true, false}, // partial tiles
