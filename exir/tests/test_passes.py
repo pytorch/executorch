@@ -1758,7 +1758,9 @@ class TestPasses(unittest.TestCase):
         # lower to edge dialect
         edge_prog = to_edge(
             aten_prog,
-            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
         )
         edge_prog = edge_prog.to_backend(XnnpackPartitioner())
 

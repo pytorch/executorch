@@ -3,19 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Demonstrate standalone TOSA graph export with reordered delegate outputs.
-
-This file is an example for contributors and lowering experiments. It uses
-TOSA implementation modules that are not public API unless the symbol is listed
-in the Arm public API manifest. Prefer target-specific public APIs for
-application code.
-
-The example uses a simple convolutional network with three outputs of different
-shapes, applies quantization, partitions for TOSA, and then checks the output
-shapes in the exported graph match the expected output shapes from the original
-FX graph.
-
-"""
+""" This example demonstrates how to export a standalone TOSA graph with multiple outputs, where the outputs of the delegate
+are reordered during partitioning. The example uses a simple convolutional network with three outputs of different shapes,
+applies quantization, partitions for TOSA, and then checks the output shapes in the exported graph match the expected output
+shapes from the original FX graph. """
 
 import operator
 

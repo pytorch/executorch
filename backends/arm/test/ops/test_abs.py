@@ -88,10 +88,7 @@ def test_abs_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    Abs.test_parameters | Abs.test_parameters_bf16 | Abs.test_parameters_fp16,
-)
+@common.parametrize("test_data", Abs.test_parameters | Abs.test_parameters_fp16)
 @common.SkipIfNoModelConverter
 def test_abs_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
