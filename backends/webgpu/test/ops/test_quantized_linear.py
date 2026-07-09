@@ -77,6 +77,12 @@ CONFIGS = [
     # there). Same fp64 golden regardless of which kernel runs.
     Q4gswConfig("pwdq_gs64", 96, 2048, 256, group_size=64),  # pwdq, non-32 group
     Q4gswConfig("pwdq_gs8", 96, 2048, 256, group_size=8),  # steel_half fallback
+    # pwdqf16acc (f16-accumulate) runs under -DWGPU_BACKEND_STEEL_F16ACC when
+    # gs % BK == 0 (perplexity-gated; see the kernel diff). Same .pte as the f32
+    # configs -- only the accumulator dtype differs -- goldened at a looser f16-
+    # accumulate tol in the native test; the deep-K shape stresses the worst case.
+    Q4gswConfig("pwdqf16acc", 96, 2048, 256),  # f16-accumulate steel (opt-in)
+    Q4gswConfig("pwdqf16acc_down", 128, 8192, 2048),  # deep-K f16-accum worst case
     Q4gswConfig("gate_proj_pf", 128, 2048, 8192),  # gate/up prefill (shmem via N)
     Q4gswConfig("down_proj_pf", 128, 8192, 2048),  # down prefill (shmem via K)
     Q4gswConfig("shmem_edge", 130, 4096, 2056),  # partial 32-tile bounds
