@@ -10,6 +10,7 @@ import torch
 
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
+    Amin,
     Cat,
     Clone,
     CloneDimOrder,
@@ -20,6 +21,7 @@ from executorch.backends.nxp.tests.ops_aliases import (
     QuantizePerChannel,
     QuantizePerTensor,
     SubTensor,
+    SumDimIntList,
     ViewCopy,
 )
 from torch.fx import GraphModule, Node
@@ -44,9 +46,11 @@ DEQUANTIZE_OPERATORS = [
 #  as no-ops (and potentially not delegated), if their input and output tensors are equal (when run on random data).
 no_op_candidates = {
     AddTensor,
+    Amin,
     MulTensor,
     PermuteCopy,
     SubTensor,
+    SumDimIntList,
 }
 
 
@@ -107,6 +111,43 @@ def node_is_effectively_static_tensor(
     return _is_dequantize(node) and node_is_static_tensor(
         node.args[0], parameters_mapping
     )
+
+
+def weights_are_effectively_static(
+    node: Node, parameters_mapping: dict[str, Parameter], weight_index: int = 1
+) -> bool:
+    """Neutron IR sometimes requires some weights to be static. This method checks if this is the case for the
+        provided `node`.
+
+    Sometimes a `permute_copy` is inserted to transpose the weights during edge lowering. The `permute_copy` is
+    then removed during conversion to Neutron IR if it transposes static data. In those cases, the weights will be
+    static. Therefore, it is ok if the weights are produced by a `permute_copy` with a static input.
+
+    :param node: Tensor node to check for data.
+    :param parameters_mapping: Dict mapping tensor names to their static data. Should be inferred from the
+                                `state_dict` attribute of an edge program.
+    :param weight_index: Index to the `node.args` where the weight is located. Defaults to 1.
+    :return: True if the weight at the given index is effectively static.
+    """
+
+    def _is_permute_copy(node_: Node) -> bool:
+        return hasattr(node_, "target") and node_.target == PermuteCopy
+
+    if (
+        _is_dequantize(dq_node := node.args[weight_index])
+        and _is_quantize(q_node := dq_node.args[0])
+        and _is_permute_copy(permute_copy_node := q_node.args[0])
+    ):
+        # The weights are produced by a `permute_copy`. Its input (the weights) must be static.
+        return node_is_effectively_static_tensor(
+            permute_copy_node.args[0], parameters_mapping
+        )
+
+    else:
+        # There is no `permute_copy`. The weights must be static directly.
+        return node_is_effectively_static_tensor(
+            node.args[weight_index], parameters_mapping
+        )
 
 
 def try_get_tensor_constant_from_node(
@@ -334,6 +375,8 @@ def is_no_op_on_neutron(node: Node, parameters_mapping: dict[str, Parameter]) ->
         if (
             output_data.dtype == val.dtype
             and output_data.shape == val.shape
+            and output_data.dtype == input_data.dtype
+            and output_data.shape == input_data.shape
             and torch.all(input_data == output_data)
         ):
             # The operator preserves the shape, data type, and data. Therefore, it is a no-op from the perspective of

@@ -4,31 +4,25 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
+from executorch.backends.nxp.tests.dataset_creator import (
+    LinearRampDatasetCreator,
+    RandomDatasetCreator,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
-)
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import Convolution, Neg
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
     torch.manual_seed(42)
     np.random.seed(23)
-
-
-# noinspection PyProtectedMember
-ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
-Neg = exir_ops.edge.aten.neg.default
 
 
 class NegModule(torch.nn.Module):
@@ -45,7 +39,7 @@ class ConvNegModule(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.conv = torch.nn.Conv2d(3, 3, 1)
+        self.conv = torch.nn.Conv2d(4, 4, 1)
 
     # noinspection PyMethodMayBeStatic
     def forward(self, x):
@@ -53,71 +47,70 @@ class ConvNegModule(torch.nn.Module):
         return -x
 
 
-@pytest.mark.parametrize(
-    "input_shape",
-    [
-        pytest.param((8,), id="1D"),
-        pytest.param((4, 2), id="2D"),
-        pytest.param((1, 2, 3), id="3D"),
-        pytest.param((1, 2, 3, 4), id="4D"),
-    ],
-)
-def test_convert_neg(mocker, input_shape):
-    model = NegModule()
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
-
-    # Make sure the `neg` was delegated.
-    assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [Neg])
-
-    # Verify correct behavior of the converted NeutronIR model.
-    intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
-
-    input_data = (
-        np.random.random(input_shape).astype(np.float32) * 256.0 - 128.0
-    ).astype(np.int8)
-
-    # Make sure the tested program contains the `neg`.
-    assert graph_contains_any_of_ops(intermediate_ep.graph, [Neg])
-
-    convert_run_compare(
-        intermediate_ep,
-        tfl_model=neutron_ir_model,
-        input_data=input_data,
+class TestNeg:
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            pytest.param((8,), id="1D"),
+            pytest.param((4, 2), id="2D"),
+            pytest.param((1, 2, 6), id="3D"),
+            pytest.param((1, 5, 3, 4), id="4D"),
+        ],
     )
+    def test__basic_nsys_inference(self, mocker, request, input_shape):
+        model = NegModule()
 
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={Neg: 1}, expected_non_delegated_ops={}
+        )
 
-def test_convert_neg__channels_last(mocker):
-    model = ConvNegModule()
-    input_shape = (1, 3, 4, 5)
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            dataset_creator=RandomDatasetCreator(low=-1.0, high=1.0),
+        )
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    delegated_ep = to_quantized_edge_program(
-        model, input_shape, use_neutron_for_format_conversion=False
-    ).exported_program()
+    def test__all_possible_values(self, mocker, request, use_qat):
+        # Use 256 elements so that, after quantization to int8, the input can
+        # cover the full discrete range [-128, 127].
+        # The dataset is generated as a linear float ramp and later quantized,
+        # which effectively exercises all int8 values.
+        input_shape = (256,)
+        model = NegModule()
 
-    # Make sure the `neg` was delegated.
-    assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [Neg])
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={Neg: 1}, expected_non_delegated_ops={}
+        )
 
-    # Verify correct behavior of the converted NeutronIR model.
-    intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            dataset_creator=LinearRampDatasetCreator(low=-1.0, high=1.0),
+            use_qat=use_qat,
+        )
 
-    input_data = (
-        np.random.random(input_shape).astype(np.float32) * 256.0 - 128.0
-    ).astype(np.int8)
+    def test__channels_first_input(self, mocker, request):
+        # Use 256 elements so that, after quantization to int8, the input can
+        # cover the full discrete range [-128, 127].
+        # The dataset is generated as a linear float ramp and later quantized,
+        # which effectively exercises all int8 values.
+        input_shape = (1, 4, 8, 8)
+        model = ConvNegModule()
 
-    # Make sure the tested program contains the `neg`.
-    assert graph_contains_any_of_ops(intermediate_ep.graph, [Neg])
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={Neg: 1, Convolution: 1},
+            expected_non_delegated_ops={},
+        )
 
-    convert_run_compare(
-        intermediate_ep,
-        tfl_model=neutron_ir_model,
-        input_data=input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-    )
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            dataset_creator=LinearRampDatasetCreator(low=-1.0, high=1.0),
+        )
