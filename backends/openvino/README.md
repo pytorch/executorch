@@ -126,7 +126,7 @@ Follow the steps below to setup your build environment:
    ```bash
    openvino_build.sh
    ```
-- Optionally, `openvino_build.sh` script can be used to build python package or C++ libraries/binaries separately.
+- Optionally, `openvino_build.sh` script can be used to build python package or C++ libraries/binaries seperately.
 
    **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument as shown in the below command. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `aot_optimize_and_infer.py` script inside `executorch/examples/openvino` folder.
      ```bash
