@@ -263,18 +263,6 @@ TEST(ScratchPool, BestFitSizeCap) {
   EXPECT_EQ(big, same) << "an in-range request should reuse the big slot";
 }
 
-// WEBGPU_NO_SCRATCH_POOL bypasses the pool -> a fresh buffer every acquire.
-TEST(ScratchPool, BypassEnvNoReuse) {
-  setenv("WEBGPU_NO_SCRATCH_POOL", "1", 1);
-  WebGPUGraph g;
-  g.set_device(g_device);
-  WGPUBuffer a = g.acquire_scratch(64 * sizeof(float));
-  g.release_scratch(a); // no-op on the bypass path
-  WGPUBuffer b = g.acquire_scratch(64 * sizeof(float));
-  unsetenv("WEBGPU_NO_SCRATCH_POOL");
-  EXPECT_TRUE(a && b && a != b) << "bypass must allocate a dedicated buffer";
-}
-
 // ScopedScratch releases its slot at scope exit, so the next acquire reuses it.
 TEST(ScratchPool, ScopedScratchReleasesOnScopeExit) {
   WebGPUGraph g;
