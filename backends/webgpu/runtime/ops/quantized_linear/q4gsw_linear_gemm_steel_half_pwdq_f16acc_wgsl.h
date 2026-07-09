@@ -129,8 +129,10 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 }
 )";
 
-inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeX = 16;
-inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeY = 16;
+inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeX =
+    16;
+inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeY =
+    16;
 inline constexpr uint32_t kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
