@@ -19,6 +19,9 @@ struct Params {
 @group(0) @binding(5) var<uniform> params: Params;
 
 // "steel" prefill GEMM (M>1): 64x64 tile, 256 threads; K%16==0 host-guarded.
+// The "steel" name + register-tiled dequant-to-shared GEMM structure are
+// inspired by MLX's steel GEMM kernels (github.com/ml-explore/mlx,
+// mlx/backend/metal/kernels/steel).
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
 var<workgroup> As: array<${buffer_scalar_type(DTYPE)}, 1024>;   // BM*BK
 var<workgroup> Bs: array<${buffer_scalar_type(DTYPE)}, 1024>;   // BK*BN
