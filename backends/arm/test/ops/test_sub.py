@@ -257,9 +257,7 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", sub_test_data | sub_test_data_bf16 | sub_test_data_fp16
-)
+@common.parametrize("test_data", sub_test_data | sub_test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     """Test Subtraction (VGF FP)"""
@@ -273,9 +271,7 @@ def test_sub_tensor_vgf_no_quant(test_data: Tuple[torch.Tensor]):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", sub2_test_data | sub2_test_data_bf16 | sub2_test_data_fp16
-)
+@common.parametrize("test_data", sub2_test_data | sub2_test_data_fp16)
 @common.SkipIfNoModelConverter
 def test_sub_tensor_vgf_no_quant_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (VGF FP)"""

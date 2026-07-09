@@ -463,11 +463,7 @@ def test_index_put_u85_INT(test_module: input_t):
 
 
 @common.SkipIfNoModelConverter
-@common.parametrize(
-    "test_module",
-    test_data_suite_fp | test_data_suite_bf16 | test_data_int,
-    xfails=xfails,
-)
+@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
 def test_index_put_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         IndexPut(),

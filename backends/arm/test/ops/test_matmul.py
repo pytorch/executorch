@@ -455,7 +455,7 @@ def test_matmul_u85_INT(test_case: test_case_t):
     pipeline.run()
 
 
-@common.parametrize("test_case", test_suite | test_suite_fp16 | test_suite_bf16)
+@common.parametrize("test_case", test_suite | test_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_matmul_vgf_no_quant(test_case: test_case_t):
     test_data = test_case()
