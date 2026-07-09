@@ -627,7 +627,9 @@ class TestBackends(unittest.TestCase):
 
         traced = to_edge(
             export(composite_m, inputs, strict=True),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
         )
 
         program_without_delegates = to_edge(
@@ -746,7 +748,9 @@ class TestBackends(unittest.TestCase):
 
         traced = to_edge(
             export(composite_m, inputs, strict=True),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
         )
 
         program_without_delegates = to_edge(

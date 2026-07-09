@@ -102,12 +102,6 @@ test_data = {
     ),
 }
 
-u55_portable_ops_test_data = {
-    "int8_floor": test_data["int8_floor"],
-    "int8_int_scalar": test_data["int8_int_scalar"],
-    "int32_floor": test_data["int32_floor"],
-}
-
 
 @common.parametrize("data", test_data)
 def test_div_tensor_mode_tosa_FP(data):
@@ -145,31 +139,11 @@ def test_div_tensor_mode_tosa_INT(data):
     test_data,
     xfails={
         "mode_trunc": "CPU op missing in unittests",
-        "int8_floor": "CPU op missing in unittests",
-        "int8_int_scalar": "CPU op missing in unittests",
         "int16_trunc": "CPU op missing in unittests",
-        "int32_floor": "CPU op missing in unittests",
         "int32_trunc": "CPU op missing in unittests",
     },
 )
 def test_div_tensor_mode_u55_INT(data):
-    mode, inputs = data()
-    model = DivTensorModeFloat(mode)
-
-    pipeline = EthosU55PipelineINT[input_tt](
-        model,
-        inputs,
-        aten_ops=[],
-        exir_ops=[],
-        use_to_edge_transform_and_lower=True,
-    )
-    pipeline.pop_stage("check_count.exir")
-    pipeline.run()
-
-
-@common.XfailIfNoCorstone300
-@common.parametrize("data", u55_portable_ops_test_data)
-def test_div_tensor_mode_u55_INT_portable_ops(data):
     mode, inputs = data()
     model = DivTensorModeFloat(mode)
 

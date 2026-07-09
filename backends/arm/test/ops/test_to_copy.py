@@ -104,17 +104,6 @@ _TO_COPY_TEST_DATA_FP = {
     ),
 }
 
-_TO_COPY_TEST_DATA_VGF_BF16 = {
-    "rand_fp32_bf16": lambda: (
-        torch.rand((1, 2, 3, 4), dtype=torch.float32),
-        torch.bfloat16,
-    ),
-    "rand_bf16_fp32": lambda: (
-        torch.rand((1, 2, 3, 4), dtype=torch.bfloat16),
-        torch.float32,
-    ),
-}
-
 
 @common.parametrize("test_data", _TO_COPY_TEST_DATA_FP)
 def test_to_tosa_FP(test_data: Tuple):
@@ -286,7 +275,7 @@ def test_to_tosa_FP_bf16_fp8_with_extensions(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP | _TO_COPY_TEST_DATA_VGF_BF16)
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP)
 @common.SkipIfNoModelConverter
 def test_to_vgf_no_quant(test_data: Tuple):
     test_tensor, new_dtype = test_data()

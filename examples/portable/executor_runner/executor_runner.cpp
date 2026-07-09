@@ -22,7 +22,6 @@
 #ifdef ET_BUNDLE_IO_ENABLED
 #include <filesystem>
 #endif // ET_BUNDLE_IO_ENABLED
-#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -93,18 +92,6 @@ DEFINE_int32(
     cpu_threads,
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
-#if defined(ET_ENABLE_VGF_INPUT_DUMP)
-DEFINE_string(
-    vgf_input_dump_dir,
-    "",
-    "Directory for Arm VGF delegate-boundary input dumps. Empty disables dumping.");
-
-DEFINE_bool(
-    dump_vgf_inputs_and_exit,
-    false,
-    "Dump Arm VGF delegate-boundary inputs from the first VGFBackend::execute() "
-    "call and stop before VGF dispatch. Requires --vgf_input_dump_dir.");
-#endif
 
 #ifdef ET_BUNDLE_IO_ENABLED
 DEFINE_double(bundleio_rtol, 0.01, "Relative tolerance for bundled IO.");
@@ -181,47 +168,6 @@ Error load_input_files(
   return Error::Ok;
 }
 
-#if defined(ET_ENABLE_VGF_INPUT_DUMP)
-constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
-constexpr const char* kVgfDumpInputsAndExitEnv =
-    "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
-Error set_env_var(const char* name, const std::string& value) {
-#if defined(_WIN32)
-  return _putenv_s(name, value.c_str()) == 0 ? Error::Ok : Error::Internal;
-#else
-  return setenv(name, value.c_str(), 1) == 0 ? Error::Ok : Error::Internal;
-#endif
-}
-#endif
-
-bool configure_vgf_input_dump_flags() {
-#if defined(ET_ENABLE_VGF_INPUT_DUMP)
-  if (FLAGS_dump_vgf_inputs_and_exit && FLAGS_vgf_input_dump_dir.empty()) {
-    ET_LOG(
-        Error,
-        "--dump_vgf_inputs_and_exit requires --vgf_input_dump_dir to be set.");
-    return false;
-  }
-
-  if (!FLAGS_vgf_input_dump_dir.empty()) {
-    Error status = set_env_var(kVgfDumpInputsDirEnv, FLAGS_vgf_input_dump_dir);
-    if (status != Error::Ok) {
-      ET_LOG(Error, "Failed to set %s.", kVgfDumpInputsDirEnv);
-      return false;
-    }
-
-    status = set_env_var(
-        kVgfDumpInputsAndExitEnv, FLAGS_dump_vgf_inputs_and_exit ? "1" : "0");
-    if (status != Error::Ok) {
-      ET_LOG(Error, "Failed to set %s.", kVgfDumpInputsAndExitEnv);
-      return false;
-    }
-  }
-#endif
-
-  return true;
-}
-
 } // namespace
 
 /// Helper to manage resources for ETDump generation
@@ -293,15 +239,6 @@ std::vector<uint8_t> try_load_file(const std::filesystem::path& path) {
 }
 #endif
 
-bool is_expected_vgf_dump_stop(Error status) {
-#if defined(ET_ENABLE_VGF_INPUT_DUMP)
-  return FLAGS_dump_vgf_inputs_and_exit && status == Error::EndOfMethod;
-#else
-  (void)status;
-  return false;
-#endif
-}
-
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
 
@@ -327,10 +264,6 @@ int main(int argc, char** argv) {
         Error,
         "Unknown --print_output mode '%s'. Expected 'none', 'summary', or 'all'.",
         FLAGS_print_output.c_str());
-    return 1;
-  }
-
-  if (!configure_vgf_input_dump_flags()) {
     return 1;
   }
 
@@ -678,14 +611,6 @@ int main(int argc, char** argv) {
       }
 
       Error status = method->execute();
-
-      if (is_expected_vgf_dump_stop(status)) {
-        ET_LOG(
-            Info,
-            "VGF delegate inputs dumped successfully; exiting before delegate dispatch.");
-        return 0;
-      }
-
       ET_CHECK_MSG(
           status == Error::Ok,
           "Execution of method %s failed with status 0x%" PRIx32,
@@ -761,13 +686,6 @@ int main(int argc, char** argv) {
     const et_timestamp_t before_execute =
         executorch::runtime::pal_current_ticks();
     Error status = method->execute();
-
-    if (is_expected_vgf_dump_stop(status)) {
-      ET_LOG(
-          Info,
-          "Arm/VGF delegate inputs dumped successfully; stopping before delegate dispatch.");
-      return 0;
-    }
     const et_timestamp_t after_execute =
         executorch::runtime::pal_current_ticks();
     const et_timestamp_t iter_elapsed = after_execute - before_execute;
