@@ -265,6 +265,7 @@ class DatasetBuilder:
             if len(decoder_datasets) > 1
             else decoder_datasets[0]
         )
+        self._log_dataset_stats(datasets, cfg.batch_size, phase="calibration")
 
         return dict.fromkeys(_ALL_MODALITY_KEYS) | {
             modality: DataLoader(
@@ -317,3 +318,31 @@ class DatasetBuilder:
             )
             for modality, dataset in datasets.items()
         }
+
+    @staticmethod
+    def _log_dataset_stats(
+        datasets: Dict[str, Dataset],
+        batch_size: int,
+        phase: str = "calibration",
+    ) -> None:
+        """Log sample/batch counts per modality; raises if any dataset < batch_size."""
+        for modality, ds in datasets.items():
+            n = len(ds)
+            n_batches = n // batch_size
+            dropped = n - n_batches * batch_size
+            drop_str = f" ({dropped} dropped)" if batch_size > 1 and dropped else ""
+            logging.info(
+                "%s '%s': %d samples, batch_size=%d, %d batches%s",
+                phase,
+                modality,
+                n,
+                batch_size,
+                n_batches,
+                drop_str,
+            )
+            if batch_size > 1 and n < batch_size:
+                raise ValueError(
+                    f"{phase} '{modality}' has {n} samples but "
+                    f"batch_size={batch_size}. "
+                    "Increase the data limit or reduce the batch size."
+                )
