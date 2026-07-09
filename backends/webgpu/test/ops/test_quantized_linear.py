@@ -70,6 +70,13 @@ CONFIGS = [
     # Partial M and N steel tiles under the f16 kernel; exercises f16 boundary
     # masking (the exact-N "steel_f16" shape does not). N%8==0, steel-isolating.
     Q4gswConfig("steel_f16_edge", 70, 1024, 136),  # f16 partial-tile
+    # pwdq (packed-word dequant) backs the f16 steel path at group_size % BK(16)
+    # == 0 (bit-exact to steel_half; steel_f16 above runs it at gs=32). These lock
+    # the gs gate at group sizes those omit: gs=64 stays on pwdq; gs=8 (< BK) falls
+    # back to the per-nibble steel_half kernel (its hoisted-per-BK scale is invalid
+    # there). Same fp64 golden regardless of which kernel runs.
+    Q4gswConfig("pwdq_gs64", 96, 2048, 256, group_size=64),  # pwdq, non-32 group
+    Q4gswConfig("pwdq_gs8", 96, 2048, 256, group_size=8),  # steel_half fallback
     Q4gswConfig("gate_proj_pf", 128, 2048, 8192),  # gate/up prefill (shmem via N)
     Q4gswConfig("down_proj_pf", 128, 8192, 2048),  # down prefill (shmem via K)
     Q4gswConfig("shmem_edge", 130, 4096, 2056),  # partial 32-tile bounds
