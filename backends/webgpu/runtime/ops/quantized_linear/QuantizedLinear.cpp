@@ -6,22 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
-#ifdef WGPU_BACKEND_STEEL_F16
-#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_f16acc_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
-#endif
-#ifdef WGPU_BACKEND_STEEL_F16ACC
-#include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_f16acc_wgsl.h>
-#endif
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
@@ -272,9 +267,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       : use_steel                   ? kQ4gswLinearGemmSteelWGSL
       : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
                                     : kQ4gswLinearWGSL;
-#ifdef WGPU_BACKEND_STEEL_F16
-  // Opt-in f16-multiply steel: only when the device negotiated shader-f16;
-  // else the f32 steel kernel runs (fail-closed). Same bindings and tile.
+  // f16-multiply steel: only when the device negotiated shader-f16; else the
+  // f32 steel kernel runs (fail-closed). Same bindings and tile.
   if (use_steel) {
     const WebGPUContext* ctx = get_default_webgpu_context();
     if (ctx != nullptr && ctx->shader_f16_supported) {
@@ -287,21 +281,17 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           : kQ4gswLinearGemmSteelHalfWGSL;
     }
   }
-#endif
-#ifdef WGPU_BACKEND_STEEL_F16ACC
-  // f16-accumulate: pwdq staging with an MLC-style f16 register accumulator.
-  // Lossy (f16 accumulate over K) -> ships on a perplexity bar (Llama-3.2-1B
-  // int4: 13.32 -> 13.37, +0.05), behind its own build option (default off).
-  // Overrides the f32-accumulate steel kernels when the device negotiated
-  // shader-f16 and group_size % BK == 0 (same hoisted-scale requirement as
-  // pwdq).
-  if (use_steel && (gs % kQ4gswSteelBK == 0u)) {
+  // f16-accumulate: pwdq staging with an f16 register accumulator.
+  // Lossy (f16 accumulate over K) -> opt-in via the enable_f16_accumulate_gemm
+  // runtime spec (default off), gated on the negotiated shader-f16 feature and
+  // group_size % BK == 0 (same hoisted-scale requirement as pwdq). Overrides
+  // the f32-accumulate steel kernels.
+  if (use_steel && graph.f16_accumulate_gemm() && (gs % kQ4gswSteelBK == 0u)) {
     const WebGPUContext* ctx = get_default_webgpu_context();
     if (ctx != nullptr && ctx->shader_f16_supported) {
       shader_src = kQ4gswLinearGemmSteelHalfPwdqF16accWGSL;
     }
   }
-#endif
   const uint32_t workgroup_count = compute_q4gsw_workgroup_count(
       device,
       use_gemv,

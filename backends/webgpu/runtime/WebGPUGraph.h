@@ -104,7 +104,9 @@ class WebGPUGraph {
   void build(
       const void* flatbuffer_data,
       const uint8_t* constant_data,
-      const executorch::runtime::NamedDataMap* named_data_map = nullptr);
+      const executorch::runtime::NamedDataMap* named_data_map = nullptr,
+      bool f16_kv_cache = false,
+      bool f16_accumulate_gemm = false);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
@@ -275,9 +277,7 @@ class WebGPUGraph {
   // Correctness: WebGPU/Dawn auto-inserts RAW hazard barriers between
   // dispatches on a shared storage buffer regardless of pass structure -- the
   // SAME guarantee mem_obj_id aliasing already relies on -- so reuse is
-  // bit-identical. Env WEBGPU_NO_SCRATCH_POOL falls back to a dedicated
-  // per-call buffer (A/B). Never hand a still-in_use slot to a co-live
-  // requester.
+  // bit-identical. Never hand a still-in_use slot to a co-live requester.
   WGPUBuffer acquire_scratch(size_t nbytes);
   void release_scratch(WGPUBuffer buffer);
   // RAII: releases an acquired scratch slot when the op-lowering scope exits
@@ -345,17 +345,22 @@ class WebGPUGraph {
     return value_types_[id];
   }
 
-#ifdef WGPU_BACKEND_KV_F16
  public:
-  // True when the sdpa K/V cache is stored f16-packed (opt-in build).
+  // True when the sdpa K/V cache is stored f16-packed (runtime opt-in).
   bool kv_f16() const {
     return kv_f16_;
+  }
+
+  // True when the q4gsw steel prefill GEMM uses the lossy f16-accumulate kernel
+  // (runtime opt-in; perplexity-gated, not bit-exact).
+  bool f16_accumulate_gemm() const {
+    return f16_accumulate_gemm_;
   }
 
  private:
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
-#endif
+  bool f16_accumulate_gemm_ = false;
 
  private:
   WGPUInstance instance_ = nullptr;
