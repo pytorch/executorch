@@ -15,6 +15,7 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
 #ifdef WGPU_BACKEND_STEEL_F16
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
 #endif
 
@@ -273,7 +274,13 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (use_steel) {
     const WebGPUContext* ctx = get_default_webgpu_context();
     if (ctx != nullptr && ctx->shader_f16_supported) {
-      shader_src = kQ4gswLinearGemmSteelHalfWGSL;
+      // Packed-word dequant: bit-exact to the steel `half` kernel but loads
+      // each u32 weight word once + hoists the per-column scale (half re-reads
+      // them ~8x/~16x). Needs group_size % BK == 0 so the hoisted scale is
+      // constant across the BK tile; else the per-nibble `half` kernel.
+      shader_src = (gs % kQ4gswSteelBK == 0u)
+          ? kQ4gswLinearGemmSteelHalfPwdqWGSL
+          : kQ4gswLinearGemmSteelHalfWGSL;
     }
   }
 #endif
