@@ -6,9 +6,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-#
-# Developer build-and-run helper. This command-line interface is not a public
-# API and may change without deprecation.
 
 set -eu
 
@@ -61,7 +58,6 @@ parallel_jobs=1
 
 function help() {
     echo "Usage: $(basename $0) [options]"
-    echo "Note: this developer workflow script is not a stable public API."
     echo "Options:"
     echo "  --model_name=<MODEL>                   Model file .py/.pth/.pt, builtin model or a model from examples/models. Passed to aot_arm_compiler"
     echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file. Passed to aot_arm_compiler"

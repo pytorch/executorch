@@ -11,7 +11,7 @@ from executorch.backends.arm.tosa.dialect.ops.avg_pool2d import (
     compute_avg_pool2d_output_shape,
     validate_avg_pool2d_dtype,
 )
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
     get_context_spec,
@@ -36,7 +36,7 @@ def _is_directly_representable(
     return remainder in (0, 1)
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "AVG_POOL2D_ADAPTIVE(Tensor input, Tensor input_zp, Tensor output_zp, SymInt[2] kernel, SymInt[2] stride, SymInt[4] pad, ScalarType acc_type) -> Tensor",
     TosaSpecification.all_profiles_for_version("1.1"),
 )
