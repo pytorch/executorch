@@ -55,7 +55,7 @@ def define_common_targets():
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
             ] + get_vec_deps() + _get_quantized_sdpa_deps(),
-            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors", "-Wno-error=pass-failed"] + get_compiler_optimization_flags() +
+            compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"] + get_compiler_optimization_flags() +
             select({
                 "DEFAULT": [],
                 "ovr_config//cpu:arm64": ["-march=armv8.2-a+dotprod"],
