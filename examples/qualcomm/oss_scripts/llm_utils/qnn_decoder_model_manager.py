@@ -44,13 +44,9 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 HUGGING_FACE_REPO_IDS = {
-    "llama3_2-1b": "NousResearch/Llama-3.2-1B",
-    "qwen2_5-0_5b": "Qwen/Qwen2.5-0.5B",
-    "qwen2_5-1_5b_instruct": "Qwen/Qwen2.5-1.5B-Instruct",
-    "qwen2_5-0_5b_instruct": "Qwen/Qwen2.5-0.5B-Instruct",
-    "qwen3-0_6b": "Qwen/Qwen3-0.6B",
-    "smollm2_135m": "HuggingFaceTB/SmolLM2-135M",
-    "granite-3_3-2b": "ibm-granite/granite-3.3-2b-instruct",
+    "qwen2.5_0.5B": "Qwen/Qwen2.5-0.5B",
+    "qwen2.5_1.5B_instruct": "Qwen/Qwen2.5-1.5B-Instruct",
+    "qwen2.5_0.5B_instruct": "Qwen/Qwen2.5-0.5B-Instruct",
 }
 
 
@@ -68,7 +64,6 @@ def get_qnn_llm_edge_manager(model_name, max_seq_len=128, enable_spinquant_r3=Tr
     config.ar_len = 1  # kv mode
     config.max_batch_size = batch_size
     config.enable_spinquant_r3 = enable_spinquant_r3
-    config.use_cache = True
 
     # Some config has head_dim provided that is different from equation below(e.g., qwen3)
     if not hasattr(config, "head_dim"):

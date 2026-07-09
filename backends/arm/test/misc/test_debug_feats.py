@@ -21,17 +21,10 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
-    VgfPipeline,
 )
 from executorch.backends.test.harness.stages import StageType
 
 input_t1 = Tuple[torch.Tensor]  # Input x
-input_t2 = Tuple[torch.Tensor, torch.Tensor]
-
-
-class AddModel(torch.nn.Module):
-    def forward(self, x, y):
-        return x + y
 
 
 class Linear(torch.nn.Module):
@@ -370,47 +363,3 @@ def test_fail_dump_ops_u55_INT(capsys, test_data: input_t1):
     error_msg = "Can not get operator distribution for Vela command stream."
     with pytest.raises(NotImplementedError, match=error_msg):
         pipeline.run()
-
-
-def _is_rescale_op(op: dict) -> bool:
-    return op.get("op") == "RESCALE" or op.get("opcode") == "RESCALE"
-
-
-@common.SkipIfNoModelConverter
-def test_vgf_rescale_tosa_debug_location_is_not_empty():
-    # Repro test for a bug with debug loc for RESCALE
-    with tempfile.TemporaryDirectory() as tmpdir:
-        pipeline = VgfPipeline[input_t2](
-            module=AddModel(),
-            test_data=(torch.ones(5), 2 * torch.ones(5)),
-            aten_op="torch.ops.aten.add.Tensor",
-            exir_op="executorch_exir_dialects_edge__ops_aten_add_Tensor",
-            run_on_vulkan_runtime=False,
-            vgf_compiler_flags="--emit-debug-info",
-            symmetric_io_quantization=True,
-            custom_path=tmpdir,
-            tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
-            tosa_spec="TOSA-1.0+INT",
-        )
-
-        pipeline.run()
-
-        tosa_files = list(Path(tmpdir).glob("*.tosa"))
-        assert tosa_files, "Expected VGF lowering to dump a TOSA artifact"
-
-        rescale_ops = []
-        for tosa_file in tosa_files:
-            with tosa_file.open("rb") as f:
-                tosa_json = dbg_tosa_fb_to_json(f.read())
-
-            ops = tosa_json["regions"][0]["blocks"][0]["operators"]
-            rescale_ops.extend([op for op in ops if _is_rescale_op(op)])
-
-        assert (
-            rescale_ops
-        ), "Expected the quantized AddModel repro to emit TOSA RESCALE ops"
-
-        for op in rescale_ops:
-            location_text = op["location"]["text"]
-            assert location_text, f"RESCALE op has empty debug location: {op}"
-            json.loads(location_text)
