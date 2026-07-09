@@ -6,7 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// White-box unit tests for WebGPUGraph::create_scratch_buffer.
+// White-box unit tests for WebGPUGraph scratch buffers:
+// create_scratch_buffer and the acquire_scratch/release_scratch reuse pool.
 
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
@@ -19,6 +20,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <vector>
@@ -220,6 +222,59 @@ TEST(ScratchBuffer, Tier3Lifecycle) {
       EXPECT_NE(b, nullptr);
     }
   } // each graph's dtor releases its 256 buffers here
+}
+
+// Tier 4: reuse-pool semantics (acquire_scratch / release_scratch /
+// ScopedScratch). The pool recycles single-op-lifetime scratch across ops so N
+// layers reuse a small constant of buffers instead of N x.
+
+// A released slot is handed back on the next same-size acquire (the reuse win).
+TEST(ScratchPool, ReuseAfterRelease) {
+  WebGPUGraph g;
+  g.set_device(g_device);
+  WGPUBuffer a = g.acquire_scratch(64 * sizeof(float));
+  g.release_scratch(a);
+  WGPUBuffer b = g.acquire_scratch(64 * sizeof(float));
+  EXPECT_EQ(a, b) << "released slot should be reused for a same-size request";
+}
+
+// A still-in_use slot is never handed to a co-live requester (RAW-safety).
+TEST(ScratchPool, NoReuseWhileInUse) {
+  WebGPUGraph g;
+  g.set_device(g_device);
+  WGPUBuffer a = g.acquire_scratch(64 * sizeof(float));
+  WGPUBuffer b = g.acquire_scratch(64 * sizeof(float)); // a not released
+  EXPECT_TRUE(a && b && a != b) << "co-live acquires must be distinct buffers";
+}
+
+// Best-fit 2x cap: a large free slot must not back a much smaller request, but
+// a request it does fit (size in [n, 2n]) reuses it.
+TEST(ScratchPool, BestFitSizeCap) {
+  WebGPUGraph g;
+  g.set_device(g_device);
+  WGPUBuffer big = g.acquire_scratch(1024 * sizeof(float));
+  g.release_scratch(big);
+  // 1024*4 bytes is outside [4, 8], so the big slot is ineligible for 4 bytes.
+  WGPUBuffer tiny = g.acquire_scratch(4);
+  EXPECT_NE(big, tiny)
+      << "oversized slot must not back a tiny request (2x cap)";
+  g.release_scratch(tiny);
+  WGPUBuffer same = g.acquire_scratch(1024 * sizeof(float));
+  EXPECT_EQ(big, same) << "an in-range request should reuse the big slot";
+}
+
+// ScopedScratch releases its slot at scope exit, so the next acquire reuses it.
+TEST(ScratchPool, ScopedScratchReleasesOnScopeExit) {
+  WebGPUGraph g;
+  g.set_device(g_device);
+  WGPUBuffer first = nullptr;
+  {
+    WebGPUGraph::ScopedScratch s(&g, g.acquire_scratch(64 * sizeof(float)));
+    first = s; // operator WGPUBuffer
+    EXPECT_NE(first, nullptr);
+  } // s releases the slot here
+  WGPUBuffer second = g.acquire_scratch(64 * sizeof(float));
+  EXPECT_EQ(first, second) << "slot freed by ScopedScratch should be reused";
 }
 
 int main(int argc, char** argv) {
