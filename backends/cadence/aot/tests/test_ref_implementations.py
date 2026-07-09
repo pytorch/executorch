@@ -670,10 +670,11 @@ class TestRefImplementations(unittest.TestCase):
                     0,  # unused out_shift
                     torch.uint8,  # dtype
                     torch.tensor(
-                        [[[[238]]]], dtype=torch.uint8
-                    ),  # (130 - 128) + (134 - 128) = 10
-                    # + bias -> 10 + 1 = 11
-                    # round(11 / 0.1 + 128) = 238,
+                        [[[[148]]]], dtype=torch.uint8
+                    ),  # conv_acc = sum((input - 128) * (weight - 128))
+                    #          = 2*1 + 4*0 + 6*0 + 8*1 = 10
+                    # float_out = bias_scale * (conv_acc + bias) = 0.1 * (10 + 10) = 2.0
+                    # round(2.0 / 0.1 + 128) = 148
                     memory_format,
                 )
                 for memory_format in [torch.contiguous_format, torch.channels_last]
@@ -914,6 +915,34 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [[[[2, 10, 8], [28, 68, 40], [26, 58, 32]]]], dtype=torch.int8
                     ),
+                    memory_format,
+                )
+                for memory_format in [torch.contiguous_format, torch.channels_last]
+            ],
+            # Zero-point overflow: int8 input minus a negative zero point exceeds
+            # the int8 range and wraps unless the subtraction is upcast first.
+            *[
+                (
+                    torch.tensor(
+                        [[[[120, 120], [120, 120]]]], dtype=torch.int8
+                    ),  # input
+                    torch.tensor([[[[1, 0], [0, 1]]]], dtype=torch.int8),  # weight
+                    torch.tensor([0], dtype=torch.int32),  # bias
+                    (1, 1),  # stride
+                    (0, 0),  # padding
+                    (1, 1),  # dilation
+                    1,  # groups
+                    -20,  # in_zero_point (120 - (-20) = 140 wraps to -116 in int8)
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
+                    4.0,  # output_scale
+                    0,  # output_zero_point
+                    0,  # unused out_multiplier
+                    0,  # unused out_shift
+                    torch.int8,  # dtype
+                    torch.tensor(
+                        [[[[70]]]], dtype=torch.int8
+                    ),  # (120 + 20) * 2 / 4 = 70
                     memory_format,
                 )
                 for memory_format in [torch.contiguous_format, torch.channels_last]
@@ -1406,6 +1435,23 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor([4, 2, 0, 0], dtype=dtype),
                 )
                 for dtype in [torch.uint8]
+            ],
+            # Zero-point overflow: int8 X minus a negative zero point exceeds the
+            # int8 range and wraps unless the subtraction is upcast first.
+            *[
+                (
+                    "int8_negative_zp_overflow",
+                    torch.tensor([120], dtype=dtype),  # input
+                    -20,  # X_zero_point (120 - (-20) = 140 wraps to -116 in int8)
+                    0,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [-70], dtype=dtype
+                    ),  # shifted = 140; 140 * (-0.5) = -70
+                )
+                for dtype in [torch.int8]
             ],
         ]
     )

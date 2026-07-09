@@ -8,6 +8,7 @@ import logging
 from typing import Callable, Optional, Union
 
 import torch
+import torch.nn.functional as F
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
 from executorch.examples.qualcomm.oss_scripts.llama.inference import DecoderInference
 from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
@@ -34,6 +35,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         max_seq_length: int,
         get_example_inputs: Callable,
         use_i64_token: bool,
+        max_batch_size: int = 1,
     ):
         assert max_seq_length is not None, "max_seq_length must be provided"
         super().__init__(
@@ -43,15 +45,23 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self._runner = DecoderInference(
             get_example_inputs=get_example_inputs,
             max_context_len=max_seq_length,
+            max_batch_size=max_batch_size,
             use_i64_token=use_i64_token,
         )
+        self._batch_size = max_batch_size
+
+    @property
+    def batch_size(self):
+        return self._batch_size
 
     def _model_call(self, inps):
+        actual_bsz = inps.shape[0]
+        inps = F.pad(inps, (0, 0, 0, self._batch_size - actual_bsz))
         logits = self._runner.predict_step(
             self._model,
             input_ids=inps,
         )
-        return logits
+        return logits[:actual_bsz]
 
 
 def run_lm_eval(
@@ -74,6 +84,7 @@ def run_lm_eval(
         max_seq_length=max_seq_length,
         get_example_inputs=get_example_inputs,
         use_i64_token=use_i64_token,
+        max_batch_size=max_batch_size,
     )
     with torch.no_grad():
         eval_results = simple_evaluate(

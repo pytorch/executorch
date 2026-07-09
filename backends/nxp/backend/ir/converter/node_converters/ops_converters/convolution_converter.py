@@ -23,6 +23,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared import (
     conv_utils,
@@ -62,6 +63,7 @@ ConvolutionArgs = tuple[
 ]
 
 
+@requires_channels_first_format
 class ConvolutionConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target_regular_conv(

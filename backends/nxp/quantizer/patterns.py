@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from functools import partial
 
 import torch
+
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
     ClampConverter,
 )
@@ -25,6 +26,8 @@ from torch._ops import OpOverload
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
+    MinMaxObserver,
+    MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
     PerChannelMinMaxObserver,
 )
@@ -40,11 +43,11 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 @dataclass
 class NodeArgsIdx:
     """
-    Specifies indexes to args paramater of Node in node input annotation.
+    Specifies indexes to args parameter of Node in node input annotation.
 
 
     Attributes:
-        idx (int): Index to Node's args paramater (list). Selects an input Node or a list of Nodes at the index.
+        idx (int): Index to Node's args parameter (list). Selects an input Node or a list of Nodes at the index.
         inner_idx (int): If specified, index to a list pointed by 'idx' attribute. Selects an input Node at the index.
                          Default: None.
     """
@@ -316,6 +319,15 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class AminPattern(SharedSpecPattern):
+    """
+    Quantizer for Amin operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amin.default]
+
+
 class BMMPattern(QuantizationPattern):
     """
     Quantizer for BatchMatMul operator.
@@ -329,10 +341,24 @@ class BMMPattern(QuantizationPattern):
     ) -> PartitionAnchors | None:
         bmm_node = fused_partition[0].nodes[-1]
 
+        # Use per_tensor_symmetric to enforce zero_point=0 for both inputs
+        observer_or_fake_quant_ctr = (
+            FakeQuantize.with_args(observer=MovingAverageMinMaxObserver)
+            if self.is_qat
+            else MinMaxObserver
+        )
+        input_quantization_spec = QuantizationSpec(
+            dtype=torch.int8,
+            observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
+            quant_min=-127,
+            quant_max=127,
+            qscheme=torch.per_tensor_symmetric,  # Neutron requires the inputs to have zero point = 0.
+        )
+
         return PartitionAnchors(
             inputs=[
-                (bmm_node, NodeArgsIdx(0)),
-                (bmm_node, NodeArgsIdx(1)),
+                (bmm_node, NodeArgsIdx(0), input_quantization_spec),
+                (bmm_node, NodeArgsIdx(1), input_quantization_spec),
             ],
             biases=[],
             output=[(bmm_node,)],
@@ -1113,6 +1139,15 @@ class SqueezeDimsPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.squeeze.dims]
+
+
+class SumDimIntListPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.dim_IntList` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.dim_IntList]
 
 
 class TanhPattern(QuantizationPattern):

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024, 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -136,6 +136,7 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_TESTS=OFF",
         "-DEXECUTORCH_BUILD_VULKAN=OFF",
         "-DEXECUTORCH_BUILD_XNNPACK=OFF",
+        "-DEXECUTORCH_BUILD_CMSIS_NN_PYBINDS=OFF",
     ]
 
 
@@ -191,9 +192,9 @@ def _base_dependencies() -> List[str]:
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-        "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
+        "coremltools==9.0; (platform_system == 'Darwin' or platform_system == 'Linux') and python_version < '3.14'",
         # scikit-learn is used to support palettization in the coreml backend.
-        "scikit-learn==1.7.1",
+        "scikit-learn>=1.7.1",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]
@@ -889,6 +890,33 @@ class CustomBuild(build):
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
 
+        # Unlike CUDA, Vulkan also needs its third-party submodules, which
+        # aren't in the default checkout, along with glslc. A partial checkout
+        # no-ops here rather than failing in CMake.
+        vulkan_third_party = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "backends",
+            "vulkan",
+            "third-party",
+        )
+        vulkan_submodules_present = all(
+            os.path.exists(os.path.join(vulkan_third_party, *parts))
+            for parts in (
+                ("volk", "volk.c"),
+                ("Vulkan-Headers", "include", "vulkan", "vulkan.h"),
+                ("VulkanMemoryAllocator", "include", "vk_mem_alloc.h"),
+            )
+        )
+        if (
+            not minimal_build
+            and vulkan_submodules_present
+            and install_utils.is_vulkan_available()
+            and install_utils.is_cmake_option_on(
+                cmake_configuration_args, "EXECUTORCH_BUILD_VULKAN", default=True
+            )
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_VULKAN=ON"]
+
         # Check if QNN SDK is available (via QNN_SDK_ROOT env var), and if so,
         # enable building the Qualcomm backend by default.
         qnn_sdk_root = os.environ.get("QNN_SDK_ROOT", "").strip()
@@ -981,6 +1009,9 @@ class CustomBuild(build):
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
                 cmake_build_args += ["--target", "vulkan_backend"]
+
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
+                cmake_build_args += ["--target", "cmsis_nn"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
@@ -1093,6 +1124,14 @@ setup(
                     src="selective_build.cp*" if _is_windows() else "selective_build.*",
                     modpath="executorch.codegen.tools.selective_build",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+                ),
+                BuiltExtension(
+                    src="cmsis_nn.cp*" if _is_windows() else "cmsis_nn.*",
+                    src_dir="backends/cortex_m/cmsis_nn-build/%BUILD_TYPE%/",
+                    modpath="executorch.backends.cortex_m.library._cmsis_nn.cmsis_nn",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS",
+                    ],
                 ),
                 BuiltExtension(
                     src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
