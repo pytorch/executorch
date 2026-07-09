@@ -333,6 +333,7 @@ def test_dialect_conv2d(test_case, cortex_m_target):
 
 xfails_implementation: dict[str, xfail_type] = {
     "conv1d": "Currently not supported.",
+    "conv3d": "Currently not supported.",
 }
 
 

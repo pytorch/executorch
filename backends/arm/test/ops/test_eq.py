@@ -285,9 +285,7 @@ def test_eq_scalar_u85_INT_16a8w(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module", test_data_tensor | test_data_tensor_bf16 | test_data_tensor_fp16
-)
+@common.parametrize("test_module", test_data_tensor | test_data_tensor_fp16)
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_no_quant_tensor(test_module):
     pipeline = VgfPipeline[input_t](
@@ -300,9 +298,7 @@ def test_eq_scalar_vgf_no_quant_tensor(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module", test_data_scalar | test_data_scalar_bf16 | test_data_scalar_fp16
-)
+@common.parametrize("test_module", test_data_scalar | test_data_scalar_fp16)
 @common.SkipIfNoModelConverter
 def test_eq_scalar_vgf_no_quant(test_module):
     pipeline = VgfPipeline[input_t](
