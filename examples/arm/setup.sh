@@ -6,9 +6,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-#
-# Developer setup helper. This command-line interface is not a public API and
-# may change without deprecation.
 
 set -u
 
@@ -70,7 +67,6 @@ OPTION_LIST=(
 
 function print_usage() {
     echo "Usage: $(basename "$0") [OPTIONS]"
-    echo "Note: this developer setup script is not a stable public API."
     echo
     echo "Available options:"
     for entry in "${OPTION_LIST[@]}"; do

@@ -41,7 +41,7 @@ Deploy **LLMs, vision, speech, and multimodal models** with the same PyTorch API
 - **🔒 Native PyTorch Export** — Direct export from PyTorch. No .onnx, .tflite, or intermediate format conversions. Preserve model semantics.
 - **⚡ Production-Proven** — Powers billions of users at [Meta with real-time on-device inference](https://engineering.fb.com/2025/07/28/android/executorch-on-device-ml-meta-family-of-apps/).
 - **💾 Tiny Runtime** — 50KB base footprint. Runs on microcontrollers to high-end smartphones.
-- **🚀 [12+ Hardware Backends](https://docs.pytorch.org/executorch/main/backends-overview.html)** — Open-source acceleration for Apple, Samsung, Qualcomm, ARM, MediaTek, Vulkan, and more.
+- **🚀 [12+ Hardware Backends](https://docs.pytorch.org/executorch/main/backends-overview.html)** — Open-source acceleration for Apple, Qualcomm, ARM, MediaTek, Vulkan, and more.
 - **🎯 One Export, Multiple Backends** — Switch hardware targets with a single line change. Deploy the same model everywhere.
 
 ## How It Works

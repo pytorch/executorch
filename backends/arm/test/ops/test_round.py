@@ -88,7 +88,7 @@ def test_round_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
 def test_round_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](

@@ -66,7 +66,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     _training_lib SHARED
     ${CMAKE_CURRENT_SOURCE_DIR}/pybindings/_training_lib.cpp
   )
-  strip_python_lib(_training_lib)
   set_target_properties(_training_lib PROPERTIES CXX_STANDARD 20)
 
   target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
