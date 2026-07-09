@@ -11,7 +11,7 @@ import torch
 
 from executorch.backends.arm.ao_ext.mxfp import mxfp_str_to_dtype
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -19,7 +19,7 @@ from executorch.backends.arm.tosa.specification import (
 from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
 
 
-@register_tosa_op(
+@register_fake_tosa_op(
     "CAST_TO_BLOCK_SCALED(Tensor input, SymInt block_size, str output_dtype) -> (Tensor, Tensor)",
     [TosaSpecification.create_from_string("TOSA-1.1+FP")],
 )
