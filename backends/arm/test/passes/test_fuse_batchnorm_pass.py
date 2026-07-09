@@ -143,7 +143,7 @@ class MergeMultipleUsersBN(torch.nn.Module):
         z = self.conv2d2(x)
         a = self.batch_norm2d(
             y
-        )  # Can be fused despite parameters of conv2d2 having multiple users.
+        )  # Can be fused despite paramters of conv2d2 having multiple users.
 
         return z, a
 

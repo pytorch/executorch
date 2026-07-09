@@ -42,7 +42,6 @@ aten = torch.ops.aten
 QK_K = 256  # super-block size for k-quants
 
 Q4_K_GROUP_SIZE = QK_K // 8  # 32  (8 sub-blocks per super-block)
-Q5_K_GROUP_SIZE = QK_K // 8  # 32  (8 sub-blocks per super-block, like Q4_K)
 Q6_K_GROUP_SIZE = QK_K // 16  # 16 (16 sub-blocks per super-block)
 
 _Q4_K_BLOCK_BYTES = 2 + 2 + 12 + QK_K // 2  # 144
@@ -155,62 +154,6 @@ def _q4_k_fields(raw: Tensor, N: int, K: int) -> Tuple[Tensor, Tensor, Tensor]:
     return q, eff_scale, eff_min
 
 
-def _q5_k_fields(raw: Tensor, N: int, K: int) -> Tuple[Tensor, Tensor, Tensor]:
-    """Decode Q5_K blocks for conversion to a genuine 5-bit tensor.
-
-    Q5_K is Q4_K plus a 1-bit high plane: same fp16 ``d`` / ``dmin`` super-scales
-    and the same 6-bit packed sub-block scales/mins, but each weight is 5 bits
-    (a low nibble in ``qs`` plus one high bit in ``qh``). Returns
-    ``(q, eff_scale, eff_min)`` where ``q`` is ``(N, K)`` uint8 in [0, 31] and
-    ``eff_scale`` / ``eff_min`` are ``(N, K // 32)`` float32, so
-    ``w = eff_scale * q - eff_min`` (asymmetric, exactly like the Q4_K affine
-    form). Verified bit-exact against ``gguf.dequantize``.
-    """
-    n_blocks = N * (K // QK_K)
-    blk = raw.reshape(n_blocks, _Q5_K_BLOCK_BYTES)
-
-    d = _read_f16(blk, 0, 2)
-    dmin = _read_f16(blk, 2, 4)
-    s = blk[:, 4:16]  # 12B packed 6-bit sub-block scales/mins (same as Q4_K)
-    qh = blk[:, 16:48]  # 32B high-bit plane (one bit per weight)
-    qs = blk[:, 48:176]  # 128B low-nibble plane (same layout as Q4_K qs)
-
-    sc = torch.empty(n_blocks, 8, dtype=torch.float32)
-    mn = torch.empty(n_blocks, 8, dtype=torch.float32)
-    sc[:, :4] = (s[:, :4] & 0x3F).float()
-    mn[:, :4] = (s[:, 4:8] & 0x3F).float()
-    sc[:, 4:] = ((s[:, 8:12] & 0xF) | ((s[:, :4] >> 6) << 4)).float()
-    mn[:, 4:] = ((s[:, 8:12] >> 4) | ((s[:, 4:8] >> 6) << 4)).float()
-
-    eff_scale = (d * sc).reshape(N, -1)
-    eff_min = (dmin * mn).reshape(N, -1)
-
-    # Low 4 bits: same nibble order as Q4_K (32 lows then 32 highs per pair).
-    low = (qs & 0x0F).to(torch.uint8)
-    high = ((qs >> 4) & 0x0F).to(torch.uint8)
-    q4 = torch.cat(
-        [
-            low[:, :32],
-            high[:, :32],
-            low[:, 32:64],
-            high[:, 32:64],
-            low[:, 64:96],
-            high[:, 64:96],
-            low[:, 96:128],
-            high[:, 96:128],
-        ],
-        dim=-1,
-    )  # (n_blocks, QK_K) in [0, 15], weight order matches Q4_K
-    # High bit: sub-block g (32 consecutive weights) reads bit g of each qh byte.
-    hb = (
-        torch.stack([(qh >> g) & 1 for g in range(8)], dim=1)
-        .reshape(n_blocks, QK_K)
-        .to(torch.uint8)
-    )
-    q = (q4 | (hb << 4)).reshape(N, K)  # [0, 31]
-    return q, eff_scale, eff_min
-
-
 def _q6_k_fields(raw: Tensor, N: int, K: int) -> Tuple[Tensor, Tensor]:
     """Decode Q6_K blocks for conversion to ``IntxUnpackedToInt8Tensor``.
 
@@ -250,11 +193,10 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
     """Wraps the raw GGUF block bytes for one quantized weight.
 
     Stores the exact GGUF ``block_q*_K`` byte layout (no repacking) plus the
-    quant type string (``"q4_k"`` / ``"q5_k"`` / ``"q6_k"``). ``aten.linear`` /
-    ``aten.embedding`` dequantize via the ``torchao::dequantize_gguf`` op (then a
-    plain linear/embedding); :meth:`to_int4_tensor` /
-    :meth:`to_intx_unpacked_to_int8_tensor` convert to torchao subclasses
-    instead.
+    quant type string (``"q4_k"`` / ``"q6_k"``). ``aten.linear`` / ``aten.embedding``
+    dequantize via the ``torchao::dequantize_gguf`` op (then a plain
+    linear/embedding); :meth:`to_int4_tensor` / :meth:`to_intx_unpacked_to_int8_tensor`
+    convert to torchao subclasses instead.
     """
 
     tensor_data_names = ["raw"]
@@ -329,13 +271,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         )
 
     def to_intx_unpacked_to_int8_tensor(self) -> Tensor:
-        """Convert to a torchao ``IntxUnpackedToInt8Tensor`` (Q4_K, Q5_K or Q6_K).
+        """Convert to a torchao ``IntxUnpackedToInt8Tensor`` (Q4_K or Q6_K).
 
         Q6_K maps to a symmetric int8 tensor (values [-32, 31], zero-point 0).
         Q4_K maps to a 4-bit tensor: values are centered to [-8, 7] and the
         affine min is folded into a (float) zero-point, so the rewrite is exact.
-        Q5_K maps to a 5-bit tensor: values are centered to [-16, 15] and the
-        affine min folded into the zero-point, exactly like Q4_K.
         """
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
@@ -348,22 +288,6 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 zero_point=torch.zeros_like(eff_scale, dtype=torch.int8),
                 target_dtype=torch.int8,
                 block_size=(1, Q6_K_GROUP_SIZE),
-                dtype=torch.bfloat16,
-                activation_quantization=None,
-            )
-        if self.ggml_type == "q5_k":
-            q, eff_scale, eff_min = _q5_k_fields(self.raw, N, K)
-            zero = torch.where(
-                eff_scale != 0, eff_min / eff_scale, torch.zeros_like(eff_min)
-            )
-            # Center quants [0, 31] -> [-16, 15] and shift the zero-point to
-            # match (dequant = scale * (q - zp) is preserved).
-            return IntxUnpackedToInt8Tensor(
-                qdata=q.to(torch.int8) - 16,
-                scale=eff_scale.to(torch.bfloat16),
-                zero_point=(zero - 16).to(torch.bfloat16),
-                target_dtype=torch.int5,
-                block_size=(1, Q5_K_GROUP_SIZE),
                 dtype=torch.bfloat16,
                 activation_quantization=None,
             )
@@ -384,7 +308,7 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 activation_quantization=None,
             )
         raise NotImplementedError(
-            f"to_intx_unpacked_to_int8_tensor supports q4_k/q5_k/q6_k; "
+            f"to_intx_unpacked_to_int8_tensor supports q4_k/q6_k; "
             f"got {self.ggml_type!r}"
         )
 
@@ -447,16 +371,14 @@ def iter_gguf(
             N = shape[0]
             row_bytes = flat.numel() // N
             raw = flat.reshape(N, row_bytes).clone()
-            yield (
-                tensor.name,
-                ExportableGGUFTensor.from_raw(raw, _TYPE_BY_GGML_ID[ttype]),
+            yield tensor.name, ExportableGGUFTensor.from_raw(
+                raw, _TYPE_BY_GGML_ID[ttype]
             )
         elif tensor.tensor_type == GGMLQuantizationType.F32:
             yield tensor.name, flat.view(torch.float32).reshape(shape).clone()
         elif tensor.tensor_type == GGMLQuantizationType.F16:
-            yield (
-                tensor.name,
-                flat.view(torch.float16).reshape(shape).to(torch.bfloat16),
+            yield tensor.name, flat.view(torch.float16).reshape(shape).to(
+                torch.bfloat16
             )
         elif tensor.tensor_type == GGMLQuantizationType.BF16:
             yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
