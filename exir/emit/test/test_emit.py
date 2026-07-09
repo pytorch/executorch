@@ -2176,7 +2176,9 @@ class TestEmit(unittest.TestCase):
 
         edge_program_manager = exir.to_edge(
             {"forward1": ep1, "forward2": ep2},
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
         )
 
         edge_program_manager = edge_program_manager.to_backend(

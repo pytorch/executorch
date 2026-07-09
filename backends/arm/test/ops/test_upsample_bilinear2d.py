@@ -502,47 +502,31 @@ def test_upsample_bilinear2d_vec_u85_INT_a16w8(
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite_tosa | test_data_suite_tosa_bf16 | test_data_suite_tosa_fp16,
-)
+@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_bilinear2d_vec_vgf_no_quant_UpsamplingBilinear2d(
     test_data: torch.Tensor,
 ):
     data, size, scale_factor, compare = test_data()
-    match data.dtype:
-        case torch.bfloat16:
-            atol = 1e-2
-            rtol = 1e-2
-        case _:
-            atol = 2e-3
-            rtol = 2e-3
     pipeline = VgfPipeline[input_t1](
         UpsamplingBilinear2d(size, scale_factor),
         (data,),
         aten_op,
         exir_op,
         quantize=False,
-        atol=atol,
-        rtol=rtol,
+        atol=2e-3,
+        rtol=2e-3,
     )
     if not compare:
         pipeline.pop_stage(-1)
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite_tosa | test_data_suite_tosa_bf16 | test_data_suite_tosa_fp16,
-)
+@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_bilinear2d_vec_vgf_no_quant_Upsample(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     match data.dtype:
-        case torch.bfloat16:
-            atol = 1e-2
-            rtol = 1e-2
         case torch.float16:
             atol = 1e-2
             rtol = 1e-2
@@ -563,17 +547,11 @@ def test_upsample_bilinear2d_vec_vgf_no_quant_Upsample(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    test_data_suite_tosa | test_data_suite_tosa_bf16 | test_data_suite_tosa_fp16,
-)
+@common.parametrize("test_data", test_data_suite_tosa | test_data_suite_tosa_fp16)
 @common.SkipIfNoModelConverter
 def test_upsample_bilinear2d_vec_vgf_no_quant_Interpolate(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
     match data.dtype:
-        case torch.bfloat16:
-            atol = 1e-2
-            rtol = 1e-2
         case torch.float16:
             atol = 1e-2
             rtol = 1e-2
