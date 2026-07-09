@@ -81,7 +81,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
         pattern_sub = (
             to_edge(
                 export(SubModule(), (input_x, input_h), strict=True),
-                compile_config=exir.EdgeCompileConfig(),
+                compile_config=exir.EdgeCompileConfig(_use_edge_ops=True),
             )
             .exported_program()
             .graph_module

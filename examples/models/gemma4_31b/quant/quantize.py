@@ -7,8 +7,7 @@
 """Quantize weights to torchao tensor subclasses.
 
 ``quantize_weight`` quantizes a single tensor given a ``QuantConfig``,
-returning an ``Int4Tensor`` (4-bit) or ``IntxUnpackedToInt8Tensor`` (6- or
-8-bit).
+returning an ``Int4Tensor`` (4-bit) or ``IntxUnpackedToInt8Tensor`` (8-bit).
 
 ``quantize_model`` walks a model's parameters, applies a ``QuantRecipe``,
 and returns a single state dict containing both quantized subclass tensors
@@ -19,6 +18,7 @@ import torch
 import torch.nn as nn
 
 from .recipe import QuantConfig, QuantRecipe
+
 
 # ---------------------------------------------------------------------------
 # Per-weight quantization
@@ -152,14 +152,11 @@ def _to_intx_tensor(
     weight: torch.Tensor,
     config: QuantConfig,
 ) -> torch.Tensor:
-    """Quantize to 6- or 8-bit and wrap in IntxUnpackedToInt8Tensor.
+    """Quantize 8-bit and wrap in IntxUnpackedToInt8Tensor.
 
     Quantizes in float32 for numerical precision, then constructs the
     subclass directly. We avoid ``from_hp`` because it quantizes in the
     input dtype (bf16), which loses precision for small-magnitude weights.
-
-    Sub-byte data (e.g. 6-bit) is still stored unpacked in an int8 container;
-    ``target_dtype`` records the true bit width for the export/runtime path.
     """
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quant_primitives import (
@@ -168,15 +165,11 @@ def _to_intx_tensor(
         quantize_affine,
     )
 
-    qmin = -(1 << (config.bits - 1))
-    qmax = (1 << (config.bits - 1)) - 1
-    target_dtype = getattr(torch, f"int{config.bits}")
-
     if config.method == "hqq":
         if not config.symmetric:
             raise ValueError(
-                "intx HQQ only supports symmetric quantization "
-                "(HQQ_SCALE_ONLY). Use method='min_max' for asymmetric intx."
+                "8-bit HQQ only supports symmetric quantization "
+                "(HQQ_SCALE_ONLY). Use method='min_max' for asymmetric 8-bit."
             )
         from torchao.quantization.quant_primitives import (
             _choose_qparams_and_quantize_scale_only_hqq,
@@ -184,7 +177,7 @@ def _to_intx_tensor(
 
         w2d = weight.float().reshape(-1, weight.shape[-1])
         qdata, scale = _choose_qparams_and_quantize_scale_only_hqq(
-            w2d, [1, config.group_size], qmin, qmax
+            w2d, [1, config.group_size], -128, 127
         )
         qdata = qdata.to(torch.int8).reshape(weight.shape)
         scale = scale.to(torch.bfloat16).reshape(weight.shape[0], -1)
@@ -197,8 +190,8 @@ def _to_intx_tensor(
             mapping,
             block_size,
             target_dtype=torch.int8,
-            quant_min=qmin,
-            quant_max=qmax,
+            quant_min=-128,
+            quant_max=127,
             scale_dtype=torch.bfloat16,
             zero_point_dtype=torch.int8,
         )
@@ -208,8 +201,8 @@ def _to_intx_tensor(
             scale,
             zero_point,
             output_dtype=torch.int8,
-            quant_min=qmin,
-            quant_max=qmax,
+            quant_min=-128,
+            quant_max=127,
         )
         N, n_groups = weight.shape[0], weight.shape[-1] // config.group_size
         scale = scale.reshape(N, n_groups)
@@ -219,7 +212,7 @@ def _to_intx_tensor(
         qdata=qdata,
         scale=scale,
         zero_point=zero_point,
-        target_dtype=target_dtype,
+        target_dtype=torch.int8,
         block_size=(1, config.group_size),
         dtype=torch.bfloat16,
         activation_quantization=None,
@@ -229,10 +222,9 @@ def _to_intx_tensor(
 def quantize_weight(weight: torch.Tensor, config: QuantConfig) -> torch.Tensor:
     """Quantize ``weight`` to a torchao tensor subclass.
 
-    Returns ``Int4Tensor`` for 4-bit or ``IntxUnpackedToInt8Tensor`` for 6-
-    and 8-bit.
+    Returns ``Int4Tensor`` for 4-bit or ``IntxUnpackedToInt8Tensor`` for 8-bit.
     """
-    if config.bits in (6, 8):
+    if config.bits == 8:
         return _to_intx_tensor(weight, config)
 
     if config.bits != 4:

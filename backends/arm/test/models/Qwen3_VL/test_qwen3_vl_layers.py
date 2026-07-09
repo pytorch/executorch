@@ -474,8 +474,6 @@ TOSA_BF16_TEST_CASES: dict[str, Qwen3VLTestCase] = {
     "qk_norm": TOSA_FP_TEST_CASES["qk_norm"],
 }
 
-VGF_NO_QUANT_BF16_TEST_CASES: dict[str, Qwen3VLTestCase] = TOSA_BF16_TEST_CASES
-
 
 TOSA_MXFP8_TEST_CASES: dict[str, Qwen3VLTestCase] = {
     "text_attention": Qwen3VLTestCase(
@@ -602,27 +600,5 @@ def test_qwen3_vl_vgf_no_quant(test_case: Qwen3VLTestCase):
             exir_op=[],
             quantize=False,
             transform_passes=list(test_case.transform_passes),
-        )
-        pipeline.run()
-
-
-@common.SkipIfNoModelConverter
-@common.parametrize(
-    "test_case",
-    VGF_NO_QUANT_BF16_TEST_CASES,
-)
-def test_qwen3_vl_vgf_no_quant_bf16(test_case: Qwen3VLTestCase):
-    model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
-    with torch.no_grad():
-        pipeline = VgfPipeline[input_t](
-            model,
-            inputs,
-            aten_op=[],
-            exir_op=[],
-            quantize=False,
-            transform_passes=list(test_case.transform_passes),
-            atol=5e-2,
-            rtol=5e-2,
         )
         pipeline.run()

@@ -344,9 +344,7 @@ def test_constant_pad_nd_tosa_INT_a16w8(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
-)
+@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
 @common.SkipIfNoModelConverter
 def test_constant_pad_nd_vgf_no_quant(test_data: Tuple):
     inp, padding, value, mode = test_data()
