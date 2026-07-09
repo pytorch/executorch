@@ -75,13 +75,16 @@ def _validate_params(
         value.dim() == 4
     ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
 
+    supported_dtypes = (torch.float32, torch.bfloat16, torch.float16)
     assert (
-        query.dtype == torch.float32
-    ), f"Expected query to be float32 but got {query.dtype}"
-    assert key.dtype == torch.float32, f"Expected key to be float32 but got {key.dtype}"
+        query.dtype in supported_dtypes
+    ), f"Expected query to be float32, bfloat16, or float16 but got {query.dtype}"
     assert (
-        value.dtype == torch.float32
-    ), f"Expected value to be float32 but got {value.dtype}"
+        key.dtype == query.dtype
+    ), f"Expected key to have the same dtype as query but got {key.dtype}"
+    assert (
+        value.dtype == query.dtype
+    ), f"Expected value to have the same dtype as query but got {value.dtype}"
 
     assert (
         key_cache.dim() == 4
@@ -91,11 +94,11 @@ def _validate_params(
     ), f"Expected value_cache to be 4 dimensional but got {value_cache.dim()}"
 
     assert (
-        key_cache.dtype == torch.float32
-    ), f"Expected key_cache to be float32 but got {key_cache.dtype}"
+        key_cache.dtype == query.dtype
+    ), f"Expected key_cache to have the same dtype as query but got {key_cache.dtype}"
     assert (
-        value_cache.dtype == torch.float32
-    ), f"Expected value_cache to be float32 but got {value_cache.dtype}"
+        value_cache.dtype == query.dtype
+    ), f"Expected value_cache to have the same dtype as query but got {value_cache.dtype}"
 
     assert (
         key_cache.size() == value_cache.size()
