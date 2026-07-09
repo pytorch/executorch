@@ -48,33 +48,44 @@ from torch.library import impl
 # ---------------------------------------------------------------------------
 
 _lib.define(
-    "int6_plain_mm(Tensor self, Tensor ql, Tensor qh, Tensor scale, int group_size) -> Tensor"
+    "int6_plain_mm(Tensor self, Tensor ql, Tensor qh, Tensor scale, Tensor steps, int group_size) -> Tensor"
 )
 
 
 @impl(_lib, "int6_plain_mm", "Meta")
-def _meta_int6(self, ql, qh, scale, group_size):
+def _meta_int6(self, ql, qh, scale, steps, group_size):
     return torch.empty(self.shape[0], ql.shape[0], dtype=self.dtype, device=self.device)
 
 
 @impl(_lib, "int6_plain_mm", "CUDA")
-def _cuda_int6(self, ql, qh, scale, group_size):
-    return _dequant_matmul_int6(self, ql, qh, scale, group_size)
+def _cuda_int6(self, ql, qh, scale, steps, group_size):
+    # scale is int8 codes in the [N, n_groups] layout; steps is the per-256
+    # super-block [N, K/256] fp16 scale step. _unit_dq_mm_int6 reconstructs
+    # scale = code * steps[:, g // (256 // gs)].
+    return _unit_dq_mm_int6(self, ql, qh, scale, steps, group_size)
 
 
-def _dequant_matmul_int6(x, ql, qh, scale, group_size):
+def _unit_dq_mm_int6(x, ql, qh, scale, steps, group_size):
     """Dequant packed-INT6 weights to input dtype and call F.linear.
 
-    ql [N, K/2] / qh [N, K/4] pack symmetric Q6_K values q in [-32, 31];
-    scale [N, K//gs]. Dequant: w[n, k] = q[n, k] * scale[n, k//gs].
+    ql [N, K/2] / qh [N, K/4] pack symmetric Q6_K values q in [-32, 31].
+    scale [N, K//gs] is int8 codes; steps [N, K//256] fp16 is the per-256
+    super-block scale step, so the real per-group scale is
+    ``scale_code * steps[:, g // (256 // gs)]``. Dequant:
+    w[n, k] = q[n, k] * (scale_code[n, k//gs] * steps[n, (k//gs) // gps]).
     """
     N = ql.shape[0]
     K = ql.shape[1] * 2
     n_groups = K // group_size
+    n_super = steps.shape[1]
+    groups_per_super = n_groups // n_super
     dtype = x.dtype
 
     q = unpack_int6(ql, qh, N, K).to(dtype).reshape(N, n_groups, group_size)
-    s = scale.to(dtype).reshape(N, n_groups, 1)
+    # Broadcast the per-256 step over the groups_per_super groups in each
+    # super-block, then multiply by the int8 code -> effective per-group scale.
+    step_g = steps.to(dtype).repeat_interleave(groups_per_super, dim=1)
+    s = (scale.to(dtype) * step_g).reshape(N, n_groups, 1)
     w_deq = (q * s).reshape(N, K)
 
     return F.linear(x, w_deq)
@@ -102,13 +113,14 @@ def _(func, types, args, kwargs):
     ql = weight_tensor.ql
     qh = weight_tensor.qh
     scale = weight_tensor.scale
+    steps = weight_tensor.steps
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
     if M <= 4:
-        out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, gs)
+        out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, steps, gs)
     else:
-        out = _dequant_matmul_int6(x_2d, ql, qh, scale, gs)
+        out = _unit_dq_mm_int6(x_2d, ql, qh, scale, steps, gs)
 
     out = out.reshape(*orig_shape[:-1], -1)
     if bias is not None:

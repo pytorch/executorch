@@ -150,71 +150,67 @@ def _create_const_ops_for_rescale(
     return [multipliers.name, shifts.name, input_zp.name, output_zp.name]
 
 
-def _build_rescale(
-    tosa_fb: Any,
-    scale: list[float],
-    input_node: Any,
-    output_name: str,
-    output_type: Any,
-    input_zp: list[int],
-    output_zp: list[int],
-    rounding_mode: ts.RoundingMode,
-    per_channel: bool = False,
-    is_scale32: bool = True,
-    input_unsigned: bool = False,
-    output_unsigned: bool = False,
-):
-    """Insert a TOSA RESCALE operator configured for the quantized path.
-
-    Args:
-        tosa_fb (Any): Graph builder receiving the RESCALE operator.
-        scale (list[float]): Scale factors applied during rescaling.
-        input_node (Any): Input tensor node feeding the operator.
-        output_name (str): Name assigned to the RESCALE output tensor.
-        output_type (ts.DType): Data type of the output tensor.
-        input_zp (list[int]): Quantization zero points for the input tensor.
-        output_zp (list[int]): Quantization zero points for the output tensor.
-        rounding_mode (ts.RoundingMode): Rounding policy for the RESCALE op.
-        per_channel (bool): Whether scales are applied per output channel.
-        is_scale32 (bool): Declared scale width; ignored when the input type is
-            ``ts.DType.INT48``.
-
-    """
-    scaleWidth = 16 if input_node.dtype == ts.DType.INT48 else 32
-    is_scale32 = False if input_node.dtype == ts.DType.INT48 else True
-    multipliers, shifts = _compute_multiplier_and_shift(scale, scaleWidth)
-    rescale_inputs = _create_const_ops_for_rescale(
-        tosa_fb,
-        is_scale32,
-        input_node.dtype,
-        output_name,
-        multipliers,
-        shifts,
-        input_zp,
-        output_zp,
-        output_type,
-        ts,
-    )
-    attr_rescale = ts.TosaSerializerAttribute()
-    attr_rescale.RescaleAttribute(
-        scale32=is_scale32,
-        rounding_mode=rounding_mode,
-        per_channel=per_channel,
-        input_unsigned=input_unsigned,
-        output_unsigned=output_unsigned,
-    )
-
-    tosa_fb.addOperator(
-        ts.Op.RESCALE,
-        [input_node.name, *rescale_inputs],
-        [output_name],
-        attr_rescale,
-    )
-
-
 @register_node_visitor
 class RescaleVisitor(NodeVisitor):
     target = "tosa.RESCALE.default"
+
+    def _build_rescale(
+        self,
+        node: Node,
+        tosa_graph: Any,
+        scale: list[float],
+        input_node: TosaArg,
+        output: TosaArg,
+        input_zp: list[int],
+        output_zp: list[int],
+        rounding_mode: ts.RoundingMode,
+        per_channel: bool = False,
+        input_unsigned: bool = False,
+        output_unsigned: bool = False,
+    ) -> None:
+        """Insert a TOSA RESCALE operator configured for the quantized path.
+
+        RESCALE is serialized through NodeVisitor._serialize_operator so that
+        debug-location metadata is attached consistently with other TOSA ops.
+        The scale width is derived from the input dtype: INT48 uses 16-bit
+        multipliers, otherwise 32-bit multipliers are used.
+
+        """
+        scale_width = 16 if input_node.dtype == ts.DType.INT48 else 32
+        is_scale32 = input_node.dtype != ts.DType.INT48
+
+        multipliers, shifts = _compute_multiplier_and_shift(scale, scale_width)
+
+        rescale_inputs = _create_const_ops_for_rescale(
+            tosa_graph,
+            is_scale32,
+            input_node.dtype,
+            output.name,
+            multipliers,
+            shifts,
+            input_zp,
+            output_zp,
+            output.dtype,
+            ts,
+        )
+
+        attr_rescale = ts.TosaSerializerAttribute()
+        attr_rescale.RescaleAttribute(
+            scale32=is_scale32,
+            rounding_mode=rounding_mode,
+            per_channel=per_channel,
+            input_unsigned=input_unsigned,
+            output_unsigned=output_unsigned,
+        )
+
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.Op.RESCALE,
+            [input_node.name, *rescale_inputs],
+            [output.name],
+            attr_rescale,
+        )
 
     def define_node(
         self,
@@ -254,12 +250,12 @@ class RescaleVisitor(NodeVisitor):
             raise ValueError(
                 f"If output dtype is not int8 or int16, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
             )
-        _build_rescale(
-            tosa_graph,
+        self._build_rescale(
+            node=node,
+            tosa_graph=tosa_graph,
             scale=scales,
             input_node=inputs[0],
-            output_name=output.name,
-            output_type=output.dtype,
+            output=output,
             input_zp=[input_zp],
             output_zp=[output_zp],
             rounding_mode=ts.RoundingMode.SINGLE_ROUND,
