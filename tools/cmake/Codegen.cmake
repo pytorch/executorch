@@ -207,6 +207,7 @@ function(generate_bindings_for_kernels)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
   if(GEN_MANUAL_REGISTRATION)
+    # codegen.gen sanitizes GEN_LIB_NAME before embedding it in a C++ symbol.
     list(APPEND _gen_command --manual-registration
          --manual-registration-lib-name=${GEN_LIB_NAME}
     )

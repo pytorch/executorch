@@ -894,9 +894,10 @@ def executorch_generated_lib(
         xplat_deps: Additional xplat deps, can be used to provide custom operator library.
         fbcode_deps: Additional fbcode deps, can be used to provide custom operator library.
         compiler_flags: compiler_flags args to runtime.cxx_library
-        manual_registration_lib_name: Optional C++ identifier to use when
-            generating a named manual registration API. If omitted, manual
-            registration keeps using `register_all_kernels`.
+        manual_registration_lib_name: Optional library name to include when
+            generating a named manual registration API. Characters that are not
+            valid in a C++ identifier are converted to underscores. If omitted,
+            manual registration keeps using `register_all_kernels`.
         dtype_selective_build: In additional to operator selection, dtype selective build
             further selects the dtypes for each operator. Can be used with model or dict
             selective build APIs, where dtypes can be specified.
