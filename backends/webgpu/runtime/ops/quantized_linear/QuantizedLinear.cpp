@@ -340,81 +340,41 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   wgpuBufferUnmap(uniform_buffer);
   graph.add_uniform_buffer_bytes(sizeof(Q4gswParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {shader_src, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Bind group layout: out (rw) + in/weight/scales/bias (ro storage) + uniform.
-  WGPUBindGroupLayoutEntry entries[6] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 4; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[5].binding = 5;
-  entries[5].visibility = WGPUShaderStage_Compute;
-  entries[5].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 6;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
   // Only tiled GEMM overrides wg_size; GEMV/shmem (64) + steel (256) are fixed.
   const bool fixed_wg = use_gemv || use_steel || use_shmem_gemm;
-  pipeline_desc.compute.constantCount = fixed_wg ? 0u : 1u;
-  pipeline_desc.compute.constants = fixed_wg ? nullptr : &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
-  WGPUBindGroupEntry bg_entries[6] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out.buffer;
-  bg_entries[0].size = out.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = in.buffer;
-  bg_entries[1].size = in.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight.buffer;
-  bg_entries[2].size = weight.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = scales.buffer;
-  bg_entries[3].size = scales.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = bias_buffer;
-  bg_entries[4].size = bias_size;
-  bg_entries[5].binding = 5;
-  bg_entries[5].buffer = uniform_buffer;
-  bg_entries[5].size = sizeof(Q4gswParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 6;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  // out (rw) + in/weight/scales/bias (ro storage) + uniform. Auto layout is
+  // safe here: every routed shader statically references t_bias (under a
+  // runtime `if (params.has_bias != 0u)`), so binding 4's real-or-dummy buffer
+  // is kept in the derived layout.
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      shader_src,
+      {
+          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight.buffer,
+           weight.nbytes},
+          {3,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           scales.buffer,
+           scales.nbytes},
+          {4, WGPUBufferBindingType_ReadOnlyStorage, bias_buffer, bias_size},
+          {5,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(Q4gswParams)},
+      },
+      fixed_wg ? nullptr : &wg_size_constant,
+      fixed_wg ? 0u : 1u);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count, "linear_q4gsw"});
+      {bundle.pipeline, bundle.bind_group, workgroup_count, "linear_q4gsw"});
 
   // Dynamic shapes: recompute dispatch + params.M for the live M. use_gemv and
   // use_shmem_gemm are captured (routing is fixed at build); the helper re-runs
@@ -482,9 +442,6 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         g.set_cur_dims(out_id, od);
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
 }

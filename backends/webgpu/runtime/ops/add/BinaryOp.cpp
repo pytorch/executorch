@@ -76,90 +76,37 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   graph.add_uniform_buffer_bytes(sizeof(AddParams));
 
-  // Create shader module from built-in WGSL source
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kBinaryAddWGSL, WGPU_STRLEN};
-
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Create bind group layout: 3 storage buffers + 1 uniform
-  WGPUBindGroupLayoutEntry entries[4] = {};
-
-  // input1 - storage buffer, read-only
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-  // input2 - storage buffer, read-only
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-  // output - storage buffer, read-write
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Storage;
-
-  // params - uniform buffer
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 4;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  // Create pipeline layout
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  // Create compute pipeline
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
   // Create bind group with actual buffers
   const auto& in1_tensor = graph.get_tensor(in1_id);
   const auto& in2_tensor = graph.get_tensor(in2_id);
 
-  WGPUBindGroupEntry bg_entries[4] = {};
-
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = in1_tensor.buffer;
-  bg_entries[0].size = in1_tensor.nbytes;
-
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = in2_tensor.buffer;
-  bg_entries[1].size = in2_tensor.nbytes;
-
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = out_tensor.buffer;
-  bg_entries[2].size = out_tensor.nbytes;
-
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = uniform_buffer;
-  bg_entries[3].size = sizeof(AddParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 4;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kBinaryAddWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in1_tensor.buffer,
+           in1_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in2_tensor.buffer,
+           in2_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {3, WGPUBufferBindingType_Uniform, uniform_buffer, sizeof(AddParams)},
+      },
+      &wg_size_constant,
+      1);
 
   graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count.x, "", workgroup_count.y});
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "",
+       workgroup_count.y});
   const size_t dispatch_idx = graph.num_dispatches() - 1;
 
   // Dynamic shapes: recompute numel/dispatch; out follows the larger operand.
@@ -193,10 +140,6 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   graph.add_tensor_resize_hook(in1_id, add_resize);
   graph.add_tensor_resize_hook(in2_id, add_resize);
 
-  // Release intermediate objects (pipeline and bind_group are kept by dispatch)
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so a resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
 }
