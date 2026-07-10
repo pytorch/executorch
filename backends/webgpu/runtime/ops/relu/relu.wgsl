@@ -16,5 +16,5 @@ fn main(
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    output[idx] = max(input[idx], 0.0);
 }
