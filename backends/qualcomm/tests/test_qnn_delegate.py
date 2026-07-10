@@ -44,6 +44,10 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     validate_context_binary,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_greater_than,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ANNOTATION,
     QCOM_MODULE,
@@ -61,8 +65,6 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    is_qnn_sdk_version_greater_than,
-    is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
     skip_annotation,
@@ -667,6 +669,40 @@ class TestQNNFloatingPointOperator(TestQNN):
                     (torch.randint(0, 10, size=(4,)),),
                 ],
             }
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_diagonal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Diagonal(),  # noqa: F405
+                    Diagonal(offset=1),  # noqa: F405
+                    Diagonal(offset=-1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    Diagonal(),  # noqa: F405
+                    Diagonal(offset=1),  # noqa: F405
+                    Diagonal(offset=-1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(3, 5),)],
+            },
+            {
+                QCOM_MODULE: [
+                    Diagonal(offset=0, dim1=1, dim2=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 4, 4),)],
+            },
         ]
 
         index = 0
@@ -3582,6 +3618,41 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_diagonal(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Diagonal(),  # noqa: F405
+                    Diagonal(offset=1),  # noqa: F405
+                    Diagonal(offset=-1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(4, 4),)],
+            },
+            {
+                QCOM_MODULE: [
+                    Diagonal(),  # noqa: F405
+                    Diagonal(offset=1),  # noqa: F405
+                    Diagonal(offset=-1),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(3, 5),)],
+            },
+            {
+                QCOM_MODULE: [
+                    Diagonal(offset=0, dim1=1, dim2=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 4, 4),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_div_mode(self):
         test_comb = [
             {
@@ -3860,18 +3931,20 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(modules[i], sample_input)
 
-    # TODO: Once the accuracy issue is fixed, enable this test.
-    @unittest.skip("Bad accuracy for HTP")
+    @unittest.skipIf(is_qnn_sdk_version_less_than("2.48"), "UT pass after QNN 2.48")
     def test_qnn_backend_embedding_per_channel(self):
         module = Embedding()  # noqa: F405
         sample_input = (torch.Tensor([1, 2, 4, 5]).to(torch.int32),)
-        qdq_module = self.get_qdq_module(
-            module,
-            sample_input,
-            quant_dtype=QuantDtype.use_16a8w,
-            is_embedding_per_channel=True,
-        )
-        self.lower_module_and_test_output(qdq_module, sample_input)
+        quant_dtype = [QuantDtype.use_16a8w, QuantDtype.use_16a4w]
+        for i, qdtype in enumerate(quant_dtype):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=qdtype,
+                    is_embedding_per_channel=True,
+                )
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_equal(self):
         test_comb = [
@@ -8654,18 +8727,18 @@ class TestExampleLLMScript(TestQNN):
                         msg["wiki_ppl"], self.llm_specs[model_name].wikitext_ppl
                     )
 
-    def test_qwen2_5(self):
-        # This is not testing static llm flow.
+    def test_hf_causal_lm(self):
+        # This is the Hugging Face transformers flow, not the static llm flow.
         if not self.required_envs([]):
             self.skipTest("missing required envs")
         prompt = "My favourite condiment is "
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/qwen2_5/qwen2_5.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
             "--prompt",
             prompt,
             "--decoder_model",
-            "qwen2.5_0.5B",
+            "qwen2_5-0_5b",
             "--ptq",
             "16a8w",
             "--enable_spinquant_r3",
@@ -10812,19 +10885,40 @@ class TestUtilsScript(TestQNN):
             save_suggest_recipes,
         )
 
-        module = SimpleModel()  # noqa: F405
-        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        torch.manual_seed(8)
+        n_layers = 20
+        vocab_size, seq_len, n_heads = 128, 8, 4
+        module = SimpleLLMDecoder(  # noqa: F405
+            vocab_size=vocab_size, n_heads=n_heads, n_layers=n_layers
+        )
+        input_ids = torch.randint(0, vocab_size, (1, seq_len), dtype=torch.int32)
+        atten_mask = torch.triu(
+            torch.full((1, 1, seq_len, seq_len), float("-inf")), diagonal=1
+        )
+        sample_input = (input_ids, atten_mask)
         fp32_gm = torch.export.export(module, sample_input, strict=True).module()
         qdq_gm = self.get_qdq_module(
             module, sample_input, quant_dtype=QuantDtype.use_8a4w
         )
 
+        class DecoderInference:
+            def get_inputs(self, input_ids, attn_mask):
+                return (input_ids, attn_mask)
+
+        text_dataloader = [
+            {
+                "input_ids": input_ids,
+                "attention_mask": atten_mask,
+            }
+        ]
+
+        num_sharding = 5
         report = PerLayerSqnrAnalyzer(
-            model_name="simple_conv",
-            num_layers=4,
+            model_name="simple_llm_decoder",
+            num_layers=n_layers,
             fp32_gm=fp32_gm,
             qdq_gm=qdq_gm,
-        ).analyze([sample_input], num_sharding=4)
+        ).analyze(DecoderInference(), text_dataloader, num_sharding=num_sharding)
 
         overrides = report.suggest_recipe_overrides(sqnr_threshold=22.0)
 
@@ -10833,10 +10927,13 @@ class TestUtilsScript(TestQNN):
             save_suggest_recipes(report, overrides, output_dir=tmp_dir)
 
             # --- save_analysis_summary csv file ---
-            with open(f"{tmp_dir}/simple_conv_quantization_error.csv") as f:
+            with open(f"{tmp_dir}/simple_llm_decoder_quantization_error.csv") as f:
                 csv_content = f.read()
             rows = list(csv.reader(csv_content.splitlines()))
-            self.assertEqual(len(rows), 5)  # 1 header + 4 group rows
+            # 1 header + per-shard conv groups (7 projections each: wq/wk/wv/wo,
+            # w1/w2/w3) + the model-level output_conv. Layers are bucketed into
+            # num_sharding contiguous shards (n_layers >= num_sharding).
+            self.assertEqual(len(rows), 1 + num_sharding * 7 + 1)
             self.assertEqual(
                 rows[0],
                 [
@@ -10852,11 +10949,11 @@ class TestUtilsScript(TestQNN):
 
             # --- save_suggest_recipes .py file (only written when sensitive layers exist) ---
             if overrides:
-                with open(f"{tmp_dir}/simple_conv_suggest_recipe.py") as f:
+                with open(f"{tmp_dir}/simple_llm_decoder_suggest_recipe.py") as f:
                     py_content = f.read()
                 # generated file must be valid Python
                 try:
-                    compile(py_content, "simple_conv_suggest_recipe.py", "exec")
+                    compile(py_content, "simple_llm_decoder_suggest_recipe.py", "exec")
                 except SyntaxError as e:
                     self.fail(
                         f"Generated recipe file has syntax error: {e}\n{py_content}"

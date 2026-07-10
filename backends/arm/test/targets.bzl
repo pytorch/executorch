@@ -38,6 +38,7 @@ def define_arm_tests():
         "ops/test_to_copy.py",
         "ops/test_exp.py",
         "ops/test_fft.py",
+        "ops/test_flip.py",
         "ops/test_reciprocal.py",
         "ops/test_mean_dim.py",
         "ops/test_var.py",
@@ -95,6 +96,19 @@ def define_arm_tests():
     for test_file in test_files:
         test_file_name = paths.basename(test_file)
         test_name = test_file_name.replace("test_", "").replace(".py", "")
+        test_env = {
+            "TEST_RUNTIME_IS_NOT_OSS": "1" if not runtime.is_oss else "0",
+        }
+        if not runtime.is_oss and _ENABLE_VGF:
+            test_env.update({
+                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
+                "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
+                "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
+                "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
+                "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
+                "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
+                "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
+            })
 
         python_pytest(
             name = test_name,
@@ -104,15 +118,7 @@ def define_arm_tests():
             compile = "with-source",
             typing = False,
             skip_on_mode_mac = True,
-            env = {} if runtime.is_oss else ({
-                "MODEL_CONVERTER_PATH": "$(location fbsource//third-party/pypi/ai-ml-sdk-model-converter/0.9.0:model-converter-bin)",
-                "MODEL_CONVERTER_LIB_DIR": "$(location fbsource//third-party/nvidia-nsight-systems:linux-x86_64)/host-linux-x64",
-                "LAVAPIPE_LIB_PATH": "$(location fbsource//third-party/mesa:vulkan_lvp)",
-                "EMULATION_LAYER_TENSOR_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Tensor)",
-                "EMULATION_LAYER_GRAPH_SO": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:libVkLayer_Graph)",
-                "EMULATION_LAYER_TENSOR_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Tensor_json)",
-                "EMULATION_LAYER_GRAPH_JSON": "$(location fbsource//third-party/arm-ml-emulation-layer/v0.9.0/src:VkLayer_Graph_json)",
-            } if _ENABLE_VGF else {}),
+            env = test_env,
             preload_deps = [
                 "//executorch/kernels/quantized:custom_ops_generated_lib",
             ] + ([] if runtime.is_oss or not _ENABLE_VGF else [
@@ -135,6 +141,7 @@ def define_arm_tests():
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
                 "fbsource//third-party/pypi/parameterized:parameterized",
+                "fbsource//third-party/tosa_tools:serializer",
                 "fbsource//third-party/tosa_tools:tosa_reference_model",
             ] + ([
                 # Needed only by the OSS-only public API manifest tests above.

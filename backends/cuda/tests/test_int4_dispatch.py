@@ -124,8 +124,8 @@ class TestMultiLayer(unittest.TestCase):
         self.assertLess(rel_err.item(), tol)
 
     def test_two_layer_mlp(self):
-        up, w_up = _make_int4_linear(512, 256)
-        down, w_down = _make_int4_linear(256, 512)
+        up, w_up = _make_int4_linear(512, 256, group_size=32)
+        down, w_down = _make_int4_linear(256, 512, group_size=32)
         x = torch.randn(4, 256, dtype=torch.bfloat16, device="cuda")
         out = down(F.silu(up(x)))
         ref = F.linear(F.silu(F.linear(x, w_up)), w_down)
@@ -204,17 +204,17 @@ class TestLargeShapes(unittest.TestCase):
         self.assertLess(rel_err.item(), tol)
 
     def test_4096x5376_decode(self):
-        module, w_ref = _make_int4_linear(4096, 5376)
+        module, w_ref = _make_int4_linear(4096, 5376, group_size=32)
         x = torch.randn(1, 5376, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_ref))
 
     def test_21504x5376_decode(self):
-        module, w_ref = _make_int4_linear(21504, 5376)
+        module, w_ref = _make_int4_linear(21504, 5376, group_size=32)
         x = torch.randn(1, 5376, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_ref))
 
     def test_21504x5376_prefill(self):
-        module, w_ref = _make_int4_linear(21504, 5376)
+        module, w_ref = _make_int4_linear(21504, 5376, group_size=32)
         x = torch.randn(128, 5376, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_ref))
 
@@ -238,9 +238,11 @@ def _record_int4_plain_mm():
     """
     calls = []
 
-    def _fake(self, qdata, scale, zero, group_size):
+    def _fake(self, qdata, scale, scale_step, zero, zero_point_step, group_size):
         calls.append((tuple(self.shape), group_size))
-        return _dequant_matmul(self, qdata, scale, zero, group_size)
+        return _dequant_matmul(
+            self, qdata, scale, scale_step, zero, zero_point_step, group_size
+        )
 
     with mock.patch.object(torch.ops.executorch_cuda, "int4_plain_mm", _fake):
         yield calls
@@ -276,9 +278,9 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_coalesced_tensor_routes_to_int4_plain_mm(self):
         """CudaCoalescedInt4Tensor with M<=4 routes to the decode custom op."""
-        t, _ = _make_int4_tensor(16, 64, group_size=32)
+        t, _ = _make_int4_tensor(16, 256, group_size=32)
         c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
-        x = torch.randn(1, 64, dtype=torch.bfloat16)  # M=1 (decode regime)
+        x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
         with _record_int4_plain_mm() as calls:
             out = F.linear(x, c)
         self.assertEqual(len(calls), 1)
@@ -286,9 +288,9 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_coalesced_tensor_prefill_uses_dequant(self):
         """M>4 uses inline dequant (no custom op) and is numerically correct."""
-        t, _ = _make_int4_tensor(16, 64, group_size=32)
+        t, _ = _make_int4_tensor(16, 256, group_size=32)
         c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
-        x = torch.randn(8, 64, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
+        x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
         with _record_int4_plain_mm() as calls:
             out = F.linear(x, c)
         self.assertEqual(calls, [])
@@ -312,15 +314,33 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_from_int4_tensor_transpose_correct(self):
         """from_int4_tensor owns the (n_groups, N) -> (N, n_groups) transpose."""
-        t, _ = _make_int4_tensor(24, 192, group_size=64)
+        t, _ = _make_int4_tensor(24, 256, group_size=64)
         c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
-        n_groups = 192 // 64
+        n_groups = 256 // 64
         self.assertEqual(tuple(t.scale.shape), (n_groups, 24))  # torchao layout
         self.assertEqual(tuple(c.scale.shape), (24, n_groups))  # coalesced layout
-        self.assertTrue(torch.equal(c.scale, t.scale.t().contiguous()))
-        self.assertTrue(torch.equal(c.zero_point, t.zero_point.t().contiguous()))
+        # Scale is a uint8 code + a per-256 fp16 step; zero is a uint8 code + a
+        # per-256 fp16 step. Decoding must recover the transposed torchao
+        # scale/zero (within code quant error).
+        n_super = int(c.scale_step.shape[1])
+        gps = n_groups // n_super
+        scale_step_g = c.scale_step.to(torch.bfloat16).repeat_interleave(gps, dim=1)
+        dec_scale = c.scale.to(torch.bfloat16) * scale_step_g
+        zero_point_step_g = c.zero_point_step.to(torch.bfloat16).repeat_interleave(
+            gps, dim=1
+        )
+        dec_zero = c.zero_point.to(torch.bfloat16) * zero_point_step_g
+        torch.testing.assert_close(
+            dec_scale, t.scale.t().contiguous().to(torch.bfloat16), rtol=0.05, atol=0
+        )
+        torch.testing.assert_close(
+            dec_zero,
+            t.zero_point.t().contiguous().to(torch.bfloat16),
+            rtol=0.02,
+            atol=0,
+        )
         # End-to-end decode result matches a reference dequant of the original.
-        x = torch.randn(2, 192, dtype=torch.bfloat16)
+        x = torch.randn(2, 256, dtype=torch.bfloat16)
         with _record_int4_plain_mm() as calls:
             out = F.linear(x, c)
         self.assertEqual(len(calls), 1)

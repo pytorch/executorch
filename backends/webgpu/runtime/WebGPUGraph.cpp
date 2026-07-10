@@ -15,6 +15,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
@@ -62,6 +63,18 @@ bool vk_datatype_is_int(vkgraph::VkDataType dtype) {
   }
 }
 
+// Normalize a possibly-negative dim against rank; throws (fail-loud) if OOR.
+int normalize_dim(int dim, int rank, const char* op) {
+  if (dim < 0) {
+    dim += rank;
+  }
+  if (dim < 0 || dim >= rank) {
+    throw std::runtime_error(
+        std::string("WebGPU ") + op + ": dim out of range");
+  }
+  return dim;
+}
+
 } // namespace
 
 WebGPUGraph::WebGPUGraph() = default;
@@ -75,6 +88,49 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
   scratch_buffers_.push_back(buffer);
   return buffer;
+}
+
+WGPUBuffer WebGPUGraph::acquire_scratch(size_t nbytes) {
+  nbytes = nbytes > 0 ? nbytes : 4;
+  // Best-fit reuse: smallest free slot with size in [nbytes, 2*nbytes] -- the
+  // 2x cap stops a large Cmax-sized buffer from backing a tiny request. Never
+  // reuse an in_use slot (co-live safety).
+  ScratchSlot* best = nullptr;
+  for (auto& s : scratch_pool_) {
+    // s.size - nbytes (safe: s.size >= nbytes) avoids overflowing 2 * nbytes.
+    if (!s.in_use && s.size >= nbytes && s.size - nbytes <= nbytes) {
+      if (best == nullptr || s.size < best->size) {
+        best = &s;
+      }
+    }
+  }
+  if (best != nullptr) {
+    best->in_use = true;
+    return best->buffer;
+  }
+  // None reusable -> create a new slot (freed in the dtor, like
+  // scratch_buffers_).
+  WGPUBufferDescriptor buf_desc = {};
+  buf_desc.size = nbytes;
+  buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+      WGPUBufferUsage_CopySrc;
+  buf_desc.mappedAtCreation = false;
+  WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+  scratch_pool_.push_back({buffer, nbytes, true});
+  return buffer;
+}
+
+void WebGPUGraph::release_scratch(WGPUBuffer buffer) {
+  if (!buffer) {
+    return;
+  }
+  for (auto& s : scratch_pool_) {
+    if (s.buffer == buffer) {
+      s.in_use = false;
+      return;
+    }
+  }
+  // Not a pooled buffer -> no-op; the dtor frees it via scratch_buffers_.
 }
 
 WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
@@ -104,11 +160,10 @@ void WebGPUGraph::update_symints_from_inputs(
       throw std::runtime_error(
           "select_as_symint: source tensor is not a graph input");
     }
-    const auto& dims = tensors_[src.input_tensor_id].dims;
-    int dim = src.dim < 0 ? src.dim + static_cast<int>(dims.size()) : src.dim;
-    if (dim < 0 || dim >= static_cast<int>(dims.size())) {
-      throw std::runtime_error("select_as_symint: dim out of range");
-    }
+    // Live cur_dims: the source may be a dynamic-shape input.
+    const auto& dims = tensors_[src.input_tensor_id].cur_dims;
+    int dim = normalize_dim(
+        src.dim, static_cast<int>(dims.size()), "select_as_symint");
     int index = src.index;
     if (index < 0) {
       index += static_cast<int>(dims[dim]);
@@ -129,19 +184,25 @@ void WebGPUGraph::update_symints_from_inputs(
     }
     // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
     const int64_t offset = static_cast<int64_t>(index) * stride;
-    // elem_size back-derived from build-time numel (sources are static-shaped).
     const void* host = inputs[pos].data;
-    const size_t elem_size = inputs[pos].nbytes / static_cast<size_t>(numel);
+    // Interpret the HOST buffer by its scalar type, not the tensor's serialized
+    // elem_size: copy_inputs narrows an int64 host input to an int32 buffer, so
+    // elem_size (buffer-derived) would misread int64 host data as int32.
     int32_t val;
-    if (elem_size == sizeof(int64_t)) {
+    if (inputs[pos].host_is_int64) {
       val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
-    } else if (elem_size == sizeof(int32_t)) {
-      val = static_cast<const int32_t*>(host)[offset];
     } else {
-      throw std::runtime_error(
-          "select_as_symint: unsupported input element size");
+      val = static_cast<const int32_t*>(host)[offset];
     }
     set_symint(src.symint_id, val);
+  }
+  // sym_size.int: SymInt = a tensor's live dim (cur_dims). Usually unused (ops
+  // read cur_dims directly); for an intermediate source cur_dims is the build
+  // max here (hooks run later in propagate_resize), which is fine while unused.
+  for (const auto& s : symint_dim_sources_) {
+    const auto& d = tensors_[s.tensor_id].cur_dims;
+    int dim = normalize_dim(s.dim, static_cast<int>(d.size()), "sym_size");
+    set_symint(s.symint_id, static_cast<int32_t>(d[dim]));
   }
 }
 
@@ -158,16 +219,78 @@ void WebGPUGraph::set_symint(int id, int32_t val) {
   }
 }
 
+void WebGPUGraph::set_cur_dims(
+    int value_id,
+    const std::vector<int64_t>& new_dims) {
+  auto& t = tensors_[value_id];
+  if (new_dims.size() != t.dims.size()) {
+    throw std::runtime_error("WebGPU resize: tensor rank changed");
+  }
+  size_t numel = 1;
+  for (size_t d = 0; d < new_dims.size(); d++) {
+    // 0-sized dims unsupported: live shapes are always in [1, max] per dim.
+    if (new_dims[d] <= 0) {
+      throw std::runtime_error("WebGPU resize: new dim must be positive");
+    }
+    if (new_dims[d] > t.dims[d]) {
+      throw std::runtime_error(
+          "WebGPU resize: new dim exceeds the max (serialized) allocation");
+    }
+    numel *= static_cast<size_t>(new_dims[d]);
+  }
+  const size_t new_nbytes = numel * t.elem_size;
+  if (t.cur_dims != new_dims) {
+    t.cur_dims = new_dims;
+    t.cur_nbytes = new_nbytes;
+    dirty_tensors_.insert(value_id);
+  }
+}
+
+void WebGPUGraph::resize_input(
+    int value_id,
+    const std::vector<int64_t>& new_dims) {
+  if (std::find(input_ids_.begin(), input_ids_.end(), value_id) ==
+      input_ids_.end()) {
+    throw std::runtime_error(
+        "WebGPUGraph::resize_input: value_id is not a graph input");
+  }
+  set_cur_dims(value_id, new_dims);
+}
+
 void WebGPUGraph::propagate_resize() {
-  if (dirty_symints_.empty()) {
+  if (dirty_symints_.empty() && dirty_tensors_.empty()) {
     return;
   }
+  // Hooks fire in registration (topological) order: operands update first.
   for (auto& hook : resize_hooks_) {
     if (dirty_symints_.count(hook.symint_id) != 0) {
       hook.fn(*this);
     }
   }
   dirty_symints_.clear();
+  // Tensor hooks: bounded fixpoint. A hook may dirty its output (cascading to a
+  // consumer); each pass handles the currently-dirty set. A forward DAG
+  // converges in <= depth passes (set_cur_dims re-dirties only on a change).
+  for (size_t pass = 0;
+       !dirty_tensors_.empty() && pass <= tensor_resize_hooks_.size();
+       pass++) {
+    std::unordered_set<int> processing;
+    processing.swap(dirty_tensors_);
+    for (auto& hook : tensor_resize_hooks_) {
+      if (processing.count(hook.trigger_tensor_id) != 0) {
+        hook.fn(*this);
+      }
+    }
+  }
+  if (!dirty_tensors_.empty()) {
+    throw std::runtime_error(
+        "WebGPU resize: tensor resize hooks did not converge");
+  }
+  // Tensor hooks must not set_symint (dirty_symints_ already drained above).
+  if (!dirty_symints_.empty()) {
+    throw std::runtime_error(
+        "WebGPU resize: a tensor resize hook set a SymInt; not supported");
+  }
 }
 
 WebGPUGraph::~WebGPUGraph() {
@@ -185,6 +308,11 @@ WebGPUGraph::~WebGPUGraph() {
   for (auto& buf : scratch_buffers_) {
     if (buf) {
       wgpuBufferRelease(buf);
+    }
+  }
+  for (auto& s : scratch_pool_) {
+    if (s.buffer) {
+      wgpuBufferRelease(s.buffer);
     }
   }
   for (auto& buf : owned_uniform_buffers_) {
@@ -230,7 +358,9 @@ WebGPUGraph::~WebGPUGraph() {
 void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data,
-    const executorch::runtime::NamedDataMap* named_data_map) {
+    const executorch::runtime::NamedDataMap* named_data_map,
+    bool f16_kv_cache,
+    bool f16_accumulate_gemm) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -250,6 +380,15 @@ void WebGPUGraph::build(
   // .pte byte sources for prepack-time constant materialization (build-only).
   constant_data_ = constant_data;
   named_data_map_ = named_data_map;
+
+  // f16 KV cache (runtime opt-in): store K/V caches as f16 iff the opt-in is
+  // set AND the device negotiated shader-f16 (fail-closed).
+  const WebGPUContext* kv_ctx = get_default_webgpu_context();
+  kv_f16_ = f16_kv_cache && (kv_ctx != nullptr && kv_ctx->shader_f16_supported);
+
+  // f16-accumulate q4gsw steel prefill GEMM (runtime opt-in). QuantizedLinear
+  // additionally gates the kernel on the negotiated shader-f16 feature.
+  f16_accumulate_gemm_ = f16_accumulate_gemm;
 
   // Phase 1: Create all values
   const auto* values = graph->values();
@@ -278,6 +417,13 @@ void WebGPUGraph::build(
       if (!a) {
         continue;
       }
+      // f16 KV: tag sdpa K/V cache values (args[3],[4]) for half-size alloc.
+      // Inert unless kv_f16_ (runtime opt-in) is set.
+      if (kv_f16_ && a->size() > 4 &&
+          oc->name()->str() == "sdpa_with_kv_cache.default") {
+        kv_cache_ids_.insert(static_cast<int>(a->Get(3)));
+        kv_cache_ids_.insert(static_cast<int>(a->Get(4)));
+      }
       for (unsigned j = 0; j < a->size(); j++) {
         int id = static_cast<int>(a->Get(j));
         if (is_prepack && j == 0) {
@@ -293,6 +439,29 @@ void WebGPUGraph::build(
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  // f16 KV defensive guard: fail loud if a non-sdpa op reads an f16 cache.
+  // Inert unless kv_f16_ (runtime opt-in) is set.
+  if (kv_f16_ && !kv_cache_ids_.empty() && chain_prescan) {
+    for (unsigned ci = 0; ci < chain_prescan->size(); ci++) {
+      const auto* oc = chain_prescan->Get(ci);
+      const std::string nm = oc->name()->str();
+      if (nm == "sdpa_with_kv_cache.default" || nm == kPrepackOpName) {
+        continue;
+      }
+      const auto* a = oc->args();
+      if (!a) {
+        continue;
+      }
+      for (unsigned j = 0; j < a->size(); j++) {
+        if (kv_cache_ids_.count(static_cast<int>(a->Get(j))) != 0) {
+          throw std::runtime_error(
+              "WebGPU f16 KV: cache tensor consumed by non-sdpa op '" + nm +
+              "' would misread the f16 buffer");
         }
       }
     }
@@ -322,6 +491,27 @@ void WebGPUGraph::build(
         tensor.elem_size = vk_datatype_size(vk_tensor->datatype());
         tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
         tensor.nbytes = numel * tensor.elem_size;
+        // Live dims start == max (serialized upper bound); resize_input shrinks
+        // them per call. Static graphs keep cur == max forever.
+        tensor.cur_dims = tensor.dims;
+        tensor.cur_nbytes = tensor.nbytes;
+
+        // f16 KV cache: dedicated half-size array<f16> buffer. WebGPU
+        // zero-initializes freshly-created buffers, so no explicit clear is
+        // needed. Inert unless kv_f16_ (runtime opt-in) is set.
+        if (kv_f16_ && kv_cache_ids_.count(i) != 0) {
+          tensor.elem_size = 2;
+          tensor.nbytes = numel * 2;
+          tensor.cur_nbytes = tensor.nbytes;
+          tensor_mem_obj_ids_[i] = -1;
+          WGPUBufferDescriptor buf_desc = {};
+          buf_desc.size = std::max(tensor.nbytes, size_t(4));
+          buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
+              WGPUBufferUsage_CopySrc;
+          buf_desc.mappedAtCreation = false;
+          tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+          break;
+        }
 
         int constant_id = vk_tensor->constant_id();
         int mem_obj_id = vk_tensor->mem_obj_id();
@@ -624,17 +814,20 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
     }
     int tid = input_ids_[i];
     const auto& tensor = tensors_[tid];
+    // Upload only the live (cur) bytes, not the max allocation; cur_nbytes ==
+    // nbytes on a static graph, so this is byte-identical there.
+    const size_t live_nbytes = tensor.cur_nbytes;
 
     // Fast path: host and GPU element types match byte-for-byte.
-    if (in.nbytes == tensor.nbytes) {
-      wgpuQueueWriteBuffer(queue_, tensor.buffer, 0, in.data, tensor.nbytes);
+    if (in.nbytes == live_nbytes) {
+      wgpuQueueWriteBuffer(queue_, tensor.buffer, 0, in.data, live_nbytes);
       continue;
     }
 
     // Narrow int64 host indices into the int32 buffer (mirrors Vulkan).
     const bool buffer_is_int32 = tensor.is_int && tensor.elem_size == 4;
-    if (in.host_is_int64 && buffer_is_int32 && in.nbytes == tensor.nbytes * 2) {
-      const size_t numel = tensor.nbytes / 4;
+    if (in.host_is_int64 && buffer_is_int32 && in.nbytes == live_nbytes * 2) {
+      const size_t numel = live_nbytes / 4;
       const int64_t* src = static_cast<const int64_t*>(in.data);
       std::vector<int32_t> narrowed(numel);
       for (size_t e = 0; e < numel; e++) {
@@ -648,7 +841,7 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
         narrowed[e] = static_cast<int32_t>(src[e]);
       }
       wgpuQueueWriteBuffer(
-          queue_, tensor.buffer, 0, narrowed.data(), tensor.nbytes);
+          queue_, tensor.buffer, 0, narrowed.data(), live_nbytes);
       continue;
     }
 
@@ -656,7 +849,7 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
         "WebGPU: unsupported input copy for input " + std::to_string(i) +
         " (host " + std::to_string(in.nbytes) + " bytes" +
         (in.host_is_int64 ? " int64" : "") + " vs buffer " +
-        std::to_string(tensor.nbytes) + " bytes)");
+        std::to_string(live_nbytes) + " bytes)");
   }
 }
 
@@ -727,7 +920,7 @@ void WebGPUGraph::execute() {
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatch.bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatch.workgroup_count_x, 1, 1);
+          pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -735,7 +928,7 @@ void WebGPUGraph::execute() {
         qp->record(
             static_cast<uint32_t>(i),
             dispatch.kernel_name,
-            {dispatch.workgroup_count_x, 1, 1},
+            {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
             {1, 1, 1});
       }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -807,7 +1000,10 @@ void WebGPUGraph::execute() {
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatches_[i].bind_group, 0, nullptr);
       wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatches_[i].workgroup_count_x, 1, 1);
+          pass,
+          dispatches_[i].workgroup_count_x,
+          dispatches_[i].workgroup_count_y,
+          1);
       wgpuComputePassEncoderEnd(pass);
       wgpuComputePassEncoderRelease(pass);
     }

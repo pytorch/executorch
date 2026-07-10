@@ -5,11 +5,20 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
+#include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <cinttypes>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <list>
 #include <numeric>
+#include <sstream>
 #include <string>
 
 using namespace std;
@@ -18,6 +27,7 @@ using namespace std;
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
@@ -36,6 +46,7 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+using executorch::runtime::toString;
 
 #ifdef ET_EVENT_TRACER_ENABLED
 using executorch::runtime::event_tracer_end_profiling_delegate;
@@ -104,15 +115,307 @@ void vkml_free_basics(
   //  vkDestroyInstance(*instance, nullptr);
 }
 
-bool vgf_neural_statistics_profiling_enabled() {
-  const char* value = std::getenv("EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS");
+// Helper functions to dump VGF Delegate Boundary Inputs
+constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
+constexpr const char* kVgfDumpInputsAndExitEnv =
+    "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
+constexpr const char* kVgfNeuralStatisticsEnv =
+    "EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS";
+
+std::atomic<uint64_t> g_vgf_dump_invocation{0};
+
+bool env_flag_enabled(const char* name) {
+  const char* value = std::getenv(name);
   if (value == nullptr || value[0] == '\0') {
     return false;
   }
 
   return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
-      std::strcmp(value, "FALSE") != 0 && std::strcmp(value, "off") != 0 &&
+      std::strcmp(value, "False") != 0 && std::strcmp(value, "FALSE") != 0 &&
+      std::strcmp(value, "off") != 0 && std::strcmp(value, "Off") != 0 &&
       std::strcmp(value, "OFF") != 0;
+}
+
+const char* descriptor_type_to_string(VkDescriptorType type) {
+  switch (type) {
+    case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+      return "VK_DESCRIPTOR_TYPE_TENSOR_ARM";
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+      return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER";
+    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+      return "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER";
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+      return "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE";
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+      return "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE";
+    default:
+      return "VK_DESCRIPTOR_TYPE_UNKNOWN";
+  }
+}
+
+template <typename T>
+std::string array_ref_to_json(ArrayRef<T> values) {
+  std::ostringstream out;
+  out << "[";
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i != 0) {
+      out << ", ";
+    }
+    out << static_cast<int64_t>(values[i]);
+  }
+  out << "]";
+  return out.str();
+}
+
+template <typename T>
+std::string vector_to_json(const std::vector<T>& values) {
+  std::ostringstream out;
+  out << "[";
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (i != 0) {
+      out << ", ";
+    }
+    out << static_cast<int64_t>(values[i]);
+  }
+  out << "]";
+  return out.str();
+}
+
+bool write_binary_file(
+    const std::filesystem::path& path,
+    const void* data,
+    size_t nbytes) {
+  std::ofstream file(path, std::ios::binary | std::ios::trunc);
+  if (!file) {
+    return false;
+  }
+
+  file.write(
+      static_cast<const char*>(data), static_cast<std::streamsize>(nbytes));
+  return file.good();
+}
+
+std::string make_vgf_call_dir_name(uint64_t invocation) {
+  std::ostringstream call_name;
+  call_name << "call_" << std::setw(6) << std::setfill('0') << invocation;
+  return call_name.str();
+}
+
+std::filesystem::path make_vgf_tmp_call_dir(
+    const std::filesystem::path& dump_root,
+    const std::string& call_dir_name) {
+  const auto nonce =
+      std::chrono::steady_clock::now().time_since_epoch().count();
+
+  std::ostringstream tmp_name;
+  tmp_name << "." << call_dir_name << ".tmp." << nonce;
+
+  return dump_root / tmp_name.str();
+}
+
+class ScopedTmpDir {
+ public:
+  explicit ScopedTmpDir(std::filesystem::path path)
+      : path_(std::move(path)), active_(true) {}
+
+  ~ScopedTmpDir() {
+    if (active_) {
+      std::error_code ec;
+      std::filesystem::remove_all(path_, ec);
+    }
+  }
+
+  ScopedTmpDir(const ScopedTmpDir&) = delete;
+  ScopedTmpDir& operator=(const ScopedTmpDir&) = delete;
+
+  void release() {
+    active_ = false;
+  }
+
+ private:
+  std::filesystem::path path_;
+  bool active_;
+};
+
+Error dump_vgf_delegate_inputs(
+    const VgfRepr& repr,
+    Span<EValue*> args,
+    const char* dump_root) {
+  const uint64_t invocation = g_vgf_dump_invocation.fetch_add(1);
+
+  const std::filesystem::path dump_root_path(dump_root);
+  const std::string call_dir_name = make_vgf_call_dir_name(invocation);
+  const std::filesystem::path final_call_dir = dump_root_path / call_dir_name;
+  const std::filesystem::path tmp_call_dir =
+      make_vgf_tmp_call_dir(dump_root_path, call_dir_name);
+
+  std::error_code ec;
+
+  std::filesystem::create_directories(dump_root_path, ec);
+  if (ec) {
+    ET_LOG(
+        Error,
+        "Failed to create VGF dump root %s: %s",
+        dump_root_path.string().c_str(),
+        ec.message().c_str());
+    return Error::Internal;
+  }
+
+  if (std::filesystem::exists(final_call_dir, ec)) {
+    ET_LOG(
+        Error,
+        "VGF dump output directory already exists: %s",
+        final_call_dir.string().c_str());
+    return Error::Internal;
+  }
+
+  std::filesystem::create_directory(tmp_call_dir, ec);
+  if (ec) {
+    ET_LOG(
+        Error,
+        "Failed to create temporary VGF dump directory %s: %s",
+        tmp_call_dir.string().c_str(),
+        ec.message().c_str());
+    return Error::Internal;
+  }
+
+  ScopedTmpDir tmp_dir_guard(tmp_call_dir);
+
+  std::vector<std::string> input_file_names;
+  input_file_names.reserve(repr.model_input_count);
+
+  for (size_t input_arg_idx = 0; input_arg_idx < repr.model_input_count;
+       ++input_arg_idx) {
+    const int io_idx = repr.model_input_io_index[input_arg_idx];
+
+    if (io_idx < 0 || static_cast<size_t>(io_idx) >= repr.IOs.size()) {
+      ET_LOG(
+          Error,
+          "Invalid VGF input IO index %d for input arg %zu",
+          io_idx,
+          input_arg_idx);
+      return Error::InvalidArgument;
+    }
+
+    if (args[input_arg_idx] == nullptr || !args[input_arg_idx]->isTensor()) {
+      ET_LOG(Error, "VGF input arg %zu is not a tensor", input_arg_idx);
+      return Error::InvalidArgument;
+    }
+
+    const Tensor& tensor = args[input_arg_idx]->toTensor();
+    const IO& io = repr.IOs[io_idx];
+
+    if (tensor.nbytes() != io.allocation_size) {
+      ET_LOG(
+          Error,
+          "VGF input arg %zu size mismatch: tensor nbytes=%zu, IO allocation_size=%zu",
+          input_arg_idx,
+          tensor.nbytes(),
+          io.allocation_size);
+      return Error::InvalidArgument;
+    }
+
+    std::ostringstream file_name;
+    file_name << "input_" << std::setw(3) << std::setfill('0') << input_arg_idx
+              << "_io_" << io_idx << ".bin";
+
+    input_file_names.push_back(file_name.str());
+
+    const std::filesystem::path input_path = tmp_call_dir / file_name.str();
+
+    if (!write_binary_file(
+            input_path, tensor.const_data_ptr(), tensor.nbytes())) {
+      ET_LOG(
+          Error,
+          "Failed to write VGF input dump file %s",
+          input_path.string().c_str());
+      return Error::Internal;
+    }
+  }
+
+  const std::filesystem::path metadata_path = tmp_call_dir / "metadata.json";
+  {
+    std::ofstream metadata(metadata_path, std::ios::out | std::ios::trunc);
+    if (!metadata) {
+      ET_LOG(
+          Error,
+          "Failed to open VGF metadata file %s",
+          metadata_path.string().c_str());
+      return Error::Internal;
+    }
+
+    metadata << "{\n";
+    metadata << "  \"format_version\": 1,\n";
+    metadata << "  \"invocation\": " << invocation << ",\n";
+    metadata << "  \"input_count\": " << repr.model_input_count << ",\n";
+    metadata << "  \"inputs\": [\n";
+
+    for (size_t input_arg_idx = 0; input_arg_idx < repr.model_input_count;
+         ++input_arg_idx) {
+      const int io_idx = repr.model_input_io_index[input_arg_idx];
+      const Tensor& tensor = args[input_arg_idx]->toTensor();
+      const IO& io = repr.IOs[io_idx];
+
+      metadata << "    {\n";
+      metadata << "      \"arg_index\": " << input_arg_idx << ",\n";
+      metadata << "      \"io_index\": " << io_idx << ",\n";
+      metadata << "      \"file\": \"" << input_file_names[input_arg_idx]
+               << "\",\n";
+      metadata << "      \"nbytes\": " << tensor.nbytes() << ",\n";
+      metadata << "      \"scalar_type\": \"" << toString(tensor.scalar_type())
+               << "\",\n";
+      metadata << "      \"tensor_shape\": "
+               << array_ref_to_json(tensor.sizes()) << ",\n";
+      metadata << "      \"tensor_strides\": "
+               << array_ref_to_json(tensor.strides()) << ",\n";
+      metadata << "      \"io_shape\": " << vector_to_json(io.size) << ",\n";
+      metadata << "      \"io_strides\": " << vector_to_json(io.stride)
+               << ",\n";
+      metadata << "      \"io_element_size\": " << io.elt_size << ",\n";
+      metadata << "      \"io_allocation_size\": " << io.allocation_size
+               << ",\n";
+      metadata << "      \"io_descriptor_type\": \""
+               << descriptor_type_to_string(io.descriptor_type) << "\"\n";
+      metadata << "    }";
+
+      if (input_arg_idx + 1 < repr.model_input_count) {
+        metadata << ",";
+      }
+      metadata << "\n";
+    }
+
+    metadata << "  ]\n";
+    metadata << "}\n";
+
+    metadata.close();
+    if (!metadata) {
+      ET_LOG(
+          Error,
+          "Failed to write VGF metadata file %s",
+          metadata_path.string().c_str());
+      return Error::Internal;
+    }
+  }
+
+  std::filesystem::rename(tmp_call_dir, final_call_dir, ec);
+  if (ec) {
+    ET_LOG(
+        Error,
+        "Failed to publish VGF dump directory %s -> %s: %s",
+        tmp_call_dir.string().c_str(),
+        final_call_dir.string().c_str(),
+        ec.message().c_str());
+    return Error::Internal;
+  }
+
+  tmp_dir_guard.release();
+
+  ET_LOG(
+      Info,
+      "Wrote VGF delegate input dump to %s",
+      final_call_dir.string().c_str());
+
+  return Error::Ok;
 }
 
 class VGFBackend final : public ::executorch::runtime::BackendInterface {
@@ -278,6 +581,25 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       return Error::InvalidArgument;
     }
 
+    // Helper block to dump VGF delegate boundary inputs for testing
+    // with scenari0 runner
+    const char* dump_inputs_dir = std::getenv(kVgfDumpInputsDirEnv);
+    if (dump_inputs_dir != nullptr && dump_inputs_dir[0] != '\0') {
+      Error dump_status =
+          dump_vgf_delegate_inputs(*repr, args, dump_inputs_dir);
+      if (dump_status != Error::Ok) {
+        return dump_status;
+      }
+
+      if (env_flag_enabled(kVgfDumpInputsAndExitEnv)) {
+        ET_LOG(
+            Info,
+            "Exiting after VGF delegate input dump because %s is set",
+            kVgfDumpInputsAndExitEnv);
+        return Error::EndOfMethod;
+      }
+    }
+
 #ifdef ET_EVENT_TRACER_ENABLED
     EventTracer* event_tracer = context.event_tracer();
 
@@ -379,7 +701,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
 
-    if (event_tracer != nullptr && vgf_neural_statistics_profiling_enabled()) {
+    if (event_tracer != nullptr && env_flag_enabled(kVgfNeuralStatisticsEnv)) {
       // We attach the neural statistics JSON blob to ETDump as delegate
       // metadata, when event tracer is active.
 

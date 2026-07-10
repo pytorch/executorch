@@ -11,11 +11,17 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
+
+#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,27 +30,31 @@ using namespace executorch::backends::webgpu;
 using namespace executorch::extension;
 using namespace executorch::runtime;
 
+namespace {
+
+// Environment-derived config; captured in main() before RUN_ALL_TESTS().
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+std::string g_update_cache_model_path;
+std::string g_qlinear_dir;
+std::string g_prepack_model_path, g_prepack_golden_path;
+std::string g_prepack2_model_path, g_prepack2_golden_path;
+std::string g_prepack_tied_model_path, g_prepack_tied_golden_path;
+std::string g_sdpa_dir;
+std::string g_symint_blob;
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 // Capacity-overrun must throw; runs without a device or TimestampQuery.
-static bool test_query_pool_overrun_throws() {
-  printf("\n--- Test: WebGPUQueryPool capacity-overrun guard ---\n");
+void test_query_pool_overrun_throws() {
   WebGPUQueryPool qp;
-  try {
-    qp.reset(1);
-  } catch (const std::exception&) {
-    printf("PASS: reset beyond capacity throws\n");
-    return true;
-  }
-  printf("FAIL: reset beyond capacity did not throw\n");
-  return false;
+  EXPECT_THROW(qp.reset(1), std::exception)
+      << "reset beyond capacity did not throw";
 }
 
 // WebGPUQueryPool roundtrip: time a probe pass; assert non-zero GPU duration.
-static bool test_query_pool_roundtrip(const WebGPUContext& ctx) {
-  printf("\n--- Test: WebGPUQueryPool roundtrip ---\n");
+void test_query_pool_roundtrip(const WebGPUContext& ctx) {
   if (!ctx.timestamp_supported) {
-    printf("SKIP: adapter lacks TimestampQuery feature\n");
-    return true;
+    GTEST_SKIP() << "adapter lacks TimestampQuery feature";
   }
   WGPUDevice device = ctx.device;
 
@@ -134,33 +144,21 @@ static bool test_query_pool_roundtrip(const WebGPUContext& ctx) {
   wgpuBindGroupRelease(bg);
   wgpuShaderModuleRelease(shader);
 
-  if (qp.results().size() != 1) {
-    printf("FAIL: expected 1 duration, got %zu\n", qp.results().size());
-    return false;
-  }
+  ASSERT_EQ(qp.results().size(), 1u)
+      << "expected 1 duration, got " << qp.results().size();
   const uint64_t dur = qp.results()[0].execution_duration_ns;
   printf("  probe duration: %llu ns\n", (unsigned long long)dur);
-  if (dur == 0) {
-    printf("FAIL: probe duration is zero (expected monotonic non-zero)\n");
-    return false;
-  }
-  printf("PASS: WebGPUQueryPool roundtrip -- non-zero GPU kernel duration\n");
-  return true;
+  EXPECT_NE(dur, 0u) << "probe duration is zero (expected monotonic non-zero)";
 }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
-static bool test_update_cache(const std::string& model_path) {
+void test_update_cache(const std::string& model_path) {
   // update_cache: value [1,2,2,4] scattered into cache [1,8,2,4] at
   // input_pos=0.
-  printf(
-      "\n--- Test: update_cache (value[1,2,2,4] -> cache[1,8,2,4], pos=0) ---\n");
-
   Module module(model_path);
   auto err = module.load_forward();
-  if (err != Error::Ok) {
-    printf("FAIL: could not load forward method (error %d)\n", (int)err);
-    return false;
-  }
+  ASSERT_EQ(err, Error::Ok)
+      << "could not load forward method (error " << (int)err << ")";
   printf("Model loaded: %s\n", model_path.c_str());
 
   constexpr int S = 2, H = 2, D = 4, Cmax = 8;
@@ -187,24 +185,15 @@ static bool test_update_cache(const std::string& model_path) {
   auto v = make_tensor_ptr({1, S, H, D}, std::vector<float>(value));
   auto c = make_tensor_ptr({1, Cmax, H, D}, std::vector<float>(cache));
   auto result = module.forward({EValue(v), EValue(c)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
 
   const auto& outputs = result.get();
-  if (outputs.empty() || !outputs[0].isTensor()) {
-    printf("FAIL: no tensor output\n");
-    return false;
-  }
+  ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor()) << "no tensor output";
   const auto& out_tensor = outputs[0].toTensor();
-  if (out_tensor.numel() != cnumel) {
-    printf(
-        "FAIL: output numel %zu != expected %d\n",
-        (size_t)out_tensor.numel(),
-        cnumel);
-    return false;
-  }
+  ASSERT_EQ((int)out_tensor.numel(), cnumel)
+      << "output numel " << (size_t)out_tensor.numel() << " != expected "
+      << cnumel;
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_abs_err = 0.0f;
@@ -212,15 +201,10 @@ static bool test_update_cache(const std::string& model_path) {
     max_abs_err = std::max(max_abs_err, std::abs(out_data[i] - ref[i]));
   }
   printf("Max abs error: %e (checked %d elements)\n", max_abs_err, cnumel);
-  if (max_abs_err > 1e-3f) {
-    printf("FAIL: max error exceeds tolerance 1e-3\n");
-    return false;
-  }
-  printf("PASS: update_cache test\n");
-  return true;
+  EXPECT_LE(max_abs_err, 1e-3f) << "max error exceeds tolerance 1e-3";
 }
 
-static std::vector<float> load_golden(const std::string& path, size_t numel) {
+std::vector<float> load_golden(const std::string& path, size_t numel) {
   // Load a raw little-endian fp32 golden written by the export .py (the native
   // binary has no ATen/torch, so the reference is computed offline).
   std::vector<float> g(numel);
@@ -241,12 +225,21 @@ static std::vector<float> load_golden(const std::string& path, size_t numel) {
 // value can't blow up the rel metric (the kernel's ~1e-8 abs error is the real
 // signal at llama3 scale). Sets the reported maxima; true iff all elements
 // pass.
-static bool sdpa_within_tol(
+bool sdpa_within_tol(
     const float* out,
     const float* golden,
     int n,
     float* ma,
     float* mr) {
+  float atol = 1e-4f, rtol = 1e-3f;
+  // f16 KV (runtime opt-in) reads K/V at reduced precision; loosen the tol on a
+  // shader-f16 device to cover that rounding. Harmless for f32 KV (looser
+  // gate).
+  const WebGPUContext* kv_ctx = get_default_webgpu_context();
+  if (kv_ctx != nullptr && kv_ctx->shader_f16_supported) {
+    atol = 2e-3f;
+    rtol = 1e-2f;
+  }
   float max_abs = 0.0f, max_rel = 0.0f;
   bool ok = true;
   for (int i = 0; i < n; i++) {
@@ -254,7 +247,7 @@ static bool sdpa_within_tol(
     const float re = ae / std::max(std::abs(golden[i]), 1e-6f);
     max_abs = std::max(max_abs, ae);
     max_rel = std::max(max_rel, re);
-    if (ae > 1e-4f && re > 1e-3f) {
+    if (ae > atol && re > rtol) {
       ok = false;
     }
   }
@@ -277,7 +270,7 @@ struct Q4gswConfig {
 
 // Llama-3.2-1B linear shapes (q/o/k/v/gate/up/down + lm_head) + 4k/8k prefill.
 // tol scales with K (fp32 accum depth), not M; down_proj (K=8192) is looser.
-static const Q4gswConfig kQ4gswConfigs[] = {
+const Q4gswConfig kQ4gswConfigs[] = {
     // name         M     K     N      tol_abs tol_rel req    heavy
     {"q_proj", 1, 2048, 2048, 1e-4f, 1e-3f, true, false},
     {"kv_proj", 1, 2048, 512, 1e-4f, 1e-3f, true, false},
@@ -288,120 +281,47 @@ static const Q4gswConfig kQ4gswConfigs[] = {
     {"kv_proj_4k", 4096, 2048, 512, 1e-4f, 1e-3f, true, false},
     {"q_proj_8k", 8192, 2048, 2048, 1e-4f, 1e-3f, false, true},
     {"kv_proj_8k", 8192, 2048, 512, 1e-4f, 1e-3f, false, true},
+    // The M==1 configs above (q/kv/gate/down_proj) exercise the bicol 2-col
+    // decode GEMV (handler routes M==1 -> bicol; each reads its own per-column
+    // scale over 64-256 K-groups). q4gsw requires N % 8 == 0, so odd-N is not
+    // exportable; bicol's has1 odd-N guard is defensive (mirrors coop4
+    // general-N robustness).
+    // M>1: steel GEMM on a >=256-invocation device (K%16==0), else shmem/tiled.
+    {"steel", 96, 2048, 256, 1e-4f, 1e-3f, true, false}, // steel-isolating
+    // Same shape as "steel" run under the f16-multiply steel kernel; the f16
+    // rounding floor (~2.3e-4, uniform in K -- not an accumulate bug) needs a
+    // looser abs gate than the strict f32 1e-4. Runs whenever the device
+    // negotiated shader-f16 (else the f32 steel kernel; the looser gate holds).
+    {"steel_f16", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
+    // Partial M and N steel tiles under the f16 kernel (f16 boundary masking).
+    {"steel_f16_edge", 70, 1024, 136, 2.3e-4f, 1e-3f, true, false},
+    // pwdq (packed-word dequant) backs the f16 steel path at group_size % BK ==
+    // 0
+    // (bit-exact to steel_half; the steel_f16 configs above run it at gs=32).
+    // These lock the gs gate at group sizes those omit: gs=64 stays on pwdq;
+    // gs=8 (< BK=16) falls back to the per-nibble steel_half kernel.
+    {"pwdq_gs64", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
+    {"pwdq_gs8", 96, 2048, 256, 2.3e-4f, 1e-3f, true, false},
+    // f16-ACCUMULATE steel (pwdqf16acc): lossy, so a wider gate than the
+    // f16-multiply steel_f16 (2.3e-4). f16 accumulation error grows with K, so
+    // the deep-K down shape (K=8192) gets the loosest tol. Perplexity is the
+    // primary quality gate (see the kernel diff); this catches gross bit/index
+    // bugs. gs=32 (% BK == 0) selects pwdqf16acc; the sweep loads these rows
+    // with the enable_f16_accumulate_gemm runtime spec set.
+    {"pwdqf16acc", 96, 2048, 256, 2e-2f, 3e-2f, true, false},
+    {"pwdqf16acc_down", 128, 8192, 2048, 5e-2f, 8e-2f, true, false},
+    {"gate_proj_pf", 128, 2048, 8192, 1e-4f, 1e-3f, true, false}, // shmem via N
+    {"down_proj_pf", 128, 8192, 2048, 1e-3f, 1e-2f, true, false}, // shmem via K
+    {"shmem_edge", 130, 4096, 2056, 1e-4f, 1e-3f, true, false}, // partial tiles
 };
 
 // /16 ramp over the flat index; mirrors test_quantized_linear.py _ramp_input.
-static float q4gsw_ramp(int i) {
+float q4gsw_ramp(int i) {
   return static_cast<float>((i % 17) - 8) / 16.0f;
 }
 
-// Fwd decl of the per-element abs-OR-rel tolerance helper (defined below).
-static bool quant_within_tol(
-    const float* out,
-    const float* golden,
-    int n,
-    float atol,
-    float rtol,
-    float* ma,
-    float* mr);
-
-static std::vector<int32_t> load_indices(
-    const std::string& path,
-    size_t numel) {
-  // Load raw little-endian int32 indices written by the export .py.
-  std::vector<int32_t> g(numel);
-  FILE* f = std::fopen(path.c_str(), "rb");
-  if (!f) {
-    return {};
-  }
-  size_t n = std::fread(g.data(), sizeof(int32_t), numel, f);
-  std::fclose(f);
-  if (n != numel) {
-    return {};
-  }
-  return g;
-}
-
-static bool test_embedding_q4gsw(
-    const std::string& model_path,
-    const std::string& indices_path,
-    const std::string& golden_path,
-    int num_indices,
-    int embed,
-    const char* label) {
-  // q4gsw embedding-gather vs torch golden; shapes per test_embedding_q4gsw.py.
-  const int out_numel = num_indices * embed;
-  printf(
-      "\n--- Test: embedding_q4gsw (%s: indices=%d, embed=%d) ---\n",
-      label,
-      num_indices,
-      embed);
-
-  Module module(model_path);
-  auto err = module.load_forward();
-  if (err != Error::Ok) {
-    printf("FAIL: could not load forward method (error %d)\n", (int)err);
-    return false;
-  }
-  printf("Model loaded: %s\n", model_path.c_str());
-
-  std::vector<int32_t> idx32 = load_indices(indices_path, num_indices);
-  std::vector<float> golden = load_golden(golden_path, out_numel);
-  if (idx32.empty() || golden.empty()) {
-    printf(
-        "FAIL: could not load indices %s / golden %s\n",
-        indices_path.c_str(),
-        golden_path.c_str());
-    return false;
-  }
-
-  // int64 at the program boundary; copy_inputs narrows to the int32 buffer.
-  std::vector<int64_t> idx64(idx32.begin(), idx32.end());
-  auto idx = make_tensor_ptr({num_indices}, std::move(idx64));
-
-  auto result = module.forward({EValue(idx)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
-  const auto& outputs = result.get();
-  if (outputs.empty() || !outputs[0].isTensor()) {
-    printf("FAIL: no tensor output\n");
-    return false;
-  }
-  const auto& out_tensor = outputs[0].toTensor();
-  if (out_tensor.numel() != out_numel) {
-    printf(
-        "FAIL: output numel %zu != expected %d\n",
-        (size_t)out_tensor.numel(),
-        out_numel);
-    return false;
-  }
-  const float* out_data = out_tensor.const_data_ptr<float>();
-
-  float max_abs_err = 0.0f, max_rel_err = 0.0f;
-  const bool pass = quant_within_tol(
-      out_data,
-      golden.data(),
-      out_numel,
-      1e-3f,
-      1e-3f,
-      &max_abs_err,
-      &max_rel_err);
-  printf(
-      "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
-      max_abs_err,
-      max_rel_err,
-      out_numel);
-  if (!pass) {
-    printf("FAIL: embedding_q4gsw exceeds tolerance 1e-3 (abs AND rel)\n");
-    return false;
-  }
-  printf("PASS: embedding_q4gsw test\n");
-  return true;
-}
-
-static bool quant_within_tol(
+// Per-element abs-OR-rel tolerance helper.
+bool quant_within_tol(
     const float* out,
     const float* golden,
     int n,
@@ -425,7 +345,81 @@ static bool quant_within_tol(
   return ok;
 }
 
-static bool test_rope(
+std::vector<int32_t> load_indices(const std::string& path, size_t numel) {
+  // Load raw little-endian int32 indices written by the export .py.
+  std::vector<int32_t> g(numel);
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    return {};
+  }
+  size_t n = std::fread(g.data(), sizeof(int32_t), numel, f);
+  std::fclose(f);
+  if (n != numel) {
+    return {};
+  }
+  return g;
+}
+
+void test_embedding_q4gsw(
+    const std::string& model_path,
+    const std::string& indices_path,
+    const std::string& golden_path,
+    int num_indices,
+    int embed,
+    const char* label) {
+  // q4gsw embedding-gather vs torch golden; shapes per test_embedding_q4gsw.py.
+  const int out_numel = num_indices * embed;
+  printf(
+      "\n--- Test: embedding_q4gsw (%s: indices=%d, embed=%d) ---\n",
+      label,
+      num_indices,
+      embed);
+
+  Module module(model_path);
+  auto err = module.load_forward();
+  ASSERT_EQ(err, Error::Ok)
+      << "could not load forward method (error " << (int)err << ")";
+  printf("Model loaded: %s\n", model_path.c_str());
+
+  std::vector<int32_t> idx32 = load_indices(indices_path, num_indices);
+  std::vector<float> golden = load_golden(golden_path, out_numel);
+  ASSERT_FALSE(idx32.empty() || golden.empty())
+      << "could not load indices " << indices_path << " / golden "
+      << golden_path;
+
+  // int64 at the program boundary; copy_inputs narrows to the int32 buffer.
+  std::vector<int64_t> idx64(idx32.begin(), idx32.end());
+  auto idx = make_tensor_ptr({num_indices}, std::move(idx64));
+
+  auto result = module.forward({EValue(idx)});
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
+  const auto& outputs = result.get();
+  ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor()) << "no tensor output";
+  const auto& out_tensor = outputs[0].toTensor();
+  ASSERT_EQ((int)out_tensor.numel(), out_numel)
+      << "output numel " << (size_t)out_tensor.numel() << " != expected "
+      << out_numel;
+  const float* out_data = out_tensor.const_data_ptr<float>();
+
+  float max_abs_err = 0.0f, max_rel_err = 0.0f;
+  const bool pass = quant_within_tol(
+      out_data,
+      golden.data(),
+      out_numel,
+      1e-3f,
+      1e-3f,
+      &max_abs_err,
+      &max_rel_err);
+  printf(
+      "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
+      max_abs_err,
+      max_rel_err,
+      out_numel);
+  EXPECT_TRUE(pass) << "embedding_q4gsw exceeds tolerance 1e-3 (abs AND rel)";
+}
+
+void test_rope(
     const std::string& model_path,
     const std::string& xq_golden_path,
     const std::string& xk_golden_path,
@@ -448,10 +442,8 @@ static bool test_rope(
 
   Module module(model_path);
   auto err = module.load_forward();
-  if (err != Error::Ok) {
-    printf("FAIL: could not load forward method (error %d)\n", (int)err);
-    return false;
-  }
+  ASSERT_EQ(err, Error::Ok)
+      << "could not load forward method (error " << (int)err << ")";
   printf("Model loaded: %s\n", model_path.c_str());
 
   // ((i % mod) - off) / 16: exact in fp32, matches test_rope.py::_ramp.
@@ -478,43 +470,30 @@ static bool test_rope(
 
   auto result =
       module.forward({EValue(xqt), EValue(xkt), EValue(fct), EValue(fst)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
   const auto& outputs = result.get();
 
   // Outputs in graph order [0]=xq_out, [1]=xk_out (positional; the numel check
   // below guards a swap, since NH != NKV under GQA).
-  if (outputs.size() < 2 || !outputs[0].isTensor() || !outputs[1].isTensor()) {
-    printf("FAIL: expected 2 tensor outputs, got %zu\n", outputs.size());
-    return false;
-  }
+  ASSERT_TRUE(
+      outputs.size() >= 2 && outputs[0].isTensor() && outputs[1].isTensor())
+      << "expected 2 tensor outputs, got " << outputs.size();
   const auto& xq_t = outputs[0].toTensor();
   const auto& xk_t = outputs[1].toTensor();
-  if (xq_t.numel() != xq_numel || xk_t.numel() != xk_numel) {
-    printf(
-        "FAIL: output shapes [%zu,%zu] != expected [%d,%d]\n",
-        (size_t)xq_t.numel(),
-        (size_t)xk_t.numel(),
-        xq_numel,
-        xk_numel);
-    return false;
-  }
+  ASSERT_TRUE(xq_t.numel() == xq_numel && xk_t.numel() == xk_numel)
+      << "output shapes [" << (size_t)xq_t.numel() << ","
+      << (size_t)xk_t.numel() << "] != expected [" << xq_numel << ","
+      << xk_numel << "]";
   const float* xq_out = xq_t.const_data_ptr<float>();
   const float* xk_out = xk_t.const_data_ptr<float>();
 
   std::vector<float> gq = load_golden(xq_golden_path, xq_numel);
   std::vector<float> gk = load_golden(xk_golden_path, xk_numel);
-  if (gq.empty() || gk.empty()) {
-    printf(
-        "FAIL: could not load goldens %s / %s\n",
-        xq_golden_path.c_str(),
-        xk_golden_path.c_str());
-    return false;
-  }
+  ASSERT_FALSE(gq.empty() || gk.empty())
+      << "could not load goldens " << xq_golden_path << " / " << xk_golden_path;
 
-  // Per-element abs-OR-rel on xq and xk (shared helper, defined above).
+  // Per-element abs-OR-rel on xq and xk (shared helper).
   float maq = 0.0f, mrq = 0.0f, mak = 0.0f, mrk = 0.0f;
   const bool pass_q =
       quant_within_tol(xq_out, gq.data(), xq_numel, 1e-3f, 1e-3f, &maq, &mrq);
@@ -528,15 +507,11 @@ static bool test_rope(
       max_abs_err,
       max_rel_err,
       xq_numel + xk_numel);
-  if (!(pass_q && pass_k)) {
-    printf("FAIL: apply_rotary_emb exceeds tolerance 1e-3 (abs AND rel)\n");
-    return false;
-  }
-  printf("PASS: apply_rotary_emb test\n");
-  return true;
+  EXPECT_TRUE(pass_q && pass_k)
+      << "apply_rotary_emb exceeds tolerance 1e-3 (abs AND rel)";
 }
 
-static bool test_prepack(
+void test_prepack(
     const std::string& model_path,
     const std::string& golden_path,
     const std::string& label = "x + const w") {
@@ -547,17 +522,12 @@ static bool test_prepack(
 
   Module module(model_path);
   auto err = module.load_forward();
-  if (err != Error::Ok) {
-    printf("FAIL: could not load forward method (error %d)\n", (int)err);
-    return false;
-  }
+  ASSERT_EQ(err, Error::Ok)
+      << "could not load forward method (error " << (int)err << ")";
   printf("Model loaded: %s\n", model_path.c_str());
 
   std::vector<float> golden = load_golden(golden_path, numel);
-  if (golden.empty()) {
-    printf("FAIL: could not load golden %s\n", golden_path.c_str());
-    return false;
-  }
+  ASSERT_FALSE(golden.empty()) << "could not load golden " << golden_path;
 
   // ((i % 13) - 6) / 16: exact in fp32, matches test_prepack.py::_inputs.
   std::vector<float> x_data(numel);
@@ -567,23 +537,14 @@ static bool test_prepack(
   auto x = make_tensor_ptr({n, n}, std::vector<float>(x_data));
 
   auto result = module.forward({EValue(x)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
   const auto& outputs = result.get();
-  if (outputs.empty() || !outputs[0].isTensor()) {
-    printf("FAIL: no tensor output\n");
-    return false;
-  }
+  ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor()) << "no tensor output";
   const auto& out_tensor = outputs[0].toTensor();
-  if (out_tensor.numel() != numel) {
-    printf(
-        "FAIL: output numel %zu != expected %d\n",
-        (size_t)out_tensor.numel(),
-        numel);
-    return false;
-  }
+  ASSERT_EQ((int)out_tensor.numel(), numel)
+      << "output numel " << (size_t)out_tensor.numel() << " != expected "
+      << numel;
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_abs_err = 0.0f, max_rel_err = 0.0f;
@@ -596,16 +557,11 @@ static bool test_prepack(
       max_abs_err,
       max_rel_err,
       numel);
-  if (!within) {
-    printf("FAIL: prepack exceeds tolerance 1e-3\n");
-    return false;
-  }
-  printf("PASS: prepack test\n");
-  return true;
+  EXPECT_TRUE(within) << "prepack exceeds tolerance 1e-3";
 }
 
 // Reconstruct _ramp_input bit-for-bit, run the op, compare to the fp64 golden.
-static bool test_q4gsw_config(
+void test_q4gsw_config(
     const Q4gswConfig& cfg,
     const std::string& pte,
     const std::string& golden_path) {
@@ -617,9 +573,17 @@ static bool test_q4gsw_config(
       cfg.n);
 
   Module module(pte);
-  if (module.load_forward() != Error::Ok) {
-    printf("FAIL: could not load %s\n", pte.c_str());
-    return false;
+  // pwdqf16acc rows exercise the lossy f16-accumulate kernel, a runtime opt-in
+  // (default off); enable it via the backend option keyed by the registered id.
+  if (std::string(cfg.name).rfind("pwdqf16acc", 0) == 0) {
+    BackendOptions<1> opts;
+    opts.set_option("enable_f16_accumulate_gemm", true);
+    LoadBackendOptionsMap map;
+    ASSERT_EQ(map.set_options("VulkanBackend", opts.view()), Error::Ok);
+    ASSERT_EQ(module.load_forward(nullptr, nullptr, &map), Error::Ok)
+        << "could not load " << pte;
+  } else {
+    ASSERT_EQ(module.load_forward(), Error::Ok) << "could not load " << pte;
   }
 
   const int in_numel = cfg.m * cfg.k;
@@ -631,30 +595,18 @@ static bool test_q4gsw_config(
 
   auto x = make_tensor_ptr({cfg.m, cfg.k}, std::vector<float>(input));
   auto result = module.forward({EValue(x)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
   const auto& outputs = result.get();
-  if (outputs.empty() || !outputs[0].isTensor()) {
-    printf("FAIL: no tensor output\n");
-    return false;
-  }
+  ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor()) << "no tensor output";
   const auto& out_tensor = outputs[0].toTensor();
-  if (out_tensor.numel() != out_numel) {
-    printf(
-        "FAIL: output numel %zu != expected %d\n",
-        (size_t)out_tensor.numel(),
-        out_numel);
-    return false;
-  }
+  ASSERT_EQ((int)out_tensor.numel(), out_numel)
+      << "output numel " << (size_t)out_tensor.numel() << " != expected "
+      << out_numel;
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   std::vector<float> golden = load_golden(golden_path, out_numel);
-  if (golden.empty()) {
-    printf("FAIL: could not load golden %s\n", golden_path.c_str());
-    return false;
-  }
+  ASSERT_FALSE(golden.empty()) << "could not load golden " << golden_path;
 
   float ma = 0.0f, mr = 0.0f;
   const bool pass = quant_within_tol(
@@ -664,47 +616,8 @@ static bool test_q4gsw_config(
       ma,
       mr,
       out_numel);
-  if (!pass) {
-    printf(
-        "FAIL: linear_q4gsw %s exceeds tolerance (abs %g OR rel %g)\n",
-        cfg.name,
-        cfg.tol_abs,
-        cfg.tol_rel);
-    return false;
-  }
-  printf("PASS: linear_q4gsw %s\n", cfg.name);
-  return true;
-}
-
-// q4gsw sweep: self-discover q4gsw_<name>.pte; required=FAIL, heavy=gate, *ran.
-static bool test_q4gsw_sweep(const std::string& dir, bool* ran) {
-  bool ok = true;
-  const bool heavy_run = std::getenv("WEBGPU_TEST_HEAVY") != nullptr;
-  for (const auto& cfg : kQ4gswConfigs) {
-    const std::string pte = dir + "q4gsw_" + cfg.name + ".pte";
-    FILE* f = std::fopen(pte.c_str(), "rb");
-    if (!f) {
-      if (cfg.required && !dir.empty()) {
-        printf(
-            "FAIL: required q4gsw config %s has no .pte in %s\n",
-            cfg.name,
-            dir.c_str());
-        ok = false;
-      }
-      continue;
-    }
-    std::fclose(f);
-    if (cfg.heavy && !heavy_run) {
-      printf(
-          "SKIP: heavy q4gsw config %s (set WEBGPU_TEST_HEAVY=1 on a real GPU)\n",
-          cfg.name);
-      continue;
-    }
-    const std::string golden = dir + "q4gsw_" + cfg.name + ".golden.bin";
-    *ran = true;
-    ok = test_q4gsw_config(cfg, pte, golden) && ok;
-  }
-  return ok;
+  EXPECT_TRUE(pass) << "linear_q4gsw " << cfg.name << " exceeds tolerance (abs "
+                    << cfg.tol_abs << " OR rel " << cfg.tol_rel << ")";
 }
 
 // Fused sdpa_with_kv_cache sweep config. Mirrors the Python CONFIGS table in
@@ -722,7 +635,7 @@ struct SdpaConfig {
   bool expect_reject = false; // load MUST fail (e.g. D%4 guard), no golden
 };
 
-static const SdpaConfig kSdpaConfigs[] = {
+const SdpaConfig kSdpaConfigs[] = {
     // name             Hq Hkv  D  S Cmax pos denom
     {"gqa31_prefill", 6, 2, 8, 4, 16, 0, 16.0f}, // GQA 3:1 (original case)
     {"mha_ctxodd", 4, 4, 16, 3, 8, 0, 16.0f}, // MHA; context_len=3 (odd)
@@ -750,6 +663,18 @@ static const SdpaConfig kSdpaConfigs[] = {
      16.0f,
      /*required=*/false,
      /*expect_reject=*/true},
+    // 2D-dispatch cap (>65535 wg): S=512 folds QK; S=2048 folds QK+softmax+AV
+    // (cap+1).
+    {"llama1b_prefill_512", 32, 8, 64, 512, 512, 0, 16.0f, /*required=*/true},
+    {"llama1b_prefill_2048",
+     32,
+     8,
+     64,
+     2048,
+     2048,
+     0,
+     16.0f,
+     /*required=*/true},
 };
 
 // Ramp denominator; mirror of test_sdpa.py::_RAMP_DENOM (keep in sync).
@@ -757,14 +682,18 @@ constexpr float kSdpaRampDenom = 16.0f;
 
 // /denom ramp: ((i % mod) - off) / denom, exact in fp32 (power-of-two denom).
 // Mirrors test_sdpa.py::_ramp.
-static float sdpa_ramp(int i, int mod, int off, float denom = kSdpaRampDenom) {
+float sdpa_ramp(int i, int mod, int off, float denom = kSdpaRampDenom) {
   return static_cast<float>((i % mod) - off) / denom;
 }
 
 // Step-indexed ramp; mirrors test_sdpa.py::_ramp_t bit-for-bit. denom defaults
 // to kSdpaRampDenom and must match the Python denom for bit-identity.
-static float
-sdpa_ramp_t(int i, int mod, int off, int t, float denom = kSdpaRampDenom) {
+float sdpa_ramp_t(
+    int i,
+    int mod,
+    int off,
+    int t,
+    float denom = kSdpaRampDenom) {
   return static_cast<float>(((i + 31 * t) % mod) - off) / denom;
 }
 
@@ -780,13 +709,13 @@ struct SdpaSequence {
   std::vector<int> seq_lens;
 };
 
-static const SdpaSequence kSdpaSequences[] = {
+const SdpaSequence kSdpaSequences[] = {
     {"small", 8, 4, 4, 16, {3, 1, 1, 5, 1, 1, 2}},
     {"small_d", 6, 2, 8, 16, {3, 1, 1, 5, 1, 1}},
     {"llama3", 24, 8, 128, 256, {111, 1, 1, 1, 57, 1, 1}},
 };
 
-static bool test_sdpa_config(
+void test_sdpa_config(
     const SdpaConfig& cfg,
     const std::string& model_path,
     const std::string& golden_path) {
@@ -805,17 +734,13 @@ static bool test_sdpa_config(
   auto err = module.load_forward();
   if (cfg.expect_reject) {
     // D not a multiple of 4 must be rejected at load by the head_dim guard.
-    if (err != Error::Ok) {
-      printf("PASS: %s rejected at load (error %d)\n", cfg.name, (int)err);
-      return true;
-    }
-    printf("FAIL: %s loaded OK; head_dim%%4 guard did not fire\n", cfg.name);
-    return false;
+    ASSERT_NE(err, Error::Ok)
+        << cfg.name << " loaded OK; head_dim%4 guard did not fire";
+    printf("PASS: %s rejected at load (error %d)\n", cfg.name, (int)err);
+    return;
   }
-  if (err != Error::Ok) {
-    printf("FAIL: could not load forward method (error %d)\n", (int)err);
-    return false;
-  }
+  ASSERT_EQ(err, Error::Ok)
+      << "could not load forward method (error " << (int)err << ")";
   printf("Model loaded: %s\n", model_path.c_str());
 
   const int qn = cfg.s * cfg.hq * cfg.d;
@@ -849,10 +774,8 @@ static bool test_sdpa_config(
 
   auto result = module.forward(
       {EValue(qt), EValue(kt), EValue(vt), EValue(kct), EValue(vct)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
 
   const auto& outputs = result.get();
   // Select the attention output [1,S,Hq,D] by shape; the op returns
@@ -871,32 +794,17 @@ static bool test_sdpa_config(
       attn_matches++;
     }
   }
-  if (attn_idx < 0) {
-    printf(
-        "FAIL: no attention output [1,%d,%d,%d] among %zu outputs\n",
-        cfg.s,
-        cfg.hq,
-        cfg.d,
-        outputs.size());
-    return false;
-  }
-  if (attn_matches > 1) {
-    printf(
-        "FAIL: ambiguous attention output: %d tensors match shape [1,%d,%d,%d]\n",
-        attn_matches,
-        cfg.s,
-        cfg.hq,
-        cfg.d);
-    return false;
-  }
+  ASSERT_GE(attn_idx, 0) << "no attention output [1," << cfg.s << "," << cfg.hq
+                         << "," << cfg.d << "] among " << outputs.size()
+                         << " outputs";
+  ASSERT_LE(attn_matches, 1) << "ambiguous attention output: " << attn_matches
+                             << " tensors match shape [1," << cfg.s << ","
+                             << cfg.hq << "," << cfg.d << "]";
   const auto& out_tensor = outputs[attn_idx].toTensor();
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   std::vector<float> golden = load_golden(golden_path, on);
-  if (golden.empty()) {
-    printf("FAIL: could not load golden %s\n", golden_path.c_str());
-    return false;
-  }
+  ASSERT_FALSE(golden.empty()) << "could not load golden " << golden_path;
 
   float max_abs_err = 0.0f, max_rel_err = 0.0f;
   const bool pass =
@@ -906,48 +814,14 @@ static bool test_sdpa_config(
       max_abs_err,
       max_rel_err,
       on);
-  if (!pass) {
-    printf(
-        "FAIL: %s exceeds tolerance (per-element abs 1e-4 OR rel 1e-3)\n",
-        cfg.name);
-    return false;
-  }
-  printf("PASS: sdpa test (%s)\n", cfg.name);
-  return true;
-}
-
-// Run the full SDPA sweep. Each config self-discovers its embedded/on-disk
-// sdpa_<name>.pte; a config is skipped silently when its .pte is absent, so the
-// same binary works whether one or all configs are embedded. Returns false only
-// if a discovered config actually fails. Sets *ran true if any config ran.
-static bool test_sdpa_sweep(const std::string& dir, bool* ran) {
-  bool ok = true;
-  for (const auto& cfg : kSdpaConfigs) {
-    const std::string pte = dir + "sdpa_" + cfg.name + ".pte";
-    FILE* f = std::fopen(pte.c_str(), "rb");
-    if (!f) {
-      // required config absent (dir set) = FAIL; otherwise skip silently.
-      if (cfg.required && !dir.empty()) {
-        printf(
-            "FAIL: required sdpa config %s has no .pte in %s\n",
-            cfg.name,
-            dir.c_str());
-        ok = false;
-      }
-      continue; // not embedded in this binary
-    }
-    std::fclose(f);
-    const std::string golden = dir + "sdpa_" + cfg.name + ".golden.bin";
-    *ran = true;
-    ok = test_sdpa_config(cfg, pte, golden) && ok;
-  }
-  return ok;
+  EXPECT_TRUE(pass) << cfg.name
+                    << " exceeds tolerance (per-element abs 1e-4 OR rel 1e-3)";
 }
 
 // Replay one sequence: thread the op's returned (mutated) KV cache across
 // steps, comparing each step's attention output to its accumulated-context
 // golden.
-static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
+void test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
   printf(
       "\n--- Test: sdpa replay (%s: Hq=%d,Hkv=%d,D=%d,Cmax=%d, %zu steps) ---\n",
       seq.name,
@@ -962,7 +836,6 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
   int input_pos = 0;
   int k_idx = -1,
       v_idx = -1; // pinned at step 0 by content (caches share numel)
-  bool ok = true;
 
   for (size_t t = 0; t < seq.seq_lens.size(); t++) {
     const int s = seq.seq_lens[t];
@@ -970,10 +843,8 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
         std::to_string(t) + "_S" + std::to_string(s) + "_pos" +
         std::to_string(input_pos);
     Module module(base + ".pte");
-    if (module.load_forward() != Error::Ok) {
-      printf("FAIL: could not load %s.pte\n", base.c_str());
-      return false;
-    }
+    ASSERT_EQ(module.load_forward(), Error::Ok)
+        << "could not load " << base << ".pte";
 
     const int qn = s * seq.hq * seq.d;
     const int kvn = s * seq.hkv * seq.d;
@@ -996,13 +867,8 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
 
     auto result = module.forward(
         {EValue(qt), EValue(kt), EValue(vt), EValue(kct), EValue(vct)});
-    if (!result.ok()) {
-      printf(
-          "FAIL: forward %s.pte (error %d)\n",
-          base.c_str(),
-          (int)result.error());
-      return false;
-    }
+    ASSERT_TRUE(result.ok())
+        << "forward " << base << ".pte (error " << (int)result.error() << ")";
     const auto& outs = result.get();
 
     // The op returns [k_cache, v_cache, attn_output]: attn has a unique numel;
@@ -1020,10 +886,8 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
         cache_idxs.push_back(static_cast<int>(i));
       }
     }
-    if (attn_idx < 0 || cache_idxs.size() != 2) {
-      printf("FAIL: %s step%zu: expected 1 attn + 2 caches\n", seq.name, t);
-      return false;
-    }
+    ASSERT_TRUE(attn_idx >= 0 && cache_idxs.size() == 2)
+        << seq.name << " step" << t << ": expected 1 attn + 2 caches";
 
     if (t == 0) {
       const float* c0 = outs[cache_idxs[0]].toTensor().const_data_ptr<float>();
@@ -1043,18 +907,13 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
         k_idx = cache_idxs[1];
         v_idx = cache_idxs[0];
       } else {
-        printf(
-            "FAIL: %s step0 cannot identify k/v cache by content\n", seq.name);
-        return false;
+        FAIL() << seq.name << " step0 cannot identify k/v cache by content";
       }
       printf("  k/v cache outputs: k_idx=%d v_idx=%d\n", k_idx, v_idx);
     }
 
     std::vector<float> golden = load_golden(base + ".golden.bin", qn);
-    if (golden.empty()) {
-      printf("FAIL: could not load %s.golden.bin\n", base.c_str());
-      return false;
-    }
+    ASSERT_FALSE(golden.empty()) << "could not load " << base << ".golden.bin";
     const float* ad = outs[attn_idx].toTensor().const_data_ptr<float>();
     float ma = 0.0f, mr = 0.0f;
     const bool step_ok = sdpa_within_tol(ad, golden.data(), qn, &ma, &mr);
@@ -1066,13 +925,9 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
         input_pos + s,
         ma,
         mr);
-    if (!step_ok) {
-      printf(
-          "FAIL: %s step%zu exceeds tolerance (per-element abs 1e-4 OR rel 1e-3)\n",
-          seq.name,
-          t);
-      ok = false;
-    }
+    EXPECT_TRUE(step_ok)
+        << seq.name << " step" << t
+        << " exceeds tolerance (per-element abs 1e-4 OR rel 1e-3)";
 
     // Thread the device-written caches into the next step (K->K, V->V).
     const float* kd = outs[k_idx].toTensor().const_data_ptr<float>();
@@ -1081,28 +936,6 @@ static bool test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
     vc.assign(vd, vd + cn);
     input_pos += s;
   }
-
-  if (ok) {
-    printf("PASS: sdpa replay (%s)\n", seq.name);
-  }
-  return ok;
-}
-
-// Run all replay sequences whose step0 .pte is present (self-skip otherwise).
-static bool test_sdpa_replay_sweep(const std::string& dir, bool* ran) {
-  bool ok = true;
-  for (const auto& seq : kSdpaSequences) {
-    const std::string step0 = dir + "sdpa_" + seq.name + "_step0_S" +
-        std::to_string(seq.seq_lens[0]) + "_pos0.pte";
-    FILE* f = std::fopen(step0.c_str(), "rb");
-    if (!f) {
-      continue; // sequence not embedded in this binary
-    }
-    std::fclose(f);
-    *ran = true;
-    ok = test_sdpa_replay(seq, dir) && ok;
-  }
-  return ok;
 }
 
 // Dynamic input_pos decode: ONE .pte (S=1, runtime SymInt input_pos) reused
@@ -1113,7 +946,7 @@ static bool test_sdpa_replay_sweep(const std::string& dir, bool* ran) {
 // per-step input_pos actually being read + applied. negative=true pins
 // input_pos at 0 every step (stale context_len) and asserts the run DIVERGES,
 // proving the runtime input_pos + resize hook are load-bearing (no false-pass).
-static bool test_sdpa_dynamic_decode(
+void test_sdpa_dynamic_decode(
     const SdpaSequence& seq,
     const std::string& dir,
     bool negative) {
@@ -1130,16 +963,12 @@ static bool test_sdpa_dynamic_decode(
 
   const std::string pte = dir + "sdpa_dyn_" + seq.name + ".pte";
   Module module(pte);
-  if (module.load_forward() != Error::Ok) {
-    printf("FAIL: could not load %s\n", pte.c_str());
-    return false;
-  }
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "could not load " << pte;
 
   const int cn = seq.cmax * seq.hkv * seq.d;
   std::vector<float> kc(cn, 0.0f), vc(cn, 0.0f);
   int k_idx = -1,
       v_idx = -1; // pinned at step 0 by content (caches share numel)
-  bool ok = true;
   bool any_mismatch = false;
 
   for (int t = 0; t < kSteps; t++) {
@@ -1170,10 +999,8 @@ static bool test_sdpa_dynamic_decode(
          EValue(kct),
          EValue(vct),
          EValue(ipt)});
-    if (!result.ok()) {
-      printf("FAIL: forward step%d (error %d)\n", t, (int)result.error());
-      return false;
-    }
+    ASSERT_TRUE(result.ok())
+        << "forward step" << t << " (error " << (int)result.error() << ")";
     const auto& outs = result.get();
 
     int attn_idx = -1;
@@ -1189,10 +1016,8 @@ static bool test_sdpa_dynamic_decode(
         cache_idxs.push_back(static_cast<int>(i));
       }
     }
-    if (attn_idx < 0 || cache_idxs.size() != 2) {
-      printf("FAIL: %s step%d: expected 1 attn + 2 caches\n", seq.name, t);
-      return false;
-    }
+    ASSERT_TRUE(attn_idx >= 0 && cache_idxs.size() == 2)
+        << seq.name << " step" << t << ": expected 1 attn + 2 caches";
     if (t == 0) {
       const float* c0 = outs[cache_idxs[0]].toTensor().const_data_ptr<float>();
       const float* c1 = outs[cache_idxs[1]].toTensor().const_data_ptr<float>();
@@ -1211,18 +1036,14 @@ static bool test_sdpa_dynamic_decode(
         k_idx = cache_idxs[1];
         v_idx = cache_idxs[0];
       } else {
-        printf("FAIL: %s step0 cannot identify k/v cache\n", seq.name);
-        return false;
+        FAIL() << seq.name << " step0 cannot identify k/v cache";
       }
     }
 
     const std::string gpath = dir + "sdpa_dyn_" + seq.name + "_step" +
         std::to_string(t) + ".golden.bin";
     std::vector<float> golden = load_golden(gpath, qn);
-    if (golden.empty()) {
-      printf("FAIL: could not load %s\n", gpath.c_str());
-      return false;
-    }
+    ASSERT_FALSE(golden.empty()) << "could not load " << gpath;
     const float* ad = outs[attn_idx].toTensor().const_data_ptr<float>();
     float ma = 0.0f, mr = 0.0f;
     const bool step_ok = sdpa_within_tol(ad, golden.data(), qn, &ma, &mr);
@@ -1245,46 +1066,24 @@ static bool test_sdpa_dynamic_decode(
   }
 
   if (negative) {
+    // The negative control must DIVERGE: a stale input_pos=0 every step cannot
+    // match the accumulating golden -- otherwise the oracle has no teeth.
+    EXPECT_TRUE(any_mismatch)
+        << seq.name
+        << " negative control matched the golden (oracle has no teeth)";
     if (any_mismatch) {
       printf(
           "PASS: sdpa dynamic decode NEGATIVE (%s): stale input_pos diverges "
           "as expected\n",
           seq.name);
-      return true;
     }
-    printf(
-        "FAIL: %s negative control matched the golden (oracle has no teeth)\n",
-        seq.name);
-    return false;
+    return;
   }
-  if (any_mismatch) {
-    printf(
-        "FAIL: %s exceeds tolerance (per-element abs 1e-4 OR rel 1e-3)\n",
-        seq.name);
-    ok = false;
-  }
-  if (ok) {
+  EXPECT_FALSE(any_mismatch)
+      << seq.name << " exceeds tolerance (per-element abs 1e-4 OR rel 1e-3)";
+  if (!any_mismatch) {
     printf("PASS: sdpa dynamic decode (%s)\n", seq.name);
   }
-  return ok;
-}
-
-// Run dynamic decode (positive + negative control) for each param set whose
-// sdpa_dyn_<name>.pte is embedded (self-skip otherwise).
-static bool test_sdpa_dynamic_decode_sweep(const std::string& dir, bool* ran) {
-  bool ok = true;
-  for (const auto& seq : kSdpaSequences) {
-    const std::string pte = dir + "sdpa_dyn_" + seq.name + ".pte";
-    FILE* f = std::fopen(pte.c_str(), "rb");
-    if (!f) {
-      continue;
-    }
-    std::fclose(f);
-    *ran = true;
-    ok = test_sdpa_dynamic_decode(seq, dir, /*negative=*/false) && ok;
-    ok = test_sdpa_dynamic_decode(seq, dir, /*negative=*/true) && ok;
-  }
-  return ok;
 }
 
 // In-graph mutable KV cache: ONE .pte whose k_cache/v_cache are mutable buffers
@@ -1294,7 +1093,7 @@ static bool test_sdpa_dynamic_decode_sweep(const std::string& dir, bool* ran) {
 // Module each step re-seeds the cache to zeros, so it MUST diverge from the
 // accumulating golden at step>=1. Persistent-matches + fresh-diverges = proof
 // the pass comes from real accumulation, not a static artifact.
-static bool test_sdpa_incache_decode(
+void test_sdpa_incache_decode(
     const SdpaSequence& seq,
     const std::string& dir,
     bool fresh_per_step) {
@@ -1313,10 +1112,8 @@ static bool test_sdpa_incache_decode(
   std::unique_ptr<Module> persistent;
   if (!fresh_per_step) {
     persistent = std::make_unique<Module>(pte);
-    if (persistent->load_forward() != Error::Ok) {
-      printf("FAIL: could not load %s\n", pte.c_str());
-      return false;
-    }
+    ASSERT_EQ(persistent->load_forward(), Error::Ok)
+        << "could not load " << pte;
   }
 
   bool any_mismatch = false;
@@ -1343,10 +1140,7 @@ static bool test_sdpa_incache_decode(
     Module* mod = persistent.get();
     if (fresh_per_step) {
       fresh = std::make_unique<Module>(pte);
-      if (fresh->load_forward() != Error::Ok) {
-        printf("FAIL: could not load %s\n", pte.c_str());
-        return false;
-      }
+      ASSERT_EQ(fresh->load_forward(), Error::Ok) << "could not load " << pte;
       mod = fresh.get();
     }
 
@@ -1354,10 +1148,8 @@ static bool test_sdpa_incache_decode(
     // buffers).
     auto result =
         mod->forward({EValue(qt), EValue(kt), EValue(vt), EValue(ipt)});
-    if (!result.ok()) {
-      printf("FAIL: forward step%d (error %d)\n", t, (int)result.error());
-      return false;
-    }
+    ASSERT_TRUE(result.ok())
+        << "forward step" << t << " (error " << (int)result.error() << ")";
     const auto& outs = result.get();
     int attn_idx = -1;
     for (size_t i = 0; i < outs.size(); i++) {
@@ -1367,18 +1159,13 @@ static bool test_sdpa_incache_decode(
         break;
       }
     }
-    if (attn_idx < 0) {
-      printf("FAIL: %s step%d: no attn output (numel %d)\n", seq.name, t, qn);
-      return false;
-    }
+    ASSERT_GE(attn_idx, 0) << seq.name << " step" << t
+                           << ": no attn output (numel " << qn << ")";
 
     const std::string gpath = dir + "sdpa_incache_" + seq.name + "_step" +
         std::to_string(t) + ".golden.bin";
     std::vector<float> golden = load_golden(gpath, qn);
-    if (golden.empty()) {
-      printf("FAIL: could not load %s\n", gpath.c_str());
-      return false;
-    }
+    ASSERT_FALSE(golden.empty()) << "could not load " << gpath;
     const float* ad = outs[attn_idx].toTensor().const_data_ptr<float>();
     float ma = 0.0f, mr = 0.0f;
     const bool step_ok = sdpa_within_tol(ad, golden.data(), qn, &ma, &mr);
@@ -1398,55 +1185,36 @@ static bool test_sdpa_incache_decode(
   if (fresh_per_step) {
     // The control must DIVERGE: a fresh Module per step has no accumulated
     // history, so it cannot match the accumulating golden at step>=1.
+    EXPECT_TRUE(any_mismatch)
+        << seq.name
+        << " static control matched the accumulating golden -- "
+           "accumulation was not actually exercised (false-pass risk)";
     if (any_mismatch) {
       printf(
           "PASS: in-graph-cache STATIC CONTROL (%s) diverges as expected -- "
           "persistence is load-bearing; the positive pass is real accumulation\n",
           seq.name);
-      return true;
     }
-    printf(
-        "FAIL: %s static control matched the accumulating golden -- "
-        "accumulation was not actually exercised (false-pass risk)\n",
-        seq.name);
-    return false;
+    return;
   }
+  EXPECT_FALSE(any_mismatch)
+      << seq.name << " in-graph-cache decode exceeds tolerance";
   if (!any_mismatch) {
     printf(
         "PASS: sdpa in-graph-cache decode (%s) -- cache accumulated in-graph "
         "with NO host threading\n",
         seq.name);
-    return true;
   }
-  printf("FAIL: %s in-graph-cache decode exceeds tolerance\n", seq.name);
-  return false;
-}
-
-static bool test_sdpa_incache_decode_sweep(const std::string& dir, bool* ran) {
-  bool ok = true;
-  for (const auto& seq : kSdpaSequences) {
-    const std::string pte = dir + "sdpa_incache_" + seq.name + ".pte";
-    FILE* f = std::fopen(pte.c_str(), "rb");
-    if (!f) {
-      continue;
-    }
-    std::fclose(f);
-    *ran = true;
-    ok = test_sdpa_incache_decode(seq, dir, /*fresh_per_step=*/false) && ok;
-    ok = test_sdpa_incache_decode(seq, dir, /*fresh_per_step=*/true) && ok;
-  }
-  return ok;
 }
 
 // S1 SymInt round-trip: build a graph directly from a dynamic-input_pos SDPA
 // blob; confirm input_pos deserializes as a live SymInt and set/read
 // round-trips.
-static bool test_symint_roundtrip(const std::string& blob_path) {
+void test_symint_roundtrip(const std::string& blob_path) {
   printf("\n--- Test: symint round-trip (%s) ---\n", blob_path.c_str());
   FILE* f = std::fopen(blob_path.c_str(), "rb");
   if (!f) {
-    printf("SKIP: %s not present\n", blob_path.c_str());
-    return true;
+    GTEST_SKIP() << blob_path << " not present";
   }
   std::fseek(f, 0, SEEK_END);
   long n = std::ftell(f);
@@ -1454,24 +1222,17 @@ static bool test_symint_roundtrip(const std::string& blob_path) {
   std::vector<uint8_t> blob(static_cast<size_t>(n));
   size_t rd = std::fread(blob.data(), 1, blob.size(), f);
   std::fclose(f);
-  if (rd != blob.size()) {
-    printf("FAIL: short read of %s\n", blob_path.c_str());
-    return false;
-  }
+  ASSERT_EQ(rd, blob.size()) << "short read of " << blob_path;
 
   auto header = WebGPUDelegateHeader::parse(blob.data());
-  if (!header.ok()) {
-    printf("FAIL: delegate header parse\n");
-    return false;
-  }
+  ASSERT_TRUE(header.ok()) << "delegate header parse";
   const uint8_t* base = blob.data();
   WebGPUGraph graph;
   try {
     graph.build(
         base + header->flatbuffer_offset, base + header->bytes_offset, nullptr);
   } catch (const std::exception& e) {
-    printf("FAIL: graph build: %s\n", e.what());
-    return false;
+    FAIL() << "graph build: " << e.what();
   }
 
   int sid = -1;
@@ -1481,35 +1242,21 @@ static bool test_symint_roundtrip(const std::string& blob_path) {
       break;
     }
   }
-  if (sid < 0) {
-    printf(
-        "FAIL: no SymInt value deserialized (input_pos should be a SymInt)\n");
-    return false;
-  }
-  if (graph.symint_buffer(sid) == nullptr) {
-    printf("FAIL: SymInt %d has no live uniform buffer\n", sid);
-    return false;
-  }
-  if (graph.read_symint(sid) != 0) {
-    printf(
-        "FAIL: SymInt %d placeholder != 0 (got %d)\n",
-        sid,
-        graph.read_symint(sid));
-    return false;
-  }
+  ASSERT_GE(sid, 0)
+      << "no SymInt value deserialized (input_pos should be a SymInt)";
+  ASSERT_NE(graph.symint_buffer(sid), nullptr)
+      << "SymInt " << sid << " has no live uniform buffer";
+  ASSERT_EQ(graph.read_symint(sid), 0)
+      << "SymInt " << sid << " placeholder != 0 (got " << graph.read_symint(sid)
+      << ")";
   graph.set_symint(sid, 7);
-  if (graph.read_symint(sid) != 7) {
-    printf("FAIL: set/read round-trip (got %d)\n", graph.read_symint(sid));
-    return false;
-  }
+  ASSERT_EQ(graph.read_symint(sid), 7)
+      << "set/read round-trip (got " << graph.read_symint(sid) << ")";
 
   // Execute-read: feed a fake input_pos=5 via the recorded select_as_symint
   // source and confirm update_symints_from_inputs populates the SymInt.
   const auto& srcs = graph.symint_sources();
-  if (srcs.empty()) {
-    printf("FAIL: no select_as_symint source recorded\n");
-    return false;
-  }
+  ASSERT_FALSE(srcs.empty()) << "no select_as_symint source recorded";
   const auto& in_ids = graph.input_ids();
   std::vector<InputData> fake_inputs(in_ids.size());
   int64_t fake_pos = 5;
@@ -1519,29 +1266,24 @@ static bool test_symint_roundtrip(const std::string& blob_path) {
     }
   }
   graph.update_symints_from_inputs(fake_inputs);
-  if (graph.read_symint(srcs[0].symint_id) != 5) {
-    printf(
-        "FAIL: execute-read (got %d, want 5)\n",
-        graph.read_symint(srcs[0].symint_id));
-    return false;
-  }
+  ASSERT_EQ(graph.read_symint(srcs[0].symint_id), 5)
+      << "execute-read (got " << graph.read_symint(srcs[0].symint_id)
+      << ", want 5)";
 
   printf(
       "PASS: symint round-trip (SymInt %d: deserialize, live buffer, "
       "set 0->7, execute-read input_pos->5)\n",
       sid);
-  return true;
 }
 
 // Group 1: the resize-hook dirty-gating mechanism (no SDPA dependency).
 // A hook keyed to a SymInt must run via propagate_resize() iff that SymInt
 // changed since the last propagate_resize, and exactly once per change.
-static bool test_resize_hook(const std::string& blob_path) {
+void test_resize_hook(const std::string& blob_path) {
   printf("\n--- Test: resize-hook dirty-gating (%s) ---\n", blob_path.c_str());
   FILE* f = std::fopen(blob_path.c_str(), "rb");
   if (!f) {
-    printf("SKIP: %s not present\n", blob_path.c_str());
-    return true;
+    GTEST_SKIP() << blob_path << " not present";
   }
   std::fseek(f, 0, SEEK_END);
   long n = std::ftell(f);
@@ -1549,23 +1291,16 @@ static bool test_resize_hook(const std::string& blob_path) {
   std::vector<uint8_t> blob(static_cast<size_t>(n));
   size_t rd = std::fread(blob.data(), 1, blob.size(), f);
   std::fclose(f);
-  if (rd != blob.size()) {
-    printf("FAIL: short read of %s\n", blob_path.c_str());
-    return false;
-  }
+  ASSERT_EQ(rd, blob.size()) << "short read of " << blob_path;
   auto header = WebGPUDelegateHeader::parse(blob.data());
-  if (!header.ok()) {
-    printf("FAIL: delegate header parse\n");
-    return false;
-  }
+  ASSERT_TRUE(header.ok()) << "delegate header parse";
   const uint8_t* base = blob.data();
   WebGPUGraph graph;
   try {
     graph.build(
         base + header->flatbuffer_offset, base + header->bytes_offset, nullptr);
   } catch (const std::exception& e) {
-    printf("FAIL: graph build: %s\n", e.what());
-    return false;
+    FAIL() << "graph build: " << e.what();
   }
 
   int sid = -1;
@@ -1575,10 +1310,7 @@ static bool test_resize_hook(const std::string& blob_path) {
       break;
     }
   }
-  if (sid < 0) {
-    printf("FAIL: no SymInt value deserialized\n");
-    return false;
-  }
+  ASSERT_GE(sid, 0) << "no SymInt value deserialized";
 
   int run_count = 0;
   int last_seen = -1;
@@ -1590,151 +1322,390 @@ static bool test_resize_hook(const std::string& blob_path) {
   // 1: change 0->3 then propagate -> hook runs once, sees 3.
   graph.set_symint(sid, 3);
   graph.propagate_resize();
-  if (run_count != 1 || last_seen != 3) {
-    printf(
-        "FAIL: after set(3)+propagate run_count=%d last_seen=%d (want 1,3)\n",
-        run_count,
-        last_seen);
-    return false;
-  }
+  ASSERT_TRUE(run_count == 1 && last_seen == 3)
+      << "after set(3)+propagate run_count=" << run_count
+      << " last_seen=" << last_seen << " (want 1,3)";
   // 2: propagate again with no change -> hook does NOT run.
   graph.propagate_resize();
-  if (run_count != 1) {
-    printf(
-        "FAIL: propagate with clean dirty-set ran the hook (run_count=%d)\n",
-        run_count);
-    return false;
-  }
+  ASSERT_EQ(run_count, 1)
+      << "propagate with clean dirty-set ran the hook (run_count=" << run_count
+      << ")";
   // 3: set to the SAME value -> not dirty -> hook does NOT run.
   graph.set_symint(sid, 3);
   graph.propagate_resize();
-  if (run_count != 1) {
-    printf(
-        "FAIL: set(same)+propagate ran the hook (run_count=%d)\n", run_count);
-    return false;
-  }
+  ASSERT_EQ(run_count, 1) << "set(same)+propagate ran the hook (run_count="
+                          << run_count << ")";
   // 4: change 3->8 then propagate -> hook runs again, sees 8.
   graph.set_symint(sid, 8);
   graph.propagate_resize();
-  if (run_count != 2 || last_seen != 8) {
-    printf(
-        "FAIL: after set(8)+propagate run_count=%d last_seen=%d (want 2,8)\n",
-        run_count,
-        last_seen);
-    return false;
-  }
+  ASSERT_TRUE(run_count == 2 && last_seen == 8)
+      << "after set(8)+propagate run_count=" << run_count
+      << " last_seen=" << last_seen << " (want 2,8)";
 
   printf(
       "PASS: resize-hook dirty-gating (SymInt %d: runs only on change, "
       "once per change; saw 3 then 8)\n",
       sid);
-  return true;
+}
+
+// q4gsw embedding_q4gsw on-GPU configs: small + llama1b (env-gated,
+// run-if-present).
+struct EmbConfig {
+  const char* name;
+  const char* model_env;
+  const char* indices_env;
+  const char* golden_env;
+  int num_indices;
+  int embed;
+};
+const EmbConfig kEmbConfigs[] = {
+    {"small",
+     "WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL",
+     "WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES",
+     "WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN",
+     4,
+     64},
+    {"llama1b",
+     "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_MODEL",
+     "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_INDICES",
+     "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_GOLDEN",
+     4,
+     2048},
+};
+
+// apply_rotary_emb on-GPU configs: multi + decode (env-gated, run-if-present).
+struct RopeConfig {
+  const char* name;
+  const char* model_env;
+  const char* xq_env;
+  const char* xk_env;
+  int S;
+  int NH;
+  int NKV;
+  int HD;
+};
+const RopeConfig kRopeConfigs[] = {
+    {"multi",
+     "WEBGPU_TEST_ROPE_MODEL",
+     "WEBGPU_TEST_ROPE_XQ_GOLDEN",
+     "WEBGPU_TEST_ROPE_XK_GOLDEN",
+     5,
+     8,
+     2,
+     64},
+    {"decode",
+     "WEBGPU_TEST_ROPE_DECODE_MODEL",
+     "WEBGPU_TEST_ROPE_DECODE_XQ_GOLDEN",
+     "WEBGPU_TEST_ROPE_DECODE_XK_GOLDEN",
+     1,
+     32,
+     8,
+     64},
+};
+
+} // namespace
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+TEST(WebGPUNative, QueryPoolOverrunThrows) {
+  test_query_pool_overrun_throws();
+}
+
+TEST(WebGPUNative, QueryPoolRoundtrip) {
+  test_query_pool_roundtrip(*get_default_webgpu_context());
+}
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
+TEST(WebGPUNative, UpdateCache) {
+  if (g_update_cache_model_path.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_UPDATE_CACHE_MODEL not set";
+  }
+  test_update_cache(g_update_cache_model_path);
+}
+
+// Guard python<->C++ ramp bit-identity: q4gsw_ramp(0) = -0.5 exactly.
+TEST(WebGPUNative, Q4gswRampBitIdentity) {
+  EXPECT_LT(std::abs(q4gsw_ramp(0) - (-0.5f)), 1e-12f)
+      << "q4gsw_ramp bit-identity check";
+}
+
+// q4gsw sweep: self-discover q4gsw_<name>.pte; required=FAIL, heavy=gate.
+TEST(WebGPUNative, QuantizedLinearSweep) {
+  const std::string& dir = g_qlinear_dir;
+  const bool heavy_run = std::getenv("WEBGPU_TEST_HEAVY") != nullptr;
+  bool ran = false;
+  for (const auto& cfg : kQ4gswConfigs) {
+    const std::string pte = dir + "q4gsw_" + cfg.name + ".pte";
+    FILE* f = std::fopen(pte.c_str(), "rb");
+    if (!f) {
+      if (cfg.required && !dir.empty()) {
+        ADD_FAILURE() << "required q4gsw config " << cfg.name
+                      << " has no .pte in " << dir;
+      }
+      continue;
+    }
+    std::fclose(f);
+    if (cfg.heavy && !heavy_run) {
+      printf(
+          "SKIP: heavy q4gsw config %s (set WEBGPU_TEST_HEAVY=1 on a real GPU)\n",
+          cfg.name);
+      continue;
+    }
+    const std::string golden = dir + "q4gsw_" + cfg.name + ".golden.bin";
+    ran = true;
+    test_q4gsw_config(cfg, pte, golden);
+  }
+  if (!dir.empty() && !ran) {
+    ADD_FAILURE()
+        << "WEBGPU_TEST_QUANTIZED_LINEAR_DIR set but no q4gsw config ran";
+  }
+}
+
+TEST(WebGPUNative, EmbeddingQ4gsw) {
+  bool any = false;
+  for (const auto& c : kEmbConfigs) {
+    const char* m = std::getenv(c.model_env);
+    const char* ip = std::getenv(c.indices_env);
+    const char* g = std::getenv(c.golden_env);
+    if (m && ip && g && *m && *ip && *g) {
+      any = true;
+      test_embedding_q4gsw(m, ip, g, c.num_indices, c.embed, c.name);
+    }
+  }
+  if (!any) {
+    GTEST_SKIP() << "no embedding_q4gsw config env set";
+  }
+}
+
+TEST(WebGPUNative, Rope) {
+  bool any = false;
+  for (const auto& c : kRopeConfigs) {
+    const char* m = std::getenv(c.model_env);
+    const char* xq = std::getenv(c.xq_env);
+    const char* xk = std::getenv(c.xk_env);
+    if (m && xq && xk && *m && *xq && *xk) {
+      any = true;
+      test_rope(m, xq, xk, c.S, c.NH, c.NKV, c.HD, c.name);
+    }
+  }
+  if (!any) {
+    GTEST_SKIP() << "no apply_rotary_emb config env set";
+  }
+}
+
+TEST(WebGPUNative, Prepack) {
+  if (g_prepack_model_path.empty() || g_prepack_golden_path.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_PREPACK_MODEL/GOLDEN not set";
+  }
+  test_prepack(g_prepack_model_path, g_prepack_golden_path);
+}
+
+TEST(WebGPUNative, Prepack2) {
+  if (g_prepack2_model_path.empty() || g_prepack2_golden_path.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_PREPACK2_MODEL/GOLDEN not set";
+  }
+  test_prepack(g_prepack2_model_path, g_prepack2_golden_path, "x + w1 + w2");
+}
+
+TEST(WebGPUNative, PrepackTied) {
+  if (g_prepack_tied_model_path.empty() || g_prepack_tied_golden_path.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_PREPACK_TIED_MODEL/GOLDEN not set";
+  }
+  test_prepack(
+      g_prepack_tied_model_path,
+      g_prepack_tied_golden_path,
+      "x + w + w (tied weights, shared key)");
+}
+
+// SDPA sweep: configs self-discover sdpa_<name>.pte; required=FAIL else skip.
+TEST(WebGPUNative, SdpaSweep) {
+  const std::string& dir = g_sdpa_dir;
+  bool ran = false;
+  for (const auto& cfg : kSdpaConfigs) {
+    const std::string pte = dir + "sdpa_" + cfg.name + ".pte";
+    FILE* f = std::fopen(pte.c_str(), "rb");
+    if (!f) {
+      // required config absent (dir set) = FAIL; otherwise skip silently.
+      if (cfg.required && !dir.empty()) {
+        ADD_FAILURE() << "required sdpa config " << cfg.name
+                      << " has no .pte in " << dir;
+      }
+      continue; // not embedded in this binary
+    }
+    std::fclose(f);
+    const std::string golden = dir + "sdpa_" + cfg.name + ".golden.bin";
+    ran = true;
+    test_sdpa_config(cfg, pte, golden);
+  }
+  if (!dir.empty() && !ran) {
+    ADD_FAILURE() << "WEBGPU_TEST_SDPA_DIR set but no sdpa config found a .pte";
+  }
+}
+
+// Guard python<->C++ ramp bit-identity (recorded: _ramp_t(0,17,8,2)=0.1875).
+TEST(WebGPUNative, SdpaRampTBitIdentity) {
+  EXPECT_LT(std::abs(sdpa_ramp_t(0, 17, 8, 2) - 0.1875f), 1e-12f)
+      << "sdpa_ramp_t bit-identity check";
+}
+
+// Guard the adversarial denom path: sdpa_ramp(0,17,8,0.5)= -16.0 exactly.
+TEST(WebGPUNative, SdpaRampDenomBitIdentity) {
+  EXPECT_LT(std::abs(sdpa_ramp(0, 17, 8, 0.5f) - (-16.0f)), 1e-12f)
+      << "sdpa_ramp denom bit-identity check";
+}
+
+// Replay sweep: run every sequence whose step0 .pte is present.
+TEST(WebGPUNative, SdpaReplaySweep) {
+  const std::string& dir = g_sdpa_dir;
+  for (const auto& seq : kSdpaSequences) {
+    const std::string step0 = dir + "sdpa_" + seq.name + "_step0_S" +
+        std::to_string(seq.seq_lens[0]) + "_pos0.pte";
+    FILE* f = std::fopen(step0.c_str(), "rb");
+    if (!f) {
+      continue; // sequence not embedded in this binary
+    }
+    std::fclose(f);
+    test_sdpa_replay(seq, dir);
+  }
+}
+
+// Dynamic decode sweep: positive + negative control per embedded param set.
+TEST(WebGPUNative, SdpaDynamicDecodeSweep) {
+  const std::string& dir = g_sdpa_dir;
+  for (const auto& seq : kSdpaSequences) {
+    const std::string pte = dir + "sdpa_dyn_" + seq.name + ".pte";
+    FILE* f = std::fopen(pte.c_str(), "rb");
+    if (!f) {
+      continue;
+    }
+    std::fclose(f);
+    test_sdpa_dynamic_decode(seq, dir, /*negative=*/false);
+    test_sdpa_dynamic_decode(seq, dir, /*negative=*/true);
+  }
+}
+
+// In-graph-cache decode sweep: persistent + fresh (static control) per set.
+TEST(WebGPUNative, SdpaIncacheDecodeSweep) {
+  const std::string& dir = g_sdpa_dir;
+  for (const auto& seq : kSdpaSequences) {
+    const std::string pte = dir + "sdpa_incache_" + seq.name + ".pte";
+    FILE* f = std::fopen(pte.c_str(), "rb");
+    if (!f) {
+      continue;
+    }
+    std::fclose(f);
+    test_sdpa_incache_decode(seq, dir, /*fresh_per_step=*/false);
+    test_sdpa_incache_decode(seq, dir, /*fresh_per_step=*/true);
+  }
+}
+
+// If an SDPA dir was given, the exports must have produced .ptes for every
+// family; a self-skip there means a silent export failure, not a pass.
+TEST(WebGPUNative, SdpaAllFamiliesRanWhenDirSet) {
+  const std::string& dir = g_sdpa_dir;
+  if (dir.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_SDPA_DIR not set";
+  }
+  auto has_glob = [&](const std::string& prefix, const std::string& suffix) {
+    for (const auto& seq : kSdpaSequences) {
+      const std::string p = dir + prefix + seq.name + suffix;
+      FILE* f = std::fopen(p.c_str(), "rb");
+      if (f) {
+        std::fclose(f);
+        return true;
+      }
+    }
+    return false;
+  };
+  bool sdpa_ran = false;
+  for (const auto& cfg : kSdpaConfigs) {
+    const std::string pte = dir + "sdpa_" + cfg.name + ".pte";
+    FILE* f = std::fopen(pte.c_str(), "rb");
+    if (f) {
+      std::fclose(f);
+      sdpa_ran = true;
+      break;
+    }
+  }
+  const bool replay_ran = [&] {
+    for (const auto& seq : kSdpaSequences) {
+      const std::string step0 = dir + "sdpa_" + seq.name + "_step0_S" +
+          std::to_string(seq.seq_lens[0]) + "_pos0.pte";
+      FILE* f = std::fopen(step0.c_str(), "rb");
+      if (f) {
+        std::fclose(f);
+        return true;
+      }
+    }
+    return false;
+  }();
+  const bool dyn_ran = has_glob("sdpa_dyn_", ".pte");
+  const bool incache_ran = has_glob("sdpa_incache_", ".pte");
+  EXPECT_TRUE(sdpa_ran && replay_ran && dyn_ran && incache_ran)
+      << "WEBGPU_TEST_SDPA_DIR set but an SDPA family found no .pte";
+}
+
+TEST(WebGPUNative, SymintRoundtrip) {
+  if (g_symint_blob.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_SYMINT_BLOB not set";
+  }
+  test_symint_roundtrip(g_symint_blob);
+}
+
+TEST(WebGPUNative, ResizeHook) {
+  if (g_symint_blob.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_SYMINT_BLOB not set";
+  }
+  test_resize_hook(g_symint_blob);
 }
 
 int main(int argc, char** argv) {
-  std::string update_cache_model_path;
+  ::testing::InitGoogleTest(&argc, argv);
+
   if (const char* env = std::getenv("WEBGPU_TEST_UPDATE_CACHE_MODEL")) {
-    update_cache_model_path = env;
+    g_update_cache_model_path = env;
   }
 
   // Quantized-linear sweep dir (mirrors WEBGPU_TEST_SDPA_DIR).
-  std::string qlinear_dir;
   if (const char* env = std::getenv("WEBGPU_TEST_QUANTIZED_LINEAR_DIR")) {
-    qlinear_dir = env;
-    if (!qlinear_dir.empty() && qlinear_dir.back() != '/') {
-      qlinear_dir += '/';
+    g_qlinear_dir = env;
+    if (!g_qlinear_dir.empty() && g_qlinear_dir.back() != '/') {
+      g_qlinear_dir += '/';
     }
   }
 
-  // embedding_q4gsw on-GPU configs: small + llama1b (env-gated,
-  // run-if-present).
-  struct EmbConfig {
-    const char* name;
-    const char* model_env;
-    const char* indices_env;
-    const char* golden_env;
-    int num_indices;
-    int embed;
-  };
-  const EmbConfig emb_configs[] = {
-      {"small",
-       "WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL",
-       "WEBGPU_TEST_EMBEDDING_Q4GSW_INDICES",
-       "WEBGPU_TEST_EMBEDDING_Q4GSW_GOLDEN",
-       4,
-       64},
-      {"llama1b",
-       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_MODEL",
-       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_INDICES",
-       "WEBGPU_TEST_EMBEDDING_Q4GSW_LLAMA1B_GOLDEN",
-       4,
-       2048},
-  };
-
-  // apply_rotary_emb on-GPU configs: multi + decode (env-gated,
-  // run-if-present).
-  struct RopeConfig {
-    const char* name;
-    const char* model_env;
-    const char* xq_env;
-    const char* xk_env;
-    int S;
-    int NH;
-    int NKV;
-    int HD;
-  };
-  const RopeConfig rope_configs[] = {
-      {"multi",
-       "WEBGPU_TEST_ROPE_MODEL",
-       "WEBGPU_TEST_ROPE_XQ_GOLDEN",
-       "WEBGPU_TEST_ROPE_XK_GOLDEN",
-       5,
-       8,
-       2,
-       64},
-      {"decode",
-       "WEBGPU_TEST_ROPE_DECODE_MODEL",
-       "WEBGPU_TEST_ROPE_DECODE_XQ_GOLDEN",
-       "WEBGPU_TEST_ROPE_DECODE_XK_GOLDEN",
-       1,
-       32,
-       8,
-       64},
-  };
-
-  std::string prepack_model_path, prepack_golden_path;
   if (const char* env = std::getenv("WEBGPU_TEST_PREPACK_MODEL")) {
-    prepack_model_path = env;
+    g_prepack_model_path = env;
   }
   if (const char* env = std::getenv("WEBGPU_TEST_PREPACK_GOLDEN")) {
-    prepack_golden_path = env;
+    g_prepack_golden_path = env;
   }
 
-  std::string prepack2_model_path, prepack2_golden_path;
   if (const char* env = std::getenv("WEBGPU_TEST_PREPACK2_MODEL")) {
-    prepack2_model_path = env;
+    g_prepack2_model_path = env;
   }
   if (const char* env = std::getenv("WEBGPU_TEST_PREPACK2_GOLDEN")) {
-    prepack2_golden_path = env;
+    g_prepack2_golden_path = env;
   }
 
-  std::string prepack_tied_model_path, prepack_tied_golden_path;
   if (const char* env = std::getenv("WEBGPU_TEST_PREPACK_TIED_MODEL")) {
-    prepack_tied_model_path = env;
+    g_prepack_tied_model_path = env;
   }
   if (const char* env = std::getenv("WEBGPU_TEST_PREPACK_TIED_GOLDEN")) {
-    prepack_tied_golden_path = env;
+    g_prepack_tied_golden_path = env;
   }
 
   // SDPA sweep: configs self-discover their sdpa_<name>.pte/.golden.bin under
   // this directory (default "" = the embedded-file root / cwd). Set
   // WEBGPU_TEST_SDPA_DIR to point at the exported .pte directory (e.g. /tmp/).
-  std::string sdpa_dir;
   if (const char* env = std::getenv("WEBGPU_TEST_SDPA_DIR")) {
-    sdpa_dir = env;
-    if (!sdpa_dir.empty() && sdpa_dir.back() != '/') {
-      sdpa_dir += '/';
+    g_sdpa_dir = env;
+    if (!g_sdpa_dir.empty() && g_sdpa_dir.back() != '/') {
+      g_sdpa_dir += '/';
     }
+  }
+
+  if (const char* env = std::getenv("WEBGPU_TEST_SYMINT_BLOB")) {
+    g_symint_blob = env;
   }
 
   WebGPUContext ctx;
@@ -1748,121 +1719,8 @@ int main(int argc, char** argv) {
   set_default_webgpu_context(&ctx);
   printf("WebGPU device acquired (native)\n");
 
-  bool ok = true;
-#ifdef WGPU_BACKEND_ENABLE_PROFILING
-  ok = test_query_pool_overrun_throws() && ok;
-  ok = test_query_pool_roundtrip(ctx) && ok;
-#endif // WGPU_BACKEND_ENABLE_PROFILING
-  if (!update_cache_model_path.empty()) {
-    ok = test_update_cache(update_cache_model_path) && ok;
-  }
-
-  bool q4gsw_ran = false;
-  bool q4gsw_ok = test_q4gsw_sweep(qlinear_dir, &q4gsw_ran);
-  if (q4gsw_ran) {
-    ok = q4gsw_ok && ok;
-  }
-  // Guard python<->C++ ramp bit-identity: q4gsw_ramp(0) = -0.5 exactly.
-  if (std::abs(q4gsw_ramp(0) - (-0.5f)) > 1e-12f) {
-    printf("FAIL: q4gsw_ramp bit-identity check\n");
-    ok = false;
-  }
-  if (!qlinear_dir.empty() && !q4gsw_ran) {
-    printf(
-        "FAIL: WEBGPU_TEST_QUANTIZED_LINEAR_DIR set but no q4gsw config ran\n");
-    ok = false;
-  }
-
-  for (const auto& c : emb_configs) {
-    const char* m = std::getenv(c.model_env);
-    const char* ip = std::getenv(c.indices_env);
-    const char* g = std::getenv(c.golden_env);
-    if (m && ip && g && *m && *ip && *g) {
-      ok = test_embedding_q4gsw(m, ip, g, c.num_indices, c.embed, c.name) && ok;
-    }
-  }
-
-  for (const auto& c : rope_configs) {
-    const char* m = std::getenv(c.model_env);
-    const char* xq = std::getenv(c.xq_env);
-    const char* xk = std::getenv(c.xk_env);
-    if (m && xq && xk && *m && *xq && *xk) {
-      ok = test_rope(m, xq, xk, c.S, c.NH, c.NKV, c.HD, c.name) && ok;
-    }
-  }
-
-  if (!prepack_model_path.empty() && !prepack_golden_path.empty()) {
-    ok = test_prepack(prepack_model_path, prepack_golden_path) && ok;
-  }
-
-  if (!prepack2_model_path.empty() && !prepack2_golden_path.empty()) {
-    ok = test_prepack(
-             prepack2_model_path, prepack2_golden_path, "x + w1 + w2") &&
-        ok;
-  }
-
-  if (!prepack_tied_model_path.empty() && !prepack_tied_golden_path.empty()) {
-    ok = test_prepack(
-             prepack_tied_model_path,
-             prepack_tied_golden_path,
-             "x + w + w (tied weights, shared key)") &&
-        ok;
-  }
-
-  bool sdpa_ran = false;
-  bool sdpa_ok = test_sdpa_sweep(sdpa_dir, &sdpa_ran);
-  if (sdpa_ran) {
-    ok = sdpa_ok && ok;
-  }
-
-  // Guard python<->C++ ramp bit-identity (recorded: _ramp_t(0,17,8,2)=0.1875).
-  if (std::abs(sdpa_ramp_t(0, 17, 8, 2) - 0.1875f) > 1e-12f) {
-    printf("FAIL: sdpa_ramp_t bit-identity check\n");
-    ok = false;
-  }
-  // Guard the adversarial denom path: sdpa_ramp(0,17,8,0.5)= -16.0 exactly.
-  if (std::abs(sdpa_ramp(0, 17, 8, 0.5f) - (-16.0f)) > 1e-12f) {
-    printf("FAIL: sdpa_ramp denom bit-identity check\n");
-    ok = false;
-  }
-
-  bool replay_ran = false;
-  bool replay_ok = test_sdpa_replay_sweep(sdpa_dir, &replay_ran);
-  if (replay_ran) {
-    ok = replay_ok && ok;
-  }
-
-  bool dyn_ran = false;
-  bool dyn_ok = test_sdpa_dynamic_decode_sweep(sdpa_dir, &dyn_ran);
-  if (dyn_ran) {
-    ok = dyn_ok && ok;
-  }
-
-  bool incache_ran = false;
-  bool incache_ok = test_sdpa_incache_decode_sweep(sdpa_dir, &incache_ran);
-  if (incache_ran) {
-    ok = incache_ok && ok;
-  }
-
-  // If an SDPA dir was given, the exports must have produced .ptes for every
-  // family; a self-skip there means a silent export failure, not a pass.
-  if (!sdpa_dir.empty() &&
-      !(sdpa_ran && replay_ran && dyn_ran && incache_ran)) {
-    printf("FAIL: WEBGPU_TEST_SDPA_DIR set but an SDPA family found no .pte\n");
-    ok = false;
-  }
-
-  if (const char* env = std::getenv("WEBGPU_TEST_SYMINT_BLOB")) {
-    ok = test_symint_roundtrip(env) && ok;
-    ok = test_resize_hook(env) && ok;
-  }
-
+  const int rc = RUN_ALL_TESTS();
   set_default_webgpu_context(nullptr);
   destroy_webgpu_context(ctx);
-
-  if (!ok) {
-    return 1;
-  }
-  printf("\nAll tests passed\n");
-  return 0;
+  return rc;
 }

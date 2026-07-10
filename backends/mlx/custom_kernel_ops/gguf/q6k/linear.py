@@ -126,7 +126,7 @@ def _q6k_matvec_source(has_bias: bool) -> str:
             const float d = (float) blk->d;
 
             float4 sums = {{0.f, 0.f, 0.f, 0.f}};
-            for (short l = 0; l < 4; ++l) {{
+            FOR_UNROLL (short l = 0; l < 4; ++l) {{
                 sums[0] += yl[4*l + 0] * (float)((int8_t)((q1[l] & 0xF) | ((qh[l] & 0x03) << 4)) - 32);
                 sums[1] += yl[4*l + 1] * (float)((int8_t)((q2[l] & 0xF) | ((qh[l] & 0x0C) << 2)) - 32);
                 sums[2] += yl[4*l + 2] * (float)((int8_t)((q1[l] >> 4)  | ((qh[l] & 0x30) << 0)) - 32);
@@ -228,9 +228,9 @@ def _q6k_matmul_source(has_bias: bool) -> str:
         const short ly_b = (tid / NL1) % 8;
         const short ib_b = 4 * sx_b + sy_b;
 
-        for (short i = 0; i < 8; ++i) {{
-            *(sb + 64 * ib_b + 8 * ly_b + i) = (half) *(yp + i);
-        }}
+        using InT2x4 = typename vec2x4<InT>::type;
+        *(threadgroup half2x4 *)(sb + 64 * ib_b + 8 * ly_b) =
+            (half2x4)(*(device const InT2x4 *)(yp));
 
         // Advance weight pointer through Q6_K sub-blocks.
         il = (il + 2 < NL) ? il + 2 : il % 2;
@@ -426,7 +426,7 @@ def _emit_q6k_matmul(
     )
 
 
-def emit_linear(
+def _emit_linear_fused(
     P: MLXProgramBuilder,
     head: Node,
     x_node: Node,
@@ -482,3 +482,30 @@ def emit_linear(
         ),
     )
     return out
+
+
+def emit_linear(
+    P: MLXProgramBuilder,
+    head: Node,
+    x_node: Node,
+    weight_node: Node,
+    bias_node: Optional[Node],
+) -> Slot:
+    """Dispatch to the MLX-native repack path or the fused Metal kernels.
+
+    The repack path is only valid when the weight merges to an MLX-supported
+    group size (>= 32); otherwise (and when ``ET_MLX_EMIT_DIRECT_GGUF=1``) the
+    fused kernels are used.
+    """
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import emit_direct_gguf
+
+    if not emit_direct_gguf():
+        from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.linear_mlx_native import (
+            emit_linear as emit_linear_mlx_native,
+        )
+
+        out = emit_linear_mlx_native(P, head, x_node, weight_node, bias_node)
+        if out is not None:
+            return out
+
+    return _emit_linear_fused(P, head, x_node, weight_node, bias_node)
