@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_av_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_entry_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
 
@@ -149,13 +150,33 @@ void et_vk_sdpa_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const size_t aw_bytes = static_cast<size_t>(aw_numel) * sizeof(float);
 
   // Up-front dispatch-limit checks (throw BEFORE any buffer alloc → no leak).
-  // QK = one thread per (b,h,s) row; AV = one per (b,h,s,d4) vec4 (4 output
-  // elements/thread); softmax = one workgroup per row. compute_1d_workgroup_
-  // count throws past the limit.
-  const uint32_t qk_wg_size =
-      utils::clamp_workgroup_size(device, kEtVkSdpaQkWorkgroupSizeX);
-  const uint32_t qk_wg_count = utils::compute_1d_workgroup_count(
-      device, static_cast<uint32_t>(num_rows), qk_wg_size, "et_vk_sdpa_qk");
+  // QK: per-row (one thread per (b,h,s) row, vec4 loads) is fastest for
+  // standard attention, but starves the GPU on channel attention (S_q =
+  // head_dim, so num_rows is tiny → few workgroups serial over a huge S_kv*D).
+  // Route to the per-entry kernel (one thread per (b,h,s,c) attn entry,
+  // 2D-folded) below an occupancy floor; both write a layout-identical
+  // attn[B,H,S_q,S_kv] so softmax/AV are unchanged, and either branch is
+  // numerically correct, so the floor is a perf knob only (Canary M4 Pro:
+  // per-entry ~15-30x faster at num_rows <= 256, per-row wins at num_rows >=
+  // 8192). AV = one per (b,h,s,d4) vec4; softmax = one workgroup per row.
+  constexpr uint32_t kQkEntryOccupancyFloor = 4096u;
+  const bool qk_per_entry = num_rows < kQkEntryOccupancyFloor;
+  const uint32_t qk_wg_size = utils::clamp_workgroup_size(
+      device,
+      qk_per_entry ? kEtVkSdpaQkEntryWorkgroupSizeX
+                   : kEtVkSdpaQkWorkgroupSizeX);
+  uint32_t qk_wg_count = 0;
+  utils::WgCount qk_entry_grid = {};
+  if (qk_per_entry) {
+    qk_entry_grid = utils::compute_2d_workgroup_count(
+        device,
+        static_cast<uint32_t>(aw_numel),
+        qk_wg_size,
+        "et_vk_sdpa_qk_entry");
+  } else {
+    qk_wg_count = utils::compute_1d_workgroup_count(
+        device, static_cast<uint32_t>(num_rows), qk_wg_size, "et_vk_sdpa_qk");
+  }
   const uint32_t av_wg_size =
       utils::clamp_workgroup_size(device, kEtVkSdpaAvWorkgroupSizeX);
   const uint64_t out_numel4 =
@@ -179,7 +200,7 @@ void et_vk_sdpa_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUBuffer attn_buf = graph.create_scratch_buffer(aw_bytes);
   WGPUBuffer softmax_buf = graph.create_scratch_buffer(aw_bytes);
 
-  // ---- Dispatch 1: QK (one thread per (b,h,s) row) ----
+  // ---- Dispatch 1: QK (per-row for standard attn, per-entry for channel) ----
   {
     QkParams p = {};
     p.B = B;
@@ -205,7 +226,7 @@ void et_vk_sdpa_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
     utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
         device,
-        kEtVkSdpaQkWGSL,
+        qk_per_entry ? kEtVkSdpaQkEntryWGSL : kEtVkSdpaQkWGSL,
         {
             {0, WGPUBufferBindingType_Storage, attn_buf, aw_bytes},
             {1, WGPUBufferBindingType_ReadOnlyStorage, q.buffer, q.nbytes},
@@ -222,7 +243,12 @@ void et_vk_sdpa_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         &wg_const,
         1);
 
-    graph.add_dispatch({bundle.pipeline, bundle.bind_group, qk_wg_count});
+    if (qk_per_entry) {
+      graph.add_dispatch_2d(
+          bundle.pipeline, bundle.bind_group, qk_entry_grid.x, qk_entry_grid.y);
+    } else {
+      graph.add_dispatch({bundle.pipeline, bundle.bind_group, qk_wg_count});
+    }
 
     wgpuBufferRelease(uniform_buffer);
     if (mask.owned_dummy != nullptr) {
