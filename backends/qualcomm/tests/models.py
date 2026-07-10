@@ -885,6 +885,18 @@ class Conv2dTopK(torch.nn.Module):
         return topk_values
 
 
+class Conv2dSort(torch.nn.Module):
+    def __init__(self, descending=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 16, 3)
+        self.descending = descending
+
+    def forward(self, x):
+        x = self.conv(x)
+        sort_values, sort_indices = torch.sort(x, dim=1, descending=self.descending)
+        return sort_values
+
+
 class Conv2dUnbind(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2602,6 +2614,33 @@ class Softmax(torch.nn.Module):
 
     def forward(self, x):
         return torch.nn.functional.softmax(x, dim=self.dim)
+
+
+class Sort(torch.nn.Module):
+    def __init__(self, dim=-1, descending=True):
+        super().__init__()
+        self.dim = dim
+        self.descending = descending
+
+    def forward(self, x):
+        values, indices = torch.sort(x, dim=self.dim, descending=self.descending)
+        return values
+
+
+class SortAndIndex(torch.nn.Module):
+    def __init__(self, shape, dim=-1, descending=True):
+        super().__init__()
+        self.idx_source = torch.rand(*shape)
+        self.dim = dim
+        self.descending = descending
+        self.rank = len(shape)
+
+    def forward(self, x):
+        normalized_dim = self.dim if self.dim >= 0 else self.rank + self.dim
+
+        values, indices = torch.sort(x, dim=normalized_dim, descending=self.descending)
+        gathered = torch.gather(self.idx_source, normalized_dim, indices)
+        return values + gathered
 
 
 class Sqrt(torch.nn.Module):

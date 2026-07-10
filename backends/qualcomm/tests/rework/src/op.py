@@ -4323,6 +4323,38 @@ class Softmax(torch.nn.Module):
                     )
 
 
+class Sort(torch.nn.Module):
+    def __init__(self, dim, descending):
+        super().__init__()
+        self.dim = dim
+        self.descending = descending
+
+    def forward(self, x):
+        sorted_values, sorted_indices = torch.sort(
+            x, dim=self.dim, descending=self.descending
+        )
+        return sorted_values
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        inputs = (torch.randn(1, 2, 3, 4),)
+        # QNN only supports sort along the last dimension
+        dims = [-1]
+        descendings = [True, False]
+        for dim, descending in itertools.product(dims, descendings):
+            with subtests.test(msg=f"dim:{dim}, descending:{descending}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim, descending=descending),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
 class Split(torch.nn.Module):
     def __init__(self, split_size_or_sections, dim):
         super().__init__()
