@@ -41,12 +41,11 @@ struct RopeDispatch {
   size_t dispatch_index;
 };
 
-// Rotate one (x->out) with the shared shader; freqs shared between xq and xk.
+// Rotate one (x->out) with its own pipeline; freqs shared between xq and xk.
 RopeDispatch add_rope_dispatch(
     WebGPUGraph& graph,
     WGPUDevice device,
-    WGPUComputePipeline pipeline,
-    WGPUBindGroupLayout bgl,
+    uint32_t wg_size,
     const WebGPUTensor& x,
     const WebGPUTensor& out,
     const WebGPUTensor& freqs_cos,
@@ -78,31 +77,37 @@ RopeDispatch add_rope_dispatch(
   wgpuBufferUnmap(uniform_buffer);
   graph.add_uniform_buffer_bytes(sizeof(RotaryParams));
 
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out.buffer;
-  bg_entries[0].size = out.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = x.buffer;
-  bg_entries[1].size = x.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = freqs_cos.buffer;
-  bg_entries[2].size = freqs_cos.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = freqs_sin.buffer;
-  bg_entries[3].size = freqs_sin.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = uniform_buffer;
-  bg_entries[4].size = sizeof(RotaryParams);
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kRotaryEmbeddingWGSL,
+      {
+          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {1, WGPUBufferBindingType_ReadOnlyStorage, x.buffer, x.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           freqs_cos.buffer,
+           freqs_cos.nbytes},
+          {3,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           freqs_sin.buffer,
+           freqs_sin.nbytes},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(RotaryParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_index = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count, "apply_rotary_emb"});
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count,
+       "apply_rotary_emb"});
 
   // Graph owns it so a resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
@@ -255,59 +260,10 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       wg_size,
       "apply_rotary_emb");
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kRotaryEmbeddingWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Bind group: out (rw) + in/freqs_cos/freqs_sin (ro) + uniform.
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 3; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUConstantEntry wg_size_constant = {};
-  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-  wg_size_constant.value = static_cast<double>(wg_size);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  // One pipeline per dispatch; a shared handle would double-free.
-  WGPUComputePipeline pipeline_q =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-  WGPUComputePipeline pipeline_k =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
   RopeDispatch q_disp = add_rope_dispatch(
       graph,
       device,
-      pipeline_q,
-      bgl,
+      wg_size,
       xq,
       xq_out,
       freqs_cos,
@@ -319,8 +275,7 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   RopeDispatch k_disp = add_rope_dispatch(
       graph,
       device,
-      pipeline_k,
-      bgl,
+      wg_size,
       xk,
       xk_out,
       freqs_cos,
@@ -371,11 +326,6 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   };
   graph.add_tensor_resize_hook(xq_id, rope_hook);
   graph.add_tensor_resize_hook(xk_id, rope_hook);
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  // pipeline_q/pipeline_k owned by their dispatches; graph dtor frees.
 }
 
 } // namespace
