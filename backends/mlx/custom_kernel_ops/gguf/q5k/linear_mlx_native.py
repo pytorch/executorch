@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""GGUF **Q4_K** linear lowering via MLX's native 4-bit quantized matmul.
+"""GGUF **Q5_K** linear lowering via MLX's native 5-bit quantized matmul.
 
 Lowers a ``dequantize_gguf -> linear`` pattern to a ``QuantizedMatmulNode``
 (mode "affine"); the GGUF blob is repacked into MLX qparams at export time (see
@@ -21,7 +21,7 @@ from typing import Optional
 from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
-from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.repack_mlx import (
+from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.repack_mlx import (
     _BITS,
     repack_mlx,
 )
@@ -40,7 +40,7 @@ def emit_linear(
     weight_node: Node,
     bias_node: Optional[Node],
 ) -> Slot:
-    """Lower a Q4_K ``dequantize_gguf -> linear`` pattern to MLX 4-bit matmul.
+    """Lower a Q5_K ``dequantize_gguf -> linear`` pattern to MLX 5-bit matmul.
 
     ``weight_node`` is the raw GGUF blob constant; ``head`` is the ``aten.linear``
     node. The blob is repacked into MLX qparams at export time, so only the
