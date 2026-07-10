@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -72,70 +73,32 @@ void build_dispatch(
     const char* kernel_name) {
   WGPUDevice device = graph.device();
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  constexpr uint32_t kMaxEntries = 8;
-  if (n_storage + 1u > kMaxEntries) {
-    throw std::runtime_error(
-        "WebGPU sdpa FlashDecoding: bind group entry count exceeds kMaxEntries");
-  }
-  WGPUBindGroupLayoutEntry bgl_entries[kMaxEntries] = {};
+  // Storage bindings then the uniform; n_rw leading bindings are read_write.
+  // Under auto layout the access class is derived from the shader, so `type`
+  // here is descriptive only.
+  std::vector<utils::BindingSpec> bindings;
+  bindings.reserve(n_storage + 1);
   const uint32_t uniform_binding = n_storage;
   for (uint32_t i = 0; i < n_storage; i++) {
-    bgl_entries[i].binding = i;
-    bgl_entries[i].visibility = WGPUShaderStage_Compute;
-    bgl_entries[i].buffer.type = (i < n_rw)
-        ? WGPUBufferBindingType_Storage
-        : WGPUBufferBindingType_ReadOnlyStorage;
+    bindings.push_back(
+        {i,
+         (i < n_rw) ? WGPUBufferBindingType_Storage
+                    : WGPUBufferBindingType_ReadOnlyStorage,
+         storage_bindings[i].buffer,
+         storage_bindings[i].size});
   }
-  bgl_entries[uniform_binding].binding = uniform_binding;
-  bgl_entries[uniform_binding].visibility = WGPUShaderStage_Compute;
-  bgl_entries[uniform_binding].buffer.type = WGPUBufferBindingType_Uniform;
+  bindings.push_back(
+      {uniform_binding,
+       WGPUBufferBindingType_Uniform,
+       uniform_buffer,
+       uniform_size});
 
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = n_storage + 1;
-  bgl_desc.entries = bgl_entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+  utils::ComputePipelineBundle bundle =
+      utils::make_compute_pipeline(device, wgsl_source, bindings);
 
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+  graph.add_dispatch(
+      {bundle.pipeline, bundle.bind_group, workgroup_count_x, kernel_name});
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[kMaxEntries] = {};
-  for (uint32_t i = 0; i < n_storage; i++) {
-    bg_entries[i].binding = i;
-    bg_entries[i].buffer = storage_bindings[i].buffer;
-    bg_entries[i].size = storage_bindings[i].size;
-  }
-  bg_entries[uniform_binding].binding = uniform_binding;
-  bg_entries[uniform_binding].buffer = uniform_buffer;
-  bg_entries[uniform_binding].size = uniform_size;
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = n_storage + 1;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  graph.add_dispatch({pipeline, bind_group, workgroup_count_x, kernel_name});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   wgpuBufferRelease(uniform_buffer);
 }
 
