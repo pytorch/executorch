@@ -527,3 +527,22 @@ def _embedding_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_addmm import (
+    _randn as _addmm_randn,
+    AddmmModule,
+)
+
+
+@register_op_test("addmm")
+def _addmm_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=lambda n: AddmmModule(n),
+        cases=[
+            Case(name="small", construct={"n": 32}, inputs=(InputSpec(shape=(4, 16), gen=_addmm_randn), InputSpec(shape=(16, 32), gen=_addmm_randn))),
+            Case(name="bart", construct={"n": 768}, inputs=(InputSpec(shape=(16, 768), gen=_addmm_randn), InputSpec(shape=(768, 768), gen=_addmm_randn))),
+            Case(name="odd_k", construct={"n": 32}, inputs=(InputSpec(shape=(4, 15), gen=_addmm_randn), InputSpec(shape=(15, 32), gen=_addmm_randn))),
+        ],
+        golden_dtype="float32",
+        atol=1e-4,
+        rtol=1e-3,
+    )
