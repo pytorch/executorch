@@ -911,6 +911,16 @@ class TestPasses(unittest.TestCase):
             dynamic_shapes={"x": {0: dim0}},
         )
         edge = to_edge(ep)
+
+        gm = edge.exported_program().graph_module
+        x_node = next(
+            n for n in gm.graph.nodes
+            if n.op == "placeholder" and n.name == "x"
+        )
+        sym_dim = x_node.meta["val"].shape[0]
+        self.assertIsInstance(sym_dim, torch.SymInt)
+        self.assertEqual(eval_upper_bound(sym_dim), 4)
+
         et = edge.to_executorch()
         self.assertIsNotNone(et)
 

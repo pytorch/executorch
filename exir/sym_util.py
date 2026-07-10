@@ -64,7 +64,7 @@ def eval_upper_bound(maybe_symint: Union[int, torch.SymInt]) -> int:
         return concrete_upper
     elif int_oo is not None and upper_bound is int_oo:
         hint = eval_expr(maybe_symint)
-        if isinstance(hint, int):
+        if hint is not None:
             return hint
         return int_oo
     else:
