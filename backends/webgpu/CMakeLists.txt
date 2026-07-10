@@ -58,6 +58,7 @@ set(WEBGPU_SRCS
     runtime/ops/et_vk_conv2d/Conv2d.cpp
     runtime/ops/et_vk_sdpa/EtVkSdpa.cpp
     runtime/ops/embedding/Embedding.cpp
+    runtime/ops/addmm/Addmm.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
