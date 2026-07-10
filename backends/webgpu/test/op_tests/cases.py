@@ -447,3 +447,47 @@ def _conv2d_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_et_vk_sdpa import (
+    SdpaModule,
+)
+
+
+def _sdpa_randn(shape):
+    g = torch.Generator().manual_seed(sum(int(x) for x in shape))
+    return torch.randn(*shape, generator=g)
+
+
+def _sdpa_mask(b, h, sq, skv):
+    g = torch.Generator().manual_seed(7)
+    return torch.randn(b, h, sq, skv, generator=g).clamp(-1.0, 0.0)
+
+
+@register_op_test("et_vk_sdpa")
+def _et_vk_sdpa_suite() -> WebGPUTestSuite:
+    # Non-causal fused attention (Florence-2 vision + BART, via the et_vk source
+    # transform). Covers self-attn, an asymmetric S_q != S_kv (cross-attn) case,
+    # an additive mask (BART), and D=128 (Voxtral/DaViT) through the vec4 kernels.
+    def qkv(b, h, sq, skv, d):
+        return (
+            InputSpec(shape=(b, h, sq, d), gen=_sdpa_randn),
+            InputSpec(shape=(b, h, skv, d), gen=_sdpa_randn),
+            InputSpec(shape=(b, h, skv, d), gen=_sdpa_randn),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda mask=None: SdpaModule(mask),
+        cases=[
+            Case(name="selfattn_small", inputs=qkv(1, 4, 8, 8, 16)),
+            Case(name="selfattn_siglip", inputs=qkv(1, 12, 576, 576, 64)),
+            Case(name="asym_qpool", inputs=qkv(1, 8, 4, 16, 16)),
+            Case(
+                name="masked_bart",
+                construct={"mask": _sdpa_mask(1, 4, 8, 8)},
+                inputs=qkv(1, 4, 8, 8, 16),
+            ),
+            Case(name="d128_voxtral", inputs=qkv(1, 4, 6, 6, 128)),
+        ],
+        golden_dtype="float32",
+        atol=1e-4,
+        rtol=1e-3,
+    )
