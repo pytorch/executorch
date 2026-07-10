@@ -466,7 +466,10 @@ def _sdpa_mask(b, h, sq, skv):
 def _et_vk_sdpa_suite() -> WebGPUTestSuite:
     # Non-causal fused attention (Florence-2 vision + BART, via the et_vk source
     # transform). Covers self-attn, an asymmetric S_q != S_kv (cross-attn) case,
-    # an additive mask (BART), and D=128 (Voxtral/DaViT) through the vec4 kernels.
+    # an additive mask (BART), and D=128 (Voxtral/DaViT). The QK dispatch is
+    # occupancy-routed: chattn_davit (num_rows = B*H*S_q = 256 < the 4096 floor)
+    # exercises the per-entry QK kernel; selfattn_siglip (num_rows = 6912) is the
+    # per-row guard. Both branches must match the same fp32 golden.
     def qkv(b, h, sq, skv, d):
         return (
             InputSpec(shape=(b, h, sq, d), gen=_sdpa_randn),
@@ -486,6 +489,7 @@ def _et_vk_sdpa_suite() -> WebGPUTestSuite:
                 inputs=qkv(1, 4, 8, 8, 16),
             ),
             Case(name="d128_voxtral", inputs=qkv(1, 4, 6, 6, 128)),
+            Case(name="chattn_davit", inputs=qkv(1, 8, 32, 256, 64)),
         ],
         golden_dtype="float32",
         atol=1e-4,
