@@ -134,85 +134,32 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // group + dispatch.
   const bool use_vec4 = (row_width % 4u == 0u);
 
-  // Create shader module from built-in WGSL source
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {use_vec4 ? kRmsNormVec4WGSL : kRmsNormWGSL, WGPU_STRLEN};
-
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Create bind group layout: out (rw) + in/weight (ro storage) + params
-  WGPUBindGroupLayoutEntry entries[4] = {};
-
-  // t_out - storage buffer, read-write
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-
-  // t_in - storage buffer, read-only
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-  // t_weight - storage buffer, read-only
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-  // params - uniform buffer
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 4;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  // Create pipeline layout
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  // Create compute pipeline
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  // Create bind group with actual buffers
+  // Bind group buffers: out (rw) + in/weight (ro storage) + params.
   const auto& out_tensor = graph.get_tensor(out_id);
   const auto& weight_tensor = graph.get_tensor(weight_id);
 
-  WGPUBindGroupEntry bg_entries[4] = {};
-
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out_tensor.buffer;
-  bg_entries[0].size = out_tensor.nbytes;
-
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = in_tensor.buffer;
-  bg_entries[1].size = in_tensor.nbytes;
-
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight_tensor.buffer;
-  bg_entries[2].size = weight_tensor.nbytes;
-
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = uniform_buffer;
-  bg_entries[3].size = sizeof(RmsNormParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 4;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  // Pass the selected vec4/scalar WGSL string; no override constant.
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      use_vec4 ? kRmsNormVec4WGSL : kRmsNormWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight_tensor.buffer,
+           weight_tensor.nbytes},
+          {3,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(RmsNormParams)},
+      });
 
   // One workgroup per row (kRmsNormWorkgroupSizeX threads cooperate per row)
   static_assert(
@@ -222,7 +169,7 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       kRmsNormVec4WorkgroupSizeX == 64,
       "must match @workgroup_size and WG_SIZE in rms_norm_vec4.wgsl");
   const size_t dispatch_idx =
-      graph.add_dispatch({pipeline, bind_group, num_rows});
+      graph.add_dispatch({bundle.pipeline, bundle.bind_group, num_rows});
 
   // Dynamic shapes: recompute num_rows + rewrite the UBO for the live input.
   WGPUBuffer params_buf = uniform_buffer;
@@ -234,10 +181,6 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
             g, in_id, out_id, row_width, epsilon, dispatch_idx, params_buf);
       });
 
-  // Release intermediate objects (pipeline and bind_group are kept by dispatch)
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
 }
