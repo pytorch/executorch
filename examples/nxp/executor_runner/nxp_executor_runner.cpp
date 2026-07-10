@@ -205,6 +205,7 @@ Error saveOutputs(
   return Error::Ok;
 }
 
+#ifdef ET_EVENT_TRACER_ENABLED
 void saveETDump(
     executorch::etdump::ETDumpGen* etdump_gen,
     const std::string& outputPath) {
@@ -224,6 +225,7 @@ void saveETDump(
     free(trace.buf);
   }
 }
+#endif
 
 template <typename T>
 Error printClassificationOutput(
