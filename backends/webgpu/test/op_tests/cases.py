@@ -299,3 +299,44 @@ def _gelu_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_layer_norm import (
+    _ramp as _ln_ramp,
+    make_layer_norm,
+)
+
+
+@register_op_test("layer_norm")
+def _layer_norm_suite() -> WebGPUTestSuite:
+    # LayerNorm over the last dim (BART + DaViT); affine + no-affine, widths
+    # below/equal/above the 64-wide workgroup reduction.
+    return WebGPUTestSuite(
+        module_factory=make_layer_norm,
+        cases=[
+            Case(name="affine_mat", construct={"normalized_shape": 128}, inputs=((4, 128),)),
+            Case(
+                name="affine_rank3",
+                construct={"normalized_shape": 768},
+                inputs=((1, 16, 768),),
+            ),
+            Case(
+                name="no_affine",
+                construct={"normalized_shape": 128, "affine": False},
+                inputs=((4, 128),),
+            ),
+            Case(
+                name="width_lt_wg", construct={"normalized_shape": 32}, inputs=((8, 32),)
+            ),
+            Case(
+                name="width_gt_wg",
+                construct={"normalized_shape": 132},
+                inputs=((4, 132),),
+            ),
+            Case(
+                name="bart_hidden",
+                construct={"normalized_shape": 1024},
+                inputs=(InputSpec(shape=(1, 8, 1024), gen=_ln_ramp),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
