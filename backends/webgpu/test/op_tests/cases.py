@@ -491,3 +491,39 @@ def _et_vk_sdpa_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_embedding import (
+    EmbeddingModule,
+)
+
+
+def _emb_idx_small(_shape):
+    return torch.tensor([0, 3, 15, 7], dtype=torch.long)
+
+
+def _emb_idx_bart(_shape):
+    return torch.tensor([[1, 5, 1023, 0, 42]], dtype=torch.long)
+
+
+@register_op_test("embedding")
+def _embedding_suite() -> WebGPUTestSuite:
+    # fp32 token/pos embedding lookup (BART). int32 indices via the op-test
+    # framework's int-input path.
+    return WebGPUTestSuite(
+        module_factory=lambda num_embeddings, embed_dim: EmbeddingModule(
+            num_embeddings, embed_dim
+        ),
+        cases=[
+            Case(
+                name="small",
+                construct={"num_embeddings": 16, "embed_dim": 8},
+                inputs=(InputSpec(shape=(4,), gen=_emb_idx_small),),
+            ),
+            Case(
+                name="bart_tok",
+                construct={"num_embeddings": 1024, "embed_dim": 768},
+                inputs=(InputSpec(shape=(1, 5), gen=_emb_idx_bart),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
