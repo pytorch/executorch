@@ -148,9 +148,7 @@ def _insert_copy(
     node_order: Dict[torch.fx.Node, int] = {
         node: i for i, node in enumerate(gm.graph.nodes)
     }
-    last_placeholder = [node for node in gm.graph.nodes if node.op == "placeholder"][
-        -1
-    ]
+    last_placeholder = [node for node in gm.graph.nodes if node.op == "placeholder"][-1]
 
     # Pair up the returns with the nodes they mutate.
     copies: List[Tuple[torch.fx.Node, torch.fx.Node]] = []
