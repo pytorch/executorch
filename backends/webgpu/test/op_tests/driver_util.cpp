@@ -49,6 +49,7 @@ std::vector<ManifestEntry> parse_manifest(const std::string& manifest_path) {
       InputRef ir;
       ir.path = join(base, ie.at("path").get<std::string>());
       ir.shape = ie.at("shape").get<std::vector<int>>();
+      ir.dtype = ie.value("dtype", std::string("float32"));
       m.inputs.push_back(std::move(ir));
     }
     const auto& g = e.at("golden");
@@ -62,6 +63,20 @@ std::vector<ManifestEntry> parse_manifest(const std::string& manifest_path) {
     out.push_back(std::move(m));
   }
   return out;
+}
+
+std::vector<int32_t> load_int32_bin(const std::string& path, size_t numel) {
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    return {};
+  }
+  std::vector<int32_t> g(numel);
+  const size_t n = std::fread(g.data(), sizeof(int32_t), numel, f);
+  std::fclose(f);
+  if (n != numel) {
+    return {};
+  }
+  return g;
 }
 
 std::vector<float> load_fp32_bin(const std::string& path, size_t numel) {
