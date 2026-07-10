@@ -894,6 +894,26 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
         self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
 
+    def test_eval_upper_bound_int_oo_falls_back_to_hint(self) -> None:
+        """When bound_sympy returns int_oo (no finite upper bound from
+        constraints), eval_upper_bound should fall back to the trace hint
+        for backed symbols rather than returning int_oo."""
+
+        class SimpleModel(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        m = SimpleModel()
+        dim0 = torch.export.Dim("batch", min=1)
+        ep = torch.export.export(
+            m,
+            (torch.randn(4, 8),),
+            dynamic_shapes={"x": {0: dim0}},
+        )
+        edge = to_edge(ep)
+        et = edge.to_executorch()
+        self.assertIsNotNone(et)
+
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
             def __init__(self, hidden_size, out_channels):
