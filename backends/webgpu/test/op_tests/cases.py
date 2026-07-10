@@ -647,3 +647,29 @@ def _max_pool2d_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_relu import (
+    _det_input as _relu_det_input,
+    ReluModule,
+)
+
+
+@register_op_test("relu")
+def _relu_suite() -> WebGPUTestSuite:
+    # SAM2/SAM3 mask-decoder MLP path; tiny + a decoder_mlp-shaped case.
+    return WebGPUTestSuite(
+        module_factory=lambda: ReluModule(),
+        cases=[
+            Case(
+                name="tiny",
+                construct={},
+                inputs=(InputSpec(shape=(1, 4, 8), gen=_relu_det_input),),
+            ),
+            Case(
+                name="decoder_mlp",
+                construct={},
+                inputs=(InputSpec(shape=(1, 576, 768), gen=_relu_det_input),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
