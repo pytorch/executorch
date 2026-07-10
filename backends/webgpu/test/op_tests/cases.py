@@ -546,3 +546,21 @@ def _addmm_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_constant_pad_nd import (
+    _randn as _pad_randn,
+    PadModule,
+)
+
+
+@register_op_test("constant_pad_nd")
+def _constant_pad_nd_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=lambda pad: PadModule(pad),
+        cases=[
+            Case(name="last2", construct={"pad": [1, 2]}, inputs=(InputSpec(shape=(3, 8), gen=_pad_randn),)),
+            Case(name="rank3", construct={"pad": [1, 1, 2, 0]}, inputs=(InputSpec(shape=(2, 4, 8), gen=_pad_randn),)),
+        ],
+        golden_dtype="float32",
+        atol=1e-4,
+        rtol=1e-3,
+    )
