@@ -564,3 +564,46 @@ def _constant_pad_nd_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_upsample_nearest2d import (
+    _det_input as _upsample_det_input,
+    UpsampleNearest2dModule,
+)
+
+
+@register_op_test("upsample_nearest2d")
+def _upsample_nearest2d_suite() -> WebGPUTestSuite:
+    # SAM2 FPN 2x upsample chain (36->72->144) + a cheap tiny eyeball case.
+    return WebGPUTestSuite(
+        module_factory=lambda scale_factor: UpsampleNearest2dModule(scale_factor),
+        cases=[
+            Case(
+                name="fpn_36_72",
+                construct={"scale_factor": 2.0},
+                inputs=(InputSpec(shape=(1, 8, 36, 36), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="fpn_72_144",
+                construct={"scale_factor": 2.0},
+                inputs=(InputSpec(shape=(1, 8, 72, 72), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="tiny",
+                construct={"scale_factor": 2.0},
+                inputs=(InputSpec(shape=(1, 4, 5, 7), gen=_upsample_det_input),),
+            ),
+            Case(
+                # Non-integer, non-2x ratio (5->8): floor(oh*5/8) and the
+                # half-pixel-center formula round((oh+0.5)*5/8-0.5) diverge at
+                # oh=3,6 (1 vs 2, 3 vs 4) — locks in the legacy "nearest"
+                # formula (see upsample_nearest2d.wgsl) against a genuinely
+                # discriminating ratio, not just the 2x cases above where both
+                # formulas happen to agree.
+                name="non_2x_ratio",
+                construct={"scale_factor": 1.6},
+                inputs=(InputSpec(shape=(1, 2, 5, 5), gen=_upsample_det_input),),
+            ),
+        ],
+        golden_dtype="float32",
+        atol=1e-4,
+        rtol=1e-3,
+    )
