@@ -340,3 +340,50 @@ def _layer_norm_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_linear_fp32 import (
+    _ramp as _lin_ramp,
+    make_linear,
+)
+
+
+@register_op_test("linear_fp32")
+def _linear_fp32_suite() -> WebGPUTestSuite:
+    # fp32 linear (BART + DaViT projections); bias + no-bias, and shapes whose
+    # M*N exceeds the 65535 1D ceiling to exercise the 2D-dispatch spill.
+    return WebGPUTestSuite(
+        module_factory=make_linear,
+        cases=[
+            Case(
+                name="bias_mat",
+                construct={"in_features": 64, "out_features": 32},
+                inputs=((4, 64),),
+            ),
+            Case(
+                name="no_bias",
+                construct={"in_features": 64, "out_features": 32, "bias": False},
+                inputs=((4, 64),),
+            ),
+            Case(
+                name="rank3",
+                construct={"in_features": 768, "out_features": 768},
+                inputs=(InputSpec(shape=(1, 16, 768), gen=_lin_ramp),),
+            ),
+            Case(
+                name="tall_m",
+                construct={"in_features": 128, "out_features": 64},
+                inputs=((256, 128),),
+            ),
+            Case(
+                name="bart_proj",
+                construct={"in_features": 1024, "out_features": 1024},
+                inputs=(InputSpec(shape=(1, 8, 1024), gen=_lin_ramp),),
+            ),
+            Case(
+                name="odd_k",
+                construct={"in_features": 63, "out_features": 32},
+                inputs=((4, 63),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
