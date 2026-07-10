@@ -607,3 +607,43 @@ def _upsample_nearest2d_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_max_pool2d import (
+    _det_input as _maxpool_det_input,
+    MaxPool2dModule,
+)
+
+
+@register_op_test("max_pool2d")
+def _max_pool2d_suite() -> WebGPUTestSuite:
+    # SAM2 Hiera q_pool (native shape) + real Hiera channel count (ch768) +
+    # a padding case + a tiny eyeball case.
+    return WebGPUTestSuite(
+        module_factory=lambda kernel_size, stride, padding: MaxPool2dModule(
+            kernel_size, stride, padding
+        ),
+        cases=[
+            Case(
+                name="q_pool",
+                construct={"kernel_size": 2, "stride": 2, "padding": 0},
+                inputs=(InputSpec(shape=(1, 8, 12, 12), gen=_maxpool_det_input),),
+            ),
+            Case(
+                name="ch768",
+                construct={"kernel_size": 2, "stride": 2, "padding": 0},
+                inputs=(InputSpec(shape=(1, 768, 14, 14), gen=_maxpool_det_input),),
+            ),
+            Case(
+                name="pad1",
+                construct={"kernel_size": 3, "stride": 2, "padding": 1},
+                inputs=(InputSpec(shape=(1, 8, 7, 7), gen=_maxpool_det_input),),
+            ),
+            Case(
+                name="tiny",
+                construct={"kernel_size": 2, "stride": 2, "padding": 0},
+                inputs=(InputSpec(shape=(1, 4, 5, 5), gen=_maxpool_det_input),),
+            ),
+        ],
+        golden_dtype="float32",
+        atol=1e-4,
+        rtol=1e-3,
+    )
