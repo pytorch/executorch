@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -152,84 +153,40 @@ void build_dispatch(
     const char* kernel_name = "") {
   WGPUDevice device = graph.device();
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
   // Bind group layout: storage entries then the uniform.
-  constexpr uint32_t kMaxEntries = 8;
-  if (n_storage + 1 > kMaxEntries) {
-    throw std::runtime_error("WebGPU sdpa: n_storage exceeds kMaxEntries");
-  }
-  WGPUBindGroupLayoutEntry bgl_entries[kMaxEntries] = {};
+  std::vector<utils::BindingSpec> bindings;
+  bindings.reserve(n_storage + 1);
   const uint32_t uniform_binding = n_storage;
   for (uint32_t i = 0; i < n_storage; i++) {
-    bgl_entries[i].binding = i;
-    bgl_entries[i].visibility = WGPUShaderStage_Compute;
-    bgl_entries[i].buffer.type = (i == 0)
-        ? WGPUBufferBindingType_Storage
-        : WGPUBufferBindingType_ReadOnlyStorage;
+    bindings.push_back(
+        {i,
+         (i == 0) ? WGPUBufferBindingType_Storage
+                  : WGPUBufferBindingType_ReadOnlyStorage,
+         storage_bindings[i].buffer,
+         storage_bindings[i].size});
   }
-  bgl_entries[uniform_binding].binding = uniform_binding;
-  bgl_entries[uniform_binding].visibility = WGPUShaderStage_Compute;
-  bgl_entries[uniform_binding].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = n_storage + 1;
-  bgl_desc.entries = bgl_entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+  bindings.push_back(
+      {uniform_binding,
+       WGPUBufferBindingType_Uniform,
+       uniform_buffer,
+       uniform_size});
 
   // QK/AV/update_cache have an `override wg_size`; softmax (0) keeps a const.
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
+  const size_t constant_count = (wg_size != 0) ? 1 : 0;
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  if (wg_size != 0) {
-    pipeline_desc.compute.constantCount = 1;
-    pipeline_desc.compute.constants = &wg_size_constant;
-  }
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[kMaxEntries] = {};
-  for (uint32_t i = 0; i < n_storage; i++) {
-    bg_entries[i].binding = i;
-    bg_entries[i].buffer = storage_bindings[i].buffer;
-    bg_entries[i].size = storage_bindings[i].size;
-  }
-  bg_entries[uniform_binding].binding = uniform_binding;
-  bg_entries[uniform_binding].buffer = uniform_buffer;
-  bg_entries[uniform_binding].size = uniform_size;
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = n_storage + 1;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device, wgsl_source, bindings, &wg_size_constant, constant_count);
 
   graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count_x,
        kernel_name,
        workgroup_count_y});
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   if (retain_uniform) {
     // Graph owns it so a resize hook can rewrite it; freed in the dtor.
     graph.own_uniform_buffer(uniform_buffer);
