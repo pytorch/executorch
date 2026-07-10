@@ -57,6 +57,12 @@ class SumModule(torch.nn.Module):
         return torch.sum(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class SumDefaultParamsModule(torch.nn.Module):
+    @staticmethod
+    def forward(x):
+        return torch.sum(x)
+
+
 class SumAddModule(SumModule):
     def forward(self, x):
         x = super().forward(x)
@@ -170,6 +176,19 @@ class TestSumDimIntListConverter:
     )
     def test__tuple_dims(self, mocker, request, input_shape, dim, keep_dim):
         model = SumModule(dim, keep_dim)
+        assert_delegated(model, input_shape, mocker, request)
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            pytest.param((4, 2), id="2D."),
+            pytest.param((2, 3, 4), id="3D."),
+            pytest.param((1, 3, 3, 7), id="4D."),
+            pytest.param((3, 1, 4, 1, 5), id="5D."),
+        ],
+    )
+    def test__default_params(self, mocker, request, input_shape):
+        model = SumDefaultParamsModule()
         assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
@@ -314,7 +333,7 @@ class TestSumDimIntListConverter:
             self, mocker, request, dim
         ):
             # If the spatial dimensions are reduced (removed), the `sum` output will always be equal in channels
-            #  first and channels last, so no `Transpose` ops are added.
+            #  first and channels last, so no `Transpose` ops before `Sum` are added.
             input_shape = (1, 7, 3, 3)
             model = MaxPoolSumModule(dim, False)
 
