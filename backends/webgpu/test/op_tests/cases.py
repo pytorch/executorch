@@ -264,3 +264,79 @@ def _cat_suite() -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
+from executorch.backends.webgpu.test.ops.test_gelu import (
+    _det_input as _gelu_det_input,
+    GeluModule,
+    N as _GELU_N,
+)
+
+
+def _gelu_full_range(_shape) -> torch.Tensor:
+    # Reuse the deterministic linspace(-6, 6) spanning negatives/zero/positives.
+    return _gelu_det_input()
+
+
+@register_op_test("gelu")
+def _gelu_suite() -> WebGPUTestSuite:
+    # erf ("none") is the Florence-2/BART + PyTorch default; tanh is the approx.
+    return WebGPUTestSuite(
+        module_factory=lambda approximate: GeluModule(approximate),
+        cases=[
+            Case(name="erf_vec", construct={"approximate": "none"}, inputs=((M1,),)),
+            Case(name="erf_mat", construct={"approximate": "none"}, inputs=((M1, M2),)),
+            Case(
+                name="erf_rank3",
+                construct={"approximate": "none"},
+                inputs=((S1, M1, M2),),
+            ),
+            Case(name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)),
+            Case(
+                name="erf_range",
+                construct={"approximate": "none"},
+                inputs=(InputSpec(shape=(_GELU_N,), gen=_gelu_full_range),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
+from executorch.backends.webgpu.test.ops.test_layer_norm import (
+    _ramp as _ln_ramp,
+    make_layer_norm,
+)
+
+
+@register_op_test("layer_norm")
+def _layer_norm_suite() -> WebGPUTestSuite:
+    # LayerNorm over the last dim (BART + DaViT); affine + no-affine, widths
+    # below/equal/above the 64-wide workgroup reduction.
+    return WebGPUTestSuite(
+        module_factory=make_layer_norm,
+        cases=[
+            Case(name="affine_mat", construct={"normalized_shape": 128}, inputs=((4, 128),)),
+            Case(
+                name="affine_rank3",
+                construct={"normalized_shape": 768},
+                inputs=((1, 16, 768),),
+            ),
+            Case(
+                name="no_affine",
+                construct={"normalized_shape": 128, "affine": False},
+                inputs=((4, 128),),
+            ),
+            Case(
+                name="width_lt_wg", construct={"normalized_shape": 32}, inputs=((8, 32),)
+            ),
+            Case(
+                name="width_gt_wg",
+                construct={"normalized_shape": 132},
+                inputs=((4, 132),),
+            ),
+            Case(
+                name="bart_hidden",
+                construct={"normalized_shape": 1024},
+                inputs=(InputSpec(shape=(1, 8, 1024), gen=_ln_ramp),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
