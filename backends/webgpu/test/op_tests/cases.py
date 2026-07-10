@@ -264,3 +264,38 @@ def _cat_suite() -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
+from executorch.backends.webgpu.test.ops.test_gelu import (
+    _det_input as _gelu_det_input,
+    GeluModule,
+    N as _GELU_N,
+)
+
+
+def _gelu_full_range(_shape) -> torch.Tensor:
+    # Reuse the deterministic linspace(-6, 6) spanning negatives/zero/positives.
+    return _gelu_det_input()
+
+
+@register_op_test("gelu")
+def _gelu_suite() -> WebGPUTestSuite:
+    # erf ("none") is the Florence-2/BART + PyTorch default; tanh is the approx.
+    return WebGPUTestSuite(
+        module_factory=lambda approximate: GeluModule(approximate),
+        cases=[
+            Case(name="erf_vec", construct={"approximate": "none"}, inputs=((M1,),)),
+            Case(name="erf_mat", construct={"approximate": "none"}, inputs=((M1, M2),)),
+            Case(
+                name="erf_rank3",
+                construct={"approximate": "none"},
+                inputs=((S1, M1, M2),),
+            ),
+            Case(name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)),
+            Case(
+                name="erf_range",
+                construct={"approximate": "none"},
+                inputs=(InputSpec(shape=(_GELU_N,), gen=_gelu_full_range),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
