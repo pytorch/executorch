@@ -375,39 +375,33 @@ inline ComputePipelineBundle make_compute_pipeline(
   shader_desc.nextInChain = &wgsl_desc.chain;
   WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
 
-  std::vector<WGPUBindGroupLayoutEntry> layout_entries(bindings.size());
   std::vector<WGPUBindGroupEntry> bind_entries(bindings.size());
   for (size_t i = 0; i < bindings.size(); i++) {
-    layout_entries[i] = {};
-    layout_entries[i].binding = bindings[i].binding;
-    layout_entries[i].visibility = WGPUShaderStage_Compute;
-    layout_entries[i].buffer.type = bindings[i].type;
-
     bind_entries[i] = {};
     bind_entries[i].binding = bindings[i].binding;
     bind_entries[i].buffer = bindings[i].buffer;
     bind_entries[i].size = bindings[i].size;
   }
 
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = layout_entries.size();
-  bgl_desc.entries = layout_entries.data();
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
+  // layout = nullptr => WebGPU auto-derives the bind-group layout from the
+  // shader's statically-used @group/@binding declarations, replacing the
+  // hand-built bind-group layout + pipeline layout. Precondition: every
+  // declared binding must be statically referenced by the shader (optional
+  // bindings backed by a dummy buffer are, under a runtime guard) -- auto
+  // layout omits an unreferenced binding, whose bind-group entry would then
+  // mismatch. BindingSpec.type is unused under auto layout (kept so call sites
+  // need no change).
   WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
+  pipeline_desc.layout = nullptr;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {entry_point, WGPU_STRLEN};
   pipeline_desc.compute.constantCount = constant_count;
   pipeline_desc.compute.constants = constants;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+
+  // Owned reference (must be released) -> handed to the bundle dtor.
+  WGPUBindGroupLayout bgl = wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
 
   WGPUBindGroupDescriptor bg_desc = {};
   bg_desc.layout = bgl;
@@ -418,7 +412,7 @@ inline ComputePipelineBundle make_compute_pipeline(
   ComputePipelineBundle bundle;
   bundle.shader = shader;
   bundle.bind_group_layout = bgl;
-  bundle.pipeline_layout = pipeline_layout;
+  bundle.pipeline_layout = nullptr; // none created under auto layout
   bundle.pipeline = pipeline;
   bundle.bind_group = bind_group;
   return bundle;

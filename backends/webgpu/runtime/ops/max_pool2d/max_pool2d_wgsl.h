@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from max_pool2d.wgsl - DO NOT EDIT.
-// wgsl-sha256: 2215b7ba725face441baac5eca8e2133458b414377868354c3fda9046a88109b
+// wgsl-sha256: 205fd7013aaacb5e5d4bda7499d436da6ca76e02f910962223c0dbd65f95e6ac
 inline constexpr const char* kMaxPool2dWGSL = R"(
 struct Params {
   N: u32,
@@ -30,7 +30,7 @@ struct Params {
   pW: u32,
   dH: u32,
   dW: u32,
-  _p0: u32,
+  write_indices: u32, // 1 = also write out_idx (runtime gate; keeps out_idx statically used)
   _p1: u32,
 }
 
@@ -41,7 +41,6 @@ struct Params {
 
 override wg_size: u32 = 256;
 override stride_x: u32 = 4294967295u; // = count_x * wg_size; set by host for 2D-spill
-override write_indices: u32 = 0u; // 1 = also write out_idx (compile-time gate, mirrors Vulkan)
 
 // max_pool2d (values [+ optional indices]), NCHW row-major, fp32. One thread per
 // output element (n, c, oh, ow); gather the window, take the max. General
@@ -90,7 +89,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
   out_vals[i] = best;
-  if (write_indices != 0u) {
+  if (params.write_indices != 0u) {
     out_idx[i] = best_idx;
   }
 }
