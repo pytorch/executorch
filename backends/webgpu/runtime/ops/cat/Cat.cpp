@@ -113,42 +113,6 @@ void cat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  // Shared shader/layout; fresh pipeline+bind group per input (no double-free).
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kCatWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Storage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Uniform;
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   uint32_t off_k = 0;
   for (size_t k = 0; k < ids.size(); k++) {
     const auto& in_tensor = graph.get_tensor(ids[k]);
@@ -163,48 +127,35 @@ void cat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         utils::make_uniform(device, &params, sizeof(CatParams));
     graph.add_uniform_buffer_bytes(sizeof(TensorMeta) + sizeof(CatParams));
 
-    WGPUComputePipelineDescriptor pipeline_desc = {};
-    pipeline_desc.layout = pipeline_layout;
-    pipeline_desc.compute.module = shader;
-    pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-    pipeline_desc.compute.constantCount = 1;
-    pipeline_desc.compute.constants = &wg_size_constant;
-    WGPUComputePipeline pipeline =
-        wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+    utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+        device,
+        kCatWGSL,
+        {
+            {0,
+             WGPUBufferBindingType_ReadOnlyStorage,
+             in_tensor.buffer,
+             in_tensor.nbytes},
+            {1,
+             WGPUBufferBindingType_Storage,
+             out_tensor.buffer,
+             out_tensor.nbytes},
+            {2,
+             WGPUBufferBindingType_Uniform,
+             out_meta_buf,
+             sizeof(TensorMeta)},
+            {3, WGPUBufferBindingType_Uniform, in_meta_buf, sizeof(TensorMeta)},
+            {4, WGPUBufferBindingType_Uniform, params_buf, sizeof(CatParams)},
+        },
+        &wg_size_constant,
+        1);
 
-    WGPUBindGroupEntry bg_entries[5] = {};
-    bg_entries[0].binding = 0;
-    bg_entries[0].buffer = in_tensor.buffer;
-    bg_entries[0].size = in_tensor.nbytes;
-    bg_entries[1].binding = 1;
-    bg_entries[1].buffer = out_tensor.buffer;
-    bg_entries[1].size = out_tensor.nbytes;
-    bg_entries[2].binding = 2;
-    bg_entries[2].buffer = out_meta_buf;
-    bg_entries[2].size = sizeof(TensorMeta);
-    bg_entries[3].binding = 3;
-    bg_entries[3].buffer = in_meta_buf;
-    bg_entries[3].size = sizeof(TensorMeta);
-    bg_entries[4].binding = 4;
-    bg_entries[4].buffer = params_buf;
-    bg_entries[4].size = sizeof(CatParams);
-
-    WGPUBindGroupDescriptor bg_desc = {};
-    bg_desc.layout = bgl;
-    bg_desc.entryCount = 5;
-    bg_desc.entries = bg_entries;
-    WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-    graph.add_dispatch({pipeline, bind_group, wg_counts[k]});
+    graph.add_dispatch({bundle.pipeline, bundle.bind_group, wg_counts[k]});
     // Drop our refs; this input's bind group keeps its uniforms alive.
     wgpuBufferRelease(in_meta_buf);
     wgpuBufferRelease(params_buf);
     off_k += static_cast<uint32_t>(in_tensor.dims[dim]);
   }
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Drop our ref to the shared out_meta; the bind groups keep it alive.
   wgpuBufferRelease(out_meta_buf);
 }
