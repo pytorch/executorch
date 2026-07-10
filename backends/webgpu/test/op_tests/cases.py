@@ -387,3 +387,63 @@ def _linear_fp32_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_conv2d import (
+    _chw_ramp,
+    make_conv,
+)
+
+
+@register_op_test("conv2d")
+def _conv2d_suite() -> WebGPUTestSuite:
+    # DaViT patch-embed / downsample convs + conv_transpose2d (same registration,
+    # folded by the `transposed` arg). NCHW fp32.
+    return WebGPUTestSuite(
+        module_factory=make_conv,
+        cases=[
+            Case(
+                name="conv3x3_pad1",
+                construct={"in_ch": 8, "out_ch": 16, "kernel": 3, "padding": 1},
+                inputs=(InputSpec(shape=(1, 8, 16, 16), gen=_chw_ramp),),
+            ),
+            Case(
+                name="patch_embed",
+                construct={"in_ch": 3, "out_ch": 64, "kernel": 16, "stride": 16},
+                inputs=(InputSpec(shape=(1, 3, 32, 32), gen=_chw_ramp),),
+            ),
+            Case(
+                name="strided",
+                construct={
+                    "in_ch": 3,
+                    "out_ch": 8,
+                    "kernel": 3,
+                    "stride": 2,
+                    "padding": 1,
+                },
+                inputs=(InputSpec(shape=(1, 3, 16, 16), gen=_chw_ramp),),
+            ),
+            Case(
+                name="depthwise",
+                construct={
+                    "in_ch": 8,
+                    "out_ch": 8,
+                    "kernel": 3,
+                    "padding": 1,
+                    "groups": 8,
+                },
+                inputs=(InputSpec(shape=(1, 8, 8, 8), gen=_chw_ramp),),
+            ),
+            Case(
+                name="transpose2x",
+                construct={
+                    "in_ch": 4,
+                    "out_ch": 4,
+                    "kernel": 2,
+                    "stride": 2,
+                    "transposed": True,
+                },
+                inputs=(InputSpec(shape=(1, 4, 4, 4), gen=_chw_ramp),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
