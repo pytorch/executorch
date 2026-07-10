@@ -1,12 +1,11 @@
-"""Sanity check: qwen3_4b_dflash_target.pte returns (logits, hidden) with the
-expected shapes at runtime.
+"""
+Verifies that the exported DFlash target model runs correctly and returns both logits and concatenated hidden states with the expected shapes. 
 
-Run after exporting with --dflash-layers, e.g.:
-    python3 export_llm_hf.py --model-id Qwen/Qwen3-4B --dflash-layers 2,18,33 ...
-    python3 test_dflash_export.py qwen3_4b_dflash_target.pte
+Run this after exporting the target model with --dflash-layers. 
 """
 
 import sys
+
 import torch
 from executorch.runtime import Runtime, Verification
 
@@ -29,4 +28,4 @@ assert hidden.shape == (1, 3, EXPECTED_HIDDEN_DIM), hidden.shape
 assert not torch.isnan(logits).any() and not torch.isinf(logits).any()
 assert not torch.isnan(hidden).any() and not torch.isinf(hidden).any()
 
-print(f"OK: logits {tuple(logits.shape)}, hidden {tuple(hidden.shape)}")
+print(f"OK- logits {tuple(logits.shape)}, hidden {tuple(hidden.shape)}")

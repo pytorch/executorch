@@ -1,7 +1,9 @@
 """Extracting Qwen3 hidden-state for DFlash.
 
 Same idea as examples/models/gemma4_31b/mlx_source_transformations.py --
-tap layers [2, N//2, N-3] and return them concatenated alongside logits.
+extract layers and return them concatenated alongside logits. In Qwen3, the 
+layer ids from z-lab Qwen3 DFlash draft config is [1, 9, 17, 25, 33]
+
 Gemma 4 does this by patching its own hand-written forward(). Qwen3 goes
 through the generic HF export path instead (export_llm_hf.py), which wraps
 the model in transformers' TorchExportableModuleWithStaticCache before
@@ -18,10 +20,9 @@ import torch
 from transformers.integrations.executorch import TorchExportableModuleWithStaticCache
 
 
-class TorchExportableModuleWithStaticCacheAndHidden(TorchExportableModuleWithStaticCache):
-    """forward() also returns tapped hidden states.
-    forward() -> (logits, hidden), where hidden is [B, T, len(layer_ids) * H].
-    """
+class TorchExportableModuleWithStaticCacheAndHidden(
+    TorchExportableModuleWithStaticCache
+):
 
     def __init__(
         self,
@@ -31,7 +32,9 @@ class TorchExportableModuleWithStaticCacheAndHidden(TorchExportableModuleWithSta
         device: Optional[torch.device] = None,
         layer_ids: Sequence[int] = (),
     ):
-        super().__init__(model, batch_size=batch_size, max_cache_len=max_cache_len, device=device)
+        super().__init__(
+            model, batch_size=batch_size, max_cache_len=max_cache_len, device=device
+        )
         if not layer_ids:
             raise ValueError("layer_ids must be non-empty")
         self.layer_ids: List[int] = list(layer_ids)
@@ -52,7 +55,6 @@ class TorchExportableModuleWithStaticCacheAndHidden(TorchExportableModuleWithSta
             output_hidden_states=True,
         )
 
-        # hidden_states[0] is the embedding output, hidden_states[i+1] is decoder layer i's output
         captured = [outs.hidden_states[i + 1] for i in self.layer_ids]
         hidden = torch.cat(captured, dim=-1)
 
@@ -62,49 +64,7 @@ class TorchExportableModuleWithStaticCacheAndHidden(TorchExportableModuleWithSta
 
 
 def default_dflash_layer_ids(num_layers: int) -> List[int]:
-    """[2, N//2, N-3] tap pattern, same as Gemma 4. For Qwen3-4B (36 layers): [2, 18, 33]."""
-    return [2, num_layers // 2, num_layers - 3]
-
-class StatelessQwen3WithHidden(torch.nn.Module):
-    """Cache-free counterpart to TorchExportableModuleWithStaticCacheAndHidden.
-
-    DFlash's speculative-decode loop re-verifies overlapping/non-contiguous
-    token ranges every round (draft tokens get proposed, verified, some
-    rejected). TorchExportableModuleWithStaticCache's persistent internal
-    cache is built for strictly-sequential autoregressive decoding and
-    produces corrupted hidden states under this access pattern (confirmed at
-    the eager PyTorch level: two calls at non-contiguous cache_position values
-    on the same cached wrapper differ by ~8694 vs. ~0.0003 for a correctly
-    stateless model). This class sidesteps the whole problem: every forward()
-    call recomputes attention over exactly the tokens/positions given, with no
-    persistent state, matching the accumulate-full-context approach already
-    used by DFlashDraftModel in dflash_draft_model.py.
-
-    forward() -> (logits, hidden), where hidden is [B, T, len(layer_ids) * H].
+    """This is simply the default dflash layer selection for Qwen3.
+    [2, N//2, N-3] tap pattern, same as Gemma 4. For Qwen3-4B (36 layers): [2, 18, 33].
     """
-
-    def __init__(self, model, layer_ids: Sequence[int] = ()):
-        super().__init__()
-        if not layer_ids:
-            raise ValueError("layer_ids must be non-empty")
-        self.model = model
-        self.layer_ids: List[int] = list(layer_ids)
-
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        cache_position: Optional[torch.Tensor] = None,
-    ):
-        outs = self.model(
-            input_ids=input_ids,
-            cache_position=cache_position,
-            attention_mask=None,
-            past_key_values=None,
-            use_cache=False,
-            output_hidden_states=True,
-        )
-        captured = [outs.hidden_states[i + 1] for i in self.layer_ids]
-        hidden = torch.cat(captured, dim=-1)
-        if hasattr(outs, "logits"):
-            return outs.logits, hidden
-        return outs.last_hidden_state, hidden
+    return [2, num_layers // 2, num_layers - 3]

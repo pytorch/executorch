@@ -221,21 +221,18 @@ def _export_with_custom_components(
             max_cache_len=effective_cache_len,
         )
     elif dflash_layers is not None:
-        # Qwen3-specific for now
-        # Generalize the import if/when another model needs DFlash tapping.
-        #
-        # Stateless (no persistent KV cache), NOT TorchExportableModuleWithStaticCacheAndHidden:
-        # DFlash's speculative-decode loop re-verifies overlapping/non-contiguous token
-        # ranges every round, which corrupts a persistent StaticCache (confirmed at the
-        # eager PyTorch level -- see StatelessQwen3WithHidden's docstring). The driver
-        # always passes the full accumulated sequence instead of relying on a cache.
+        # Qwen3-specific for now.
         from executorch.examples.models.qwen3.mlx_source_transformations import (
-            StatelessQwen3WithHidden,
+            TorchExportableModuleWithStaticCacheAndHidden,
         )
 
-        logger.info(f"Creating stateless DFlash hidden-state-tapping wrapper, layers={dflash_layers}")
-        exportable = StatelessQwen3WithHidden(
+        logger.info(
+            f"Creating DFlash hidden-state-tapping wrapper, layers={dflash_layers}"
+        )
+        exportable = TorchExportableModuleWithStaticCacheAndHidden(
             model=model,
+            batch_size=1,
+            max_cache_len=effective_cache_len,
             layer_ids=dflash_layers,
         )
     else:
@@ -246,7 +243,7 @@ def _export_with_custom_components(
             max_cache_len=effective_cache_len,
         )
 
-    if use_custom_kv_cache and dflash_layers is None:
+    if use_custom_kv_cache:
         from executorch.backends.mlx.llm.source_transformation import (
             replace_hf_cache_with_mlx,
         )
@@ -318,6 +315,9 @@ def _export_with_custom_components(
         transform_passes=get_default_passes(),
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
+        # Required by the C++ LLMEngine metadata contract (get_llm_metadata in
+        # llm_runner_helper.cpp) -- this export path (used for --dflash-layers)
+        constant_methods={"get_max_seq_len": max_seq_len},
     )
 
     logger.info("Exporting to ExecuTorch...")
@@ -459,10 +459,11 @@ def main():
         "--dflash-layers",
         type=str,
         default=None,
-        help="Comma-separated layer indices to tap for DFlash hidden-state output, e.g. '2,18,33'",
+        help="Comma-separated transformer layer indices whose hidden states are concatenated and returned alongside logits for DFlash. E.g. '1,9,17,25,33'",
     )
 
     args = parser.parse_args()
+    # Convert "1,9,17,25,33" -> [1, 9, 17, 25, 33]
     dflash_layers = (
         [int(x) for x in args.dflash_layers.split(",")] if args.dflash_layers else None
     )

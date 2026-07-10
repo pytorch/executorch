@@ -1,13 +1,12 @@
-"""Plain autoregressive baseline using the SAME target .pte, tokenizer, and
-chat-template settings as run_dflash.py -- for an apples-to-apples comparison,
-not the old Phase 0 number (measured under different conditions/quant pass).
+"""Standard autoregressive decoding used as the baseline for the comparison. 
 """
+
 import argparse
 import time
 
 import torch
-from transformers import AutoTokenizer
 from executorch.runtime import Runtime, Verification
+from transformers import AutoTokenizer
 
 
 def main():
@@ -27,15 +26,19 @@ def main():
     if args.chat_template:
         messages = [{"role": "user", "content": args.prompt}]
         chat_out = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True,
-            enable_thinking=args.enable_thinking, return_tensors="pt",
+            messages,
+            add_generation_prompt=True,
+            enable_thinking=args.enable_thinking,
+            return_tensors="pt",
         )
         prompt_ids = chat_out.input_ids if hasattr(chat_out, "input_ids") else chat_out
     else:
         prompt_ids = tokenizer(args.prompt, return_tensors="pt").input_ids
 
     rt = Runtime.get()
-    target = rt.load_program(args.target_pte, verification=Verification.Minimal).load_method("forward")
+    target = rt.load_program(
+        args.target_pte, verification=Verification.Minimal
+    ).load_method("forward")
 
     prompt_len = prompt_ids.shape[1]
     input_pos = torch.arange(prompt_len, dtype=torch.long)
@@ -61,7 +64,7 @@ def main():
     n = len(generated)
     print(f"Prompt: {args.prompt}")
     print(f"Generated ({n} tokens): {text}")
-    print(f"\n--- baseline stats ---")
+    print("\n--baseline stats--")
     print(f"time: {dt:.2f}s   tokens/s: {n / dt:.2f}")
 
 

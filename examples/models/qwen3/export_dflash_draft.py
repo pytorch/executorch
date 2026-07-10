@@ -1,13 +1,22 @@
+"""Exports the DFlash draft model to an .pte program. 
+
+This script loads the pretrained DFlash draft checkpoint, copies the shared embedding and output project weights from target model, applies same 4-bit quantization used by target, and exports the draft model for MLX inference. 
+The exported model is used alongside the target model during speculative decoding. 
+"""
+
 import argparse
 from pathlib import Path
 
 import torch
+
+from executorch.backends.mlx.examples.llm.dflash_draft_model import (
+    DFlashDraftModel,
+    load_dflash_config,
+)
 from huggingface_hub import snapshot_download
 from safetensors.torch import load_file
 from torch.export import Dim
 from transformers import AutoModelForCausalLM
-
-from executorch.backends.mlx.examples.llm.dflash_draft_model import DFlashDraftModel, load_dflash_config
 
 
 def load_draft_model(draft_id: str, target_state_dict: dict) -> DFlashDraftModel:
@@ -21,11 +30,17 @@ def load_draft_model(draft_id: str, target_state_dict: dict) -> DFlashDraftModel
 
     missing, unexpected = model.load_state_dict(draft_weights, strict=False)
     assert not unexpected, f"Unexpected draft checkpoint keys: {unexpected}"
-    still_missing = [k for k in missing if not k.startswith(("embed_tokens.", "lm_head."))]
+    still_missing = [
+        k for k in missing if not k.startswith(("embed_tokens.", "lm_head."))
+    ]
     assert not still_missing, f"Missing draft checkpoint keys: {still_missing}"
 
     model.embed_tokens.weight.data.copy_(target_state_dict["model.embed_tokens.weight"])
-    lm_head_key = "lm_head.weight" if "lm_head.weight" in target_state_dict else "model.embed_tokens.weight"
+    lm_head_key = (
+        "lm_head.weight"
+        if "lm_head.weight" in target_state_dict
+        else "model.embed_tokens.weight"
+    )
     model.lm_head.weight.data.copy_(target_state_dict[lm_head_key])
     return model
 
@@ -45,12 +60,10 @@ def main():
     model.eval()
     del target
 
-    # Quantize to 4-bit to match the target export (--qlinear 4w --qembedding 4w,
-    # group_size=32). Without this the draft is full float32 (~3.5GB) with its
-    # shared embed/lm_head dominating memory; quantizing brings it to ~1GB and,
-    # critically, keeps the shared embed/lm_head at the SAME precision as the
-    # target so their logits stay consistent (acceptance depends on this).
+    # Quantize the draft model to match the target model.
+    # Keeping both models at the same precision reduces memory usage and helps keep their predictions consistent, which is important for achieving a high draft acceptance rate.
     from executorch.backends.mlx.llm.quantization import quantize_model_
+
     quantize_model_(
         model,
         qlinear_config="4w",
@@ -74,13 +87,14 @@ def main():
     }
 
     import torch.fx.experimental._config as fx_config
+
     with fx_config.patch(backed_size_oblivious=True):
         exported = torch.export.export(
             model, (tokens, target_hidden, position_ids), dynamic_shapes=dynamic_shapes
         )
 
-    from executorch.exir import to_edge_transform_and_lower
     from executorch.backends.mlx.partitioner import MLXPartitioner
+    from executorch.exir import to_edge_transform_and_lower
 
     edge = to_edge_transform_and_lower(exported, partitioner=[MLXPartitioner()])
     et_program = edge.to_executorch()
@@ -88,7 +102,9 @@ def main():
     with open(args.output, "wb") as f:
         f.write(et_program.buffer)
     print(f"Saved draft model to: {args.output}")
-    print(f"Dynamic ctx_len supported: 1 to {args.max_ctx_len}, block_size fixed at {block_size}.")
+    print(
+        f"Dynamic ctx_len supported: 1 to {args.max_ctx_len}, block_size fixed at {block_size}."
+    )
 
 
 if __name__ == "__main__":

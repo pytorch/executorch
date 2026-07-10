@@ -86,3 +86,10 @@ zephyr_dev_root.backup.*/
 # Agents
 .claude/*.local.*
 extension/pybindings/mlx.metallib
+
+# DFlash C++ engine (Qwen3) -- incomplete, broken build, follow-up PR
+examples/models/qwen3/CMakeLists.txt
+examples/models/qwen3/CMakePresets.json
+examples/models/qwen3/qwen3_dflash_engine.h
+examples/models/qwen3/qwen3_dflash_engine.cpp
+examples/models/qwen3/main.cpp
