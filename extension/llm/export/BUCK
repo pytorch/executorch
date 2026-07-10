@@ -59,6 +59,26 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
+fbcode_target(_kind = runtime.python_library,
+    name = "gguf",
+    srcs = [
+        "gguf.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/numpy:numpy",
+    ],
+)
+
 fbcode_target(_kind = runtime.python_binary,
     name = "export_llm",
     srcs = [
