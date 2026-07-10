@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer build helper. This command-line interface is not a public API and
+# may change without deprecation.
 
 set -eu
 
@@ -23,11 +26,12 @@ source "${script_dir}/utils.sh"
 
 help() {
     echo "Usage: $(basename $0) [options]"
+    echo "Note: this developer build script is not a stable public API."
     echo "Options:"
     echo "  --build_type=<TYPE>         Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --etdump                    Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --extra_build_flags=<FLAGS> Extra flags to pass to cmake. Default: none "
-    echo "  --output=<FOLDER>           Output folder Default: $(output_folder)"
+    echo "  --output=<FOLDER>           Output folder Default: ${output_folder}"
     echo "  --bundleio                  Support BundleIO using Devtools with Input/RefOutput included"
     exit 0
 }

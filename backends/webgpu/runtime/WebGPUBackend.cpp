@@ -79,8 +79,32 @@ Result<DelegateHandle*> WebGPUBackend::init(
     return Error::DelegateInvalidCompatibility;
   }
 
+  // Load-time backend option (BackendOption / LoadBackendOptionsMap), keyed by
+  // the registered backend name; default false. Mirrors the CoreML/XNNPACK
+  // runtime-spec pattern -- no compile flag and no .pte re-export needed.
+  bool enable_f16_kv_cache = false;
+  {
+    Result<bool> spec = context.get_runtime_spec<bool>("enable_f16_kv_cache");
+    if (spec.ok()) {
+      enable_f16_kv_cache = spec.get();
+    }
+  }
+  bool enable_f16_accumulate_gemm = false;
+  {
+    Result<bool> spec =
+        context.get_runtime_spec<bool>("enable_f16_accumulate_gemm");
+    if (spec.ok()) {
+      enable_f16_accumulate_gemm = spec.get();
+    }
+  }
+
   try {
-    graph->build(flatbuffer_data, constant_data, context.get_named_data_map());
+    graph->build(
+        flatbuffer_data,
+        constant_data,
+        context.get_named_data_map(),
+        enable_f16_kv_cache,
+        enable_f16_accumulate_gemm);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();

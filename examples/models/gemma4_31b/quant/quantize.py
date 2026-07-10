@@ -7,8 +7,8 @@
 """Quantize weights to torchao tensor subclasses.
 
 ``quantize_weight`` quantizes a single tensor given a ``QuantConfig``,
-returning an ``Int4Tensor`` (4-bit) or ``IntxUnpackedToInt8Tensor`` (6- or
-8-bit).
+returning an ``Int4Tensor`` (4-bit) or ``IntxUnpackedToInt8Tensor`` (5-, 6-,
+or 8-bit).
 
 ``quantize_model`` walks a model's parameters, applies a ``QuantRecipe``,
 and returns a single state dict containing both quantized subclass tensors
@@ -19,7 +19,6 @@ import torch
 import torch.nn as nn
 
 from .recipe import QuantConfig, QuantRecipe
-
 
 # ---------------------------------------------------------------------------
 # Per-weight quantization
@@ -153,7 +152,7 @@ def _to_intx_tensor(
     weight: torch.Tensor,
     config: QuantConfig,
 ) -> torch.Tensor:
-    """Quantize to 6- or 8-bit and wrap in IntxUnpackedToInt8Tensor.
+    """Quantize to 5-, 6-, or 8-bit and wrap in IntxUnpackedToInt8Tensor.
 
     Quantizes in float32 for numerical precision, then constructs the
     subclass directly. We avoid ``from_hp`` because it quantizes in the
@@ -230,10 +229,10 @@ def _to_intx_tensor(
 def quantize_weight(weight: torch.Tensor, config: QuantConfig) -> torch.Tensor:
     """Quantize ``weight`` to a torchao tensor subclass.
 
-    Returns ``Int4Tensor`` for 4-bit or ``IntxUnpackedToInt8Tensor`` for 6-
-    and 8-bit.
+    Returns ``Int4Tensor`` for 4-bit or ``IntxUnpackedToInt8Tensor`` for 5-,
+    6-, and 8-bit.
     """
-    if config.bits in (6, 8):
+    if config.bits in (5, 6, 8):
         return _to_intx_tensor(weight, config)
 
     if config.bits != 4:

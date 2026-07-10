@@ -547,6 +547,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeUnfoldToGatherPass(),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
+                CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeStridedSliceCopyPass(),
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
