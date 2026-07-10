@@ -905,7 +905,7 @@ class TestPasses(unittest.TestCase):
 
         m = SimpleModel()
         dim0 = torch.export.Dim("batch", min=1)
-        ep = torch.export.export(
+        ep = export(
             m,
             (torch.randn(4, 8),),
             dynamic_shapes={"x": {0: dim0}},
@@ -914,8 +914,7 @@ class TestPasses(unittest.TestCase):
 
         gm = edge.exported_program().graph_module
         x_node = next(
-            n for n in gm.graph.nodes
-            if n.op == "placeholder" and n.name == "x"
+            n for n in gm.graph.nodes if n.op == "placeholder" and n.name == "x"
         )
         sym_dim = x_node.meta["val"].shape[0]
         self.assertIsInstance(sym_dim, torch.SymInt)

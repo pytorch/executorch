@@ -66,7 +66,10 @@ def eval_upper_bound(maybe_symint: Union[int, torch.SymInt]) -> int:
         hint = eval_expr(maybe_symint)
         if hint is not None:
             return hint
-        return int_oo
+        raise RuntimeError(
+            "Cannot evaluate a finite upper bound for symbolic expression "
+            "(int_oo) and no trace hint is available."
+        )
     else:
         raise RuntimeError(
             f"Expect upper bound to be sympy.Integer or int_oo. but got {upper_bound}"
