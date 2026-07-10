@@ -49,7 +49,7 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        ("torch==2.12.0" if use_pytorch_nightly else "torch"),
+        ("torch==2.13.0" if use_pytorch_nightly else "torch"),
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -112,7 +112,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
 
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
-        ("torchvision==0.27.0" if use_pytorch_nightly else "torchvision"),
+        ("torchvision==0.28.0" if use_pytorch_nightly else "torchvision"),
         ("torchaudio==2.11.0" if use_pytorch_nightly else "torchaudio"),
     ]
     # Then install domain libraries
