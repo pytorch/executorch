@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_gemm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_wgsl.h>
@@ -313,15 +314,34 @@ void conv2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const uint32_t icpg = IC / groups;
   const bool use_vec4 = (icpg % 4u == 0u);
 
-  // Up-front (throw before any buffer alloc → no leak-on-throw).
-  // Adaptive 1D->2D dispatch: wg=clamp(device,256) + 2D-spill past the 65535
-  // ceiling (the documented SAM FpnNeck @1008^2 blocker). stride_x lets the
-  // shader decode i = gid.y*stride_x + gid.x.
-  utils::DispatchGrid grid = utils::compute_dispatch_grid(
-      device,
-      utils::checked_u32(out_numel, "conv2d"),
-      kConv2dWorkgroupSizeX,
-      "et_vk_conv2d");
+  // groups==1 non-transposed -> im2col tiled GEMM (reuses the linear tiled-GEMM
+  // skeleton: M=OC, N=B*OH*OW, K=IC*KH*KW; input im2col-sampled on the fly,
+  // out-of-range -> 0.0 for padding). Canary M4 Pro: 1.1-2.4x over the direct
+  // kernel across stem/FPN shapes (biggest on the RGB stem, where the
+  // vec4-over-IC path is inert). Grouped/depthwise stay on the direct kernel
+  // (grouped GEMM is block-diagonal; mirrors ORT).
+  const bool use_gemm = (groups == 1u);
+
+  // Compute the dispatch grid UP-FRONT, before any buffer alloc, so a throw
+  // (grid exceeds the device dispatch/tile limit) can't leak the uniform/bias.
+  constexpr uint32_t kConv2dGemmTile =
+      32u; // fixed @workgroup_size(8,8), TILE=32
+  utils::WgCount gemm_grid = {};
+  utils::DispatchGrid direct_grid = {};
+  if (use_gemm) {
+    // 2D tile grid over (N cols, M rows); folds past the 65535 per-dim ceiling.
+    gemm_grid = utils::compute_tile_grid_2d(
+        device, B * OH * OW, OC, kConv2dGemmTile, "et_vk_conv2d_gemm");
+  } else {
+    // Adaptive 1D->2D dispatch: wg=clamp(256) + 2D-spill past the 65535 ceiling
+    // (the SAM FpnNeck @1008^2 blocker); stride_x decodes
+    // i=gid.y*stride_x+gid.x.
+    direct_grid = utils::compute_dispatch_grid(
+        device,
+        utils::checked_u32(out_numel, "conv2d"),
+        kConv2dWorkgroupSizeX,
+        "et_vk_conv2d");
+  }
 
   ConvParams params = {};
   params.B = B;
@@ -352,29 +372,62 @@ void conv2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       has_bias,
       has_bias ? graph.get_tensor(bias_id).buffer : nullptr,
       has_bias ? graph.get_tensor(bias_id).nbytes : 0);
-  auto constants = utils::make_grid_constants(grid);
 
-  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
-      device,
-      use_vec4 ? kConv2dVec4WGSL : kConv2dWGSL,
-      {
-          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
-          {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
-          {2,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           weight.buffer,
-           weight.nbytes},
-          {3, WGPUBufferBindingType_ReadOnlyStorage, bias.buffer, bias.nbytes},
-          {4,
-           WGPUBufferBindingType_Uniform,
-           uniform_buffer,
-           sizeof(ConvParams)},
-      },
-      constants.data(),
-      constants.size());
-
-  graph.add_dispatch_2d(
-      bundle.pipeline, bundle.bind_group, grid.count_x, grid.count_y);
+  if (use_gemm) {
+    // vec4-over-IC is inert for NCHW (strided channel gather), so the GEMM is
+    // scalar — ORT skips vec4 for NCHW too.
+    utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+        device,
+        kConv2dGemmWGSL,
+        {
+            {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+            {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+            {2,
+             WGPUBufferBindingType_ReadOnlyStorage,
+             weight.buffer,
+             weight.nbytes},
+            {3,
+             WGPUBufferBindingType_ReadOnlyStorage,
+             bias.buffer,
+             bias.nbytes},
+            {4,
+             WGPUBufferBindingType_Uniform,
+             uniform_buffer,
+             sizeof(ConvParams)},
+        });
+    graph.add_dispatch_2d(
+        bundle.pipeline, bundle.bind_group, gemm_grid.x, gemm_grid.y);
+  } else {
+    // Direct conv (grouped/depthwise); vec4-over-IC when icpg%4==0 (register-
+    // packed, not coalesced — NCHW's channel stride isn't contiguous).
+    auto constants = utils::make_grid_constants(direct_grid);
+    utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+        device,
+        use_vec4 ? kConv2dVec4WGSL : kConv2dWGSL,
+        {
+            {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+            {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+            {2,
+             WGPUBufferBindingType_ReadOnlyStorage,
+             weight.buffer,
+             weight.nbytes},
+            {3,
+             WGPUBufferBindingType_ReadOnlyStorage,
+             bias.buffer,
+             bias.nbytes},
+            {4,
+             WGPUBufferBindingType_Uniform,
+             uniform_buffer,
+             sizeof(ConvParams)},
+        },
+        constants.data(),
+        constants.size());
+    graph.add_dispatch_2d(
+        bundle.pipeline,
+        bundle.bind_group,
+        direct_grid.count_x,
+        direct_grid.count_y);
+  }
 
   wgpuBufferRelease(uniform_buffer);
   if (bias.owned_dummy != nullptr) {
