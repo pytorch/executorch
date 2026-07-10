@@ -1959,9 +1959,7 @@ class TestPasses(unittest.TestCase):
                 y = y + 1
                 return y
 
-        model = to_edge(
-            export(EarlyMutationModule(), (torch.zeros(1),), strict=True)
-        )
+        model = to_edge(export(EarlyMutationModule(), (torch.zeros(1),), strict=True))
         gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
 
         node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
@@ -1994,9 +1992,7 @@ class TestPasses(unittest.TestCase):
                 self.state.copy_(new_state)
                 return old_plus
 
-        model = to_edge(
-            export(ReadOldValueModule(), (torch.zeros(1),), strict=True)
-        )
+        model = to_edge(export(ReadOldValueModule(), (torch.zeros(1),), strict=True))
         gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
 
         node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
