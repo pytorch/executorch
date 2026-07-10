@@ -125,6 +125,7 @@ function(add_webgpu_native_test test_name test_src)
   target_link_libraries(
     ${test_name}
     PRIVATE webgpu_backend
+            vulkan_schema
             ${WEBGPU_GPU_LIB}
             executorch_core
             extension_module_static
@@ -169,10 +170,11 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
 
     # Device-free util unit test: no backend/Dawn link (pure manifest/tolerance
-    # helpers), so it does NOT use the native-test helper.
+    # + dispatch-grid-math helpers), so it does NOT use the native-test helper.
     add_executable(
-      webgpu_op_test_util_test test/op_tests/test_driver_util.cpp
-                               test/op_tests/driver_util.cpp
+      webgpu_op_test_util_test
+      test/op_tests/test_driver_util.cpp test/op_tests/driver_util.cpp
+      test/native/test_webgpu_utils.cpp
     )
     target_include_directories(
       webgpu_op_test_util_test
