@@ -479,6 +479,14 @@ class WebGPUGraph {
   void add_qkv_fused_dispatch(QkvFusionGroup& g);
   void add_qkv_fused_hook(const QkvFusionGroup& g);
 
+  // SwiGLU fusion (WEBGPU_SWIGLU_FUSE): emit ONE fused elementwise dispatch
+  // computing out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2
+  // muls. `out` is repointed to a private pooled buffer (aliasing guard);
+  // `gate` is likewise given a private pooled buffer at its producer op by the
+  // build() walk (the planner reuse-aliases up onto gate's slot, so up_proj
+  // would stomp gate before the fused reads it). Only used during build(); the
+  // detection maps are empty (inert) when the toggle is off.
+  void add_swiglu_fused_dispatch(int gate_id, int up_id, int out_id);
 };
 
 } // namespace executorch::backends::webgpu

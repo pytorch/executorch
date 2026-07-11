@@ -8,6 +8,7 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/mul/silu_mul_fused_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_qkv_fused_wgsl.h>
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
@@ -869,6 +870,178 @@ void WebGPUGraph::build(
     }
   }
 
+  // SwiGLU fusion detection (WEBGPU_SWIGLU_FUSE; default OFF -> all sets stay
+  // empty
+  // -> the Phase-3 loop below runs verbatim = byte-identical). Fold each
+  // SiLU-gate MLP triple  sigmoid(g) -> mul(g,sig)=silu -> mul(silu,up)=out
+  // into ONE elementwise dispatch that computes sigmoid + silu in registers
+  // (gate + up read once, one output written): 8 traffic units -> 3. Bit-exact
+  // (same fp op order, and the sigmoid form matches sigmoid.wgsl). swiglu_skip
+  // holds the sigmoid + the 1st-mul op indices (their dispatches are dropped --
+  // sig/silu become dead), and swiglu_anchor maps the 2nd-mul op (where out +
+  // up are both live) -> its group, so the fused dispatch is emitted IN-PLACE
+  // there (correct execution order). The sig/silu intermediates must be
+  // single-consumer (folding them can't strand a second reader).
+  std::vector<std::array<int, 3>> swiglu_groups; // {gate, up, out}
+  std::unordered_set<unsigned> swiglu_skip; // sigmoid + 1st-mul op indices
+  std::unordered_map<unsigned, size_t> swiglu_anchor; // 2nd-mul op idx -> group
+  // gate_proj op idx -> group: repoint gate to a PRIVATE pooled buffer there,
+  // before gate_proj is lowered (root-cause fix, see the detection guard
+  // below).
+  std::unordered_map<unsigned, size_t> swiglu_gate_acquire;
+  // out's last-use op idx -> group: release the pooled fused-output buffer
+  // after its final consumer's dispatch is built (pool recycling for the
+  // +memory).
+  std::unordered_map<unsigned, size_t> swiglu_out_release;
+  if (std::getenv("WEBGPU_SWIGLU_FUSE") != nullptr && chain) {
+    // Consumer count: appearances as a NON-output (non-last) arg, ValueList-
+    // expanded. sig/silu are safe to fold only if each is consumed exactly once
+    // (by the 1st/2nd mul respectively) and nowhere else.
+    std::vector<int> consumer_cnt(num_vals, 0);
+    for (unsigned i = 0; i < chain->size(); i++) {
+      const auto* a = chain->Get(i)->args();
+      if (!a || a->size() == 0) {
+        continue;
+      }
+      for (unsigned j = 0; j + 1 < a->size(); j++) {
+        const int id = static_cast<int>(a->Get(j));
+        if (id < 0 || id >= num_vals) {
+          continue;
+        }
+        consumer_cnt[id]++;
+        if (value_types_[id] == ValueType::ValueList) {
+          for (int m : value_lists_[id]) {
+            if (m >= 0 && m < num_vals) {
+              consumer_cnt[m]++;
+            }
+          }
+        }
+      }
+    }
+    // Producer (op that writes each value = its last arg) + last-use (last op
+    // referencing a value in ANY arg, ValueList-expanded). Used to (a) find
+    // gate's producer op so gate can be repointed to a private buffer before it
+    // is written, and (b) find out's last consumer so the pooled out buffer is
+    // released only after it is truly dead.
+    std::vector<int> producer(num_vals, -1);
+    std::vector<int> last_use(num_vals, -1);
+    for (unsigned i = 0; i < chain->size(); i++) {
+      const auto* a = chain->Get(i)->args();
+      if (!a || a->size() == 0) {
+        continue;
+      }
+      for (unsigned j = 0; j < a->size(); j++) {
+        const int id = static_cast<int>(a->Get(j));
+        if (id < 0 || id >= num_vals) {
+          continue;
+        }
+        last_use[id] = static_cast<int>(i);
+        if (value_types_[id] == ValueType::ValueList) {
+          for (int m : value_lists_[id]) {
+            if (m >= 0 && m < num_vals) {
+              last_use[m] = static_cast<int>(i);
+            }
+          }
+        }
+      }
+      const int outv = static_cast<int>(a->Get(a->size() - 1));
+      if (outv >= 0 && outv < num_vals) {
+        producer[outv] = static_cast<int>(i);
+      }
+    }
+    struct SigInfo {
+      unsigned op;
+      int g_in;
+    };
+    struct Mul1Info {
+      unsigned op;
+      int g_in;
+      unsigned sig_op;
+      int sig_out;
+    };
+    std::unordered_map<int, SigInfo> sigmoid_by_out; // sig_out -> {op, g}
+    std::unordered_map<int, Mul1Info>
+        mul1_by_out; // silu_out -> {op, g, sig...}
+    for (unsigned i = 0; i < chain->size(); i++) {
+      const auto* oc = chain->Get(i);
+      const std::string nm = oc->name()->str();
+      const auto* a = oc->args();
+      if (!a) {
+        continue;
+      }
+      if (nm == "aten.sigmoid.default" && a->size() >= 2) {
+        sigmoid_by_out[static_cast<int>(a->Get(1))] = {
+            i, static_cast<int>(a->Get(0))};
+        continue;
+      }
+      if (nm != "aten.mul.Tensor" || a->size() < 3) {
+        continue;
+      }
+      const int x = static_cast<int>(a->Get(0));
+      const int y = static_cast<int>(a->Get(1));
+      const int out = static_cast<int>(a->Get(2));
+      // 2nd mul? one operand is a recorded silu (a 1st-mul output).
+      int silu = -1, up = -1;
+      if (mul1_by_out.count(x) != 0) {
+        silu = x;
+        up = y;
+      } else if (mul1_by_out.count(y) != 0) {
+        silu = y;
+        up = x;
+      }
+      if (silu >= 0) {
+        const Mul1Info& m1 = mul1_by_out[silu];
+        const int g = m1.g_in;
+        const bool tensors_ok = g >= 0 && up >= 0 && out >= 0 &&
+            get_value_type(g) == ValueType::Tensor &&
+            get_value_type(up) == ValueType::Tensor &&
+            get_value_type(out) == ValueType::Tensor;
+        if (tensors_ok) {
+          const auto& tg = tensors_[g];
+          const auto& tu = tensors_[up];
+          const auto& to = tensors_[out];
+          // Elementwise, all fp32, identical dims (so the fused output's live
+          // dims
+          // == gate's on resize), live buffers, and single-consumer
+          // intermediates. gate must be consumed by EXACTLY the sigmoid +
+          // 1st-mul (consumer_cnt
+          // == 2) so it is dead once the fused dispatch reads it, and have a
+          // real producer op (so it can be repointed before it is written).
+          if (tg.buffer && tu.buffer && to.buffer && tg.elem_size == 4 &&
+              tu.elem_size == 4 && to.elem_size == 4 && tg.dims == tu.dims &&
+              tg.dims == to.dims && tg.nbytes == tu.nbytes &&
+              tg.nbytes == to.nbytes && consumer_cnt[m1.sig_out] == 1 &&
+              consumer_cnt[silu] == 1 && consumer_cnt[g] == 2 &&
+              producer[g] >= 0) {
+            const size_t gidx = swiglu_groups.size();
+            swiglu_groups.push_back({g, up, out});
+            swiglu_skip.insert(m1.sig_op);
+            swiglu_skip.insert(m1.op);
+            swiglu_anchor[i] = gidx;
+            // The serialized memory planner reuse-aliases up onto gate's slot
+            // (gate dies at the 1st mul, up_proj is emitted between the muls),
+            // so up_proj would stomp gate's buffer before the fused dispatch
+            // (at this 2nd-mul anchor) reads it. Give gate a private buffer at
+            // its producer op; release it right after the fused read. out is
+            // likewise pooled + released after last_use[out] (its final
+            // consumer, e.g. down_proj).
+            swiglu_gate_acquire[static_cast<unsigned>(producer[g])] = gidx;
+            swiglu_out_release[static_cast<unsigned>(last_use[out])] = gidx;
+          }
+        }
+        continue; // a 2nd-mul is never also a 1st-mul
+      }
+      // 1st mul? inputs are exactly {sigmoid input g, sigmoid output sig}.
+      auto sx = sigmoid_by_out.find(x);
+      auto sy = sigmoid_by_out.find(y);
+      if (sx != sigmoid_by_out.end() && sx->second.g_in == y) {
+        mul1_by_out[out] = {i, y, sx->second.op, x};
+      } else if (sy != sigmoid_by_out.end() && sy->second.g_in == x) {
+        mul1_by_out[out] = {i, x, sy->second.op, y};
+      }
+    }
+  }
+
   if (chain) {
     for (unsigned i = 0; i < chain->size(); i++) {
       const auto* op_call = chain->Get(i);
@@ -886,6 +1059,34 @@ void WebGPUGraph::build(
         }
       }
 
+      // SwiGLU fusion. At gate_proj repoint gate to a private pooled buffer (so
+      // up_proj can't stomp its planner-aliased slot before the fused reads
+      // it); drop the folded sigmoid + 1st-mul; at the 2nd-mul anchor emit ONE
+      // fused silu*up dispatch then release gate. Sets empty when
+      // WEBGPU_SWIGLU_FUSE is off (verbatim path).
+      {
+        auto ga = swiglu_gate_acquire.find(i);
+        if (ga != swiglu_gate_acquire.end()) {
+          // Repoint BEFORE gate_proj is lowered below, so it writes the private
+          // buffer. gate_proj falls through to normal lowering (not
+          // skip/anchor).
+          const int gate_id = swiglu_groups[ga->second][0];
+          tensors_[gate_id].buffer = acquire_scratch(tensors_[gate_id].nbytes);
+        }
+        if (swiglu_skip.count(i) != 0) {
+          continue; // sigmoid / 1st-mul: folded into the fused dispatch
+        }
+        auto sa = swiglu_anchor.find(i);
+        if (sa != swiglu_anchor.end()) {
+          const auto& grp = swiglu_groups[sa->second];
+          add_swiglu_fused_dispatch(grp[0], grp[1], grp[2]);
+          // gate is dead once the fused dispatch has read it
+          // (consumer_cnt[g]==2, both folded) -> return its buffer to the pool
+          // for the next layer.
+          release_scratch(tensors_[grp[0]].buffer);
+          continue;
+        }
+      }
       // QKV fusion (M-gated): keep the 3 separate q/k/v linears AND add a fused
       // multi-output GEMM; the fused resize hook selects by LIVE M (prefill M>1
       // -> fused runs, the 3 zeroed; decode M==1 -> the 3 coop4 GEMVs run,
@@ -933,6 +1134,14 @@ void WebGPUGraph::build(
         if (lit != qkv_last.end()) {
           // All 3 sep dispatch indices + the fused index are now known.
           add_qkv_fused_hook(qkv_groups[lit->second]);
+        }
+      }
+      // SwiGLU: this op is out's last consumer (its dispatch just captured
+      // out's buffer above) -> return the pooled fused-output buffer for reuse.
+      {
+        auto orl = swiglu_out_release.find(i);
+        if (orl != swiglu_out_release.end()) {
+          release_scratch(tensors_[swiglu_groups[orl->second][2]].buffer);
         }
       }
     }
@@ -1231,6 +1440,144 @@ void WebGPUGraph::add_qkv_fused_dispatch(QkvFusionGroup& g) {
   own_uniform_buffer(uniform_buffer);
   g.fused_dispatch = fused_idx; // consumed by add_qkv_fused_hook at the last op
   g.fused_params = uniform_buffer;
+}
+
+namespace {
+// Uniform layout matching silu_mul_fused.wgsl Params (16B-aligned).
+struct SiluMulParams {
+  uint32_t num_elements;
+  uint32_t _pad[3];
+};
+} // namespace
+
+// SwiGLU fusion (WEBGPU_SWIGLU_FUSE): emit ONE elementwise dispatch computing
+// out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2 muls.
+// Elementwise (no M-gate: identical at decode and prefill).
+void WebGPUGraph::add_swiglu_fused_dispatch(
+    int gate_id,
+    int up_id,
+    int out_id) {
+  // Private distinct output buffer (mirrors the QKV aliasing guard): the
+  // planner reuse-aliases `out` onto a dead slot (e.g. sigmoid's), which
+  // without this would bind the same buffer as ro `gate` AND rw `output` ->
+  // Dawn writable-aliasing / all-zeros. Repoint BEFORE the bind group so it
+  // captures the private buffer; downstream consumers (lowered later) also see
+  // it. gate is still in_use here (released only after this call), so
+  // acquire_scratch hands out a DISTINCT slot. Pooled (not dedicated): the
+  // caller releases it after out's last consumer, so N layers recycle a small
+  // constant of buffers. tensor_mem_obj_ids_[out] stays
+  // >= 0, so the dtor never per-tensor-frees it (scratch_pool_ owns it).
+  tensors_[out_id].buffer = acquire_scratch(tensors_[out_id].nbytes);
+
+  const auto& gate = tensors_[gate_id];
+  const auto& up = tensors_[up_id];
+  const auto& out = tensors_[out_id];
+  const uint32_t num_elements =
+      static_cast<uint32_t>(out.nbytes / sizeof(float));
+
+  SiluMulParams params = {num_elements, {0u, 0u, 0u}};
+  WGPUBufferDescriptor u_desc = {};
+  u_desc.size = sizeof(SiluMulParams);
+  u_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  u_desc.mappedAtCreation = true;
+  WGPUBuffer uniform_buffer = wgpuDeviceCreateBuffer(device_, &u_desc);
+  std::memcpy(
+      wgpuBufferGetMappedRange(uniform_buffer, 0, sizeof(SiluMulParams)),
+      &params,
+      sizeof(SiluMulParams));
+  wgpuBufferUnmap(uniform_buffer);
+  add_uniform_buffer_bytes(sizeof(SiluMulParams));
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kSiluMulFusedWGSL, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device_, &shader_desc);
+
+  // BGL: gate (ro) 0, up (ro) 1, output (rw) 2, params (uniform) 3.
+  WGPUBindGroupLayoutEntry entries[4] = {};
+  entries[0].binding = 0;
+  entries[0].visibility = WGPUShaderStage_Compute;
+  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+  entries[1].binding = 1;
+  entries[1].visibility = WGPUShaderStage_Compute;
+  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+  entries[2].binding = 2;
+  entries[2].visibility = WGPUShaderStage_Compute;
+  entries[2].buffer.type = WGPUBufferBindingType_Storage;
+  entries[3].binding = 3;
+  entries[3].visibility = WGPUShaderStage_Compute;
+  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 4;
+  bgl_desc.entries = entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device_, &bgl_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pipeline_layout =
+      wgpuDeviceCreatePipelineLayout(device_, &pl_desc);
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = pipeline_layout;
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device_, &pipeline_desc);
+
+  WGPUBindGroupEntry bg[4] = {};
+  bg[0].binding = 0;
+  bg[0].buffer = gate.buffer;
+  bg[0].size = gate.nbytes;
+  bg[1].binding = 1;
+  bg[1].buffer = up.buffer;
+  bg[1].size = up.nbytes;
+  bg[2].binding = 2;
+  bg[2].buffer = out.buffer;
+  bg[2].size = out.nbytes;
+  bg[3].binding = 3;
+  bg[3].buffer = uniform_buffer;
+  bg[3].size = sizeof(SiluMulParams);
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 4;
+  bg_desc.entries = bg;
+  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device_, &bg_desc);
+
+  const uint32_t wg = kSiluMulFusedWorkgroupSizeX;
+  const uint32_t workgroup_count = (num_elements + wg - 1) / wg;
+  if (workgroup_count > 65535) {
+    throw std::runtime_error(
+        "silu_mul_fused: workgroup count exceeds 65535 (1D dispatch limit)");
+  }
+  add_dispatch({pipeline, bind_group, workgroup_count, "silu_mul_fused"});
+  const size_t dispatch_idx = num_dispatches() - 1;
+
+  wgpuShaderModuleRelease(shader);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuPipelineLayoutRelease(pipeline_layout);
+  own_uniform_buffer(uniform_buffer);
+
+  // Dynamic shapes: gate/up/out share dims, so out's live dims == gate's;
+  // recompute num_elements + dispatch from gate's live shape. Triggers on gate
+  // -- exactly the input the folded sigmoid's hook keyed on, so it is dirtied
+  // on every resize.
+  WGPUBuffer params_buf = uniform_buffer;
+  add_tensor_resize_hook(
+      gate_id, [gate_id, out_id, wg, dispatch_idx, params_buf](WebGPUGraph& g) {
+        const auto& d = g.cur_dims(gate_id);
+        g.set_cur_dims(out_id, d);
+        uint64_t numel = 1;
+        for (int64_t v : d) {
+          numel *= static_cast<uint64_t>(v);
+        }
+        SiluMulParams p = {static_cast<uint32_t>(numel), {0u, 0u, 0u}};
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            (static_cast<uint32_t>(numel) + wg - 1) / wg;
+      });
 }
 
 // M-gate coordinator: registered at the LAST triple op (all dispatch indices
