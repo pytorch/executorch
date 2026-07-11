@@ -919,7 +919,10 @@ class TestPasses(unittest.TestCase):
         sym_dim = x_node.meta["val"].shape[0]
         self.assertIsInstance(sym_dim, torch.SymInt)
 
-        from torch.utils._sympy.numbers import int_oo
+        try:
+            from torch.utils._sympy.numbers import int_oo
+        except ImportError:
+            self.skipTest("int_oo not available in this torch version")
         from torch.utils._sympy.value_ranges import bound_sympy
 
         raw_upper = bound_sympy(
