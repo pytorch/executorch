@@ -450,6 +450,43 @@ class WebGPUGraph {
   std::unordered_map<std::string, WGPUBindGroupLayout> bgl_cache_;
 
   size_t uniform_buffer_bytes_ = 0;
+
+  // QKV-concat fusion (WEBGPU_QKV_FUSE): one detected attention q/k/v linear
+  // triple sharing an input activation (value ids + shapes), fused in build()
+  // into a single multi-output q4gsw GEMM that scatter-writes q/k/v. Only used
+  // during build(); inert (never populated) when the env toggle is off.
+  struct QkvFusionGroup {
+    int input_id = -1;
+    int out_q = -1, out_k = -1, out_v = -1;
+    int weight_q = -1, weight_k = -1, weight_v = -1;
+    int scales_q = -1, scales_k = -1, scales_v = -1;
+    uint32_t Nq = 0, Nk = 0, Nv = 0; // 2048, 512, 512
+    uint32_t K = 0, K_packed = 0, group_size = 0, num_groups = 0;
+    uint32_t padded_N_q = 0, padded_N_k = 0, padded_N_v = 0;
+    unsigned op_idx[3] = {0, 0, 0}; // the 3 q/k/v linear op-chain indices
+    size_t sep_dispatch[3] = {
+        0,
+        0,
+        0}; // their dispatch indices (filled in build())
+    size_t fused_dispatch = 0; // the fused GEMM dispatch index
+    WGPUBuffer fused_params =
+        nullptr; // the fused params UBO (rewritten by the hook)
+  };
+  // Concat the 3 packed weights (row-stack) + scales (strided gather) into
+  // fused buffers, then record ONE fused-GEMM dispatch (bespoke 8-binding
+  // layout) that writes the 3 original q/k/v output buffers, plus a 3-output
+  // resize hook.
+  void add_qkv_fused_dispatch(QkvFusionGroup& g);
+  void add_qkv_fused_hook(const QkvFusionGroup& g);
+
+  // SwiGLU fusion (WEBGPU_SWIGLU_FUSE): emit ONE fused elementwise dispatch
+  // computing out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2
+  // muls. `out` is repointed to a private pooled buffer (aliasing guard);
+  // `gate` is likewise given a private pooled buffer at its producer op by the
+  // build() walk (the planner reuse-aliases up onto gate's slot, so up_proj
+  // would stomp gate before the fused reads it). Only used during build(); the
+  // detection maps are empty (inert) when the toggle is off.
+  void add_swiglu_fused_dispatch(int gate_id, int up_id, int out_id);
 };
 
 } // namespace executorch::backends::webgpu
