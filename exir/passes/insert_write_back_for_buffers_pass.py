@@ -177,7 +177,7 @@ def _insert_copy(
     if len(copies) > 1:
         mutated_aliases: Set[torch.fx.Node] = set()
         return_aliases: Set[torch.fx.Node] = set()
-        for i, (mutated_node, return_node) in enumerate(copies):
+        for mutated_node, return_node in copies:
             mutated_alias = _collect_aliases(mutated_node, node_order)
             return_alias = _collect_aliases(return_node, node_order)
             if mutated_alias & return_aliases or return_alias & mutated_aliases:
