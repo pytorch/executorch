@@ -918,6 +918,15 @@ class TestPasses(unittest.TestCase):
         )
         sym_dim = x_node.meta["val"].shape[0]
         self.assertIsInstance(sym_dim, torch.SymInt)
+
+        from torch.utils._sympy.numbers import int_oo
+        from torch.utils._sympy.value_ranges import bound_sympy
+
+        raw_upper = bound_sympy(
+            sym_dim.node.expr, sym_dim.node.shape_env.var_to_range
+        ).upper
+        self.assertIs(raw_upper, int_oo)
+
         self.assertEqual(eval_upper_bound(sym_dim), 4)
 
         et = edge.to_executorch()
