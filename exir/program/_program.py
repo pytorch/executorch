@@ -45,6 +45,7 @@ from executorch.exir.passes import (
     convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
+    LegalizePortableDimOrderPass,
     MemoryFormatOpsPass,
     OpReplacePass,
     remove_unused_parameters_pass,
@@ -405,12 +406,14 @@ class ExirExportedProgram:
         self,
         exported_program: ExportedProgram,
         after_to_edge_passes: bool,
+        compile_config: Optional[EdgeCompileConfig] = None,
     ):
         self.exported_program = exported_program
 
         # Add a flag to denote whehter to_edge is called on this program
         # to detect misusage of directly calling to_executorch without to_edge
         self.after_to_edge_passes = after_to_edge_passes
+        self.compile_config = compile_config or EdgeCompileConfig()
 
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
         self.exported_program = _transform(self.exported_program, *passes)
@@ -441,7 +444,9 @@ class ExirExportedProgram:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
         new_gm = self.exported_program.graph_module
-        for p in edge_to_executorch_passes(config):
+        for p in edge_to_executorch_passes(
+            config, edge_compile_config=self.compile_config
+        ):
             new_gm_res = p(new_gm)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
@@ -478,6 +483,7 @@ class ExirExportedProgram:
         new_eep = ExirExportedProgram(
             copy.deepcopy(self.exported_program, memo),
             self.after_to_edge_passes,
+            copy.deepcopy(self.compile_config, memo),
         )
         return new_eep
 
@@ -673,6 +679,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 ],
             ),
             False,
+            config,
         )
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
@@ -753,7 +760,9 @@ def pre_memory_planning_passes(
 
 
 def edge_to_executorch_passes(
-    config: ExecutorchBackendConfig, name: Optional[str] = None
+    config: ExecutorchBackendConfig,
+    name: Optional[str] = None,
+    edge_compile_config: Optional[EdgeCompileConfig] = None,
 ) -> List[PassType]:
     """
     Returns a list of passes to lower from edge to executorch.
@@ -766,6 +775,7 @@ def edge_to_executorch_passes(
     else:
         device_cfg = propagate_device_config
 
+    edge_compile_config = edge_compile_config or EdgeCompileConfig()
     passes: List[PassType] = [
         # ExecuTorch backend ops are unable to handle unbacked symints. So after
         # this pass, passes cannot be Interpreter-based, because it will fail if
@@ -780,6 +790,9 @@ def edge_to_executorch_passes(
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
     ] + pre_memory_planning_passes(config, name)
+
+    if not edge_compile_config._skip_dim_order:
+        passes.insert(len(config.passes), LegalizePortableDimOrderPass())
 
     return passes
 
@@ -1702,7 +1715,9 @@ class EdgeProgramManager:
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
-            for p in edge_to_executorch_passes(config, name):
+            for p in edge_to_executorch_passes(
+                config, name, edge_compile_config=self.compile_config
+            ):
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module
