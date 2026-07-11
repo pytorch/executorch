@@ -8,6 +8,7 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_qkv_fused_wgsl.h>
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <executorch/runtime/core/named_data_map.h>
@@ -16,6 +17,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
@@ -74,6 +76,20 @@ int normalize_dim(int dim, int rank, const char* op) {
   }
   return dim;
 }
+
+// Uniform layout matching the fused-QKV WGSL Params struct (16B-aligned, 32B);
+// identical to QuantizedLinear.cpp's Q4gswParams (kept local to this TU).
+struct QkvFusedParams {
+  uint32_t M;
+  uint32_t N;
+  uint32_t K;
+  uint32_t K_packed;
+  uint32_t group_size;
+  uint32_t padded_N;
+  uint32_t has_bias;
+  uint32_t _pad;
+};
+static_assert(sizeof(QkvFusedParams) == 32, "QkvFusedParams must be 32 bytes");
 
 } // namespace
 
@@ -685,6 +701,174 @@ void WebGPUGraph::build(
 
   // Phase 3: Build operator dispatch chain
   const auto* chain = graph->chain();
+
+  // QKV-concat fusion detection (WEBGPU_QKV_FUSE; default OFF -> both sets stay
+  // empty -> the Phase-3 loop below runs verbatim = byte-identical). Find each
+  // attention q/k/v triple: EXACTLY 3 et_vk.linear_q4gsw ops sharing args[0]
+  // (the same input activation), in chain order q,k,v with the N-pattern
+  // {2048,512,512}, on the steel route (K%16==0), group_size%16==0, no bias.
+  // The fused kernel needs shader-f16 + a 256-thread WG, so gate on those (else
+  // leave the triple to the normal per-linear handlers). qkv_fused_skip holds
+  // all 3 op indices; qkv_anchor maps the FIRST op index -> its group, so the
+  // fused dispatch is emitted IN-PLACE at the anchor (correct execution order).
+  std::vector<QkvFusionGroup> qkv_groups;
+  std::unordered_map<unsigned, size_t>
+      qkv_first; // first triple op -> group (repoint buffers)
+  std::unordered_map<unsigned, size_t>
+      qkv_last; // last triple op  -> group (emit fused)
+  std::unordered_map<unsigned, size_t>
+      qkv_member; // any triple op   -> group (record dispatch)
+  if (std::getenv("WEBGPU_QKV_FUSE") != nullptr && chain) {
+    bool device_ok = false;
+    {
+      WGPULimits limits = {};
+      const bool have =
+          wgpuDeviceGetLimits(device_, &limits) == WGPUStatus_Success;
+      bool f16 = false;
+      if (auto* ctx = get_default_webgpu_context()) {
+        f16 = ctx->shader_f16_supported;
+      }
+      device_ok =
+          have && f16 && limits.maxComputeInvocationsPerWorkgroup >= 256u;
+    }
+    if (device_ok) {
+      // Group linear_q4gsw op indices by input id, preserving chain order.
+      std::unordered_map<int, std::vector<unsigned>> by_input;
+      std::vector<int> input_order;
+      for (unsigned i = 0; i < chain->size(); i++) {
+        const auto* oc = chain->Get(i);
+        if (oc->name()->str() != "et_vk.linear_q4gsw.default") {
+          continue;
+        }
+        const auto* a = oc->args();
+        if (!a || a->size() < 6) {
+          continue;
+        }
+        const int inp = static_cast<int>(a->Get(0));
+        if (by_input.find(inp) == by_input.end()) {
+          input_order.push_back(inp);
+        }
+        by_input[inp].push_back(i);
+      }
+      auto op_arg = [&](unsigned oi, unsigned j) {
+        return static_cast<int>(chain->Get(oi)->args()->Get(j));
+      };
+      for (int inp : input_order) {
+        const auto& ops = by_input[inp];
+        if (ops.size() != 3) {
+          continue; // gate+up is a 2-group; o/down/lm_head are 1 each.
+        }
+        // args: [in, weight, scales, group_size, bias, out].
+        const int wq = op_arg(ops[0], 1), sqid = op_arg(ops[0], 2),
+                  bq = op_arg(ops[0], 4), oq = op_arg(ops[0], 5);
+        const int wk = op_arg(ops[1], 1), skid = op_arg(ops[1], 2),
+                  bk = op_arg(ops[1], 4), ok = op_arg(ops[1], 5);
+        const int wv = op_arg(ops[2], 1), svid = op_arg(ops[2], 2),
+                  bv = op_arg(ops[2], 4), ov = op_arg(ops[2], 5);
+        const int gsid = op_arg(ops[0], 3);
+        if (op_arg(ops[1], 3) != gsid || op_arg(ops[2], 3) != gsid) {
+          continue; // all 3 must share the group_size scalar.
+        }
+        if (get_value_type(bq) == ValueType::Tensor ||
+            get_value_type(bk) == ValueType::Tensor ||
+            get_value_type(bv) == ValueType::Tensor) {
+          continue; // fused kernel path assumes has_bias == 0.
+        }
+        const auto& twq = tensors_[wq];
+        const auto& twk = tensors_[wk];
+        const auto& twv = tensors_[wv];
+        if (twq.dims.size() != 2 || twk.dims.size() != 2 ||
+            twv.dims.size() != 2) {
+          continue;
+        }
+        const uint32_t Nq = static_cast<uint32_t>(twq.dims[0]);
+        const uint32_t Nk = static_cast<uint32_t>(twk.dims[0]);
+        const uint32_t Nv = static_cast<uint32_t>(twv.dims[0]);
+        if (Nq != 2048u || Nk != 512u || Nv != 512u) {
+          continue; // kernel hardcodes N_Q=2048, N_KV=512 (Llama-3.2 GQA).
+        }
+        const uint32_t K_packed = static_cast<uint32_t>(twq.dims[1]);
+        if (static_cast<uint32_t>(twk.dims[1]) != K_packed ||
+            static_cast<uint32_t>(twv.dims[1]) != K_packed) {
+          continue;
+        }
+        const auto& tin = tensors_[inp];
+        if (tin.dims.empty()) {
+          continue;
+        }
+        const uint32_t K = static_cast<uint32_t>(tin.dims.back());
+        if (K == 0 || K % 16u != 0u || K_packed != (K + 1u) / 2u) {
+          continue; // steel route stages a full BK=16 K-tile with no K-mask.
+        }
+        if (get_value_type(gsid) != ValueType::Int) {
+          continue;
+        }
+        const int64_t gsv = get_int(gsid);
+        if (gsv <= 0 || static_cast<uint32_t>(gsv) % 16u != 0u) {
+          continue; // hoisted scale must be constant across the BK tile.
+        }
+        const uint32_t gs = static_cast<uint32_t>(gsv);
+        const auto& tsq = tensors_[sqid];
+        const auto& tsk = tensors_[skid];
+        const auto& tsv = tensors_[svid];
+        if (tsq.dims.size() != 2 || tsk.dims.size() != 2 ||
+            tsv.dims.size() != 2) {
+          continue;
+        }
+        const uint32_t num_groups = static_cast<uint32_t>(tsq.dims[0]);
+        if (static_cast<uint32_t>(tsk.dims[0]) != num_groups ||
+            static_cast<uint32_t>(tsv.dims[0]) != num_groups) {
+          continue;
+        }
+        const uint32_t pNq = static_cast<uint32_t>(tsq.dims[1]);
+        const uint32_t pNk = static_cast<uint32_t>(tsk.dims[1]);
+        const uint32_t pNv = static_cast<uint32_t>(tsv.dims[1]);
+        if (pNq < Nq || pNk < Nk || pNv < Nv ||
+            num_groups < (K + gs - 1u) / gs) {
+          continue;
+        }
+        // All source + destination buffers must be live (Phase 1/2 allocated).
+        if (!twq.buffer || !twk.buffer || !twv.buffer || !tsq.buffer ||
+            !tsk.buffer || !tsv.buffer || !tin.buffer || !tensors_[oq].buffer ||
+            !tensors_[ok].buffer || !tensors_[ov].buffer) {
+          continue;
+        }
+
+        QkvFusionGroup grp;
+        grp.input_id = inp;
+        grp.out_q = oq;
+        grp.out_k = ok;
+        grp.out_v = ov;
+        grp.weight_q = wq;
+        grp.weight_k = wk;
+        grp.weight_v = wv;
+        grp.scales_q = sqid;
+        grp.scales_k = skid;
+        grp.scales_v = svid;
+        grp.Nq = Nq;
+        grp.Nk = Nk;
+        grp.Nv = Nv;
+        grp.K = K;
+        grp.K_packed = K_packed;
+        grp.group_size = gs;
+        grp.num_groups = num_groups;
+        grp.padded_N_q = pNq;
+        grp.padded_N_k = pNk;
+        grp.padded_N_v = pNv;
+        grp.op_idx[0] = ops[0];
+        grp.op_idx[1] = ops[1];
+        grp.op_idx[2] = ops[2];
+        const size_t gidx = qkv_groups.size();
+        qkv_groups.push_back(grp);
+        qkv_first[ops[0]] = gidx;
+        qkv_last[ops[2]] = gidx;
+        qkv_member[ops[0]] = gidx;
+        qkv_member[ops[1]] = gidx;
+        qkv_member[ops[2]] = gidx;
+      }
+    }
+  }
+
   if (chain) {
     for (unsigned i = 0; i < chain->size(); i++) {
       const auto* op_call = chain->Get(i);
@@ -702,7 +886,55 @@ void WebGPUGraph::build(
         }
       }
 
+      // QKV fusion (M-gated): keep the 3 separate q/k/v linears AND add a fused
+      // multi-output GEMM; the fused resize hook selects by LIVE M (prefill M>1
+      // -> fused runs, the 3 zeroed; decode M==1 -> the 3 coop4 GEMVs run,
+      // fused zeroed -- the fused 64x64 tile is ~4x slower than coop4 at M=1).
+      // At the FIRST triple op, repoint the 3 outputs to FRESH distinct
+      // buffers: the planner reuse-aliases q/k/v (each dies right after RoPE),
+      // which is fatal for a simultaneous fused write, so BOTH paths use
+      // non-aliased storage. All maps empty when the toggle is off (verbatim
+      // path).
+      {
+        auto fit = qkv_first.find(i);
+        if (fit != qkv_first.end()) {
+          const auto& g = qkv_groups[fit->second];
+          tensors_[g.out_q].buffer =
+              create_scratch_buffer(tensors_[g.out_q].nbytes);
+          tensors_[g.out_k].buffer =
+              create_scratch_buffer(tensors_[g.out_k].nbytes);
+          tensors_[g.out_v].buffer =
+              create_scratch_buffer(tensors_[g.out_v].nbytes);
+        }
+      }
+
       webgpu_operator_registry().get_op_fn(op_name)(*this, args);
+
+      {
+        auto mit = qkv_member.find(i);
+        if (mit != qkv_member.end()) {
+          QkvFusionGroup& g = qkv_groups[mit->second];
+          const size_t di = num_dispatches() - 1; // this linear's dispatch
+          if (i == g.op_idx[0]) {
+            g.sep_dispatch[0] = di;
+            // Emit the fused dispatch RIGHT AFTER the q-linear (the anchor) so
+            // at M>1 it writes q/k/v BEFORE any consumer. q/k/v may be
+            // interleaved with rope in the chain, so emitting it at the LAST
+            // triple op would let a consumer (rope-q) read still-unwritten
+            // fresh_q -> garbage.
+            add_qkv_fused_dispatch(g);
+          } else if (i == g.op_idx[1]) {
+            g.sep_dispatch[1] = di;
+          } else {
+            g.sep_dispatch[2] = di;
+          }
+        }
+        auto lit = qkv_last.find(i);
+        if (lit != qkv_last.end()) {
+          // All 3 sep dispatch indices + the fused index are now known.
+          add_qkv_fused_hook(qkv_groups[lit->second]);
+        }
+      }
     }
   }
 
@@ -804,6 +1036,270 @@ WGPUBindGroupLayout WebGPUGraph::get_or_create_bgl(
 
   bgl_cache_[key] = bgl;
   return bgl;
+}
+
+void WebGPUGraph::add_qkv_fused_dispatch(QkvFusionGroup& g) {
+  const uint32_t N = g.Nq + g.Nk + g.Nv; // fused output width (3072)
+
+  const auto& in = tensors_[g.input_id];
+  const auto& out_q = tensors_[g.out_q];
+  const auto& out_k = tensors_[g.out_k];
+  const auto& out_v = tensors_[g.out_v];
+  const auto& wq = tensors_[g.weight_q];
+  const auto& wk = tensors_[g.weight_k];
+  const auto& wv = tensors_[g.weight_v];
+  const auto& sq = tensors_[g.scales_q];
+  const auto& sk = tensors_[g.scales_k];
+  const auto& sv = tensors_[g.scales_v];
+
+  // Buffers were repointed to FRESH distinct slots at the first triple op (see
+  // the build() op-walk), so out_q/k/v no longer alias. Live M from the shared
+  // input.
+  uint64_t in_numel = 1;
+  for (int64_t d : in.dims) {
+    in_numel *= static_cast<uint64_t>(d);
+  }
+  const uint32_t M = static_cast<uint32_t>(in_numel / g.K);
+
+  // Fused weight [N, K_packed]: a byte-contiguous row-stack of Wq;Wk;Wv (q4gsw
+  // packs each output row independently along a shared K_packed, so stacking
+  // along N is a flat append -- bit-exact). Fused scales [num_groups, N]: a
+  // strided PER-GROUP-ROW gather (dest row stride N != the per-linear source
+  // strides padded_N_{q,k,v}), NOT a flat append. Both dtor-freed via scratch.
+  const uint64_t kp = static_cast<uint64_t>(g.K_packed); // packed bytes / row
+  const uint64_t fs = sizeof(float);
+  WGPUBuffer fused_weight = create_scratch_buffer(static_cast<size_t>(N) * kp);
+  WGPUBuffer fused_scales = create_scratch_buffer(
+      static_cast<size_t>(g.num_groups) * N * sizeof(float));
+
+  // Sources are direct constants materialized in Phase 1 (or prepack outputs
+  // materialized earlier in Phase 3); all writes are already enqueued on
+  // queue_, so this build-time copy sees the materialized bytes.
+  WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(device_, nullptr);
+  wgpuCommandEncoderCopyBufferToBuffer(
+      enc, wq.buffer, 0, fused_weight, 0, static_cast<uint64_t>(g.Nq) * kp);
+  wgpuCommandEncoderCopyBufferToBuffer(
+      enc,
+      wk.buffer,
+      0,
+      fused_weight,
+      static_cast<uint64_t>(g.Nq) * kp,
+      static_cast<uint64_t>(g.Nk) * kp);
+  wgpuCommandEncoderCopyBufferToBuffer(
+      enc,
+      wv.buffer,
+      0,
+      fused_weight,
+      static_cast<uint64_t>(g.Nq + g.Nk) * kp,
+      static_cast<uint64_t>(g.Nv) * kp);
+  for (uint32_t grp = 0; grp < g.num_groups; grp++) {
+    const uint64_t dst_row = static_cast<uint64_t>(grp) * N * fs;
+    wgpuCommandEncoderCopyBufferToBuffer(
+        enc,
+        sq.buffer,
+        static_cast<uint64_t>(grp) * g.padded_N_q * fs,
+        fused_scales,
+        dst_row,
+        static_cast<uint64_t>(g.Nq) * fs);
+    wgpuCommandEncoderCopyBufferToBuffer(
+        enc,
+        sk.buffer,
+        static_cast<uint64_t>(grp) * g.padded_N_k * fs,
+        fused_scales,
+        dst_row + static_cast<uint64_t>(g.Nq) * fs,
+        static_cast<uint64_t>(g.Nk) * fs);
+    wgpuCommandEncoderCopyBufferToBuffer(
+        enc,
+        sv.buffer,
+        static_cast<uint64_t>(grp) * g.padded_N_v * fs,
+        fused_scales,
+        dst_row + static_cast<uint64_t>(g.Nq + g.Nk) * fs,
+        static_cast<uint64_t>(g.Nv) * fs);
+  }
+  WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(enc, nullptr);
+  wgpuQueueSubmit(queue_, 1, &cmd);
+  wgpuCommandBufferRelease(cmd);
+  wgpuCommandEncoderRelease(enc);
+
+  // Params UBO (owned; rewritten by the resize hook). padded_N == N (fused
+  // scales row stride); has_bias == 0 (attention q/k/v are bias-less).
+  QkvFusedParams params = {};
+  params.M = M;
+  params.N = N;
+  params.K = g.K;
+  params.K_packed = g.K_packed;
+  params.group_size = g.group_size;
+  params.padded_N = N;
+  params.has_bias = 0;
+  WGPUBufferDescriptor u_desc = {};
+  u_desc.size = sizeof(QkvFusedParams);
+  u_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  u_desc.mappedAtCreation = true;
+  WGPUBuffer uniform_buffer = wgpuDeviceCreateBuffer(device_, &u_desc);
+  std::memcpy(
+      wgpuBufferGetMappedRange(uniform_buffer, 0, sizeof(QkvFusedParams)),
+      &params,
+      sizeof(QkvFusedParams));
+  wgpuBufferUnmap(uniform_buffer);
+  add_uniform_buffer_bytes(sizeof(QkvFusedParams));
+
+  // 4-byte dummy for the fixed bias binding (has_bias == 0).
+  WGPUBuffer bias_dummy = create_scratch_buffer(4);
+
+  // Bespoke 8-binding layout: 3 rw-storage outputs + 4 ro-storage + 1 uniform.
+  // One-off shader/bgl/pipeline owned by the dispatch (matches
+  // q4gsw_linear_impl).
+  WGPUBindGroupLayoutEntry entries[8] = {};
+  for (uint32_t i = 0; i < 3; i++) {
+    entries[i].binding = i;
+    entries[i].visibility = WGPUShaderStage_Compute;
+    entries[i].buffer.type = WGPUBufferBindingType_Storage;
+  }
+  for (uint32_t i = 3; i < 7; i++) {
+    entries[i].binding = i;
+    entries[i].visibility = WGPUShaderStage_Compute;
+    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+  }
+  entries[7].binding = 7;
+  entries[7].visibility = WGPUShaderStage_Compute;
+  entries[7].buffer.type = WGPUBufferBindingType_Uniform;
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 8;
+  bgl_desc.entries = entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device_, &bgl_desc);
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kQ4gswLinearGemmQkvFusedWGSL, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device_, &shader_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pipeline_layout =
+      wgpuDeviceCreatePipelineLayout(device_, &pl_desc);
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = pipeline_layout;
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device_, &pipeline_desc);
+
+  WGPUBindGroupEntry bg[8] = {};
+  bg[0].binding = 0;
+  bg[0].buffer = out_q.buffer;
+  bg[0].size = out_q.nbytes;
+  bg[1].binding = 1;
+  bg[1].buffer = out_k.buffer;
+  bg[1].size = out_k.nbytes;
+  bg[2].binding = 2;
+  bg[2].buffer = out_v.buffer;
+  bg[2].size = out_v.nbytes;
+  bg[3].binding = 3;
+  bg[3].buffer = in.buffer;
+  bg[3].size = in.nbytes;
+  bg[4].binding = 4;
+  bg[4].buffer = fused_weight;
+  bg[4].size = static_cast<uint64_t>(N) * kp;
+  bg[5].binding = 5;
+  bg[5].buffer = fused_scales;
+  bg[5].size = static_cast<uint64_t>(g.num_groups) * N * fs;
+  bg[6].binding = 6;
+  bg[6].buffer = bias_dummy;
+  bg[6].size = 4;
+  bg[7].binding = 7;
+  bg[7].buffer = uniform_buffer;
+  bg[7].size = sizeof(QkvFusedParams);
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 8;
+  bg_desc.entries = bg;
+  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device_, &bg_desc);
+
+  // 1D dispatch over ceil(M/BM) * ceil(N/BN) tiles (BM=BN=64), matching the
+  // kernel's nbN = ceil(N/64) tile decode (NOT grid-strided).
+  const uint32_t nbN = (N + 63u) / 64u;
+  const uint32_t nbM = (M + 63u) / 64u;
+  const size_t fused_idx =
+      add_dispatch({pipeline, bind_group, nbN * nbM, "linear_q4gsw_qkv_fused"});
+  wgpuShaderModuleRelease(shader);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuPipelineLayoutRelease(pipeline_layout);
+  own_uniform_buffer(uniform_buffer);
+  g.fused_dispatch = fused_idx; // consumed by add_qkv_fused_hook at the last op
+  g.fused_params = uniform_buffer;
+}
+
+// M-gate coordinator: registered at the LAST triple op (all dispatch indices
+// known). Prefill (M>1): run the fused GEMM, zero the 3 separate linears.
+// Decode (M==1): zero the fused, leave the 3 coop4 GEMVs (their own hooks set
+// the decode wg) -- the fused 64x64 tile wastes 63/64 rows at M=1. Recomputes
+// live M + the 3 output cur_dims + fused params. Inert on a static graph; a
+// workgroup_count of 0 = no-op.
+void WebGPUGraph::add_qkv_fused_hook(const QkvFusionGroup& g) {
+  const int input_id = g.input_id, out_q_id = g.out_q, out_k_id = g.out_k,
+            out_v_id = g.out_v;
+  const uint32_t K = g.K, Kp = g.K_packed, gs = g.group_size, Nq = g.Nq,
+                 Nk = g.Nk, Nv = g.Nv, Nf = g.Nq + g.Nk + g.Nv;
+  const size_t fused_idx = g.fused_dispatch, sep0 = g.sep_dispatch[0],
+               sep1 = g.sep_dispatch[1], sep2 = g.sep_dispatch[2];
+  WGPUBuffer params_buf = g.fused_params;
+  add_tensor_resize_hook(
+      input_id,
+      [input_id,
+       out_q_id,
+       out_k_id,
+       out_v_id,
+       K,
+       Kp,
+       gs,
+       Nq,
+       Nk,
+       Nv,
+       Nf,
+       fused_idx,
+       sep0,
+       sep1,
+       sep2,
+       params_buf](WebGPUGraph& gr) {
+        const auto& d = gr.cur_dims(input_id);
+        uint64_t numel = 1;
+        for (int64_t v : d) {
+          numel *= static_cast<uint64_t>(v);
+        }
+        const uint32_t m = static_cast<uint32_t>(numel / K);
+        std::vector<int64_t> oq = d;
+        oq.back() = static_cast<int64_t>(Nq);
+        std::vector<int64_t> ok = d;
+        ok.back() = static_cast<int64_t>(Nk);
+        std::vector<int64_t> ov = d;
+        ov.back() = static_cast<int64_t>(Nv);
+        gr.set_cur_dims(out_q_id, oq);
+        gr.set_cur_dims(out_k_id, ok);
+        gr.set_cur_dims(out_v_id, ov);
+        QkvFusedParams p = {};
+        p.M = m;
+        p.N = Nf;
+        p.K = K;
+        p.K_packed = Kp;
+        p.group_size = gs;
+        p.padded_N = Nf;
+        p.has_bias = 0;
+        wgpuQueueWriteBuffer(gr.queue(), params_buf, 0, &p, sizeof(p));
+        if (m > 1u) {
+          const uint32_t nbN2 = (Nf + 63u) / 64u;
+          const uint32_t nbM2 = (m + 63u) / 64u;
+          gr.dispatch_at(fused_idx).workgroup_count_x = nbN2 * nbM2;
+          gr.dispatch_at(sep0).workgroup_count_x = 0u;
+          gr.dispatch_at(sep1).workgroup_count_x = 0u;
+          gr.dispatch_at(sep2).workgroup_count_x = 0u;
+        } else {
+          gr.dispatch_at(fused_idx).workgroup_count_x = 0u;
+        }
+      });
 }
 
 void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
