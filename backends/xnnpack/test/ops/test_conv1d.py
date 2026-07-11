@@ -187,9 +187,16 @@ class TestConv1d(unittest.TestCase):
         for kernel_size, dilation in configs:
             with self.subTest(kernel_size=kernel_size, dilation=dilation):
                 (
-                    Tester(self.Conv1dSamePadding(kernel_size=kernel_size, dilation=dilation), inputs)
+                    Tester(
+                        self.Conv1dSamePadding(
+                            kernel_size=kernel_size, dilation=dilation
+                        ),
+                        inputs,
+                    )
                     .quantize(
-                        Quantize(calibration_samples=self._get_calibration_samples(inputs))
+                        Quantize(
+                            calibration_samples=self._get_calibration_samples(inputs)
+                        )
                     )
                     .export()
                     .check_count({"torch.ops.aten.conv1d.padding": 1})

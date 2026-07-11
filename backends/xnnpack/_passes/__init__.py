@@ -19,7 +19,6 @@ from executorch.backends.xnnpack._passes.conv1d_unsqueeze_pass import (
     Conv1dUnsqueezePass,
 )
 from executorch.backends.xnnpack._passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack._passes.insert_pad_qdq import InsertPadQDQPass
 from executorch.backends.xnnpack._passes.convert_to_sdpa import ConvertToSDPAPass
 from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
     ConvertToUpsampleBilinear2d,
@@ -28,6 +27,7 @@ from executorch.backends.xnnpack._passes.decompose_batch_norm import DecomposeBa
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
+from executorch.backends.xnnpack._passes.insert_pad_qdq import InsertPadQDQPass
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack._passes.propagate_custom_meta_pass import (
     PropagateCustomMetaPass,

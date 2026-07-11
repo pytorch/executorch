@@ -10,6 +10,7 @@ import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
+    is_quant,
     tag_as_implicit_q_dq,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -21,6 +22,8 @@ class InsertPadQDQPass(XNNPACKPass):
     Inserts implicit quantize/dequantize pairs after constant_pad_nd nodes
     that sit in a quantized context (input is a dequantize node), so the pad
     can be serialized as a quantized static pad op.
+
+    Skips pads whose output is already quantized (idempotent).
 
     Without this pass, a zero-valued constant_pad_nd between a dequantize and
     a convolution would serialize as fp32 while the conv expects quantized
@@ -37,9 +40,7 @@ class InsertPadQDQPass(XNNPACKPass):
                 continue
 
             pad_input = node.args[0]
-            if not (
-                isinstance(pad_input, torch.fx.Node) and is_dequant(pad_input)
-            ):
+            if not (isinstance(pad_input, torch.fx.Node) and is_dequant(pad_input)):
                 continue
 
             pad_value = cast(float, node.args[2]) if len(node.args) > 2 else 0.0
@@ -48,6 +49,9 @@ class InsertPadQDQPass(XNNPACKPass):
 
             pad_amounts = cast(List[int], node.args[1])
             if any(p < 0 for p in pad_amounts):
+                continue
+
+            if any(is_quant(user) for user in node.users):
                 continue
 
             q_params = pad_input.args[1:]

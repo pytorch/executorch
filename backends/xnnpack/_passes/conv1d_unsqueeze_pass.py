@@ -159,9 +159,8 @@ class Conv1dUnsqueezePass(XNNPACKPass):
 
                     # c. Add unsqueeze to input (3d -> 4d) and squeeze to output (4d -> 3d)
                     # unsqueeze -> conv2d -> squeeze
-                    input_node = node.args[0]
-
                     with graph.inserting_before(node):
+                        input_node = node.args[0]
                         unsqueeze_before = self.create_node(
                             graph, exir_ops.edge.aten.unsqueeze_copy.default
                         )
