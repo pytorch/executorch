@@ -259,7 +259,14 @@ inline void event_tracer_log_evalue(EventTracer* event_tracer, EValue& evalue) {
   if (event_tracer) {
     if (event_tracer->event_tracer_debug_level() >=
         EventTracerDebugLogLevel::kIntermediateOutputs) {
-      event_tracer->log_evalue(evalue, LoggedEValueType::kIntermediateOutput);
+      auto log_result = event_tracer->log_evalue(
+          evalue, LoggedEValueType::kIntermediateOutput);
+      if (!log_result.ok()) {
+        ET_LOG(
+            Error,
+            "Failed to log intermediate evalue: %s",
+            to_string(log_result.error()));
+      }
     }
   }
 #else //! ET_EVENT_TRACER_ENABLED
@@ -280,7 +287,14 @@ inline void event_tracer_log_evalue_output(
   if (event_tracer) {
     if (event_tracer->event_tracer_debug_level() >=
         EventTracerDebugLogLevel::kProgramOutputs) {
-      event_tracer->log_evalue(evalue, LoggedEValueType::kProgramOutput);
+      auto log_result = event_tracer->log_evalue(
+          evalue, LoggedEValueType::kProgramOutput);
+      if (!log_result.ok()) {
+        ET_LOG(
+            Error,
+            "Failed to log program output evalue: %s",
+            to_string(log_result.error()));
+      }
     }
   }
 #else //! ET_EVENT_TRACER_ENABLED
