@@ -67,7 +67,7 @@ def eval_upper_bound(maybe_symint: Union[int, torch.SymInt]) -> int:
         if hint is not None:
             return hint
         raise RuntimeError(
-            "Cannot evaluate a finite upper bound for symbolic expression "
+            f"Cannot evaluate a finite upper bound for symbolic expression {expr} "
             "(int_oo) and no trace hint is available."
         )
     else:
