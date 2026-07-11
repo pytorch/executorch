@@ -13,10 +13,10 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: dd771b9ab096410f3ad0d9259bef7816e41330a434325ea28baa5abbfb2841d2
+// wgsl-sha256: cb4afee4d4486ffaefee969aa8f13828d57df029b951dc2996d84fa024514820
 inline constexpr const char* kQ4gswLinearGemmSteelWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
-@group(0) @binding(1) var<storage, read> t_input: array<f32>;
+@group(0) @binding(1) var<storage, read> t_input: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> t_weight: array<u32>;
 @group(0) @binding(3) var<storage, read> t_scales: array<f32>;
 @group(0) @binding(4) var<storage, read> t_bias: array<f32>;
@@ -76,10 +76,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let arow = row0 + ar;
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
-      As[ar * BK + ac + 0u] = f32(t_input[base]);
-      As[ar * BK + ac + 1u] = f32(t_input[base + 1u]);
-      As[ar * BK + ac + 2u] = f32(t_input[base + 2u]);
-      As[ar * BK + ac + 3u] = f32(t_input[base + 3u]);
+      // vec4<f32> coalesced load; base is 4-aligned on the steel route (K%16==0, ac/k0 multiples of 4).
+      let av = t_input[base >> 2u];
+      As[ar * BK + ac + 0u] = f32(av.x);
+      As[ar * BK + ac + 1u] = f32(av.y);
+      As[ar * BK + ac + 2u] = f32(av.z);
+      As[ar * BK + ac + 3u] = f32(av.w);
     } else {
       As[ar * BK + ac + 0u] = 0.0; As[ar * BK + ac + 1u] = 0.0;
       As[ar * BK + ac + 2u] = 0.0; As[ar * BK + ac + 3u] = 0.0;
