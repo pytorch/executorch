@@ -1095,7 +1095,7 @@ void WebGPUGraph::build(
       // At the FIRST triple op, repoint the 3 outputs to FRESH distinct
       // buffers: the planner reuse-aliases q/k/v (each dies right after RoPE),
       // which is fatal for a simultaneous fused write, so BOTH paths use
-      // non-aliased storage. All maps empty when the toggle is off (verbatim
+      // non-aliased storage. All maps empty when no triple matches (verbatim
       // path).
       {
         auto fit = qkv_first.find(i);
