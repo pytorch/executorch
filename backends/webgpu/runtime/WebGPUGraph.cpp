@@ -702,15 +702,16 @@ void WebGPUGraph::build(
   // Phase 3: Build operator dispatch chain
   const auto* chain = graph->chain();
 
-  // QKV-concat fusion detection (WEBGPU_QKV_FUSE; default OFF -> both sets stay
-  // empty -> the Phase-3 loop below runs verbatim = byte-identical). Find each
-  // attention q/k/v triple: EXACTLY 3 et_vk.linear_q4gsw ops sharing args[0]
-  // (the same input activation), in chain order q,k,v with the N-pattern
-  // {2048,512,512}, on the steel route (K%16==0), group_size%16==0, no bias.
-  // The fused kernel needs shader-f16 + a 256-thread WG, so gate on those (else
-  // leave the triple to the normal per-linear handlers). qkv_fused_skip holds
-  // all 3 op indices; qkv_anchor maps the FIRST op index -> its group, so the
-  // fused dispatch is emitted IN-PLACE at the anchor (correct execution order).
+  // QKV-concat fusion detection (auto-applied graph pass, no flag): the maps
+  // stay empty when no q/k/v triple matches -> the Phase-3 loop below runs
+  // verbatim. Find each attention q/k/v triple: EXACTLY 3 et_vk.linear_q4gsw
+  // ops sharing args[0] (the same input activation), in chain order q,k,v with
+  // the N-pattern {2048,512,512}, on the steel route (K%16==0),
+  // group_size%16==0, no bias. The fused kernel needs shader-f16 + a 256-thread
+  // WG, so gate on those (else leave the triple to the normal per-linear
+  // handlers). qkv_fused_skip holds all 3 op indices; qkv_anchor maps the FIRST
+  // op index -> its group, so the fused dispatch is emitted IN-PLACE at the
+  // anchor (correct execution order).
   std::vector<QkvFusionGroup> qkv_groups;
   std::unordered_map<unsigned, size_t>
       qkv_first; // first triple op -> group (repoint buffers)
@@ -718,7 +719,7 @@ void WebGPUGraph::build(
       qkv_last; // last triple op  -> group (emit fused)
   std::unordered_map<unsigned, size_t>
       qkv_member; // any triple op   -> group (record dispatch)
-  if (std::getenv("WEBGPU_QKV_FUSE") != nullptr && chain) {
+  if (chain) {
     bool device_ok = false;
     {
       WGPULimits limits = {};
