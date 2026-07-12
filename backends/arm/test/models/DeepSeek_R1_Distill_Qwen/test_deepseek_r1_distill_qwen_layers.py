@@ -15,6 +15,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.DeepSeek_R1_Distill_Qwen.deepseek_r1_distill_qwen_test_config import (
     get_deepseek_r1_distill_qwen_1_5b_checkpoint_config,
 )
+from executorch.backends.arm.test.models.model_test_utils import to_bfloat16
 from executorch.backends.arm.test.ops.mxfp.common import MXFPTosaPipelineFP
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
@@ -72,19 +73,6 @@ class DeepSeekR1DistillQwenTestModule(torch.nn.Module):
     @classmethod
     def prepare_model_and_inputs(cls):
         raise NotImplementedError
-
-
-def _to_bfloat16(
-    model: torch.nn.Module, inputs: input_t
-) -> tuple[torch.nn.Module, input_t]:
-    return model.to(torch.bfloat16), tuple(
-        (
-            x.to(torch.bfloat16)
-            if isinstance(x, torch.Tensor) and x.is_floating_point()
-            else x
-        )
-        for x in inputs
-    )
 
 
 def _is_linear(module: torch.nn.Module, _fqn: str) -> bool:
@@ -401,7 +389,7 @@ def test_deepseek_r1_distill_qwen_tosa_FP_bf16_xlarge(
     test_case: DeepSeekR1DistillQwenTestCase,
 ):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
+    model, inputs = to_bfloat16(model, inputs)
     with torch.no_grad():
         pipeline = TosaPipelineFP[input_t](
             model,
@@ -424,7 +412,7 @@ def test_deepseek_r1_distill_qwen_tosa_FP_bf16(
     test_case: DeepSeekR1DistillQwenTestCase,
 ):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
+    model, inputs = to_bfloat16(model, inputs)
     with torch.no_grad():
         pipeline = TosaPipelineFP[input_t](
             model,
@@ -475,7 +463,7 @@ def test_deepseek_r1_distill_qwen_tosa_mxfp8_bf16(
     test_case: DeepSeekR1DistillQwenTestCase,
 ):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
+    model, inputs = to_bfloat16(model, inputs)
     mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
 
     with torch.no_grad():
@@ -552,7 +540,7 @@ def test_deepseek_r1_distill_qwen_vgf_no_quant_bf16(
     test_case: DeepSeekR1DistillQwenTestCase,
 ):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
+    model, inputs = to_bfloat16(model, inputs)
     with torch.no_grad():
         pipeline = VgfPipeline[input_t](
             model,
@@ -578,7 +566,7 @@ def test_deepseek_r1_distill_qwen_vgf_no_quant_bf16_xlarge(
     test_case: DeepSeekR1DistillQwenTestCase,
 ):
     model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
+    model, inputs = to_bfloat16(model, inputs)
     with torch.no_grad():
         pipeline = VgfPipeline[input_t](
             model,
