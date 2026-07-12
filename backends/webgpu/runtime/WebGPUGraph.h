@@ -451,10 +451,10 @@ class WebGPUGraph {
 
   size_t uniform_buffer_bytes_ = 0;
 
-  // QKV-concat fusion (WEBGPU_QKV_FUSE): one detected attention q/k/v linear
+  // QKV-concat fusion: one detected attention q/k/v linear
   // triple sharing an input activation (value ids + shapes), fused in build()
   // into a single multi-output q4gsw GEMM that scatter-writes q/k/v. Only used
-  // during build(); inert (never populated) when the env toggle is off.
+  // during build(); inert (never populated) when no q/k/v triple matches.
   struct QkvFusionGroup {
     int input_id = -1;
     int out_q = -1, out_k = -1, out_v = -1;
@@ -478,7 +478,6 @@ class WebGPUGraph {
   // resize hook.
   void add_qkv_fused_dispatch(QkvFusionGroup& g);
   void add_qkv_fused_hook(const QkvFusionGroup& g);
-
 };
 
 } // namespace executorch::backends::webgpu
