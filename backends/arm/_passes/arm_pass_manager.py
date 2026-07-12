@@ -58,6 +58,7 @@ from executorch.backends.arm._passes import (
     DecomposeEmbeddingPass,
     DecomposeErfinvPass,
     DecomposeExpm1Pass,
+    DecomposeFlipPass,
     DecomposeFloorDividePass,
     DecomposeGeluPass,
     DecomposeGluPass,
@@ -112,6 +113,7 @@ from executorch.backends.arm._passes import (
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
+    FuseIdenticalInputTransformsPass,
     FuseQuantizedActivationPass,
     FuseViewCopyTransformPass,
     InsertConstShapesPass,
@@ -147,6 +149,7 @@ from executorch.backends.arm._passes import (
     RewriteLeLtToGeGtPass,
     RewriteMatmulPass,
     RewriteMaxPool2dPass,
+    RewriteMXFPConv2dPass,
     RewriteMXFPLinearPass,
     RewritePadPass,
     RewriteSlicePass,
@@ -499,6 +502,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
                 # Ticket: MLETORCH-1539
+                FuseIdenticalInputTransformsPass(),
                 DecomposeLinearPass(),
                 InsertRescaleInt32Pass(),
                 FuseConsecutiveRescalesPass(),
@@ -535,6 +539,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 PromoteBoolOperandsPass(),
                 DecomposeSinhPass(),
                 DecomposeSignPass(),
+                DecomposeFlipPass(),
                 DecomposeFloorDividePass(),
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
@@ -542,6 +547,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeUnfoldToGatherPass(),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
+                CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeStridedSliceCopyPass(),
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
@@ -612,18 +618,18 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMaxPool2dPass(),
                 DecomposeAdaptiveMaxPool2dPass(),
                 RewriteConvPass(exported_program),
+                RewriteMXFPConv2dPass(exported_program),
                 RewriteMXFPLinearPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseTosaOps(),
+                RemovePermutesAroundElementwiseTosaOps(exported_program),
                 CanonicalizeViewCopyPermutePass(),
                 FuseCascadedTransposeOrPermuteOps(),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 InsertConstShapesPass(),
-                ExirToTosaPass(exported_program),
             ]
         )
 
@@ -632,6 +638,7 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                ExirToTosaPass(exported_program),
                 SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
                 FuseConsecutiveConcatShapesPass(),

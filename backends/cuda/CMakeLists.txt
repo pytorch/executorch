@@ -114,6 +114,7 @@ if(CMAKE_CUDA_COMPILER)
     _aoti_cuda_shim_sources
     runtime/shims/int4mm.cu
     runtime/shims/int4_plain_mm.cu
+    runtime/shims/int5_plain_mm.cu
     runtime/shims/int6_plain_mm.cu
     runtime/shims/int8_plain_mm.cu
     runtime/shims/sort.cu
@@ -160,7 +161,7 @@ endif()
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
     aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart CUDA::curand
-                            ${CMAKE_DL_LIBS}
+                            extension_cuda ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -169,8 +170,13 @@ else()
   target_link_libraries(
     aoti_cuda_shims
     PRIVATE cuda_platform
-    PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
+    PUBLIC -Wl,--whole-archive
+           aoti_common_shims_slim
+           -Wl,--no-whole-archive
+           CUDA::cudart
+           CUDA::curand
+           extension_cuda
+           ${CMAKE_DL_LIBS}
   )
 endif()
 
@@ -242,6 +248,12 @@ install(
 
 if(BUILD_TESTING)
   include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+  et_cxx_test(
+    test_cuda_allocator SOURCES runtime/test/test_cuda_allocator.cpp EXTRA_LIBS
+    aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_allocator PRIVATE CUDA_AVAILABLE=1)
 
   et_cxx_test(
     test_cuda_mutable_state SOURCES runtime/test/test_cuda_mutable_state.cpp

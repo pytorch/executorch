@@ -45,6 +45,10 @@ DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 DISPATCH_ORDER_OK=1
 UPDATE_CACHE_DIR="/tmp/update_cache"
 UPDATE_CACHE_OK=1
+INDEX_DIR="/tmp/index"
+INDEX_OK=1
+DYNAMIC_SHAPE_DIR="/tmp/dynamic_shape"
+DYNAMIC_SHAPE_OK=1
 EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
 EMBEDDING_INDICES="/tmp/webgpu_embedding_q4gsw_indices.bin"
 EMBEDDING_GOLDEN="/tmp/webgpu_embedding_q4gsw_golden.bin"
@@ -65,36 +69,36 @@ PREPACK_TIED_MODEL="/tmp/webgpu_prepack_tied_const.pte"
 PREPACK_TIED_GOLDEN="/tmp/webgpu_prepack_tied_const_golden.bin"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import export_all_quantized_linear_models
+from executorch.backends.webgpu.test.ops.test_quantized_linear import export_all_quantized_linear_models
 export_all_quantized_linear_models('/tmp')
 " || echo "WARN: q4gsw export failed; required configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import export_embedding_q4gsw_model
+from executorch.backends.webgpu.test.ops.test_embedding_q4gsw import export_embedding_q4gsw_model
 export_embedding_q4gsw_model('${EMBEDDING_MODEL}', '${EMBEDDING_GOLDEN}', '${EMBEDDING_INDICES}')
 export_embedding_q4gsw_model('${EMBEDDING_LLAMA1B_MODEL}', '${EMBEDDING_LLAMA1B_GOLDEN}', '${EMBEDDING_LLAMA1B_INDICES}', 'llama1b')
 " || echo "WARN: embedding_q4gsw export failed; embedding configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.rope.test_rope import export_rope_model
+from executorch.backends.webgpu.test.ops.test_rope import export_rope_model
 export_rope_model('${ROPE_MODEL}', '${ROPE_XQ_GOLDEN}', '${ROPE_XK_GOLDEN}')
 export_rope_model('${ROPE_DECODE_MODEL}', '${ROPE_DECODE_XQ_GOLDEN}', '${ROPE_DECODE_XK_GOLDEN}', 'decode')
 " || echo "WARN: rope export failed; apply_rotary_emb configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.prepack.test_prepack import export_prepack_model, export_prepack_two_const_model, export_prepack_tied_const_model
+from executorch.backends.webgpu.test.ops.test_prepack import export_prepack_model, export_prepack_two_const_model, export_prepack_tied_const_model
 export_prepack_model('${PREPACK_MODEL}', '${PREPACK_GOLDEN}')
 export_prepack_two_const_model('${PREPACK2_MODEL}', '${PREPACK2_GOLDEN}')
 export_prepack_tied_const_model('${PREPACK_TIED_MODEL}', '${PREPACK_TIED_GOLDEN}')
 " || echo "WARN: prepack export failed; prepack configs will FAIL in webgpu_native_test"
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
+from executorch.backends.webgpu.test.ops.test_dispatch_order import export_dispatch_order_cases
 export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 " || { echo "WARN: dispatch_order export failed; skipping dispatch_order native test"; DISPATCH_ORDER_OK=0; }
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_update_cache import (
+from executorch.backends.webgpu.test.ops.test_update_cache import (
     export_update_cache_cases,
     export_update_cache_replay,
     export_update_cache_negative,
@@ -104,10 +108,20 @@ export_update_cache_replay('${UPDATE_CACHE_DIR}')
 export_update_cache_negative('${UPDATE_CACHE_DIR}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
 
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.index.test_index import export_all_index_models
+export_all_index_models('${INDEX_DIR}')
+" || { echo "WARN: index export failed; skipping index native test"; INDEX_OK=0; }
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.dynamic_shape.test_dynamic_shape_export import export_dynamic_shape_cases
+export_dynamic_shape_cases('${DYNAMIC_SHAPE_DIR}')
+" || { echo "WARN: dynamic_shape export failed; skipping dynamic_shape native test"; DYNAMIC_SHAPE_OK=0; }
+
 # Non-fatal: a failed sdpa export makes the required 4k/8k configs hard-fail in
 # webgpu_native_test below (precise per-config error), so don't exit/mask here.
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import (
+from executorch.backends.webgpu.test.ops.test_sdpa import (
     export_all_sdpa_models,
     export_replay_sequences,
     export_dynamic_decode,
@@ -125,6 +139,7 @@ rm -rf "${BUILD_DIR}"
 cmake \
     -DEXECUTORCH_BUILD_WEBGPU=ON \
     -DEXECUTORCH_BUILD_WEBGPU_TEST=ON \
+    -DEXECUTORCH_BUILD_TESTS=ON \
     -DDawn_DIR="${Dawn_DIR}" \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
@@ -136,7 +151,7 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 # ── Build + run every native test target that exists in this tree ────────────
-TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test)
+TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_index_test webgpu_dynamic_shape_test webgpu_dispatch_2d_test)
 BIN_DIR="${BUILD_DIR}/backends/webgpu"
 
 # Which targets are defined depends on which diffs are landed (native_test +
@@ -201,7 +216,15 @@ fi
 if [[ "${DISPATCH_ORDER_OK}" == "1" && -x "${BIN_DIR}/webgpu_dispatch_order_test" ]]; then
   "${BIN_DIR}/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
 fi
+if [[ "${INDEX_OK}" == "1" && -x "${BIN_DIR}/webgpu_index_test" ]]; then
+  "${BIN_DIR}/webgpu_index_test" "${INDEX_DIR}"
+fi
+if [[ "${DYNAMIC_SHAPE_OK}" == "1" && -x "${BIN_DIR}/webgpu_dynamic_shape_test" ]]; then
+  "${BIN_DIR}/webgpu_dynamic_shape_test" "${DYNAMIC_SHAPE_DIR}"
+fi
 [[ -x "${BIN_DIR}/webgpu_scratch_buffer_test" ]] && "${BIN_DIR}/webgpu_scratch_buffer_test"
+# Device-free: pure 2D workgroup-count fold unit test (no .pte, no GPU).
+[[ -x "${BIN_DIR}/webgpu_dispatch_2d_test" ]] && "${BIN_DIR}/webgpu_dispatch_2d_test"
 
 echo "=== WebGPU native tests on Dawn: all run targets passed ==="
 

@@ -9,10 +9,13 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 
 """
 
-
 import operator
 import typing
 from typing import final, Optional, Sequence, Type
+
+# Register Arm-specific torch.library ops and MXFP transforms at package
+# import time.
+import executorch.backends.arm.ao_ext  # noqa: F401
 
 import torch
 import torch.fx as fx
@@ -27,7 +30,6 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
-from executorch.backends.arm.ao_ext.ops import mxfp_linear_op  # noqa: F401
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.control_flow_support import (
@@ -170,6 +172,15 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
     return len(users) > 0
 
 
+def _floating_profile_negative_checks(
+    tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter
+) -> list[OperatorSupportBase]:
+    checks: list[OperatorSupportBase] = [CheckMixedFloatingInputs(reporter)]
+    if not tosa_spec.support_integer():
+        checks.append(CheckInt32ComparisonInputs(reporter))
+    return checks
+
+
 def is_quantized(node: torch.fx.Node) -> bool:
     """Checks if the node is quantized.
 
@@ -240,7 +251,10 @@ def get_registered_tosa_support_checks(
 class MXOpsSupportList(OperatorSupportBase):
     """Accept Arm MX custom ops when the active spec enables MX support."""
 
-    targets = (exir_ops.edge.tosa_mxfp.linear.default,)
+    targets = (
+        exir_ops.edge.tosa_mxfp.conv2d.default,
+        exir_ops.edge.tosa_mxfp.linear.default,
+    )
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
@@ -328,14 +342,15 @@ def _negative_checks(
     additional_checks: Optional[Sequence[OperatorSupportBase]],
 ) -> list[OperatorSupportBase]:
     checks: list[OperatorSupportBase] = [RankCheck(reporter, MAX_RANK)]
+    checks.append(CheckKnownUnsupportedTOSASemantics(reporter))
 
     if not tosa_spec.support_extension("int64"):
-        checks.append(CheckInt64InputsAndOutputs(exported_program, reporter))
+        checks.append(CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec))
 
     checks.extend(_wrapped_additional_checks(additional_checks, reporter))
 
     if tosa_spec.support_float():
-        checks.append(CheckMixedFloatingInputs(reporter))
+        checks.extend(_floating_profile_negative_checks(tosa_spec, reporter))
     else:
         checks.append(CheckArmQuantized(reporter))
         checks.append(CheckProperQuantization(reporter))
@@ -355,6 +370,52 @@ def _negative_checks(
         checks.append(SymbolicShapeSupportCheck(reporter))
 
     return checks
+
+
+class CheckKnownUnsupportedTOSASemantics(OperatorSupportBase):
+    """Reject ops whose TOSA lowering is known to differ from PyTorch."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def _argmax_all_users_cast_to_int32(self, node: fx.Node) -> bool:
+        # TOSA ARGMAX produces int32 indices. This is only a faithful lowering
+        # when every user immediately narrows aten.argmax's int64 result:
+        #
+        #   aten.argmax -> _to_dim_order_copy(dtype=int32) -> users
+        cast_ops = (
+            torch.ops.dim_order_ops._to_dim_order_copy.default,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        )
+        # A live argmax should normally have users. Treat a no-user node as not
+        # proving the int64 result is intentionally narrowed to int32.
+        if not node.users:
+            return False
+        for user in node.users:
+            if user.target not in cast_ops:
+                return False
+            if user.kwargs.get("dtype") != torch.int32:
+                return False
+        return True
+
+    def _check_argmax(self, node: fx.Node) -> bool:
+        if self._argmax_all_users_cast_to_int32(node):
+            return True
+        self.reporter.report_reject(
+            node, "TOSA ARGMAX produces int32 but aten.argmax returns int64."
+        )
+        return False
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.target in (
+            torch.ops.aten.argmax.default,
+            exir_ops.edge.aten.argmax.default,
+        ):
+            return self._check_argmax(node)
+
+        return True
 
 
 def tosa_support_factory(
@@ -677,7 +738,10 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     """
 
     def __init__(
-        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+        self,
+        exported_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+        tosa_spec: TosaSpecification,
     ):
         """Initialize the check with program context and reporter."""
         self.input_names = [
@@ -686,6 +750,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             if spec.kind == InputKind.USER_INPUT
         ]
         self.reporter = reporter
+        self.tosa_spec = tosa_spec
         self.int32_min = torch.iinfo(torch.int32).min
         self.int32_max = torch.iinfo(torch.int32).max
         super().__init__()
@@ -697,6 +762,104 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         data = node.target(*node.args, **node.kwargs)
         min_val, max_val = int(torch.min(data)), int(torch.max(data))
         return min_val >= self.int32_min and max_val <= self.int32_max
+
+    def has_rejected_int64_output(
+        self, node: torch.fx.Node, tensor_list: Sequence[typing.Any]
+    ) -> bool:
+        if node.target in (
+            torch.ops.aten.argmax.default,
+            exir_ops.edge.aten.argmax.default,
+        ):
+            return not self._is_tosa_argmax_supported(node)
+        return any(
+            tensor.dtype == torch.int64
+            for tensor in tensor_list
+            if isinstance(tensor, FakeTensor)
+        )
+
+    def _is_tosa_argmax_dtype_supported(
+        self, node: torch.fx.Node, input_dtype: torch.dtype
+    ) -> bool:
+        if input_dtype == torch.int8:
+            if not self.tosa_spec.support_integer():
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires PRO-INT for int8 input."
+                )
+                return False
+        elif input_dtype == torch.int16:
+            if not (
+                self.tosa_spec.support_integer()
+                and self.tosa_spec.support_extension("int16")
+            ):
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires EXT-INT16 for int16 input."
+                )
+                return False
+        elif input_dtype in (torch.float16, torch.float32):
+            if not self.tosa_spec.support_float():
+                self.reporter.report_reject(
+                    node, f"TOSA ARGMAX requires PRO-FP for {input_dtype} input."
+                )
+                return False
+        elif input_dtype == torch.bfloat16:
+            if not (
+                self.tosa_spec.support_float()
+                and self.tosa_spec.support_extension("bf16")
+            ):
+                self.reporter.report_reject(
+                    node, "TOSA ARGMAX requires EXT-BF16 for bfloat16 input."
+                )
+                return False
+        else:
+            self.reporter.report_reject(
+                node, f"TOSA ARGMAX does not support {input_dtype} input."
+            )
+            return False
+        return True
+
+    def _is_tosa_argmax_supported(self, node: torch.fx.Node) -> bool:
+        dim = node.kwargs.get("dim", node.args[1] if len(node.args) > 1 else None)
+        if dim is None:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires an explicit reduction dimension."
+            )
+            return False
+        if not isinstance(dim, int):
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires a statically known reduction dimension."
+            )
+            return False
+
+        input_node = typing.cast(torch.fx.Node, node.args[0])
+        input_tensor = get_first_fake_tensor(input_node)
+        if not self._is_tosa_argmax_dtype_supported(node, input_tensor.dtype):
+            return False
+
+        input_rank = len(input_tensor.shape)
+        if input_rank == 0:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX requires an input with rank at least 1."
+            )
+            return False
+
+        axis = dim + input_rank if dim < 0 else dim
+        if axis < 0 or axis >= input_rank:
+            self.reporter.report_reject(
+                node,
+                f"TOSA ARGMAX axis must be in [0, {input_rank - 1}] but got {dim}.",
+            )
+            return False
+
+        keepdim = node.kwargs.get(
+            "keepdim", node.args[2] if len(node.args) > 2 else False
+        )
+        if keepdim:
+            self.reporter.report_reject(
+                node, "TOSA ARGMAX does not support keepdim=True."
+            )
+            return False
+
+        return True
 
     def _check_int64_input_nodes(self, node: torch.fx.Node) -> bool:
         """Check if all int64 input nodes are constant and will be
@@ -741,11 +904,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         vals = node.meta["val"]
         tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]
 
-        any_int64 = any(
-            tensor.dtype == torch.int64
-            for tensor in tensor_list
-            if isinstance(tensor, FakeTensor)
-        )
+        any_int64 = self.has_rejected_int64_output(node, tensor_list)
         # Don't partition nodes with int64 output...
         if any_int64:
             # ... Except for constant ops that are directly cast to something non-int64.
@@ -887,6 +1046,47 @@ class CheckMixedFloatingInputs(OperatorSupportBase):
                 " Did you call model.to(dtype=...) or cast properly?",
             )
             return False
+
+        return True
+
+
+class CheckInt32ComparisonInputs(OperatorSupportBase):
+    """Reject int32 comparisons under the FP profile."""
+
+    target_ops = {
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.eq.Scalar,
+        exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.gt.Scalar,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.lt.Scalar,
+    }
+
+    def __init__(self, reporter: WhyNoPartitionReporter) -> None:
+        self.reporter = reporter
+        super().__init__()
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.target not in self.target_ops:
+            return True
+
+        for input_node in (
+            input_node
+            for input_node in node.all_input_nodes
+            if input_node.op != "get_attr"
+        ):
+            if get_first_fake_tensor(input_node).dtype == torch.int32:
+                self.reporter.report_reject(
+                    node,
+                    "FP profile does not support int32 comparison inputs.",
+                )
+                return False
 
         return True
 

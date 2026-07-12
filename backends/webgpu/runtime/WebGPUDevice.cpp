@@ -13,9 +13,7 @@
 #include <cstdlib>
 #include <memory>
 #include <stdexcept>
-#ifdef WGPU_BACKEND_ENABLE_PROFILING
 #include <vector>
-#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 namespace executorch {
 namespace backends {
@@ -90,7 +88,9 @@ WebGPUContext create_webgpu_context() {
 
   // TimedWaitAny lets webgpu_wait() block on futures via wgpuInstanceWaitAny.
   WGPUInstanceDescriptor instance_desc = {};
-#if defined(__EMSCRIPTEN__)
+  // Vendored (buck) Dawn uses the older capabilities.* API; the rig's native
+  // Dawn and emscripten's emdawnwebgpu (emcc 4.0.19+) use requiredFeatures.
+#if defined(WEBGPU_DAWN_INSTANCE_CAPABILITIES)
   instance_desc.capabilities.timedWaitAnyEnable = true;
   instance_desc.capabilities.timedWaitAnyMaxCount = 1;
 #else
@@ -141,16 +141,28 @@ WebGPUContext create_webgpu_context() {
     device_desc.requiredLimits = &supported_limits;
   }
 
+  // Request optional features when the adapter advertises them. A feature the
+  // adapter lacks is skipped (its fast path stays disabled). A feature the
+  // adapter advertises becomes required of the device, so if the device were
+  // to reject it, context creation fails below rather than falling back. The
+  // vector must outlive wgpuAdapterRequestDevice below (device_desc points
+  // into it).
+  std::vector<WGPUFeatureName> required_features;
+  if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_ShaderF16)) {
+    required_features.push_back(WGPUFeatureName_ShaderF16);
+    ctx.shader_f16_supported = true;
+  }
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
   // Bench: enable TimestampQuery if available; fail-open (skip timing if not).
-  std::vector<WGPUFeatureName> required_features;
   if (wgpuAdapterHasFeature(ctx.adapter, WGPUFeatureName_TimestampQuery)) {
     required_features.push_back(WGPUFeatureName_TimestampQuery);
-    device_desc.requiredFeatureCount = required_features.size();
-    device_desc.requiredFeatures = required_features.data();
     ctx.timestamp_supported = true;
   }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+  if (!required_features.empty()) {
+    device_desc.requiredFeatureCount = required_features.size();
+    device_desc.requiredFeatures = required_features.data();
+  }
 
   device_desc.uncapturedErrorCallbackInfo.callback = on_device_error;
 

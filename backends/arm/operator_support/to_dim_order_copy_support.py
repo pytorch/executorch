@@ -10,7 +10,6 @@ profile (integer and/or float).
 
 """
 
-import copy
 import logging
 
 import torch
@@ -22,124 +21,38 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     SupportedTOSAOperatorCheck,
 )
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.cast_support import (
+    supported_to_dim_order_casts,
+    SupportedCastMap,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 logger = logging.getLogger(__name__)
 
-SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
-
 
 @register_tosa_support_check
 class ToCopySupported(SupportedTOSAOperatorCheck):
-    """Provide TOSA support check for ``_to_dim_order_copy``.
-
-    Attributes:
-        SUPPORTED_INT_PROFILE_DTYPES (dict[torch.dtype, list[torch.dtype]]):
-            Allowed output dtypes for each integer input dtype.
-        SUPPORTED_FP_PROFILE_DTYPES (dict[torch.dtype, list[torch.dtype]]):
-            Allowed output dtypes for each floating input dtype.
-
-    """
+    """Provide TOSA support check for ``_to_dim_order_copy``."""
 
     targets = [
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
     ]
 
     @staticmethod
-    def _merge_supported_types(
-        dtypes1: SupportedTypeDict,
-        dtypes2: SupportedTypeDict,
-    ) -> SupportedTypeDict:
-        """Return a merged mapping of supported dtype transitions.
+    def _is_quantized_identity_cast(node: torch.fx.Node) -> bool:
+        for user in node.users:
+            if (
+                not user.target
+                == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+            ):
+                return False
+            scale = user.args[1]
+            zp = user.args[2]
+            if scale != 1.0 or zp != 0.0:
+                return False
+        return True
 
-        Args:
-            dtypes1 (dict[torch.dtype, list[torch.dtype]]): Base mapping.
-            dtypes2 (dict[torch.dtype, list[torch.dtype]]): Mapping to merge in.
-
-        Returns:
-            dict[torch.dtype, list[torch.dtype]]: Combined mapping.
-
-        """
-        merged_dtypes = copy.deepcopy(
-            dtypes1
-        )  # Use deepcopy to avoid unintentionally modifying SUPPORTED_INT_PROFILE_DTYPES
-        for k, v in dtypes2.items():
-            merged_dtypes[k] = merged_dtypes.get(k, []) + v
-        return merged_dtypes
-
-    SUPPORTED_INT_PROFILE_DTYPES: SupportedTypeDict = {
-        torch.bool: [torch.bool, torch.int8, torch.int16, torch.int32],
-        torch.int8: [torch.bool, torch.int8, torch.int16, torch.int32],
-        torch.int16: [torch.bool, torch.int8, torch.int16, torch.int32],
-        torch.int32: [torch.bool, torch.int8, torch.int16, torch.int32],
-        torch.int64: [torch.bool, torch.int8, torch.int16, torch.int32],
-    }
-    SUPPORTED_FP_PROFILE_DTYPES: SupportedTypeDict = {
-        torch.int8: [torch.int8, torch.float16, torch.float32],
-        torch.int16: [torch.int16, torch.float16, torch.float32],
-        torch.int32: [torch.int32, torch.float16, torch.float32],
-        # INT64 inputs to casts *should* be ok, since they should be rejected by
-        # CheckInt64InputsAndOutputs if the cast can't be done AOT.
-        torch.int64: [
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.float16,
-            torch.float32,
-        ],
-        torch.float16: [
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.float16,
-            torch.float32,
-        ],
-        torch.float32: [
-            torch.float32,
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.float16,
-            torch.float32,
-        ],
-    }
-    SUPPORTED_INT_FP_PROFILE_DTYPES: SupportedTypeDict = {
-        torch.bool: [torch.float32],
-    }
-    SUPPORTED_BF16_EXTENSION_DTYPES: SupportedTypeDict = {
-        torch.int8: [torch.bfloat16],
-        torch.int16: [torch.bfloat16],
-        torch.int32: [torch.bfloat16],
-        torch.int64: [torch.bfloat16],
-        torch.float32: [torch.bfloat16],
-        torch.bfloat16: [
-            torch.int8,
-            torch.int16,
-            torch.int32,
-            torch.bfloat16,
-            torch.float32,
-        ],
-    }
-    SUPPORTED_FP8E4M3_EXTENSION_DTYPES: SupportedTypeDict = {
-        torch.float16: [torch.float8_e4m3fn],
-        torch.float32: [torch.float8_e4m3fn],
-        torch.float8_e4m3fn: [torch.float16, torch.float32],
-    }
-    SUPPORTED_FP8E5M2_EXTENSION_DTYPES: SupportedTypeDict = {
-        torch.float16: [torch.float8_e5m2],
-        torch.float32: [torch.float8_e5m2],
-        torch.float8_e5m2: [torch.float16, torch.float32],
-    }
-    SUPPORTED_BF16_FP8E4M3_EXTENSION_DTYPES: SupportedTypeDict = {
-        torch.bfloat16: [torch.float8_e4m3fn],
-        torch.float8_e4m3fn: [torch.bfloat16],
-    }
-    SUPPORTED_BF16_FP8E5M2_EXTENSION_DTYPES: SupportedTypeDict = {
-        torch.bfloat16: [torch.float8_e5m2],
-        torch.float8_e5m2: [torch.bfloat16],
-    }
-
-    def is_node_tosa_supported(  # noqa: C901
+    def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
         """Return True if the node is supported by TOSA.
@@ -149,43 +62,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         input dtype.
 
         """
-        supported_dtypes: SupportedTypeDict = {}
-        if tosa_spec.support_integer():
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_INT_PROFILE_DTYPES, supported_dtypes
-            )
-        if tosa_spec.support_float():
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_FP_PROFILE_DTYPES, supported_dtypes
-            )
-        if tosa_spec.support_integer() and tosa_spec.support_float():
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_INT_FP_PROFILE_DTYPES, supported_dtypes
-            )
-        if tosa_spec.support_extension("bf16"):
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_BF16_EXTENSION_DTYPES, supported_dtypes
-            )
-        if tosa_spec.support_extension("fp8e4m3"):
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_FP8E4M3_EXTENSION_DTYPES, supported_dtypes
-            )
-        if tosa_spec.support_extension("fp8e5m2"):
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_FP8E5M2_EXTENSION_DTYPES, supported_dtypes
-            )
-        if tosa_spec.support_extension("bf16") and tosa_spec.support_extension(
-            "fp8e4m3"
-        ):
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_BF16_FP8E4M3_EXTENSION_DTYPES, supported_dtypes
-            )
-        if tosa_spec.support_extension("bf16") and tosa_spec.support_extension(
-            "fp8e5m2"
-        ):
-            supported_dtypes = self._merge_supported_types(
-                self.SUPPORTED_BF16_FP8E5M2_EXTENSION_DTYPES, supported_dtypes
-            )
+        supported_dtypes: SupportedCastMap = supported_to_dim_order_casts(tosa_spec)
 
         if len(node.all_input_nodes) != 1:
             self.reporter.report_reject(
@@ -207,7 +84,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             )
             return False
 
-        # Check input type
         input_dtype = input_val.dtype
         if input_dtype not in supported_dtypes:
             self.reporter.report_reject(
@@ -216,7 +92,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             )
             return False
 
-        # Check output type
         output_val = node.meta["val"]
         if not isinstance(output_val, torch._subclasses.FakeTensor):
             self.reporter.report_reject(
@@ -228,6 +103,8 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             )
             return False
         if output_val.dtype not in supported_dtypes[input_dtype]:
+            if tosa_spec.support_integer() and self._is_quantized_identity_cast(node):
+                return True
             self.reporter.report_reject(
                 node,
                 (

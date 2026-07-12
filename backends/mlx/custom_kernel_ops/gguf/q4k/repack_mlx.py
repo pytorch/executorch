@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""Q4_K -> MLX qparam repack for the legacy MLX-native lowering path.
+"""Q4_K -> MLX qparam repack for the MLX-native lowering path.
 
 Used when ``ET_MLX_EMIT_DIRECT_GGUF=0``: the GGUF blob is unpacked and repacked
 into MLX affine 4-bit qparams at export time instead of being consumed directly
@@ -28,16 +28,23 @@ _BITS = 4
 def repack_mlx(P: MLXProgramBuilder, weight_node: Node) -> Tuple[Slot, Slot, Slot, int]:
     """Unpack a raw Q4_K blob and repack into MLX qparam constants.
 
+    Adjacent sub-blocks with identical scale/min are merged into a larger group
+    size (up to 128) when lossless, so ``group_size`` may be 32, 64, or 128.
     Returns ``(packed_slot, scales_slot, biases_slot, group_size)``.
     """
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
     weight_target, raw = P.get_placeholder_target_and_tensor(weight_node)
-    intx = ExportableGGUFTensor.from_raw(raw, "q4_k").to_intx_unpacked_to_int8_tensor()
+    intx = ExportableGGUFTensor.from_raw(raw, "q4_k").to_intx_unpacked_to_int8_tensor(
+        max_group_size=128
+    )
     group_size = int(intx.block_size[-1])
-    packed, biases = to_mlx_qparams(intx.qdata, intx.scale, intx.zero_point, _BITS)
+    qdata, scale, zero_point = intx.qdata, intx.scale, intx.zero_point
+    del intx  # drop the tensor-subclass wrapper; keep only the fields we need
+    packed, biases = to_mlx_qparams(qdata, scale, zero_point, _BITS)
+    del qdata  # the (N, K) int8 is no longer needed once packed
 
     packed_slot = P.make_or_get_constant(f"{weight_target}_q4k_packed", packed)
-    scales_slot = P.make_or_get_constant(f"{weight_target}_q4k_scales", intx.scale)
+    scales_slot = P.make_or_get_constant(f"{weight_target}_q4k_scales", scale)
     biases_slot = P.make_or_get_constant(f"{weight_target}_q4k_biases", biases)
     return packed_slot, scales_slot, biases_slot, group_size

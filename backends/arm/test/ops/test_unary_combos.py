@@ -104,9 +104,7 @@ def test_add_tensor_tosa_INT_combos(model_cls):
 
 
 @common.XfailIfNoCorstone300
-@common.parametrize(
-    "model_cls", MODEL_DATA, xfails={"NegAdd": "Numerical failure. MLBEDSW-11581"}
-)
+@common.parametrize("model_cls", MODEL_DATA)
 def test_add_tensor_u55_INT_combos(model_cls):
     m, inputs, exir = _build(model_cls)
     p = EthosU55PipelineINT[Tensor1](

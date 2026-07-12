@@ -60,12 +60,13 @@ class QDQDequantizeConverterBase(NodeConverter, ABC):
         if isinstance(self, QDQPerChannelDequantizeConverter):
             quantized_dimension = self.get_quantization_dimension(input_tensor, node)
 
-        consumes_model_input = (
+        consumes_model_io = (
             node.args[0].name in self.context.edge_program_signature.user_inputs
+            or node.args[0].name in self.context.edge_program_signature.user_outputs
         )
-        if consumes_model_input:
-            # We cannot just skip the operator. Skipping would require changing the input's name, and as the input is
-            #  also a model input, the name cannot be changed.
+        if consumes_model_io:
+            # We cannot just skip the operator. Skipping would require changing the input's/output's name, and as the
+            #  input/output is also a model input/output, the name cannot be changed.
             # Instead, we convert it into an identity (Transpose that will be removed), and we make the output tensor
             #  quantized just like the input.
             t_op = self._create_tflite_op_with_io_tensors(node)
@@ -80,6 +81,7 @@ class QDQDequantizeConverterBase(NodeConverter, ABC):
 
             self.builder.turn_operator_to_identity(t_op)
             self.builder.append_operators([t_op])
+
         else:
             # Dequantize consumes an internal tensor, so we can just make it so that any operators which used the float
             #  output of the dequantize will now use its quantized input. We do this by redirecting the output to the

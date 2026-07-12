@@ -57,11 +57,18 @@ constexpr const char* kDecodeMethod = "decode";
 // `forward` method was compiled for. Read into the metadata map in create().
 constexpr const char* kMaxPrefillChunk = "get_max_prefill_chunk";
 
+// Constant method (MLX --sample exports) signalling that `forward` samples a
+// token id on-device and returns it directly. Read into the metadata map in
+// create().
+constexpr const char* kUseSampling = "use_sampling";
+
 Result<uint64_t> read_sampled_token(
     const executorch::aten::Tensor& output,
-    float temperature) {
+    float temperature,
+    bool use_sampling) {
 #ifdef EXECUTORCH_BUILD_CUDA
   (void)temperature;
+  (void)use_sampling;
   const void* ptr = output.const_data_ptr();
   cudaPointerAttributes attrs;
   const bool on_device = cudaPointerGetAttributes(&attrs, ptr) == cudaSuccess &&
@@ -78,6 +85,11 @@ Result<uint64_t> read_sampled_token(
   }
   return static_cast<uint64_t>(llrintf(val));
 #else
+  // On-device sampling (MLX --sample): `forward` already returns the int64
+  // token id, so read it directly instead of sampling host-side from logits.
+  if (use_sampling) {
+    return static_cast<uint64_t>(output.const_data_ptr<int64_t>()[0]);
+  }
   return static_cast<uint64_t>(
       logits_to_token(output, temperature < 0.0f ? 0.0f : temperature));
 #endif
@@ -183,9 +195,9 @@ class Qwen35MoESession : public LLMSession {
       ::tokenizers::Tokenizer* tokenizer,
       std::unordered_map<std::string, int64_t> metadata,
       std::unordered_set<uint64_t> eos_ids
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
       ,
-      ::executorch::backends::cuda::MutableStateContextOwner* mutable_state,
+      MutableStateContextOwner* mutable_state,
       int session_token
 #endif
       )
@@ -195,7 +207,7 @@ class Qwen35MoESession : public LLMSession {
         tokenizer_(tokenizer),
         metadata_(std::move(metadata)),
         eos_ids_(std::move(eos_ids))
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
         ,
         mutable_state_(mutable_state),
         session_token_(session_token)
@@ -209,12 +221,26 @@ class Qwen35MoESession : public LLMSession {
     temp_tensor_ =
         from_blob(&temp_val_, {1}, executorch::aten::ScalarType::Float);
 #endif
+#ifdef EXECUTORCH_BUILD_MLX
+    if (auto it = metadata_.find(kUseSampling); it != metadata_.end()) {
+      use_sampling_ = it->second != 0;
+    }
+    // 0-dim scalar inputs appended to `forward` when sampling on-device. Reused
+    // across calls; only the backing scalar is rewritten per token.
+    temp_tensor_mlx_ =
+        from_blob(&temp_val_mlx_, {}, executorch::aten::ScalarType::Float);
+    top_k_tensor_ =
+        from_blob(&top_k_val_, {}, executorch::aten::ScalarType::Long);
+    top_p_tensor_ =
+        from_blob(&top_p_val_, {}, executorch::aten::ScalarType::Float);
+    seed_tensor_ =
+        from_blob(&seed_val_, {}, executorch::aten::ScalarType::Long);
+#endif
   }
 
   ~Qwen35MoESession() override {
-#ifdef EXECUTORCH_BUILD_CUDA
-    if (mutable_state_ != nullptr &&
-        session_token_ != ::executorch::backends::cuda::kNoMutableSession) {
+#ifdef QWEN_HAS_MUTABLE_STATE
+    if (mutable_state_ != nullptr && session_token_ != kNoMutableSession) {
       mutable_state_->destroy_session(session_token_);
     }
 #endif
@@ -232,15 +258,25 @@ class Qwen35MoESession : public LLMSession {
     }
     float first_token_temp = temperature_;
     if (initial_sampling != nullptr) {
-      if (initial_sampling->top_p != 1.0f || initial_sampling->top_k != 0 ||
-          initial_sampling->seed != 0) {
+      if (!use_sampling_ &&
+          (initial_sampling->top_k != 0 || initial_sampling->top_p != 1.0f ||
+           initial_sampling->seed != 0)) {
         ET_LOG(
             Error,
-            "prefill_tokens: only temperature is supported; top_p/top_k/seed "
-            "are not yet implemented");
+            "prefill_tokens: top_k/top_p/seed require a sampling model "
+            "(export with --sample); only temperature is supported otherwise");
         return Error::NotSupported;
       }
       first_token_temp = initial_sampling->temperature;
+      if (use_sampling_) {
+        if (!valid_top_p(initial_sampling->top_p)) {
+          ET_LOG(Error, "prefill_tokens: top_p must be in (0, 1]");
+          return Error::InvalidArgument;
+        }
+        top_k_ = initial_sampling->top_k;
+        top_p_ = initial_sampling->top_p;
+        seed_ = initial_sampling->seed; // base seed for the kept (token 0) draw
+      }
     }
     if (!valid_temperature(first_token_temp)) {
       ET_LOG(Error, "prefill_tokens: temperature must be -1 or in [0, 1]");
@@ -309,6 +345,15 @@ class Qwen35MoESession : public LLMSession {
       set_temp(first_token_temp);
       inputs.push_back(EValue(temp_tensor_));
 #endif
+#ifdef EXECUTORCH_BUILD_MLX
+      if (use_sampling_) {
+        set_sampling_inputs(first_token_temp, top_k_, top_p_, seed_);
+        inputs.push_back(EValue(temp_tensor_mlx_));
+        inputs.push_back(EValue(top_k_tensor_));
+        inputs.push_back(EValue(top_p_tensor_));
+        inputs.push_back(EValue(seed_tensor_));
+      }
+#endif
       auto sampled =
           run_locked(method, inputs, first_token_temp, /*sync_after=*/true);
       ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
@@ -317,15 +362,21 @@ class Qwen35MoESession : public LLMSession {
     }
     pending_ = sampled_token;
     prev_decode_token_.reset();
+#ifdef EXECUTORCH_BUILD_MLX
+    if (use_sampling_) {
+      seed_ += 1; // first decode token draws with base+1
+    }
+#endif
     return Error::Ok;
   }
 
   Result<DecodeResult> decode_one(const SamplingConfig& sampling) override {
-    if (sampling.top_p != 1.0f || sampling.top_k != 0 || sampling.seed != 0) {
+    if (!use_sampling_ &&
+        (sampling.top_k != 0 || sampling.top_p != 1.0f || sampling.seed != 0)) {
       ET_LOG(
           Error,
-          "Qwen35MoESession: only temperature is supported; top_p/top_k/seed "
-          "are not implemented");
+          "Qwen35MoESession: top_k/top_p/seed require a sampling model "
+          "(export with --sample); only temperature is supported otherwise");
       return Error::NotSupported;
     }
     if (!valid_temperature(sampling.temperature)) {
@@ -337,6 +388,14 @@ class Qwen35MoESession : public LLMSession {
         InvalidState,
         "decode_one requires a pending token; call prefill_tokens() first");
     temperature_ = sampling.temperature;
+    if (use_sampling_) {
+      if (!valid_top_p(sampling.top_p)) {
+        ET_LOG(Error, "decode_one: top_p must be in (0, 1]");
+        return Error::InvalidArgument;
+      }
+      top_k_ = sampling.top_k;
+      top_p_ = sampling.top_p;
+    }
 
     if (stop_.load(std::memory_order_relaxed)) {
       return DecodeResult{0, "", /*is_eos=*/false, /*is_terminal=*/true};
@@ -382,12 +441,26 @@ class Qwen35MoESession : public LLMSession {
     set_temp(temperature_);
     inputs.push_back(EValue(temp_tensor_));
 #endif
+#ifdef EXECUTORCH_BUILD_MLX
+    if (use_sampling_) {
+      set_sampling_inputs(temperature_, top_k_, top_p_, seed_);
+      inputs.push_back(EValue(temp_tensor_mlx_));
+      inputs.push_back(EValue(top_k_tensor_));
+      inputs.push_back(EValue(top_p_tensor_));
+      inputs.push_back(EValue(seed_tensor_));
+    }
+#endif
     auto sampled =
         run_locked(kDecodeMethod, inputs, temperature_, /*sync_after=*/false);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
     pending_ = sampled.get();
     prev_decode_token_ = token;
     pos_ += 1;
+#ifdef EXECUTORCH_BUILD_MLX
+    if (use_sampling_) {
+      seed_ += 1; // next token draws with the next seed in the schedule
+    }
+#endif
     return DecodeResult{
         token, std::move(text_piece), /*is_eos=*/false, /*is_terminal=*/false};
   }
@@ -413,9 +486,25 @@ class Qwen35MoESession : public LLMSession {
     return temperature == -1.0f || (temperature >= 0.0f && temperature <= 1.0f);
   }
 
+  static bool valid_top_p(float top_p) {
+    return top_p > 0.0f && top_p <= 1.0f;
+  }
+
 #ifdef EXECUTORCH_BUILD_CUDA
   void set_temp(float t) {
     temp_val_ = (t <= 0.0f) ? 1e-6f : t;
+  }
+#endif
+
+#ifdef EXECUTORCH_BUILD_MLX
+  // Rewrite the backing scalars for the reused 0-dim sampling input tensors.
+  // The -1 temperature sentinel maps to 0 (greedy).
+  void
+  set_sampling_inputs(float temp, int64_t top_k, float top_p, uint64_t seed) {
+    temp_val_mlx_ = (temp < 0.0f) ? 0.0f : temp;
+    top_k_val_ = (top_k <= 0) ? INT64_MAX : top_k; // 0/neg = keep all
+    top_p_val_ = top_p;
+    seed_val_ = static_cast<int64_t>(seed);
   }
 #endif
 
@@ -425,8 +514,8 @@ class Qwen35MoESession : public LLMSession {
       float temperature,
       bool sync_after) {
     std::lock_guard<std::mutex> guard(*exec_mutex_);
-#ifdef EXECUTORCH_BUILD_CUDA
-    Result<std::vector<EValue>> res = mutable_state_ != nullptr
+#ifdef QWEN_HAS_MUTABLE_STATE
+    auto res = mutable_state_ != nullptr
         ? mutable_state_->with_active_session(
               session_token_,
               [&]() { return module_->execute(method, inputs); })
@@ -435,7 +524,8 @@ class Qwen35MoESession : public LLMSession {
     auto res = module_->execute(method, inputs);
 #endif
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
-    auto sampled = read_sampled_token(res.get()[0].toTensor(), temperature);
+    auto sampled =
+        read_sampled_token(res.get()[0].toTensor(), temperature, use_sampling_);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
 #ifdef EXECUTORCH_BUILD_CUDA
     if (sync_after && cudaDeviceSynchronize() != cudaSuccess) {
@@ -461,16 +551,35 @@ class Qwen35MoESession : public LLMSession {
   float temperature_ = -1.0f;
   std::atomic<bool> stop_{false};
 
+  // On-device sampling state (MLX --sample). top_p_/seed_ are engine-managed:
+  // the seed increments per generated token for decorrelated, reproducible
+  // draws.
+  bool use_sampling_ = false;
+  int64_t top_k_ = 0; // 0 = off (keep all); mapped to INT64_MAX on-device
+  float top_p_ = 1.0f;
+  uint64_t seed_ = 0;
+
   int64_t decode_token_data_[1] = {0};
   int64_t decode_pos_data_[1] = {0};
   TensorPtr decode_tokens_;
   TensorPtr decode_pos_;
+#ifdef QWEN_HAS_MUTABLE_STATE
+  MutableStateContextOwner* mutable_state_ = nullptr;
+  int session_token_ = kNoMutableSession;
+#endif
 #ifdef EXECUTORCH_BUILD_CUDA
-  ::executorch::backends::cuda::MutableStateContextOwner* mutable_state_ =
-      nullptr;
-  int session_token_ = ::executorch::backends::cuda::kNoMutableSession;
   float temp_val_ = 1e-6f;
   TensorPtr temp_tensor_;
+#endif
+#ifdef EXECUTORCH_BUILD_MLX
+  float temp_val_mlx_ = 0.0f;
+  int64_t top_k_val_ = INT64_MAX;
+  float top_p_val_ = 1.0f;
+  int64_t seed_val_ = 0;
+  TensorPtr temp_tensor_mlx_;
+  TensorPtr top_k_tensor_;
+  TensorPtr top_p_tensor_;
+  TensorPtr seed_tensor_;
 #endif
 };
 
@@ -513,6 +622,11 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
   if (auto mpc = meta_module->get(kMaxPrefillChunk); mpc.ok()) {
     metadata_result.get()[kMaxPrefillChunk] = mpc->toScalar().to<int64_t>();
   }
+  // get_llm_metadata doesn't harvest use_sampling; surface it so the session
+  // knows `forward` returns a token id (on-device) rather than logits.
+  if (auto us = meta_module->get(kUseSampling); us.ok()) {
+    metadata_result.get()[kUseSampling] = us->toScalar().to<int64_t>();
+  }
 #endif
   auto eos_ids = get_eos_ids(tokenizer.get(), meta_module.get());
   // This export's metadata doesn't carry the chat-turn EOS (config.json has no
@@ -529,17 +643,17 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
         "not stop at end of turn");
   }
 
+#ifdef QWEN_HAS_MUTABLE_STATE
+  std::unique_ptr<MutableStateContextOwner> mutable_state;
+#endif
 #ifdef EXECUTORCH_BUILD_CUDA
-  std::unique_ptr<::executorch::backends::cuda::MutableStateContextOwner>
-      mutable_state;
   if (config.enable_cuda_graph) {
     ET_LOG(
         Info,
         "Qwen35MoEEngine: CUDA graph requested; per-session rebinding disabled "
         "and serving capacity clamped to 1 session.");
   } else {
-    auto candidate = std::make_unique<
-        ::executorch::backends::cuda::MutableStateContextOwner>();
+    auto candidate = std::make_unique<MutableStateContextOwner>();
     if (Error e = register_mutable_fqns(meta_module.get(), *candidate);
         e == Error::Ok) {
       mutable_state = std::move(candidate);
@@ -550,9 +664,13 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
           "serving capacity clamped to 1 session.");
     }
   }
+#elif defined(EXECUTORCH_BUILD_MLX)
+  // MLX owns mutable buffers directly and selects per-session storage at
+  // execute time; no FQN registration or coverage check is required.
+  mutable_state = std::make_unique<MutableStateContextOwner>();
 #endif
 
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   auto module_res = mutable_state != nullptr
       ? mutable_state->with_load_scope(
             [&]() { return build_qwen_module(config); })
@@ -566,16 +684,14 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
   std::unique_ptr<Module> shared_module = std::move(module_res.get());
 
   bool rebind_available = false;
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   rebind_available = mutable_state != nullptr && mutable_state->available();
-  if (rebind_available) {
-    if (mutable_state->validate_coverage() != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Qwen35MoEEngine: mutable-buffer coverage check failed; disabling "
-          "multi-session (capacity clamped to 1).");
-      rebind_available = false;
-    }
+  if (rebind_available && mutable_state->validate_coverage() != Error::Ok) {
+    ET_LOG(
+        Error,
+        "Qwen35MoEEngine: mutable-buffer coverage check failed; disabling "
+        "multi-session (capacity clamped to 1).");
+    rebind_available = false;
   }
   if (!rebind_available) {
     ET_LOG(
@@ -592,7 +708,7 @@ Result<std::unique_ptr<Qwen35MoEEngine>> Qwen35MoEEngine::create(
       std::move(eos_ids),
       std::move(shared_module),
       rebind_available
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
       ,
       std::move(mutable_state)
 #endif
@@ -621,7 +737,7 @@ Result<std::unique_ptr<LLMSession>> Qwen35MoEEngine::create_session() {
   }
 
   int token = -1; // kNoMutableSession: single-session / no rebind
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   if (rebind_available_) {
     auto t = mutable_state_->create_session();
     if (t.error() != Error::Ok) {
@@ -638,7 +754,7 @@ Result<std::unique_ptr<LLMSession>> Qwen35MoEEngine::create_session() {
       tokenizer_.get(),
       metadata_,
       eos_ids_
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
       ,
       mutable_state_.get(),
       token
@@ -648,7 +764,7 @@ Result<std::unique_ptr<LLMSession>> Qwen35MoEEngine::create_session() {
 
 LLMServingCapacity Qwen35MoEEngine::serving_capacity() const {
   LLMServingCapacity cap; // default: 1 session, 0 bytes (unknown)
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
   if (rebind_available_) {
     cap.max_physical_sessions_without_weight_duplication =
         config_.max_sessions > 1 ? config_.max_sessions : 1;
