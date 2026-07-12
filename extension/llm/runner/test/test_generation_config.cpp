@@ -11,9 +11,38 @@
 
 using namespace ::testing;
 using executorch::extension::llm::GenerationConfig;
+using executorch::extension::llm::stats_to_json_string;
+using executorch::extension::llm::Stats;
 
 namespace {
 class GenerationConfigTest : public Test {};
+
+TEST(StatsTest, SerializesAndResetsModelExecutionTimestamps) {
+  Stats stats;
+  stats.model_execution_start_ms = 123;
+  stats.model_execution_end_ms = 456;
+
+  const std::string json = stats_to_json_string(stats);
+  EXPECT_NE(
+      json.find("\"model_execution_start_ms\":123"), std::string::npos);
+  EXPECT_NE(json.find("\"model_execution_end_ms\":456"), std::string::npos);
+  EXPECT_LT(
+      json.find("\"model_execution_start_ms\""),
+      json.find("\"model_execution_end_ms\""));
+
+  stats.reset();
+  EXPECT_EQ(stats.model_execution_start_ms, 0);
+  EXPECT_EQ(stats.model_execution_end_ms, 0);
+}
+
+TEST(StatsTest, RecordsOrderedModelExecutionTimestamps) {
+  Stats stats;
+  stats.on_model_execution_begin();
+  stats.on_model_execution_end();
+
+  EXPECT_GT(stats.model_execution_start_ms, 0);
+  EXPECT_GE(stats.model_execution_end_ms, stats.model_execution_start_ms);
+}
 
 TEST_F(GenerationConfigTest, TestResolveMaxNewTokensBothDefault) {
   // Test when both seq_len and max_new_tokens are -1 (default)

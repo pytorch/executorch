@@ -66,6 +66,16 @@ struct ET_EXPERIMENTAL Stats {
     aggregate_sampling_timer_start_timestamp = 0;
   }
 
+  inline void on_model_execution_begin() {
+    if (model_execution_start_ms == 0) {
+      model_execution_start_ms = time_in_ms();
+    }
+  }
+
+  inline void on_model_execution_end() {
+    model_execution_end_ms = time_in_ms();
+  }
+
   void reset(bool all_stats = false) {
     // Not resetting model_load_start_ms and model_load_end_ms because reset is
     // typically called after warmup and before running the actual run.
@@ -77,6 +87,8 @@ struct ET_EXPERIMENTAL Stats {
       model_load_end_ms = 0;
     }
     inference_start_ms = 0;
+    model_execution_start_ms = 0;
+    model_execution_end_ms = 0;
     prompt_eval_end_ms = 0;
     first_token_ms = 0;
     inference_end_ms = 0;
@@ -121,6 +133,9 @@ inline std::string stats_to_json_string(const Stats& stats) {
      << "\"model_load_end_ms\":" << stats.model_load_end_ms << ","
      << "\"inference_start_ms\":" << stats.inference_start_ms << ","
      << "\"inference_end_ms\":" << stats.inference_end_ms << ","
+     << "\"model_execution_start_ms\":"
+     << stats.model_execution_start_ms << ","
+     << "\"model_execution_end_ms\":" << stats.model_execution_end_ms << ","
      << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
      << "\"first_token_ms\":" << stats.first_token_ms << ","
      << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
