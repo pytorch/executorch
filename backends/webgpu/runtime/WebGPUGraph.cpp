@@ -703,15 +703,16 @@ void WebGPUGraph::build(
   // Phase 3: Build operator dispatch chain
   const auto* chain = graph->chain();
 
-  // QKV-concat fusion detection (WEBGPU_QKV_FUSE; default OFF -> both sets stay
-  // empty -> the Phase-3 loop below runs verbatim = byte-identical). Find each
-  // attention q/k/v triple: EXACTLY 3 et_vk.linear_q4gsw ops sharing args[0]
-  // (the same input activation), in chain order q,k,v with the N-pattern
-  // {2048,512,512}, on the steel route (K%16==0), group_size%16==0, no bias.
-  // The fused kernel needs shader-f16 + a 256-thread WG, so gate on those (else
-  // leave the triple to the normal per-linear handlers). qkv_fused_skip holds
-  // all 3 op indices; qkv_anchor maps the FIRST op index -> its group, so the
-  // fused dispatch is emitted IN-PLACE at the anchor (correct execution order).
+  // QKV-concat fusion detection (auto-applied graph pass, no flag): the maps
+  // stay empty when no q/k/v triple matches -> the Phase-3 loop below runs
+  // verbatim. Find each attention q/k/v triple: EXACTLY 3 et_vk.linear_q4gsw
+  // ops sharing args[0] (the same input activation), in chain order q,k,v with
+  // the N-pattern {2048,512,512}, on the steel route (K%16==0),
+  // group_size%16==0, no bias. The fused kernel needs shader-f16 + a 256-thread
+  // WG, so gate on those (else leave the triple to the normal per-linear
+  // handlers). qkv_fused_skip holds all 3 op indices; qkv_anchor maps the FIRST
+  // op index -> its group, so the fused dispatch is emitted IN-PLACE at the
+  // anchor (correct execution order).
   std::vector<QkvFusionGroup> qkv_groups;
   std::unordered_map<unsigned, size_t>
       qkv_first; // first triple op -> group (repoint buffers)
@@ -719,7 +720,7 @@ void WebGPUGraph::build(
       qkv_last; // last triple op  -> group (emit fused)
   std::unordered_map<unsigned, size_t>
       qkv_member; // any triple op   -> group (record dispatch)
-  if (std::getenv("WEBGPU_QKV_FUSE") != nullptr && chain) {
+  if (chain) {
     bool device_ok = false;
     {
       WGPULimits limits = {};
@@ -870,9 +871,9 @@ void WebGPUGraph::build(
     }
   }
 
-  // SwiGLU fusion detection (WEBGPU_SWIGLU_FUSE; default OFF -> all sets stay
-  // empty
-  // -> the Phase-3 loop below runs verbatim = byte-identical). Fold each
+  // SwiGLU fusion detection (auto-applied graph pass, no flag): all sets stay
+  // empty when no SiLU-gate triple matches
+  // -> the Phase-3 loop below runs verbatim. Fold each
   // SiLU-gate MLP triple  sigmoid(g) -> mul(g,sig)=silu -> mul(silu,up)=out
   // into ONE elementwise dispatch that computes sigmoid + silu in registers
   // (gate + up read once, one output written): 8 traffic units -> 3. Bit-exact
@@ -893,7 +894,7 @@ void WebGPUGraph::build(
   // after its final consumer's dispatch is built (pool recycling for the
   // +memory).
   std::unordered_map<unsigned, size_t> swiglu_out_release;
-  if (std::getenv("WEBGPU_SWIGLU_FUSE") != nullptr && chain) {
+  if (chain) {
     // Consumer count: appearances as a NON-output (non-last) arg, ValueList-
     // expanded. sig/silu are safe to fold only if each is consumed exactly once
     // (by the 1st/2nd mul respectively) and nowhere else.
@@ -1063,7 +1064,7 @@ void WebGPUGraph::build(
       // up_proj can't stomp its planner-aliased slot before the fused reads
       // it); drop the folded sigmoid + 1st-mul; at the 2nd-mul anchor emit ONE
       // fused silu*up dispatch then release gate. Sets empty when
-      // WEBGPU_SWIGLU_FUSE is off (verbatim path).
+      // no SwiGLU triple matched (verbatim path).
       {
         auto ga = swiglu_gate_acquire.find(i);
         if (ga != swiglu_gate_acquire.end()) {
@@ -1450,7 +1451,7 @@ struct SiluMulParams {
 };
 } // namespace
 
-// SwiGLU fusion (WEBGPU_SWIGLU_FUSE): emit ONE elementwise dispatch computing
+// SwiGLU fusion: emit ONE elementwise dispatch computing
 // out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2 muls.
 // Elementwise (no M-gate: identical at decode and prefill).
 void WebGPUGraph::add_swiglu_fused_dispatch(
