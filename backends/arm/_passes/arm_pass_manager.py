@@ -109,7 +109,6 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FuseBatchNorm2dPass,
     FuseConsecutiveConcatShapesPass,
-    FuseConsecutiveRescalesPass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
@@ -505,7 +504,6 @@ class ArmPassManager(ExportedProgramPassManager):
                 FuseIdenticalInputTransformsPass(),
                 DecomposeLinearPass(),
                 InsertRescaleInt32Pass(),
-                FuseConsecutiveRescalesPass(),
                 InsertControlFlowRescalesPass(),
                 DecomposeQuantNodesPass(),
             ]
