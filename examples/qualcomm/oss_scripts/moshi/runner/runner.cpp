@@ -243,7 +243,8 @@ Error Runner::generate(std::string& input_list) {
         module_->set_output(method_name_, output_tensors_[0], 0) == Error::Ok,
         "failed to set output tensor for module 0'th output");
 
-    module_->execute(method_name_, inputs_);
+    auto exec_result = module_->execute(method_name_, inputs_);
+    ET_CHECK_OK_OR_RETURN_ERROR(exec_result.error());
   }
   stats_.decode_end_ms = time_in_ms();
 
