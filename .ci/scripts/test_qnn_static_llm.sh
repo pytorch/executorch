@@ -20,9 +20,9 @@ fi
 source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
 install_qnn
 
-export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
-export PYTHONPATH=".."
+export PYTHONPATH="${EXECUTORCH_ROOT}/..${PYTHONPATH:+:${PYTHONPATH}}"
 cp schema/program.fbs exir/_serialize/program.fbs
 cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
 cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
