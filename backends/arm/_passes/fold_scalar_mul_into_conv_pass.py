@@ -289,7 +289,10 @@ class FoldScalarMulIntoConvPass(ArmPass):
         if node.op != "get_attr":
             return None
         owning_module = node.graph.owning_module
+        if owning_module is None:
+            return None
         target = str(node.target)
+        tensor: torch.Tensor | None
         try:
             tensor = owning_module.get_parameter(target)
         except AttributeError:
@@ -304,7 +307,10 @@ class FoldScalarMulIntoConvPass(ArmPass):
 
     def _set_get_attr_tensor(self, node: Node, tensor: torch.Tensor) -> bool:
         owning_module = node.graph.owning_module
+        if owning_module is None:
+            return False
         target = str(node.target)
+        attr_tensor: torch.Tensor | None
         try:
             attr_tensor = owning_module.get_parameter(target)
         except AttributeError:
