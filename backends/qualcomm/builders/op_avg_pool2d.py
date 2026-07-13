@@ -54,15 +54,8 @@ class AvgPool2d(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        pt_ceil_mode = node.args[4] if len(node.args) > 4 else False
-
         # kernel info
-        input_shape = input_node.meta["val"].shape
-        input_h, input_w = input_shape[2], input_shape[3]
         filter_size = self._get_filter_size(node)
-        if pt_ceil_mode:
-            # filter_size might larger than input_h, input_w, use min of them
-            filter_size = [min(filter_size[0], input_h), min(filter_size[1], input_w)]
         filter_size_shape = [len(filter_size)]
 
         padding = [0, 0]
@@ -70,19 +63,14 @@ class AvgPool2d(NodeVisitor):
             padding = cast(List[int], node.args[3])
             if len(padding) == 1:
                 padding = padding + padding
-            if pt_ceil_mode:
-                ori_filter_h, ori_filter_w = self._get_filter_size(node)
-                padding = [
-                    0 if ori_filter_h > input_h else padding[0],
-                    0 if ori_filter_w > input_w else padding[1],
-                ]
 
         padding_shape = [len(padding), len(padding)]
 
         # if ceil mode is True, use ceil instead of floor to compute the output shape
+        ceil_mode = node.args[4] if len(node.args) > 4 else False
         mode = (
             OpPoolAvg2d.RoundingMode.CEIL
-            if pt_ceil_mode
+            if ceil_mode
             else OpPoolAvg2d.RoundingMode.FLOOR
         )
 
@@ -95,11 +83,6 @@ class AvgPool2d(NodeVisitor):
         count_include_pad = True
         if len(node.args) > 5:
             count_include_pad = cast(bool, node.args[5])
-        # TODO: If count_include_pad = False, it seems not to compute average with padding in Qnn.
-        # But it still compute average with padding value, and change divisor in torch
-        # if not count_include_pad:
-        #     print("Not support count_include_pad = False.")
-        #     return
 
         pooling_region = filter_size[0] * filter_size[1]
         divisor_override = pooling_region  # Default divisor is pooling_region

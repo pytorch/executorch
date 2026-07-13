@@ -33,6 +33,56 @@ logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
 
 
+# Ops that the CoreML partitioner must always reject regardless of their
+# arguments.  Each entry is annotated with the upstream issue that motivates
+# it so future readers can tell when an entry is safe to drop.
+_UNSUPPORTED_OP_TARGETS = frozenset(
+    [
+        # https://github.com/apple/coremltools/issues/2565 — diagonal has a
+        # CoreML correctness bug.
+        torch.ops.aten.diagonal.default,
+        torch.ops.aten.diagonal_copy.default,
+        exir_ops.edge.aten.diagonal.default,
+        exir_ops.edge.aten.diagonal_copy.default,
+        # https://github.com/apple/coremltools/issues/2569 — acosh / asinh
+        # are not implemented in coremltools.
+        torch.ops.aten.acosh.default,
+        exir_ops.edge.aten.acosh.default,
+        torch.ops.aten.asinh.default,
+        exir_ops.edge.aten.asinh.default,
+        # https://github.com/pytorch/executorch/issues/11722 — only
+        # ``aten.rand.default`` actually reaches an unimplemented branch in
+        # coremltools 9.0 ("not enough values to unpack (expected 5, got 1)"
+        # raised from the rand handler).  ``randn`` / ``rand_like`` /
+        # ``randn_like`` / ``randint`` lower cleanly today, so we leave them
+        # delegated.  Verified locally against coremltools 9.0 / Python 3.10
+        # by lowering each op in isolation.
+        torch.ops.aten.rand.default,
+        exir_ops.edge.aten.rand.default,
+    ]
+)
+
+
+_ARG_MIN_MAX_TARGETS = (
+    torch.ops.aten.argmax.default,
+    torch.ops.aten.argmin.default,
+    exir_ops.edge.aten.argmax.default,
+    exir_ops.edge.aten.argmin.default,
+)
+
+
+def _is_arg_min_max_over_flattened_input(node: torch.fx.Node) -> bool:
+    """``argmin``/``argmax`` with ``dim=None`` reduces over the flattened input.
+
+    CoreML doesn't support that reduction shape and intermittently crashes
+    the process at runtime — see pytorch/executorch#11715.
+    """
+    if node.target not in _ARG_MIN_MAX_TARGETS:
+        return False
+    dim = node.args[1] if len(node.args) >= 2 else node.kwargs.get("dim", None)
+    return dim is None
+
+
 def _is_view_op(op: torch._ops.OpOverload) -> bool:
     schema = op._schema
     if len(schema.arguments) == 0:
@@ -92,27 +142,20 @@ class _OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
             )
             return True
 
-        # https://github.com/apple/coremltools/issues/2565
-        if node.target in [
-            torch.ops.aten.diagonal.default,
-            torch.ops.aten.diagonal_copy.default,
-            exir_ops.edge.aten.diagonal.default,
-            exir_ops.edge.aten.diagonal_copy.default,
-        ]:
+        # Ops that are unsupported by CoreML purely on the basis of their
+        # target — no per-arg conditions to check.  Grouped by upstream issue
+        # so the comment trail still points at the underlying coremltools /
+        # executorch bug for each entry.
+        if node.target in _UNSUPPORTED_OP_TARGETS:
             self.log_once(
-                "torch.ops.aten.diagonal.default has a bug in CoreML.  Overriding op support."
+                f"{node.target} is not supported by CoreML.  Overriding op support."
             )
             return True
 
-        # https://github.com/apple/coremltools/issues/2569
-        if node.target in [
-            torch.ops.aten.acosh.default,
-            exir_ops.edge.aten.acosh.default,
-            torch.ops.aten.asinh.default,
-            exir_ops.edge.aten.asinh.default,
-        ]:
+        if _is_arg_min_max_over_flattened_input(node):
             self.log_once(
-                "torch.ops.aten.{acosh, asinh}.default is not supported by CoreML.  Overriding op support."
+                "torch.ops.aten.{argmax, argmin}.default with dim=None is "
+                "not supported by CoreML.  Overriding op support."
             )
             return True
 

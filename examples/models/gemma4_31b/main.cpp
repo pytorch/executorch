@@ -6,30 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Gemma 4 31B-IT runner for the CUDA ExecuTorch backend.
-//
-// Drives the prefill + decode methods produced by export.py.
-// The exported model performs Gumbel-max sampling on-device and returns a
-// single float token ID per call, so this runner only has to feed tokens
-// in and decode them via the HuggingFace tokenizer.
-
 #include <gflags/gflags.h>
 
-#include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/examples/models/gemma4_31b/gemma4_31b_engine.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/backend/interface.h>
-#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/log.h>
-#include <pytorch/tokenizers/hf_tokenizer.h>
 
 #include <cinttypes>
-#include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <fstream>
+#include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -62,59 +50,67 @@ DEFINE_string(
     "",
     "Path to file containing prompt text (overrides --prompt).");
 DEFINE_double(temperature, 0.8, "Sampling temperature (0 = near-greedy).");
+DEFINE_int32(
+    top_k,
+    0,
+    "Top-k sampling; keep the k most likely tokens. 0 (default) = off (keep "
+    "all). Requires a model exported with --sample (MLX on-device sampling).");
+DEFINE_double(
+    top_p,
+    1.0,
+    "Nucleus sampling top_p in (0, 1]; 1.0 = off. Requires a model exported "
+    "with --sample (MLX on-device sampling).");
+DEFINE_int64(
+    seed,
+    -1,
+    "Base RNG seed for on-device sampling; the runner increments it per token. "
+    "-1 (default) draws a random seed each run; set a value for reproducible "
+    "output. Requires a model exported with --sample.");
 DEFINE_int32(max_new_tokens, 128, "Maximum tokens to generate.");
 DEFINE_int32(bos_id, 2, "BOS token id to prepend (Gemma convention: 2).");
 DEFINE_int32(eos_id, 1, "EOS token id (Gemma convention: 1).");
+DEFINE_bool(
+    raw_prompt,
+    false,
+    "Skip chat-template wrapping (use if the prompt is already formatted).");
 DEFINE_bool(
     cuda_graph,
     false,
     "Enable CUDA graph capture for the decode method. CUDA only.");
 
 namespace llm = ::executorch::extension::llm;
-using ::executorch::extension::from_blob;
-using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
-using ::executorch::runtime::EValue;
 
-using SizesType = executorch::aten::SizesType;
+namespace {
 
-static uint64_t read_token(const executorch::aten::Tensor& output) {
-  const void* ptr = output.const_data_ptr();
-  float val = 0.0f;
-
-#ifdef EXECUTORCH_BUILD_CUDA
-  cudaPointerAttributes attrs{};
-  bool on_device = cudaPointerGetAttributes(&attrs, ptr) == cudaSuccess &&
-      attrs.type == cudaMemoryTypeDevice;
-  if (on_device) {
-    cudaError_t err =
-        cudaMemcpy(&val, ptr, sizeof(float), cudaMemcpyDeviceToHost);
-    if (err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "read_token: cudaMemcpy D2H failed: %s",
-          cudaGetErrorString(err));
-      return 0;
-    }
-  } else {
-    memcpy(&val, ptr, sizeof(float));
+std::optional<std::string> read_prompt() {
+  if (FLAGS_prompt_file.empty()) {
+    return FLAGS_prompt;
   }
-#else
-  memcpy(&val, ptr, sizeof(float));
-#endif
-
-  return static_cast<uint64_t>(llrintf(val));
+  std::ifstream f(FLAGS_prompt_file);
+  if (!f.is_open()) {
+    ET_LOG(Error, "Failed to open prompt file: %s", FLAGS_prompt_file.c_str());
+    return std::nullopt;
+  }
+  return std::string(
+      (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
+
+std::string format_prompt(std::string prompt) {
+  if (FLAGS_raw_prompt) {
+    return prompt;
+  }
+  return "<|turn>user\n" + prompt +
+      "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>";
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  if (FLAGS_model_path.empty()) {
-    ET_LOG(Error, "Must specify --model_path");
-    return 1;
-  }
-  if (FLAGS_tokenizer_path.empty()) {
-    ET_LOG(Error, "Must specify --tokenizer_path");
+  if (FLAGS_model_path.empty() || FLAGS_tokenizer_path.empty()) {
+    ET_LOG(Error, "--model_path and --tokenizer_path are required");
     return 1;
   }
 
@@ -125,90 +121,29 @@ int main(int argc, char** argv) {
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);
   stats.gpu_total_bytes = gpu_total_bytes;
   stats.gpu_free_before_load_bytes = gpu_free_bytes;
-#endif
-
-  stats.model_load_start_ms = llm::time_in_ms();
-
-  // Tokenizer
-  auto tokenizer = std::make_unique<tokenizers::HFTokenizer>();
-  if (tokenizer->load(FLAGS_tokenizer_path) != tokenizers::Error::Ok) {
-    ET_LOG(
-        Error,
-        "Failed to load tokenizer from %s",
-        FLAGS_tokenizer_path.c_str());
-    return 1;
-  }
-
-  // Module: share_memory_arenas=true so prefill and decode see the same
-  // KV-cache memory (we exported with share_mutable_buffers=True).
-  std::vector<std::string> data_files;
-  if (!FLAGS_data_path.empty()) {
-    data_files.push_back(FLAGS_data_path);
-  }
-  auto module = std::make_unique<Module>(
-      FLAGS_model_path,
-      data_files,
-      Module::LoadMode::File,
-      /*event_tracer=*/nullptr,
-      /*memory_allocator=*/nullptr,
-      /*temp_allocator=*/nullptr,
-      /*share_memory_arenas=*/true);
-
-  // Get metadata
-  auto metadata_result = llm::get_llm_metadata(tokenizer.get(), module.get());
-  if (metadata_result.error() != Error::Ok) {
-    ET_LOG(Error, "Failed to read model metadata");
-    return 1;
-  }
-
-#ifdef EXECUTORCH_BUILD_CUDA
-  if (FLAGS_cuda_graph) {
-    executorch::runtime::BackendOptions<2> cuda_opts;
-    cuda_opts.set_option("enable_cuda_graph_for_method", "decode");
-    executorch::runtime::set_option("CudaBackend", cuda_opts.view());
-    printf("CUDA graph enabled for decode method\n");
-  }
-
-  // Cross-method per-FQN weight sharing: prefill + decode share the same
-  // weight tensors and (more importantly) the same KV-cache buffers, so
-  // without this flag we would allocate them twice. MUST be set before
-  // load_method.
-  {
-    executorch::runtime::BackendOptions<1> backend_options;
-    auto set_err =
-        backend_options.set_option("weight_sharing_across_methods", true);
-    if (set_err != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Failed to construct weight_sharing_across_methods option: %d",
-          static_cast<int>(set_err));
-      return 1;
-    }
-    auto opt_err =
-        executorch::runtime::set_option("CudaBackend", backend_options.view());
-    if (opt_err != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Failed to enable weight_sharing_across_methods: %d",
-          static_cast<int>(opt_err));
-      return 1;
-    }
-  }
 #else
   if (FLAGS_cuda_graph) {
     ET_LOG(Info, "--cuda_graph ignored on non-CUDA build");
   }
 #endif
 
-  printf("Loading methods...\n");
-  if (module->load_method("prefill") != Error::Ok) {
-    ET_LOG(Error, "Failed to load prefill method");
+  llm::Gemma4_31BConfig config;
+  config.model_path = FLAGS_model_path;
+  config.data_path = FLAGS_data_path;
+  config.tokenizer_path = FLAGS_tokenizer_path;
+  config.max_sessions = 1;
+  config.eos_id = FLAGS_eos_id;
+#ifdef EXECUTORCH_BUILD_CUDA
+  config.enable_cuda_graph = FLAGS_cuda_graph;
+#endif
+
+  stats.model_load_start_ms = llm::time_in_ms();
+  auto engine_result = llm::Gemma4_31BEngine::create(config);
+  if (engine_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to create Gemma4_31BEngine");
     return 1;
   }
-  if (module->load_method("decode") != Error::Ok) {
-    ET_LOG(Error, "Failed to load decode method");
-    return 1;
-  }
+  auto engine = std::move(engine_result.get());
   stats.model_load_end_ms = llm::time_in_ms();
 
 #ifdef EXECUTORCH_BUILD_CUDA
@@ -216,179 +151,75 @@ int main(int argc, char** argv) {
   stats.gpu_free_after_load_bytes = gpu_free_bytes;
 #endif
 
-  auto eos_ids = llm::get_eos_ids(tokenizer.get(), module.get());
-  eos_ids.insert(static_cast<uint64_t>(FLAGS_eos_id));
-
-  // Read prompt from file or flag
-  std::string prompt_text = FLAGS_prompt;
-  if (!FLAGS_prompt_file.empty()) {
-    std::ifstream f(FLAGS_prompt_file);
-    if (!f.is_open()) {
-      ET_LOG(
-          Error, "Failed to open prompt file: %s", FLAGS_prompt_file.c_str());
-      return 1;
-    }
-    prompt_text = std::string(
-        (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  auto session_result = engine->create_session();
+  if (session_result.error() != Error::Ok) {
+    ET_LOG(Error, "Failed to create session");
+    return 1;
   }
+  auto session = std::move(session_result.get());
 
-  // Encode prompt
-  auto encode_result = tokenizer->encode(prompt_text);
-  if (!encode_result.ok()) {
+  auto prompt = read_prompt();
+  if (!prompt.has_value()) {
+    return 1;
+  }
+  std::string prompt_text = format_prompt(std::move(*prompt));
+
+  auto encoded = engine->tokenizer()->encode(prompt_text, /*bos=*/0, /*eos=*/0);
+  if (!encoded.ok()) {
     ET_LOG(Error, "Failed to encode prompt");
     return 1;
   }
-  auto prompt_tokens = std::move(*encode_result);
-  // Gemma models require BOS at the start of the sequence.
-  prompt_tokens.insert(
-      prompt_tokens.begin(), static_cast<uint64_t>(FLAGS_bos_id));
-  int64_t num_prompt_tokens = static_cast<int64_t>(prompt_tokens.size());
-  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
-  stats.num_prompt_tokens = num_prompt_tokens;
+  std::vector<uint64_t> prompt_tokens;
+  prompt_tokens.reserve(encoded->size() + 1);
+  prompt_tokens.push_back(static_cast<uint64_t>(FLAGS_bos_id));
+  prompt_tokens.insert(prompt_tokens.end(), encoded->begin(), encoded->end());
 
+  stats.num_prompt_tokens = static_cast<int64_t>(prompt_tokens.size());
+  printf("Prompt tokens: %" PRId64 "\n", stats.num_prompt_tokens);
+
+  llm::SamplingConfig sampling;
+  sampling.temperature = static_cast<float>(FLAGS_temperature);
+  sampling.top_k = FLAGS_top_k;
+  sampling.top_p = static_cast<float>(FLAGS_top_p);
+  // Only a --sample model uses the seed; randomize an unset seed for those and
+  // leave non-sample models at 0 so they don't trip the top_p/seed guard.
+  const auto& md = engine->metadata();
+  const auto us_it = md.find("use_sampling");
+  const bool model_samples = us_it != md.end() && us_it->second != 0;
+  uint64_t base_seed = FLAGS_seed < 0 ? 0 : static_cast<uint64_t>(FLAGS_seed);
+  if (model_samples && FLAGS_seed < 0) {
+    base_seed = static_cast<uint64_t>(std::random_device{}());
+  }
+  sampling.seed = base_seed;
+  if (model_samples) {
+    printf("Sampling base seed: %" PRIu64 "\n", base_seed);
+  }
   stats.inference_start_ms = llm::time_in_ms();
-
-  auto S = [](int64_t v) -> SizesType { return static_cast<SizesType>(v); };
-
-#ifdef EXECUTORCH_BUILD_CUDA
-  // CUDA build: model fuses the sampler. Pass temperature as a third input.
-  float temp_val =
-      FLAGS_temperature <= 0.0 ? 1e-6f : static_cast<float>(FLAGS_temperature);
-  auto temp_tensor =
-      from_blob(&temp_val, {1}, executorch::aten::ScalarType::Float);
-#endif
-
-  // ---------------------------------------------------------------
-  // Prefill (chunked to respect ring-buffer KV cache limit)
-  // ---------------------------------------------------------------
-  // Sliding layers use a ring buffer sized to 2×sliding_window. A single
-  // prefill call must not exceed this size, otherwise index_copy_ with
-  // wrapped indices produces non-deterministic results on CUDA.
-  int64_t max_prefill_chunk = (*metadata_result)[llm::kMaxSeqLen] - 1;
-  {
-    auto get_result = module->get("get_max_prefill_chunk");
-    if (get_result.ok()) {
-      max_prefill_chunk = get_result->toScalar().to<int64_t>();
-    }
+  if (session->prefill_tokens(prompt_tokens, &sampling) != Error::Ok) {
+    ET_LOG(Error, "Prefill failed");
+    return 1;
   }
-
-  uint64_t cur_token = 0;
-  int64_t prefill_pos = 0;
-  while (prefill_pos < num_prompt_tokens) {
-    int64_t chunk_len =
-        std::min(num_prompt_tokens - prefill_pos, max_prefill_chunk);
-
-    std::string run_method = (chunk_len == 1) ? "decode" : "prefill";
-
-    std::vector<int64_t> token_data(
-        prompt_tokens.begin() + prefill_pos,
-        prompt_tokens.begin() + prefill_pos + chunk_len);
-    std::vector<int64_t> pos_data(chunk_len);
-    for (int64_t i = 0; i < chunk_len; i++) {
-      pos_data[i] = prefill_pos + i;
-    }
-    auto tokens_tensor = from_blob(
-        token_data.data(),
-        {1, S(chunk_len)},
-        executorch::aten::ScalarType::Long);
-    auto pos_tensor = from_blob(
-        pos_data.data(), {S(chunk_len)}, executorch::aten::ScalarType::Long);
-
-    std::vector<EValue> prefill_inputs;
-    prefill_inputs.push_back(EValue(tokens_tensor));
-    prefill_inputs.push_back(EValue(pos_tensor));
-#ifdef EXECUTORCH_BUILD_CUDA
-    prefill_inputs.push_back(EValue(temp_tensor));
-#endif
-
-    auto prefill_result = module->execute(run_method, prefill_inputs);
-    if (prefill_result.error() != Error::Ok) {
-      ET_LOG(
-          Error, "%s failed at pos %" PRId64, run_method.c_str(), prefill_pos);
-      return 1;
-    }
-    cur_token = read_token(prefill_result.get()[0].toTensor());
-    prefill_pos += chunk_len;
-  }
-
   stats.prompt_eval_end_ms = llm::time_in_ms();
-  double prefill_ms =
-      static_cast<double>(stats.prompt_eval_end_ms - stats.inference_start_ms);
-  printf(
-      "Prefill: %" PRId64 " tokens in %.1f ms (%.1f tok/s)\n",
-      num_prompt_tokens,
-      prefill_ms,
-      num_prompt_tokens * 1000.0 / prefill_ms);
+  stats.first_token_ms = stats.prompt_eval_end_ms;
 
-#ifdef EXECUTORCH_BUILD_CUDA
-  // Synchronize CUDA device to ensure prefill's writes to shared mutable
-  // buffers (KV cache) are visible to the decode method, which may run on
-  // a different CUDA stream.
-  cudaDeviceSynchronize();
-#endif
-
-  // ---------------------------------------------------------------
-  // Decode loop
-  // ---------------------------------------------------------------
-  int64_t pos = num_prompt_tokens;
-  std::vector<int64_t> decode_token_data = {static_cast<int64_t>(cur_token)};
-  std::vector<int64_t> decode_pos_data = {pos};
-  auto decode_tokens = from_blob(
-      decode_token_data.data(), {1, 1}, executorch::aten::ScalarType::Long);
-  auto decode_pos = from_blob(
-      decode_pos_data.data(), {1}, executorch::aten::ScalarType::Long);
-
-  uint64_t prev_token = cur_token;
-  for (int32_t step = 0; step < FLAGS_max_new_tokens; step++) {
-    decode_token_data[0] = static_cast<int64_t>(cur_token);
-    decode_pos_data[0] = pos;
-
-    std::vector<EValue> decode_inputs;
-    decode_inputs.push_back(EValue(decode_tokens));
-    decode_inputs.push_back(EValue(decode_pos));
-#ifdef EXECUTORCH_BUILD_CUDA
-    decode_inputs.push_back(EValue(temp_tensor));
-#endif
-
-    auto decode_result = module->execute("decode", decode_inputs);
-    if (decode_result.error() != Error::Ok) {
-      ET_LOG(Error, "Decode step %d failed", step);
+  int64_t generated = 0;
+  for (; generated < FLAGS_max_new_tokens; ++generated) {
+    auto step = session->decode_one(sampling);
+    if (step.error() != Error::Ok) {
+      ET_LOG(Error, "Decode failed");
       return 1;
     }
-
-    prev_token = cur_token;
-    cur_token = read_token(decode_result.get()[0].toTensor());
-
-    if (step == 0) {
-      stats.first_token_ms = llm::time_in_ms();
-    }
-    pos++;
-
-    auto decode_str = tokenizer->decode(prev_token, cur_token);
-    if (decode_str.ok()) {
-      printf("%s", decode_str->c_str());
-      fflush(stdout);
-    }
-
-    if (eos_ids.find(cur_token) != eos_ids.end()) {
-      printf("\n");
+    const auto& d = step.get();
+    if (d.is_terminal) {
       break;
     }
+    printf("%s", d.text_piece.c_str());
+    fflush(stdout);
   }
-
-  stats.inference_end_ms = llm::time_in_ms();
   printf("\n");
 
-  int64_t num_generated = pos - num_prompt_tokens;
-  stats.num_generated_tokens = num_generated;
-  double decode_ms =
-      static_cast<double>(stats.inference_end_ms - stats.prompt_eval_end_ms);
-  printf(
-      "Decode: %" PRId64 " tokens in %.1f ms (%.1f tok/s)\n",
-      num_generated,
-      decode_ms,
-      num_generated * 1000.0 / decode_ms);
-  printf("Prompt tokens: %" PRId64 "\n", num_prompt_tokens);
+  stats.inference_end_ms = llm::time_in_ms();
+  stats.num_generated_tokens = generated;
 
 #ifdef EXECUTORCH_BUILD_CUDA
   cudaMemGetInfo(&gpu_free_bytes, &gpu_total_bytes);

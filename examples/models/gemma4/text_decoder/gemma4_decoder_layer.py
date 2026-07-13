@@ -20,7 +20,6 @@ from torch import nn
 
 from .gemma4_attention import Gemma4Attention
 from .gemma4_config import Gemma4Config
-from .gemma4_norm import RMSNorm
 
 
 class Gemma4MLP(nn.Module):
@@ -97,23 +96,23 @@ class Gemma4DecoderLayer(nn.Module):
         )
 
         # LayerNorms
-        self.input_layernorm = RMSNorm(
+        self.input_layernorm = nn.RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
         )
-        self.post_attention_layernorm = RMSNorm(
+        self.post_attention_layernorm = nn.RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
         )
-        self.pre_feedforward_layernorm = RMSNorm(
+        self.pre_feedforward_layernorm = nn.RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
         )
-        self.post_feedforward_layernorm = RMSNorm(
+        self.post_feedforward_layernorm = nn.RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
         )
-        self.post_per_layer_input_norm = RMSNorm(
+        self.post_per_layer_input_norm = nn.RMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
         )

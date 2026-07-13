@@ -49,6 +49,7 @@ jobs:
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
       script: |
         set -eux
         # This is needed to get the prebuilt PyTorch wheel from S3
@@ -71,7 +72,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}"
+          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}" -cpuOnly true
           if (\$LASTEXITCODE -ne 0) {
               Write-Host "Setup failed. Exit code: \$LASTEXITCODE."
               exit \$LASTEXITCODE

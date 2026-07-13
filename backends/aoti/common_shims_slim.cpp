@@ -7,6 +7,8 @@
  */
 
 #include <executorch/backends/aoti/common_shims_slim.h>
+#include <executorch/runtime/platform/abort.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace executorch {
 namespace backends {
@@ -118,6 +120,10 @@ int32_t aoti_torch_dtype_bfloat16() {
   return 15; // ScalarType::BFloat16
 }
 
+int32_t aoti_torch_dtype_float16() {
+  return 5; // ScalarType::Half
+}
+
 int32_t aoti_torch_dtype_int64() {
   return 4; // ScalarType::Long
 }
@@ -169,6 +175,25 @@ AOTITorchError aoti_torch_grad_mode_set_enabled(bool enabled) {
     return Error::NotSupported;
   }
   return Error::Ok;
+}
+
+void aoti_torch_check(
+    bool cond,
+    const char* func,
+    const char* file,
+    uint32_t line,
+    const char* msg) {
+  if (cond) {
+    return;
+  }
+  ET_LOG(
+      Fatal,
+      "[%s:%u] %s: %s",
+      file != nullptr ? file : "<unknown>",
+      line,
+      func != nullptr ? func : "<unknown>",
+      msg != nullptr ? msg : "AOTI check failed");
+  ::executorch::runtime::runtime_abort();
 }
 
 } // extern "C"

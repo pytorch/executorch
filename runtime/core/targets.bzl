@@ -77,6 +77,7 @@ def define_common_targets():
         ],
         exported_deps = [
             ":core",
+            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],
         visibility = ["PUBLIC"],
@@ -154,6 +155,17 @@ def define_common_targets():
             ],
             visibility = ["//executorch/..."],
         )
+
+    runtime.cxx_library(
+        name = "device_memory_buffer",
+        srcs = ["device_memory_buffer.cpp"],
+        exported_headers = ["device_memory_buffer.h"],
+        exported_deps = [
+            ":core",
+            ":device_allocator",
+        ],
+        visibility = ["PUBLIC"],
+    )
 
     runtime.cxx_library(
         name = "tag",

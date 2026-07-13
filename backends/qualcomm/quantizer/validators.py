@@ -283,7 +283,21 @@ def _qspec_port_encoding_type(node: Node, qspec: QuantizationSpecBase):
     qscheme = qspec.qscheme
 
     if qscheme in [torch.per_tensor_symmetric, torch.per_tensor_affine]:
-        if qspec.dtype == torch.int8 and qspec.quant_max - qspec.quant_min <= 15:
+        # quant_max/quant_min are None for non-integer activations (e.g. uint16 in
+        # 16a2w) whose range is not expressed as a fixed integer bound; skip the
+        # 4-bit BW_SCALE_OFFSET special-casing for those tensors.
+        if (
+            qspec.dtype == torch.int8
+            and qspec.quant_max is not None
+            and qspec.quant_min is not None
+            and (quant_range := qspec.quant_max - qspec.quant_min) <= 15
+        ):
+            if quant_range <= 3:
+                raise ValueError(
+                    f"2-bit quantization (range={quant_range}) "
+                    "does not support per-tensor encoding. "
+                    "Use per-channel quantization instead."
+                )
             encoding_type = (
                 PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET
             )

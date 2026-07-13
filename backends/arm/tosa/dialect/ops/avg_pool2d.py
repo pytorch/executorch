@@ -8,7 +8,7 @@ from typing import List, Union
 import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
     get_context_spec,
@@ -48,6 +48,10 @@ def _get_supported_avg_pool2d_acc_types(
         supported_acc_types[torch.float32] = (torch.float32,)
         if tosa_spec.support_extension("bf16"):
             supported_acc_types[torch.bfloat16] = (torch.float32,)
+        if tosa_spec.support_extension("fp8e4m3"):
+            supported_acc_types[torch.float8_e4m3fn] = (torch.float16,)
+        if tosa_spec.support_extension("fp8e5m2"):
+            supported_acc_types[torch.float8_e5m2] = (torch.float16,)
 
     return supported_acc_types
 
@@ -101,7 +105,7 @@ def validate_avg_pool2d_args(
         )
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "AVG_POOL2D(Tensor input, Tensor input_zp, Tensor output_zp, int[2] kernel, int[2] stride, SymInt[4] pad, ScalarType acc_type) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -136,7 +140,7 @@ def compute_avg_pool2d_output_shape(
     pad: List[IntLikeType] | List[int],
     op: str = "AVG_POOL2D",
 ) -> List[IntLikeType]:
-    """Compute the output shape for NCHW avg-pool."""
+    """Compute the output shape for NHWC avg-pool."""
 
     if x.dim() != 4:
         raise TosaValueError(f"{op} requires a 4D tensor, got {x.dim()}D", op=op)

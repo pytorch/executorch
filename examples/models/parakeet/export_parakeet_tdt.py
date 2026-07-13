@@ -334,7 +334,7 @@ def export_all(
     programs = {}
 
     # Determine device based on backend (preprocessor always stays on CPU)
-    device = torch.device("cuda" if backend == "cuda" else "cpu")
+    device = torch.device("cuda:0" if backend == "cuda" else "cpu")
 
     # Get audio parameters from model config
     sample_rate = model.preprocessor._cfg.sample_rate
@@ -360,8 +360,8 @@ def export_all(
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            # min=1600 samples = 0.1 sec @ 16kHz, max aligned with encoder limit
-            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
+            # min=10 frames = 0.1 sec @ 16kHz, max aligned with encoder limit.
+            "audio": {0: Dim.AUTO(min=1600, max=max_audio_samples)},
             "length": {},
         },
         strict=False,
@@ -370,7 +370,7 @@ def export_all(
 
     # Move model to CUDA after preprocessor export (preprocessor must stay on CPU)
     if backend == "cuda":
-        model.cuda()
+        model.to(device)
 
     feat_in = getattr(model.encoder, "_feat_in", 128)
     # Use max_mel_frames as example to ensure Dim.AUTO infers the full range.

@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -239,9 +240,9 @@ TEST_F(OpBmmOutTest, MismatchedDimensionsDies) {
 }
 
 TEST_F(OpBmmOutTest, MismatchedDimensionSizeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimension size");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.ones({2, 10, 3});
@@ -261,9 +262,9 @@ TEST_F(OpBmmOutTest, MismatchedDimensionSizeDies) {
 }
 
 TEST_F(OpBmmOutTest, WrongOutShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle wrong out shape");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.ones({2, 10, 3});

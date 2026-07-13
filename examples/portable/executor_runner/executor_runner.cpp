@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2024-2025 Arm Limited and/or its affiliates.
+ * Copyright 2024-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -22,6 +22,7 @@
 #ifdef ET_BUNDLE_IO_ENABLED
 #include <filesystem>
 #endif // ET_BUNDLE_IO_ENABLED
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -34,6 +35,7 @@
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -68,6 +70,12 @@ DEFINE_string(
     output_file,
     "",
     "Base name of output file. If not empty output will be written to the file(s).");
+DEFINE_bool(
+    server_mode,
+    false,
+    "Run continuously, executing one inference per line read from stdin. "
+    "In server mode, input files specified by --inputs are re-read before each "
+    "execution and outputs are overwritten under --output_file.");
 
 DEFINE_string(
     print_output,
@@ -85,6 +93,18 @@ DEFINE_int32(
     cpu_threads,
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
+#if defined(ET_ENABLE_VGF_INPUT_DUMP)
+DEFINE_string(
+    vgf_input_dump_dir,
+    "",
+    "Directory for Arm VGF delegate-boundary input dumps. Empty disables dumping.");
+
+DEFINE_bool(
+    dump_vgf_inputs_and_exit,
+    false,
+    "Dump Arm VGF delegate-boundary inputs from the first VGFBackend::execute() "
+    "call and stop before VGF dispatch. Requires --vgf_input_dump_dir.");
+#endif
 
 #ifdef ET_BUNDLE_IO_ENABLED
 DEFINE_double(bundleio_rtol, 0.01, "Relative tolerance for bundled IO.");
@@ -102,6 +122,7 @@ using executorch::extension::BufferDataLoader;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
 using executorch::runtime::DataLoader;
+using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
@@ -115,8 +136,93 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
 using executorch::runtime::TensorInfo;
+using executorch::runtime::etensor::Device;
 
 enum class PrintOutputMode { None, Summary, All };
+
+namespace {
+
+Error load_input_files(
+    const std::vector<std::string>& file_paths,
+    std::vector<std::string>& inputs_storage,
+    std::vector<std::pair<char*, size_t>>& input_buffers) {
+  inputs_storage.clear();
+  input_buffers.clear();
+  inputs_storage.reserve(file_paths.size());
+
+  for (const auto& file_path : file_paths) {
+    std::ifstream input_file_handle(
+        file_path, std::ios::binary | std::ios::ate);
+
+    if (!input_file_handle) {
+      ET_LOG(Error, "Failed to open input file: %s", file_path.c_str());
+      return Error::AccessFailed;
+    }
+
+    std::streamsize file_size = input_file_handle.tellg();
+    input_file_handle.seekg(0, std::ios::beg);
+    if (file_size < 0) {
+      ET_LOG(Error, "Failed to read input file size: %s", file_path.c_str());
+      return Error::Internal;
+    }
+
+    // Reserve memory for actual file contents.
+    inputs_storage.emplace_back(static_cast<size_t>(file_size), '\0');
+
+    if (!input_file_handle.read(inputs_storage.back().data(), file_size)) {
+      ET_LOG(Error, "Failed to read input file: %s", file_path.c_str());
+      return Error::AccessFailed;
+    }
+
+    input_buffers.emplace_back(
+        inputs_storage.back().data(), static_cast<size_t>(file_size));
+  }
+
+  return Error::Ok;
+}
+
+#if defined(ET_ENABLE_VGF_INPUT_DUMP)
+constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
+constexpr const char* kVgfDumpInputsAndExitEnv =
+    "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
+Error set_env_var(const char* name, const std::string& value) {
+#if defined(_WIN32)
+  return _putenv_s(name, value.c_str()) == 0 ? Error::Ok : Error::Internal;
+#else
+  return setenv(name, value.c_str(), 1) == 0 ? Error::Ok : Error::Internal;
+#endif
+}
+#endif
+
+bool configure_vgf_input_dump_flags() {
+#if defined(ET_ENABLE_VGF_INPUT_DUMP)
+  if (FLAGS_dump_vgf_inputs_and_exit && FLAGS_vgf_input_dump_dir.empty()) {
+    ET_LOG(
+        Error,
+        "--dump_vgf_inputs_and_exit requires --vgf_input_dump_dir to be set.");
+    return false;
+  }
+
+  if (!FLAGS_vgf_input_dump_dir.empty()) {
+    Error status = set_env_var(kVgfDumpInputsDirEnv, FLAGS_vgf_input_dump_dir);
+    if (status != Error::Ok) {
+      ET_LOG(Error, "Failed to set %s.", kVgfDumpInputsDirEnv);
+      return false;
+    }
+
+    status = set_env_var(
+        kVgfDumpInputsAndExitEnv, FLAGS_dump_vgf_inputs_and_exit ? "1" : "0");
+    if (status != Error::Ok) {
+      ET_LOG(Error, "Failed to set %s.", kVgfDumpInputsAndExitEnv);
+      return false;
+    }
+  }
+#endif
+
+  return true;
+}
+
+} // namespace
 
 /// Helper to manage resources for ETDump generation
 class EventTraceManager {
@@ -187,6 +293,15 @@ std::vector<uint8_t> try_load_file(const std::filesystem::path& path) {
 }
 #endif
 
+bool is_expected_vgf_dump_stop(Error status) {
+#if defined(ET_ENABLE_VGF_INPUT_DUMP)
+  return FLAGS_dump_vgf_inputs_and_exit && status == Error::EndOfMethod;
+#else
+  (void)status;
+  return false;
+#endif
+}
+
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
 
@@ -212,6 +327,10 @@ int main(int argc, char** argv) {
         Error,
         "Unknown --print_output mode '%s'. Expected 'none', 'summary', or 'all'.",
         FLAGS_print_output.c_str());
+    return 1;
+  }
+
+  if (!configure_vgf_input_dump_flags()) {
     return 1;
   }
 
@@ -270,40 +389,25 @@ int main(int argc, char** argv) {
   // everything hardcoded to ones.
   std::vector<std::string> inputs_storage;
   std::vector<std::pair<char*, size_t>> input_buffers;
+  std::vector<std::string> file_paths;
   if (!bundle_io) {
     if (!FLAGS_inputs.empty()) {
       ET_LOG(Info, "Loading inputs from input file(s).");
       std::stringstream list_of_input_files(FLAGS_inputs);
       std::string path;
 
-      std::vector<std::string> file_paths;
       while (std::getline(list_of_input_files, path, ',')) {
         file_paths.push_back(std::move(path));
       }
-      // First reserve number of elements to avoid vector reallocations.
-      inputs_storage.reserve(file_paths.size());
 
-      for (const auto& file_path : file_paths) {
-        std::ifstream input_file_handle(
-            file_path, std::ios::binary | std::ios::ate);
-
-        if (!input_file_handle) {
-          ET_LOG(Error, "Failed to open input file: %s\n", file_path.c_str());
-          return 1;
-        }
-
-        std::streamsize file_size = input_file_handle.tellg();
-        input_file_handle.seekg(0, std::ios::beg);
-
-        // Reserve memory for actual file contents.
-        inputs_storage.emplace_back(file_size, '\0');
-
-        if (!input_file_handle.read(inputs_storage.back().data(), file_size)) {
-          ET_LOG(Error, "Failed to read input file: %s\n", file_path.c_str());
-          return 1;
-        }
-
-        input_buffers.emplace_back(&inputs_storage.back()[0], file_size);
+      // In server mode, input files are re-read before each execution.
+      if (!FLAGS_server_mode) {
+        const Error load_status =
+            load_input_files(file_paths, inputs_storage, input_buffers);
+        ET_CHECK_MSG(
+            load_status == Error::Ok,
+            "Could not load inputs: 0x%" PRIx32,
+            (uint32_t)load_status);
       }
     }
   }
@@ -425,24 +529,80 @@ int main(int argc, char** argv) {
   // mobile environments will only have a single buffer. Some embedded
   // environments may have more than one for, e.g., slow/large DRAM and
   // fast/small SRAM, or for memory associated with particular cores.
-  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
+  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns CPU memory
+  std::vector<DeviceMemoryBuffer> planned_device_buffers; // Owns device memory
   std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
+  std::vector<Device> planned_devices; // One entry per planned buffer
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
+  planned_spans.reserve(num_memory_planned_buffers);
+  planned_devices.reserve(num_memory_planned_buffers);
+  // Under device memory planning, some planned buffers are resident on an
+  // accelerator (e.g. CUDA) rather than CPU. Those must be backed by real
+  // device memory: backing them with host memory would make delegate IO
+  // tensors device-typed but host-backed, which the backend rejects at runtime.
+  bool has_device_buffers = false;
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     // .get() will always succeed because id < num_memory_planned_buffers.
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
-    ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
-    planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
-    planned_spans.push_back({planned_buffers.back().get(), buffer_size});
+    Result<Device> buffer_device =
+        method_meta->memory_planned_buffer_device(id);
+    ET_CHECK_MSG(
+        buffer_device.ok(),
+        "Failed to get device for planned buffer %zu: 0x%" PRIx32,
+        id,
+        (uint32_t)buffer_device.error());
+    planned_devices.push_back(buffer_device.get());
+
+    if (buffer_device->is_cpu()) {
+      ET_LOG(
+          Info,
+          "Setting up CPU planned buffer %zu, size %zu.",
+          id,
+          buffer_size);
+      planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
+      planned_spans.push_back({planned_buffers.back().get(), buffer_size});
+    } else {
+      has_device_buffers = true;
+      // Allocate via the DeviceAllocator registered by the backend library
+      // (e.g. the CUDA backend registers a CudaAllocator when linked).
+      Result<DeviceMemoryBuffer> device_buffer = DeviceMemoryBuffer::create(
+          buffer_size, buffer_device->type(), buffer_device->index());
+      ET_CHECK_MSG(
+          device_buffer.ok(),
+          "Failed to allocate device memory for planned buffer %zu "
+          "(device_type=%d): 0x%" PRIx32,
+          id,
+          (int)buffer_device->type(),
+          (uint32_t)device_buffer.error());
+      ET_LOG(
+          Info,
+          "Setting up device planned buffer %zu, size %zu, device_type %d.",
+          id,
+          buffer_size,
+          (int)buffer_device->type());
+      planned_spans.push_back(device_buffer->as_span());
+      planned_device_buffers.push_back(std::move(device_buffer.get()));
+    }
   }
-  HierarchicalAllocator planned_memory(
-      {planned_spans.data(), planned_spans.size()});
+
+  // For CPU-only programs keep the legacy single-arg allocator so behavior is
+  // unchanged. When the program plans device buffers, pass the per-buffer
+  // device metadata so the runtime can place tensors on the right device.
+  std::optional<HierarchicalAllocator> planned_memory;
+  if (has_device_buffers) {
+    planned_memory.emplace(
+        Span<Span<uint8_t>>(planned_spans.data(), planned_spans.size()),
+        Span<const Device>(planned_devices.data(), planned_devices.size()));
+  } else {
+    planned_memory.emplace(
+        Span<Span<uint8_t>>(planned_spans.data(), planned_spans.size()));
+  }
 
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
   MemoryManager memory_manager(
-      &method_allocator, &planned_memory, &temp_allocator);
+      &method_allocator, &planned_memory.value(), &temp_allocator);
 
   //
   // Load the method from the program, using the provided allocators. Running
@@ -469,6 +629,96 @@ int main(int argc, char** argv) {
         static_cast<double>(after_load - before_load) *
             load_tick_ratio.numerator / load_tick_ratio.denominator /
             1000000.0);
+  }
+
+  if (FLAGS_server_mode) {
+    ET_CHECK_MSG(
+        !FLAGS_output_file.empty(),
+        "--output_file must be set in --server_mode so outputs can be retrieved.");
+    ET_LOG(Info, "Running in server mode; waiting for stdin triggers.");
+    std::vector<EValue> outputs(method->outputs_size());
+    ET_LOG(Info, "%zu outputs: ", outputs.size());
+
+    std::string line;
+    while (std::getline(std::cin, line)) {
+      (void)line;
+
+      if (!bundle_io && !file_paths.empty()) {
+        const Error load_status =
+            load_input_files(file_paths, inputs_storage, input_buffers);
+        ET_CHECK_MSG(
+            load_status == Error::Ok,
+            "Could not load inputs: 0x%" PRIx32,
+            (uint32_t)load_status);
+      }
+
+      std::optional<executorch::extension::BufferCleanup> inputs;
+
+#ifdef ET_BUNDLE_IO_ENABLED
+      if (bundle_io) {
+        ET_LOG(Debug, "Getting inputs from bundled IO");
+        Error status = executorch::bundled_program::load_bundled_input(
+            *method, model_pte, testset_idx);
+        ET_CHECK_MSG(
+            status == Error::Ok,
+            "load_bundled_input failed with status 0x%" PRIx32,
+            static_cast<uint32_t>(status));
+      } else
+#endif
+      {
+        ET_LOG(Debug, "Preparing inputs.");
+        auto res = executorch::extension::prepare_input_tensors(
+            *method, {}, input_buffers);
+        ET_CHECK_MSG(
+            res.ok(),
+            "Could not prepare inputs: 0x%" PRIx32,
+            (uint32_t)res.error());
+        inputs.emplace(std::move(res.get()));
+        ET_LOG(Debug, "Inputs prepared.");
+      }
+
+      Error status = method->execute();
+
+      if (is_expected_vgf_dump_stop(status)) {
+        ET_LOG(
+            Info,
+            "VGF delegate inputs dumped successfully; exiting before delegate dispatch.");
+        return 0;
+      }
+
+      ET_CHECK_MSG(
+          status == Error::Ok,
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method_name,
+          static_cast<uint32_t>(status));
+
+      status = method->get_outputs(outputs.data(), outputs.size());
+      ET_CHECK(status == Error::Ok);
+
+      if (FLAGS_output_file.size() > 0) {
+        for (int i = 0; i < outputs.size(); ++i) {
+          if (outputs[i].isTensor()) {
+            Tensor tensor = outputs[i].toTensor();
+
+            char out_filename[255];
+            snprintf(
+                out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
+            ET_LOG(Info, "Writing output to file: %s", out_filename);
+            FILE* out_file = fopen(out_filename, "wb");
+            ET_CHECK_MSG(
+                out_file != nullptr,
+                "Failed to open output file: %s",
+                out_filename);
+            fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
+            fclose(out_file);
+          }
+        }
+      }
+
+      ET_LOG(Info, "SERVER MODE DONE");
+    }
+
+    return 0;
   }
 
   et_timestamp_t time_spent_executing = 0;
@@ -511,6 +761,13 @@ int main(int argc, char** argv) {
     const et_timestamp_t before_execute =
         executorch::runtime::pal_current_ticks();
     Error status = method->execute();
+
+    if (is_expected_vgf_dump_stop(status)) {
+      ET_LOG(
+          Info,
+          "Arm/VGF delegate inputs dumped successfully; stopping before delegate dispatch.");
+      return 0;
+    }
     const et_timestamp_t after_execute =
         executorch::runtime::pal_current_ticks();
     const et_timestamp_t iter_elapsed = after_execute - before_execute;
@@ -553,6 +810,10 @@ int main(int argc, char** argv) {
         snprintf(out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
         ET_LOG(Info, "Writing output to file: %s", out_filename);
         FILE* out_file = fopen(out_filename, "wb");
+        ET_CHECK_MSG(
+            out_file != nullptr,
+            "Failed to open output file: %s",
+            out_filename);
         fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
         fclose(out_file);
       }

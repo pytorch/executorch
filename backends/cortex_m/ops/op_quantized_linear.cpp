@@ -13,12 +13,13 @@ namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+// cppcheck-suppress unusedFunction
 Tensor& quantized_linear_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weights,
-    const torch::executor::optional<Tensor>& bias,
-    const torch::executor::optional<Tensor>& kernel_sum,
+    const std::optional<Tensor>& bias,
+    const std::optional<Tensor>& kernel_sum,
     const int64_t input_offset,
     const int64_t filter_offset,
     const int64_t output_offset,

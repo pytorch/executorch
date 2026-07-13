@@ -8,34 +8,30 @@
 
 Mirrors ``examples/models/qwen3_5_moe/sampler.py``: a single-output sampler
 that lets one exported program be re-driven with different temperatures
-without re-export. ``temperature=None`` is a no-op (returns logits).
+without re-export.
 """
-
-from typing import Optional
 
 import torch
 
 
 def sample(
     logits: torch.Tensor,
-    temperature: Optional[torch.Tensor] = None,
+    temperature: torch.Tensor,
 ) -> torch.Tensor:
     """Draw a single token per batch row using the Gumbel-max trick.
 
     Args:
         logits: ``[B, V]`` float32 logits (already soft-capped if applicable).
         temperature: 0-D or 1-D float tensor; clamped to >= 1e-6 so a 0
-            temperature still works ("near-greedy"). When ``None`` the call
-            short-circuits and returns ``logits`` unchanged.
+            temperature still works ("near-greedy").
 
     Returns:
-        ``[B, 1]`` float32 token IDs (``argmax(logits/T + gumbel_noise)``),
-        or the unmodified logits when ``temperature`` is ``None``.
+        ``[B, 1]`` int64 token IDs (``argmax(logits/T + gumbel_noise)``).
+        Emitting int64 (rather than casting to float) lets the runner alias the
+        on-device output token directly as the next decode step's int64 token
+        input — no D2H/H2D round-trip and no dtype cast.
     """
-    if temperature is None:
-        return logits
-
     logits = logits / temperature.clamp(min=1e-6)
     noise = torch.rand_like(logits)
     gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
-    return (logits + gumbel).argmax(dim=-1, keepdim=True).float()
+    return (logits + gumbel).argmax(dim=-1, keepdim=True).to(torch.int64)

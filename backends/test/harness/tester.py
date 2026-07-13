@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -287,7 +287,7 @@ class Tester:
         return self
 
     def check_node_count(self, input: Dict[Any, int]):
-        # Count the occurances of each target in the graph.
+        # Count the occurrences of each target in the graph.
         target_ops = [
             node.target
             for node in self.stages[self.cur].graph_module.graph.nodes
@@ -439,9 +439,16 @@ class Tester:
                     f"\tMismatched count: {(model != ref).sum().item()} / {model.numel()}\n"
                 )
             else:
+                # torch.allclose() does not have a CPU implementation for FP8 tensors
+                # in some PyTorch builds, so compare FP8 outputs in float32 instead.
+                compare_model = model
+                compare_ref = ref
+                if model.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+                    compare_model = model.to(torch.float32)
+                    compare_ref = ref.to(torch.float32)
                 assert torch.allclose(
-                    model,
-                    ref,
+                    compare_model,
+                    compare_ref,
                     atol=atol,
                     rtol=rtol,
                     equal_nan=True,
@@ -449,7 +456,7 @@ class Tester:
                     f"Output {i} does not match reference output.\n"
                     f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                     f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                    f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref).to(torch.double))}.\n"
+                    f"\tDifference: max: {torch.max(compare_model-compare_ref)}, abs: {torch.max(torch.abs(compare_model-compare_ref))}, mean abs error: {torch.mean(torch.abs(compare_model-compare_ref).to(torch.double))}.\n"
                     f"\t-- Model vs. Reference --\n"
                     f"\t Numel: {model.numel()}, {ref.numel()}\n"
                     f"\tMedian: {model.median()}, {ref.median()}\n"

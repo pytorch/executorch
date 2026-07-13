@@ -98,6 +98,16 @@ class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPa
         # Actual selection is done per-call in call_operator.
         super().__init__(tfa_pass, _all_ops, *args, **kwargs)
 
+    def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target in _all_ops:
+                return True
+
+        return any(
+            isinstance(child, torch.fx.GraphModule) and self.should_run_pass(child)
+            for child in graph_module.children()
+        )
+
     def call_operator(self, op, args, kwargs, meta):
         if self.is_tfa_pass and op in _preserve_in_tfa:
             return ExportPass.call_operator(self, op, args, kwargs, meta)
@@ -126,4 +136,4 @@ class ReplaceScalarWithTensorByProfilePass(ArmPass, ReplaceScalarWithTensorArgPa
             return super().call_operator(op, args, kwargs, meta)
         else:
             # Do not handle; forward unchanged.
-            return ExportPass.call_operator(self, op, args, kwargs, meta)
+            return ArmPass.call_operator(self, op, args, kwargs, meta)

@@ -14,6 +14,7 @@ def _make_symint(
     shape_env: ShapeEnv, symbol: str, hint: int, min: int = 1, max: int = 64
 ) -> torch.SymInt:
     symint = shape_env.create_symintnode(sympy.Symbol(symbol), hint=hint)
+    assert isinstance(symint, torch.SymInt)
     shape_env.constrain_symbol_range(
         symint.node.expr, compiler_min=min, compiler_max=max
     )

@@ -9,8 +9,11 @@ Quantization framework: **recipe → quantize → pack**.
 | `recipe.py` | **Policy** — what to quantize, what precision, which layers | nothing |
 | `quantize.py` | **Computation** — produces torchao subclass tensors | recipe, torchao |
 | `pack.py` | **Packing dispatch** — `pack_model` (bulk) and `pack_one` (streaming) | — |
-| `pack_cuda.py` | **CUDA packing** — converts Int4Tensor to tinygemm format | pack |
-| `gguf.py` | **GGUF import** — unpacks Q4_K/Q6_K blocks to torchao subclasses | torchao |
+| `pack_cuda.py` | **CUDA packing** — passes Int4Tensor/IntxUnpacked through for CUDA dispatch | pack |
+| `pack_mlx.py` | **MLX packing** — converts Int4Tensor → IntxUnpacked, regroups per-axis embeddings | pack |
+
+GGUF import (unpacking Q4_K/Q6_K blocks) now lives in the shared
+`extension/llm/export/gguf.py`.
 
 ## Data flow
 
@@ -48,7 +51,4 @@ The format is compatible with torchao's `save_pretrained` / `load_pretrained`.
 ## TODO
 
 - `pack_metal.py` — Metal backend packer.
-- `pack_mlx.py` — MLX backend packer.
-- `gguf.py` — extend with Q5_K, Q8_0 GGUF quant types.
-- Upstream `Int4TilePackedTo4dTensor.from_int4_tensor()` to torchao
-  to replace the manual conversion in `pack_int4_for_cuda`.
+- GGUF quant types (Q5_K, Q8_0): extend `extension/llm/export/gguf.py`.

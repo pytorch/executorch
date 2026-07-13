@@ -16,6 +16,9 @@ name = "executorch"
 dynamic = [
   # setup.py will set the version.
   'version',
+  # setup.py sets dependencies, which vary by build mode (the
+  # EXECUTORCH_BUILD_MINIMAL wheel declares a slimmer runtime set).
+  'dependencies',
 ]
 description = "On-device AI across mobile, embedded and edge for PyTorch"
 readme = "README-wheel.md"
@@ -48,39 +51,17 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
-requires-python = ">=3.10,<3.14"
-dependencies=[
-  "expecttest",
-  "flatbuffers",
-  "hypothesis",
-  "kgb",
-  "mpmath==1.3.0",
-  "numpy>=2.0.0; python_version >= '3.10'",
-  "packaging",
-  "pandas>=2.2.2; python_version >= '3.10'",
-  "parameterized",
-  "pytorch-tokenizers",
-  "pyyaml",
-  "ruamel.yaml",
-  "sympy",
-  "tabulate",
-  # See also third-party/TARGETS for buck's typing-extensions version.
-  "typing-extensions>=4.10.0",
-  # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-  "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
-  # scikit-learn is used to support palettization in the coreml backend
-  "scikit-learn==1.7.1",
-  "hydra-core>=1.3.0",
-  "omegaconf>=2.3.0",
-]
+requires-python = ">=3.10,<3.15"
+
+# Runtime dependencies are declared dynamically (see `dynamic` above) and
+# computed in setup.py, so the EXECUTORCH_BUILD_MINIMAL wheel can ship a slimmer
+# set than the full wheel. See `_base_dependencies()` / `_minimal_dependencies()`
+# in setup.py.
 
 [project.optional-dependencies]
-cortex_m = [
-  # Keep this in sync with AoT deps from backends/cortex_m/requirements-cortex-m.txt
-  "cmsis_nn @ git+https://github.com/ARM-software/CMSIS-NN.git@d933672e7ca97eec70ef43230baee7b20c2a28ae",
-]
 vgf = [
   # AoT vgf dependencies
   # Keep this in sync with AoT deps from backends/arm/requirements-arm-vgf.txt and
@@ -88,15 +69,15 @@ vgf = [
   "ai_ml_emulation_layer_for_vulkan==0.9.0",
   "ai_ml_sdk_model_converter==0.9.0",
   "ml_dtypes==0.5.1",
-  "tosa-tools==2026.2.1",
+  "tosa-tools==2026.5.0",
 ]
 ethos_u = [
   # AoT ethos_u dependencies
   # Keep this in sync with AoT deps backends/arm/requirements-arm-ethos-u.txt and
   # backends/arm/requirements-arm-tosa.txt.
-  "ethos-u-vela==5.0.0",
+  "ethos-u-vela==5.1.0",
   "ml_dtypes==0.5.1",
-  "tosa-tools==2026.2.1",
+  "tosa-tools==2026.5.0",
 ]
 openvino = [
   "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
@@ -143,6 +124,10 @@ license-files = ["LICENSE"]
   # Some kernel libraries need their .yaml files.
   "*.yaml",
 ]
+"executorch.backends.arm.vgf.shaders" = [
+  "*.glsl",
+  "*.spirv.b64",
+]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
@@ -155,6 +140,9 @@ first_party_detection = false
 # Emit syntax compatible with older versions of python instead of only the range
 # specified by `requires-python`. TODO: Remove this once we support these older
 # versions of python and can expand the `requires-python` range.
+# py314 is intentionally omitted: black 24.4.2 does not recognize it, and the
+# newer black that does (>=26) reformats the whole repo. Add py314 here when the
+# tree is reformatted to the newer black stable style.
 target-version = ["py38", "py39", "py310", "py311", "py312", "py313"]
 
 [tool.docformatter]
@@ -164,3 +152,27 @@ wrap-descriptions = 80
 style = "sphinx"
 close-quotes-on-newline = true
 blank = true
+
+[tool.ruff.lint]
+select = ["D"]
+ignore = [
+  # Allow incremental adoption on legacy modules.
+  "D100",
+  "D104",
+  "D107",
+  # Keep the formatter-compatible rule pair for class docstring spacing.
+  "D203",
+  "D213",
+  # Numpy-style section rules conflict with Google-style docstrings.
+  "D406",
+  "D407",
+  "D408",
+  "D409",
+  "D410",
+  "D411",
+  "D412",
+  "D413",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

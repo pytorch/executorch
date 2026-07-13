@@ -87,6 +87,36 @@ test_data_fp_bf16: dict[str, input_params] = {
         ),  # Shape: [N=2, W=2, C=2]
     ),
 }
+test_data_fp_fp8: dict[str, tuple[input_params, str]] = {
+    "test_fp8e4m3_2d": (
+        (
+            torch.tensor(
+                [[0.5, 1.25, 2.5], [3.5, 4.25, 5.75]],
+                dtype=torch.float8_e4m3fn,
+            ),
+            1,
+            torch.tensor(
+                [[1, 0], [2, 1]],
+                dtype=torch.int64,
+            ),
+        ),
+        "fp8e4m3",
+    ),
+    "test_fp8e5m2_3d": (
+        (
+            torch.tensor(
+                [[[0.5, 1.5], [2.5, 3.5]], [[4.5, 5.5], [6.5, 7.5]]],
+                dtype=torch.float8_e5m2,
+            ),
+            1,
+            torch.tensor(
+                [[[0, 1], [1, 0]], [[1, 0], [0, 1]]],
+                dtype=torch.int64,
+            ),
+        ),
+        "fp8e5m2",
+    ),
+}
 
 
 # INT profile: integer inputs + bool (bool is supported via casts in
@@ -145,6 +175,23 @@ def test_gather_tosa_FP(test_data: input_params):
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_fp_fp8)
+def test_gather_tosa_FP_fp8(test_data: tuple[input_params, str]):
+    input_data, tosa_extension = test_data
+    pipeline = TosaPipelineFP[input_params](
+        Gather(),
+        input_data,
+        aten_op=Gather.aten_op,
+        exir_op=Gather.exir_op,
+        transform_passes=[
+            InsertInt32CastsAfterInt64PlaceholdersPass(),
+        ],  # int64 index are not currently supported and need to be cast to int32
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_int | test_data_fp)
 def test_gather_tosa_INT(test_data: input_params):
     pipeline = TosaPipelineINT[input_params](
@@ -183,7 +230,7 @@ def test_gather_u85_INT(test_data: input_params):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_fp | test_data_int)
+@common.parametrize("test_data", test_data_fp | test_data_fp_bf16 | test_data_int)
 @common.SkipIfNoModelConverter
 def test_gather_vgf_no_quant(test_data: input_params):
     pipeline = VgfPipeline[input_params](

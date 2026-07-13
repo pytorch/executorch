@@ -1,27 +1,32 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.executorch_pipeline import (
+    ModelInputSpec,
+    to_quantized_edge_program,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
+    AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import (
-    SubTensorConvModule,
-    SubTensorModule,
-    SubTensorOneInputModule,
+from executorch.backends.nxp.tests.models import MaxPoolSubTensorModule, SubTensorModule
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    SubTensor,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -31,151 +36,215 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-@pytest.mark.parametrize(
-    "input_shape",
-    [
-        pytest.param((4,), id="1D."),
-        pytest.param((6, 6), id="2D."),
-        pytest.param((1, 4, 8), id="3D."),
-        pytest.param((1, 4, 8, 8), id="4D."),
-    ],
-)
-def test_sub_tensor_quant_conversion(mocker, input_shape, use_qat):
-    model = SubTensorModule()
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    _ = to_quantized_edge_program(model, [input_shape, input_shape], use_qat=use_qat)
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data_1 = (np.random.random(input_shape).astype(np.float32) * 50).astype(
-        np.int8
+class TestSubTensor:
+    @pytest.mark.parametrize(
+        "x_input_shape",
+        [
+            pytest.param((1,), id="1D."),
+            pytest.param((6, 5), id="2D."),
+            pytest.param((6, 82), id="2D alt."),
+            pytest.param((1, 4, 7), id="3D."),
+            pytest.param((1, 68, 7), id="3D alt."),
+            pytest.param((2, 4, 3, 15), id="4D."),
+            pytest.param((1, 4, 9, 11, 4), id="5D."),
+        ],
     )
-    input_data_2 = (np.random.random(input_shape).astype(np.float32) * 50).astype(
-        np.int8
+    def test__basic_nsys_inference(self, mocker, request, x_input_shape):
+        x_input_spec = ModelInputSpec(x_input_shape)
+        model = SubTensorModule()
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
+        )
+        dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
+        comparator = AllCloseOutputComparator(atol=1)
+
+        lower_run_compare(
+            model,
+            [x_input_spec, x_input_spec],
+            graph_verifier,
+            request,
+            dataset_creator,
+            comparator,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )
+
+    def test__basic_nsys_inference_qat(self, mocker, request):
+        x_input_spec = ModelInputSpec((2, 4, 3, 15))
+        model = SubTensorModule()
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
+        )
+        dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
+        comparator = AllCloseOutputComparator(atol=1)
+
+        lower_run_compare(
+            model,
+            [x_input_spec, x_input_spec],
+            graph_verifier,
+            request,
+            dataset_creator,
+            comparator,
+            use_qat=True,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )
+
+    @pytest.mark.parametrize(
+        "input_spec",
+        [
+            pytest.param(
+                [ModelInputSpec((4, 6)), ModelInputSpec((1, 6))], id="2 inputs 2D."
+            ),
+            pytest.param(
+                [ModelInputSpec((69, 73)), ModelInputSpec((1, 73))],
+                id="2 inputs 2D alt.",
+            ),
+            pytest.param(
+                [ModelInputSpec((4,)), ModelInputSpec((4, 4))], id="2 inputs 1D + 2D."
+            ),
+            pytest.param(
+                [ModelInputSpec((5, 3, 4)), ModelInputSpec((1, 3, 1))],
+                id="2 inputs 3D.",
+            ),
+        ],
     )
-    input_data = {0: input_data_1, 1: input_data_2}
+    def test__broadcast(self, mocker, request, input_spec):
+        model = SubTensorModule()
+        graph_verifier = DetailedGraphVerifier(
+            mocker, expected_delegated_ops={SubTensor: 1}, expected_non_delegated_ops={}
+        )
+        dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
 
-    nodes = list(exported_program.graph.nodes)
-    assert nodes[4].target == exir_ops.edge.aten.sub.Tensor
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
+        comparator = AllCloseOutputComparator(atol=1)
 
-    convert_run_compare(
-        exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
+        lower_run_compare(
+            model,
+            input_spec,
+            graph_verifier,
+            request,
+            dataset_creator,
+            comparator,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )
+
+    @pytest.mark.parametrize(
+        "input_spec",
+        [
+            pytest.param(
+                [ModelInputSpec((4, 1)), ModelInputSpec((1, 6))], id="2 inputs 2D."
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 3, 4)), ModelInputSpec((5, 3, 1))],
+                id="2 inputs 3D.",
+            ),
+            pytest.param(
+                [ModelInputSpec((6, 4)), ModelInputSpec((6, 6, 1))],
+                id="2 inputs 2D+3D.",
+            ),
+        ],
     )
+    def test__broadcast_unsupported(self, input_spec):
+        # Broadcast where at least one of the inputs is not equal to output is not supported
+        model = SubTensorModule()
 
+        delegated_ep = to_quantized_edge_program(model, input_spec).exported_program()
 
-@pytest.mark.parametrize(
-    "input_shape",
-    [
-        pytest.param((4,), id="1D."),
-        pytest.param((6, 6), id="2D."),
-        pytest.param((1, 4, 8), id="3D."),
-        pytest.param((1, 4, 8, 8), id="4D."),
-    ],
-)
-def test_sub_tensor_one_input_quant_conversion(mocker, input_shape, use_qat):
-    model = SubTensorOneInputModule()
+        # Make sure the `sub.Tensor` was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [SubTensor])
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    _ = to_quantized_edge_program(model, input_shape, use_qat=use_qat)
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    nodes = list(exported_program.graph.nodes)
-    assert nodes[2].target == exir_ops.edge.aten.sub.Tensor
-
-    convert_run_compare(
-        exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
+    @pytest.mark.parametrize(
+        "input_spec",
+        [
+            pytest.param(
+                ModelInputSpec((1, 4, 5, 5)),
+                id="4D, product of dims is not a multiple of 8.",
+            ),
+        ],
     )
+    def test__channels_first_input(self, mocker, request, input_spec):
+        model = MaxPoolSubTensorModule()
 
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={SubTensor: 1, MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={},
+        )
+        dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
 
-@pytest.mark.parametrize(
-    "x_input_shape",
-    [
-        pytest.param((1, 4, 8, 8), id="4D."),
-        pytest.param((1, 4, 5, 5), id="4D, product of dims is not a multiple of 8."),
-    ],
-)
-def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape, use_qat):
-    model = SubTensorConvModule()
+        lower_run_compare(
+            model,
+            [input_spec, input_spec],
+            graph_verifier,
+            request,
+            dataset_creator,
+        )
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    n, c, h, w = x_input_shape
-    y_input_shape = (n, 8, h, w)
-
-    # Run conversion
-    _ = to_quantized_edge_program(
-        model,
-        [x_input_shape, y_input_shape],
-        use_qat=use_qat,
-        use_neutron_for_format_conversion=False,
+    @pytest.mark.parametrize(
+        "input_spec",
+        [
+            pytest.param(
+                [ModelInputSpec((1, 8, 7, 1)), ModelInputSpec((1, 8, 1, 1))],
+                id="2 inputs 4D + 4D.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 5, 5)), ModelInputSpec((1, 8, 5, 1))],
+                id="2 inputs 4D + 4D same height.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 5, 5)), ModelInputSpec((1, 1))],
+                id="2 inputs 4D + 2D ones tensor.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 8, 8)), ModelInputSpec((8, 8))],
+                id="2 inputs 4D + 2D both dims 8.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 5, 5)), ModelInputSpec((1, 5))],
+                id="2 inputs 4D + 2D one dim 5.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 12, 10)), ModelInputSpec((8, 1, 10))],
+                id="2 inputs 4D + 3D channels dim 1.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 4, 10)), ModelInputSpec((1, 4, 1))],
+                id="2 inputs 4D + 3D channels dim 4.",
+            ),
+            pytest.param(
+                [ModelInputSpec((1, 8, 25, 18)), ModelInputSpec((4, 1, 8, 25, 18))],
+                id="2 inputs 4D + 5D.",
+            ),
+        ],
     )
+    def test__broadcast_channels_first_input(self, mocker, request, input_spec):
+        model = MaxPoolSubTensorModule()
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={SubTensor: 1, MaxPool2DWithIndices: 1, GetItem: 1},
+            expected_non_delegated_ops={},
+        )
+        dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
 
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
+        comparator = AllCloseOutputComparator(atol=1)
 
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data_1 = (np.random.random(x_input_shape).astype(np.float32) * 50).astype(
-        np.int8
-    )
-    input_data_2 = (np.random.random(y_input_shape).astype(np.float32) * 50).astype(
-        np.int8
-    )
-    input_data = {0: input_data_1, 1: input_data_2}
-
-    nodes = list(exported_program.graph.nodes)
-    assert nodes[15].target == exir_ops.edge.aten.sub.Tensor
-
-    convert_run_compare(
-        exported_program,
-        input_data=input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-    )
-
-
-@pytest.mark.parametrize(
-    "x_input_shape, y_input_shape",
-    [
-        pytest.param((1, 4, 7), (4, 7), id="3D -> 2D."),
-        pytest.param((1, 4, 8), (1, 4, 4, 8), id="3D -> 4D."),
-        pytest.param((1, 1, 4, 4, 8), (1, 4, 4, 8), id="5D -> 4D."),
-        pytest.param((4,), (4, 4), id="1D -> 2D."),
-        pytest.param((4,), (4, 4, 4), id="1D -> 3D."),
-        pytest.param((6, 6), (1, 8, 6, 6), id="2D -> 4D."),
-        pytest.param((6, 6), (6,), id="2D -> 1D."),
-    ],
-)
-def test_sub_tensor_broadcasting_unsupported_quant_conversion(
-    x_input_shape, y_input_shape, use_qat
-):
-    model = SubTensorModule()
-
-    # Run conversion
-    edge_program = to_quantized_edge_program(
-        model, [x_input_shape, y_input_shape], use_qat=use_qat
-    ).exported_program()
-    nodes = list(edge_program.graph.nodes)
-
-    # Broadcast is not supported, node is not converted
-    assert (
-        nodes[6].target == exir_ops.edge.aten.sub.Tensor
-    )  # Sub Tensor is not delegated.
+        lower_run_compare(
+            model,
+            input_spec,
+            graph_verifier,
+            request,
+            dataset_creator,
+            comparator,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )

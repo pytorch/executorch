@@ -15,6 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU65PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -183,6 +184,18 @@ def test_add_tensor_u55_INT(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
+@common.XfailIfNoCorstone300
+def test_add_tensor_u65_INT(test_data: input_t1):
+    pipeline = EthosU65PipelineINT[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone320
 def test_add_tensor_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -250,7 +263,9 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data | Add.test_data_fp16)
+@common.parametrize(
+    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
+)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](

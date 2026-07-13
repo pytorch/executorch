@@ -11,6 +11,17 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "cast_support",
+    srcs = [
+        "cast_support.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":specification",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "mapping",
     srcs = [
         "mapping.py",
@@ -38,6 +49,17 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         "//executorch/backends/arm/operators:node_visitor",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "resize_utils",
+    srcs = [
+        "resize_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":specification",
     ],
 )
 

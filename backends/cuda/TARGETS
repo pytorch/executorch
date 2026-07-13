@@ -3,16 +3,82 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 runtime.python_library(
+    name = "coalesced_int4_tensor",
+    srcs = [
+        "coalesced_int4_tensor.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+runtime.python_library(
+    name = "dp4a_planar_int5_tensor",
+    srcs = [
+        "dp4a_planar_int5_tensor.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+runtime.python_library(
+    name = "dp4a_planar_int6_tensor",
+    srcs = [
+        "dp4a_planar_int6_tensor.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+runtime.python_library(
+    name = "quantize_op_dispatch",
+    srcs = [
+        "quantize_op_dispatch/__init__.py",
+        "quantize_op_dispatch/_library.py",
+        "quantize_op_dispatch/int4_dispatch.py",
+        "quantize_op_dispatch/int5_dispatch.py",
+        "quantize_op_dispatch/int6_dispatch.py",
+        "quantize_op_dispatch/int8_dispatch.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        ":coalesced_int4_tensor",
+        ":dp4a_planar_int5_tensor",
+        ":dp4a_planar_int6_tensor",
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+runtime.python_library(
     name = "cuda_passes",
     srcs = [
         "passes/__init__.py",
         "passes/move_cond_predicate_to_cpu.py",
+        "passes/replace_int64_floordiv.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
@@ -58,6 +124,7 @@ runtime.python_library(
         "triton/kernels/int4_matmul.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
+        "triton/kernels/tq4_sdpa.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",

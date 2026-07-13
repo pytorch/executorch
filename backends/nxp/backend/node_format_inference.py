@@ -9,10 +9,29 @@ import operator
 import torch
 
 from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
-
-from executorch.backends.nxp.backend.edge_helper import is_channels_last_dim_order
+from executorch.backends.nxp.backend.edge_helper import (
+    is_channels_last_dim_order,
+    try_get_arg,
+)
 from executorch.backends.nxp.backend.edge_program_converter import functions_converters
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.ops_aliases import (
+    AdaptiveAvgPool2D,
+    Amin,
+    AvgPool2D,
+    Convolution,
+    DequantizePerChannel,
+    DequantizePerTensor,
+    GetItem,
+    MaxPool2D,
+    MaxPool2DWithIndices,
+    MeanDim,
+    PermuteCopy,
+    QuantizePerTensor,
+    SumDimIntList,
+    UpsampleBilinear2D,
+    UpsampleNearest2D,
+    ViewCopy,
+)
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from torch.export import ExportedProgram
 from torch.fx import Node
@@ -25,19 +44,24 @@ class NodeFormatInference:
     # The op in the dictionary is mapped to a dictionary, which holds indices to input nodes
     # that are always channels first.
     ops_with_channels_first_nodes = {
-        exir_ops.edge.aten.avg_pool2d.default: {"inputs": [0]},
-        exir_ops.edge.aten.convolution.default: {"inputs": [0, 1]},
-        exir_ops.edge.aten.max_pool2d_with_indices.default: {"inputs": [0]},
-        exir_ops.edge.aten.max_pool2d.default: {"inputs": [0]},
-        exir_ops.edge.aten.upsample_bilinear2d.vec: {"inputs": [0]},
-        exir_ops.edge.aten.upsample_nearest2d.vec: {"inputs": [0]},
+        AdaptiveAvgPool2D: {"inputs": [0]},
+        torch.ops.aten.adaptive_avg_pool2d.default: {"inputs": [0]},
+        AvgPool2D: {"inputs": [0]},
+        Convolution: {"inputs": [0, 1]},
+        MaxPool2DWithIndices: {"inputs": [0]},
+        MaxPool2D: {"inputs": [0]},
+        UpsampleBilinear2D: {"inputs": [0]},
+        UpsampleNearest2D: {"inputs": [0]},
     }
 
     # A set of Edge Aten ops, which have the ability to change the format (for example - input nodes
     # are channels first but output is formatless).
     ops_that_can_change_tensor_format = {
-        exir_ops.edge.aten.view_copy.default,
-        exir_ops.edge.aten.permute_copy.default,
+        ViewCopy,
+        PermuteCopy,
+        MeanDim,
+        Amin,
+        SumDimIntList,
     }
 
     _type_changed_during_last_run: bool
@@ -69,10 +93,10 @@ class NodeFormatInference:
         self._type_changed_during_last_run = False
 
         self._known_targets = list(functions_converters) + [
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            operator.getitem,
+            DequantizePerTensor,
+            DequantizePerChannel,
+            QuantizePerTensor,
+            GetItem,
         ]
 
     def identify_node_formats(self):
@@ -102,10 +126,7 @@ class NodeFormatInference:
             self._handle_node_which_uses_channels_first_format(node)
 
         elif op_type in self.ops_that_can_change_tensor_format:
-            if op_type in [
-                exir_ops.edge.aten.view_copy.default,
-                exir_ops.edge.aten.permute_copy.default,
-            ]:
+            if op_type in [ViewCopy, PermuteCopy]:
                 # Try to assign the `formatless` format to the input and output. The converter will then handle the
                 #  transition.
                 # Note: If the format for the input/output has already been assigned as channels first, it will NOT be
@@ -117,10 +138,28 @@ class NodeFormatInference:
                     self._node_inputs[node][0], DataFormat.FORMATLESS
                 )
 
+            elif op_type in [MeanDim, Amin, SumDimIntList]:
+                # The operator schema is:
+                #  <reduce_op>(Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor
+                keep_dim = try_get_arg(node, 2) or False
+                if keep_dim:
+                    # The operator preserves the rank, so we can handle it as an operator that can use any node format.
+                    self._handle_node_which_can_use_any_node_format(node)
+                else:
+                    # The operator removes dimensions, so the IO must be marked as `formatless` (unless overridden by
+                    #  channels first of course).
+                    self._assign_format_to_node(
+                        self._node_outputs[node][0], DataFormat.FORMATLESS
+                    )
+                    self._assign_format_to_node(
+                        self._node_inputs[node][0], DataFormat.FORMATLESS
+                    )
+
             else:
                 logger.error(
                     f"Node format inference for node type: {op_type} not found!"
                 )
+
         elif node.op != "call_function" or (
             hasattr(node, "target") and node.target in self._known_targets
         ):

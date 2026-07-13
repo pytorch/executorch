@@ -198,6 +198,17 @@ def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
     pipeline.run()
 
 
+def test_upsample_nearest2d_vec_tosa_does_not_delegate_exact_one_sixteenth_downscale():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Interpolate(size=None, scale_factor=1.0 / 16.0),
+        (torch.randn(1, 3, 256, 448),),
+        {exir_op: 1},
+        n_expected_delegates=0,
+    )
+
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_suite)
 def test_upsample_nearest2d_vec_tosa_INT(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
@@ -271,7 +282,9 @@ def test_upsample_nearest2d_vec_tosa_INT_a16w8(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_upsample_nearest2d_vec_vgf_no_quant(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
@@ -287,7 +300,9 @@ def test_upsample_nearest2d_vec_vgf_no_quant(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_upsample_nearest2d_vec_vgf_no_quant_nearest(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
@@ -303,7 +318,9 @@ def test_upsample_nearest2d_vec_vgf_no_quant_nearest(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_upsample_nearest2d_vec_vgf_no_quant_interpolate(test_data: torch.Tensor):
     data, size, scale_factor, compare = test_data()
@@ -314,7 +331,7 @@ def test_upsample_nearest2d_vec_vgf_no_quant_interpolate(test_data: torch.Tensor
         exir_op,
         quantize=False,
         # Override tosa version to test FP-only path
-        tosa_version="TOSA-1.0+FP",
+        tosa_version="TOSA-1.0+FP+bf16",
     )
     if not compare:
         pipeline.pop_stage(-1)

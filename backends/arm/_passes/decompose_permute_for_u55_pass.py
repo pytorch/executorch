@@ -11,16 +11,17 @@ from typing import Any, Sequence, Set, Type
 
 import torch
 import tosa_serializer as ts
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.rewrite_slice import RewriteSlicePass
 from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.tosa.mapping import map_dtype
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from torch.fx import GraphModule
 
 
-class DecomposePermuteForU55Pass(ArmPass):
+class DecomposePermuteForU55Pass(ArmOpTargetedPass):
     """Decompose U55 permutes into shape-safe permutes for large tensor shapes.
 
     Ethos-U55 has transpose shape constraints based on rank-dependent
@@ -36,10 +37,16 @@ class DecomposePermuteForU55Pass(ArmPass):
         exir_ops.edge.aten.permute.default,
         exir_ops.edge.aten.permute_copy.default,
     )
+    target_ops = _PERMUTE_OPS
     _SLICE_OP = exir_ops.edge.aten.slice_copy.Tensor
     _CAT_OP = exir_ops.edge.aten.cat.default
     _MAX_PRODUCT = 2**16
     _VELA_TARGET = "ethos-u55-128"
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if not get_context_spec().is_U55_subset:
+            return False
+        return super().should_run_pass(graph_module)
 
     @classmethod
     def _violates_u55_worst_case_constraint(cls, shape: Sequence[int]) -> bool:
@@ -323,7 +330,7 @@ class DecomposePermuteForU55Pass(ArmPass):
         return recurse(input_node, 0)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self._PERMUTE_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         spec = get_context_spec()

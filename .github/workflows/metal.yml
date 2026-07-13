@@ -20,9 +20,34 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-metal-builds:
     name: test-executorch-metal-build
+    needs: [changed-files, run-decision]
+    # Path-filtered: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch metal-relevant paths skip
+    # this job on non-sampled commits. See _ci-run-decision.yml for
+    # the sampling policy.
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -40,6 +65,14 @@ jobs:
 
   test-metal-modules:
     name: test-metal-backend-modules
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -65,6 +98,14 @@ jobs:
 
   test-metal-qwen35-moe-tiny:
     name: test-metal-qwen35-moe-tiny
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -162,8 +203,21 @@ jobs:
 
   export-model-metal-artifact:
     name: export-model-metal-artifact
-    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
+    # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch metal-relevant paths skip
+    # this job on non-sampled commits.
+    needs: [changed-files, run-decision]
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     strategy:
@@ -226,11 +280,30 @@ jobs:
         # the PCH dir, which PyTorch derives from tempfile.gettempdir() independently.
         export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
         export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
-        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        VR_MODE=""
+        if [ "${{ matrix.model.name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
+          VR_MODE="vr-offline"
+        fi
+        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"
 
   test-model-metal-e2e:
     name: test-model-metal-e2e
-    needs: export-model-metal-artifact
+    # Same path filter as export-model-metal-artifact above. Also
+    # explicitly gated on the export job succeeding — when needs: jobs
+    # are *skipped* (e.g. fork PR), GitHub still evaluates this if:,
+    # so without the explicit success-check this job would run and then
+    # fail trying to download an artifact that was never produced.
+    needs: [changed-files, export-model-metal-artifact, run-decision]
+    if: |
+      needs.export-model-metal-artifact.result == 'success' &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
@@ -290,4 +363,8 @@ jobs:
         fi
         echo "::endgroup::"
 
-        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        VR_MODE=""
+        if [ "${{ matrix.model.name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
+          VR_MODE="vr-offline"
+        fi
+        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}" "${VR_MODE}"

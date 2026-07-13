@@ -9,22 +9,22 @@
 import operator
 import traceback
 from inspect import isclass
-from typing import cast, List, Optional, Sequence, Tuple
+from typing import cast, Optional, Sequence
 
 import torch
 import torch.fx
+
+from executorch.backends.arm._passes.dim_maps import (
+    _normalize_dims,
+    normalize_view_shape,
+)
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from executorch.exir.graph_module import (
-    _get_control_flow_submodules,
-    get_control_flow_submodules,
-)
 from executorch.exir.pass_base import NodeMetadata
-
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -36,14 +36,18 @@ from torch._export.utils import (
 from torch._ops import OpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
-from torch.fx import GraphModule, Node
+
+_Dim = int | torch.SymInt
 
 
 def is_submodule_node(node: torch.fx.Node):
     if node.op not in ("get_attr", "placeholder"):
         return False
+    owning_module = node.graph.owning_module
+    if owning_module is None or not isinstance(node.target, str):
+        return False
     try:
-        node.graph.owning_module.get_submodule(node.target)
+        owning_module.get_submodule(node.target)
     except AttributeError:
         return False
     return True
@@ -248,6 +252,43 @@ def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
     return NodeMetadata(plain_meta_dict)
 
 
+def refresh_permute_view_meta(node: torch.fx.Node) -> None:
+    """Compute new meta-vals, specifically preserving SymInts for view/permute
+    nodes.
+    """
+    input_node = node.all_input_nodes[0]
+    input_val = input_node.meta.get("val")
+    if input_val is None or node.target not in {
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+    }:
+        return
+
+    if not isinstance(input_val, torch.Tensor):
+        node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
+        return
+
+    # Compute new meta shapes to preserve SymInts.
+    match node.target:
+        case exir_ops.edge.aten.view_copy.default:
+            node.meta["val"] = input_val.new_empty(
+                tuple(
+                    normalize_view_shape(
+                        input_val.shape, cast(Sequence[_Dim], node.args[1])
+                    )
+                )
+            )
+        case exir_ops.edge.aten.permute_copy.default:
+            dims = _normalize_dims(
+                cast(Sequence[int], node.args[1]), len(input_val.shape)
+            )
+            node.meta["val"] = input_val.new_empty(
+                tuple(input_val.shape[dim] for dim in dims)
+            )
+        case _:
+            node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
+
+
 def insert_scalar(
     graph: torch.fx.Graph,
     value: int | float,
@@ -364,48 +405,6 @@ def set_node_arg(node: torch.fx.Node, i: int | str, value):
         raise RuntimeError("Invalid type")
 
 
-def is_nested_control_flow_graph(graph_module: GraphModule) -> bool:
-    """Returns True if graph_module is a nested control-flow graph."""
-
-    # Find all top-level control-flow submodules
-    top_cf = get_control_flow_submodules(graph_module)
-    # For each submodule, see if it itself has control-flow inside
-    for _, submod, _ in top_cf:
-        if get_control_flow_submodules(submod):
-            return True
-    return False
-
-
-def get_cond_while_submodules_nested(
-    graph_module: GraphModule,
-    apply_quantization: bool = False,
-) -> List[Tuple[str, GraphModule, Node]]:
-    """Recursively find cond/while_loop submodules in an GraphModule.
-
-    In nested control flow graphs, FX records the submodule functions
-    (true/false or cond/body) in reverse order compared to top-level graphs. We
-    must swap the indices when nested so that cond (first) and body/true_fn
-    (second) are consistently identified across all nesting levels.
-
-    """
-
-    # Determine arg indices based on nesting and whether only cond branch is needed
-    nested = is_nested_control_flow_graph(graph_module)
-    # cond: [true_fn, false_fn] or swapped if nested
-    cond_indices = [2, 1] if nested else [1, 2]
-    # while_loop: [cond_fn, body_fn] or swapped if nested
-    while_indices = [1, 0] if nested else [0, 1]
-    if apply_quantization:
-        # only keep the cond_fn for while_loop (first index) when quantizing.
-        while_indices = [while_indices[0]]
-    mapping = {
-        torch.ops.higher_order.cond: cond_indices,
-        torch.ops.higher_order.while_loop: while_indices,
-    }
-    # collect cond/while submodules (using mapping indices)
-    return _get_control_flow_submodules(graph_module, mapping)
-
-
 def to_2tuple(value):
     """Normalizes scalars, and 1-element sequences to a tuple of length 2."""
     if isinstance(value, int):
@@ -413,3 +412,16 @@ def to_2tuple(value):
     if len(value) == 1:
         return (value[0], value[0])
     return tuple(value)
+
+
+def permute_fake_tensor_metadata(
+    fake_tensor: FakeTensor, permute_dims: tuple[int, ...]
+) -> FakeTensor:
+    permuted_shape = tuple(fake_tensor.shape[dim] for dim in permute_dims)
+    meta_tensor = torch.empty(
+        permuted_shape,
+        dtype=fake_tensor.dtype,
+        device="meta",
+        requires_grad=fake_tensor.requires_grad,
+    )
+    return FakeTensor(fake_tensor.fake_mode, meta_tensor, fake_tensor.fake_device)

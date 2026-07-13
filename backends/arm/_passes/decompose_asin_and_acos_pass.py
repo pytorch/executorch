@@ -10,7 +10,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -48,7 +48,7 @@ def get_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get decomposition for op {op}")
 
 
-class DecomposeAsinAndAcosPass(ArmPass):
+class DecomposeAsinAndAcosPass(ArmOpTargetedPass):
     """This pass decomposes asin and acos into a rational approximation for
     small values and a transformed rational approximation for large values.
 
@@ -71,6 +71,7 @@ class DecomposeAsinAndAcosPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+    target_ops = edge_asin_op + edge_acos_op
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]
@@ -116,7 +117,7 @@ class DecomposeAsinAndAcosPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_asin_op + edge_acos_op):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if self._is_quantized_meta(meta):

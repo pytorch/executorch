@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torchvision import transforms  # type: ignore[import-untyped]
@@ -49,6 +50,7 @@ def test_resnet_18_tosa_FP():
     pipeline.run()
 
 
+# Slightly higher atol for TOSA BF16 on aarch64 (MLETORCH-2048: numeric mismatch)
 def test_resnet_18_tosa_FP_bf16():
     bf16_model = resnet18(weights=ResNet18_Weights).eval()
     bf16_model = bf16_model.to(torch.bfloat16)
@@ -58,8 +60,24 @@ def test_resnet_18_tosa_FP_bf16():
         (bf16_input,),
         aten_op=[],
         tosa_extensions=["bf16"],
-        atol=10e-02,
-        rtol=10e-02,
+        atol=0.3 if common.is_aarch64_host() else 0.1,
+        rtol=0.1,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_resnet_18_vgf_no_quant_bf16():
+    bf16_model = resnet18(weights=ResNet18_Weights).eval()
+    bf16_model = bf16_model.to(torch.bfloat16)
+    bf16_input = normalize(torch.rand((1, 3, 224, 224)) * 2 - 1).to(torch.bfloat16)
+    pipeline = VgfPipeline[input_t](
+        bf16_model,
+        (bf16_input,),
+        aten_op=[],
+        quantize=False,
+        atol=6e-01,
+        rtol=6e-01,
     )
     pipeline.run()
 

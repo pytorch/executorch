@@ -150,6 +150,18 @@ test_modules_fp16 = {
         (torch.rand(1, 4, 12, 12, dtype=torch.float16),),
     ),
 }
+test_modules_fp8 = {
+    "rand_fp8e4m3": lambda: (
+        AvgPool2d(4, 2, 0, False),
+        (torch.rand(1, 16, 50, 32).to(torch.float8_e4m3fn),),
+        "fp8e4m3",
+    ),
+    "kernel_3x3_stride_1_pad_1_fp8e5m2": lambda: (
+        AvgPool2d((3, 3), (1, 1), 1),
+        (torch.rand(1, 4, 12, 12).to(torch.float8_e5m2),),
+        "fp8e5m2",
+    ),
+}
 
 
 @common.parametrize("test_module", test_modules | test_modules_bf16 | test_modules_fp16)
@@ -163,6 +175,21 @@ def test_avg_pool2d_tosa_FP(test_module):
         exir_op,
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_fp8)
+def test_avg_pool2d_tosa_FP_fp8(test_module):
+    model, input_tensor, tosa_extension = test_module()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_extensions=[tosa_extension],
+        compare_tosa_ref_model_outputs=False,
+    )
+    pipeline.count_tosa_ops({"AVG_POOL2D": 1})
     pipeline.run()
 
 
@@ -259,16 +286,31 @@ def test_avg_pool2d_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules | test_modules_fp16)
+@common.parametrize(
+    "test_module",
+    test_modules | test_modules_bf16 | test_modules_fp16,
+    xfails={
+        "kernel_3x3_stride_1_pad_1_bf16": "'Unsupported BF16 PAD constant encoding' in emulation layer. MLCE-1887."
+    },
+)
 @common.SkipIfNoModelConverter
 def test_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()
+    match input_tensor[0].dtype:
+        case torch.bfloat16:
+            atol = 5e-3
+            rtol = 5e-3
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t](
         model,
         input_tensor,
         aten_op,
         exir_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
