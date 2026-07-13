@@ -406,54 +406,29 @@ class ConvolutionConfig(GEMMConfig):
             precision != ConfigPrecisionType.FP32
             and not is_transpose
             and is_node(act_input)
+            and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
+            and len(act_input.users) == 1
         ):
-            # Find a constant_pad_nd in the activation chain. It may be the direct
-            # input to the conv, or it may be behind the QDQ pair inserted by
-            # InsertPadQDQPass (dequant -> pad -> q -> dq -> conv).
-            pad_node = None
-            if act_input.target == exir_ops.edge.aten.constant_pad_nd.default:
-                pad_node = act_input
-            elif is_dequant(act_input) and len(act_input.users) == 1:
-                q_node = get_input_node(act_input, 0)
-                if isinstance(q_node, torch.fx.Node) and is_quant(q_node):
-                    maybe_pad = get_input_node(q_node, 0)
-                    if (
-                        isinstance(maybe_pad, torch.fx.Node)
-                        and maybe_pad.target
-                        == exir_ops.edge.aten.constant_pad_nd.default
-                    ):
-                        pad_node = maybe_pad
+            conv_padding = cast(List[int], node.args[4])
+            is_1d = len(conv_padding) == 1
+            is_2d = len(conv_padding) == 2
 
-            if pad_node is not None and len(pad_node.users) == 1:
-                conv_padding = cast(List[int], node.args[4])
-                is_1d = len(conv_padding) == 1
-                is_2d = len(conv_padding) == 2
+            pad_value = (
+                cast(float, act_input.args[2]) if len(act_input.args) > 2 else 0.0
+            )
+            pad_amounts = cast(List[int], act_input.args[1])
+            spatial_only = (
+                is_1d
+                and (len(pad_amounts) <= 2 or all(a == 0 for a in pad_amounts[2:]))
+            ) or (
+                is_2d
+                and (len(pad_amounts) <= 4 or all(a == 0 for a in pad_amounts[4:]))
+            )
 
-                pad_value = pad_node.args[2] if len(pad_node.args) > 2 else 0
-                if pad_value != 0.0:
-                    return super()._get_act_deps(node, ep, precision)
-
-                pad_amounts = cast(List[int], pad_node.args[1])
-
-                pad_ok = False
-                if is_1d:
-                    temporal_only = len(pad_amounts) <= 2 or all(
-                        a == 0 for a in pad_amounts[2:]
-                    )
-                    pad_ok = (
-                        len(pad_amounts) % 2 == 0
-                        and all(a >= 0 for a in pad_amounts)
-                        and temporal_only
-                    )
-                elif is_2d:
-                    pad_ok = len(pad_amounts) <= 4 or all(
-                        a == 0 for a in pad_amounts[4:]
-                    )
-
-                if pad_ok:
-                    valid, deps = super()._get_act_deps(pad_node, ep, precision)
-                    if valid:
-                        return (True, [pad_node, *deps])
+            if pad_value == 0.0 and all(a >= 0 for a in pad_amounts) and spatial_only:
+                valid, deps = super()._get_act_deps(act_input, ep, precision)
+                if valid:
+                    return (True, [act_input, *deps])
 
         return super()._get_act_deps(node, ep, precision)
 

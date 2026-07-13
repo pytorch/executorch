@@ -10,6 +10,7 @@ import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
+    is_per_tensor,
     is_quant,
     tag_as_implicit_q_dq,
 )
@@ -32,6 +33,7 @@ class InsertPadQDQPass(XNNPACKPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
+        modified = False
         for node in list(graph.nodes):
             if (
                 node.op != "call_function"
@@ -40,7 +42,11 @@ class InsertPadQDQPass(XNNPACKPass):
                 continue
 
             pad_input = node.args[0]
-            if not (isinstance(pad_input, torch.fx.Node) and is_dequant(pad_input)):
+            if not (
+                isinstance(pad_input, torch.fx.Node)
+                and is_dequant(pad_input)
+                and is_per_tensor(pad_input)
+            ):
                 continue
 
             pad_value = cast(float, node.args[2]) if len(node.args) > 2 else 0.0
@@ -76,6 +82,7 @@ class InsertPadQDQPass(XNNPACKPass):
 
             node.replace_all_uses_with(dq)
             q.args = (node,) + q_params
+            modified = True
 
         graph_module.recompile()
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
