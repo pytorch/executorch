@@ -1912,7 +1912,7 @@ document.write(`
                   
   <section id="running-llms-on-android">
 <h1>Running LLMs on Android<a class="headerlink" href="#running-llms-on-android" title="Link to this heading">#</a></h1>
-<p>ExecuTorch’s LLM-specific runtime components provide an experimental Java interface around the core C++ LLM runtime, available through the <code class="docutils literal notranslate"><span class="pre">executorch-android</span></code> AAR.</p>
+<p>ExecuTorch’s LLM-specific runtime components provide experimental Java APIs, callable from Java or Kotlin, around the core C++ LLM runtime. These APIs are available through the <code class="docutils literal notranslate"><span class="pre">executorch-android</span></code> AAR.</p>
 <section id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
 <p>Make sure you have a model and tokenizer files ready, as described in the prerequisites section of the <a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running LLMs with C++</span></a> guide.</p>
@@ -1920,30 +1920,56 @@ document.write(`
 </section>
 <section id="runtime-api">
 <h2>Runtime API<a class="headerlink" href="#runtime-api" title="Link to this heading">#</a></h2>
-<p>Once the <code class="docutils literal notranslate"><span class="pre">executorch-android</span></code> AAR is on your classpath, you can import the LLM runner classes from the <code class="docutils literal notranslate"><span class="pre">org.pytorch.executorch.extension.llm</span></code> package.</p>
+<p>Once the <code class="docutils literal notranslate"><span class="pre">executorch-android</span></code> AAR is on your classpath, you can import the LLM runner classes from the <code class="docutils literal notranslate"><span class="pre">org.pytorch.executorch.extension.llm</span></code> package. The runner is callable from both Java and Kotlin; the rest of this guide includes both Java and Kotlin examples for each snippet.</p>
 <section id="importing">
 <h3>Importing<a class="headerlink" href="#importing" title="Link to this heading">#</a></h3>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmModule</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmModuleConfig</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmGenerationConfig</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmCallback</span><span class="p">;</span>
+
+<span class="c1">// Only needed for the multimodal ByteBuffer paths in the Images section.</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.ByteBuffer</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.ByteOrder</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="k">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmModule</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmModuleConfig</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmGenerationConfig</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">org.pytorch.executorch.extension.llm.LlmCallback</span>
+
+<span class="c1">// Only needed for the multimodal ByteBuffer paths in the Images section.</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">java.nio.ByteBuffer</span>
+<span class="k">import</span><span class="w"> </span><span class="nn">java.nio.ByteOrder</span>
 </pre></div>
 </div>
 </section>
 <section id="llmmodule">
 <h3>LlmModule<a class="headerlink" href="#llmmodule" title="Link to this heading">#</a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">LlmModule</span></code> class provides a simple Java interface for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">LlmModule</span></code> class provides a simple interface, usable from Java and Kotlin, for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt.</p>
 <p>This API is experimental and subject to change.</p>
 <section id="initialization">
 <h4>Initialization<a class="headerlink" href="#initialization" title="Link to this heading">#</a></h4>
 <p>Create an <code class="docutils literal notranslate"><span class="pre">LlmModule</span></code> by specifying paths to your serialized model (<code class="docutils literal notranslate"><span class="pre">.pte</span></code>) and tokenizer files. For text-only models, the simple constructor is enough:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmModule</span><span class="w"> </span><span class="kd">module</span> <span class="err">=</span> <span class="nc">new</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span>
 <span class="w">    </span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="mf">0.8f</span><span class="p">);</span>
 </pre></div>
 </div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="m">0.8f</span>
+<span class="p">)</span>
+</pre></div>
+</div>
 <p>For finer control (multimodal model type, BOS/EOS handling, supplementary data files, load mode), use <code class="docutils literal notranslate"><span class="pre">LlmModuleConfig</span></code> with the fluent builder:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmModuleConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">modulePath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">tokenizerPath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">)</span>
@@ -1955,15 +1981,35 @@ document.write(`
 <span class="n">LlmModule</span><span class="w"> </span><span class="kd">module</span> <span class="err">=</span> <span class="nc">new</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span><span class="n">config</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Available load modes are <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_FILE</span></code>, <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP</span></code> (default), <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP_USE_MLOCK</span></code>, and <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS</span></code>. Available model types are <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT</span></code>, <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT_VISION</span></code>, and <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_MULTIMODAL</span></code>.</p>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modulePath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tokenizerPath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="m">0.8f</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelType</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">MODEL_TYPE_TEXT</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">loadMode</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">LOAD_MODE_MMAP</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+
+<span class="kd">val</span><span class="w"> </span><span class="nv">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Available load modes are <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_FILE</span></code>, <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP</span></code> (default), <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP_USE_MLOCK</span></code>, and <code class="docutils literal notranslate"><span class="pre">LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS</span></code>. Available model types are <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT</span></code> and <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT_VISION</span></code> (the <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_MULTIMODAL</span></code> constant is currently an alias for <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT_VISION</span></code> and selects the same runtime path).</p>
 <p>Construction itself is lightweight and does not load the program data immediately.</p>
 </section>
 <section id="loading">
 <h4>Loading<a class="headerlink" href="#loading" title="Link to this heading">#</a></h4>
 <p>Explicitly load the model before generation to avoid paying the load cost during your first <code class="docutils literal notranslate"><span class="pre">generate</span></code> call.</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kt">int</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kd">module</span><span class="err">.</span><span class="nc">load</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">status</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="c1">// Handle load failure (status is an ExecuTorch runtime error code).</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">module</span><span class="p">.</span><span class="na">load</span><span class="p">()</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">status</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="m">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Handle load failure (status is an ExecuTorch runtime error code).</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -1972,6 +2018,7 @@ document.write(`
 <section id="generating">
 <h4>Generating<a class="headerlink" href="#generating" title="Link to this heading">#</a></h4>
 <p>Generate tokens from a text prompt by passing an <code class="docutils literal notranslate"><span class="pre">LlmCallback</span></code> that receives each token as it is produced. The same callback also receives a JSON-encoded statistics string when generation completes.</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmCallback</span><span class="w"> </span><span class="n">callback</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">LlmCallback</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nd">@Override</span>
 <span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onResult</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -1995,7 +2042,29 @@ document.write(`
 <span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
 </pre></div>
 </div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">callback</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">object</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="nc">LlmCallback</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">override</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">onResult</span><span class="p">(</span><span class="n">token</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Called once per generated token. Append to your UI buffer here.</span>
+<span class="w">        </span><span class="n">print</span><span class="p">(</span><span class="n">token</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">override</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">onStats</span><span class="p">(</span><span class="n">statsJson</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Called once when generation finishes. See extension/llm/runner/stats.h</span>
+<span class="w">        </span><span class="c1">// for the field definitions.</span>
+<span class="w">        </span><span class="n">println</span><span class="p">(</span><span class="s">&quot;\n</span><span class="si">$</span><span class="n">statsJson</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">override</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">onError</span><span class="p">(</span><span class="n">errorCode</span><span class="p">:</span><span class="w"> </span><span class="kt">Int</span><span class="p">,</span><span class="w"> </span><span class="n">message</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Called if the runtime reports an error during generation.</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
+</pre></div>
+</div>
 <p>For full control over generation parameters, use <code class="docutils literal notranslate"><span class="pre">LlmGenerationConfig</span></code>:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmGenerationConfig</span><span class="w"> </span><span class="n">genConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmGenerationConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">seqLen</span><span class="p">(</span><span class="mi">2048</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.8f</span><span class="p">)</span>
@@ -2005,12 +2074,27 @@ document.write(`
 <span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">genConfig</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
 </pre></div>
 </div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">genConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmGenerationConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">seqLen</span><span class="p">(</span><span class="m">2048</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="m">0.8f</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">echo</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+
+<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">genConfig</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
+</pre></div>
+</div>
 <p><code class="docutils literal notranslate"><span class="pre">LlmGenerationConfig</span></code> exposes <code class="docutils literal notranslate"><span class="pre">echo</span></code>, <code class="docutils literal notranslate"><span class="pre">maxNewTokens</span></code>, <code class="docutils literal notranslate"><span class="pre">seqLen</span></code>, <code class="docutils literal notranslate"><span class="pre">temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">numBos</span></code>, <code class="docutils literal notranslate"><span class="pre">numEos</span></code>, and <code class="docutils literal notranslate"><span class="pre">warming</span></code>. Defaults match the C++ <code class="docutils literal notranslate"><span class="pre">GenerationConfig</span></code> documented in <a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running LLMs with C++</span></a>.</p>
 </section>
 <section id="stopping-generation">
 <h4>Stopping Generation<a class="headerlink" href="#stopping-generation" title="Link to this heading">#</a></h4>
 <p>If you need to interrupt a long-running generation, call <code class="docutils literal notranslate"><span class="pre">stop()</span></code> from another thread (or from inside the <code class="docutils literal notranslate"><span class="pre">onResult</span></code> callback):</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">stop</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">stop</span><span class="p">()</span>
 </pre></div>
 </div>
 <p>Generation also runs synchronously on the calling thread, so make sure you invoke <code class="docutils literal notranslate"><span class="pre">generate()</span></code> off the main thread (for example, on a <code class="docutils literal notranslate"><span class="pre">HandlerThread</span></code> or via a <code class="docutils literal notranslate"><span class="pre">java.util.concurrent.Executor</span></code>).</p>
@@ -2018,7 +2102,12 @@ document.write(`
 <section id="resetting">
 <h4>Resetting<a class="headerlink" href="#resetting" title="Link to this heading">#</a></h4>
 <p>To clear the prefilled tokens from the KV cache and reset the start position to 0, call:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">resetContext</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">resetContext</span><span class="p">()</span>
 </pre></div>
 </div>
 <p>This is the equivalent of <code class="docutils literal notranslate"><span class="pre">reset()</span></code> on the iOS runner and <code class="docutils literal notranslate"><span class="pre">reset()</span></code> on the C++ <code class="docutils literal notranslate"><span class="pre">IRunner</span></code>.</p>
@@ -2026,57 +2115,116 @@ document.write(`
 </section>
 <section id="multimodal-inputs">
 <h3>Multimodal Inputs<a class="headerlink" href="#multimodal-inputs" title="Link to this heading">#</a></h3>
-<p>For models declared as <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT_VISION</span></code> or <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_MULTIMODAL</span></code>, image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call <code class="docutils literal notranslate"><span class="pre">generate()</span></code> with the text prompt to produce the response.</p>
+<p>For models declared as <code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_TEXT_VISION</span></code> (<code class="docutils literal notranslate"><span class="pre">MODEL_TYPE_MULTIMODAL</span></code> is currently an alias), image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call <code class="docutils literal notranslate"><span class="pre">generate()</span></code> with the text prompt to produce the response.</p>
 <section id="images">
 <h4>Images<a class="headerlink" href="#images" title="Link to this heading">#</a></h4>
 <p>Raw uint8 pixel data in CHW order can be supplied as an <code class="docutils literal notranslate"><span class="pre">int[]</span></code>, or as a direct <code class="docutils literal notranslate"><span class="pre">ByteBuffer</span></code> to avoid JNI array copies:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// As int[]</span>
 <span class="kt">int</span><span class="o">[]</span><span class="w"> </span><span class="n">pixels</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span><span class="w">       </span><span class="c1">// length == channels * height * width</span>
 <span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/*width=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*height=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*channels=*/</span><span class="mi">3</span><span class="p">);</span>
 
 <span class="c1">// As direct ByteBuffer (preferred for large images)</span>
+<span class="kt">byte</span><span class="o">[]</span><span class="w"> </span><span class="n">rawBytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span><span class="w">  </span><span class="c1">// length == channels * height * width</span>
 <span class="n">ByteBuffer</span><span class="w"> </span><span class="n">buffer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ByteBuffer</span><span class="p">.</span><span class="na">allocateDirect</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="p">);</span>
-<span class="n">buffer</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">rawBytes</span><span class="p">).</span><span class="na">rewind</span><span class="p">();</span>
+<span class="n">buffer</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">rawBytes</span><span class="p">);</span>
+<span class="c1">// Rewind so the JNI side reads from position 0.</span>
+<span class="n">buffer</span><span class="p">.</span><span class="na">rewind</span><span class="p">();</span>
 <span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Pre-normalized float pixel data is also supported, both as a <code class="docutils literal notranslate"><span class="pre">float[]</span></code> and as a direct <code class="docutils literal notranslate"><span class="pre">ByteBuffer</span></code> in native byte order:</p>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="c1">// As IntArray</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">pixels</span><span class="p">:</span><span class="w"> </span><span class="n">IntArray</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...</span><span class="w">       </span><span class="c1">// length == channels * height * width</span>
+<span class="n">module</span><span class="p">.</span><span class="na">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/* width = */</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/* height = */</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/* channels = */</span><span class="w"> </span><span class="m">3</span><span class="p">)</span>
+
+<span class="c1">// As direct ByteBuffer (preferred for large images)</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">rawBytes</span><span class="p">:</span><span class="w"> </span><span class="n">ByteArray</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...</span><span class="w">  </span><span class="c1">// length == channels * height * width</span>
+<span class="kd">val</span><span class="w"> </span><span class="nv">buffer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ByteBuffer</span><span class="p">.</span><span class="na">allocateDirect</span><span class="p">(</span><span class="m">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="m">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="m">336</span><span class="p">).</span><span class="na">apply</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">put</span><span class="p">(</span><span class="n">rawBytes</span><span class="p">)</span>
+<span class="w">    </span><span class="n">rewind</span><span class="p">()</span>
+<span class="p">}</span>
+<span class="n">module</span><span class="p">.</span><span class="na">prefillImages</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">3</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Pre-normalized float pixel data is also supported, both as a <code class="docutils literal notranslate"><span class="pre">float[]</span></code> and as a direct <code class="docutils literal notranslate"><span class="pre">ByteBuffer</span></code> in native byte order. The two paths intentionally hit different methods: the <code class="docutils literal notranslate"><span class="pre">float[]</span></code> overload is <code class="docutils literal notranslate"><span class="pre">prefillImages</span></code>, while the <code class="docutils literal notranslate"><span class="pre">ByteBuffer</span></code> path is <code class="docutils literal notranslate"><span class="pre">prefillNormalizedImage</span></code> (the names reflect the underlying JNI bindings and are not interchangeable).</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="n">normalized</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span><span class="w">  </span><span class="c1">// length == channels * height * width</span>
 <span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">normalized</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
 
 <span class="n">ByteBuffer</span><span class="w"> </span><span class="n">floatBuffer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ByteBuffer</span>
 <span class="w">    </span><span class="p">.</span><span class="na">allocateDirect</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">Float</span><span class="p">.</span><span class="na">BYTES</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">order</span><span class="p">(</span><span class="n">ByteOrder</span><span class="p">.</span><span class="na">nativeOrder</span><span class="p">());</span>
-<span class="c1">// fill floatBuffer with normalized values, then:</span>
+<span class="c1">// fill floatBuffer with normalized values, then rewind before the call:</span>
+<span class="n">floatBuffer</span><span class="p">.</span><span class="na">rewind</span><span class="p">();</span>
 <span class="kd">module</span><span class="err">.</span><span class="nc">prefillNormalizedImage</span><span class="p">(</span><span class="n">floatBuffer</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">normalized</span><span class="p">:</span><span class="w"> </span><span class="n">FloatArray</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...</span><span class="w">  </span><span class="c1">// length == channels * height * width</span>
+<span class="n">module</span><span class="p">.</span><span class="na">prefillImages</span><span class="p">(</span><span class="n">normalized</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">3</span><span class="p">)</span>
+
+<span class="kd">val</span><span class="w"> </span><span class="nv">floatBuffer</span><span class="p">:</span><span class="w"> </span><span class="n">ByteBuffer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ByteBuffer</span>
+<span class="w">    </span><span class="p">.</span><span class="na">allocateDirect</span><span class="p">(</span><span class="m">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="m">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="m">336</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="kt">Float</span><span class="p">.</span><span class="na">SIZE_BYTES</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">order</span><span class="p">(</span><span class="n">ByteOrder</span><span class="p">.</span><span class="na">nativeOrder</span><span class="p">())</span>
+<span class="c1">// fill floatBuffer with normalized values, then rewind before the call:</span>
+<span class="n">floatBuffer</span><span class="p">.</span><span class="na">rewind</span><span class="p">()</span>
+<span class="n">module</span><span class="p">.</span><span class="na">prefillNormalizedImage</span><span class="p">(</span><span class="n">floatBuffer</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">3</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
 <section id="audio">
 <h4>Audio<a class="headerlink" href="#audio" title="Link to this heading">#</a></h4>
 <p>Preprocessed audio features (for example mel spectrograms produced by a Whisper preprocessor) can be supplied as <code class="docutils literal notranslate"><span class="pre">byte[]</span></code> or <code class="docutils literal notranslate"><span class="pre">float[]</span></code>:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">prefillAudio</span><span class="p">(</span><span class="n">features</span><span class="p">,</span><span class="w"> </span><span class="cm">/*batchSize=*/</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nBins=*/</span><span class="mi">128</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nFrames=*/</span><span class="mi">3000</span><span class="p">);</span>
 </pre></div>
 </div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">prefillAudio</span><span class="p">(</span><span class="n">features</span><span class="p">,</span><span class="w"> </span><span class="cm">/* batchSize = */</span><span class="w"> </span><span class="m">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/* nBins = */</span><span class="w"> </span><span class="m">128</span><span class="p">,</span><span class="w"> </span><span class="cm">/* nFrames = */</span><span class="w"> </span><span class="m">3000</span><span class="p">)</span>
+</pre></div>
+</div>
 <p>Raw audio samples can be supplied with <code class="docutils literal notranslate"><span class="pre">prefillRawAudio</span></code>:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">prefillRawAudio</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span><span class="w"> </span><span class="cm">/*batchSize=*/</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nChannels=*/</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/*nSamples=*/</span><span class="mi">16000</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">prefillRawAudio</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span><span class="w"> </span><span class="cm">/* batchSize = */</span><span class="w"> </span><span class="m">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/* nChannels = */</span><span class="w"> </span><span class="m">1</span><span class="p">,</span><span class="w"> </span><span class="cm">/* nSamples = */</span><span class="w"> </span><span class="m">16000</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
 <section id="generating-with-multimodal-prefill">
 <h4>Generating with Multimodal Prefill<a class="headerlink" href="#generating-with-multimodal-prefill" title="Link to this heading">#</a></h4>
 <p>After prefilling each modality, run <code class="docutils literal notranslate"><span class="pre">generate()</span></code> with the text prompt as usual:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
 <span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
 </pre></div>
 </div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">3</span><span class="p">)</span>
+<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
+</pre></div>
+</div>
 <p>For text-vision models, a convenience overload accepts the image and prompt together:</p>
+<p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span>
 <span class="w">    </span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/*width=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*height=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*channels=*/</span><span class="mi">3</span><span class="p">,</span>
 <span class="w">    </span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="cm">/*seqLen=*/</span><span class="mi">768</span><span class="p">,</span>
 <span class="w">    </span><span class="n">callback</span><span class="p">,</span>
 <span class="w">    </span><span class="cm">/*echo=*/</span><span class="kc">false</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Kotlin:</p>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/* width = */</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/* height = */</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/* channels = */</span><span class="w"> </span><span class="m">3</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/* seqLen = */</span><span class="w"> </span><span class="m">768</span><span class="p">,</span>
+<span class="w">    </span><span class="n">callback</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/* echo = */</span><span class="w"> </span><span class="kc">false</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -2450,7 +2598,7 @@ document.write(`
        "headline": "Running LLMs on Android",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/llm/run-on-android.html",
-       "articleBody": "Running LLMs on Android# ExecuTorch\u2019s LLM-specific runtime components provide an experimental Java interface around the core C++ LLM runtime, available through the executorch-android AAR. Prerequisites# Make sure you have a model and tokenizer files ready, as described in the prerequisites section of the Running LLMs with C++ guide. To add the executorch-android library to your app, see Using ExecuTorch on Android. The LLM runner classes are bundled inside the same AAR as the generic Module API. Runtime API# Once the executorch-android AAR is on your classpath, you can import the LLM runner classes from the org.pytorch.executorch.extension.llm package. Importing# import org.pytorch.executorch.extension.llm.LlmModule; import org.pytorch.executorch.extension.llm.LlmModuleConfig; import org.pytorch.executorch.extension.llm.LlmGenerationConfig; import org.pytorch.executorch.extension.llm.LlmCallback; LlmModule# The LlmModule class provides a simple Java interface for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt. This API is experimental and subject to change. Initialization# Create an LlmModule by specifying paths to your serialized model (.pte) and tokenizer files. For text-only models, the simple constructor is enough: LlmModule module = new LlmModule( \"/data/local/tmp/llama-3.2-instruct.pte\", \"/data/local/tmp/tokenizer.model\", 0.8f); For finer control (multimodal model type, BOS/EOS handling, supplementary data files, load mode), use LlmModuleConfig with the fluent builder: LlmModuleConfig config = LlmModuleConfig.create() .modulePath(\"/data/local/tmp/llama-3.2-instruct.pte\") .tokenizerPath(\"/data/local/tmp/tokenizer.model\") .temperature(0.8f) .modelType(LlmModuleConfig.MODEL_TYPE_TEXT) .loadMode(LlmModuleConfig.LOAD_MODE_MMAP) .build(); LlmModule module = new LlmModule(config); Available load modes are LOAD_MODE_FILE, LOAD_MODE_MMAP (default), LOAD_MODE_MMAP_USE_MLOCK, and LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS. Available model types are MODEL_TYPE_TEXT, MODEL_TYPE_TEXT_VISION, and MODEL_TYPE_MULTIMODAL. Construction itself is lightweight and does not load the program data immediately. Loading# Explicitly load the model before generation to avoid paying the load cost during your first generate call. int status = module.load(); if (status != 0) { // Handle load failure (status is an ExecuTorch runtime error code). } If you skip this step, the model is loaded lazily on the first generate call. Generating# Generate tokens from a text prompt by passing an LlmCallback that receives each token as it is produced. The same callback also receives a JSON-encoded statistics string when generation completes. LlmCallback callback = new LlmCallback() { @Override public void onResult(String token) { // Called once per generated token. Append to your UI buffer here. System.out.print(token); } @Override public void onStats(String statsJson) { // Called once when generation finishes. See extension/llm/runner/stats.h // for the field definitions. System.out.println(\"\\n\" + statsJson); } @Override public void onError(int errorCode, String message) { // Called if the runtime reports an error during generation. } }; module.generate(\"Once upon a time\", callback); For full control over generation parameters, use LlmGenerationConfig: LlmGenerationConfig genConfig = LlmGenerationConfig.create() .seqLen(2048) .temperature(0.8f) .echo(false) .build(); module.generate(\"Once upon a time\", genConfig, callback); LlmGenerationConfig exposes echo, maxNewTokens, seqLen, temperature, numBos, numEos, and warming. Defaults match the C++ GenerationConfig documented in Running LLMs with C++. Stopping Generation# If you need to interrupt a long-running generation, call stop() from another thread (or from inside the onResult callback): module.stop(); Generation also runs synchronously on the calling thread, so make sure you invoke generate() off the main thread (for example, on a HandlerThread or via a java.util.concurrent.Executor). Resetting# To clear the prefilled tokens from the KV cache and reset the start position to 0, call: module.resetContext(); This is the equivalent of reset() on the iOS runner and reset() on the C++ IRunner. Multimodal Inputs# For models declared as MODEL_TYPE_TEXT_VISION or MODEL_TYPE_MULTIMODAL, image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call generate() with the text prompt to produce the response. Images# Raw uint8 pixel data in CHW order can be supplied as an int[], or as a direct ByteBuffer to avoid JNI array copies: // As int[] int[] pixels = ...; // length == channels * height * width module.prefillImages(pixels, /*width=*/336, /*height=*/336, /*channels=*/3); // As direct ByteBuffer (preferred for large images) ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 336 * 336); buffer.put(rawBytes).rewind(); module.prefillImages(buffer, 336, 336, 3); Pre-normalized float pixel data is also supported, both as a float[] and as a direct ByteBuffer in native byte order: float[] normalized = ...; // length == channels * height * width module.prefillImages(normalized, 336, 336, 3); ByteBuffer floatBuffer = ByteBuffer .allocateDirect(3 * 336 * 336 * Float.BYTES) .order(ByteOrder.nativeOrder()); // fill floatBuffer with normalized values, then: module.prefillNormalizedImage(floatBuffer, 336, 336, 3); Audio# Preprocessed audio features (for example mel spectrograms produced by a Whisper preprocessor) can be supplied as byte[] or float[]: module.prefillAudio(features, /*batchSize=*/1, /*nBins=*/128, /*nFrames=*/3000); Raw audio samples can be supplied with prefillRawAudio: module.prefillRawAudio(samples, /*batchSize=*/1, /*nChannels=*/1, /*nSamples=*/16000); Generating with Multimodal Prefill# After prefilling each modality, run generate() with the text prompt as usual: module.prefillImages(pixels, 336, 336, 3); module.generate(\"What\u0027s in this image?\", callback); For text-vision models, a convenience overload accepts the image and prompt together: module.generate( pixels, /*width=*/336, /*height=*/336, /*channels=*/3, \"What\u0027s in this image?\", /*seqLen=*/768, callback, /*echo=*/false); Demo# See the Llama Android demo app in executorch-examples for an end-to-end project that wires LlmModule, LlmCallback, and a HandlerThread into a chat UI.",
+       "articleBody": "Running LLMs on Android# ExecuTorch\u2019s LLM-specific runtime components provide experimental Java APIs, callable from Java or Kotlin, around the core C++ LLM runtime. These APIs are available through the executorch-android AAR. Prerequisites# Make sure you have a model and tokenizer files ready, as described in the prerequisites section of the Running LLMs with C++ guide. To add the executorch-android library to your app, see Using ExecuTorch on Android. The LLM runner classes are bundled inside the same AAR as the generic Module API. Runtime API# Once the executorch-android AAR is on your classpath, you can import the LLM runner classes from the org.pytorch.executorch.extension.llm package. The runner is callable from both Java and Kotlin; the rest of this guide includes both Java and Kotlin examples for each snippet. Importing# Java: import org.pytorch.executorch.extension.llm.LlmModule; import org.pytorch.executorch.extension.llm.LlmModuleConfig; import org.pytorch.executorch.extension.llm.LlmGenerationConfig; import org.pytorch.executorch.extension.llm.LlmCallback; // Only needed for the multimodal ByteBuffer paths in the Images section. import java.nio.ByteBuffer; import java.nio.ByteOrder; Kotlin: import org.pytorch.executorch.extension.llm.LlmModule import org.pytorch.executorch.extension.llm.LlmModuleConfig import org.pytorch.executorch.extension.llm.LlmGenerationConfig import org.pytorch.executorch.extension.llm.LlmCallback // Only needed for the multimodal ByteBuffer paths in the Images section. import java.nio.ByteBuffer import java.nio.ByteOrder LlmModule# The LlmModule class provides a simple interface, usable from Java and Kotlin, for loading a text-generation model, configuring its tokenizer, generating token streams, and stopping execution. It also supports multimodal models that accept image and audio inputs alongside a text prompt. This API is experimental and subject to change. Initialization# Create an LlmModule by specifying paths to your serialized model (.pte) and tokenizer files. For text-only models, the simple constructor is enough: Java: LlmModule module = new LlmModule( \"/data/local/tmp/llama-3.2-instruct.pte\", \"/data/local/tmp/tokenizer.model\", 0.8f); Kotlin: val module = LlmModule( \"/data/local/tmp/llama-3.2-instruct.pte\", \"/data/local/tmp/tokenizer.model\", 0.8f ) For finer control (multimodal model type, BOS/EOS handling, supplementary data files, load mode), use LlmModuleConfig with the fluent builder: Java: LlmModuleConfig config = LlmModuleConfig.create() .modulePath(\"/data/local/tmp/llama-3.2-instruct.pte\") .tokenizerPath(\"/data/local/tmp/tokenizer.model\") .temperature(0.8f) .modelType(LlmModuleConfig.MODEL_TYPE_TEXT) .loadMode(LlmModuleConfig.LOAD_MODE_MMAP) .build(); LlmModule module = new LlmModule(config); Kotlin: val config = LlmModuleConfig.create() .modulePath(\"/data/local/tmp/llama-3.2-instruct.pte\") .tokenizerPath(\"/data/local/tmp/tokenizer.model\") .temperature(0.8f) .modelType(LlmModuleConfig.MODEL_TYPE_TEXT) .loadMode(LlmModuleConfig.LOAD_MODE_MMAP) .build() val module = LlmModule(config) Available load modes are LOAD_MODE_FILE, LOAD_MODE_MMAP (default), LOAD_MODE_MMAP_USE_MLOCK, and LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS. Available model types are MODEL_TYPE_TEXT and MODEL_TYPE_TEXT_VISION (the MODEL_TYPE_MULTIMODAL constant is currently an alias for MODEL_TYPE_TEXT_VISION and selects the same runtime path). Construction itself is lightweight and does not load the program data immediately. Loading# Explicitly load the model before generation to avoid paying the load cost during your first generate call. Java: int status = module.load(); if (status != 0) { // Handle load failure (status is an ExecuTorch runtime error code). } Kotlin: val status = module.load() if (status != 0) { // Handle load failure (status is an ExecuTorch runtime error code). } If you skip this step, the model is loaded lazily on the first generate call. Generating# Generate tokens from a text prompt by passing an LlmCallback that receives each token as it is produced. The same callback also receives a JSON-encoded statistics string when generation completes. Java: LlmCallback callback = new LlmCallback() { @Override public void onResult(String token) { // Called once per generated token. Append to your UI buffer here. System.out.print(token); } @Override public void onStats(String statsJson) { // Called once when generation finishes. See extension/llm/runner/stats.h // for the field definitions. System.out.println(\"\\n\" + statsJson); } @Override public void onError(int errorCode, String message) { // Called if the runtime reports an error during generation. } }; module.generate(\"Once upon a time\", callback); Kotlin: val callback = object : LlmCallback { override fun onResult(token: String) { // Called once per generated token. Append to your UI buffer here. print(token) } override fun onStats(statsJson: String) { // Called once when generation finishes. See extension/llm/runner/stats.h // for the field definitions. println(\"\\n$statsJson\") } override fun onError(errorCode: Int, message: String) { // Called if the runtime reports an error during generation. } } module.generate(\"Once upon a time\", callback) For full control over generation parameters, use LlmGenerationConfig: Java: LlmGenerationConfig genConfig = LlmGenerationConfig.create() .seqLen(2048) .temperature(0.8f) .echo(false) .build(); module.generate(\"Once upon a time\", genConfig, callback); Kotlin: val genConfig = LlmGenerationConfig.create() .seqLen(2048) .temperature(0.8f) .echo(false) .build() module.generate(\"Once upon a time\", genConfig, callback) LlmGenerationConfig exposes echo, maxNewTokens, seqLen, temperature, numBos, numEos, and warming. Defaults match the C++ GenerationConfig documented in Running LLMs with C++. Stopping Generation# If you need to interrupt a long-running generation, call stop() from another thread (or from inside the onResult callback): Java: module.stop(); Kotlin: module.stop() Generation also runs synchronously on the calling thread, so make sure you invoke generate() off the main thread (for example, on a HandlerThread or via a java.util.concurrent.Executor). Resetting# To clear the prefilled tokens from the KV cache and reset the start position to 0, call: Java: module.resetContext(); Kotlin: module.resetContext() This is the equivalent of reset() on the iOS runner and reset() on the C++ IRunner. Multimodal Inputs# For models declared as MODEL_TYPE_TEXT_VISION (MODEL_TYPE_MULTIMODAL is currently an alias), image and audio data are provided through dedicated prefill methods. After prefilling all modalities, call generate() with the text prompt to produce the response. Images# Raw uint8 pixel data in CHW order can be supplied as an int[], or as a direct ByteBuffer to avoid JNI array copies: Java: // As int[] int[] pixels = ...; // length == channels * height * width module.prefillImages(pixels, /*width=*/336, /*height=*/336, /*channels=*/3); // As direct ByteBuffer (preferred for large images) byte[] rawBytes = ...; // length == channels * height * width ByteBuffer buffer = ByteBuffer.allocateDirect(3 * 336 * 336); buffer.put(rawBytes); // Rewind so the JNI side reads from position 0. buffer.rewind(); module.prefillImages(buffer, 336, 336, 3); Kotlin: // As IntArray val pixels: IntArray = ... // length == channels * height * width module.prefillImages(pixels, /* width = */ 336, /* height = */ 336, /* channels = */ 3) // As direct ByteBuffer (preferred for large images) val rawBytes: ByteArray = ... // length == channels * height * width val buffer = ByteBuffer.allocateDirect(3 * 336 * 336).apply { put(rawBytes) rewind() } module.prefillImages(buffer, 336, 336, 3) Pre-normalized float pixel data is also supported, both as a float[] and as a direct ByteBuffer in native byte order. The two paths intentionally hit different methods: the float[] overload is prefillImages, while the ByteBuffer path is prefillNormalizedImage (the names reflect the underlying JNI bindings and are not interchangeable). Java: float[] normalized = ...; // length == channels * height * width module.prefillImages(normalized, 336, 336, 3); ByteBuffer floatBuffer = ByteBuffer .allocateDirect(3 * 336 * 336 * Float.BYTES) .order(ByteOrder.nativeOrder()); // fill floatBuffer with normalized values, then rewind before the call: floatBuffer.rewind(); module.prefillNormalizedImage(floatBuffer, 336, 336, 3); Kotlin: val normalized: FloatArray = ... // length == channels * height * width module.prefillImages(normalized, 336, 336, 3) val floatBuffer: ByteBuffer = ByteBuffer .allocateDirect(3 * 336 * 336 * Float.SIZE_BYTES) .order(ByteOrder.nativeOrder()) // fill floatBuffer with normalized values, then rewind before the call: floatBuffer.rewind() module.prefillNormalizedImage(floatBuffer, 336, 336, 3) Audio# Preprocessed audio features (for example mel spectrograms produced by a Whisper preprocessor) can be supplied as byte[] or float[]: Java: module.prefillAudio(features, /*batchSize=*/1, /*nBins=*/128, /*nFrames=*/3000); Kotlin: module.prefillAudio(features, /* batchSize = */ 1, /* nBins = */ 128, /* nFrames = */ 3000) Raw audio samples can be supplied with prefillRawAudio: Java: module.prefillRawAudio(samples, /*batchSize=*/1, /*nChannels=*/1, /*nSamples=*/16000); Kotlin: module.prefillRawAudio(samples, /* batchSize = */ 1, /* nChannels = */ 1, /* nSamples = */ 16000) Generating with Multimodal Prefill# After prefilling each modality, run generate() with the text prompt as usual: Java: module.prefillImages(pixels, 336, 336, 3); module.generate(\"What\u0027s in this image?\", callback); Kotlin: module.prefillImages(pixels, 336, 336, 3) module.generate(\"What\u0027s in this image?\", callback) For text-vision models, a convenience overload accepts the image and prompt together: Java: module.generate( pixels, /*width=*/336, /*height=*/336, /*channels=*/3, \"What\u0027s in this image?\", /*seqLen=*/768, callback, /*echo=*/false); Kotlin: module.generate( pixels, /* width = */ 336, /* height = */ 336, /* channels = */ 3, \"What\u0027s in this image?\", /* seqLen = */ 768, callback, /* echo = */ false ) Demo# See the Llama Android demo app in executorch-examples for an end-to-end project that wires LlmModule, LlmCallback, and a HandlerThread into a chat UI.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
