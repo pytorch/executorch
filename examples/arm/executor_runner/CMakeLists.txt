@@ -288,13 +288,22 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(COMPILER_PREPROCESSOR_OPTIONS -E -x c -P)
 endif()
 
+set(_arm_runner_linker_preprocessor_options ${COMPILER_PREPROCESSOR_OPTIONS})
+foreach(_arm_runner_linker_define IN ITEMS HEAP_SIZE STACK_SIZE)
+  if(DEFINED ${_arm_runner_linker_define})
+    list(APPEND _arm_runner_linker_preprocessor_options
+         "-D${_arm_runner_linker_define}=${${_arm_runner_linker_define}}"
+    )
+  endif()
+endforeach()
+
 get_filename_component(LINK_FILE_OUT_BASE "${LINK_FILE}" NAME)
 set(LINK_FILE_OUT
     "${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}"
 )
 
 execute_process(
-  COMMAND ${CMAKE_C_COMPILER} ${COMPILER_PREPROCESSOR_OPTIONS} -o
+  COMMAND ${CMAKE_C_COMPILER} ${_arm_runner_linker_preprocessor_options} -o
           ${LINK_FILE_OUT} ${LINK_FILE_IN}
 )
 target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
