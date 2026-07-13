@@ -118,6 +118,13 @@ struct DeviceHandle final {
   ~DeviceHandle();
 };
 
+// Returns the Vulkan instance apiVersion that ExecuTorch should request. Aims
+// for Vulkan 1.3 (which exposes VK_EXT_subgroup_size_control as core, so it can
+// be used without a separately advertised extension) but never exceeds the
+// version the loader supports. Falls back to 1.1 on loaders that predate
+// vkEnumerateInstanceVersion.
+uint32_t select_instance_api_version();
+
 void find_requested_device_extensions(
     VkPhysicalDevice physical_device,
     std::vector<const char*>& enabled_extensions,

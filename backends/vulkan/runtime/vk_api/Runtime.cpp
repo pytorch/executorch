@@ -87,7 +87,7 @@ VkInstance create_instance(const RuntimeConfig& config) {
       0, // applicationVersion
       nullptr, // pEngineName
       0, // engineVersion
-      VK_API_VERSION_1_1, // apiVersion
+      select_instance_api_version(), // apiVersion
   };
 
   std::vector<const char*> enabled_layers;

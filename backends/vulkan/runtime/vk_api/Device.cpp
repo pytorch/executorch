@@ -40,6 +40,24 @@ DeviceType determine_device_type(const std::string& device_name) {
 
 } // namespace
 
+uint32_t select_instance_api_version() {
+  uint32_t requested_version = VK_API_VERSION_1_1;
+#if defined(VK_VERSION_1_3)
+  auto enumerate_instance_version =
+      (PFN_vkEnumerateInstanceVersion)vkGetInstanceProcAddr(
+          VK_NULL_HANDLE, "vkEnumerateInstanceVersion");
+  if (enumerate_instance_version != nullptr) {
+    uint32_t loader_version = 0;
+    if (enumerate_instance_version(&loader_version) == VK_SUCCESS) {
+      requested_version = loader_version < VK_API_VERSION_1_3
+          ? loader_version
+          : VK_API_VERSION_1_3;
+    }
+  }
+#endif /* VK_VERSION_1_3 */
+  return requested_version;
+}
+
 PhysicalDevice::PhysicalDevice(
     VkInstance instance_handle,
     VkPhysicalDevice physical_device_handle)
