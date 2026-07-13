@@ -15,7 +15,6 @@ from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
-    CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -133,11 +132,12 @@ from executorch.backends.arm._passes import (
     NormalizeTransformInputPlaceholdersPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
+    PropagateViewCopyPermuteDownPass,
+    PropagateViewCopyPermuteUpPass,
     QuantizeClampArgumentsPass,
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
-    RemovePermutesAroundElementwiseTosaOps,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
     RewriteAdaptiveAvgPool2dPass,
@@ -172,9 +172,6 @@ from executorch.backends.arm.tosa.specification import (
     tosa_spec_in_set,
     TosaLoweringContext,
     TosaSpecification,
-)
-from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
-    FuseCascadedTransposeOrPermuteOps,
 )
 
 from executorch.exir import ExportedProgram
@@ -606,6 +603,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
                 FuseConstantArgsPass(exported_program),
+                CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
@@ -629,14 +627,14 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseTosaOps(exported_program),
-                CanonicalizeViewCopyPermutePass(),
-                FuseCascadedTransposeOrPermuteOps(),
+                PropagateViewCopyPermuteDownPass(self.compile_spec, exported_program),
+                PropagateViewCopyPermuteUpPass(self.compile_spec, exported_program),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 FuseConsecutiveSlicesPass(),
                 InsertConstShapesPass(),
+                InsertDataLayoutCastsPass(),
             ]
         )
 
