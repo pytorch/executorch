@@ -15,9 +15,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
 install_qnn
 
-export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
-export PYTHONPATH="${EXECUTORCH_ROOT}/..${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH=".."
 cp schema/program.fbs exir/_serialize/program.fbs
 cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
 cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
@@ -57,6 +57,8 @@ MODEL="qwen2_5-0_5b"
 MAX_SEQ=1024
 PTQ="16a4w"
 
+EXTRA_FLAGS="$@"
+
 # Run command and capture *both stdout and stderr*
 LOG_FILE="eval_${MODEL}_$(date +%Y%m%d_%H%M%S).log"
 
@@ -69,7 +71,7 @@ $PYTHON_EXECUTABLE -m executorch.examples.qualcomm.oss_scripts.llama.eval_llama_
   $EXTRA_FLAGS 2>&1 | tee "$LOG_FILE"
 
 # Extract last word_perplexity
-LAST_PERP=$(grep "wikitext:.*word_perplexity,none" "$LOG_FILE" | tail -n 1 | sed -E "s/.*'word_perplexity,none': ([0-9.]+).*/\1/")
+LAST_PERP=$(grep "INFO:root:wikitext:" "$LOG_FILE" | tail -n 1 | sed -E "s/.*'word_perplexity,none': ([0-9.]+).*/\1/")
 
 if [[ -z "$LAST_PERP" ]]; then
   echo "❌ Could not find word_perplexity in logs!"
