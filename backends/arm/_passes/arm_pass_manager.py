@@ -110,6 +110,7 @@ from executorch.backends.arm._passes import (
     FuseBatchNorm2dPass,
     FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
+    FuseConsecutiveSlicesPass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
@@ -630,6 +631,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
+                FuseConsecutiveSlicesPass(),
                 InsertConstShapesPass(),
             ]
         )

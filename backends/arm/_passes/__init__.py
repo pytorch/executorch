@@ -114,6 +114,7 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
 from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
 from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
+from .fuse_consecutive_slices_pass import FuseConsecutiveSlicesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
