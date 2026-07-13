@@ -155,6 +155,43 @@ if(EXECUTORCH_BUILD_VGF)
   set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
   set(VOLK_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 
+  set(_vgf_missing_vulkan_deps "")
+
+  if(NOT EXISTS "${VULKAN_HEADERS_PATH}/vulkan/vulkan.h")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/Vulkan-Headers/include/vulkan/vulkan.h"
+    )
+  endif()
+
+  if(NOT EXISTS "${VOLK_HEADERS_PATH}/volk.h")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/volk/volk.h"
+    )
+  endif()
+
+  if(NOT EXISTS "${VOLK_HEADERS_PATH}/volk.c")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/volk/volk.c"
+    )
+  endif()
+
+  if(_vgf_missing_vulkan_deps)
+    string(REPLACE ";" "\n  - " _vgf_missing_vulkan_deps_text
+                   "${_vgf_missing_vulkan_deps}"
+    )
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_VGF=ON requires Vulkan-Headers and volk from "
+        "backends/vulkan/third-party, even when EXECUTORCH_BUILD_VULKAN=OFF. "
+        "Missing:\n"
+        "  - ${_vgf_missing_vulkan_deps_text}\n"
+        "Run from the repository root:\n"
+        "  git submodule update --init "
+        "backends/vulkan/third-party/Vulkan-Headers "
+        "backends/vulkan/third-party/volk"
+    )
+  endif()
+
   if(EXISTS
      "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
   )
@@ -246,6 +283,12 @@ if(EXECUTORCH_BUILD_VGF)
 
   target_link_libraries(vgf_backend PRIVATE executorch_core)
   target_link_libraries(vgf_backend PRIVATE vgf)
+
+  # When VGF compiles volk.c itself, link libdl for dlopen/dlsym
+  if(NOT EXECUTORCH_BUILD_VULKAN)
+    target_link_libraries(vgf_backend PRIVATE ${CMAKE_DL_LIBS})
+  endif()
+
   executorch_target_link_options_shared_lib(vgf_backend)
 
   # end config for VGF builds
