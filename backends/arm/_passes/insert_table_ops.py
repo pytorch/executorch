@@ -66,6 +66,7 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.leaky_relu.default,
         exir_ops.edge.aten.remainder.Scalar,
     }
 
@@ -106,6 +107,18 @@ class TableOps:
                     scale = cast(float, node.meta.get("float_scale", 1.0))
                     return lambda x: torch.ops.aten.elu.default(
                         x, input_alpha, scale, input_scale
+                    ).flatten()
+                case exir_ops.edge.aten.leaky_relu.default:
+                    negative_slope = cast(
+                        float,
+                        (
+                            node.args[1]
+                            if len(node.args) > 1
+                            else node.kwargs.get("negative_slope", 0.01)
+                        ),
+                    )
+                    return lambda x: torch.nn.functional.leaky_relu(
+                        x, negative_slope=negative_slope
                     ).flatten()
                 case exir_ops.edge.aten.remainder.Scalar:
                     divisor = cast(float | int, node.args[1])

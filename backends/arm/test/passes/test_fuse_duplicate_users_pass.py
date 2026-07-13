@@ -5,10 +5,16 @@
 
 from typing import Dict, Tuple
 
+import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
 from executorch.backends.arm._passes import FuseDuplicateUsersPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Graph, GraphModule
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -59,6 +65,36 @@ modules: Dict[str, ModuleWithOps] = {
 def _set_val(node, val):
     node.meta["val"] = val
     return node
+
+
+def _rescale_nodes(graph_module):
+    return [
+        node
+        for node in graph_module.graph.nodes
+        if node.op == "call_function"
+        and node.target == exir_ops.backend.tosa.RESCALE.default
+    ]
+
+
+def _graph_with_duplicate_rescale_users() -> GraphModule:
+    graph = Graph()
+    x = _set_val(graph.placeholder("x"), torch.ones(1, dtype=torch.int8))
+    rescale_args = (x, torch.int32, [1.0], 16, 0)
+    first_rescale = _set_val(
+        graph.call_function(exir_ops.backend.tosa.RESCALE.default, rescale_args),
+        torch.ones(1, dtype=torch.int32),
+    )
+    second_rescale = _set_val(
+        graph.call_function(exir_ops.backend.tosa.RESCALE.default, rescale_args),
+        torch.ones(1, dtype=torch.int32),
+    )
+    output = graph.output((first_rescale, second_rescale))
+    output.meta["val"] = (
+        torch.ones(1, dtype=torch.int32),
+        torch.ones(1, dtype=torch.int32),
+    )
+    graph.lint()
+    return GraphModule(torch.nn.Module(), graph)
 
 
 def _graph_with_users_not_in_node_order() -> GraphModule:
@@ -116,3 +152,18 @@ def test_fuse_duplicate_users_preserves_graph_order_for_representative():
     result.graph_module.graph.lint()
     assert result.modified
     assert len(_add_node_names(result.graph_module)) == 1
+
+
+def test_fuse_duplicate_users_removes_identical_rescale_users():
+    graph_module = _graph_with_duplicate_rescale_users()
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        result = FuseDuplicateUsersPass()(graph_module)
+
+    rescale_nodes = _rescale_nodes(result.graph_module)
+
+    result.graph_module.graph.lint()
+    assert result.modified
+    assert len(rescale_nodes) == 1
+    output_node = result.graph_module.graph.output_node()
+    assert output_node.args[0] == (rescale_nodes[0], rescale_nodes[0])

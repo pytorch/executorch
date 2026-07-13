@@ -6,12 +6,13 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-"""GGUF **Q4_K** linear lowering via MLX's native 4-bit quantized matmul.
+"""GGUF **Q6_K** linear lowering via MLX's native 6-bit quantized matmul.
 
 Lowers a ``dequantize_gguf -> linear`` pattern to a ``QuantizedMatmulNode``
 (mode "affine"); the GGUF blob is repacked into MLX qparams at export time (see
-:mod:`.repack_mlx`). The group size is 32 by default, or the merged 64/128 when
-adjacent sub-blocks are identical.
+:mod:`.repack_mlx`). Only usable when the weight merges to an MLX-supported
+group size (>= 32); :func:`emit_linear` returns ``None`` otherwise so the caller
+can fall back to the fused kernels.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from typing import Optional
 from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
-from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.repack_mlx import (
+from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.repack_mlx import (
     _BITS,
     repack_mlx,
 )
@@ -39,14 +40,16 @@ def emit_linear(
     x_node: Node,
     weight_node: Node,
     bias_node: Optional[Node],
-) -> Slot:
-    """Lower a Q4_K ``dequantize_gguf -> linear`` pattern to MLX 4-bit matmul.
+) -> Optional[Slot]:
+    """Lower a Q6_K ``dequantize_gguf -> linear`` pattern to MLX 6-bit matmul.
 
-    ``weight_node`` is the raw GGUF blob constant; ``head`` is the ``aten.linear``
-    node. The blob is repacked into MLX qparams at export time, so only the
-    MLX-format constants are serialized.
+    Returns the output slot, or ``None`` when the weight does not merge to an
+    MLX-supported group size (the caller should fall back to fused kernels).
     """
-    w_slot, scales_slot, biases_slot, group_size = repack_mlx(P, weight_node)
+    repacked = repack_mlx(P, weight_node)
+    if repacked is None:
+        return None
+    w_slot, scales_slot, biases_slot, group_size = repacked
     x_slot, bias_slot = P.slot_map([x_node, bias_node])
 
     out = P.make_or_get_slot(head)

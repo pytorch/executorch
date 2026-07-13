@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -118,13 +119,21 @@ void vkml_free_basics(
 constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
 constexpr const char* kVgfDumpInputsAndExitEnv =
     "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
+constexpr const char* kVgfNeuralStatisticsEnv =
+    "EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS";
 
 std::atomic<uint64_t> g_vgf_dump_invocation{0};
 
 bool env_flag_enabled(const char* name) {
   const char* value = std::getenv(name);
-  return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0 &&
-      std::strcmp(value, "false") != 0 && std::strcmp(value, "False") != 0;
+  if (value == nullptr || value[0] == '\0') {
+    return false;
+  }
+
+  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
+      std::strcmp(value, "False") != 0 && std::strcmp(value, "FALSE") != 0 &&
+      std::strcmp(value, "off") != 0 && std::strcmp(value, "Off") != 0 &&
+      std::strcmp(value, "OFF") != 0;
 }
 
 const char* descriptor_type_to_string(VkDescriptorType type) {
@@ -691,6 +700,28 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
+
+    if (event_tracer != nullptr && env_flag_enabled(kVgfNeuralStatisticsEnv)) {
+      // We attach the neural statistics JSON blob to ETDump as delegate
+      // metadata, when event tracer is active.
+
+      // This is “synthetic” event, which we use as a carrier for metadata
+      EventTracerEntry neural_statistics_event =
+          event_tracer_start_profiling_delegate(
+              event_tracer,
+              kVgfNeuralStatisticsDelegateEventName,
+              /*delegate_debug_id=*/-1);
+
+      // Ask VGF representation for neural accelerator diagnostics
+      std::string neural_statistics_metadata =
+          repr->collect_neural_statistics_metadata();
+
+      event_tracer_end_profiling_delegate(
+          event_tracer,
+          neural_statistics_event,
+          neural_statistics_metadata.data(),
+          neural_statistics_metadata.size());
+    }
 
     EventTracerEntry copy_outputs_event = event_tracer_start_profiling_delegate(
         event_tracer,

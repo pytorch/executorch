@@ -243,6 +243,61 @@ def _q6_k_fields(raw: Tensor, N: int, K: int) -> Tuple[Tensor, Tensor]:
     return q.reshape(N, K).to(torch.int8), eff_scale
 
 
+def _max_uniform_group_size(
+    eff_scale: Tensor,
+    eff_min: Tensor,
+    base_group_size: int,
+    max_group_size: int,
+) -> Tuple[int, Tensor, Tensor]:
+    """Merge adjacent identical sub-block groups into the largest lossless group.
+
+    ``eff_scale`` / ``eff_min`` are ``(N, K // base_group_size)`` per-sub-block
+    affine params. Returns ``(group_size, eff_scale, eff_min)`` where
+    ``group_size`` is the largest power-of-two multiple of ``base_group_size``
+    that is ``<= max_group_size``, divides the per-row group count, and for which
+    every run of ``group_size // base_group_size`` consecutive sub-blocks has an
+    identical scale *and* min across all rows. Because a run is merged only when
+    both params match exactly, ``scale * (q - zero_point)`` is bit-identical, so
+    the upgrade is lossless. The returned params are subsampled to
+    ``(N, K // group_size)``; when no merge applies the inputs are returned
+    unchanged at ``base_group_size``.
+
+    Merging is data-dependent (it inspects the actual scale/min values), so under
+    fake tensors -- e.g. the partitioner's support check, which runs on a fake
+    program -- the values are unknown and the base group size is kept. The real
+    merge happens later during preprocess, when the weight holds real data.
+    """
+    from torch._subclasses.fake_tensor import FakeTensor
+
+    if isinstance(eff_scale, FakeTensor):
+        return base_group_size, eff_scale, eff_min
+
+    n_rows, n_groups = eff_scale.shape
+
+    # Largest power-of-two factor that fits under max_group_size and divides the
+    # group count evenly.
+    factor = 1
+    while (
+        base_group_size * factor * 2 <= max_group_size and n_groups % (factor * 2) == 0
+    ):
+        factor *= 2
+
+    # Step down to the largest factor whose runs are actually uniform (a larger
+    # uniform run implies its sub-runs are too, so the first match is the max).
+    while factor > 1:
+        s = eff_scale.reshape(n_rows, n_groups // factor, factor)
+        m = eff_min.reshape(n_rows, n_groups // factor, factor)
+        if bool((s == s[:, :, :1]).all()) and bool((m == m[:, :, :1]).all()):
+            return (
+                base_group_size * factor,
+                s[:, :, 0].contiguous(),
+                m[:, :, 0].contiguous(),
+            )
+        factor //= 2
+
+    return base_group_size, eff_scale, eff_min
+
+
 # Tensor subclass
 
 
@@ -328,7 +383,9 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
             shape=torch.Size([N, K]),
         )
 
-    def to_intx_unpacked_to_int8_tensor(self) -> Tensor:
+    def to_intx_unpacked_to_int8_tensor(
+        self, max_group_size: Optional[int] = None
+    ) -> Tensor:
         """Convert to a torchao ``IntxUnpackedToInt8Tensor`` (Q4_K, Q5_K or Q6_K).
 
         Q6_K maps to a symmetric int8 tensor (values [-32, 31], zero-point 0).
@@ -336,23 +393,45 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         affine min is folded into a (float) zero-point, so the rewrite is exact.
         Q5_K maps to a 5-bit tensor: values are centered to [-16, 15] and the
         affine min folded into the zero-point, exactly like Q4_K.
+
+        ``max_group_size``: when set, adjacent sub-blocks whose scale *and* min
+        are identical are merged into the largest lossless group size
+        ``<= max_group_size`` (see :func:`_max_uniform_group_size`). Q6_K is
+        symmetric (no min), so its merge decision is scale-equality only.
+        Defaults to ``None`` (keep the native groups: 32 for Q4_K/Q5_K, 16 for
+        Q6_K).
         """
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
         N, K = int(self.shape[0]), int(self.shape[1])
         if self.ggml_type == "q6_k":
             q, eff_scale = _q6_k_fields(self.raw, N, K)
+            group_size = Q6_K_GROUP_SIZE
+            if max_group_size is not None:
+                # Symmetric (zero-point 0, no min): an all-zeros min always
+                # matches, so the merge reduces to adjacent scale equality.
+                group_size, eff_scale, _ = _max_uniform_group_size(
+                    eff_scale,
+                    torch.zeros_like(eff_scale),
+                    Q6_K_GROUP_SIZE,
+                    max_group_size,
+                )
             return IntxUnpackedToInt8Tensor(
                 qdata=q,
                 scale=eff_scale.to(torch.bfloat16),
                 zero_point=torch.zeros_like(eff_scale, dtype=torch.int8),
                 target_dtype=torch.int8,
-                block_size=(1, Q6_K_GROUP_SIZE),
+                block_size=(1, group_size),
                 dtype=torch.bfloat16,
                 activation_quantization=None,
             )
         if self.ggml_type == "q5_k":
             q, eff_scale, eff_min = _q5_k_fields(self.raw, N, K)
+            group_size = Q5_K_GROUP_SIZE
+            if max_group_size is not None:
+                group_size, eff_scale, eff_min = _max_uniform_group_size(
+                    eff_scale, eff_min, Q5_K_GROUP_SIZE, max_group_size
+                )
             zero = torch.where(
                 eff_scale != 0, eff_min / eff_scale, torch.zeros_like(eff_min)
             )
@@ -363,12 +442,17 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 scale=eff_scale.to(torch.bfloat16),
                 zero_point=(zero - 16).to(torch.bfloat16),
                 target_dtype=torch.int5,
-                block_size=(1, Q5_K_GROUP_SIZE),
+                block_size=(1, group_size),
                 dtype=torch.bfloat16,
                 activation_quantization=None,
             )
         if self.ggml_type == "q4_k":
             q, eff_scale, eff_min = _q4_k_fields(self.raw, N, K)
+            group_size = Q4_K_GROUP_SIZE
+            if max_group_size is not None:
+                group_size, eff_scale, eff_min = _max_uniform_group_size(
+                    eff_scale, eff_min, Q4_K_GROUP_SIZE, max_group_size
+                )
             zero = torch.where(
                 eff_scale != 0, eff_min / eff_scale, torch.zeros_like(eff_min)
             )
@@ -379,7 +463,7 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 scale=eff_scale.to(torch.bfloat16),
                 zero_point=(zero - 8).to(torch.bfloat16),
                 target_dtype=torch.int4,
-                block_size=(1, Q4_K_GROUP_SIZE),
+                block_size=(1, group_size),
                 dtype=torch.bfloat16,
                 activation_quantization=None,
             )

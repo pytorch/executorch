@@ -155,6 +155,43 @@ if(EXECUTORCH_BUILD_VGF)
   set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
   set(VOLK_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 
+  set(_vgf_missing_vulkan_deps "")
+
+  if(NOT EXISTS "${VULKAN_HEADERS_PATH}/vulkan/vulkan.h")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/Vulkan-Headers/include/vulkan/vulkan.h"
+    )
+  endif()
+
+  if(NOT EXISTS "${VOLK_HEADERS_PATH}/volk.h")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/volk/volk.h"
+    )
+  endif()
+
+  if(NOT EXISTS "${VOLK_HEADERS_PATH}/volk.c")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/volk/volk.c"
+    )
+  endif()
+
+  if(_vgf_missing_vulkan_deps)
+    string(REPLACE ";" "\n  - " _vgf_missing_vulkan_deps_text
+                   "${_vgf_missing_vulkan_deps}"
+    )
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_VGF=ON requires Vulkan-Headers and volk from "
+        "backends/vulkan/third-party, even when EXECUTORCH_BUILD_VULKAN=OFF. "
+        "Missing:\n"
+        "  - ${_vgf_missing_vulkan_deps_text}\n"
+        "Run from the repository root:\n"
+        "  git submodule update --init "
+        "backends/vulkan/third-party/Vulkan-Headers "
+        "backends/vulkan/third-party/volk"
+    )
+  endif()
+
   if(EXISTS
      "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
   )
@@ -184,6 +221,36 @@ if(EXECUTORCH_BUILD_VGF)
       set(LIBVGF_PATH "${_vgf_site_pure}")
     endif()
 
+    if(EXECUTORCH_BUILD_TESTS)
+      add_executable(
+        vgf_neural_statistics_test
+        ${EXECUTORCH_ROOT}/backends/arm/test/vgf_neural_statistics_test.cpp
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFNeuralStatistics.cpp
+      )
+      target_include_directories(
+        vgf_neural_statistics_test
+        PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+                ${VOLK_HEADERS_PATH}
+      )
+      target_compile_options(
+        vgf_neural_statistics_test PRIVATE -DUSE_VULKAN_WRAPPER
+                                           -DUSE_VULKAN_VOLK
+      )
+      target_link_libraries(vgf_neural_statistics_test PRIVATE executorch_core)
+      if(TARGET GTest::gtest_main)
+        target_link_libraries(
+          vgf_neural_statistics_test PRIVATE GTest::gtest_main
+        )
+      else()
+        target_link_libraries(
+          vgf_neural_statistics_test PRIVATE gtest gtest_main
+        )
+      endif()
+      add_test(NAME vgf_neural_statistics_test
+               COMMAND vgf_neural_statistics_test
+      )
+    endif()
+
     set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
   endif()
 
@@ -194,8 +261,9 @@ if(EXECUTORCH_BUILD_VGF)
   target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
 
   # Add backend delegate for VGF
-  set(_vgf_backend_sources backends/arm/runtime/VGFBackend.cpp
-                           backends/arm/runtime/VGFSetup.cpp
+  set(_vgf_backend_sources
+      backends/arm/runtime/VGFBackend.cpp backends/arm/runtime/VGFSetup.cpp
+      backends/arm/runtime/VGFNeuralStatistics.cpp
   )
   if(NOT EXECUTORCH_BUILD_VULKAN)
     list(APPEND _vgf_backend_sources backends/vulkan/third-party/volk/volk.c)
@@ -215,6 +283,12 @@ if(EXECUTORCH_BUILD_VGF)
 
   target_link_libraries(vgf_backend PRIVATE executorch_core)
   target_link_libraries(vgf_backend PRIVATE vgf)
+
+  # When VGF compiles volk.c itself, link libdl for dlopen/dlsym
+  if(NOT EXECUTORCH_BUILD_VULKAN)
+    target_link_libraries(vgf_backend PRIVATE ${CMAKE_DL_LIBS})
+  endif()
+
   executorch_target_link_options_shared_lib(vgf_backend)
 
   # end config for VGF builds

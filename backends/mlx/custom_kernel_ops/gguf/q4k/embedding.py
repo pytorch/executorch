@@ -134,7 +134,7 @@ def emit_embedding(
     indices_node: Node,
     output_dtype: torch.dtype,
 ) -> Slot:
-    """Dispatch to fused Metal gather or the legacy MLX-native repack path."""
+    """Dispatch to fused Metal gather or the MLX-native repack path."""
     from executorch.backends.mlx.custom_kernel_ops.gguf.q4k import emit_direct_gguf
 
     if emit_direct_gguf():
