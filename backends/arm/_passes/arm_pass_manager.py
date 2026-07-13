@@ -164,7 +164,10 @@ from executorch.backends.arm._passes import (
 )
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import SoftmaxDecompositionConfig
+from executorch.backends.arm.common.pipeline_config import (
+    LeakyReLULoweringConfig,
+    SoftmaxDecompositionConfig,
+)
 from executorch.backends.arm.tosa.specification import (
     tosa_spec_in_set,
     TosaLoweringContext,
@@ -292,7 +295,8 @@ class ArmPassManager(ExportedProgramPassManager):
                 pass
             case SoftmaxDecompositionConfig.STABLE:
                 skip_set.add(DecomposeMaskedFillPass)
-
+        if config.leaky_relu == LeakyReLULoweringConfig.TABLE:
+            skip_set.add(DecomposeLeakyReLUPass)
         self._skip_pass_types = tuple(skip_set)
         skip_names = [skipped_pass.__name__ for skipped_pass in self._skip_pass_types]
         logger.debug(f"Passes in skip list: {skip_names}")
@@ -704,7 +708,6 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeEinsumPass(tfa_pass=True),
                     RewriteInplaceArithmeticPass(tfa_pass=True),
                     DecomposeAddSubAlphaPass(tfa_pass=True),
-                    DecomposeLeakyReLUPass(tfa_pass=True),
                     ConvertEluFamilyToEluPass(tfa_pass=True),
                     DecomposeGroupNormPass(tfa_pass=True),
                     DecomposeLayerNormPass(tfa_pass=True),
@@ -714,6 +717,12 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeAvgPool2dPass(tfa_pass=True),
                 ]
             )
+
+            if (
+                self.compile_spec._get_pass_pipeline_config().leaky_relu
+                is LeakyReLULoweringConfig.DECOMPOSE
+            ):
+                self.add_pass(DecomposeLeakyReLUPass(tfa_pass=True))
 
             # Scalars -> tensors
             self.add_passes(
