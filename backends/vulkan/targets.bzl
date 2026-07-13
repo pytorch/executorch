@@ -10,7 +10,9 @@ def get_vulkan_compiler_flags():
             "-Wno-global-constructors",
             "-Wno-missing-prototypes",
         ],
-        "ovr_config//os:windows": [],
+        "ovr_config//os:windows": [
+            "-Wno-error",
+        ],
     })
 
 def get_vulkan_preprocessor_flags(no_volk, is_fbcode):

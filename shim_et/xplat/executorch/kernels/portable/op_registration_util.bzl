@@ -124,13 +124,16 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         # Zephyr and Windows builds. OSS bypasses the zephyr branch via
         # runtime.is_oss since ovr_config//os:zephyr is not in the OSS
         # buck2 prelude.
+        # The vendored ATen vec headers pulled in on the Windows host trip
+        # several -Werror warnings (e.g. -Wundef on __GNUC__), so disable
+        # warnings-as-errors for the Windows (clang) kernel compiles.
         compiler_flags = (select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
-                "ovr_config//os:windows": [],
+                "ovr_config//os:windows": ["-Wno-error"],
                 "ovr_config//os:zephyr": [],
             }) if not runtime.is_oss else select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
-                "ovr_config//os:windows": [],
+                "ovr_config//os:windows": ["-Wno-error"],
             })) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)

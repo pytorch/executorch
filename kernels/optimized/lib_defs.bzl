@@ -214,6 +214,11 @@ def define_libs(is_fbcode=False):
                 # TODO: replace with get_compiler_optimization_flags from op_registration_util.bzl when that
                 # is re-enabled.
                 "DEFAULT": ["-Os"],
+            }) + select({
+                "DEFAULT": [],
+                # ATen vec headers trip -Werror warnings on the Windows (clang)
+                # host.
+                "ovr_config//os:windows": ["-Wno-error"],
             }),
             header_namespace = "executorch/kernels/optimized",
             visibility = ["PUBLIC"],

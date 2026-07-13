@@ -48,6 +48,11 @@ def define_common_targets():
         srcs = ["binary_ops.cpp"],
         exported_headers = ["binary_ops.h"],
         visibility = ["PUBLIC"],
+        # ATen vec headers trip -Werror warnings on the Windows (clang) host.
+        compiler_flags = select({
+            "DEFAULT": [],
+            "ovr_config//os:windows": ["-Wno-error"],
+        }),
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_includes",
