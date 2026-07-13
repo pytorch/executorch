@@ -122,6 +122,7 @@ from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_identical_input_transforms_pass import (  # noqa
     FuseIdenticalInputTransformsPass,
+    NormalizeTransformInputPlaceholdersPass,
 )
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
