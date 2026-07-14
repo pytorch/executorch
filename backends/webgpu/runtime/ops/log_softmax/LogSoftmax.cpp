@@ -9,7 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/log_softmax/log_softmax_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/softmax/log_softmax_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
