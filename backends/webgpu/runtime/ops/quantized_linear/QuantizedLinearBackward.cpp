@@ -81,7 +81,8 @@ void q4gsw_backward_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (dout.nbytes != static_cast<uint64_t>(M) * N * sizeof(float)) {
     throw std::runtime_error("q4gsw_backward: d_out fp32/shape mismatch");
   }
-  if (scales.nbytes != static_cast<uint64_t>(num_groups) * padded_N * sizeof(float)) {
+  if (scales.nbytes !=
+      static_cast<uint64_t>(num_groups) * padded_N * sizeof(float)) {
     throw std::runtime_error("q4gsw_backward: scales fp32/shape mismatch");
   }
   if (weight.nbytes != static_cast<uint64_t>(N) * K_packed) {

@@ -22,9 +22,7 @@ from dataclasses import dataclass
 
 import torch
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
-    VulkanPartitioner,
-)
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # torch.optim.AdamW defaults; bc1/bc2 are 1 - beta^step (host-precomputed).
