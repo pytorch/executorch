@@ -10,6 +10,7 @@ import torch
 
 from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import (
+    input_rank,
     is_channels_last_dim_order,
     try_get_arg,
 )
@@ -26,6 +27,7 @@ from executorch.backends.nxp.tests.ops_aliases import (
     MaxPool2DWithIndices,
     MeanDim,
     PermuteCopy,
+    Prelu,
     QuantizePerTensor,
     SumDimIntList,
     UpsampleBilinear2D,
@@ -54,6 +56,11 @@ class NodeFormatInference:
         UpsampleNearest2D: {"inputs": [0]},
     }
 
+    ops_conditionally_with_channels_first_nodes = {
+        Prelu: {"inputs": [0]},
+        torch.ops.aten.prelu.default: {"inputs": [0]},
+    }
+
     # A set of Edge Aten ops, which have the ability to change the format (for example - input nodes
     # are channels first but output is formatless).
     ops_that_can_change_tensor_format = {
@@ -63,6 +70,8 @@ class NodeFormatInference:
         Amin,
         SumDimIntList,
     }
+
+    prelu_targets = [Prelu, torch.ops.aten.prelu.default]
 
     _type_changed_during_last_run: bool
 
@@ -160,6 +169,13 @@ class NodeFormatInference:
                     f"Node format inference for node type: {op_type} not found!"
                 )
 
+        elif node.target in self.prelu_targets:
+            num_parameters_shape = tuple(node.args[1].meta["val"].shape)
+            if input_rank(node, 0) > 2 and num_parameters_shape != (1,):
+                self._handle_node_which_uses_channels_first_format(node)
+            else:
+                self._handle_node_which_can_use_any_node_format(node)
+
         elif node.op != "call_function" or (
             hasattr(node, "target") and node.target in self._known_targets
         ):
@@ -248,10 +264,14 @@ class NodeFormatInference:
         Function for assigning format to nodes that require channels first input (Conv, MaxPool etc.)
         """
         op_type = self._get_node_op_type(node)
+        ops_using_channels_first_format = (
+            self.ops_with_channels_first_nodes
+            | self.ops_conditionally_with_channels_first_nodes
+        )
 
         for index, ancestor_node in enumerate(self._node_inputs[node]):
             # Go through input nodes and assign them correct format
-            if index in self.ops_with_channels_first_nodes[op_type]["inputs"]:
+            if index in ops_using_channels_first_format[op_type]["inputs"]:
                 self._assign_format_to_node(ancestor_node, DataFormat.CHANNELS_FIRST)
 
                 # We need to propagate channels first format up to already visited nodes
