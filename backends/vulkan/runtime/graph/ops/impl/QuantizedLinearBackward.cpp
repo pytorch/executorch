@@ -41,8 +41,7 @@ utils::uvec3 linear_q4gsw_backward_global_wg_size(
   (void)resize_args;
   const ValueRef d_x = args.at(0).refs.at(0);
   const uint32_t K = graph->size_at<uint32_t>(-1, d_x);
-  const uint32_t M =
-      utils::safe_downcast<uint32_t>(graph->numel_of(d_x) / K);
+  const uint32_t M = utils::safe_downcast<uint32_t>(graph->numel_of(d_x) / K);
   const uint32_t tiles = utils::div_up_4(M) * utils::div_up_4(K);
   return {tiles, 1u, 1u};
 }
@@ -92,8 +91,7 @@ void linear_q4gsw_backward(
   const ValueRef packed_scales =
       prepack_q4_scales(graph, weight_scales_data, in_dtype);
 
-  const uint32_t M =
-      utils::safe_downcast<uint32_t>(graph.numel_of(d_out) / N);
+  const uint32_t M = utils::safe_downcast<uint32_t>(graph.numel_of(d_out) / N);
   const uint32_t tiles =
       utils::div_up_4(M) * utils::div_up_4(static_cast<uint32_t>(K));
   VK_CHECK_COND(
