@@ -32,8 +32,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     ssum = ssum + exp(v - mx);
   }
+  $if LOG:
+    let log_sum = log(ssum);
   for (var r: u32 = 0u; r < params.r_; r = r + 1u) {
     let idx = base + r * params.inner_;
-    out[idx] = exp(inp[idx] - mx) / ssum;
+    $if LOG:
+      out[idx] = (inp[idx] - mx) - log_sum;
+    $else:
+      out[idx] = exp(inp[idx] - mx) / ssum;
   }
 }
