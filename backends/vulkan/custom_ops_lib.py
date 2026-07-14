@@ -1147,6 +1147,56 @@ lib.impl(name, rms_norm_impl, "CompositeExplicitAutograd")
 rms_norm_op = getattr(getattr(torch.ops, namespace), name)
 
 
+########################
+## fused_ce (training) ##
+########################
+
+
+def fused_ce_impl(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    n_valid: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    mask = labels >= 0
+    safe = labels.clamp(min=0).long()
+    lse = torch.logsumexp(logits, dim=-1)
+    picked = logits.gather(-1, safe[:, None]).squeeze(-1)
+    loss = torch.where(mask, (lse - picked) / n_valid, torch.zeros_like(lse)).sum()
+    softmax = torch.softmax(logits, dim=-1)
+    onehot = torch.nn.functional.one_hot(safe, logits.shape[-1]).to(logits.dtype)
+    dlogits = torch.where(
+        mask[:, None], (softmax - onehot) / n_valid, torch.zeros_like(softmax)
+    )
+    return loss, dlogits
+
+
+def fused_ce_meta(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    n_valid: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return logits.new_empty([]), torch.empty_like(logits)
+
+
+def fused_ce_setup_context(ctx, inputs, output) -> None:
+    ctx.save_for_backward(output[1])
+
+
+def fused_ce_backward(ctx, grad_loss, grad_dlogits):
+    (dlogits,) = ctx.saved_tensors
+    return grad_loss * dlogits, None, None
+
+
+name = "fused_ce"
+lib.define(f"{name}(Tensor logits, Tensor labels, float n_valid) -> (Tensor, Tensor)")
+lib.impl(name, fused_ce_impl, "CompositeExplicitAutograd")
+lib.impl(name, fused_ce_meta, "Meta")
+torch.library.register_autograd(
+    f"{namespace}::{name}", fused_ce_backward, setup_context=fused_ce_setup_context
+)
+fused_ce_op = getattr(getattr(torch.ops, namespace), name)
+
+
 # STE weight gradient d_out^T @ x through the frozen 4-bit linear_q4gsw base.
 def linear_q4gsw_dw_impl(
     d_out: torch.Tensor,

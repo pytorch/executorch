@@ -1755,6 +1755,20 @@ def register_rms_norm():
     )
 
 
+# =============================================================================
+# FusedCe.cpp (training)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.fused_ce.default)
+def register_fused_ce():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=[utils.FP_T, utils.INT_T, utils.NONE_T],
+        outputs_dtypes=[utils.FP_T, utils.FP_T],
+    )
+
+
 
 
 @update_features(

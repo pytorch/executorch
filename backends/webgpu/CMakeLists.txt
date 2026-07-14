@@ -54,6 +54,7 @@ set(WEBGPU_SRCS
     runtime/ops/index/Index.cpp
     runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
     runtime/ops/mm/Mm.cpp
+    runtime/ops/fused_ce/FusedCe.cpp
     runtime/ops/log_softmax/LogSoftmax.cpp
     runtime/ops/softmax/Softmax.cpp
     runtime/ops/bmm/Bmm.cpp
