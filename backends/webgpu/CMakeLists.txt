@@ -52,6 +52,9 @@ set(WEBGPU_SRCS
     runtime/ops/cat/Cat.cpp
     runtime/ops/index/Index.cpp
     runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
+    runtime/ops/mm/Mm.cpp
+    runtime/ops/bmm/Bmm.cpp
+    runtime/ops/linear/Linear.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
