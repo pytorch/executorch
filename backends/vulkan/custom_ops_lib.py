@@ -335,7 +335,13 @@ def linear_q4gsw_backward(ctx, grad_out):
     d_x = torch.ops.et_vk.linear_q4gsw_backward(
         grad_out, weights, weight_scales, ctx.group_size
     )
-    return d_x, None, None, None, None  # grads for (x, weights, scales, group_size, bias)
+    return (
+        d_x,
+        None,
+        None,
+        None,
+        None,
+    )  # grads for (x, weights, scales, group_size, bias)
 
 
 torch.library.register_autograd(
@@ -1197,7 +1203,6 @@ torch.library.register_autograd(
 fused_ce_op = getattr(getattr(torch.ops, namespace), name)
 
 
-
 ###########################
 ## adamw_step (training) ##
 ###########################
@@ -1270,7 +1275,6 @@ lib.define(f"{name}(Tensor d_out, Tensor x) -> Tensor")
 lib.impl(name, linear_q4gsw_dw_impl, "CompositeExplicitAutograd")
 lib.impl(name, linear_q4gsw_dw_meta, "Meta")
 linear_q4gsw_dw_op = getattr(getattr(torch.ops, namespace), name)
-
 
 
 ##################

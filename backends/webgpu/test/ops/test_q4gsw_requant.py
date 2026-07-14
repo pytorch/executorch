@@ -22,9 +22,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
-    VulkanPartitioner,
-)
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (n out_features, k in_features, group_size).
@@ -57,7 +55,9 @@ def _det_inputs(n: int, k: int, gs: int):
     return latent, scales
 
 
-def _reference_codes(latent: torch.Tensor, scales: torch.Tensor, gs: int) -> torch.Tensor:
+def _reference_codes(
+    latent: torch.Tensor, scales: torch.Tensor, gs: int
+) -> torch.Tensor:
     """fp32 truth for the int4 codes: clamp(round(latent / scale), -8, 7), [N, K]."""
     n, k = latent.shape
     group_idx = torch.arange(k) // gs  # [K]

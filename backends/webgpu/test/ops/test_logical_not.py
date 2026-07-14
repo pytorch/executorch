@@ -21,9 +21,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
-    VulkanPartitioner,
-)
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> shape. "tail3x7" has numel 21 (not a multiple of 4) => partial word.
@@ -98,9 +96,7 @@ class TestLogicalNot(unittest.TestCase):
                 torch.testing.assert_close(got, golden)
 
 
-def export_logical_not_model(
-    pte_path: str, golden_path: str, input_path: str
-) -> None:
+def export_logical_not_model(pte_path: str, golden_path: str, input_path: str) -> None:
     """Write logical_not .pte + torch golden (raw uint8) + raw LE fp32 input."""
     m = LogicalNotModule(0.0).eval()
     x = _det_input(CONFIGS["mat2d"])
