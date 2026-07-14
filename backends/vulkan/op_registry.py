@@ -462,6 +462,15 @@ def register_quantizedlinear_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.et_vk.linear_q4gsw_backward.default)
+def register_linear_q4gsw_backward():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
 @update_features(exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default)
 def register_linear_dq8ca_q4gsw():
     return OpFeatures(
@@ -1775,6 +1784,25 @@ def register_logical_not():
         inputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_q4gsw_dw.default)
+def register_linear_q4gsw_dw():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
+
+
+@update_features(exir_ops.edge.et_vk.q4gsw_requant.default)
+def register_q4gsw_requant():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
     )
 
 
