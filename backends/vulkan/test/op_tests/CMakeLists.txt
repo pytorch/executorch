@@ -132,6 +132,10 @@ if(TARGET vulkan_backend AND LIB_TORCH)
     quantized_linear_backward_test
     ${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_backward_test.cpp test_utils
   )
+  vulkan_op_test(
+    q4gsw_requant_test ${CMAKE_CURRENT_SOURCE_DIR}/q4gsw_requant_test.cpp
+    test_utils
+  )
 
   # Only build generated op tests if a path to tags.yaml and
   # native_functions.yaml is provided. These files are required for codegen.
