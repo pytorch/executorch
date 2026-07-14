@@ -38,6 +38,7 @@ set(WEBGPU_SRCS
     runtime/ops/sdpa/Sdpa.cpp
     runtime/ops/select_as_symint/SelectAsSymint.cpp
     runtime/ops/quantized_linear/QuantizedLinear.cpp
+    runtime/ops/quantized_linear/QuantizedLinearBackward.cpp
     runtime/ops/mul/BinaryOp.cpp
     runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
     runtime/ops/rope/RotaryEmbedding.cpp
@@ -52,6 +53,24 @@ set(WEBGPU_SRCS
     runtime/ops/cat/Cat.cpp
     runtime/ops/index/Index.cpp
     runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
+    runtime/ops/mm/Mm.cpp
+    runtime/ops/log_softmax/LogSoftmax.cpp
+    runtime/ops/softmax/Softmax.cpp
+    runtime/ops/bmm/Bmm.cpp
+    runtime/ops/reduce/Reduce.cpp
+    runtime/ops/div/BinaryOp.cpp
+    runtime/ops/sub/BinaryOp.cpp
+    runtime/ops/where/Where.cpp
+    runtime/ops/compare/Compare.cpp
+    runtime/ops/gather/Gather.cpp
+    runtime/ops/expand_copy/ExpandCopy.cpp
+    runtime/ops/fill/Fill.cpp
+    runtime/ops/dim_order/DimOrder.cpp
+    runtime/ops/linear/Linear.cpp
+    runtime/ops/embedding/Embedding.cpp
+    runtime/ops/logical_not/LogicalNot.cpp
+    runtime/ops/quantized_linear/QuantizedLinearDw.cpp
+    runtime/ops/quantized_linear/QuantizedLinearRequant.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
