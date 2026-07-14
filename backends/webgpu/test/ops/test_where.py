@@ -18,9 +18,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
-    VulkanPartitioner,
-)
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (cond_shape, a_shape, b_shape). Output is the broadcast of all three.
