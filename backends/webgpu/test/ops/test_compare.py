@@ -21,9 +21,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
-    VulkanPartitioner,
-)
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 SCALAR = 0.0
