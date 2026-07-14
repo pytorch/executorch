@@ -13,14 +13,13 @@ namespace generic {
 namespace native {
 
 using ::executorch::aten::Tensor;
-using std::optional;
 
 Tensor& rope_out(
     ET_UNUSED ::executorch::runtime::KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& sin_tensor,
     const Tensor& cos_tensor,
-    const optional<Tensor>& pos,
+    const std::optional<Tensor>& pos,
     Tensor& out) {
   // Input shape is [1, seq, h, hd / 2, 2] or [1, seq, h, hd]
   const ssize_t seq_length = input.size(1);
@@ -76,14 +75,13 @@ namespace generic {
 namespace native {
 
 using ::executorch::aten::Tensor;
-using std::optional;
 
 Tensor& rope_rotate_stacked_halves_out(
     ET_UNUSED ::executorch::runtime::KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& sin_tensor,
     const Tensor& cos_tensor,
-    const optional<Tensor>& pos,
+    const std::optional<Tensor>& pos,
     Tensor& out) {
   // Input shape is [1, seq, h, 2, hd / 2] or [1, seq, h, hd]
   const ssize_t seq_length = input.size(1);

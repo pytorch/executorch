@@ -22,7 +22,6 @@ using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
-using std::optional;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::embedding_out;
 using torch::executor::native::quantize_per_tensor_out;
@@ -149,7 +148,7 @@ TEST(OpQuantizedEmbeddingTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       weight);
 
   embedding_out(

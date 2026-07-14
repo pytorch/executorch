@@ -27,7 +27,6 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::canCast;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 namespace impl {
 namespace G3 {
@@ -80,8 +79,8 @@ ET_NODISCARD bool check_bounds(
 Tensor& clamp_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const optional<Scalar>& min_opt,
-    const optional<Scalar>& max_opt,
+    const std::optional<Scalar>& min_opt,
+    const std::optional<Scalar>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();
@@ -333,8 +332,8 @@ Tensor& clamp_out(
 Tensor& clamp_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    const optional<Tensor>& min_opt,
-    const optional<Tensor>& max_opt,
+    const std::optional<Tensor>& min_opt,
+    const std::optional<Tensor>& max_opt,
     Tensor& out) {
   bool has_min = min_opt.has_value();
   bool has_max = max_opt.has_value();
