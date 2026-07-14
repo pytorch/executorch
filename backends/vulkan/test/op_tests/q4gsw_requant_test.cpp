@@ -135,8 +135,8 @@ void test_vulkan_q4gsw_requant_impl(
 
   const int64_t N4 = N / 4;
   const int64_t N4_padded = (N4 + 1) & ~int64_t{1};
-  const ValueRef r_packed = graph.add_tensor(
-      {(K / 4) * N4_padded * 2}, vkapi::kInt, utils::kBuffer);
+  const ValueRef r_packed =
+      graph.add_tensor({(K / 4) * N4_padded * 2}, vkapi::kInt, utils::kBuffer);
 
   VK_GET_OP_FN("et_vk.q4gsw_requant.default")
   (graph, {r_latent.value, r_scales, r_group_size, r_packed});
