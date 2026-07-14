@@ -10,9 +10,13 @@ def get_vulkan_compiler_flags():
             "-Wno-global-constructors",
             "-Wno-missing-prototypes",
         ],
-        "ovr_config//os:windows": [
-            "-Wno-error",
-        ],
+        # The Windows clang host build needs -Werror relaxed for the vendored
+        # VMA headers, but MSVC cl.exe rejects the gcc-style flag, so exclude
+        # pure MSVC.
+        "ovr_config//os:windows": select({
+            "DEFAULT": ["-Wno-error"],
+            "ovr_config//compiler:msvc": [],
+        }),
     })
 
 def get_vulkan_preprocessor_flags(no_volk, is_fbcode):

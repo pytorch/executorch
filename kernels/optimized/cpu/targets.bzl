@@ -48,10 +48,14 @@ def define_common_targets():
         srcs = ["binary_ops.cpp"],
         exported_headers = ["binary_ops.h"],
         visibility = ["PUBLIC"],
-        # ATen vec headers trip -Werror warnings on the Windows (clang) host.
+        # ATen vec headers trip -Werror warnings on the Windows clang host;
+        # MSVC cl.exe rejects the gcc-style flag.
         compiler_flags = select({
             "DEFAULT": [],
-            "ovr_config//os:windows": ["-Wno-error"],
+            "ovr_config//os:windows": select({
+                "DEFAULT": ["-Wno-error"],
+                "ovr_config//compiler:msvc": [],
+            }),
         }),
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",

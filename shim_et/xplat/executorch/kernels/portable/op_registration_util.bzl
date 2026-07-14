@@ -129,11 +129,17 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         # warnings-as-errors for the Windows (clang) kernel compiles.
         compiler_flags = (select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
-                "ovr_config//os:windows": ["-Wno-error"],
+                "ovr_config//os:windows": select({
+                    "DEFAULT": ["-Wno-error"],
+                    "ovr_config//compiler:msvc": [],
+                }),
                 "ovr_config//os:zephyr": [],
             }) if not runtime.is_oss else select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
-                "ovr_config//os:windows": ["-Wno-error"],
+                "ovr_config//os:windows": select({
+                    "DEFAULT": ["-Wno-error"],
+                    "ovr_config//compiler:msvc": [],
+                }),
             })) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)

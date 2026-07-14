@@ -216,9 +216,12 @@ def define_libs(is_fbcode=False):
                 "DEFAULT": ["-Os"],
             }) + select({
                 "DEFAULT": [],
-                # ATen vec headers trip -Werror warnings on the Windows (clang)
-                # host.
-                "ovr_config//os:windows": ["-Wno-error"],
+                # ATen vec headers trip -Werror warnings on the Windows clang
+                # host; MSVC cl.exe rejects the gcc-style flag.
+                "ovr_config//os:windows": select({
+                    "DEFAULT": ["-Wno-error"],
+                    "ovr_config//compiler:msvc": [],
+                }),
             }),
             header_namespace = "executorch/kernels/optimized",
             visibility = ["PUBLIC"],
