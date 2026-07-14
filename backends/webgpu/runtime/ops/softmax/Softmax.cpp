@@ -173,8 +173,7 @@ void softmax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // Dynamic shapes: recompute the decomposition for the reduced dim + dispatch.
   WGPUBuffer params_buf = uniform_buffer;
-  const uint64_t build_numel =
-      static_cast<uint64_t>(outer) * r * inner;
+  const uint64_t build_numel = static_cast<uint64_t>(outer) * r * inner;
   graph.add_tensor_resize_hook(
       in_id,
       [in_id, out_id, dim, build_numel, wg_size, dispatch_idx, params_buf](
@@ -198,7 +197,9 @@ void softmax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         g.dispatch_at(dispatch_idx).workgroup_count_x =
             utils::compute_1d_workgroup_count(
-                g.device(), static_cast<uint32_t>(live_lines), wg_size,
+                g.device(),
+                static_cast<uint32_t>(live_lines),
+                wg_size,
                 "softmax(resize)");
         g.set_cur_dims(out_id, d);
       });
