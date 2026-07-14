@@ -56,6 +56,7 @@ set(WEBGPU_SRCS
     runtime/ops/log_softmax/LogSoftmax.cpp
     runtime/ops/softmax/Softmax.cpp
     runtime/ops/bmm/Bmm.cpp
+    runtime/ops/reduce/Reduce.cpp
     runtime/ops/div/BinaryOp.cpp
     runtime/ops/sub/BinaryOp.cpp
     runtime/ops/linear/Linear.cpp
