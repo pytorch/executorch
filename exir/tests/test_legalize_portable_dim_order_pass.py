@@ -100,9 +100,7 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
 
     def test_channels_last_mean_inserts_copy_before_mean(self) -> None:
         module = MeanIssueReproModule().eval().to(memory_format=torch.channels_last)
-        sample_input = (
-            torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last),
-        )
+        sample_input = (torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last),)
 
         edge = self._build_edge(module, sample_input)
         updated = edge.transform([LegalizePortableDimOrderPass()])
@@ -119,9 +117,7 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
 
     def test_channels_last_linear_inserts_copy_before_expand_copy(self) -> None:
         module = LinearIssueReproModule(out_features=8).eval()
-        sample_input = (
-            torch.randn(1, 2, 3, 10).to(memory_format=torch.channels_last),
-        )
+        sample_input = (torch.randn(1, 2, 3, 10).to(memory_format=torch.channels_last),)
 
         edge = self._build_edge(module, sample_input)
         updated = edge.transform([LegalizePortableDimOrderPass()])
@@ -141,7 +137,9 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
         )
 
     def test_contiguous_inputs_skip_copy(self) -> None:
-        mean_module = MeanIssueReproModule().eval().to(memory_format=torch.channels_last)
+        mean_module = (
+            MeanIssueReproModule().eval().to(memory_format=torch.channels_last)
+        )
         linear_module = LinearIssueReproModule().eval()
         cases = (
             ("mean", mean_module, (torch.randn(1, 2, 3, 4).contiguous(),)),
@@ -209,15 +207,13 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
         for name, module, sample_input in cases:
             with self.subTest(name=name):
                 graph_module = self._assert_runtime_matches_eager(module, sample_input)
-                FileCheck().check("_to_dim_order_copy").check("aten.expand_copy.out").run(
-                    graph_module.code
-                )
+                FileCheck().check("_to_dim_order_copy").check(
+                    "aten.expand_copy.out"
+                ).run(graph_module.code)
 
     def test_issue_11086_c1_control_uses_alternate_path(self) -> None:
         module = LinearIssueReproModule(out_features=8).eval()
-        sample_input = (
-            torch.randn(1, 1, 3, 10).to(memory_format=torch.channels_last),
-        )
+        sample_input = (torch.randn(1, 1, 3, 10).to(memory_format=torch.channels_last),)
 
         edge = self._build_edge(module, sample_input)
         graph_module = edge.exported_program().graph_module
@@ -230,4 +226,3 @@ class TestLegalizePortableDimOrderPass(unittest.TestCase):
 
         runtime_graph = self._assert_runtime_matches_eager(module, sample_input)
         FileCheck().check_not("aten.expand_copy.out").run(runtime_graph.code)
-

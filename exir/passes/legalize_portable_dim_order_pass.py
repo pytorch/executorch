@@ -6,11 +6,12 @@
 
 from typing import Optional
 
+import executorch.exir.passes.dim_order_ops_registry  # noqa: F401
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dim_order_utils import get_dim_order
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
-import executorch.exir.passes.dim_order_ops_registry  # noqa: F401
 
 
 class LegalizePortableDimOrderPass(ExportPass):
@@ -44,9 +45,9 @@ class LegalizePortableDimOrderPass(ExportPass):
             input_tensor = None
             input_meta = meta.copy()
 
-        if input_tensor is None or tuple(int(d) for d in input_tensor.dim_order()) == tuple(
-            range(input_tensor.dim())
-        ):
+        if input_tensor is None or tuple(
+            int(d) for d in input_tensor.dim_order()
+        ) == tuple(range(input_tensor.dim())):
             return super().call_operator(op, args, kwargs, meta)
 
         contiguous_dim_order = get_dim_order(
