@@ -217,11 +217,12 @@ def define_libs(is_fbcode=False):
             }) + select({
                 "DEFAULT": [],
                 # ATen vec headers trip -Werror warnings on the Windows clang
-                # host; MSVC cl.exe rejects the gcc-style flag.
+                # host; MSVC cl.exe rejects the gcc-style flag. OSS buck2 has no
+                # compiler constraint, so guard the MSVC branch to non-OSS.
                 "ovr_config//os:windows": select({
                     "DEFAULT": ["-Wno-error"],
                     "ovr_config//compiler:msvc": [],
-                }),
+                }) if not runtime.is_oss else ["-Wno-error"],
             }),
             header_namespace = "executorch/kernels/optimized",
             visibility = ["PUBLIC"],

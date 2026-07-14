@@ -52,10 +52,13 @@ def define_common_targets():
         # MSVC cl.exe rejects the gcc-style flag.
         compiler_flags = select({
             "DEFAULT": [],
+            # OSS buck2 has no compiler constraint (ovr_config//compiler:msvc
+            # resolves to the nonexistent prelude//compiler:msvc), so it cannot
+            # appear as a select key there; guard the MSVC branch to non-OSS.
             "ovr_config//os:windows": select({
                 "DEFAULT": ["-Wno-error"],
                 "ovr_config//compiler:msvc": [],
-            }),
+            }) if not runtime.is_oss else ["-Wno-error"],
         }),
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",

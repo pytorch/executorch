@@ -135,9 +135,8 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_11) {
   executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 1, 8},
       {99.375, 80.125, -81.0, 8.5, -70.375, -54.25, -80.25, 34.125});
-  std::optional<executorch::aten::Tensor> attn_mask =
-      std::optional<executorch::aten::Tensor>(
-          tfFloat.full({1, 1}, std::numeric_limits<float>::infinity()));
+  executorch::aten::Tensor attn_mask =
+      tfFloat.full({1, 1}, std::numeric_limits<float>::infinity());
   double dropout_p = 0.0;
   bool is_causal = false;
   std::optional<double> scale;
@@ -314,7 +313,7 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_18) {
   std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0.0;
   bool is_causal = false;
-  std::optional<double> scale = std::optional<double>(-INFINITY);
+  double scale = -INFINITY;
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {3, 2, 2, 6},
       {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN,
@@ -387,15 +386,14 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_19) {
        15.25,   53.75,   44.625,  -22.0,   -84.0,   -7.25,   22.0,    25.875,
        17.625,  -86.875, 22.75,   -74.0,   -79.875, -68.0,   -71.125, -81.625,
        -4.125,  65.875,  1.875,   76.125,  -43.75,  -15.25,  -4.625,  -66.125});
-  std::optional<executorch::aten::Tensor> attn_mask =
-      std::optional<executorch::aten::Tensor>(tfFloat.make(
+  executorch::aten::Tensor attn_mask = tfFloat.make(
           {3, 1, 2, 2, 4},
           {39.0,  49.375,  -87.125, -99.125, 49.375,  -41.125, 26.25,   79.75,
            91.0,  -3.125,  65.75,   63.5,    -48.375, 43.375,  22.5,    -53.625,
            -70.0, 2.125,   21.875,  6.375,   -6.375,  75.25,   -35.875, 86.375,
            71.5,  -35.875, 19.75,   11.625,  -87.25,  49.0,    -6.0,    62.875,
            7.125, 87.375,  -14.75,  55.5,    59.125,  24.75,   -66.5,   72.375,
-           2.25,  81.375,  -87.125, 35.125,  -39.125, 43.5,    52.875,  39.5}));
+           2.25,  81.375,  -87.125, 35.125,  -39.125, 43.5,    52.875,  39.5});
   double dropout_p = 0.0;
   bool is_causal = false;
   std::optional<double> scale;
@@ -593,12 +591,10 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_51) {
   executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 3, 3},
       {70.375, 30.875, 72.125, 53.0, 39.125, -4.625, 26.5, 79.5, 88.625});
-  std::optional<executorch::aten::Tensor> attn_mask =
-      std::optional<executorch::aten::Tensor>(tfFloat.make(
-          {8, 3},
-          {-59.25, -26.25, -3.0,  -24.125, 47.75,  92.375,  87.5,    21.5,
-           64.5,   45.0,   -54.0, 17.375,  -67.75, 14.625,  88.75,   36.0,
-           88.375, 25.75,  42.5,  -13.375, -82.75, -59.625, -21.125, 6.5}));
+  executorch::aten::Tensor attn_mask = tfFloat.make(
+      {8, 3}, {-59.25, -26.25, -3.0,  -24.125, 47.75,  92.375,  87.5,    21.5,
+               64.5,   45.0,   -54.0, 17.375,  -67.75, 14.625,  88.75,   36.0,
+               88.375, 25.75,  42.5,  -13.375, -82.75, -59.625, -21.125, 6.5});
   double dropout_p = 0.0;
   bool is_causal = false;
   std::optional<double> scale;

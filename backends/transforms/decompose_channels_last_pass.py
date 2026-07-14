@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # Importing registers the channels_last dialect (and its edge overloads).
+import operator
+
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -13,10 +15,16 @@ from executorch.exir.pass_base import ExportPass
 _NHWC_TO_NCHW = [0, 3, 1, 2]
 _NCHW_TO_NHWC = [0, 2, 3, 1]
 
-# channels_last op -> the channels-first aten op it wraps.
+# Single-output channels_last op -> the channels-first aten op it wraps. The
+# activation (arg 0) is permuted to NCHW, the op runs, and the result is permuted
+# back; any remaining args (e.g. grid_sampler's grid) pass through unchanged.
 _DECOMPOSITIONS = {
     exir_ops.edge.channels_last.convolution.default: exir_ops.edge.aten.convolution.default,
     exir_ops.edge.channels_last.avg_pool2d.default: exir_ops.edge.aten.avg_pool2d.default,
+    exir_ops.edge.channels_last.adaptive_avg_pool2d.default: exir_ops.edge.aten._adaptive_avg_pool2d.default,
+    exir_ops.edge.channels_last.upsample_bilinear2d.default: exir_ops.edge.aten.upsample_bilinear2d.vec,
+    exir_ops.edge.channels_last.upsample_nearest2d.default: exir_ops.edge.aten.upsample_nearest2d.vec,
+    exir_ops.edge.channels_last.grid_sampler_2d.default: exir_ops.edge.aten.grid_sampler_2d.default,
 }
 
 
@@ -47,6 +55,35 @@ class DecomposeChannelsLastPass(ExportPass):
                 (nchw_out, _NCHW_TO_NHWC),
                 {},
                 meta,
+            )
+        if op == exir_ops.edge.channels_last.max_pool2d_with_indices.default:
+            nchw_in = super().call_operator(
+                exir_ops.edge.aten.permute_copy.default,
+                (args[0], _NHWC_TO_NCHW),
+                {},
+                meta,
+            )
+            pooled = super().call_operator(
+                exir_ops.edge.aten.max_pool2d_with_indices.default,
+                (nchw_in, *args[1:]),
+                kwargs,
+                meta,
+            )
+            values = super().call_operator(operator.getitem, (pooled, 0), {}, meta)
+            indices = super().call_operator(operator.getitem, (pooled, 1), {}, meta)
+            return (
+                super().call_operator(
+                    exir_ops.edge.aten.permute_copy.default,
+                    (values, _NCHW_TO_NHWC),
+                    {},
+                    meta,
+                ),
+                super().call_operator(
+                    exir_ops.edge.aten.permute_copy.default,
+                    (indices, _NCHW_TO_NHWC),
+                    {},
+                    meta,
+                ),
             )
         if op == exir_ops.edge.channels_last.permute_copy.default:
             return super().call_operator(

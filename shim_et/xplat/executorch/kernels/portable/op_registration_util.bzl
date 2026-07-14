@@ -136,10 +136,10 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
                 "ovr_config//os:zephyr": [],
             }) if not runtime.is_oss else select({
                 "DEFAULT": ["-Wno-missing-prototypes"],
-                "ovr_config//os:windows": select({
-                    "DEFAULT": ["-Wno-error"],
-                    "ovr_config//compiler:msvc": [],
-                }),
+                # OSS buck2 has no compiler constraint (ovr_config//compiler:msvc
+                # resolves to the nonexistent prelude//compiler:msvc), so it
+                # cannot appear as a select key. Use the clang flag directly.
+                "ovr_config//os:windows": ["-Wno-error"],
             })) + (
             # For shared library build, we don't want to expose symbols of
             # kernel implementation (ex torch::executor::native::tanh_out)
@@ -1414,19 +1414,21 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
-    op_target(
-        name = "op__device_copy",
-        deps = [
-            "//executorch/runtime/core:device_allocator",
-        ],
-    ),
 )
 
-# Operators that are not listed in `functions.yaml` (i.e., operators listed in
-# `custom_ops.yaml`), which are not compatible with the core ATen operators.
-# Every entry here will be backed by a cxx_library target with the given name
-# and deps, as well as a similar `<name>_aten` target that uses at::Tensor and
-# related types.
+# Operators that need a `<name>_aten` target (using at::Tensor and related
+# types) in addition to the lean `<name>` target. Every entry here is backed by
+# a cxx_library target with the given name and deps, plus a similar
+# `<name>_aten` target.
+#
+# Most entries are custom ops listed only in `custom_ops.yaml` (not in
+# `functions.yaml`) because they are not core ATen operators. `op__device_copy`
+# is an exception: it stays registered for the portable runtime via
+# `functions.yaml` (`et_copy::_h2d_copy.out` / `_d2h_copy.out`), but is listed
+# here so that an `op__device_copy_aten` target also exists. That `_aten` target
+# backs `:device_copy_ops_aten_lib`, which registers these device-copy ops for
+# ATen-mode runtimes (ATen-mode codegen consumes `custom_ops.yaml`-style
+# schemas, not `functions.yaml`, so `generated_lib_aten` cannot register them).
 #
 # Note that a single target (or single .cpp file) can't mix ATen and non-ATen
 # ops, and must be split. They can, however, share common code via a library dep
@@ -1434,6 +1436,12 @@ ATEN_OPS = (
 CUSTOM_OPS = (
     op_target(
         name = "op_allclose",
+    ),
+    op_target(
+        name = "op__device_copy",
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+        ],
     ),
 )
 
