@@ -29,7 +29,9 @@ struct LogSoftmaxParams {
   uint32_t inner;
   uint32_t pad_;
 };
-static_assert(sizeof(LogSoftmaxParams) == 16, "LogSoftmaxParams must be 16 bytes");
+static_assert(
+    sizeof(LogSoftmaxParams) == 16,
+    "LogSoftmaxParams must be 16 bytes");
 
 // Decompose dims into [outer, R, inner] for a reduction along `dim`.
 void decompose(
@@ -85,7 +87,8 @@ void log_softmax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   for (int64_t d : in.dims) {
     numel *= static_cast<uint64_t>(d);
   }
-  if (in.nbytes != numel * sizeof(float) || out.nbytes != numel * sizeof(float)) {
+  if (in.nbytes != numel * sizeof(float) ||
+      out.nbytes != numel * sizeof(float)) {
     throw std::runtime_error(
         "WebGPU log_softmax: fp32-only (byte-size mismatch)");
   }
@@ -205,7 +208,9 @@ void log_softmax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         g.dispatch_at(dispatch_idx).workgroup_count_x =
             utils::compute_1d_workgroup_count(
-                g.device(), static_cast<uint32_t>(live_lines), wg_size,
+                g.device(),
+                static_cast<uint32_t>(live_lines),
+                wg_size,
                 "log_softmax(resize)");
         g.set_cur_dims(out_id, std::vector<int64_t>(d.begin(), d.end()));
       });
