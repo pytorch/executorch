@@ -63,7 +63,7 @@ target_include_directories(
 install(
   TARGETS etdump flatccrt
   EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_BINARY_DIR}/lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
