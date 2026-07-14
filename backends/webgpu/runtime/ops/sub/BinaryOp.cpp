@@ -10,7 +10,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
-#include <executorch/backends/webgpu/runtime/ops/sub/binary_sub_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
