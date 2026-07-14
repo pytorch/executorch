@@ -113,9 +113,9 @@ def export_fused_ce_model(cfg: CeConfig, pte_path: str, golden_path: str) -> Non
         f.write(et.buffer)
     g_loss, g_dlogits = _fp64_golden(logits, labels, n_valid)
     # loss scalar then dlogits, both raw LE fp32
-    np.concatenate(
-        [g_loss.reshape(1).numpy(), g_dlogits.reshape(-1).numpy()]
-    ).astype("<f4").tofile(golden_path)
+    np.concatenate([g_loss.reshape(1).numpy(), g_dlogits.reshape(-1).numpy()]).astype(
+        "<f4"
+    ).tofile(golden_path)
     print(f"Exported {pte_path}; golden {golden_path}")
 
 

@@ -20,9 +20,7 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
-    VulkanPartitioner,
-)
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 # name -> (num_embeddings, embedding_dim, indices_shape).
@@ -43,9 +41,9 @@ class EmbeddingModule(torch.nn.Module):
 
 def _det_weight(num_embeddings: int, dim: int) -> torch.Tensor:
     """Deterministic fp32 [num_embeddings, dim] table (distinct per-row values)."""
-    return torch.linspace(
-        -1.0, 1.0, num_embeddings * dim, dtype=torch.float32
-    ).reshape(num_embeddings, dim)
+    return torch.linspace(-1.0, 1.0, num_embeddings * dim, dtype=torch.float32).reshape(
+        num_embeddings, dim
+    )
 
 
 def _det_indices(num_embeddings: int, shape: tuple[int, ...]) -> torch.Tensor:
