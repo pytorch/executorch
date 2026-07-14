@@ -6,17 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-plugins {
-    alias(libs.plugins.jetbrains.kotlin.jvm)
-    id 'java-library'
-    id "com.vanniktech.maven.publish" version "0.31.0"
-}
+apply plugin: 'kotlin'
+apply plugin: 'java-library'
+apply plugin: 'com.vanniktech.maven.publish'
 
 def execuTorchVersion = System.properties['execuTorchVersion']
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
 }
 
 repositories {
@@ -42,7 +40,7 @@ sourceSets {
 
 compileKotlin {
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "11"
         freeCompilerArgs += ["-Xjvm-default=all"]
     }
 }

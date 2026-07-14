@@ -15,15 +15,14 @@ endif()
 if(NOT ANDROID)
   find_package(JNI REQUIRED)
   if(NOT FBJNI_HEADERS_DIR OR NOT FBJNI_LIBRARY)
-    message(FATAL_ERROR "For non-Android platforms, please specify -DFBJNI_HEADERS_DIR=/path/to/fbjni/include and -DFBJNI_LIBRARY=/path/to/libfbjni.so")
+    message(
+      FATAL_ERROR
+        "For non-Android platforms, please specify -DFBJNI_HEADERS_DIR=/path/to/fbjni/include and -DFBJNI_LIBRARY=/path/to/libfbjni.so"
+    )
   endif()
 
   add_library(fbjni SHARED IMPORTED)
-  set_target_properties(
-    fbjni
-    PROPERTIES
-      IMPORTED_LOCATION "${FBJNI_LIBRARY}"
-  )
+  set_target_properties(fbjni PROPERTIES IMPORTED_LOCATION "${FBJNI_LIBRARY}")
   set(_common_compile_options
       $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
       $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
@@ -39,12 +38,13 @@ else()
     set(ANDROID_PLATFORM android-30)
   endif()
 
-  # We need to download fbjni library from maven, and use its "prefab" library and
-  # headers, and link executorch library against that fbjni library. We don't know
-  # which NDK is used to compile fbjni, and we need to link our executorch library
-  # to the version which Android APK links against for runtime to ensure the
-  # libc++ dependencies are consistent. WARNING # Users need to use the SAME fbjni
-  # version here and in app gradle dependency for runtime compatibility!
+  # We need to download fbjni library from maven, and use its "prefab" library
+  # and headers, and link executorch library against that fbjni library. We
+  # don't know which NDK is used to compile fbjni, and we need to link our
+  # executorch library to the version which Android APK links against for
+  # runtime to ensure the libc++ dependencies are consistent. WARNING # Users
+  # need to use the SAME fbjni version here and in app gradle dependency for
+  # runtime compatibility!
   if(NOT FBJNI_VERSION)
     set(FBJNI_VERSION 0.7.0)
   endif()
@@ -52,7 +52,9 @@ else()
   set(FBJNI_AAR_URL
       https://repo1.maven.org/maven2/com/facebook/fbjni/fbjni/${FBJNI_VERSION}/fbjni-${FBJNI_VERSION}.aar
   )
-  set(FBJNI_DOWNLOAD_PATH ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar)
+  set(FBJNI_DOWNLOAD_PATH
+      ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/fbjni.aar
+  )
 
   if(NOT EXISTS "${FBJNI_DOWNLOAD_PATH}")
     file(DOWNLOAD "${FBJNI_AAR_URL}" "${FBJNI_DOWNLOAD_PATH}")

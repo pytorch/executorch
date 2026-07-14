@@ -11,8 +11,8 @@ package org.pytorch.executorch
 import java.lang.reflect.Method
 
 /**
- * Platform-agnostic logging helper that forwards logs to android.util.Log when running
- * on Android, and falls back to standard error console logging when running on desktop JVMs.
+ * Platform-agnostic logging helper that forwards logs to android.util.Log when running on Android,
+ * and falls back to standard error console logging when running on desktop JVMs.
  */
 internal object Log {
   private var androidLogMethod: Method? = null
