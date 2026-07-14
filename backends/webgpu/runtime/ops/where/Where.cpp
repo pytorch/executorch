@@ -60,10 +60,12 @@ void where_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   fill_tensor_meta_broadcast(b_tensor, out_ndim, &b_meta);
 
   // a/b/out are fp32; cond is 1-byte bool (read byte-packed as array<u32>).
-  if (out_tensor.nbytes != static_cast<size_t>(out_meta.numel) * sizeof(float) ||
+  if (out_tensor.nbytes !=
+          static_cast<size_t>(out_meta.numel) * sizeof(float) ||
       a_tensor.nbytes != static_cast<size_t>(a_meta.numel) * sizeof(float) ||
       b_tensor.nbytes != static_cast<size_t>(b_meta.numel) * sizeof(float)) {
-    throw std::runtime_error("where: non-fp32 self/other (nbytes != numel * 4)");
+    throw std::runtime_error(
+        "where: non-fp32 self/other (nbytes != numel * 4)");
   }
   if (cond_tensor.nbytes != static_cast<size_t>(cond_meta.numel)) {
     throw std::runtime_error("where: condition is not a 1-byte (bool) tensor");
@@ -169,8 +171,16 @@ void where_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // Dynamic shapes: rebuild the 4 broadcast TensorMeta UBOs + dispatch count.
   WGPUBuffer o_buf = out_meta_buf, c_buf = cond_meta_buf, a_buf = a_meta_buf,
              bb_buf = b_meta_buf;
-  auto where_resize = [cond_id, a_id, b_id, out_id, wg_size, dispatch_idx, o_buf,
-                       c_buf, a_buf, bb_buf](WebGPUGraph& g) {
+  auto where_resize = [cond_id,
+                       a_id,
+                       b_id,
+                       out_id,
+                       wg_size,
+                       dispatch_idx,
+                       o_buf,
+                       c_buf,
+                       a_buf,
+                       bb_buf](WebGPUGraph& g) {
     const auto& c = g.cur_dims(cond_id);
     const auto& a = g.cur_dims(a_id);
     const auto& b = g.cur_dims(b_id);
@@ -184,7 +194,8 @@ void where_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       int64_t m = std::max({cv, av, bv});
       if ((cv != m && cv != 1) || (av != m && av != 1) ||
           (bv != m && bv != 1)) {
-        throw std::runtime_error("where(resize): operands not broadcast-compatible");
+        throw std::runtime_error(
+            "where(resize): operands not broadcast-compatible");
       }
       out_d[i] = m;
     }
