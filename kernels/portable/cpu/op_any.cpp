@@ -54,7 +54,7 @@ Tensor& any_all_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 Tensor& any_dims_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    optional<ArrayRef<int64_t>> dim_list,
+    std::optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
     Tensor& out) {
   (void)ctx;
