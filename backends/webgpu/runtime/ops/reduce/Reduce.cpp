@@ -227,7 +227,9 @@ void reduce_impl(
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         g.dispatch_at(dispatch_idx).workgroup_count_x =
             utils::compute_1d_workgroup_count(
-                g.device(), static_cast<uint32_t>(live_outputs), wg_size,
+                g.device(),
+                static_cast<uint32_t>(live_outputs),
+                wg_size,
                 "reduce(resize)");
         // Propagate reduced output dims for downstream resize hooks.
         int64_t nd = static_cast<int64_t>(d.size());
