@@ -41,10 +41,112 @@ EXPECTED_INPUT_COUNTS = {
     InputKind.USER_INPUT: 3,
 }
 
+EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS = {
+    InputKind.BUFFER: 4,
+    InputKind.USER_INPUT: 3,
+}
+
 EXPECTED_OUTPUT_COUNTS = {
     OutputKind.BUFFER_MUTATION: 2,
     OutputKind.USER_OUTPUT: 2,
 }
+
+
+DYNAMIC_KVQ_OPS = [
+    "torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default",
+    "torch.ops.quantized_decomposed.quantize_per_token.default",
+    "torch.ops.quantized_decomposed.dequantize_per_token.default",
+    "torch.ops.llama.update_cache.default",
+    "torch.ops.llama.update_cache_with_indices.default",
+]
+
+
+def _reject_dynamic_kvq_ops(pipeline):
+    pipeline.add_stage_after(
+        "export", pipeline.tester.check_not, DYNAMIC_KVQ_OPS, suffix="dynamic_kvq_ops"
+    )
+
+
+@torch.no_grad()
+class StaticQuantizedCacheModule(torch.nn.Module):
+    key_cache: torch.Tensor
+    value_cache: torch.Tensor
+    key_scale: torch.Tensor
+    value_scale: torch.Tensor
+
+    def __init__(
+        self,
+        config: LlamaConfig,
+        max_cache_len: int = 10,
+        scale: float = 1.0 / 127.0,
+    ) -> None:
+        super().__init__()
+
+        self.config = config
+        hidden_size = self.config.hidden_size
+        num_attention_heads = self.config.num_attention_heads
+        assert hidden_size is not None and num_attention_heads is not None
+
+        self.hidden_size = hidden_size
+        self.num_attention_heads = num_attention_heads
+        self.head_dim = self.hidden_size // self.num_attention_heads
+        cache_shape = (1, self.num_attention_heads, max_cache_len, self.head_dim)
+        scale_shape = (1, 1, 1, self.head_dim)
+
+        self.register_buffer("key_cache", torch.zeros(cache_shape, dtype=torch.int8))
+        self.register_buffer("value_cache", torch.zeros(cache_shape, dtype=torch.int8))
+        self.register_buffer(
+            "key_scale", torch.full(scale_shape, scale, dtype=torch.float32)
+        )
+        self.register_buffer(
+            "value_scale", torch.full(scale_shape, scale, dtype=torch.float32)
+        )
+
+    # PT2E activation quantization does not create persistent int8 mutable buffers.
+    def _quantize(self, value: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+        return torch.clamp(torch.round(value / scale), -128, 127).to(torch.int8)
+
+    def forward(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        cache_position: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        key_q = self._quantize(key_states, self.key_scale)
+        value_q = self._quantize(value_states, self.value_scale)
+
+        self.key_cache[:, :, cache_position] = key_q
+        self.value_cache[:, :, cache_position] = value_q
+
+        key = self.key_cache.to(torch.float32) * self.key_scale
+        value = self.value_cache.to(torch.float32) * self.value_scale
+        key[:, :, cache_position] = key_states
+        value[:, :, cache_position] = value_states
+
+        return key.clone(), value.clone()
+
+    def get_inputs(self) -> input_t:
+        key_states = torch.randn(
+            (
+                1,
+                self.num_attention_heads,
+                1,
+                self.head_dim,
+            ),
+            dtype=torch.float32,
+        )
+        value_states = torch.randn(
+            (
+                1,
+                self.num_attention_heads,
+                1,
+                self.head_dim,
+            ),
+            dtype=torch.float32,
+        )
+        cache_position = torch.tensor([1], dtype=torch.int64)
+
+        return key_states, value_states, cache_position
 
 
 @torch.no_grad()
@@ -225,4 +327,66 @@ def test_static_cache_vgf_quant(test_data):
         tosa_spec="TOSA-1.0+INT",
     )
     pipeline.count_program_io_kinds(EXPECTED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_configs)
+def test_static_quantized_cache_tosa_INT(test_data):
+    module = StaticQuantizedCacheModule(test_data).eval()
+    pipeline = TosaPipelineINT[input_t](
+        module, module.get_inputs(), aten_op=[], exir_op=[], fold_quantize=False
+    )
+    _reject_dynamic_kvq_ops(pipeline)
+    pipeline.change_args(
+        "check_count.exir",
+        {"torch.ops.higher_order.executorch_call_delegate": 2},
+    )
+    pipeline.count_program_io_kinds(
+        EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_configs,
+    xfails={
+        config: "Incorrect numerical behavior: MLBEDSW-11589" for config in test_configs
+    },
+)
+def test_static_quantized_cache_u85_INT(test_data):
+    module = StaticQuantizedCacheModule(test_data).eval()
+    pipeline = EthosU85PipelineINT[input_t](
+        module, module.get_inputs(), aten_ops=[], fold_quantize=False
+    )
+    _reject_dynamic_kvq_ops(pipeline)
+    pipeline.change_args(
+        "check_count.exir",
+        {"torch.ops.higher_order.executorch_call_delegate": 2},
+    )
+    pipeline.tester.use_portable_ops = True
+    pipeline.count_program_io_kinds(
+        EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("test_data", test_configs)
+def test_static_quantized_cache_vgf_quant(test_data):
+    module = StaticQuantizedCacheModule(test_data).eval()
+    pipeline = VgfPipeline[input_t](
+        module,
+        module.get_inputs(),
+        aten_op=[],
+        exir_op=[],
+        quantize=True,
+        fold_quantize=False,
+        tosa_spec="TOSA-1.0+INT",
+        n_expected_delegates=2,
+    )
+    _reject_dynamic_kvq_ops(pipeline)
+    pipeline.count_program_io_kinds(
+        EXPECTED_STATIC_QUANTIZED_INPUT_COUNTS, EXPECTED_OUTPUT_COUNTS
+    )
     pipeline.run()
