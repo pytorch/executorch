@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Extracting Qwen3 hidden-state for DFlash.
 
 Same idea as examples/models/gemma4_31b/mlx_source_transformations.py --
@@ -61,10 +67,3 @@ class TorchExportableModuleWithStaticCacheAndHidden(
         if hasattr(outs, "logits"):
             return outs.logits, hidden
         return outs.last_hidden_state, hidden
-
-
-def default_dflash_layer_ids(num_layers: int) -> List[int]:
-    """This is simply the default dflash layer selection for Qwen3.
-    [2, N//2, N-3] tap pattern, same as Gemma 4. For Qwen3-4B (36 layers): [2, 18, 33].
-    """
-    return [2, num_layers // 2, num_layers - 3]

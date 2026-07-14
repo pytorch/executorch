@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """PyTorch implementation of the DFlash draft model for ExecuTorch export.
 
 This model is the lightweight "draft" network used in DFlash speculative
@@ -148,7 +154,7 @@ class DFlashAttention(nn.Module):
         self.k_norm = DFlashRMSNorm(hd, config.rms_norm_eps)
 
     def forward(self, x, x_ctx, cos, sin):
-        """Keys and values come frmo both the projected target context and the proposal block itself. This lets the draft attend to what the target model already understands while also allowing predictions within the proposal block to interact with one another."""
+        """Keys and values come from both the projected target context and the proposal block itself. This lets the draft attend to what the target model already understands while also allowing predictions within the proposal block to interact with one another."""
         B, L, _ = x.shape
         S = x_ctx.shape[1]
         q = self.q_norm(

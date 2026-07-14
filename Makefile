@@ -485,11 +485,7 @@ clean:
 	       extension/llm/tokenizers/build \
 	       extension/llm/tokenizers/pytorch_tokenizers.egg-info
 
-qwen3_dflash-mlx:
-	@echo "==> Building and installing ExecuTorch with MLX..."
-	cmake --workflow --preset mlx-release
-	@echo "==> Building Qwen3 DFlash speculative decoding runner with MLX..."
-	cd examples/models/qwen3 && cmake --workflow --preset qwen3-dflash-mlx
-	@echo ""
-	@echo "✓ Build complete!"
-	@echo "  Runner: cmake-out/examples/models/qwen3/qwen3_dflash_runner"
+# qwen3_dflash-mlx target removed: it depended on the C++ engine sources
+# (CMakeLists.txt, CMakePresets.json, qwen3_dflash_engine.*), which are
+# gitignored/not yet landed. Restore this target in the follow-up PR that
+# actually lands the C++ engine.

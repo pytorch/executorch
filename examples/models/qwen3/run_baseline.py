@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Standard autoregressive decoding used as the baseline for the comparison. 
 """
 
@@ -15,8 +21,7 @@ def main():
     p.add_argument("--tokenizer", default="Qwen/Qwen3-4B")
     p.add_argument("--prompt", required=True)
     p.add_argument("--max-new-tokens", type=int, default=128)
-    p.add_argument("--chat-template", action="store_true", default=True)
-    p.add_argument("--no-chat-template", dest="chat_template", action="store_false")
+    p.add_argument("--no-chat-template", dest="chat_template", action="store_false", default=True)
     p.add_argument("--enable-thinking", action="store_true", default=False)
     args = p.parse_args()
 

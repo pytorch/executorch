@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Python implementation of the DFlash speculative decoding loop for the ExecuTorch MLX backend. 
 
 This file coordinates the interaction between the target model and the draft model during inference. Instead of asking the target model to generate one token at a time, DFlash first lets the lightweight draft model predict a block of future tokens, then asks the target model to verify those predictions in a single forward pass. Any matching draft tokens are accepted, while the first incorrect prediction is replaced with the target model's token. The process then repeats from the updated position. 
@@ -44,12 +50,12 @@ def main():
     p.add_argument("--prompt", default="The capital of France is")
     p.add_argument("--max-new-tokens", type=int, default=64)
     p.add_argument(
-        "--chat-template",
-        action="store_true",
+        "--no-chat-template",
+        dest="chat_template",
+        action="store_false",
         default=True,
-        help="Apply Qwen3's chat template (paper's eval setup). Default on.",
+        help="Disable Qwen3's chat template. On by default (paper's eval setup).",
     )
-    p.add_argument("--no-chat-template", dest="chat_template", action="store_false")
     p.add_argument(
         "--enable-thinking",
         action="store_true",
@@ -144,9 +150,7 @@ def main():
         _t0 = time.time()
         (draft_logits,) = draft.execute([draft_input, hidden, draft_pos])
         _draft_exec_time = time.time() - _t0
-        _t0b = time.time()
         draft_ids = draft_logits[0].argmax(-1).tolist()  # block_size - 1 tokens
-        _draft_argmax_time = time.time() - _t0b
 
         # 2. Verify the draft predictions. Target model predicts the next token after every position in the block in a single forward pass.
         verify_input = torch.cat(
@@ -160,19 +164,17 @@ def main():
         _t1 = time.time()
         target_logits, new_hidden = target.execute([verify_input, verify_pos])
         _target_exec_time = time.time() - _t1
-        _t1b = time.time()
         target_ids = target_logits[0].argmax(-1).tolist()  # block_size tokens
-        _target_argmax_time = time.time() - _t1b
 
         # 3. Keep every drafting token that matches the target. At the first mismatch, stop accepting draft predictions and use the target model's token instead.
-        _t2 = time.time()
+        # (target_ids has block_size entries vs draft_ids' block_size - 1, so
+        # target_ids[accepted] is always in-bounds, including the all-accepted
+        # bonus-token case.)
         accepted = first_mismatch(draft_ids, target_ids)
-        _fm_time = time.time() - _t2
         if args.verbose and rounds <= 10:
             print(
-                f"  timing: draft_exec={_draft_exec_time*1000:.1f}ms draft_argmax={_draft_argmax_time*1000:.2f}ms "
-                f"target_exec={_target_exec_time*1000:.1f}ms target_argmax={_target_argmax_time*1000:.2f}ms "
-                f"first_mismatch={_fm_time*1000:.3f}ms ctx_len={hidden.shape[1]}"
+                f"  timing: draft_exec={_draft_exec_time*1000:.1f}ms "
+                f"target_exec={_target_exec_time*1000:.1f}ms ctx_len={hidden.shape[1]}"
             )
         if args.verbose and rounds <= 5:
             print(
@@ -194,11 +196,7 @@ def main():
         last_token = new_tokens[-1]
         # Append the hidden states for the newly accepted tokens to the running target context.
         # The draft model conditions on the hidden states of the entire sequence, so this context grows as generation progresses rather than being replaced each round.
-        _t3 = time.time()
         hidden = torch.cat([hidden, new_hidden[:, : len(new_tokens), :].float()], dim=1)
-        _cat_time = time.time() - _t3
-        if args.verbose and rounds <= 10:
-            print(f"  timing: hidden_cat={_cat_time*1000:.2f}ms")
 
         if eos_id in new_tokens:
             break

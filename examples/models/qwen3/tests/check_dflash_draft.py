@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """
 Verifies that the exported draft .pte loads, runs correctly, and supports dynamic context lengths as the accumulated target hidden-state context grows during speculative decoding. A successful export and execution also confirms that the checkpoint weights and exported model are compatible.
 """

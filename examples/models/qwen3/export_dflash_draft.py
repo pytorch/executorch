@@ -1,6 +1,12 @@
-"""Exports the DFlash draft model to an .pte program. 
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-This script loads the pretrained DFlash draft checkpoint, copies the shared embedding and output project weights from target model, applies same 4-bit quantization used by target, and exports the draft model for MLX inference. 
+"""Exports the DFlash draft model to a .pte program. 
+
+This script loads the pretrained DFlash draft checkpoint, copies the shared embedding and output projection weights from target model, applies same 4-bit quantization used by target, and exports the draft model for MLX inference. 
 The exported model is used alongside the target model during speculative decoding. 
 """
 

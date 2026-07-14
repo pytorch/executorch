@@ -68,5 +68,27 @@ Note that you have to apply the chat template manually for the C++ runner.
 
 To run the model on an example iOS or Android app, see the Llama README's [Step 5: Build Mobile apps](../llama/README.md#step-5-build-mobile-apps) section.
 
+### DFlash speculative decoding (MLX delegate)
+
+`export_dflash_draft.py`, `run_dflash.py`, and `run_baseline.py` implement
+block-diffusion speculative decoding (DFlash) for Qwen3 on the MLX delegate.
+See `mlx_source_transformations.py` for the hidden-state-tapping wrapper used
+during export.
+
+The `check_dflash_*.py` scripts under `tests/` are manual driver scripts, not
+pytest tests -- they require exported `qwen3_4b_dflash_target.pte` /
+`_draft.pte` files (multi-GB, not checked in), HF downloads, and Apple
+M-series hardware with the MLX delegate, so they cannot run in this repo's
+CI. Run them by hand after exporting:
+
+```bash
+python examples/models/qwen3/tests/check_dflash_target.py qwen3_4b_dflash_target.pte
+python examples/models/qwen3/tests/check_dflash_draft.py qwen3_4b_dflash_draft.pte
+python examples/models/qwen3/tests/check_dflash_lossless.py
+```
+
+The "lossless" guarantee (DFlash output is token-for-token identical to
+greedy baseline decoding) is currently only verified this way, manually.
+
 ### FAQ
 For more help with exporting or running this model, feel free to ask in our [discord channel](https://discord.gg/UEjkY9Zs).
