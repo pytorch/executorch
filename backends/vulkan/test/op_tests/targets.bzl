@@ -187,6 +187,12 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
+        "linear_q4gsw_dw_test",
+        extra_deps = [
+            ":test_utils",
+        ]
+    )
+    define_test_targets(
         "rms_norm_test",
         extra_deps = [
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
