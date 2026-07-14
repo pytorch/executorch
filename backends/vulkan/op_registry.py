@@ -1746,6 +1746,38 @@ def register_rms_norm():
     )
 
 
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.ne.Scalar,
+        exir_ops.edge.aten.lt.Scalar,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.ge.Scalar,
+    ]
+)
+def register_compare_scalar_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+
+
+@update_features(exir_ops.edge.aten.logical_not.default)
+def register_logical_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 #######################
 ## Utility functions ##
 #######################
