@@ -69,7 +69,8 @@ void compare_impl(
   const size_t out_bind_size = (out_tensor.nbytes + 3) & ~size_t(3);
   const uint32_t n_words = (numel + 3u) / 4u;
 
-  uint32_t wg_size = utils::clamp_workgroup_size(device, kCompareWorkgroupSizeX);
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kCompareWorkgroupSizeX);
   uint32_t workgroup_count =
       utils::compute_1d_workgroup_count(device, n_words, wg_size, op_name);
 
@@ -139,20 +140,21 @@ void compare_impl(
       graph.add_dispatch({pipeline, bind_group, workgroup_count});
 
   WGPUBuffer p_buf = params_buf;
-  auto cmp_resize = [self_id, out_id, mode, scalar, wg_size, dispatch_idx,
-                     p_buf, op_name](WebGPUGraph& g) {
-    const auto& d = g.cur_dims(self_id);
-    uint32_t n = 1u;
-    for (auto x : d) {
-      n *= static_cast<uint32_t>(x);
-    }
-    g.set_cur_dims(out_id, d);
-    CompareParams p = {n, mode, scalar, 0u};
-    wgpuQueueWriteBuffer(g.queue(), p_buf, 0, &p, sizeof(p));
-    const uint32_t nw = (n + 3u) / 4u;
-    g.dispatch_at(dispatch_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(g.device(), nw, wg_size, op_name);
-  };
+  auto cmp_resize =
+      [self_id, out_id, mode, scalar, wg_size, dispatch_idx, p_buf, op_name](
+          WebGPUGraph& g) {
+        const auto& d = g.cur_dims(self_id);
+        uint32_t n = 1u;
+        for (auto x : d) {
+          n *= static_cast<uint32_t>(x);
+        }
+        g.set_cur_dims(out_id, d);
+        CompareParams p = {n, mode, scalar, 0u};
+        wgpuQueueWriteBuffer(g.queue(), p_buf, 0, &p, sizeof(p));
+        const uint32_t nw = (n + 3u) / 4u;
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(g.device(), nw, wg_size, op_name);
+      };
   graph.add_tensor_resize_hook(self_id, cmp_resize);
 
   wgpuShaderModuleRelease(shader);
