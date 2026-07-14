@@ -144,20 +144,26 @@ void add_fill(
 
 void full_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_fill(
-      graph, args.at(args.size() - 1), read_scalar(graph, args.at(1), "full"),
+      graph,
+      args.at(args.size() - 1),
+      read_scalar(graph, args.at(1), "full"),
       "full");
 }
 
 void full_like_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_fill(
-      graph, args.at(args.size() - 1),
-      read_scalar(graph, args.at(1), "full_like"), "full_like");
+      graph,
+      args.at(args.size() - 1),
+      read_scalar(graph, args.at(1), "full_like"),
+      "full_like");
 }
 
 void scalar_tensor_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_fill(
-      graph, args.at(args.size() - 1),
-      read_scalar(graph, args.at(0), "scalar_tensor"), "scalar_tensor");
+      graph,
+      args.at(args.size() - 1),
+      read_scalar(graph, args.at(0), "scalar_tensor"),
+      "scalar_tensor");
 }
 
 } // namespace
