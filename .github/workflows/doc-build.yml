@@ -101,10 +101,12 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     secrets: inherit
     with:
-      secrets-env: DOC_BUILD_GITHUB_TOKEN
       repository: pytorch/executorch
       download-artifact: docs
       ref: gh-pages
+      # Publish on the host so actions/checkout's persisted credentials are
+      # available to git push.
+      run-with-docker: false
       timeout: 90
       script: |
         set -euo pipefail
@@ -134,9 +136,6 @@ jobs:
         mkdir -p "${TARGET_FOLDER}"
         mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
         git add "${TARGET_FOLDER}" || true
-
-        echo "::add-mask::$SECRET_DOC_BUILD_GITHUB_TOKEN" # Mask the secret in GH logs
-        git remote set-url origin https://x-access-token:$SECRET_DOC_BUILD_GITHUB_TOKEN@github.com/pytorch/executorch.git
 
         git config user.name 'pytorchbot'
         git config user.email 'soumith+bot@pytorch.org'
