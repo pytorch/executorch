@@ -1746,8 +1746,6 @@ def register_rms_norm():
     )
 
 
-
-
 @update_features(
     [
         exir_ops.edge.aten.ne.Scalar,
@@ -1764,8 +1762,6 @@ def register_compare_scalar_ops():
         supports_resize=True,
         supports_highdim=True,
     )
-
-
 
 
 @update_features(exir_ops.edge.aten.logical_not.default)

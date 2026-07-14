@@ -54,7 +54,8 @@ void embedding_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (out.nbytes != out_numel * sizeof(float) ||
       weight.nbytes % sizeof(float) != 0 ||
       indices.nbytes != index_numel * sizeof(int32_t)) {
-    throw std::runtime_error("embedding: fp32 weight/out + i32 indices required");
+    throw std::runtime_error(
+        "embedding: fp32 weight/out + i32 indices required");
   }
   if (out_numel != index_numel * dim) {
     throw std::runtime_error("embedding: out numel != num_indices * dim");
