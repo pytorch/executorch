@@ -289,6 +289,61 @@ lib.define(
 lib.impl(name, linear_q4gsw, "CompositeExplicitAutograd")
 linear_qc4w_op = getattr(getattr(torch.ops, namespace), name)
 
+
+# Backward of linear_q4gsw wrt input (for on-device LoRA training through a frozen
+# 4-bit base): d_x = d_out @ dequant(W). Reference impl extracts dequant(W) via the
+# forward on an identity so it is layout-agnostic; the runtime dispatches this op to
+# the tiled q4gsw_backward WGSL kernel (contracts over N).
+def linear_q4gsw_backward_impl(
+    d_out: torch.Tensor,
+    weights: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    in_features = int(weights.shape[1]) * 2
+    eye = torch.eye(in_features, dtype=d_out.dtype, device=d_out.device)
+    w_t = linear_q4gsw(eye, weights, weight_scales, group_size)  # [in, out]
+    return d_out @ w_t.t()  # [M, out] @ [out, in] = [M, in]
+
+
+def linear_q4gsw_backward_meta(
+    d_out: torch.Tensor,
+    weights: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    return d_out.new_empty(d_out.shape[:-1] + (int(weights.shape[1]) * 2,))
+
+
+name = "linear_q4gsw_backward"
+lib.define(
+    f"{name}(Tensor d_out, Tensor weights, Tensor weight_scales, int group_size) -> Tensor"
+)
+lib.impl(name, linear_q4gsw_backward_impl, "CompositeExplicitAutograd")
+lib.impl(name, linear_q4gsw_backward_meta, "Meta")
+linear_q4gsw_backward_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def linear_q4gsw_setup_context(ctx, inputs, output) -> None:
+    _x, weights, weight_scales, group_size, _bias = inputs
+    ctx.save_for_backward(weights, weight_scales)
+    ctx.group_size = group_size
+
+
+def linear_q4gsw_backward(ctx, grad_out):
+    weights, weight_scales = ctx.saved_tensors
+    d_x = torch.ops.et_vk.linear_q4gsw_backward(
+        grad_out, weights, weight_scales, ctx.group_size
+    )
+    return d_x, None, None, None, None  # grads for (x, weights, scales, group_size, bias)
+
+
+torch.library.register_autograd(
+    f"{namespace}::linear_q4gsw",
+    linear_q4gsw_backward,
+    setup_context=linear_q4gsw_setup_context,
+)
+
 name = "linear_dq8ca_q4gsw"
 lib.define(
     f"""
@@ -1090,3 +1145,120 @@ name = "rms_norm"
 lib.define(f"{name}(Tensor x, Tensor weight, float eps) -> Tensor")
 lib.impl(name, rms_norm_impl, "CompositeExplicitAutograd")
 rms_norm_op = getattr(getattr(torch.ops, namespace), name)
+
+
+########################
+## fused_ce (training) ##
+########################
+
+
+def fused_ce_impl(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    n_valid: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    mask = labels >= 0
+    safe = labels.clamp(min=0).long()
+    lse = torch.logsumexp(logits, dim=-1)
+    picked = logits.gather(-1, safe[:, None]).squeeze(-1)
+    loss = torch.where(mask, (lse - picked) / n_valid, torch.zeros_like(lse)).sum()
+    softmax = torch.softmax(logits, dim=-1)
+    onehot = torch.nn.functional.one_hot(safe, logits.shape[-1]).to(logits.dtype)
+    dlogits = torch.where(
+        mask[:, None], (softmax - onehot) / n_valid, torch.zeros_like(softmax)
+    )
+    return loss, dlogits
+
+
+def fused_ce_meta(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    n_valid: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return logits.new_empty([]), torch.empty_like(logits)
+
+
+def fused_ce_setup_context(ctx, inputs, output) -> None:
+    ctx.save_for_backward(output[1])
+
+
+def fused_ce_backward(ctx, grad_loss, grad_dlogits):
+    (dlogits,) = ctx.saved_tensors
+    return grad_loss * dlogits, None, None
+
+
+name = "fused_ce"
+lib.define(f"{name}(Tensor logits, Tensor labels, float n_valid) -> (Tensor, Tensor)")
+lib.impl(name, fused_ce_impl, "CompositeExplicitAutograd")
+lib.impl(name, fused_ce_meta, "Meta")
+torch.library.register_autograd(
+    f"{namespace}::{name}", fused_ce_backward, setup_context=fused_ce_setup_context
+)
+fused_ce_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# STE weight gradient d_out^T @ x through the frozen 4-bit linear_q4gsw base.
+def linear_q4gsw_dw_impl(
+    d_out: torch.Tensor,
+    x: torch.Tensor,
+) -> torch.Tensor:
+    return d_out.reshape(-1, d_out.shape[-1]).t() @ x.reshape(-1, x.shape[-1])
+
+
+def linear_q4gsw_dw_meta(
+    d_out: torch.Tensor,
+    x: torch.Tensor,
+) -> torch.Tensor:
+    return d_out.new_empty((d_out.shape[-1], x.shape[-1]))
+
+
+name = "linear_q4gsw_dw"
+lib.define(f"{name}(Tensor d_out, Tensor x) -> Tensor")
+lib.impl(name, linear_q4gsw_dw_impl, "CompositeExplicitAutograd")
+lib.impl(name, linear_q4gsw_dw_meta, "Meta")
+linear_q4gsw_dw_op = getattr(getattr(torch.ops, namespace), name)
+
+
+
+##################
+## q4gsw_requant ##
+##################
+
+
+# STE re-quant of fp32 latent weights into the frozen-scale 4-bit codes.
+def q4gsw_requant_impl(
+    latent: torch.Tensor,
+    scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    n, k = latent.shape
+    group_idx = torch.arange(k, device=latent.device) // group_size
+    scale_full = scales.t()[:, group_idx]  # [N, K]: scales[k // group_size, n]
+    nonzero = scale_full != 0
+    safe = torch.where(nonzero, scale_full, torch.ones_like(scale_full))
+    q = torch.round(latent / safe)
+    q = torch.where(nonzero, q, torch.zeros_like(q))
+    codes = (torch.clamp(q, -8, 7).to(torch.int32) + 8) & 0xF  # [N, K] in 0..15
+    k_packed = (k + 1) // 2
+    packed = torch.zeros((n, k_packed), dtype=torch.uint8, device=latent.device)
+    packed[:, :] = codes[:, 0::2].to(torch.uint8)
+    if k > 1:
+        high = codes[:, 1::2].to(torch.uint8)
+        packed[:, : high.shape[1]] |= high << 4
+    return packed
+
+
+def q4gsw_requant_meta(
+    latent: torch.Tensor,
+    scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    n, k = latent.shape
+    return latent.new_empty((n, (k + 1) // 2), dtype=torch.uint8)
+
+
+name = "q4gsw_requant"
+lib.define(f"{name}(Tensor latent, Tensor scales, int group_size) -> Tensor")
+lib.impl(name, q4gsw_requant_impl, "CompositeExplicitAutograd")
+lib.impl(name, q4gsw_requant_meta, "Meta")
+q4gsw_requant_op = getattr(getattr(torch.ops, namespace), name)
