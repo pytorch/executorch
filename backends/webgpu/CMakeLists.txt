@@ -62,6 +62,9 @@ set(WEBGPU_SRCS
     runtime/ops/where/Where.cpp
     runtime/ops/compare/Compare.cpp
     runtime/ops/gather/Gather.cpp
+    runtime/ops/expand_copy/ExpandCopy.cpp
+    runtime/ops/fill/Fill.cpp
+    runtime/ops/dim_order/DimOrder.cpp
     runtime/ops/linear/Linear.cpp
     runtime/ops/embedding/Embedding.cpp
     runtime/ops/logical_not/LogicalNot.cpp
