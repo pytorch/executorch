@@ -117,8 +117,7 @@ if(TARGET vulkan_backend AND LIB_TORCH)
     test_utils
   )
   vulkan_op_test(
-    adamw_step_test ${CMAKE_CURRENT_SOURCE_DIR}/adamw_step_test.cpp
-    test_utils
+    adamw_step_test ${CMAKE_CURRENT_SOURCE_DIR}/adamw_step_test.cpp test_utils
   )
   vulkan_op_test(
     linear_q4gsw_dw_test ${CMAKE_CURRENT_SOURCE_DIR}/linear_q4gsw_dw_test.cpp

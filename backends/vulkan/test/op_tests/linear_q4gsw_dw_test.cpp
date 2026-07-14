@@ -27,10 +27,7 @@ at::Tensor linear_q4gsw_dw_reference_impl(
     const at::Tensor& x) {
   const int64_t N = d_out.size(-1);
   const int64_t K = x.size(-1);
-  return d_out.reshape({-1, N})
-      .t()
-      .matmul(x.reshape({-1, K}))
-      .contiguous();
+  return d_out.reshape({-1, N}).t().matmul(x.reshape({-1, K})).contiguous();
 }
 
 //
@@ -40,8 +37,7 @@ at::Tensor linear_q4gsw_dw_reference_impl(
 void test_vulkan_linear_q4gsw_dw_impl(
     const std::vector<int64_t>& d_out_sizes,
     const std::vector<int64_t>& x_sizes,
-    const vkcompute::utils::StorageType storage =
-        vkcompute::utils::kBuffer) {
+    const vkcompute::utils::StorageType storage = vkcompute::utils::kBuffer) {
   at::Tensor d_out =
       at::rand(d_out_sizes, at::device(at::kCPU).dtype(at::kFloat));
   at::Tensor x = at::rand(x_sizes, at::device(at::kCPU).dtype(at::kFloat));
