@@ -70,6 +70,7 @@ set(WEBGPU_SRCS
     runtime/ops/linear/Linear.cpp
     runtime/ops/embedding/Embedding.cpp
     runtime/ops/logical_not/LogicalNot.cpp
+    runtime/ops/adamw/AdamwStep.cpp
     runtime/ops/quantized_linear/QuantizedLinearDw.cpp
     runtime/ops/quantized_linear/QuantizedLinearRequant.cpp
 )

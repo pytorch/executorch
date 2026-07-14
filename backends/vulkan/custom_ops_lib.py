@@ -1197,6 +1197,59 @@ torch.library.register_autograd(
 fused_ce_op = getattr(getattr(torch.ops, namespace), name)
 
 
+
+###########################
+## adamw_step (training) ##
+###########################
+
+
+def adamw_step_impl(
+    param: torch.Tensor,
+    m: torch.Tensor,
+    v: torch.Tensor,
+    grad: torch.Tensor,
+    lr: float,
+    beta1: float,
+    beta2: float,
+    eps: float,
+    weight_decay: float,
+    bias_correction1: float,
+    bias_correction2: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    param.mul_(1.0 - lr * weight_decay)
+    m.mul_(beta1).add_(grad, alpha=1.0 - beta1)
+    v.mul_(beta2).addcmul_(grad, grad, value=1.0 - beta2)
+    mhat = m / bias_correction1
+    denom = (v / bias_correction2).sqrt() + eps
+    param.addcdiv_(mhat, denom, value=-lr)
+    return param, m, v
+
+
+def adamw_step_meta(
+    param: torch.Tensor,
+    m: torch.Tensor,
+    v: torch.Tensor,
+    grad: torch.Tensor,
+    lr: float,
+    beta1: float,
+    beta2: float,
+    eps: float,
+    weight_decay: float,
+    bias_correction1: float,
+    bias_correction2: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return param, m, v
+
+
+name = "adamw_step"
+lib.define(
+    f"{name}(Tensor(a!) param, Tensor(b!) m, Tensor(c!) v, Tensor grad, float lr, float beta1, float beta2, float eps, float weight_decay, float bias_correction1, float bias_correction2) -> (Tensor(a!), Tensor(b!), Tensor(c!))"
+)
+lib.impl(name, adamw_step_impl, "CompositeExplicitAutograd")
+lib.impl(name, adamw_step_meta, "Meta")
+adamw_step_op = getattr(getattr(torch.ops, namespace), name)
+
+
 # STE weight gradient d_out^T @ x through the frozen 4-bit linear_q4gsw base.
 def linear_q4gsw_dw_impl(
     d_out: torch.Tensor,
