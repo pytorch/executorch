@@ -12,8 +12,8 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from log_softmax.wgsl - DO NOT EDIT.
-// wgsl-sha256: 0f6d1e9eea8d0ec8246c2c4f0b0be5c03deb4a73790896b8a0b093fc5be16114
+// @generated from softmax.wgsl - DO NOT EDIT.
+// wgsl-sha256: 3e5550d3bf913a4e9e871b1474934278f81b4d635504aceb8ab4e096ef18889a
 inline constexpr const char* kLogSoftmaxWGSL = R"(
 struct Params {
   outer_: u32,
@@ -38,7 +38,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let oo = t / params.inner_;
   let ii = t % params.inner_;
   let base = oo * params.r_ * params.inner_ + ii;
-  // Online flash-style softmax; -3.4e38 seeds max (Tint overflows -FLT_MAX).
+  // Online (flash-style) softmax; -3.4e38 seeds max (Tint overflows -FLT_MAX).
   var mx: f32 = -3.4e38;
   var ssum: f32 = 0.0;
   for (var r: u32 = 0u; r < params.r_; r = r + 1u) {
