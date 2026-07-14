@@ -52,9 +52,9 @@ void resize_rms_norm(
   if (rows == 0) {
     throw std::runtime_error("WebGPU rms_norm: zero rows");
   }
-  if (rows > 65535u) {
+  if (rows > utils::queried_max_workgroups(g.device())) {
     throw std::runtime_error(
-        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
+        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
   }
   RmsNormParams p = {};
   p.num_rows = rows;
@@ -104,9 +104,9 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU rms_norm: zero rows");
   }
   // Validate the 1D dispatch limit before allocating any GPU objects.
-  if (num_rows > 65535u) {
+  if (num_rows > utils::queried_max_workgroups(device)) {
     throw std::runtime_error(
-        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
+        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
   }
 
   // Create uniform buffer for params
