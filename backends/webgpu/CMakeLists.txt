@@ -52,6 +52,17 @@ set(WEBGPU_SRCS
     runtime/ops/cat/Cat.cpp
     runtime/ops/index/Index.cpp
     runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
+    runtime/ops/mm/Mm.cpp
+    runtime/ops/log_softmax/LogSoftmax.cpp
+    runtime/ops/softmax/Softmax.cpp
+    runtime/ops/bmm/Bmm.cpp
+    runtime/ops/reduce/Reduce.cpp
+    runtime/ops/div/BinaryOp.cpp
+    runtime/ops/sub/BinaryOp.cpp
+    runtime/ops/where/Where.cpp
+    runtime/ops/compare/Compare.cpp
+    runtime/ops/linear/Linear.cpp
+    runtime/ops/logical_not/LogicalNot.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
