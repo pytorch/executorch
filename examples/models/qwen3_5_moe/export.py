@@ -1073,6 +1073,8 @@ def _export_cuda(model, config, args):
         "enable_dynamic_shape": True,
         "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
+    # Avoid a PyTorch 2.13 Triton codegen bug in Qwen's fused cast/reduction
+    # compile-time autotune path while keeping the CUDA backend defaults unchanged.
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
@@ -1081,6 +1083,9 @@ def _export_cuda(model, config, args):
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
                         CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("emulate_precision_casts", b"OFF"),
+                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
             ],
@@ -1089,6 +1094,9 @@ def _export_cuda(model, config, args):
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
                         CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("emulate_precision_casts", b"OFF"),
+                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
             ],
