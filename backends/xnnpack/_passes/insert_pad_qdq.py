@@ -9,7 +9,6 @@ from typing import cast, List
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
-    is_dequant,
     is_per_tensor,
     is_quant,
     tag_as_implicit_q_dq,
@@ -44,7 +43,6 @@ class InsertPadQDQPass(XNNPACKPass):
             pad_input = node.args[0]
             if not (
                 isinstance(pad_input, torch.fx.Node)
-                and is_dequant(pad_input)
                 and is_per_tensor(pad_input)
             ):
                 continue
