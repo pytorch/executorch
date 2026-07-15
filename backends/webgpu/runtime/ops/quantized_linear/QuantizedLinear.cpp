@@ -253,6 +253,9 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // M==1 -> bicol GEMV; M>1 -> steel GEMM (preferred) else shmem else tiled.
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
+  // GEMV (bicol) has its own override wg_size; clamp its own default.
+  const uint32_t gemv_wg_size =
+      utils::clamp_workgroup_size(device, kQ4gswLinearCoop4BicolWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
   // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
   const bool use_steel = !use_gemv && steel_supported(device) &&
@@ -372,16 +375,17 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUPipelineLayout pipeline_layout =
       wgpuDeviceCreatePipelineLayout(device, &pl_desc);
 
+  // GEMV/tiled wire an override wg_size; steel (256) + shmem (64) are fixed.
+  const bool fixed_wg = use_steel || use_shmem_gemm;
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-  wg_size_constant.value = static_cast<double>(wg_size);
+  wg_size_constant.value =
+      static_cast<double>(use_gemv ? gemv_wg_size : wg_size);
 
   WGPUComputePipelineDescriptor pipeline_desc = {};
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  // Only tiled GEMM overrides wg_size; GEMV/shmem (64) + steel (256) are fixed.
-  const bool fixed_wg = use_gemv || use_steel || use_shmem_gemm;
   pipeline_desc.compute.constantCount = fixed_wg ? 0u : 1u;
   pipeline_desc.compute.constants = fixed_wg ? nullptr : &wg_size_constant;
   WGPUComputePipeline pipeline =
