@@ -9,7 +9,7 @@ from typing import cast, List
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
-    is_per_tensor,
+    is_dequant,
     is_quant,
     tag_as_implicit_q_dq,
 )
@@ -43,7 +43,9 @@ class InsertPadQDQPass(XNNPACKPass):
             pad_input = node.args[0]
             if not (
                 isinstance(pad_input, torch.fx.Node)
-                and is_per_tensor(pad_input)
+                and is_dequant(pad_input)
+                and pad_input.target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
             ):
                 continue
 
