@@ -84,7 +84,6 @@ class ParallelPoolModel(torch.nn.Module):
 
 
 class TestProfiling:
-    @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.", strict=True)
     def test__softmax(self, caplog, request):
         caplog.set_level(logging.INFO)
         model = SoftmaxModule(-1)
@@ -135,7 +134,6 @@ class TestProfiling:
             10: (),  # Neutron Dump
         }
 
-    @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.", strict=True)
     def test__cifar(self, caplog, request):
         caplog.set_level(logging.INFO)
         input_shape = (1, 3, 32, 32)
