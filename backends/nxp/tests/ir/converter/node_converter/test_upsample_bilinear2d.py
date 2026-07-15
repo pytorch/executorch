@@ -51,7 +51,6 @@ class UpsampleBilinearAddModule(UpsampleBilinearModule):
 
 
 class TestUpsampleBilinear2D:
-    # TODO Use quantized dataset and `atol=1` in the tests.
 
     # noinspection PyMethodMayBeStatic
     def assert_delegated(
@@ -61,7 +60,6 @@ class TestUpsampleBilinear2D:
         mocker,
         request,
         use_qat=False,
-        atol=None,
         expected_delegated_ops=None,
     ):
         if expected_delegated_ops is None:
@@ -76,8 +74,9 @@ class TestUpsampleBilinear2D:
         # Cover also negative values to thoroughly test the operator.
         dataset_creator = RandomDatasetCreator(low=-2, high=2)
 
-        kwargs = {"atol": atol} if atol is not None else {}
-        output_comparator = AllCloseOutputComparator(**kwargs)
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
+        comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
             model,
@@ -85,8 +84,9 @@ class TestUpsampleBilinear2D:
             graph_verifier,
             request,
             dataset_creator,
-            output_comparator,
+            comparator,
             use_qat=use_qat,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     # noinspection PyMethodMayBeStatic
@@ -103,20 +103,14 @@ class TestUpsampleBilinear2D:
         input_shape = (1, 2, 3, 4)
         output_size = (5, 7)
         model = UpsampleBilinearModule(size=output_size, align_corners=align_corners)
-        atol = 0.015  # ~= output scale -> single bit error.
-        self.assert_delegated(
-            model, input_shape, mocker, request, use_qat=use_qat, atol=atol
-        )
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     def test__qat__not_align_corners(self, mocker, request, use_qat):
         align_corners = False
         input_shape = (1, 2, 3, 4)
         output_size = (6, 8)
         model = UpsampleBilinearModule(size=output_size, align_corners=align_corners)
-        atol = 0.015  # ~= output scale -> single bit error.
-        self.assert_delegated(
-            model, input_shape, mocker, request, use_qat=use_qat, atol=atol
-        )
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "input_shape, output_size",
@@ -136,8 +130,7 @@ class TestUpsampleBilinear2D:
     ):
         align_corners = False
         model = UpsampleBilinearModule(size=output_size, align_corners=align_corners)
-        atol = 0.016  # ~= output scale -> single bit error.
-        self.assert_delegated(model, input_shape, mocker, request, atol=atol)
+        self.assert_delegated(model, input_shape, mocker, request)
 
     def test__not_align_corners__output_size__unsupported(self):
         align_corners = False
@@ -162,8 +155,7 @@ class TestUpsampleBilinear2D:
     def test__not_align_corners__scales(self, mocker, request, input_shape, scale):
         align_corners = False
         model = UpsampleBilinearModule(scale=scale, align_corners=align_corners)
-        atol = 0.016  # ~= output scale -> single bit error.
-        self.assert_delegated(model, input_shape, mocker, request, atol=atol)
+        self.assert_delegated(model, input_shape, mocker, request)
 
     def test__not_align_corners__scales__unsupported(self):
         align_corners = False
@@ -196,8 +188,7 @@ class TestUpsampleBilinear2D:
     ):
         align_corners = True
         model = UpsampleBilinearModule(size=output_size, align_corners=align_corners)
-        atol = 0.016  # ~= output scale -> single bit error.
-        self.assert_delegated(model, input_shape, mocker, request, atol=atol)
+        self.assert_delegated(model, input_shape, mocker, request)
 
     def test__align_corners__output_size__unsupported(self):
         align_corners = True
@@ -253,8 +244,7 @@ class TestUpsampleBilinear2D:
     def test__align_corners__scales(self, mocker, request, input_shape, scale):
         align_corners = True
         model = UpsampleBilinearModule(scale=scale, align_corners=align_corners)
-        atol = 0.016  # ~= output scale -> single bit error.
-        self.assert_delegated(model, input_shape, mocker, request, atol=atol)
+        self.assert_delegated(model, input_shape, mocker, request)
 
     def test__align_corners__scales__unsupported(self):
         align_corners = True

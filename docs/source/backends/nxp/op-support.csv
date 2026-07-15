@@ -37,6 +37,7 @@ aten.split_with_sizes.default,N/A, N/A, "transforming split -> getitem to slice,
 aten.squeeze.default,int8,static int8,
 aten.squeeze.dim,int8,static int8,
 aten.squeeze.dims,int8,static int8,
+aten.sum.dim_IntList,int8,static int8,
 aten.tanh.default,int8,static int8,
 aten.unsqueeze.default,int8,static int8,
 aten.upsample_bilinear2d.vec,int8,static int8,"channels % 8 = 0, H_scale = W_scale = 2 or 4"

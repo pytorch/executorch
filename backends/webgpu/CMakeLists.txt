@@ -151,19 +151,9 @@ function(add_webgpu_native_test test_name test_src)
 endfunction()
 
 if(EXECUTORCH_BUILD_WEBGPU_TEST)
-  add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
-  add_webgpu_native_test(
-    webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
-  )
-  add_webgpu_native_test(
-    webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
-  )
-  add_webgpu_native_test(
-    webgpu_update_cache_test test/native/test_update_cache.cpp
-  )
-
-  # Manifest-driven op-test framework: a generic gtest driver (webgpu_op_test) +
-  # its device-free util unit test. GTest needs -DEXECUTORCH_BUILD_TESTS=ON.
+  # All WebGPU native tests use GTest (device-dependent ones bring up the device
+  # in their own main(); the fold unit test is device-free via gtest_main).
+  # GTest needs -DEXECUTORCH_BUILD_TESTS=ON.
   if(NOT TARGET GTest::gtest)
     find_package(GTest QUIET)
   endif()
@@ -194,6 +184,36 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
     target_compile_options(webgpu_op_test_util_test PRIVATE -fexceptions)
     set_property(TARGET webgpu_op_test_util_test PROPERTY CXX_STANDARD 17)
+
+    # Device-dependent native tests: each has its own main() that brings up the
+    # device once, then RUN_ALL_TESTS(); link GTest::gtest (not gtest_main).
+    add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
+    target_link_libraries(webgpu_native_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
+    )
+    target_link_libraries(webgpu_dispatch_order_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
+    )
+    target_link_libraries(webgpu_scratch_buffer_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_update_cache_test test/native/test_update_cache.cpp
+    )
+    target_link_libraries(webgpu_update_cache_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_dynamic_shape_test test/native/test_dynamic_shape.cpp
+    )
+    target_link_libraries(webgpu_dynamic_shape_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(webgpu_index_test test/native/test_index.cpp)
+    target_link_libraries(webgpu_index_test PRIVATE GTest::gtest)
+
+    # Device-free fold unit test (gtest_main provides main; no device needed).
+    add_webgpu_native_test(
+      webgpu_dispatch_2d_test test/native/test_dispatch_2d.cpp
+    )
+    target_link_libraries(
+      webgpu_dispatch_2d_test PRIVATE GTest::gtest GTest::gtest_main
+    )
   endif()
-  add_webgpu_native_test(webgpu_index_test test/native/test_index.cpp)
 endif()

@@ -16,6 +16,7 @@ from . import (  # noqa
     op_any,
     op_cat,
     op_cond_if,
+    op_flip,
     op_permute,
     op_repeat,
     op_sum,

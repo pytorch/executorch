@@ -112,6 +112,14 @@ def _is_noop_squeeze(node: torch.fx.Node) -> bool:
         return input_tensor.shape == output_tensor.shape
 
 
+def _is_noop_flip(node: torch.fx.node.Node) -> bool:
+    # flip over no dims is the identity; DecomposeFlipPass drops it entirely.
+    if node.target != exir_ops.edge.aten.flip.default:
+        return False
+    dims = node.args[1]
+    return isinstance(dims, (list, tuple)) and len(dims) == 0
+
+
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
     return node.target == exir_ops.edge.aten.view_copy.default
 
@@ -509,6 +517,7 @@ class TOSAPartitioner(Partitioner):
                     or _is_noop_detach_copy(node)
                     or _is_noop_to_dim_order_copy(node)
                     or _is_noop_squeeze(node)
+                    or _is_noop_flip(node)
                     or _is_view_copy(node)
                     or _is_noop_as_strided_copy(node)
                     or node.target in Q_OPS

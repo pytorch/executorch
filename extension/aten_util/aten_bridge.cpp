@@ -17,6 +17,22 @@ namespace executorch {
 namespace extension {
 
 namespace {
+void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
+  if (tensor.numel() == 0) {
+    return nullptr;
+  }
+
+  auto* storage_data = static_cast<char*>(tensor.unsafeGetTensorImpl()
+                                              ->unsafe_storage()
+                                              .unsafeGetStorageImpl()
+                                              ->_mutable_data_ptr_no_checks()
+                                              .mutable_get());
+  ET_CHECK_MSG(
+      storage_data != nullptr,
+      "Tensor has a non-zero number of elements, but its data is not allocated");
+  return storage_data + tensor.storage_offset() * tensor.itemsize();
+}
+
 void check_tensor_meta(const at::Tensor& a, const executorch::aten::Tensor& b) {
   // 0-dim (scalar) tensors legitimately have empty sizes/strides arrays;
   // their `.data()` may return nullptr depending on the underlying container.
@@ -139,7 +155,8 @@ void alias_etensor_to_attensor(
       "Input tensor must have contiguous or channels last memory format");
 
   check_tensor_meta(aten_tensor, mutable_et);
-  mutable_et.unsafeGetTensorImpl()->set_data(aten_tensor.mutable_data_ptr());
+  mutable_et.unsafeGetTensorImpl()->set_data(
+      mutable_tensor_data_ptr_no_cow(aten_tensor));
 }
 
 at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
@@ -163,7 +180,7 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
 TensorPtr alias_tensor_ptr_to_attensor(at::Tensor& t) {
   return make_tensor_ptr(
       {t.sizes().begin(), t.sizes().end()},
-      t.mutable_data_ptr(),
+      mutable_tensor_data_ptr_no_cow(t),
       torch::executor::ScalarType(t.scalar_type()));
 }
 

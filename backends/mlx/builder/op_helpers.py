@@ -24,6 +24,12 @@ if TYPE_CHECKING:
 # computing biases = -scales * 2^(bits-1) during the init chain.
 QUANTIZED_SERIALIZE_BIASES = False
 
+# Row-chunk size (in elements) for the int64 bit-packer in ``to_mlx_qparams``.
+# Packing widths that don't divide 32 (5/6-bit) needs int64 scratch; chunking the
+# rows bounds that scratch to ~this many elements instead of the whole weight
+# (a full lm_head would otherwise be tens of GB of int64 -> OOM).
+_PACK_CHUNK_ELEMS = 1 << 24  # ~16M int64 elements (~128 MB per scratch tensor)
+
 
 def get_aten_target(target):
     """
@@ -554,18 +560,44 @@ def to_mlx_qparams(
         q = qdata.view(torch.uint8) + offset
         Q = q.contiguous().view(torch.uint32).reshape(rows, -1)
     else:
-        # Contiguous bit-packing for widths that don't divide 32 (e.g. 6-bit),
-        # matching MLX's affine pack_and_quantize (ops.cpp): each value
-        # contributes `bits` LSB-first bits to a continuous stream that is
-        # chunked into uint32 words (also LSB-first), straddling word
-        # boundaries -> (rows, cols*bits//32) uint32.
-        q = qdata.to(torch.int32) + offset  # 0 .. 2**bits-1
-        bit_ids = torch.arange(bits, dtype=torch.int32)
-        stream = (q.unsqueeze(-1) >> bit_ids) & 1  # (rows, cols, bits) LSB-first
-        stream = stream.reshape(rows, -1, 32)  # (rows, n_words, 32)
-        word_shifts = torch.arange(32, dtype=torch.int64)
-        packed = (stream.to(torch.int64) << word_shifts).sum(-1)  # (rows, n_words)
-        Q = packed.to(torch.int32).contiguous().view(torch.uint32)
+        # Contiguous LSB-first bit-packing for widths that don't divide 32
+        # (e.g. 5/6-bit), matching MLX's affine pack_and_quantize (ops.cpp).
+        #
+        # We scatter each column's value directly into its uint32 word(s) rather
+        # than expanding to a per-bit stream. Column j occupies global bits
+        # [j*bits, (j+1)*bits): word j*bits//32 at shift j*bits%32, plus a carry
+        # into the next word when it straddles the boundary (at most one carry
+        # since bits <= 32). Column bit-ranges within a word are disjoint, so
+        # index_add_ (sum) is equivalent to OR.
+        #
+        # The scatter needs int64 (a value shifted by up to 31 overflows int32),
+        # so we pack the rows in chunks to bound the peak int64 working set --
+        # packing a full lm_head in one shot would otherwise materialize a
+        # multi-GB int64 tensor.
+        n_words = cols * bits // 32
+        pos = torch.arange(cols, dtype=torch.int64) * bits
+        word = pos // 32
+        shift = pos % 32
+        straddle = (shift + bits) > 32
+        has_straddle = bool(straddle.any())
+        word_carry = (word + 1).clamp(max=n_words - 1) if has_straddle else None
+
+        rows_per_chunk = max(1, _PACK_CHUNK_ELEMS // cols)
+        chunks = []
+        for r0 in range(0, rows, rows_per_chunk):
+            q = qdata[r0 : r0 + rows_per_chunk].to(torch.int64) + offset
+            packed = torch.zeros(q.shape[0], n_words, dtype=torch.int64)
+            packed.index_add_(1, word, q << shift)  # low bits (+ overflow)
+            if has_straddle:
+                carry = torch.where(straddle, q >> (32 - shift), torch.zeros_like(q))
+                packed.index_add_(1, word_carry, carry)
+                del carry
+            del q
+            chunks.append((packed & 0xFFFFFFFF).to(torch.int32))
+            del packed
+        packed_i32 = chunks[0] if len(chunks) == 1 else torch.cat(chunks, dim=0)
+        del chunks
+        Q = packed_i32.contiguous().view(torch.uint32)
 
     if compute_biases:
         B = -scale * (zero_point.to(scale.dtype) + offset)
@@ -659,10 +691,10 @@ def parse_dequant_node(
         return None
 
     # MLX supports 2,3,4,5,6,8-bit affine quantization. to_mlx_qparams packs
-    # 2/4/8 via fast paths and other widths (e.g. 6) via a general contiguous
-    # bit-packer, so enable 6 here too.
+    # 2/4/8 via fast paths and other widths (e.g. 5, 6) via a general
+    # contiguous bit-packer, so enable 5 and 6 here too.
     bits = (qmax - qmin + 1).bit_length() - 1
-    if bits not in [2, 4, 6, 8]:
+    if bits not in [2, 4, 5, 6, 8]:
         return None
     return qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim
 

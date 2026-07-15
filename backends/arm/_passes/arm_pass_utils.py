@@ -43,8 +43,11 @@ _Dim = int | torch.SymInt
 def is_submodule_node(node: torch.fx.Node):
     if node.op not in ("get_attr", "placeholder"):
         return False
+    owning_module = node.graph.owning_module
+    if owning_module is None or not isinstance(node.target, str):
+        return False
     try:
-        node.graph.owning_module.get_submodule(node.target)
+        owning_module.get_submodule(node.target)
     except AttributeError:
         return False
     return True

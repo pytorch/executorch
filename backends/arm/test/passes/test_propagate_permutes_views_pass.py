@@ -32,6 +32,7 @@ RELU = exir_ops.edge.aten.relu.default
 NEG = exir_ops.edge.aten.neg.default
 MM = exir_ops.edge.aten.mm.default
 RESCALE = exir_ops.backend.tosa.RESCALE.default
+CLONE = exir_ops.edge.dim_order_ops._clone_dim_order.default
 TABLE = exir_ops.backend.tosa.TABLE.default
 SCATTER = exir_ops.backend.tosa.SCATTER.default
 CAT = exir_ops.edge.aten.cat.default
@@ -1137,6 +1138,102 @@ def test_propagate_up_stops_at_shared_rescale_producer() -> None:
     graph.output((permute, add))
 
     targets = _run_pass_on_graph(graph)
+
+    assert targets.index(RESCALE) < targets.index(PERMUTE)
+
+
+def test_propagate_up_stops_before_narrowing_rescale_fed_by_binary_op() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    y = graph.placeholder("y")
+    y.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    add = graph.call_function(ADD, args=(x, y))
+    add.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    rescale = graph.call_function(RESCALE, args=(add, torch.int8, [1.0], 0, 0))
+    rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
+    permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
+    graph.output(permute)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph)
+
+    assert targets.index(RESCALE) < targets.index(PERMUTE)
+
+
+def test_propagate_up_crosses_same_width_rescale_fed_by_binary_op() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    y = graph.placeholder("y")
+    y.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    add = graph.call_function(ADD, args=(x, y))
+    add.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    rescale = graph.call_function(RESCALE, args=(add, torch.int32, [1.0], 0, 0))
+    rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
+    graph.output(permute)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph)
+
+    assert targets.index(PERMUTE) < targets.index(RESCALE)
+
+
+def test_propagate_up_stops_before_narrowing_rescale_from_shared_placeholder() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    rescale = graph.call_function(RESCALE, args=(x, torch.int8, [1.0], 0, 0))
+    rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
+    other = graph.call_function(NEG, args=(x,))
+    other.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
+    graph.output((permute, other))
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph)
+
+    assert targets.index(RESCALE) < targets.index(PERMUTE)
+
+
+def test_propagate_up_crosses_widening_rescale_fed_by_binary_op() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
+    y = graph.placeholder("y")
+    y.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
+    add = graph.call_function(ADD, args=(x, y))
+    add.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
+    rescale = graph.call_function(RESCALE, args=(add, torch.int32, [1.0], 0, 0))
+    rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int32)
+    graph.output(permute)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph)
+
+    assert targets.index(PERMUTE) < targets.index(RESCALE)
+
+
+def test_propagate_up_stops_before_narrowing_rescale_behind_unary() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    clone = graph.call_function(CLONE, args=(x,))
+    clone.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
+    rescale = graph.call_function(RESCALE, args=(clone, torch.int8, [1.0], 0, 0))
+    rescale.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int8)
+    permute = graph.call_function(PERMUTE, args=(rescale, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2), dtype=torch.int8)
+    graph.output(permute)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph)
 
     assert targets.index(RESCALE) < targets.index(PERMUTE)
 

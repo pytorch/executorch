@@ -1,6 +1,8 @@
+$if DTYPE == "half":
+  enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> t_attn_weights_softmax: array<f32>;
-@group(0) @binding(2) var<storage, read> t_v_cache: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> t_v_cache: array<${buffer_gvec_type(DTYPE, 4)}>;
 
 struct Params {
   S: u32,
@@ -38,7 +40,10 @@ fn load_v_d4(c: u32, kvh: u32, d0: u32) -> vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
   }
   let base = c * params.Hkv * params.D + kvh * params.D + d0;
-  return t_v_cache[base / 4u];
+  $if DTYPE == "half":
+    return vec4<f32>(t_v_cache[base / 4u]);
+  $else:
+    return t_v_cache[base / 4u];
 }
 
 // Branch-free loaders for the aligned body: caller guarantees c4..c4+3 < context_len.
@@ -52,7 +57,10 @@ fn load_a_vec4_nc(s: u32, h: u32, c4: u32) -> vec4<f32> {
 
 fn load_v_d4_nc(c: u32, kvh: u32, d0: u32) -> vec4<f32> {
   let base = c * params.Hkv * params.D + kvh * params.D + d0;
-  return t_v_cache[base / 4u];
+  $if DTYPE == "half":
+    return vec4<f32>(t_v_cache[base / 4u]);
+  $else:
+    return t_v_cache[base / 4u];
 }
 
 fn store_out_vec4(s: u32, d0: u32, h: u32, val: vec4<f32>) {
@@ -64,17 +72,21 @@ fn store_out_vec4(s: u32, d0: u32, h: u32, val: vec4<f32>) {
 }
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   let nrt = (params.S + TM - 1u) / TM;
   let nct = (params.D + TN - 1u) / TN;
   let tiles = nrt * nct;
   let total = tiles * params.Hq;
-  if (gid.x >= total) {
+  // 2D dispatch fold: recover the linear tile index across x/y.
+  let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
+  if (idx >= total) {
     return;
   }
 
-  let h = gid.x / tiles;
-  let rem = gid.x % tiles;
+  let h = idx / tiles;
+  let rem = idx % tiles;
   let row_tile = rem / nct;
   let col_tile = rem % nct;
   let kvh = h / params.g;

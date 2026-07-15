@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_softmax.wgsl - DO NOT EDIT.
-// wgsl-sha256: e2714ec4c2400b37f6fd39c410075c519effc0273354a4f906fb924334809024
+// wgsl-sha256: bdd45cf344663533b243153200c507f41a90295751924e70452abcd5da4cdd5a
 inline constexpr const char* kSdpaSoftmaxWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_in: array<f32>;
@@ -37,9 +37,12 @@ var<workgroup> shared_sum: array<f32, WG_SIZE>;
 @compute @workgroup_size(WG_SIZE, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
-    @builtin(local_invocation_id) lid: vec3<u32>) {
+    @builtin(local_invocation_id) lid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   // One workgroup per (h, s) row of length context_len (= row_width).
-  let row_idx = wid.x;
+  // 2D dispatch fold: recover the linear row index. Keep the `valid` predicate
+  // below (NOT an early return) — the workgroupBarrier()s require uniform flow.
+  let row_idx = wid.x + wid.y * num_workgroups.x;
   let worker_id = lid.x;
 
   let base = row_idx * params.row_width;

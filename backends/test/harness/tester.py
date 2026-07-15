@@ -287,7 +287,7 @@ class Tester:
         return self
 
     def check_node_count(self, input: Dict[Any, int]):
-        # Count the occurances of each target in the graph.
+        # Count the occurrences of each target in the graph.
         target_ops = [
             node.target
             for node in self.stages[self.cur].graph_module.graph.nodes

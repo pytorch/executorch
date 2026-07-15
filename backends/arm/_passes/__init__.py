@@ -53,6 +53,7 @@ from .decompose_elu_pass import ConvertEluFamilyToEluPass, DecomposeEluPass  # n
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
+from .decompose_flip_pass import DecomposeFlipPass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
@@ -113,6 +114,7 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
 from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
 from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
+from .fuse_consecutive_slices_pass import FuseConsecutiveSlicesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
@@ -121,6 +123,7 @@ from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_identical_input_transforms_pass import (  # noqa
     FuseIdenticalInputTransformsPass,
+    NormalizeTransformInputPlaceholdersPass,
 )
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa

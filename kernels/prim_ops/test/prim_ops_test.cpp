@@ -42,6 +42,7 @@ TEST_F(RegisterPrimOpsTest, OpRegistered) {
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_min.Scalar"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_not.Scalar"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_int.Scalar"));
+  EXPECT_TRUE(hasOpsFn("executorch_prim::sym_ite.Scalar"));
 }
 
 TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
@@ -239,6 +240,46 @@ TEST_F(RegisterPrimOpsTest, SymIntReturnsCorrectValue) {
   values[1] = EValue((int64_t)0);
   getOpsFn("executorch_prim::sym_int.Scalar")(context_, Span<EValue*>(stack));
   EXPECT_EQ(stack[1]->toInt(), 0);
+}
+
+TEST_F(RegisterPrimOpsTest, SymIteReturnsCorrectValue) {
+  EValue values[4];
+  EValue* stack[4];
+  for (size_t i = 0; i < 4; i++) {
+    stack[i] = &values[i];
+  }
+
+  // true branch selects t (int)
+  values[0] = EValue(true);
+  values[1] = EValue((int64_t)42);
+  values[2] = EValue((int64_t)99);
+  values[3] = EValue((int64_t)0);
+  getOpsFn("executorch_prim::sym_ite.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[3]->toInt(), 42);
+
+  // false branch selects f (int)
+  values[0] = EValue(false);
+  values[1] = EValue((int64_t)42);
+  values[2] = EValue((int64_t)99);
+  values[3] = EValue((int64_t)0);
+  getOpsFn("executorch_prim::sym_ite.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[3]->toInt(), 99);
+
+  // true branch selects t (double)
+  values[0] = EValue(true);
+  values[1] = EValue(3.14);
+  values[2] = EValue(2.72);
+  values[3] = EValue(0.0);
+  getOpsFn("executorch_prim::sym_ite.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_FLOAT_EQ(stack[3]->toDouble(), 3.14);
+
+  // false branch selects f (bool)
+  values[0] = EValue(false);
+  values[1] = EValue(true);
+  values[2] = EValue(false);
+  values[3] = EValue(false);
+  getOpsFn("executorch_prim::sym_ite.Scalar")(context_, Span<EValue*>(stack));
+  EXPECT_EQ(stack[3]->toBool(), false);
 }
 
 TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {

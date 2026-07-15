@@ -92,6 +92,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sub_tensor_converter import (
     SubTensorConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sum_dim_int_list_converter import (
+    SumDimIntListConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import (
     TanhConverter,
 )
@@ -138,6 +141,7 @@ __all__ = [
     "SliceTensorConverter",
     "SoftmaxConverter",
     "SubTensorConverter",
+    "SumDimIntListConverter",
     "TanhConverter",
     "UpsampleBilinear2DConverter",
     "UpsampleNearest2DConverter",

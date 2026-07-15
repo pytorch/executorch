@@ -5,7 +5,7 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -14,7 +14,7 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "MATMUL(Tensor input1, Tensor input2) -> Tensor",  # schema
     TosaSpecification.all_versions_and_profiles(),
 )
