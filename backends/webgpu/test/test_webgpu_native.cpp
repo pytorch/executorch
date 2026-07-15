@@ -6,9 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDelegateHeader.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
@@ -21,6 +23,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <string>
@@ -254,6 +257,185 @@ bool sdpa_within_tol(
   *ma = max_abs;
   *mr = max_rel;
   return ok;
+}
+
+// Matches the WGSL Params struct in rms_norm.wgsl (16-byte aligned).
+struct RmsNormProbeParams {
+  uint32_t num_rows;
+  uint32_t row_width;
+  float epsilon;
+  uint32_t _pad;
+};
+
+struct WgMapData {
+  WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
+};
+void wg_map_cb(
+    WGPUMapAsyncStatus status,
+    WGPUStringView /*message*/,
+    void* userdata1,
+    void* /*userdata2*/) {
+  static_cast<WgMapData*>(userdata1)->status = status;
+}
+
+// Run the rms_norm scalar kernel at an explicit override wg_size and map the
+// output back. Module::forward can't set a second workgroup size (the handler
+// always clamps to 64), so the pipeline is built directly here; the
+// map/readback mirrors WebGPUGraph::copy_outputs.
+std::vector<float> run_rms_norm_at_wg(
+    const WebGPUContext& ctx,
+    uint32_t wg_size,
+    const std::vector<float>& input,
+    const std::vector<float>& weight,
+    uint32_t num_rows,
+    uint32_t row_width,
+    float epsilon) {
+  WGPUDevice device = ctx.device;
+  const uint64_t out_bytes =
+      static_cast<uint64_t>(num_rows) * row_width * sizeof(float);
+  const uint64_t in_bytes = static_cast<uint64_t>(input.size()) * sizeof(float);
+  const uint64_t w_bytes = static_cast<uint64_t>(weight.size()) * sizeof(float);
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kRmsNormWGSL, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  WGPUBindGroupLayoutEntry bgl_entries[4] = {};
+  bgl_entries[0].binding = 0;
+  bgl_entries[0].visibility = WGPUShaderStage_Compute;
+  bgl_entries[0].buffer.type = WGPUBufferBindingType_Storage;
+  bgl_entries[1].binding = 1;
+  bgl_entries[1].visibility = WGPUShaderStage_Compute;
+  bgl_entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+  bgl_entries[2].binding = 2;
+  bgl_entries[2].visibility = WGPUShaderStage_Compute;
+  bgl_entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+  bgl_entries[3].binding = 3;
+  bgl_entries[3].visibility = WGPUShaderStage_Compute;
+  bgl_entries[3].buffer.type = WGPUBufferBindingType_Uniform;
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 4;
+  bgl_desc.entries = bgl_entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pl = wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+
+  WGPUConstantEntry wg_const = {};
+  wg_const.key = {"wg_size", WGPU_STRLEN};
+  wg_const.value = static_cast<double>(wg_size);
+
+  WGPUComputePipelineDescriptor pipe_desc = {};
+  pipe_desc.layout = pl;
+  pipe_desc.compute.module = shader;
+  pipe_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipe_desc.compute.constantCount = 1;
+  pipe_desc.compute.constants = &wg_const;
+  WGPUComputePipeline pipe =
+      wgpuDeviceCreateComputePipeline(device, &pipe_desc);
+
+  WGPUBufferDescriptor out_bd = {};
+  out_bd.size = out_bytes;
+  out_bd.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc;
+  WGPUBuffer out_buf = wgpuDeviceCreateBuffer(device, &out_bd);
+
+  WGPUBufferDescriptor in_bd = {};
+  in_bd.size = in_bytes;
+  in_bd.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+  WGPUBuffer in_buf = wgpuDeviceCreateBuffer(device, &in_bd);
+  wgpuQueueWriteBuffer(ctx.queue, in_buf, 0, input.data(), in_bytes);
+
+  WGPUBufferDescriptor w_bd = {};
+  w_bd.size = w_bytes;
+  w_bd.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+  WGPUBuffer w_buf = wgpuDeviceCreateBuffer(device, &w_bd);
+  wgpuQueueWriteBuffer(ctx.queue, w_buf, 0, weight.data(), w_bytes);
+
+  RmsNormProbeParams params = {num_rows, row_width, epsilon, 0u};
+  WGPUBufferDescriptor p_bd = {};
+  p_bd.size = sizeof(RmsNormProbeParams);
+  p_bd.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  WGPUBuffer p_buf = wgpuDeviceCreateBuffer(device, &p_bd);
+  wgpuQueueWriteBuffer(ctx.queue, p_buf, 0, &params, sizeof(params));
+
+  WGPUBufferDescriptor stg_bd = {};
+  stg_bd.size = out_bytes;
+  stg_bd.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
+  WGPUBuffer staging = wgpuDeviceCreateBuffer(device, &stg_bd);
+
+  WGPUBindGroupEntry bg_entries[4] = {};
+  bg_entries[0].binding = 0;
+  bg_entries[0].buffer = out_buf;
+  bg_entries[0].size = out_bytes;
+  bg_entries[1].binding = 1;
+  bg_entries[1].buffer = in_buf;
+  bg_entries[1].size = in_bytes;
+  bg_entries[2].binding = 2;
+  bg_entries[2].buffer = w_buf;
+  bg_entries[2].size = w_bytes;
+  bg_entries[3].binding = 3;
+  bg_entries[3].buffer = p_buf;
+  bg_entries[3].size = sizeof(RmsNormProbeParams);
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 4;
+  bg_desc.entries = bg_entries;
+  WGPUBindGroup bg = wgpuDeviceCreateBindGroup(device, &bg_desc);
+
+  WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(device, nullptr);
+  WGPUComputePassDescriptor pass_desc = {};
+  WGPUComputePassEncoder pass =
+      wgpuCommandEncoderBeginComputePass(enc, &pass_desc);
+  wgpuComputePassEncoderSetPipeline(pass, pipe);
+  wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+  wgpuComputePassEncoderDispatchWorkgroups(pass, num_rows, 1, 1);
+  wgpuComputePassEncoderEnd(pass);
+  wgpuComputePassEncoderRelease(pass);
+  wgpuCommandEncoderCopyBufferToBuffer(enc, out_buf, 0, staging, 0, out_bytes);
+  WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(enc, nullptr);
+  wgpuQueueSubmit(ctx.queue, 1, &cmd);
+  wgpuCommandBufferRelease(cmd);
+  wgpuCommandEncoderRelease(enc);
+
+  WgMapData cb = {};
+  WGPUBufferMapCallbackInfo cb_info = {};
+  cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
+  cb_info.callback = wg_map_cb;
+  cb_info.userdata1 = &cb;
+  WGPUFuture fut =
+      wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, out_bytes, cb_info);
+  const WGPUWaitStatus wait = webgpu_wait(ctx.instance, fut);
+
+  std::vector<float> result(static_cast<size_t>(num_rows) * row_width);
+  bool ok = false;
+  if (wait == WGPUWaitStatus_Success &&
+      cb.status == WGPUMapAsyncStatus_Success) {
+    const void* mapped = wgpuBufferGetConstMappedRange(staging, 0, out_bytes);
+    std::memcpy(result.data(), mapped, out_bytes);
+    wgpuBufferUnmap(staging);
+    ok = true;
+  }
+
+  wgpuBufferRelease(staging);
+  wgpuBufferRelease(p_buf);
+  wgpuBufferRelease(w_buf);
+  wgpuBufferRelease(in_buf);
+  wgpuBufferRelease(out_buf);
+  wgpuBindGroupRelease(bg);
+  wgpuComputePipelineRelease(pipe);
+  wgpuPipelineLayoutRelease(pl);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuShaderModuleRelease(shader);
+
+  if (!ok) {
+    throw std::runtime_error("rms_norm wg-size probe: output map failed");
+  }
+  return result;
 }
 
 // linear_q4gsw sweep config; mirrors CONFIGS in test_quantized_linear.py.
@@ -1413,6 +1595,56 @@ TEST(WebGPUNative, QueryPoolRoundtrip) {
   test_query_pool_roundtrip(*get_default_webgpu_context());
 }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+
+// The override wg_size must not change results: run the rms_norm scalar kernel
+// at wg_size 64 and 128 (the handler always clamps to 64, so 128 is only
+// reachable via a direct pipeline) and require element-wise agreement. Absolute
+// rms_norm correctness is covered by the model-driven golden tests; this locks
+// the runtime-configurability guarantee (same WGSL, different size -> same
+// output).
+TEST(WebGPUNative, RmsNormWorkgroupSizeConfigurable) {
+  const WebGPUContext* ctx = get_default_webgpu_context();
+  if (ctx == nullptr || ctx->device == nullptr) {
+    GTEST_SKIP() << "no WebGPU device";
+  }
+  constexpr uint32_t num_rows = 3, row_width = 256;
+  constexpr float epsilon = 1e-5f;
+  std::vector<float> input(static_cast<size_t>(num_rows) * row_width);
+  std::vector<float> weight(row_width);
+  for (size_t i = 0; i < input.size(); i++) {
+    input[i] = std::sin(0.1f * static_cast<float>(i)) * 2.0f + 0.5f;
+  }
+  for (uint32_t j = 0; j < row_width; j++) {
+    weight[j] = 0.5f + 0.001f * static_cast<float>(j);
+  }
+
+  const std::vector<float> out64 =
+      run_rms_norm_at_wg(*ctx, 64, input, weight, num_rows, row_width, epsilon);
+  const std::vector<float> out128 = run_rms_norm_at_wg(
+      *ctx, 128, input, weight, num_rows, row_width, epsilon);
+  ASSERT_EQ(out64.size(), static_cast<size_t>(num_rows) * row_width);
+  ASSERT_EQ(out128.size(), out64.size());
+
+  double sumsq = 0.0;
+  for (float v : out64) {
+    sumsq += static_cast<double>(v) * static_cast<double>(v);
+  }
+  float max_abs = 0.0f, max_rel = 0.0f;
+  const bool consistent = sdpa_within_tol(
+      out64.data(),
+      out128.data(),
+      static_cast<int>(out64.size()),
+      &max_abs,
+      &max_rel);
+  printf(
+      "  rms_norm wg64-vs-wg128: max_abs=%e max_rel=%e sumsq=%f\n",
+      max_abs,
+      max_rel,
+      sumsq);
+  EXPECT_GT(sumsq, 0.0) << "wg64 output is all zero (kernel did not run)";
+  EXPECT_TRUE(consistent) << "wg64 vs wg128 differ beyond tol (abs " << max_abs
+                          << " rel " << max_rel << ")";
+}
 
 TEST(WebGPUNative, UpdateCache) {
   if (g_update_cache_model_path.empty()) {
