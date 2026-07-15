@@ -42,8 +42,8 @@ class TestT5EncoderModel:
     }
 
     ops_after_partitioner_INT = {
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 3,
-        "torch.ops.higher_order.executorch_call_delegate": 3,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
+        "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
     ops_after_partitioner_vgf_quantize = {

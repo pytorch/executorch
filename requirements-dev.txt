@@ -10,6 +10,7 @@ zstd  # Imported by resolve_buck.py.
 certifi  # Imported by resolve_buck.py.
 lintrunner==0.12.7
 lintrunner-adapters==0.14.0
+ruff==0.15.4
 
 pytest<9.0
 pytest-xdist

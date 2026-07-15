@@ -9,6 +9,7 @@ from .arm_pass import ArmOpTargetedPass, ArmPass  # noqa  # usort: skip
 from .accumulate_index_put_pass import AccumulateIndexPutPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .canonicalize_gather_pass import CanonicalizeGatherPass  # noqa
+from .canonicalize_view_copy_permute_pass import CanonicalizeViewCopyPermutePass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .constant_folding_pass import ConstantFoldingPass  # noqa
@@ -52,6 +53,7 @@ from .decompose_elu_pass import ConvertEluFamilyToEluPass, DecomposeEluPass  # n
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_erfinv_pass import DecomposeErfinvPass  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
+from .decompose_flip_pass import DecomposeFlipPass  # noqa
 from .decompose_floor_divide_pass import DecomposeFloorDividePass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
@@ -104,19 +106,26 @@ from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # 
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
 from .deduplicate_get_attr_pass import DeduplicateGetAttrPass  # noqa
 from .ensure_unique_output_nodes_pass import EnsureUniqueOutputNodesPass  # noqa
+from .exir_to_tosa_pass import ExirToTosaPass  # noqa
 from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
 )
+from .fold_scalar_mul_into_conv_pass import FoldScalarMulIntoConvPass  # noqa
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
 from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
 from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
+from .fuse_consecutive_slices_pass import FuseConsecutiveSlicesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
 )
 from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
+from .fuse_identical_input_transforms_pass import (  # noqa
+    FuseIdenticalInputTransformsPass,
+    NormalizeTransformInputPlaceholdersPass,
+)
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
 from .insert_const_shapes import InsertConstShapesPass  # noqa
@@ -143,6 +152,10 @@ from .normalize_index_put_none_indices_pass import (  # noqa
 )
 from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
+from .propagate_view_copy_permute_pass import (  # noqa
+    PropagateViewCopyPermuteDownPass,
+    PropagateViewCopyPermuteUpPass,
+)
 from .remove_getitem_pass import RemoveGetItemPass  # noqa
 from .remove_graph_asserts_pass import RemoveGraphAssertsPass  # noqa
 from .remove_noop_pass import RemoveNoopPass  # noqa
@@ -169,11 +182,14 @@ from .rewrite_inplace_arithmetic_pass import RewriteInplaceArithmeticPass  # noq
 from .rewrite_le_lt_to_ge_gt_pass import RewriteLeLtToGeGtPass  # noqa
 from .rewrite_matmul import RewriteMatmulPass  # noqa
 from .rewrite_max_pool2d_pass import RewriteMaxPool2dPass  # noqa
+from .rewrite_mxfp_conv2d import RewriteMXFPConv2dPass  # noqa
+from .rewrite_mxfp_linear import RewriteMXFPLinearPass  # noqa
 from .rewrite_pad import RewritePadPass  # noqa
 from .rewrite_slice import RewriteSlicePass  # noqa
 from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
+from .symbolic_to_tosa_shape_pass import SymbolicToTosaShapesPass  # noqa
 from .unsqueeze_before_repeat_pass import UnsqueezeBeforeRepeatPass  # noqa
 from .unsqueeze_scalar_placeholders_pass import UnsqueezeScalarPlaceholdersPass  # noqa
 from .replace_inf_and_limit_values_pass import (  # noqa  # usort: skip

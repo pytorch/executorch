@@ -8,12 +8,12 @@
 import math
 from typing import cast, Optional
 
-import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 import executorch.backends.cortex_m.ops.operators  # noqa
 import executorch.exir as exir
 import torch
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.cortex_m.library import cmsis_nn
 
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,

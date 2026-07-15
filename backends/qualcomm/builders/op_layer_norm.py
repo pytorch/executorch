@@ -11,7 +11,12 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_DATA
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_DATA,
+    QCOM_QUANT_ATTRS,
+    QCOM_ZERO_POINT,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -31,6 +36,7 @@ class LayerNormVisitor(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
+        # args of node : ['input', 'normalized_shape', 'weight', 'bias', 'eps']
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
@@ -54,8 +60,26 @@ class LayerNormVisitor(NodeVisitor):
         axis = [len(input_tensor.shape) - 1]
         axis_shape = [len(axis)]
 
-        weight_node = self.get_node(node.args[2])
-        weight_tensor = get_parameter(weight_node, self.edge_program)
+        has_weight = len(node.args) > 2 and node.args[2] is not None
+        if has_weight:
+            weight_node = self.get_node(node.args[2])
+            assert weight_node is not None
+            weight_tensor = get_parameter(weight_node, self.edge_program)
+        else:
+            # elementwise_affine=False: use all-ones weight as identity
+            weight_tensor = torch.ones(normalized_shapes, dtype=torch.float32)
+            weight_node = torch.fx.Node(
+                node.graph,
+                node.name + "_runtime_weight",
+                "call_function",
+                exir_ops.edge.aten.tensor.default,
+                (),
+                {},
+            )
+            if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+                quant_attrs = quant_attrs.copy()
+                quant_attrs[QCOM_ZERO_POINT] = 0
+                weight_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
             node,
@@ -66,8 +90,10 @@ class LayerNormVisitor(NodeVisitor):
 
         layer_norm_input_tensors = [input_tensor_wrapper, weight_tensor_wrapper]
 
-        bias_node = self.get_node(node.args[3])
-        if bias_node is not None:
+        has_bias = len(node.args) > 3 and node.args[3] is not None
+        if has_bias:
+            bias_node = self.get_node(node.args[3])
+            assert bias_node is not None
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
@@ -78,7 +104,7 @@ class LayerNormVisitor(NodeVisitor):
             )
             layer_norm_input_tensors.append(bias_tensor_wrapper)
 
-        epsilon = node.args[4]
+        epsilon = node.args[4] if len(node.args) > 4 else 1e-05
 
         output_tensor = self.get_tensor(node, node, 0)
         output_tensor_wrapper = self.define_tensor(

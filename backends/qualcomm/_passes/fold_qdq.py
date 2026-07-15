@@ -6,10 +6,7 @@
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.builders.utils import is_parameter
-from executorch.backends.qualcomm.utils.constants import (
-    QCOM_BYPASS_NODE,
-    QCOM_FALLBACK_NODE,
-)
+from executorch.backends.qualcomm.utils.constants import QCOM_BYPASS_NODE
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
@@ -42,24 +39,18 @@ class FoldQDQ(ExportPass):
             if n.target not in dq_ops:
                 continue
 
-            if not self.force_fold and (
-                QCOM_BYPASS_NODE in n.meta or QCOM_FALLBACK_NODE in n.meta
-            ):
-                continue
-
-            for user_n in user_list:
-                user_n.replace_input_with(n, n.args[0])
-            graph_module.graph.erase_node(n)
+            # skip parameters & buffers
+            if not self.force_fold and is_parameter(n.args[0], self.edge_program):
+                self._annotate_bypass(n)
+            else:
+                for user_n in user_list:
+                    user_n.replace_input_with(n, n.args[0])
+                graph_module.graph.erase_node(n)
 
     def _fold_q(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         # remove q
         for n in graph_module.graph.nodes:
             if n.target not in q_ops:
-                continue
-
-            if not self.force_fold and (
-                QCOM_BYPASS_NODE in n.meta or QCOM_FALLBACK_NODE in n.meta
-            ):
                 continue
 
             to_be_removed = [n]
@@ -85,16 +76,7 @@ class FoldQDQ(ExportPass):
             for n in to_be_removed:
                 graph_module.graph.erase_node(n)
 
-    def _preserve_qdq(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        for n in graph_module.graph.nodes:
-            # skip parameters & buffers
-            if n.target in dq_ops and is_parameter(n.args[0], self.edge_program):
-                self._annotate_bypass(n)
-                continue
-
     def call(self, graph_module: torch.fx.GraphModule):
-        if not self.force_fold:
-            self._preserve_qdq(graph_module)
         self._fold_dq(graph_module)
         self._fold_q(graph_module)
         dead_code_elimination_pass(graph_module)

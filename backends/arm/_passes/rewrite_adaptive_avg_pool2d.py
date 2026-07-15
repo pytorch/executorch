@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
@@ -20,7 +20,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class RewriteAdaptiveAvgPool2dPass(ArmPass):
+class RewriteAdaptiveAvgPool2dPass(ArmOpTargetedPass):
     """Rewrite dynamic adaptive average pooling to tosa.avg_pool2d_adaptive when
     possible.
 
@@ -31,7 +31,7 @@ class RewriteAdaptiveAvgPool2dPass(ArmPass):
 
     """
 
-    targeted_ops = {exir_ops.edge.aten._adaptive_avg_pool2d.default}
+    target_ops = {exir_ops.edge.aten._adaptive_avg_pool2d.default}
     _passes_required_after: Set[Type[ExportPass]] = {
         ComputeConstantOpsAOTPass,
     }
@@ -81,7 +81,7 @@ class RewriteAdaptiveAvgPool2dPass(ArmPass):
         return stride + remainder, stride
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         x = args[0]

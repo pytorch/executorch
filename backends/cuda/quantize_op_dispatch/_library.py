@@ -6,9 +6,10 @@
 
 """Shared torch.library handle for the ``executorch_cuda`` op namespace.
 
-``int4_dispatch`` and ``int8_dispatch`` both register custom ops into the same
-``executorch_cuda`` namespace, so they must share a single ``DEF`` library
-instance — PyTorch allows only one ``DEF`` per namespace per process.
+``int4_dispatch``, ``int6_dispatch`` and ``int8_dispatch`` all register custom
+ops into the same ``executorch_cuda`` namespace, so they must share a single
+``DEF`` library instance — PyTorch allows only one ``DEF`` per namespace per
+process.
 """
 
 from torch.library import Library

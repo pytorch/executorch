@@ -9,7 +9,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import copy_meta, get_const_node
+from .utils import copy_meta, create_const_node
 
 
 class DecomposeAcos(ExportPass):
@@ -52,7 +52,7 @@ class DecomposeAcos(ExportPass):
             )
 
             if is_edge and pi_half_node is None:
-                pi_half_node = get_const_node(
+                pi_half_node = create_const_node(
                     graph, graph_module, "_pi_half_constant", pi_half, node
                 )
 

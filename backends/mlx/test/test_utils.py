@@ -275,6 +275,7 @@ def export_model_to_pte(
     dynamic_shapes: Optional[Dict] = None,
     verbose: bool = False,
     edge_compile_config: Optional[exir.EdgeCompileConfig] = None,
+    transform_passes: Optional[list] = None,
 ) -> None:
     """
     Export a PyTorch model to a .pte file using the MLX delegate.
@@ -287,6 +288,8 @@ def export_model_to_pte(
         dynamic_shapes: Optional dynamic shapes specification for torch.export.
             Example: {0: {0: Dim("batch", min=1, max=32)}} for dynamic batch on first input.
         verbose: Whether to print the exported program for debugging.
+        transform_passes: Optional edge-dialect passes to run before partitioning
+            (e.g. ``get_default_passes()``). Mirrors the production export path.
     """
     from executorch.backends.mlx import MLXPartitioner
     from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -308,10 +311,14 @@ def export_model_to_pte(
 
     # Lower to edge and delegate to MLX
     compile_config = edge_compile_config or exir.EdgeCompileConfig()
+    lower_kwargs = {}
+    if transform_passes is not None:
+        lower_kwargs["transform_passes"] = transform_passes
     edge_program = exir.to_edge_transform_and_lower(
         exported_program,
         partitioner=[MLXPartitioner()],
         compile_config=compile_config,
+        **lower_kwargs,
     )
 
     # Print edge program if verbose
@@ -877,6 +884,15 @@ class OpTestCase:
         """Return EdgeCompileConfig for export, or None for default."""
         return None
 
+    def get_transform_passes(self) -> Optional[list]:
+        """Return edge-dialect transform passes to run before partitioning.
+
+        Defaults to None (no passes), matching the historical op-test path.
+        Override to return ``get_default_passes()`` to exercise the production
+        lowering pipeline (e.g. for reinplace/donation coverage).
+        """
+        return None
+
     def get_test_dir(self) -> Path:
         """Get the directory for this test's files."""
         test_dir = Path(__file__).parent / "op_tests" / self.name
@@ -947,6 +963,7 @@ class OpTestCase:
             dynamic_shapes=dynamic_shapes,
             verbose=verbose,
             edge_compile_config=self.get_edge_compile_config(),
+            transform_passes=self.get_transform_passes(),
         )
 
         # Save test inputs

@@ -7,14 +7,20 @@
 binary_scalar_buffer:
   parameter_names_with_default_values:
     OPERATOR: power_of(X, Y)
-    NDIM: 3
+    IS_COMPARISON_OP: false
     DTYPE: float
-    PACKING: C_packed
+    SCALAR_VALUE_TYPE: float
     STORAGE: buffer
   generate_variant_forall:
-    DTYPE:
-      - VALUE: half
-      - VALUE: float
-      - VALUE: int32
+    combination:
+      parameter_names: [DTYPE, SCALAR_VALUE_TYPE]
+      combos:
+       - parameter_values: [half, float]
+       - parameter_values: [float, float]
+       - parameter_values: [int32, int32]
+       - parameter_values: [int32, float]
   shader_variants:
     - NAME: pow_scalar_buffer
+    - NAME: eq_scalar_buffer
+      OPERATOR: X == Y
+      IS_COMPARISON_OP: true

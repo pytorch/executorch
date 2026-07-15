@@ -25,7 +25,7 @@ namespace native {
     const ::executorch::aten::Tensor& out_multiplier,
     const ::executorch::aten::Tensor& out_shift,
     int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& quantized_fully_connected_per_tensor_out(
@@ -38,7 +38,7 @@ namespace native {
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor&
@@ -52,7 +52,7 @@ quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor&
@@ -66,7 +66,7 @@ quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 } // namespace native

@@ -26,23 +26,33 @@ extern "C" {
  *
  * Weight format: [N, K//2] uint8, two INT4 values per byte
  * (low nibble = even k, high nibble = odd k).
- * Scale: [K//group_size, N] bf16 per-group scales (Int4Tensor layout).
- * Zero: [K//group_size, N] bf16 per-group zero points.
- * W4A8 dp4a matvec: dynamically quantizes activations to INT8,
- * then uses dp4a for fused int4×int8 dot products.
+ * Encoding: the per-group scale is a uint8 code with a per-256-super-block fp16
+ * step; the per-group zero is a uint8 code with a per-256-super-block fp16
+ * step. scale      : [N, K//gs]  uint8 — per-group scale codes (coalesced
+ * layout) scale_step : [N, K//256] fp16  — per-256-super-block scale step; the
+ * group scale is decoded as scale_code * scale_step[:, g//(256/gs)]. zero : [N,
+ * K//gs]  uint8 — per-group zero codes (coalesced layout) zero_point_step  :
+ * [N, K//256] fp16  — per-256-super-block zero step; the group zero is decoded
+ * as zero_code * zero_point_step[:, g//(256/gs)]. W4A8 dp4a matvec: dynamically
+ * quantizes activations to INT8, then uses dp4a for fused int4×int8 dot
+ * products.
  *
- * @param self     Input activation [M, K] bf16
- * @param qdata    Packed weights [N, K//2] uint8
- * @param scale    Per-group scales [K//group_size, N] bf16
- * @param zero     Per-group zero points [K//group_size, N] bf16
+ * @param self       Input activation [M, K] bf16
+ * @param qdata      Packed weights [N, K//2] uint8
+ * @param scale      Per-group scale codes [N, K//gs] uint8
+ * @param scale_step Per-256 scale step [N, K//256] fp16
+ * @param zero       Per-group zero codes [N, K//gs] uint8
+ * @param zero_point_step  Per-256 zero step [N, K//256] fp16
  * @param group_size Quantization group size (32, 64, 128)
- * @param ret0     Output [M, N] bf16
+ * @param ret0       Output [M, N] bf16
  */
 AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_int4_plain_mm(
     Tensor* self,
     Tensor* qdata,
     Tensor* scale,
+    Tensor* scale_step,
     Tensor* zero,
+    Tensor* zero_point_step,
     int64_t group_size,
     Tensor** ret0);
 

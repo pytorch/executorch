@@ -163,7 +163,7 @@ def test_select_scatter_u85_INT(test_module: input_t):
 
 
 @common.SkipIfNoModelConverter
-@common.parametrize("test_module", test_data_suite)
+@common.parametrize("test_module", test_data_suite | test_data_suite_bf16)
 def test_select_scatter_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         SelectScatter(),

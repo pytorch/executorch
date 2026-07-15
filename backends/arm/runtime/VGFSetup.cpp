@@ -66,6 +66,7 @@ enum class FormatScalarKind {
   Uint,
   Sint,
   Float,
+  BFloat,
 };
 
 struct FormatInfo {
@@ -157,6 +158,7 @@ static uint32_t get_format_component_count(VkFormat format) {
     case VK_FORMAT_R16_UINT:
     case VK_FORMAT_R16_SINT:
     case VK_FORMAT_R16_SFLOAT:
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
     case VK_FORMAT_R32_UINT:
     case VK_FORMAT_R32_SINT:
     case VK_FORMAT_R32_SFLOAT:
@@ -208,6 +210,9 @@ static bool get_format_info(VkFormat format, FormatInfo* info) {
       return true;
     case VK_FORMAT_R16_SFLOAT:
       *info = FormatInfo{1, 2, FormatScalarKind::Float};
+      return true;
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
+      *info = FormatInfo{1, 2, FormatScalarKind::BFloat};
       return true;
     case VK_FORMAT_R32_UINT:
       *info = FormatInfo{1, 4, FormatScalarKind::Uint};
@@ -776,6 +781,73 @@ static bool find_memory_index(
       memory_requirements.memoryRequirements.memoryTypeBits,
       aims,
       memory_type_out);
+}
+
+bool VgfRepr::map_persistent_io_memory() {
+  unmap_persistent_io_memory();
+
+  for (auto& io : IOs) {
+    if (io.memory == VK_NULL_HANDLE) {
+      ET_LOG(Error, "Cannot persistently map null Vulkan IO memory");
+      unmap_persistent_io_memory();
+      return false;
+    }
+
+    void* persistent_memory = nullptr;
+
+    // IO resources may alias the same VkDeviceMemory. Vulkan memory must not be
+    // mapped more than once at the same time, so map each unique memory once
+    // and share the returned pointer across aliased IO entries.
+    // Make sure that memory is HOST_VISIBLE and HOST_COHERENT.
+    bool found_existing_mapping = false;
+    auto mapped_memory_it = std::find_if(
+        persistent_mapped_memories.begin(),
+        persistent_mapped_memories.end(),
+        [&](const auto& mapped_memory) {
+          return mapped_memory.memory == io.memory;
+        });
+
+    if (mapped_memory_it != persistent_mapped_memories.end()) {
+      persistent_memory = mapped_memory_it->data;
+      found_existing_mapping = true;
+    }
+
+    if (!found_existing_mapping) {
+      VkResult result = vkMapMemory(
+          vk_device, io.memory, 0, VK_WHOLE_SIZE, 0, &persistent_memory);
+      if (result != VK_SUCCESS) {
+        ET_LOG(
+            Error,
+            "Failed to persistently map Vulkan IO memory, error %d",
+            result);
+        unmap_persistent_io_memory();
+        return false;
+      }
+
+      persistent_mapped_memories.push_back(PersistentMappedMemory{
+          .memory = io.memory,
+          .data = persistent_memory,
+      });
+    }
+
+    io.persistent_memory = persistent_memory;
+  }
+
+  return true;
+}
+
+void VgfRepr::unmap_persistent_io_memory() {
+  for (const auto& mapped_memory : persistent_mapped_memories) {
+    if (mapped_memory.memory != VK_NULL_HANDLE &&
+        mapped_memory.data != nullptr) {
+      vkUnmapMemory(vk_device, mapped_memory.memory);
+    }
+  }
+  persistent_mapped_memories.clear();
+
+  for (auto& io : IOs) {
+    io.persistent_memory = nullptr;
+  }
 }
 
 VkResult allocate_memory(
@@ -1839,6 +1911,7 @@ bool VgfRepr::process_vgf(
                  VK_NULL_HANDLE,
                  tensor_memory,
                  {0, 0, 0},
+                 nullptr,
                  owns_memory,
                  true,
                  is_in});
@@ -1931,6 +2004,7 @@ bool VgfRepr::process_vgf(
                  VK_NULL_HANDLE,
                  buffer_memory,
                  {0, 0, 0},
+                 nullptr,
                  owns_memory,
                  true,
                  is_in});
@@ -2117,6 +2191,7 @@ bool VgfRepr::process_vgf(
                  image_memory,
                  staging_memory,
                  image_extent,
+                 nullptr,
                  true,
                  owns_image_memory,
                  is_in});
@@ -2943,23 +3018,59 @@ bool VgfRepr::process_vgf(
         return false;
       }
 
-      for (const auto& bind_point_requirement : bind_point_requirements) {
+      for (auto& bind_point_requirement : bind_point_requirements) {
+        const bool is_transient_bind_point = bind_point_requirement.bindPoint ==
+            VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM;
+
+        bool is_neural_statistics_bind_point = false;
+#ifdef VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_NEURAL_ACCELERATOR_STATISTICS_ARM
+        is_neural_statistics_bind_point = bind_point_requirement.bindPoint ==
+            VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_NEURAL_ACCELERATOR_STATISTICS_ARM;
+#endif
+
+        if (!is_transient_bind_point && !is_neural_statistics_bind_point) {
+          ET_LOG(
+              Error,
+              "Unsupported data-graph session bind point %u",
+              static_cast<uint32_t>(bind_point_requirement.bindPoint));
+          return false;
+        }
+
+        auto mark_neural_statistics_unavailable =
+            [&](const std::string& message) {
+              segment.neural_statistics_bind_point_available = false;
+              segment.neural_statistics_memory = VK_NULL_HANDLE;
+              segment.neural_statistics_memory_size = 0;
+              segment.neural_statistics_memory_host_visible = false;
+              segment.neural_statistics_memory_host_coherent = false;
+              segment.neural_statistics_status = message;
+              ET_LOG(Info, "%s", message.c_str());
+            };
+
         if (bind_point_requirement.bindPointType !=
             VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM) {
+          const std::string message =
+              "Neural accelerator statistics bind point was advertised, but is not a memory bind point";
+          if (is_neural_statistics_bind_point) {
+            mark_neural_statistics_unavailable(message);
+            continue;
+          }
+
           ET_LOG(
               Error,
               "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM");
           return false;
         }
-        if (bind_point_requirement.bindPoint !=
-            VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
-          ET_LOG(
-              Error,
-              "Expected VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM");
-          return false;
-        }
+
         if (bind_point_requirement.numObjects != 1) {
-          ET_LOG(Error, "Expected only one object for the bindpoint");
+          const std::string message =
+              "Neural accelerator statistics bind point was advertised, but numObjects is not 1";
+          if (is_neural_statistics_bind_point) {
+            mark_neural_statistics_unavailable(message);
+            continue;
+          }
+
+          ET_LOG(Error, "Expected exactly one object for bind point");
           return false;
         }
 
@@ -2972,19 +3083,28 @@ bool VgfRepr::process_vgf(
                 .bindPoint = bind_point_requirement.bindPoint,
                 .objectIndex = 0,
             };
+
         VkMemoryRequirements2 memory_requirements = {
             .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
             .pNext = nullptr,
         };
+
         vkGetDataGraphPipelineSessionMemoryRequirementsARM(
             vk_device, &memory_requirements_info, &memory_requirements);
 
         VkMemoryPropertyFlags aims = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
         uint32_t memory_index = 0;
         if (!find_memory_index(
                 vk_physical, memory_requirements, aims, &memory_index)) {
+          if (is_neural_statistics_bind_point) {
+            mark_neural_statistics_unavailable(
+                "Neural accelerator statistics bind point was advertised, but no host-visible coherent memory type is available");
+            continue;
+          }
+
           ET_LOG(
               Error,
               "Failed to find data-graph session memory type for segment %d",
@@ -2999,14 +3119,19 @@ bool VgfRepr::process_vgf(
             .memoryTypeIndex = memory_index,
         };
 
-        VkDeviceMemory memory;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
         result = vkAllocateMemory(
             vk_device, &memory_allocate_info, nullptr, &memory);
         if (result != VK_SUCCESS) {
+          if (is_neural_statistics_bind_point) {
+            mark_neural_statistics_unavailable(
+                "Failed to allocate neural accelerator statistics memory");
+            continue;
+          }
+
           ET_LOG(Error, "Failed to allocate memory for intermediates");
           return false;
         }
-        intermediates.push_back(memory);
 
         VkBindDataGraphPipelineSessionMemoryInfoARM bind_info = {
             .sType =
@@ -3018,11 +3143,41 @@ bool VgfRepr::process_vgf(
             .memory = memory,
             .memoryOffset = 0,
         };
+
         result =
             vkBindDataGraphPipelineSessionMemoryARM(vk_device, 1, &bind_info);
         if (result != VK_SUCCESS) {
+          vkFreeMemory(vk_device, memory, nullptr);
+
+          if (is_neural_statistics_bind_point) {
+            mark_neural_statistics_unavailable(
+                "Failed to bind neural accelerator statistics memory");
+            continue;
+          }
+
           ET_LOG(Error, "Failed to bind intermediates memory");
           return false;
+        }
+
+        intermediates.push_back(memory);
+
+        if (is_neural_statistics_bind_point) {
+          // Only set this true after memory is successfully allocated and
+          // bound.
+          segment.neural_statistics_bind_point_available = true;
+          segment.neural_statistics_memory = memory;
+          segment.neural_statistics_memory_size =
+              memory_requirements.memoryRequirements.size;
+          segment.neural_statistics_memory_host_visible = true;
+          segment.neural_statistics_memory_host_coherent = true;
+          segment.neural_statistics_status.clear();
+
+          ET_LOG(
+              Info,
+              "Bound neural accelerator statistics memory for segment %d, size=%llu",
+              segment.segment_id,
+              static_cast<unsigned long long>(
+                  segment.neural_statistics_memory_size));
         }
       }
     } else {
@@ -3433,6 +3588,15 @@ bool VgfRepr::process_vgf(
     vkEndCommandBuffer(vk_execute_cmd);
   }
 
+  {
+    VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_MAP_IO_MEMORY");
+
+    if (!map_persistent_io_memory()) {
+      ET_LOG(Error, "Failed to persistently map VGF IO memory");
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -3492,7 +3656,40 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
   return true;
 }
 
+std::vector<VgfNeuralStatisticsSegmentContext>
+VgfRepr::get_neural_statistics_segment_contexts() const {
+  std::vector<VgfNeuralStatisticsSegmentContext> contexts;
+  contexts.reserve(segments.size());
+
+  for (const auto& segment : segments) {
+    contexts.push_back(VgfNeuralStatisticsSegmentContext{
+        .segment_id = segment.segment_id,
+        .is_data_graph_pipeline = segment.use_data_graph_pipeline,
+        .pipeline = segment.vk_pipeline,
+        .session = segment.vk_session,
+        .statistics_bind_point_available =
+            segment.neural_statistics_bind_point_available,
+        .statistics_memory = segment.neural_statistics_memory,
+        .statistics_memory_size = segment.neural_statistics_memory_size,
+        .statistics_memory_host_visible =
+            segment.neural_statistics_memory_host_visible,
+        .statistics_memory_host_coherent =
+            segment.neural_statistics_memory_host_coherent,
+        .statistics_bind_point_reason = segment.neural_statistics_status,
+    });
+  }
+
+  return contexts;
+}
+
+std::string VgfRepr::collect_neural_statistics_metadata() const {
+  return collect_vgf_neural_statistics_metadata(
+      vk_device, get_neural_statistics_segment_contexts());
+}
+
 void VgfRepr::free_vgf() {
+  unmap_persistent_io_memory();
+
   if (vk_timestamp_query_pool != VK_NULL_HANDLE) {
     vkDestroyQueryPool(vk_device, vk_timestamp_query_pool, nullptr);
     vk_timestamp_query_pool = VK_NULL_HANDLE;
@@ -3615,6 +3812,7 @@ static uint32_t get_format_size(VkFormat format) {
     case VK_FORMAT_R16_UINT:
     case VK_FORMAT_R16_SINT:
     case VK_FORMAT_R16_SFLOAT:
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
     case VK_FORMAT_R8G8_UINT:
     case VK_FORMAT_R8G8_SINT:
       return 2;

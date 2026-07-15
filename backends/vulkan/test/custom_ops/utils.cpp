@@ -1366,6 +1366,10 @@ ComputeGraph setup_compute_graph(
     int op_invocations_per_execute) {
   GraphConfig config;
   config.enable_querypool = true;
+  // Default-on (opt-out via TestCase::set_force_resize(false)): force every
+  // DynamicDispatchNode to run its resize function on each execute(),
+  // exercising the op's resize formula even when input shapes are unchanged.
+  config.force_resize = test_case.get_force_resize();
   ComputeGraph graph(config);
 
   std::vector<ValueRef> input_values;

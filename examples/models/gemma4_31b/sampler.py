@@ -26,9 +26,12 @@ def sample(
             temperature still works ("near-greedy").
 
     Returns:
-        ``[B, 1]`` float32 token IDs (``argmax(logits/T + gumbel_noise)``).
+        ``[B, 1]`` int64 token IDs (``argmax(logits/T + gumbel_noise)``).
+        Emitting int64 (rather than casting to float) lets the runner alias the
+        on-device output token directly as the next decode step's int64 token
+        input — no D2H/H2D round-trip and no dtype cast.
     """
     logits = logits / temperature.clamp(min=1e-6)
     noise = torch.rand_like(logits)
     gumbel = -torch.log(-torch.log(noise + 1e-20) + 1e-20)
-    return (logits + gumbel).argmax(dim=-1, keepdim=True).float()
+    return (logits + gumbel).argmax(dim=-1, keepdim=True).to(torch.int64)

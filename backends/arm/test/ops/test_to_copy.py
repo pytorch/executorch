@@ -20,6 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
+input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
 class Cast(torch.nn.Module):
@@ -38,6 +39,40 @@ class CastAdd(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         return x.to(dtype=self.target_dtype) + x.to(dtype=self.target_dtype)
+
+
+class CastAddTensor(torch.nn.Module):
+    def __init__(self, target_dtype):
+        super().__init__()
+        self.target_dtype = target_dtype
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return x.to(dtype=self.target_dtype) + y
+
+
+class AddModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return x + y
+
+
+class CastToAddModule(torch.nn.Module):
+    def __init__(self, target_dtype):
+        super().__init__()
+        self.target_dtype = target_dtype
+        self.add = AddModule()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return self.add(x.to(dtype=self.target_dtype), y)
+
+
+class CastCatTensor(torch.nn.Module):
+    def __init__(self, target_dtype, dim: int):
+        super().__init__()
+        self.target_dtype = target_dtype
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return torch.cat((x.to(dtype=self.target_dtype), y), dim=self.dim)
 
 
 """
@@ -66,6 +101,17 @@ _TO_COPY_TEST_DATA_FP = {
     "rand_int32": lambda: (
         torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
         torch.int8,
+    ),
+}
+
+_TO_COPY_TEST_DATA_VGF_BF16 = {
+    "rand_fp32_bf16": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.bfloat16,
+    ),
+    "rand_bf16_fp32": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.bfloat16),
+        torch.float32,
     ),
 }
 
@@ -240,7 +286,7 @@ def test_to_tosa_FP_bf16_fp8_with_extensions(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP)
+@common.parametrize("test_data", _TO_COPY_TEST_DATA_FP | _TO_COPY_TEST_DATA_VGF_BF16)
 @common.SkipIfNoModelConverter
 def test_to_vgf_no_quant(test_data: Tuple):
     test_tensor, new_dtype = test_data()
@@ -262,18 +308,6 @@ exir_ops.edge.dim_order_ops._to_dim_order_copy.default. We should reject this op
 in ToCopySupported::is_node_tosa_supported() before it goes into the delegated graph.
 """
 _TO_COPY_TEST_DATA_INT = {
-    "rand_int8_fp32": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int8),
-        torch.float32,
-    ),
-    "rand_int16_fp32": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int16),
-        torch.float32,
-    ),
-    "rand_int32_fp32": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
-        torch.float32,
-    ),
     "rand_int32_fp16": lambda: (
         torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
         torch.float16,
@@ -296,6 +330,135 @@ def test_to_tosa_INT_not_delegated(test_data: Tuple):
             "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
         },
         quantize=True,
+    )
+    pipeline.run()
+
+
+_TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_DATA = {
+    "int8_to_fp32_add": lambda: (
+        (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int8),
+        torch.randn(1, 3, 4, 4),
+        torch.float32,
+    ),
+    "int16_to_fp32_add": lambda: (
+        (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int16),
+        torch.randn(1, 3, 4, 4),
+        torch.float32,
+    ),
+    "int32_to_fp32_add": lambda: (
+        (torch.randn(1, 3, 4, 4) * 10).to(dtype=torch.int32),
+        torch.randn(1, 3, 4, 4),
+        torch.float32,
+    ),
+}
+
+
+_TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_CAT_DATA = {
+    "int8_to_fp32_cat": lambda: (
+        (torch.randn(1, 2, 4, 4) * 10).to(dtype=torch.int8),
+        torch.randn(1, 2, 4, 1),
+        torch.float32,
+        3,
+    ),
+    "int16_to_fp32_cat": lambda: (
+        (torch.randn(1, 2, 4, 4) * 10).to(dtype=torch.int16),
+        torch.randn(1, 2, 4, 1),
+        torch.float32,
+        3,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_DATA)
+def test_to_tosa_INT_quantized_int_to_float_cast_add(test_data: Tuple):
+    x, y, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t2](
+        CastAddTensor(new_dtype),
+        (x, y),
+        aten_op=["torch.ops.aten.add.Tensor"],
+        exir_op=["executorch_exir_dialects_edge__ops_aten_add_Tensor"],
+        qtol=1,
+    )
+    pipeline.change_args(
+        "check_count.exir",
+        {
+            "torch.ops.higher_order.executorch_call_delegate": 1,
+        },
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_CAT_DATA)
+def test_to_tosa_INT_quantized_int_to_float_cast_cat(test_data: Tuple):
+    x, y, new_dtype, dim = test_data()
+    pipeline = TosaPipelineINT[input_t2](
+        CastCatTensor(new_dtype, dim),
+        (x, y),
+        aten_op=["torch.ops.aten.cat.default"],
+        exir_op=["executorch_exir_dialects_edge__ops_aten_cat_default"],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", _TO_COPY_QUANTIZED_INT_TO_FLOAT_CAST_DATA)
+def test_to_tosa_INT_quantized_int_to_float_cast_to_unquantized_add_delegated(
+    test_data: Tuple,
+):
+    x, y, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t2](
+        CastToAddModule(new_dtype),
+        (x, y),
+        aten_op=["torch.ops.aten.add.Tensor"],
+        exir_op=["executorch_exir_dialects_edge__ops_aten_add_Tensor"],
+    )
+    pipeline.quantizer.set_module_name("add", None)
+    pipeline.pop_stage("check_not.exir")
+    pipeline.change_args(
+        "check_count.exir",
+        {
+            "torch.ops.higher_order.executorch_call_delegate": 1,
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 0,
+        },
+    )
+    pipeline.run()
+
+
+_TO_COPY_INT_TO_INT_CAST_DATA = {
+    "int8_to_int16": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int8),
+        torch.int16,
+    ),
+    "int8_to_int32": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int8),
+        torch.int32,
+    ),
+    "int16_to_int8": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int16),
+        torch.int8,
+    ),
+    "int16_to_int32": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int16),
+        torch.int32,
+    ),
+    "int32_to_int8": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
+        torch.int8,
+    ),
+    "int32_to_int16": lambda: (
+        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int32),
+        torch.int16,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_INT_TO_INT_CAST_DATA)
+def test_to_tosa_INT_int_to_int_cast(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
     )
     pipeline.run()
 
@@ -339,6 +502,25 @@ redundant_xfails_INT = redundant_xfails_FP | {
     "rand_fp16_fp16": "FP16 is not supported",
 }
 
+_TO_COPY_FLOAT_IDENTITY_CAST_DATA = {
+    "fp32_to_fp32": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.float32,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_FLOAT_IDENTITY_CAST_DATA)
+def test_to_tosa_INT_float_to_same_dtype_cast(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        CastAdd(new_dtype),
+        (test_tensor,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
+
 
 @common.parametrize(
     "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_FP
@@ -377,6 +559,36 @@ def test_to_tosa_INT_not_delegated_REDUNDANT_CAST(test_data: Tuple):
         Cast(new_dtype),
         (test_tensor,),
         non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
+    )
+    pipeline.run()
+
+
+_TO_COPY_UNSUPPORTED_QUANTIZED_CAST_DATA = {
+    "fp32_to_fp16": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.float16,
+    ),
+    "fp32_to_int32": lambda: (
+        torch.rand((1, 2, 3, 4), dtype=torch.float32),
+        torch.int32,
+    ),
+    "bool_to_fp32": lambda: (
+        torch.randint(0, 2, (1, 2, 3, 4), dtype=torch.bool),
+        torch.float32,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_UNSUPPORTED_QUANTIZED_CAST_DATA)
+def test_to_tosa_INT_unsupported_cast_not_delegated(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        {
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1
+        },
+        quantize=True,
     )
     pipeline.run()
 

@@ -16,6 +16,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
@@ -26,6 +27,7 @@ from torch.fx import Node
 from torch.nn import Parameter
 
 
+@requires_channels_first_format
 class AvgPool2dConverter(NodeConverter):
 
     @staticmethod

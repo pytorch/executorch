@@ -17,7 +17,8 @@ import os  # nosec B404 - used alongside subprocess for tool invocation
 import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
-from typing import final, List
+from dataclasses import dataclass
+from typing import Any, final, List
 
 from executorch.backends.arm._passes import RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
@@ -38,7 +39,7 @@ from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-no
 )
 from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
     model_converter_env,
-    require_model_converter_binary,
+    require_model_converter_executable,
 )
 from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
     BackendDetails,
@@ -51,6 +52,95 @@ from torch.export.exported_program import ExportedProgram
 
 # debug functionality
 logger = logging.getLogger(__name__)
+
+STATUS_OK = "PASS"
+STATUS_FAIL = "FAIL"
+VGF_BACKEND_NAME = "VgfBackend"
+
+
+@dataclass(frozen=True)
+class VgfRuntimeEnvironmentCheck:
+    """One VGF runtime backend environment preflight result.
+
+    This lives next to the Python VGF backend name and backend implementation,
+    while importing the actual ExecuTorch runtime lazily so AoT import behavior
+    remains unchanged.
+
+    """
+
+    name: str
+    status: str
+    detail: str
+    action: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Return True when the check did not fail."""
+        return self.status != STATUS_FAIL
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Return the check as a JSON-serializable dictionary."""
+        return {
+            "name": self.name,
+            "status": self.status,
+            "detail": self.detail,
+            "action": self.action,
+        }
+
+
+def _load_runtime() -> Any:
+    from executorch.runtime import Runtime
+
+    return Runtime.get()
+
+
+def check_vgf_runtime_backend_environment() -> VgfRuntimeEnvironmentCheck:
+    """Check whether the installed runtime exposes the VGF backend."""
+    try:
+        runtime = _load_runtime()
+    except Exception as exc:
+        return VgfRuntimeEnvironmentCheck(
+            "VGF runtime backend",
+            STATUS_FAIL,
+            f"Could not initialize executorch.runtime.Runtime: {exc}",
+            "Install or rebuild ExecuTorch with runtime pybindings. For source "
+            "builds, enable the VGF runtime backend and reinstall the package.",
+        )
+
+    try:
+        registered_backend_names = list(
+            runtime.backend_registry.registered_backend_names
+        )
+        is_available = runtime.backend_registry.is_available(
+            backend_name=VGF_BACKEND_NAME
+        )
+    except Exception as exc:
+        return VgfRuntimeEnvironmentCheck(
+            "VGF runtime backend",
+            STATUS_FAIL,
+            f"Runtime backend registry query failed: {exc}",
+            "Reinstall or rebuild ExecuTorch with backend registry pybindings.",
+        )
+
+    if is_available:
+        return VgfRuntimeEnvironmentCheck(
+            "VGF runtime backend",
+            STATUS_OK,
+            f"{VGF_BACKEND_NAME} is available in the runtime backend registry.",
+        )
+
+    rendered = ", ".join(registered_backend_names[:20])
+    if len(registered_backend_names) > 20:
+        rendered += ", ..."
+
+    return VgfRuntimeEnvironmentCheck(
+        "VGF runtime backend",
+        STATUS_FAIL,
+        f"{VGF_BACKEND_NAME} is not available. Registered backends: "
+        f"{rendered or '<none>'}.",
+        "Use a runtime build/package that includes the VGF backend. For source "
+        "builds, configure with -DEXECUTORCH_BUILD_VGF=ON and reinstall.",
+    )
 
 
 def _register_grid_sampler_rewrite_pass() -> None:
@@ -191,7 +281,7 @@ def vgf_compile(
             f.write(tosa_flatbuffer)
 
         compile_flags = [f for f in compile_flags if f and f.strip()]
-        converter_binary = require_model_converter_binary()
+        converter_binary = str(require_model_converter_executable())
         vgf_path = tosa_path + ".vgf"
         conversion_command = [
             converter_binary,

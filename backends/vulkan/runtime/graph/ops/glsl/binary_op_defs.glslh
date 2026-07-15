@@ -19,38 +19,44 @@
 // - Uses standard pow() for x > 0
 //
 
+// Operands are evaluated in the promoted compute type COMPUTE_T (and its vector
+// form COMPUTE_VEC4_T), which the including shader sets from
+// get_higher_precision_dtype(DTYPE, SCALAR_VALUE_TYPE) so mixed tensor/scalar
+// dtype combinations compute without loss before narrowing back to the output
+// dtype.
+
 // Scalar overload
-T power_of(T x, T y) {
+COMPUTE_T power_of(COMPUTE_T x, COMPUTE_T y) {
   if (x == 0.0) {
     // Handle 0^y: 0^0 = 1, 0^y = 0 for y > 0
-    return (y == 0.0) ? T(1.0) : T(0.0);
+    return (y == 0.0) ? COMPUTE_T(1.0) : COMPUTE_T(0.0);
   }
 
   // Use absolute value to avoid undefined behavior
-  float result = pow(abs(x), y);
+  float result = pow(abs(float(x)), float(y));
 
   // For negative bases with odd integer exponents, preserve the negative sign
   if (x < 0.0) {
-    float int_y = round(y);
-    if (abs(y - int_y) < 1e-5 && int(int_y) % 2 == 1) {
+    float int_y = round(float(y));
+    if (abs(float(y) - int_y) < 1e-5 && int(int_y) % 2 == 1) {
       result = -result;
     }
   }
 
-  return T(result);
+  return COMPUTE_T(result);
 }
 
-#ifdef VEC4_T
+#ifdef COMPUTE_VEC4_T
 
 // Vector overload
-VEC4_T power_of(VEC4_T x, VEC4_T y) {
-  VEC4_T result;
+COMPUTE_VEC4_T power_of(COMPUTE_VEC4_T x, COMPUTE_VEC4_T y) {
+  COMPUTE_VEC4_T result;
   for (int i = 0; i < 4; i++) {
     result[i] = power_of(x[i], y[i]);
   }
   return result;
 }
 
-#endif // VEC4_T
+#endif // COMPUTE_VEC4_T
 
 #endif // BINARY_OP_DEFS_GLSLH

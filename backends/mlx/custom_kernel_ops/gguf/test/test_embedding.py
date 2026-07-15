@@ -6,13 +6,13 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Tests for the GGUF Q6_K embedding lowering.
+Tests for the GGUF Q4_K / Q5_K / Q6_K embedding lowering.
 
 An ``nn.Embedding`` whose weight is an ``ExportableGGUFTensor`` exports to
-``embedding(torchao::dequantize_gguf(weight, "q6_k", ...), indices)``. The MLX
-``GGUF_QUANTIZED_EMBEDDING`` pattern matches that subgraph and lowers it to the
-fused Q6_K gather Metal kernel. These tests compare the kernel against the eager
-reference (``gguf``-package dequant + ``F.embedding``) on the same packed table.
+``embedding(torchao::dequantize_gguf(weight, ggml_type, ...), indices)``. The MLX
+``GGUF_QUANTIZED_EMBEDDING`` pattern matches that subgraph and lowers it to fused
+gather Metal kernels. These tests compare the kernel against the eager reference
+(``gguf``-package dequant + ``F.embedding``) on the same packed table.
 
 Usage::
 
@@ -27,18 +27,26 @@ import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.backends.mlx.custom_kernel_ops.gguf.test.test_linear import (
-    make_q6_k_blob,
+    _BLOB_MAKERS,
+    _emit_direct_gguf_env,
+    _mlx_native_dequant,
+    _q4k_mlx_native_dequant,
 )
 from executorch.backends.mlx.test.test_utils import OpTestCase
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
 
-def _make_gguf_embedding_model(vocab: int, K: int, seed: int = 0) -> nn.Module:
-    """An ``nn.Embedding`` whose weight is a Q6_K ``ExportableGGUFTensor``."""
+def _make_gguf_embedding_model(
+    vocab: int,
+    K: int,
+    ggml_type: str = "q6_k",
+    seed: int = 0,
+    uniform: bool = False,
+) -> nn.Module:
     emb = nn.Embedding(vocab, K)
-    blob = make_q6_k_blob(vocab, K, seed=seed)
+    blob = _BLOB_MAKERS[ggml_type](vocab, K, seed=seed, uniform=uniform)
     emb.weight = nn.Parameter(
-        ExportableGGUFTensor.from_raw(blob, "q6_k", torch.bfloat16),
+        ExportableGGUFTensor.from_raw(blob, ggml_type, torch.bfloat16),
         requires_grad=False,
     )
     return emb
@@ -56,12 +64,23 @@ class GGUFEmbeddingTest(OpTestCase):
         vocab: int = 512,
         K: int = 256,
         idx_shape: Tuple[int, ...] = (8,),
+        ggml_type: str = "q6_k",
+        emit_direct_gguf: bool = True,
+        uniform: bool = False,
     ):
         self.vocab = vocab
         self.K = K
         self.idx_shape = idx_shape
+        self.ggml_type = ggml_type
+        self.emit_direct_gguf = emit_direct_gguf
+        self.uniform = uniform
         shp = "x".join(str(d) for d in idx_shape)
-        self.name = f"gguf_embedding_v{vocab}_k{K}_idx{shp}"
+        tag = f"gguf_embedding_{ggml_type}_v{vocab}_k{K}_idx{shp}"
+        if not emit_direct_gguf:
+            tag += "_mlx_native"
+        if uniform:
+            tag += "_merged"
+        self.name = tag
 
     @classmethod
     def get_test_configs(cls) -> List["GGUFEmbeddingTest"]:
@@ -77,7 +96,79 @@ class GGUFEmbeddingTest(OpTestCase):
             # kept small so the packed weight fits CI-runner GPU buffer limits; the
             # gather + per-row dequant path is identical regardless of vocab.
             cls(vocab=2048, K=5376, idx_shape=(8,)),
+            cls(vocab=512, K=256, idx_shape=(8,), ggml_type="q4_k"),
+            cls(vocab=512, K=512, idx_shape=(8,), ggml_type="q4_k"),
+            cls(vocab=512, K=256, idx_shape=(2, 3), ggml_type="q4_k"),
+            cls(vocab=2048, K=5376, idx_shape=(8,), ggml_type="q4_k"),
+            cls(
+                vocab=512,
+                K=256,
+                idx_shape=(8,),
+                ggml_type="q4_k",
+                emit_direct_gguf=False,
+            ),
+            # Q5_K: fused gather. Single / batched / multi-dim indices, a
+            # non-tile-aligned vocab, and a production embed width.
+            cls(vocab=512, K=256, idx_shape=(1,), ggml_type="q5_k"),
+            cls(vocab=512, K=256, idx_shape=(8,), ggml_type="q5_k"),
+            cls(vocab=512, K=1024, idx_shape=(4,), ggml_type="q5_k"),
+            cls(vocab=300, K=256, idx_shape=(16,), ggml_type="q5_k"),
+            cls(vocab=512, K=256, idx_shape=(2, 3), ggml_type="q5_k"),
+            cls(vocab=2048, K=5376, idx_shape=(8,), ggml_type="q5_k"),
+            # Q5_K MLX-native gather (bits=5 affine dequantize).
+            cls(
+                vocab=512,
+                K=256,
+                idx_shape=(8,),
+                ggml_type="q5_k",
+                emit_direct_gguf=False,
+            ),
+            cls(
+                vocab=512,
+                K=256,
+                idx_shape=(2, 3),
+                ggml_type="q5_k",
+                emit_direct_gguf=False,
+            ),
+            # Group-size upgrade: uniform sub-blocks merge to a larger group
+            # size, so the gather runs at gs>32 (and q6_k's native path fires).
+            cls(
+                vocab=512,
+                K=512,
+                idx_shape=(8,),
+                ggml_type="q4_k",
+                emit_direct_gguf=False,
+                uniform=True,
+            ),
+            cls(
+                vocab=512,
+                K=512,
+                idx_shape=(8,),
+                ggml_type="q5_k",
+                emit_direct_gguf=False,
+                uniform=True,
+            ),
+            cls(
+                vocab=512,
+                K=512,
+                idx_shape=(8,),
+                ggml_type="q6_k",
+                emit_direct_gguf=False,
+                uniform=True,
+            ),
+            cls(
+                vocab=512,
+                K=512,
+                idx_shape=(2, 3),
+                ggml_type="q6_k",
+                emit_direct_gguf=False,
+                uniform=True,
+            ),
         ]
+
+    def generate_test_files(self, verbose: bool = False):
+        with _emit_direct_gguf_env(self.emit_direct_gguf):
+            return super().generate_test_files(verbose=verbose)
 
     def get_edge_compile_config(self):
         from executorch.exir import EdgeCompileConfig
@@ -86,12 +177,34 @@ class GGUFEmbeddingTest(OpTestCase):
         return EdgeCompileConfig(_check_ir_validity=False)
 
     def create_model(self) -> nn.Module:
-        return _make_gguf_embedding_model(self.vocab, self.K)
+        return _make_gguf_embedding_model(
+            self.vocab, self.K, self.ggml_type, uniform=self.uniform
+        )
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         torch.manual_seed(0)
         indices = torch.randint(0, self.vocab, self.idx_shape, dtype=torch.int64)
         return (indices,)
+
+    def _native_fires(self) -> bool:
+        # MLX-native gather runs when direct emission is off and the weight
+        # merges to an MLX group size: q4_k/q5_k always (native 32); q6_k
+        # (native 16) only when merging reaches >= 32 (uniform fixtures).
+        if self.emit_direct_gguf:
+            return False
+        if self.ggml_type in ("q4_k", "q5_k"):
+            return True
+        return self.uniform
+
+    def compute_expected_outputs(self, model, test_inputs):
+        if self._native_fires():
+            if model.weight.ggml_type == "q4_k":
+                weight = _q4k_mlx_native_dequant(model.weight)
+            else:
+                weight = _mlx_native_dequant(model.weight)
+            out = torch.nn.functional.embedding(test_inputs[0], weight)
+            return [out.to(model.weight.orig_dtype)]
+        return model(*test_inputs)
 
 
 def _main() -> None:  # noqa: C901
@@ -100,7 +213,9 @@ def _main() -> None:  # noqa: C901
 
     from executorch.backends.mlx.test.test_utils import rebuild_op_test_runner
 
-    parser = argparse.ArgumentParser(description="Test GGUF Q6_K embedding lowering")
+    parser = argparse.ArgumentParser(
+        description="Test GGUF Q4_K / Q5_K / Q6_K embedding lowering"
+    )
     parser.add_argument("action", choices=["generate", "compare", "run", "list"])
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--rebuild", action="store_true")

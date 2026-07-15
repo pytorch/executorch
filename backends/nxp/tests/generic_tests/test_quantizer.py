@@ -432,7 +432,7 @@ def test_quantizer__linear_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 
@@ -477,7 +477,7 @@ def test_quantizer__addmm_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 
@@ -522,7 +522,7 @@ def test_quantizer__mm_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 
@@ -567,7 +567,7 @@ def test_quantizer__conv_w_activation(mocker, activation, inplace, use_qat):
     )
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
     exir_program_aten_quant: GraphModule = quantizer_spy.spy_return
 

@@ -9,7 +9,6 @@ from executorch.backends.nxp.backend.graph_utils import (
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
     Partition,
 )
@@ -52,9 +51,7 @@ class ReLUConverter(NodeConverter):
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
-        is_alone_in_partition = cls.is_node_alone_in_partition(
-            node, partition_list, filter_fn=is_not_qdq_node
-        )
+        is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
         if is_alone_in_partition:
             return is_clamp_preserved_under_quantization(node)
 

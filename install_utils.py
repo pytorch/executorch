@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import functools
+import os
 import platform
 import re
 import subprocess
@@ -16,9 +17,8 @@ from typing import List, Optional
 # Format: tuple of (major, minor) version numbers
 SUPPORTED_CUDA_VERSIONS = (
     (12, 6),
-    (12, 8),
-    (12, 9),
     (13, 0),
+    (13, 2),
 )
 
 
@@ -54,6 +54,45 @@ def is_cuda_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def is_vulkan_available() -> bool:
+    """
+    Check if the Vulkan shader compiler (glslc) is available on the system.
+
+    glslc is the only build-time dependency for the Vulkan backend; the Vulkan
+    loader itself is dlopen()ed at runtime via volk. Restricted to Linux and
+    Windows, the desktop GPU platforms the backend supports (macOS would require
+    MoltenVK).
+
+    glslc is looked up on PATH and, failing that, under $VULKAN_SDK/{bin,Bin} to
+    match the find_program() HINTS the build uses (see pybind.cmake and
+    ShaderLibrary.cmake): the Windows Vulkan SDK sets VULKAN_SDK but does not add
+    its bin directory to PATH, so a PATH-only probe would miss it there.
+
+    Returns:
+        True if glslc is available on a supported platform, False otherwise.
+    """
+    if sys.platform not in ("linux", "win32"):
+        return False
+    candidates = ["glslc"]
+    vulkan_sdk = os.environ.get("VULKAN_SDK")
+    if vulkan_sdk:
+        glslc_name = "glslc.exe" if sys.platform == "win32" else "glslc"
+        candidates += [
+            os.path.join(vulkan_sdk, "bin", glslc_name),
+            os.path.join(vulkan_sdk, "Bin", glslc_name),
+        ]
+    for glslc in candidates:
+        try:
+            # Only the exit status matters, so skip text=True; keep the except
+            # tight to avoid masking things like UnicodeDecodeError.
+            subprocess.run([glslc, "--version"], capture_output=True, check=True)
+            return True
+        except (OSError, subprocess.SubprocessError):
+            # glslc missing or not runnable -> unavailable; try the next candidate.
+            continue
+    return False
 
 
 @functools.lru_cache(maxsize=1)

@@ -9,6 +9,26 @@ from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 _VALID_NAN_MODES = {"PROPAGATE", "IGNORE"}
 
 
+def broadcast_shape(
+    input1: torch.Tensor, input2: torch.Tensor, op: str
+) -> tuple[int | torch.SymInt, ...]:
+    try:
+        return tuple(torch.broadcast_shapes(input1.shape, input2.shape))
+    except (RuntimeError, ValueError) as err:
+        raise TosaValueError(
+            f"Failed to broadcast shapes {tuple(input1.shape)} and {tuple(input2.shape)}",
+            op=op,
+        ) from err
+
+
+def require_same_dtype(input1: torch.Tensor, input2: torch.Tensor, op: str) -> None:
+    if input1.dtype != input2.dtype:
+        raise TosaValueError(
+            f"Expected matching dtypes but got {input1.dtype} and {input2.dtype}",
+            op=op,
+        )
+
+
 def validate_nan_mode(nan_mode: str, op: str) -> None:
     if nan_mode not in _VALID_NAN_MODES:
         raise TosaValueError(

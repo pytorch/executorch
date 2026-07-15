@@ -25,6 +25,9 @@ namespace backends {
 namespace xnnpack {
 namespace delegate {
 
+// Forward-declared to keep XNNWeightsCache.h out of this header.
+class XNNWeightsCache;
+
 class XNNExecutor {
  private:
   std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime_{
@@ -37,6 +40,10 @@ class XNNExecutor {
   std::vector<xnn_external_value> externals_;
   std::vector<std::string> packed_data_names_;
   std::shared_ptr<XNNWorkspace> workspace_;
+  // Owned so the cache outlives delete_packed_data in destroy(),
+  // even when every other executor sharing it is gone. Empty when no
+  // file-backed cache is in use.
+  std::shared_ptr<XNNWeightsCache> weights_cache_;
   std::atomic<bool> in_use_{false};
   std::atomic<bool> destroyed_{false};
 
@@ -69,6 +76,20 @@ class XNNExecutor {
 
   inline std::shared_ptr<XNNWorkspace> get_workspace() {
     return workspace_;
+  }
+
+  // Set once by XNNPACKBackend::init after compileModel succeeds. Pass
+  // an empty shared_ptr if no file-backed cache is in use for this PTE
+  // (treated identically to never calling this).
+  inline void set_weights_cache(std::shared_ptr<XNNWeightsCache> cache) {
+    weights_cache_ = std::move(cache);
+  }
+
+  // Returns the per-PTE weights cache shared_ptr (may be empty). Used
+  // by XNNPACKBackend::execute to lock the cache's mutex around runtime
+  // invocation, and by destroy() to invoke delete_packed_data.
+  inline std::shared_ptr<XNNWeightsCache> get_weights_cache() const {
+    return weights_cache_;
   }
 
   /**

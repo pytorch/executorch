@@ -392,7 +392,7 @@ cases = {
     "grouped_conv": TransposeCountCase(
         GroupedConvModule(),
         (torch.randn(1, 4, 8, 8),),
-        4,
+        2,
     ),
     "transpose_conv": TransposeCountCase(
         TransposeConvModule(),
@@ -408,12 +408,12 @@ cases = {
     "maxpool2d_dilation": TransposeCountCase(
         MaxPool2dDilatedModule(),
         (torch.randn(1, 2, 8, 8),),
-        4,
+        2,
     ),
     "lstm": TransposeCountCase(
         LstmModule(),
         (torch.randn(2, 4, 8),),
-        2,
+        1,
     ),
     "groupnorm": TransposeCountCase(
         GroupNormModule(),
@@ -428,7 +428,7 @@ cases = {
     "multihead_attention_rank3": TransposeCountCase(
         MultiheadAttentionModule(),
         (torch.randn(2, 4, 8),),
-        8,
+        6,
     ),
     "cumsum_rank3_dim0": TransposeCountCase(
         CumsumModule(),
@@ -441,31 +441,31 @@ cases = {
         0,
     ),
     "model_1_conv_maxpool_residual_linear": TransposeCountCase(
-        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 5
+        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 1
     ),
     "model_2_conv_mha_linear_layernorm": TransposeCountCase(
-        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 9
+        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 7
     ),
     "model_3_lstm_linear": TransposeCountCase(
-        Model3LstmLinear(), (torch.randn(2, 16, 8),), 2
+        Model3LstmLinear(), (torch.randn(2, 16, 8),), 1
     ),
     "model_4_conv_lstm_linear_layernorm": TransposeCountCase(
-        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 3
+        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 2
     ),
     "model_5_dwconv_gelu_layernorm_avgpool": TransposeCountCase(
-        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 4
+        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 2
     ),
     "model_6_gru_linear": TransposeCountCase(
-        Model6GruLinear(), (torch.randn(2, 16, 8),), 2
+        Model6GruLinear(), (torch.randn(2, 16, 8),), 1
     ),
     "model_7_dwconv_batchnorm_linear": TransposeCountCase(
         Model7DwConvBatchNormLinear(), (torch.randn(2, 8, 64),), 1
     ),
     "model_8_conv_batchnorm_maxpool_residual": TransposeCountCase(
-        Model8ConvBatchNormMaxPoolResidual(), (torch.randn(1, 8, 16, 16),), 4
+        Model8ConvBatchNormMaxPoolResidual(), (torch.randn(1, 8, 16, 16),), 2
     ),
     "model_9_dilated_conv_batchnorm_avgpool_residual": TransposeCountCase(
-        Model9DilatedConvBatchNormAvgPoolResidual(), (torch.randn(1, 8, 16, 16),), 4
+        Model9DilatedConvBatchNormAvgPoolResidual(), (torch.randn(1, 8, 16, 16),), 2
     ),
     "model_10_dwconv_batchnorm_linear_cat": TransposeCountCase(
         Model10DwConvBatchNormLinearCat(), (torch.randn(2, 8, 64),), 1
@@ -495,7 +495,7 @@ cases_channels_last = {
     "conv3d_rank5_channels_last": TransposeCountCase(
         Conv3dModule(),
         (torch.randn(1, 2, 6, 6, 6).to(memory_format=torch.channels_last_3d),),
-        3,
+        1,
     ),
     "linear_rank4_channels_last": TransposeCountCase(
         LinearModule(),
@@ -513,7 +513,7 @@ cases_channels_last = {
     "pixel_shuffle_channels_last": TransposeCountCase(
         PixelShuffleModule(),
         (torch.randn(1, 8, 2, 2).to(memory_format=torch.channels_last),),
-        3,
+        1,
     ),
     "grouped_conv_channels_last": TransposeCountCase(
         GroupedConvModule(),
@@ -538,7 +538,7 @@ cases_channels_last = {
     "maxpool2d_dilation_channels_last": TransposeCountCase(
         MaxPool2dDilatedModule(),
         (torch.randn(1, 2, 8, 8).to(memory_format=torch.channels_last),),
-        6,
+        3,
     ),
     "groupnorm_channels_last": TransposeCountCase(
         GroupNormModule(),

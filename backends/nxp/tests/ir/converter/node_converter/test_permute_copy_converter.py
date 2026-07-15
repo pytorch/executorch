@@ -77,7 +77,13 @@ class PermuteMaxPoolPermuteModule(torch.nn.Module):
 class TestPermuteCopy:
     # noinspection PyMethodMayBeStatic
     def assert_delegated(
-        self, model, input_shape, mocker, expected_delegated_ops=None, use_qat=False
+        self,
+        model,
+        input_shape,
+        mocker,
+        request,
+        expected_delegated_ops=None,
+        use_qat=False,
     ):
         graph_verifier = DetailedGraphVerifier(
             mocker,
@@ -89,6 +95,7 @@ class TestPermuteCopy:
             model,
             input_shape,
             graph_verifier,
+            request,
             use_qat=use_qat,
         )
 
@@ -115,18 +122,18 @@ class TestPermuteCopy:
             pytest.param((3, 2, 1, 0), id="reverse"),
         ]
 
-    def test__qat(self, mocker, use_qat):
+    def test__qat(self, mocker, request, use_qat):
         input_shape = (2, 3, 5, 7)
         permutation = (0, 2, 3, 1)  # NCHW -> NHWC
         model = PermuteModule(permutation)
-        self.assert_delegated(model, input_shape, mocker, use_qat=use_qat)
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
     @pytest.mark.parametrize(
         "permutation",
         _all_permutations_for_rank(3),
         ids=lambda perm: f"permutation = {perm}",
     )
-    def test__all_permutations__3d(self, mocker, permutation: tuple[int]):
+    def test__all_permutations__3d(self, mocker, request, permutation: tuple[int]):
         # Avoid dimensions of size 1 and multiples of `num_macs` for a thorough test.
         input_shape = (2, 3, 5)
         model = PermuteModule(permutation)
@@ -135,14 +142,14 @@ class TestPermuteCopy:
             #  would result in an empty graph, which is not allowed. Therefore, it's not delegated.
             self.assert_not_delegated(model, input_shape)
         else:
-            self.assert_delegated(model, input_shape, mocker)
+            self.assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
         "permutation",
         _all_permutations_for_rank(4),
         ids=lambda perm: f"permutation = {perm}",
     )
-    def test__all_permutations__4d(self, mocker, permutation: tuple[int]):
+    def test__all_permutations__4d(self, mocker, request, permutation: tuple[int]):
         # Avoid dimensions of size 1 and multiples of `num_macs` for a thorough test.
         input_shape = (2, 3, 5, 7)
         model = PermuteModule(permutation)
@@ -151,43 +158,55 @@ class TestPermuteCopy:
             #  would result in an empty graph, which is not allowed. Therefore, it's not delegated.
             self.assert_not_delegated(model, input_shape)
         else:
-            self.assert_delegated(model, input_shape, mocker)
+            self.assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize("permutation", _special_4d_permutations())
     def test__all_permutations__4d__channels_first_input(
-        self, mocker, permutation: tuple[int]
+        self, mocker, request, permutation: tuple[int]
     ):
         # Avoid dimensions of size 1 and multiples of `num_macs` for a thorough test.
         input_shape = (2, 3, 5, 7)
         model = MaxPoolPermuteModule(permutation)
         expected_delegated_ops = {MaxPool2DWithIndices: 1, GetItem: 1, PermuteCopy: 1}
         self.assert_delegated(
-            model, input_shape, mocker, expected_delegated_ops=expected_delegated_ops
+            model,
+            input_shape,
+            mocker,
+            request,
+            expected_delegated_ops=expected_delegated_ops,
         )
 
     @pytest.mark.parametrize("permutation", _special_4d_permutations())
     def test__all_permutations__4d__channels_first_output(
-        self, mocker, permutation: tuple[int]
+        self, mocker, request, permutation: tuple[int]
     ):
         # Avoid dimensions of size 1 and multiples of `num_macs` for a thorough test.
         input_shape = (2, 3, 5, 7)
         model = PermuteMaxPoolModule(permutation)
         expected_delegated_ops = {MaxPool2DWithIndices: 1, GetItem: 1, PermuteCopy: 1}
         self.assert_delegated(
-            model, input_shape, mocker, expected_delegated_ops=expected_delegated_ops
+            model,
+            input_shape,
+            mocker,
+            request,
+            expected_delegated_ops=expected_delegated_ops,
         )
 
     @pytest.mark.parametrize("perm1", _special_4d_permutations())
     @pytest.mark.parametrize("perm2", _special_4d_permutations())
     def test__all_permutations__4d__channels_first_io(
-        self, mocker, perm1: tuple[int], perm2: tuple[int]
+        self, mocker, request, perm1: tuple[int], perm2: tuple[int]
     ):
         # Avoid dimensions of size 1 and multiples of `num_macs` for a thorough test.
         input_shape = (2, 3, 5, 7)
         model = PermuteMaxPoolPermuteModule(perm1, perm2)
         expected_delegated_ops = {MaxPool2DWithIndices: 1, GetItem: 1, PermuteCopy: 2}
         self.assert_delegated(
-            model, input_shape, mocker, expected_delegated_ops=expected_delegated_ops
+            model,
+            input_shape,
+            mocker,
+            request,
+            expected_delegated_ops=expected_delegated_ops,
         )
 
     @pytest.mark.parametrize(
@@ -200,7 +219,7 @@ class TestPermuteCopy:
             pytest.param((4, 2, 3, 0, 1), id="perm = (4, 2, 3, 0, 1)"),
         ],
     )
-    def test__5d(self, mocker, permutation):
+    def test__5d(self, mocker, request, permutation):
         # Avoid dimensions of size 1 and multiples of `num_macs` for a thorough test.
         input_shape = (2, 3, 5, 3, 5)
         model = PermuteModule(permutation)
@@ -209,4 +228,4 @@ class TestPermuteCopy:
             #  would result in an empty graph, which is not allowed. Therefore, it's not delegated.
             self.assert_not_delegated(model, input_shape)
         else:
-            self.assert_delegated(model, input_shape, mocker)
+            self.assert_delegated(model, input_shape, mocker, request)

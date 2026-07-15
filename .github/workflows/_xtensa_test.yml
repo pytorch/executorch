@@ -1,0 +1,84 @@
+# Reusable: build + run the Cadence Xtensa op-level gtest tests for one core on
+# the Instruction Set Simulator (xt-run). Mirrors _xtensa_build.yml's native
+# OIDC + docker-run skeleton (running xt-run needs the same licensed toolchain),
+# then builds the gtest op-test ELF and runs it on the simulator. The runner
+# cross-compile and these op tests are separate build configs (the tests need
+# exceptions/RTTI that the runner build disables), so this is a self-contained
+# job rather than consuming the runner artifact.
+name: xtensa-test
+
+on:
+  workflow_call:
+    inputs:
+      backend:
+        description: "Cadence backend to test (hifi4 | vision | fusion_g3)"
+        required: true
+        type: string
+      ref:
+        description: "Git ref to check out"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  test:
+    name: ${{ inputs.backend }}
+    runs-on: linux.2xlarge
+    environment: cadence
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout executorch
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.ref }}
+
+      - name: Calculate docker image
+        id: calculate-docker-image
+        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
+        with:
+          docker-image-name: ci-image:executorch-ubuntu-22.04-clang12
+
+      - name: Pull docker image
+        run: docker pull "${{ steps.calculate-docker-image.outputs.docker-image }}"
+
+      - name: Assume Cadence artifacts role (host OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.CADENCE_CI_AWS_ROLE }}
+          aws-region: ${{ vars.CADENCE_CI_AWS_REGION }}
+
+      - name: Build and run op tests on xt-run
+        env:
+          DOCKER_IMAGE: ${{ steps.calculate-docker-image.outputs.docker-image }}
+          BACKEND: ${{ inputs.backend }}
+          XTENSA_S3_BUCKET: ${{ vars.CADENCE_CI_S3_BUCKET }}
+        shell: bash
+        run: |
+          set -eux
+          # OIDC/role assumption already happened on the host above; pass the
+          # resulting AWS creds and the store/backend into the CI image, where
+          # the toolchain download + op-test build + xt-run happen.
+          docker run --rm \
+            -e BACKEND -e XTENSA_S3_BUCKET \
+            -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
+            -e AWS_DEFAULT_REGION -e AWS_REGION \
+            -v "${GITHUB_WORKSPACE}:/work/executorch" -w /work/executorch \
+            "${DOCKER_IMAGE}" \
+            bash -c '
+              set -exo pipefail
+              eval "$(/opt/conda/bin/conda shell.bash hook)"
+              conda activate "$(conda env list --json | jq -r ".envs | .[-1]")"
+              ./install_requirements.sh > /dev/null
+              pip install --quiet awscli
+              # hifi4/fusion_g3 optimized kernels need the foss-xtensa nnlib
+              # sources, which are not vendored in executorch; the cadence
+              # installer clones them. vision has no nnlib dependency.
+              if [ "${BACKEND}" != "vision" ]; then
+                backends/cadence/install_requirements.sh
+              fi
+              source .ci/scripts/setup-xtensa-tools.sh "${BACKEND}"
+              .ci/scripts/test-cadence-xtensa.sh
+            '

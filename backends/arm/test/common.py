@@ -5,6 +5,7 @@
 
 
 import os
+import platform
 
 from datetime import datetime
 
@@ -25,6 +26,10 @@ from executorch.backends.arm.test.runner_utils import (
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.vgf import VgfCompileSpec
+
+
+def is_aarch64_host() -> bool:
+    return platform.machine().lower() in ("aarch64", "arm64")
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:

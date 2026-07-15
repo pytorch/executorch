@@ -72,6 +72,7 @@ aoti_torch_get_device_index(Tensor* tensor, int32_t* ret_device_index);
 
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bfloat16();
+AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_float16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int64();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int32();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();

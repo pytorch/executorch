@@ -369,6 +369,19 @@ TEST_F(OpLogSoftmaxOutTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
+TEST_F(OpLogSoftmaxOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // N=512: without fp32 accumulation, the exp-sum saturates at BFloat16's
+  // precision limit (~256), so the output is ~-log(256) instead of -log(512).
+  // atol=1e-1 can catch pre-fix error: |log(512) - log(256)| = log(2)
+  constexpr int N = 512;
+  Tensor x = tf.zeros({1, N});
+  Tensor out = tf.zeros({1, N});
+  op_log_softmax_out(x, /*dim=*/1, /*half_to_float=*/false, out);
+  Tensor expected = tf.full({1, N}, -std::log(static_cast<float>(N)));
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, /*rtol=*/1e-5, /*atol=*/1e-1);
+}
+
 TEST_F(OpLogSoftmaxOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 

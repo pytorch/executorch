@@ -45,8 +45,11 @@ from __future__ import annotations
 from typing import Optional
 
 from executorch.backends.mlx.builder.op_helpers import (
+    emit_ceil_div,
+    emit_if_else,
     emit_product,
     emit_shape,
+    emit_sub_int,
     torch_dtype_to_scalar_type,
 )
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
@@ -57,13 +60,9 @@ from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.common import (
     QK_K,
 )
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
-    AddIntNode,
-    FloorDivideIntNode,
-    IfNode,
     IntOrVid,
     MetalKernelNode,
     MultiplyIntNode,
-    SubtractIntNode,
 )
 from torch.fx.node import Node
 
@@ -127,7 +126,7 @@ def _q6k_matvec_source(has_bias: bool) -> str:
             const float d = (float) blk->d;
 
             float4 sums = {{0.f, 0.f, 0.f, 0.f}};
-            for (short l = 0; l < 4; ++l) {{
+            FOR_UNROLL (short l = 0; l < 4; ++l) {{
                 sums[0] += yl[4*l + 0] * (float)((int8_t)((q1[l] & 0xF) | ((qh[l] & 0x03) << 4)) - 32);
                 sums[1] += yl[4*l + 1] * (float)((int8_t)((q2[l] & 0xF) | ((qh[l] & 0x0C) << 2)) - 32);
                 sums[2] += yl[4*l + 2] * (float)((int8_t)((q1[l] >> 4)  | ((qh[l] & 0x30) << 0)) - 32);
@@ -163,8 +162,8 @@ def _q6k_matmul_source(has_bias: bool) -> str:
     constexpr short NL0 = NK / 16;  // = 2 — dequant iterations per thread for weight
     constexpr short NL1 = NK / 8;   // = 4 — load iterations per thread for activation
 
-    threadgroup half sa[4096];  // NR0 * NK storage (strided by 64)
-    threadgroup half sb[4096];  // NR1 * NK storage (strided by 64)
+    threadgroup half sa[4096];  // NR0 * NK weight tile; reused as NR1*NR0 float output staging (8 KB)
+    threadgroup half sb[1024];  // NR1 * NK activation tile (strided by 64): 16 ib slots * 64
 
     const ushort tid   = thread_index_in_threadgroup;   // 0..127
     const ushort sgitg = simdgroup_index_in_threadgroup; // 0..3
@@ -229,9 +228,9 @@ def _q6k_matmul_source(has_bias: bool) -> str:
         const short ly_b = (tid / NL1) % 8;
         const short ib_b = 4 * sx_b + sy_b;
 
-        for (short i = 0; i < 8; ++i) {{
-            *(sb + 64 * ib_b + 8 * ly_b + i) = (half) *(yp + i);
-        }}
+        using InT2x4 = typename vec2x4<InT>::type;
+        *(threadgroup half2x4 *)(sb + 64 * ib_b + 8 * ly_b) =
+            (half2x4)(*(device const InT2x4 *)(yp));
 
         // Advance weight pointer through Q6_K sub-blocks.
         il = (il + 2 < NL) ? il + 2 : il % 2;
@@ -263,7 +262,9 @@ def _q6k_matmul_source(has_bias: bool) -> str:
         }}
     }}
 
-    // --- Write results: always via threadgroup memory for float→InT cast ---
+    // --- Write results: stage the output tile in threadgroup memory, then
+    // drain it to device. Staging is required for the float->InT cast and the
+    // optional bias add.
     // Barrier needed: sa was used for weight tiles during the K-loop and is now
     // reused as float staging for the output. Without this barrier, a fast
     // simdgroup could start writing mc[] into sa while a slower one is still
@@ -279,14 +280,15 @@ def _q6k_matmul_source(has_bias: bool) -> str:
         }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        if (sgitg == 0) {{
-            for (int j = tid; j < nr1; j += NR1) {{
-                device InT * D = out + (uint)(r1 + j) * (uint)N + r0;
-                threadgroup float * Cp = ((threadgroup float *) sa) + j * NR0;
-                for (int i = 0; i < nr0; ++i) {{
-                    float v = Cp[i];
-                    D[i] = (InT)(v {bias_add});
-                }}
+        // Drain all NR1*NR0 tile elements across the threadgroup's 128 threads.
+        // NR0/NR1 are compile-time constants, so idx / NR0 and idx % NR0 fold
+        // to a shift/mask.
+        for (int idx = tid; idx < NR1 * NR0; idx += 128) {{
+            const int j = idx / NR0;
+            const int i = idx % NR0;
+            if (j < nr1 && i < nr0) {{
+                const float v = ((threadgroup float *) sa)[j * NR0 + i];
+                out[(uint)(r1 + j) * (uint)N + (r0 + i)] = (InT)(v {bias_add});
             }}
         }}
     }}
@@ -294,7 +296,7 @@ def _q6k_matmul_source(has_bias: bool) -> str:
 
 
 # Number of simdgroups per threadgroup for the mat-vec kernel.
-_Q6K_MV_NSG = 4
+_Q6K_MV_NSG = 2
 # Tile sizes for the mat-mat kernel (from llama.cpp kernel_mul_mm).
 _Q6K_MM_NR0 = 64  # weight/output rows (N dim) per threadgroup
 _Q6K_MM_NR1 = 32  # activation rows (M dim) per threadgroup
@@ -424,7 +426,7 @@ def _emit_q6k_matmul(
     )
 
 
-def emit_linear(
+def _emit_linear_fused(
     P: MLXProgramBuilder,
     head: Node,
     x_node: Node,
@@ -457,27 +459,14 @@ def emit_linear(
         )
     K = (row_bytes // Q6K_BLOCK_BYTES) * QK_K
 
-    # Determine M (product of x's leading dims). Static M lets us pick the
-    # optimal kernel and (for mat-mat) compute a literal launch grid.
-    x_meta = x_node.meta["val"]
-    leading_dims = x_meta.shape[:-1]
-    M: Optional[int] = 1
-    for d in leading_dims:
-        if isinstance(d, int):
-            M *= d
-        else:
-            M = None  # dynamic / symbolic
-            break
-
     out = P.make_or_get_slot(head)
-    tile = _Q6K_MM_NR1  # M-dimension tile (activation rows per threadgroup)
-    if M == 1:
-        # Static decode -> mat-vec.
-        _emit_q6k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
-    elif M is not None:
-        # Static prefill -> tiled simdgroup mat-mat (literal grid).
-        blocks_m = (M + tile - 1) // tile
-        _emit_q6k_matmul(
+    tile = _Q6K_MM_NR1
+
+    m_iov = emit_product(P, emit_shape(P, x_node, x_slot, end_dim=-1))
+    emit_if_else(
+        P,
+        emit_sub_int(P, m_iov, IntOrVid.from_literal(1)),
+        emit_then=lambda: _emit_q6k_matmul(
             P,
             x_node,
             x_slot,
@@ -485,65 +474,38 @@ def emit_linear(
             bias_slot,
             N,
             K,
-            IntOrVid.from_literal(blocks_m),
+            emit_ceil_div(P, m_iov, tile),
             out,
-        )
-    else:
-        # Dynamic seqlen -> emit both kernels in separate chains and select at
-        # runtime with an IfNode. cond = M - 1: nonzero (M>1) runs the mat-mat
-        # (then) chain, zero (M==1) runs the mat-vec (else) chain.
-        leading = emit_shape(P, x_node, x_slot, end_dim=-1)
-        m_iov = emit_product(P, leading)
-
-        _, cond_slot = P.make_tmp_value_slot()
-        P.emit(
-            SubtractIntNode(
-                a=m_iov,
-                b=IntOrVid.from_literal(1),
-                out=P.slot_to_vid(cond_slot),
-            )
-        )
-        cond_iov = IntOrVid.from_vid(P.slot_to_vid(cond_slot))
-
-        # blocks_m = (M + tile - 1) // tile  (mat-mat grid.y).
-        _, sum_slot = P.make_tmp_value_slot()
-        P.emit(
-            AddIntNode(
-                a=m_iov,
-                b=IntOrVid.from_literal(tile - 1),
-                out=P.slot_to_vid(sum_slot),
-            )
-        )
-        _, blocks_m_slot = P.make_tmp_value_slot()
-        P.emit(
-            FloorDivideIntNode(
-                a=IntOrVid.from_vid(P.slot_to_vid(sum_slot)),
-                b=IntOrVid.from_literal(tile),
-                out=P.slot_to_vid(blocks_m_slot),
-            )
-        )
-        blocks_m_iov = IntOrVid.from_vid(P.slot_to_vid(blocks_m_slot))
-
-        with P.new_chain() as then_idx:  # prefill / mat-mat
-            _emit_q6k_matmul(
-                P,
-                x_node,
-                x_slot,
-                weight_slot,
-                bias_slot,
-                N,
-                K,
-                blocks_m_iov,
-                out,
-            )
-        with P.new_chain() as else_idx:  # decode / mat-vec
-            _emit_q6k_matvec(P, x_node, x_slot, weight_slot, bias_slot, N, K, out)
-
-        P.emit(
-            IfNode(
-                cond=cond_iov,
-                then_chain_idx=then_idx,
-                else_chain_idx=else_idx,
-            )
-        )
+        ),
+        emit_else=lambda: _emit_q6k_matvec(
+            P, x_node, x_slot, weight_slot, bias_slot, N, K, out
+        ),
+    )
     return out
+
+
+def emit_linear(
+    P: MLXProgramBuilder,
+    head: Node,
+    x_node: Node,
+    weight_node: Node,
+    bias_node: Optional[Node],
+) -> Slot:
+    """Dispatch to the MLX-native repack path or the fused Metal kernels.
+
+    The repack path is only valid when the weight merges to an MLX-supported
+    group size (>= 32); otherwise (and when ``ET_MLX_EMIT_DIRECT_GGUF=1``) the
+    fused kernels are used.
+    """
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import emit_direct_gguf
+
+    if not emit_direct_gguf():
+        from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.linear_mlx_native import (
+            emit_linear as emit_linear_mlx_native,
+        )
+
+        out = emit_linear_mlx_native(P, head, x_node, weight_node, bias_node)
+        if out is not None:
+            return out
+
+    return _emit_linear_fused(P, head, x_node, weight_node, bias_node)

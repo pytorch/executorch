@@ -38,6 +38,20 @@ set(WEBGPU_SRCS
     runtime/ops/sdpa/Sdpa.cpp
     runtime/ops/select_as_symint/SelectAsSymint.cpp
     runtime/ops/quantized_linear/QuantizedLinear.cpp
+    runtime/ops/mul/BinaryOp.cpp
+    runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
+    runtime/ops/rope/RotaryEmbedding.cpp
+    runtime/ops/prepack/Prepack.cpp
+    runtime/ops/view_copy/ViewCopy.cpp
+    runtime/ops/select/Select.cpp
+    runtime/ops/sigmoid/UnaryOp.cpp
+    runtime/ops/squeeze/Squeeze.cpp
+    runtime/ops/unsqueeze/Unsqueeze.cpp
+    runtime/ops/slice/Slice.cpp
+    runtime/ops/permute/Permute.cpp
+    runtime/ops/cat/Cat.cpp
+    runtime/ops/index/Index.cpp
+    runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
@@ -137,15 +151,69 @@ function(add_webgpu_native_test test_name test_src)
 endfunction()
 
 if(EXECUTORCH_BUILD_WEBGPU_TEST)
-  add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
-  add_webgpu_native_test(webgpu_rms_norm_test test/native/test_rms_norm.cpp)
-  add_webgpu_native_test(
-    webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
-  )
-  add_webgpu_native_test(
-    webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
-  )
-  add_webgpu_native_test(
-    webgpu_update_cache_test test/native/test_update_cache.cpp
-  )
+  # All WebGPU native tests use GTest (device-dependent ones bring up the device
+  # in their own main(); the fold unit test is device-free via gtest_main).
+  # GTest needs -DEXECUTORCH_BUILD_TESTS=ON.
+  if(NOT TARGET GTest::gtest)
+    find_package(GTest QUIET)
+  endif()
+  if(TARGET GTest::gtest)
+    # Reuse add_webgpu_native_test for the backend link + frameworks + flags;
+    # add only driver_util, GTest, and the header-only nlohmann/json include.
+    add_webgpu_native_test(webgpu_op_test test/op_tests/op_test_driver.cpp)
+    target_sources(webgpu_op_test PRIVATE test/op_tests/driver_util.cpp)
+    target_link_libraries(webgpu_op_test PRIVATE GTest::gtest)
+    target_include_directories(
+      webgpu_op_test
+      PRIVATE "${EXECUTORCH_ROOT}/third-party/json/single_include"
+    )
+
+    # Device-free util unit test: no backend/Dawn link (pure manifest/tolerance
+    # helpers), so it does NOT use the native-test helper.
+    add_executable(
+      webgpu_op_test_util_test test/op_tests/test_driver_util.cpp
+                               test/op_tests/driver_util.cpp
+    )
+    target_include_directories(
+      webgpu_op_test_util_test
+      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+              "${EXECUTORCH_ROOT}/third-party/json/single_include"
+    )
+    target_link_libraries(
+      webgpu_op_test_util_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+    target_compile_options(webgpu_op_test_util_test PRIVATE -fexceptions)
+    set_property(TARGET webgpu_op_test_util_test PROPERTY CXX_STANDARD 17)
+
+    # Device-dependent native tests: each has its own main() that brings up the
+    # device once, then RUN_ALL_TESTS(); link GTest::gtest (not gtest_main).
+    add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
+    target_link_libraries(webgpu_native_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
+    )
+    target_link_libraries(webgpu_dispatch_order_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
+    )
+    target_link_libraries(webgpu_scratch_buffer_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_update_cache_test test/native/test_update_cache.cpp
+    )
+    target_link_libraries(webgpu_update_cache_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_dynamic_shape_test test/native/test_dynamic_shape.cpp
+    )
+    target_link_libraries(webgpu_dynamic_shape_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(webgpu_index_test test/native/test_index.cpp)
+    target_link_libraries(webgpu_index_test PRIVATE GTest::gtest)
+
+    # Device-free fold unit test (gtest_main provides main; no device needed).
+    add_webgpu_native_test(
+      webgpu_dispatch_2d_test test/native/test_dispatch_2d.cpp
+    )
+    target_link_libraries(
+      webgpu_dispatch_2d_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+  endif()
 endif()

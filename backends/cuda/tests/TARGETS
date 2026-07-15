@@ -24,9 +24,8 @@ python_unittest_remote_gpu(
     ],
     keep_gpu_sections = True,
     remote_execution = re_test_utils.remote_execution(
-        subplatform = "A100",
-        mig = "false",
         platform = "gpu-remote-execution",
+        subplatform = "A100-exclusive",
     ),
 )
 

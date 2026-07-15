@@ -23,6 +23,19 @@ In addition, the following deployment paths are supported by this backend:
 
 More information on TOSA can be found here: https://www.mlplatform.org/tosa/tosa_spec.html.
 
+## Public API Boundary
+
+The Arm backend public Python API is the set of symbols tracked in
+`backends/arm/public_api_manifests/api_manifest_running.toml`. Other modules,
+helpers, scripts, and directory layouts in this subtree are implementation
+details and may change without deprecation.
+
+In particular, `backends/arm/tosa` contains shared lowering implementation for
+Arm backends. It is not a stable public package except for symbols explicitly
+listed in the public API manifest. Prefer the target-specific public APIs in
+`executorch.backends.arm.ethosu` and `executorch.backends.arm.vgf` for
+application code.
+
 ## Directory Layout
 
 Below is an overview of the key folder and files in this directory:

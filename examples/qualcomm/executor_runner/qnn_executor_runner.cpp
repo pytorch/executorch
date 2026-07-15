@@ -208,6 +208,8 @@ class CustomMemory {
 
 int main(int argc, char** argv) {
   executorch::runtime::runtime_init();
+  QnnExecuTorchBackendRegister(
+      reinterpret_cast<void*>(executorch::runtime::register_backend));
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {

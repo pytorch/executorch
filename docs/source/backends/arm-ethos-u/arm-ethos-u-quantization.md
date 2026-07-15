@@ -92,6 +92,7 @@ Args:
 - **quantization_config (Optional[QuantizationConfig])**: Configuration
         describing quantization settings for nodes matched by the provided
         NodeFinder. ``None`` indicates no quantization.
+- **node_finder (NodeFinder)**: Predicate used to select nodes.
 
 ```python
 def EthosUQuantizer.set_node_name(self, node_name: 'str', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':

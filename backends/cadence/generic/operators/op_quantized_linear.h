@@ -25,7 +25,7 @@ namespace native {
     const ::executorch::aten::Tensor& out_multiplier,
     const ::executorch::aten::Tensor& out_shift,
     int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor& quantized_linear_per_tensor_out(
@@ -38,7 +38,7 @@ namespace native {
     const int64_t out_multiplier,
     const int64_t out_shift,
     const int64_t out_zero_point,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
+    const std::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
 ::executorch::aten::Tensor&

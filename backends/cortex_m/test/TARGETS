@@ -1,15 +1,20 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("targets.bzl", "define_common_targets")
 
 oncall("executorch")
 python_unittest(
     name="test_replace_quant_nodes",
+    env={
+        "TEST_RUNTIME_IS_NOT_OSS": "1" if not runtime.is_oss else "0",
+    },
     srcs=[
         "test_helpers_passes_utils.py",
         "test_replace_quant_nodes.py",

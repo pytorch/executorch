@@ -10,6 +10,7 @@
 
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
+#include <executorch/backends/xnnpack/runtime/XNNWeightsCacheManager.h>
 #include <executorch/backends/xnnpack/runtime/XNNWorkspaceManager.h>
 #include <executorch/runtime/backend/backend_init_context.h>
 #include <executorch/runtime/backend/options.h>
@@ -17,7 +18,9 @@
 #include <executorch/runtime/core/result.h>
 
 #include <atomic>
+#include <memory>
 #include <mutex>
+#include <string>
 
 namespace executorch::backends::xnnpack {
 
@@ -43,46 +46,41 @@ class XnnpackBackendOptions {
   XNNWorkspaceManager& workspace_manager();
   const XNNWorkspaceManager& workspace_manager() const;
 
-  const std::string& get_packed_cache_path() const;
+  // Returns a copy of the most-recently-set packed cache path. Copied
+  // under path_mutex_ to avoid tearing while set_option is concurrently
+  // running. Callers receive a snapshot; subsequent set_option calls
+  // do not affect the returned string.
+  std::string get_packed_cache_path() const;
   void set_packed_cache_path(const std::string& path);
 
-  // Shared XNNWeightsCache (one instance per backend, like the workspace
-  // manager). The cache itself is not internally synchronized; callers
-  // MUST hold weights_cache_mutex() around every weights_cache() call —
-  // including reading the reference and calling any method on it. The
-  // same mutex also protects packed_cache_path_, so a typical
-  // load/init/compile sequence holds one lock for the whole block:
+  // Returns a shared XNNWeightsCache via the backend-owned manager.
+  // Same non-empty path → same shared instance. Different paths →
+  // independent instances. Empty path → one shared heap-only instance
+  // across all empty-path callers (so XNNPACK's in-memory name dedup
+  // still works).
   //
-  //   std::lock_guard lock(options.weights_cache_mutex());
-  //   options.weights_cache().set_packed_cache_path(
-  //       options.get_packed_cache_path());
-  //   options.weights_cache().initialize_for_runtime(...);
-  //   XNNCompiler::compileModel(..., &options.weights_cache(), ...);
-  //
-  // The mutex is intentionally exposed (rather than wrapping every
-  // method) because XNNCompiler needs a raw cache pointer to pass into
-  // XNNPACK callbacks that fire during xnn_create_runtime; those
-  // callbacks must run under the same lock as the surrounding init.
-  delegate::XNNWeightsCache& weights_cache();
-  std::mutex& weights_cache_mutex();
+  // The caller MUST hold the returned instance's XNNWeightsCache::mutex()
+  // around every cache-method call, including the XNNPACK callbacks
+  // invoked during xnn_create_runtime.
+  runtime::Result<std::shared_ptr<delegate::XNNWeightsCache>>
+  get_or_create_weights_cache(const std::string& cache_file_path);
 
-  // Invokes save_packed_index() on the cache while holding the cache
-  // mutex. Returns the cache's error code; the caller does not need to
-  // grab the mutex itself. This is the entry point used by set_option()
-  // when `save_weight_cache_on_disk_option_key` is requested.
+  // Returns the manager directly. Useful for tests and for the
+  // `save_weight_cache_on_disk` option side-effect path. Production
+  // callers should prefer get_or_create_weights_cache().
+  XNNWeightsCacheManager& weights_cache_manager();
+  const XNNWeightsCacheManager& weights_cache_manager() const;
+
+  // Walks every live cache instance the manager has handed out and
+  // invokes save_packed_index() on each (under each instance's own
+  // mutex). Used by set_option() when `save_weight_cache_on_disk` is
+  // requested. Returns the first error encountered; continues
+  // attempting every instance.
   runtime::Error save_weights_cache_locked();
 
  private:
   XNNWorkspaceManager workspace_manager_;
-
-  // Weights cache is shared across all delegate instances. Owned here so
-  // that all backend-option-keyed state (workspace manager, weights cache,
-  // packed-cache path) lives in a single place; XnnpackBackend holds an
-  // XnnpackBackendOptions and delegates synchronization to its mutex.
-  // Protects weights_cache_ AND packed_cache_path_ (init reads the path
-  // while holding this lock and hands it to the cache).
-  std::mutex weights_cache_mutex_;
-  delegate::XNNWeightsCache weights_cache_;
+  XNNWeightsCacheManager weights_cache_manager_;
 
 #ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
   std::atomic<WorkspaceSharingMode> sharing_mode_{WorkspaceSharingMode::Global};
@@ -97,6 +95,17 @@ class XnnpackBackendOptions {
   std::atomic<bool> weight_cache_enabled_{false};
 #endif
 
+  // The most-recently-set packed cache path. Today's callers (Cria
+  // runner) set this via set_option(packed_cache_path_option_key) per
+  // PTE, then invoke init() which reads it and calls
+  // get_or_create_weights_cache(). path_mutex_ serializes the
+  // set / get pair so a concurrent set_option from another caller
+  // doesn't tear the string mid-read.
+  //
+  // This is a transport for the path option only — the path itself
+  // is owned per-cache-instance inside XNNWeightsCache, set once by
+  // the manager before publishing the shared_ptr.
+  mutable std::mutex path_mutex_;
   std::string packed_cache_path_;
 };
 

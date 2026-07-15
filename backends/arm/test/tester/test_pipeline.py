@@ -1223,6 +1223,8 @@ class VgfPipeline(BasePipeline, Generic[T]):
 
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+       n_expected_delegates: Number of delegate calls expected after
+       partitioning.
 
     """
 
@@ -1252,16 +1254,19 @@ class VgfPipeline(BasePipeline, Generic[T]):
         tosa_spec: TosaSpecification | str | None = None,
         fold_quantize: bool = True,
         preserve_io_quantization: bool = False,
+        n_expected_delegates: int = 1,
     ):
         if tosa_spec is None:
             if tosa_version is None:
-                tosa_spec = VgfCompileSpec().tosa_spec
-            else:
-                if tosa_extensions is None:
+                tosa_version = str(VgfCompileSpec().tosa_spec)
+            if tosa_extensions is None:
+                if "FP" in tosa_version:
+                    tosa_extensions = ["bf16"]
+                else:
                     tosa_extensions = []
-                tosa_spec = TosaSpecification.create_from_string(
-                    tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
-                )
+            tosa_spec = TosaSpecification.create_from_string(
+                tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
+            )
         elif isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
         compile_spec = common.get_vgf_compile_spec(
@@ -1281,6 +1286,10 @@ class VgfPipeline(BasePipeline, Generic[T]):
             use_to_edge_transform_and_lower,
             dynamic_shapes,
             transform_passes=transform_passes,
+        )
+        self.change_args(
+            "check_count.exir",
+            {"torch.ops.higher_order.executorch_call_delegate": n_expected_delegates},
         )
 
         remove_torch_quant_nodes_stage = (

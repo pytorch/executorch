@@ -26,24 +26,17 @@ import json
 import os
 import re
 import shutil
-import subprocess  # nosec B404 - invoked only for trusted local tools
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from executorch.backends.arm.vgf.model_converter import (
-    find_model_converter_binary,
-    model_converter_env,
-)
-
+from executorch.backends.arm.vgf import model_converter
 
 STATUS_OK = "PASS"
 STATUS_WARN = "WARN"
 STATUS_FAIL = "FAIL"
-
-VGF_BACKEND_NAME = "VgfBackend"
 
 _REQUIRED_VKML_INSTANCE_LAYERS = {
     "VK_LAYER_ML_Graph_Emulation",
@@ -64,9 +57,11 @@ class VgfEnvironmentCheck:
 
     @property
     def ok(self) -> bool:
+        """Return True when the check did not fail."""
         return self.status != STATUS_FAIL
 
     def to_dict(self) -> dict[str, str | None]:
+        """Return the check as a JSON-serializable dictionary."""
         return {
             "name": self.name,
             "status": self.status,
@@ -84,13 +79,16 @@ class VgfEnvironmentReport:
 
     @property
     def ok(self) -> bool:
+        """Return True when all checks passed or warned."""
         return all(check.ok for check in self.checks)
 
     @property
     def failures(self) -> list[VgfEnvironmentCheck]:
+        """Return checks with failure status."""
         return [check for check in self.checks if check.status == STATUS_FAIL]
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the report as a JSON-serializable dictionary."""
         return {
             "mode": self.mode,
             "ok": self.ok,
@@ -98,6 +96,7 @@ class VgfEnvironmentReport:
         }
 
     def raise_for_errors(self) -> None:
+        """Raise RuntimeError when any check failed."""
         if self.ok:
             return
 
@@ -107,6 +106,7 @@ class VgfEnvironmentReport:
         )
 
     def format(self) -> str:
+        """Format the report for human-readable output."""
         title = f"VGF environment preflight ({self.mode}): " + (
             "OK" if self.ok else "FAILED"
         )
@@ -120,7 +120,6 @@ def check_vgf_aot_environment() -> VgfEnvironmentReport:
     and source-build checks.
 
     """
-
     return VgfEnvironmentReport(
         mode="aot",
         checks=[
@@ -133,15 +132,11 @@ def check_vgf_aot_environment() -> VgfEnvironmentReport:
 
 def is_vgf_aot_available() -> bool:
     """Return True when VGF AoT/export prerequisites are available."""
-
     return check_vgf_aot_environment().ok
 
 
 def check_vgf_runtime_environment() -> VgfEnvironmentReport:
-    """Check whether the installed/runtime pybinding exposes VGF runtime
-    support.
-    """
-
+    """Check whether the pybinding exposes VGF runtime support."""
     return VgfEnvironmentReport(
         mode="runtime",
         checks=[
@@ -152,7 +147,6 @@ def check_vgf_runtime_environment() -> VgfEnvironmentReport:
 
 def is_vgf_runtime_available() -> bool:
     """Return True when VGF runtime support is available."""
-
     return check_vgf_runtime_environment().ok
 
 
@@ -162,7 +156,6 @@ def check_vgf_host_emulator_environment() -> VgfEnvironmentReport:
     This checks runtime backend registration plus Vulkan/VKML environment setup.
 
     """
-
     checks = [
         *_checks_from(check_vgf_runtime_environment()),
         _check_vulkan_sdk(),
@@ -175,7 +168,6 @@ def check_vgf_source_build_environment(
     build_dir: str | os.PathLike[str] | None = None,
 ) -> VgfEnvironmentReport:
     """Check source-build diagnostics for the VGF runtime backend."""
-
     return VgfEnvironmentReport(
         mode="source-build",
         checks=[
@@ -199,7 +191,6 @@ def check_environment(
     or require_runtime_build get the source-build diagnostic check.
 
     """
-
     if build_dir is not None or require_runtime_build:
         return check_vgf_source_build_environment(build_dir=build_dir)
     return check_vgf_aot_environment()
@@ -214,6 +205,16 @@ def _format_check(check: VgfEnvironmentCheck) -> str:
     if check.action:
         lines.append(f"  Action: {check.action}")
     return "\n".join(lines)
+
+
+def _as_environment_check(check: Any) -> VgfEnvironmentCheck:
+    """Convert a module-owned preflight result into the CLI report type."""
+    return VgfEnvironmentCheck(
+        check.name,
+        check.status,
+        check.detail,
+        getattr(check, "action", None),
+    )
 
 
 def _repo_root() -> Path:
@@ -297,165 +298,22 @@ def _check_tosa_serializer() -> VgfEnvironmentCheck:
     )
 
 
-def _resolve_executable(binary: str) -> Path | None:
-    path = Path(binary)
-    if path.is_absolute() or path.parent != Path("."):
-        if _safe_is_file(path) and os.access(path, os.X_OK):
-            return path
-        return None
-
-    resolved = shutil.which(binary)
-    if resolved:
-        return Path(resolved)
-    return None
-
-
-def _command_output(result: subprocess.CompletedProcess[str]) -> str:
-    text = "\n".join(
-        part.strip() for part in (result.stdout, result.stderr) if part.strip()
-    )
-    lines = text.splitlines()
-    if not lines:
-        return "<no output>"
-    return "\n".join(lines[:4])
-
-
 def _check_model_converter() -> VgfEnvironmentCheck:
-    binary = find_model_converter_binary()
-    if binary is None:
-        return VgfEnvironmentCheck(
-            "MLSDK model converter",
-            STATUS_FAIL,
-            "Could not find model-converter on PATH and MODEL_CONVERTER_PATH "
-            "does not point to an executable file.",
-            "Install VGF AoT dependencies with "
-            "python -m pip install 'executorch[vgf]' or, in a source checkout, "
-            "python -m pip install -r backends/arm/requirements-arm-vgf.txt. "
-            "Alternatively set MODEL_CONVERTER_PATH to the converter executable.",
-        )
-
-    executable = _resolve_executable(binary)
-    if executable is None:
-        return VgfEnvironmentCheck(
-            "MLSDK model converter",
-            STATUS_FAIL,
-            f"Resolved converter candidate {binary!r}, but it is not executable.",
-            "Fix MODEL_CONVERTER_PATH or place model-converter on PATH.",
-        )
-
-    try:
-        result = subprocess.run(  # nosec B603 - local converter executable
-            [str(executable), "--version"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=20,
-            env=model_converter_env(),
-        )
-    except Exception as exc:
-        return VgfEnvironmentCheck(
-            "MLSDK model converter",
-            STATUS_FAIL,
-            f"Found {executable}, but running '--version' failed: {exc}",
-            "Check MODEL_CONVERTER_LIB_DIR and the process loader paths. "
-            "For source setup, source examples/arm/arm-scratch/setup_path.sh.",
-        )
-
-    if result.returncode != 0:
-        return VgfEnvironmentCheck(
-            "MLSDK model converter",
-            STATUS_FAIL,
-            f"{executable} --version exited with {result.returncode}:\n"
-            f"{_command_output(result)}",
-            "Check that the model-converter binary and its shared libraries are "
-            "from the same MLSDK install.",
-        )
-
-    return VgfEnvironmentCheck(
-        "MLSDK model converter",
-        STATUS_OK,
-        f"{executable} --version succeeded:\n{_command_output(result)}",
-    )
+    """Convert a module-owned preflight result into the CLI report type."""
+    return _as_environment_check(model_converter.check_model_converter_environment())
 
 
 def _check_model_converter_lib_dir() -> VgfEnvironmentCheck:
-    lib_dir = os.environ.get("MODEL_CONVERTER_LIB_DIR")
-    if not lib_dir:
-        return VgfEnvironmentCheck(
-            "MODEL_CONVERTER_LIB_DIR",
-            STATUS_OK,
-            "MODEL_CONVERTER_LIB_DIR is not set; relying on the process loader "
-            "paths. This is OK when model-converter --version succeeds.",
-        )
-
-    path = Path(lib_dir).expanduser()
-    if _safe_is_dir(path):
-        return VgfEnvironmentCheck(
-            "MODEL_CONVERTER_LIB_DIR",
-            STATUS_OK,
-            f"MODEL_CONVERTER_LIB_DIR points to existing directory: {path}",
-        )
-
-    return VgfEnvironmentCheck(
-        "MODEL_CONVERTER_LIB_DIR",
-        STATUS_FAIL,
-        f"MODEL_CONVERTER_LIB_DIR={lib_dir!r} does not exist or is not a directory.",
-        "Unset MODEL_CONVERTER_LIB_DIR or set it to the converter library directory.",
+    """Convert a module-owned preflight result into the CLI report type."""
+    return _as_environment_check(
+        model_converter.check_model_converter_lib_dir_environment()
     )
-
-
-def _load_runtime() -> Any:
-    from executorch.runtime import Runtime
-
-    return Runtime.get()
 
 
 def _check_runtime_vgf_backend() -> VgfEnvironmentCheck:
-    try:
-        runtime = _load_runtime()
-    except Exception as exc:
-        return VgfEnvironmentCheck(
-            "VGF runtime backend",
-            STATUS_FAIL,
-            f"Could not initialize executorch.runtime.Runtime: {exc}",
-            "Install or rebuild ExecuTorch with runtime pybindings. For source "
-            "builds, enable the VGF runtime backend and reinstall the package.",
-        )
+    from executorch.backends.arm.vgf import backend as vgf_backend
 
-    try:
-        registered_backend_names = list(
-            runtime.backend_registry.registered_backend_names
-        )
-        is_available = runtime.backend_registry.is_available(
-            backend_name=VGF_BACKEND_NAME
-        )
-    except Exception as exc:
-        return VgfEnvironmentCheck(
-            "VGF runtime backend",
-            STATUS_FAIL,
-            f"Runtime backend registry query failed: {exc}",
-            "Reinstall or rebuild ExecuTorch with backend registry pybindings.",
-        )
-
-    if is_available:
-        return VgfEnvironmentCheck(
-            "VGF runtime backend",
-            STATUS_OK,
-            f"{VGF_BACKEND_NAME} is available in the runtime backend registry.",
-        )
-
-    rendered = ", ".join(registered_backend_names[:20])
-    if len(registered_backend_names) > 20:
-        rendered += ", ..."
-
-    return VgfEnvironmentCheck(
-        "VGF runtime backend",
-        STATUS_FAIL,
-        f"{VGF_BACKEND_NAME} is not available. Registered backends: "
-        f"{rendered or '<none>'}.",
-        "Use a runtime build/package that includes the VGF backend. For source "
-        "builds, configure with -DEXECUTORCH_BUILD_VGF=ON and reinstall.",
-    )
+    return _as_environment_check(vgf_backend.check_vgf_runtime_backend_environment())
 
 
 def _package_dirs(package: str) -> list[Path]:
@@ -758,6 +616,16 @@ def _select_report(args: argparse.Namespace) -> VgfEnvironmentReport:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the VGF environment preflight command.
+
+    Args:
+        argv (Sequence[str] | None): Command-line arguments to parse, or None
+            to parse arguments from sys.argv.
+
+    Returns:
+        int: Zero when selected checks are OK, otherwise one.
+
+    """
     parser = argparse.ArgumentParser(
         description="Preflight the Arm VGF backend environment."
     )

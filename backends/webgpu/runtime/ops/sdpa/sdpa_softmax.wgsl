@@ -20,9 +20,12 @@ var<workgroup> shared_sum: array<f32, WG_SIZE>;
 @compute @workgroup_size(WG_SIZE, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
-    @builtin(local_invocation_id) lid: vec3<u32>) {
+    @builtin(local_invocation_id) lid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   // One workgroup per (h, s) row of length context_len (= row_width).
-  let row_idx = wid.x;
+  // 2D dispatch fold: recover the linear row index. Keep the `valid` predicate
+  // below (NOT an early return) — the workgroupBarrier()s require uniform flow.
+  let row_idx = wid.x + wid.y * num_workgroups.x;
   let worker_id = lid.x;
 
   let base = row_idx * params.row_width;

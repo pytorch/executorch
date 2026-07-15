@@ -54,3 +54,8 @@ binary_op_texture:
       generate_variant_forall:
         DTYPE:
           - VALUE: uint8
+    - NAME: binary_bitwise_or_texture3d
+      OPERATOR: X | Y
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: uint8

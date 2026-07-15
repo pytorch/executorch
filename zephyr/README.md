@@ -23,13 +23,7 @@ pip install west "cmake<4.0.0" pyelftools ninja jsonschema
 Setup zephyr repo
 <!-- RUN west_init -->
 ```
-west init --manifest-rev v4.3.0
-```
-
-Install Zephyr SDK according to Zephyr's guides and set ZEPHYR_SDK_INSTALL_DIR
-
-```
-export ZEPHYR_SDK_INSTALL_DIR=<PATH-TO-ZEPHYR-SDK>
+west init --manifest-rev v4.4.0
 ```
 
 # Usage with Zephyr
@@ -58,6 +52,22 @@ Add ExecuTorch and Ethos-U driver to Zephyr
 west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u
 west update
 ```
+
+## Install Zephyr Python packages
+
+<!-- RUN west_packages_install -->
+```
+west packages pip --install
+```
+
+## Install Zephyr SDK
+
+<!-- RUN west_sdk_install -->
+```
+west sdk install --gnu-toolchains arm-zephyr-eabi
+```
+
+Or install Zephyr SDK according to Zephyr's guides for other targets.
 
 ## Setup and install ExecuTorch
 

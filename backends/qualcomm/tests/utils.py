@@ -222,6 +222,7 @@ class TestQNN(unittest.TestCase):
     direct_build_folder: str = ""
     dsp_heap_profile_filename = "htp_heap_usage.txt"
     use_fp16 = False
+    seed = None
 
     @classmethod
     def setUpClass(cls):
@@ -234,6 +235,7 @@ class TestQNN(unittest.TestCase):
                 host=cls.host,
                 soc_model=cls.soc_model,
                 direct_build_folder=cls.direct_build_folder,
+                seed=cls.seed,
             )
 
             # init device once

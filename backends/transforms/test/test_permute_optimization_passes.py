@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,6 +26,8 @@ from executorch.backends.transforms.remove_permutes_around_elementwise_ops impor
 from executorch.backends.transforms.replace_nop_transpose_or_permute_with_view import (
     ReplaceNopTransposeOrPermuteWithViewPass,
 )
+
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 from torch.utils import _pytree as pytree
@@ -475,6 +478,38 @@ class PostponePermuteBelowSqueezeViewTest(unittest.TestCase):
             gm,
             [x_data],
             "PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView",
+        )
+
+    def test_postpone_permute_with_symbolic_shapes(self) -> None:
+        class DynamicPermuteViewModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = x.view(x.shape[0], 12, 64)
+                y = y.permute(1, 0, 2)
+                y = y.view(1, 12, x.shape[0], 64)
+                return y.permute(0, 1, 3, 2)
+
+        exported_program = torch.export.export(
+            DynamicPermuteViewModule(),
+            (torch.randn(3, 1, 768),),
+            dynamic_shapes={"x": {0: torch.export.Dim("batch", min=1, max=8)}},
+        )
+        edge_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        graph_module = edge_program.exported_program().graph_module
+
+        result = cast(
+            PassResult,
+            PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView().call(graph_module),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.view_copy.default), 2
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
         )
 
     def test_negative_not_squeeze_like(self) -> None:

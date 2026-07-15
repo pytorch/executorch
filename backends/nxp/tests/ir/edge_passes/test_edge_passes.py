@@ -255,19 +255,19 @@ class TestEdgePasses(unittest.TestCase):
 
             # Check linear and activation are in separate QDQ clusters
             nodes = list(exported_program.graph.nodes)
-            assert len(nodes) == 13
+            assert len(nodes) == 15
             assert _is_dequantize(nodes[5])
             assert (
                 neutron_target_spec.neutron_target_info.is_fusable_conv_or_linear__edge(
-                    nodes[7]
+                    nodes[9]
                 )
             )
-            assert _is_quantize(nodes[8])
-            assert _is_dequantize(nodes[9])
+            assert _is_quantize(nodes[10])
+            assert _is_dequantize(nodes[11])
             assert neutron_target_spec.neutron_target_info.is_supported_fused_activation__edge(
-                nodes[10]
+                nodes[12]
             )
-            assert _is_quantize(nodes[11])
+            assert _is_quantize(nodes[13])
 
     @parameterized.expand(
         [
