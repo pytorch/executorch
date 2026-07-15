@@ -18,7 +18,7 @@ Windows note:
 ## Export the model:
 Navigate into `<executorch_root>/examples/openvino/llama` and execute the commands below to export the model. Update the model file paths to match the location where your model is downloaded. Replace device with the target hardware you want to compile the model for (`CPU`, `GPU`, or `NPU`). The exported model will be generated in the same directory with the filename `llama3_2_ov.pte`. For modifying the output name, change `output_name` in `llama3_2_ov_4wo.yaml` file under `export`.
 
-Linux/macOS (bash):
+#### Linux/macOS (bash):
 ```
 LLAMA_CHECKPOINT=<path/to/model/folder>/consolidated.00.pth
 LLAMA_PARAMS=<path/to/model/folder>/params.json
@@ -33,7 +33,7 @@ python -m executorch.extension.llm.export.export_llm \
   +base.tokenizer_path="${LLAMA_TOKENIZER:?}"
 ```
 
-Windows (PowerShell):
+#### Windows (PowerShell):
 ```powershell
 $LLAMA_CHECKPOINT="C:\path\to\model\consolidated.00.pth"
 $LLAMA_PARAMS="C:\path\to\model\params.json"
@@ -54,7 +54,7 @@ After export, verify `outputs/<date>/<time>/.hydra/overrides.yaml` contains non-
 OpenVINO backend also offers Quantization support for llama models when exporting the model. The different quantization modes that are offered are INT4 groupwise & per-channel weights compression and INT8 per-channel weights compression. It can be achieved by setting `pt2e_quantize` option in `llama3_2_ov_4wo.yaml` file under `quantization`. Set this parameter to `openvino_4wo` for INT4 or `openvino_8wo` for INT8 weight compression. It is set to `openvino_4wo` in `llama3_2_ov_4wo.yaml` file by default. For modifying the group size, set `group_size` option in `llama3_2_ov_4wo.yaml` file under `quantization`. By default group size 128 is used to achieve optimal performance with the NPU.
 
 ## Build OpenVINO C++ Runtime with Llama Runner:
-Linux/macOS:
+#### Linux/macOS:
 First, build the backend libraries with llm extension by executing the script below in `<executorch_root>/backends/openvino/scripts` folder:
 ```bash
 ./openvino_build.sh --cpp_runtime_llm
@@ -71,7 +71,7 @@ cmake --build cmake-out/examples/models/llama -j$(nproc) --config Release
 ```
 The executable is saved in `<executorch_root>/cmake-out/examples/models/llama/llama_main`
 
-Windows (PowerShell):
+#### Windows (PowerShell):
 Build backend runtime with LLM extension from `<executorch_root>`:
 ```powershell
 if (Test-Path cmake-out) { Remove-Item -Recurse -Force cmake-out }
@@ -108,12 +108,12 @@ The executable is saved in `<executorch_root>/cmake-out/examples/models/llama/Re
 ## Execute Inference Using Llama Runner
 Update the model tokenizer file path to match the location where your model is downloaded and replace the prompt. For Llama 3.2 models downloaded from Hugging Face, use `tokenizer.json`.
 
-Linux/macOS:
+#### Linux/macOS:
 ```
 ./cmake-out/examples/models/llama/llama_main --model_path=<executorch_root>/examples/openvino/llama/llama3_2.pte --tokenizer_path=<path/to/model/folder>/tokenizer.json --prompt="Your custom prompt"
 ```
 
-Windows (PowerShell):
+#### Windows (PowerShell):
 ```powershell
 <executorch_root>\cmake-out\examples\models\llama\Release\llama_main.exe --model_path="llama3_2_ov.pte" --tokenizer_path="C:\path\to\model\tokenizer.json" --prompt="Your custom prompt" --max_new_tokens=128
 ```
