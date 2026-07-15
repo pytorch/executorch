@@ -178,11 +178,20 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUPipelineLayout pipeline_layout =
       wgpuDeviceCreatePipelineLayout(device, &pl_desc);
 
+  // Runtime-overridable workgroup size (mirrors add op); clamp only reduces.
+  const uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kRmsNormWorkgroupSizeX);
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
+
   // Create compute pipeline
   WGPUComputePipelineDescriptor pipeline_desc = {};
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
@@ -217,10 +226,10 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // One workgroup per row (kRmsNormWorkgroupSizeX threads cooperate per row)
   static_assert(
       kRmsNormWorkgroupSizeX == 64,
-      "must match @workgroup_size and WG_SIZE in rms_norm.wgsl");
+      "kRmsNormWorkgroupSizeX must match override wg_size default (64)");
   static_assert(
       kRmsNormVec4WorkgroupSizeX == 64,
-      "must match @workgroup_size and WG_SIZE in rms_norm_vec4.wgsl");
+      "kRmsNormVec4WorkgroupSizeX must match override wg_size default (64)");
   const size_t dispatch_idx =
       graph.add_dispatch({pipeline, bind_group, num_rows});
 
