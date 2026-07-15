@@ -22,6 +22,19 @@ def combo_pattern(*pattern_lists):
 
 class ReluFusedPatternCheck(PatternCheck):
     @classmethod
+    def check_pattern(cls, pattern):
+        output_node = pattern[-1] if pattern else None
+        if output_node is None:
+            return False
+
+        min_val = float(output_node.args[1]) if len(output_node.args) > 1 else -1.0
+        return (
+            output_node.target
+            not in (torch.ops.aten.hardtanh.default, torch.ops.aten.hardtanh_.default)
+            or min_val == 0
+        )
+
+    @classmethod
     def check_quantization_config(cls, pattern, quantization_config):
         if quantization_config is None:
             return True
@@ -55,6 +68,47 @@ class ArithmeticFloatInputsCheck(PatternCheck):
         return True
 
 
+class CastCheck(PatternCheck):
+    INTEGER_CAST_DTYPES = (torch.int8, torch.int16, torch.int32)
+
+    @classmethod
+    def is_integer_to_integer(cls, input_dtype: torch.dtype, output_dtype: torch.dtype):
+        return (
+            input_dtype in cls.INTEGER_CAST_DTYPES
+            and output_dtype in cls.INTEGER_CAST_DTYPES
+        )
+
+    @classmethod
+    def is_integer_to_float(cls, input_dtype: torch.dtype, output_dtype: torch.dtype):
+        return input_dtype in cls.INTEGER_CAST_DTYPES and output_dtype.is_floating_point
+
+    @classmethod
+    def is_float_identity(cls, input_dtype: torch.dtype, output_dtype: torch.dtype):
+        return input_dtype.is_floating_point and input_dtype == output_dtype
+
+    @classmethod
+    def is_supported_cast(cls, input_dtype: torch.dtype, output_dtype: torch.dtype):
+        return (
+            cls.is_integer_to_integer(input_dtype, output_dtype)
+            or cls.is_integer_to_float(input_dtype, output_dtype)
+            or cls.is_float_identity(input_dtype, output_dtype)
+        )
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        node = pattern[0]
+        if len(node.all_input_nodes) == 0:
+            return False
+
+        try:
+            input_tensor = get_first_fake_tensor(node.all_input_nodes[0])
+            output_tensor = get_first_fake_tensor(node)
+        except Exception:
+            return False
+
+        return cls.is_supported_cast(input_tensor.dtype, output_tensor.dtype)
+
+
 BINARY_OP_PATTERNS = [
     (torch.ops.aten.add.Tensor,),
     (torch.ops.aten.add_.Tensor,),
@@ -77,8 +131,6 @@ FUSED_ACTIVATION_OPS = [
     torch.ops.aten.relu_.default,
     torch.ops.aten.hardtanh.default,
     torch.ops.aten.hardtanh_.default,
-    torch.ops.aten.clamp.default,
-    torch.ops.aten.clamp_.default,
 ]
 BATCH_NORM_OPS = [torch.ops.aten.batch_norm.default]
 LINEAR_OP_PATTERNS = (
@@ -175,6 +227,13 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.atanh.default,),
         (torch.ops.aten.einsum.default,),
         (torch.ops.aten.grid_sampler.default,),
+        (torch.ops.aten.linspace.default,),
+        (torch.ops.aten.eye.default,),
+        (torch.ops.aten.moveaxis.int,),
+        (torch.ops.aten.moveaxis.intlist,),
+        (torch.ops.aten.movedim.int,),
+        (torch.ops.aten.movedim.intlist,),
+        (torch.ops.aten.to.dtype,),
     ]
 )
 TOSA_QUANTIZER_SUPPORT_DICT: dict[tuple[OpOverload, ...], type[PatternCheck] | None] = {
@@ -184,3 +243,4 @@ for pattern in FUSED_RELU_OP_PATTERNS:
     TOSA_QUANTIZER_SUPPORT_DICT[pattern] = ReluFusedPatternCheck
 for pattern in BINARY_OP_PATTERNS:
     TOSA_QUANTIZER_SUPPORT_DICT[pattern] = ArithmeticFloatInputsCheck
+TOSA_QUANTIZER_SUPPORT_DICT[(torch.ops.aten.to.dtype,)] = CastCheck

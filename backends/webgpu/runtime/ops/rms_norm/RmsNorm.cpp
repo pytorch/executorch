@@ -179,8 +179,9 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       wgpuDeviceCreatePipelineLayout(device, &pl_desc);
 
   // Runtime-overridable workgroup size (mirrors add op); clamp only reduces.
+  // Pow2 required: the kernel halves the reduction stride (wg_size / 2u).
   const uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kRmsNormWorkgroupSizeX);
+      utils::clamp_workgroup_size_pow2(device, kRmsNormWorkgroupSizeX);
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
