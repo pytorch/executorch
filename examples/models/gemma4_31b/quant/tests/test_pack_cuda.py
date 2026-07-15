@@ -19,6 +19,7 @@ import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
 from executorch.backends.cuda.dp4a_planar_int6_tensor import (
+    _encode_int8_per_super,
     CudaDp4aPlanarInt6Tensor,
     pack_int6,
     unpack_int6,
@@ -145,8 +146,18 @@ class TestPackLinearInt6(unittest.TestCase):
         q = torch.randint(-32, 32, (N, K), dtype=torch.int8)
         scale = (torch.rand(N, K // gs) * 0.1 + 0.01).to(torch.bfloat16)
         ql, qh = pack_int6(q)
-        t = CudaDp4aPlanarInt6Tensor(ql, qh, scale, [1, gs], torch.Size([N, K]))
-        return t, q, scale
+        # The tensor stores int8 scale *codes* + a per-256-super-block [N, K/256]
+        # fp16 step (scale = code * step[:, g // (256 // gs)]); encode here and
+        # return the effective scale so the reference dequant matches the kernel.
+        scale_codes, steps = _encode_int8_per_super(scale.float(), gs)
+        n_super = steps.shape[1]
+        gps = (K // gs) // n_super
+        step_g = steps.to(torch.bfloat16).repeat_interleave(gps, dim=1)
+        eff_scale = (scale_codes.to(torch.bfloat16) * step_g).to(torch.bfloat16)
+        t = CudaDp4aPlanarInt6Tensor(
+            ql, qh, scale_codes, steps, [1, gs], torch.Size([N, K])
+        )
+        return t, q, eff_scale
 
     def _make_q6k_gguf(self, N, nb=1):
         """Build a synthetic q6_k ExportableGGUFTensor (see test_gguf.py).
@@ -179,7 +190,7 @@ class TestPackLinearInt6(unittest.TestCase):
         self.assertTrue(torch.equal(q_rt, q))
 
     def test_dequantize_equals_q_scale(self):
-        t, q, scale = self._make_int6(32, 128, gs=16)
+        t, q, scale = self._make_int6(32, 256, gs=16)
         ref = q.to(torch.bfloat16) * scale.to(torch.bfloat16).repeat_interleave(
             16, dim=-1
         )
@@ -348,8 +359,8 @@ class TestPackModel(unittest.TestCase):
 
     def test_mixed_precision(self):
         torch.manual_seed(0)
-        w4 = torch.randn(64, 128, dtype=torch.bfloat16)
-        w8 = torch.randn(64, 128, dtype=torch.bfloat16)
+        w4 = torch.randn(64, 256, dtype=torch.bfloat16)
+        w8 = torch.randn(64, 256, dtype=torch.bfloat16)
         q4 = quantize_weight(
             w4,
             QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max"),
@@ -361,15 +372,15 @@ class TestPackModel(unittest.TestCase):
         with torch.device("meta"):
             model = nn.ModuleDict(
                 {
-                    "q_proj": nn.Linear(128, 64, bias=False),
-                    "v_proj": nn.Linear(128, 64, bias=False),
+                    "q_proj": nn.Linear(256, 64, bias=False),
+                    "v_proj": nn.Linear(256, 64, bias=False),
                 }
             )
         pack_model(
             model, {"q_proj.weight": q4, "v_proj.weight": q8}, DEFAULT_CUDA_PACKERS
         )
         model.cuda()
-        x = torch.randn(1, 128, dtype=torch.bfloat16, device="cuda")
+        x = torch.randn(1, 256, dtype=torch.bfloat16, device="cuda")
 
         ref4 = torch.nn.functional.linear(x, w4.cuda())
         out4 = model.q_proj(x)
@@ -389,7 +400,7 @@ class TestPackModel(unittest.TestCase):
 
     def test_load_and_pack_from_disk(self):
         torch.manual_seed(0)
-        weight = torch.randn(64, 128, dtype=torch.bfloat16)
+        weight = torch.randn(64, 256, dtype=torch.bfloat16)
         config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
         q = quantize_weight(weight, config)
 
@@ -405,17 +416,17 @@ class TestPackModel(unittest.TestCase):
             with torch.device("meta"):
                 model = nn.ModuleDict(
                     {
-                        "proj": nn.Linear(128, 64, bias=False),
+                        "proj": nn.Linear(256, 64, bias=False),
                         "norm": nn.LayerNorm(64, bias=False),
                     }
                 )
             load_and_pack_for_cuda(path, model)
 
-        self.assertEqual(model.proj.weight.shape, torch.Size([64, 128]))
+        self.assertEqual(model.proj.weight.shape, torch.Size([64, 256]))
         self.assertEqual(model.norm.weight.shape, torch.Size([64]))
 
         model.proj.cuda()
-        x = torch.randn(1, 128, dtype=torch.bfloat16, device="cuda")
+        x = torch.randn(1, 256, dtype=torch.bfloat16, device="cuda")
         ref = torch.nn.functional.linear(x, weight.cuda())
         out = model.proj(x)
         rel_error = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
@@ -423,9 +434,9 @@ class TestPackModel(unittest.TestCase):
 
     def test_pack_one_quantized(self):
         config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
-        q = quantize_weight(torch.randn(64, 128, dtype=torch.bfloat16), config)
+        q = quantize_weight(torch.randn(64, 256, dtype=torch.bfloat16), config)
         with torch.device("meta"):
-            model = nn.ModuleDict({"proj": nn.Linear(128, 64, bias=False)})
+            model = nn.ModuleDict({"proj": nn.Linear(256, 64, bias=False)})
         pack_one(model, "proj.weight", q, DEFAULT_CUDA_PACKERS)
         self.assertNotEqual(model.proj.weight.device.type, "meta")
 
@@ -463,13 +474,13 @@ class TestPackErrorPaths(unittest.TestCase):
 
     def test_missing_weight_detected(self):
         config = QuantConfig(bits=4, group_size=32, symmetric=False, method="min_max")
-        q = quantize_weight(torch.randn(32, 64, dtype=torch.bfloat16), config)
+        q = quantize_weight(torch.randn(32, 256, dtype=torch.bfloat16), config)
 
         with torch.device("meta"):
             model = nn.ModuleDict(
                 {
-                    "a": nn.Linear(64, 32, bias=False),
-                    "b": nn.Linear(64, 32, bias=False),
+                    "a": nn.Linear(256, 32, bias=False),
+                    "b": nn.Linear(256, 32, bias=False),
                 }
             )
         with self.assertRaises(RuntimeError) as ctx:
