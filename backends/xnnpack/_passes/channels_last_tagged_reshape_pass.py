@@ -359,6 +359,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         input_node: torch.fx.Node,
         target_node: torch.fx.Node,
     ) -> None:
+        if not isinstance(input_node, torch.fx.Node):
+            return
+
         if is_param_node(self.exported_program, input_node):
             if (
                 ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in input_node.meta
