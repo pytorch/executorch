@@ -253,10 +253,12 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // M==1 -> bicol GEMV; M>1 -> steel GEMM (preferred) else shmem else tiled.
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
-  // GEMV (bicol) has its own override wg_size; clamp its own default.
-  const uint32_t gemv_wg_size =
-      utils::clamp_workgroup_size(device, kQ4gswLinearCoop4BicolWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
+  // GEMV (bicol) is a pow2 tree reduction; compute its size only when used.
+  const uint32_t gemv_wg_size = use_gemv
+      ? utils::clamp_workgroup_size_pow2(
+            device, kQ4gswLinearCoop4BicolWorkgroupSizeX)
+      : 0u;
   // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
   const bool use_steel = !use_gemv && steel_supported(device) &&
       steel_workgroup_count(device, M, N, K) > 0u;

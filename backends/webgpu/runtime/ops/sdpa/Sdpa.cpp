@@ -530,7 +530,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     const utils::WgCount wgc = utils::compute_2d_workgroup_count(
         device, static_cast<uint32_t>(Hq * S), 1, "softmax");
     const uint32_t sm_wg =
-        utils::clamp_workgroup_size(device, kSdpaSoftmaxWorkgroupSizeX);
+        utils::clamp_workgroup_size_pow2(device, kSdpaSoftmaxWorkgroupSizeX);
     SoftmaxParams p = make_softmax_params(Hq, S, context_len);
     WGPUBuffer ubuf = graph.make_uniform_buffer(&p, sizeof(p));
     BufferBinding bindings[2] = {
