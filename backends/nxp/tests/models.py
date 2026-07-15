@@ -100,6 +100,37 @@ class Conv2dModule(torch.nn.Module):
         return self.conv(x)
 
 
+class Conv2dTransposedModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool = True,
+        dilation: Union[int, tuple[int, int]] = 1,
+        in_channels: int = 4,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        out_channels: int = 8,
+        padding: Union[int, Collection[int]] = 0,
+        output_padding: Union[int, tuple[int, int]] = 0,
+        stride: Union[int, tuple[int, int]] = 2,
+        groups: int = 1,
+    ):
+        super().__init__()
+
+        self.conv_transp = torch.nn.ConvTranspose2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            dilation=dilation,
+            bias=bias,
+            groups=groups,
+        )
+
+    def forward(self, x):
+        return self.conv_transp(x)
+
+
 class Conv3dModule(torch.nn.Module):
     def __init__(
         self,
