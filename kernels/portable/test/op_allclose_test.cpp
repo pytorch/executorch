@@ -38,8 +38,8 @@ class OpAllCloseTest : public OperatorTest {
     Tensor a = tf.ones(/*sizes=*/{2, 2});
     Tensor b = tf.ones(/*sizes=*/{2, 2});
 
-    auto a_data = a.data_ptr<CTYPE>();
-    auto b_data = b.data_ptr<CTYPE>();
+    auto a_data = a.const_data_ptr<CTYPE>();
+    auto b_data = b.const_data_ptr<CTYPE>();
     b_data[0] = a_data[0] + adiff + a_data[0] * rdiff;
 
     TensorFactory<ScalarType::Bool> tf_bool;
@@ -54,7 +54,7 @@ class OpAllCloseTest : public OperatorTest {
         /*dummy_param=*/false,
         out);
 
-    auto out_data = out.data_ptr<bool>();
+    auto out_data = out.const_data_ptr<bool>();
     EXPECT_EQ(out_data[0], should_match)
         << a_data[0] << " doesn't match " << b_data[0] << "; dtype " << DTYPE;
   }
@@ -76,7 +76,7 @@ TEST_F(OpAllCloseTest, IdenticalFloatTensors) {
       /*dummy_param=*/false,
       out);
 
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], true);
 }
 
@@ -96,7 +96,7 @@ TEST_F(OpAllCloseTest, IdenticalDoubleTensors) {
       /*dummy_param=*/false,
       out);
 
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], true);
 }
 
@@ -116,7 +116,7 @@ TEST_F(OpAllCloseTest, NonEqualFloatTensors) {
       /*dummy_param=*/false,
       out);
 
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], false);
 }
 
@@ -136,7 +136,7 @@ TEST_F(OpAllCloseTest, NonEqualDoubleTensors) {
       /*dummy_param=*/false,
       out);
 
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], false);
 }
 
@@ -155,7 +155,7 @@ TEST_F(OpAllCloseTest, IdenticalIntTensors) {
       /*dummy_param=*/false,
       out);
 
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], true);
 }
 
@@ -174,7 +174,7 @@ TEST_F(OpAllCloseTest, NonEqualIntTensors) {
       /*dummy_param=*/false,
       out);
 
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], false);
 }
 
@@ -192,7 +192,7 @@ TEST_F(OpAllCloseTest, IdenticalBoolTensors) {
       /*equal_nan=*/false,
       /*dummy_param=*/false,
       out);
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], true);
 }
 
@@ -200,7 +200,7 @@ TEST_F(OpAllCloseTest, NonEqualBoolTensors) {
   TensorFactory<ScalarType::Bool> tf_bool;
   Tensor a = tf_bool.ones(/*sizes=*/{2, 2});
   Tensor b = tf_bool.ones(/*sizes=*/{2, 2});
-  auto b_data = b.data_ptr<bool>();
+  auto b_data = b.mutable_data_ptr<bool>();
   b_data[0] = false;
   Tensor out = tf_bool.zeros(/*sizes=*/{1});
 
@@ -212,7 +212,7 @@ TEST_F(OpAllCloseTest, NonEqualBoolTensors) {
       /*equal_nan=*/false,
       /*dummy_param=*/false,
       out);
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.const_data_ptr<bool>();
   EXPECT_EQ(out_data[0], false);
 }
 

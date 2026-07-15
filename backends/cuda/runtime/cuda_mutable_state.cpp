@@ -151,7 +151,7 @@ Result<int> tensor_cuda_device_index(const SlimTensor& t) {
     return static_cast<int>(device.index());
   }
   cudaPointerAttributes attr{};
-  const cudaError_t err = cudaPointerGetAttributes(&attr, t.data_ptr());
+  const cudaError_t err = cudaPointerGetAttributes(&attr, t.const_data_ptr());
   if (err != cudaSuccess) {
     cudaGetLastError();
     ET_LOG(

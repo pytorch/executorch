@@ -54,8 +54,8 @@ Tensor& quantized_mul_out(
       output_shift);
 
   // Extract quantization parameters
-  int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();
-  int8_t* input2_ptr = input2_int8.data_ptr<int8_t>();
+  const int8_t* input1_ptr = input1_int8.const_data_ptr<int8_t>();
+  const int8_t* input2_ptr = input2_int8.const_data_ptr<int8_t>();
   int32_t zp1 = static_cast<int32_t>(input1_zero_point);
   int32_t zp2 = static_cast<int32_t>(input2_zero_point);
   const int32_t out_zp = static_cast<int32_t>(output_zero_point);
@@ -67,7 +67,7 @@ Tensor& quantized_mul_out(
   if (channel_broadcast) {
     if (input1_int8.numel() < input2_int8.numel()) {
       std::swap<int32_t>(zp1, zp2);
-      std::swap<int8_t*>(input1_ptr, input2_ptr);
+      std::swap(input1_ptr, input2_ptr);
     }
 
     muls_per_loop = input1_int8.size(1);
