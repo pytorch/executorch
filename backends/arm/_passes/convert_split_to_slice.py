@@ -7,7 +7,7 @@
 from typing import Set, Type
 
 import torch.fx
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -16,7 +16,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ConvertSplitToSlicePass(ArmPass):
+class ConvertSplitToSlicePass(ArmOpTargetedPass):
     """Replace a split operation with many slice operations."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
@@ -25,6 +25,7 @@ class ConvertSplitToSlicePass(ArmPass):
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.split_copy.Tensor,
     )
+    target_ops = split_ops
     slice = exir_ops.edge.aten.slice_copy.Tensor
 
     def call(self, graph_module: torch.fx.GraphModule):

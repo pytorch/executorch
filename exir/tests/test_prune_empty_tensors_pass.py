@@ -12,6 +12,7 @@ from executorch.exir import to_edge
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.prune_empty_tensors_pass import PruneEmptyTensorsPass
 
 
 class TestCat(nn.Module):
@@ -23,6 +24,16 @@ class TestCat(nn.Module):
 
     def get_example_inputs(self):
         return (torch.rand(5, 6), torch.rand(5, 6), torch.rand(5, 6))
+
+
+class UnbackedCatModel(nn.Module):
+    __test__ = False
+
+    def forward(self, x, routing_weights):
+        expert_mask = routing_weights > 0.5
+        indices = torch.nonzero(expert_mask)
+        selected = x[indices[:, 0]]
+        return torch.cat([x[:0], selected], dim=0)
 
 
 class TestPruneEmptyTensors(unittest.TestCase):
@@ -77,3 +88,25 @@ class TestPruneEmptyTensors(unittest.TestCase):
         reference = model(*example_inputs)
 
         self.assertTrue(torch.allclose(actual, reference))
+
+    def test_unbacked_symint_numel_does_not_crash(self) -> None:
+        """PruneEmptyTensorsPass must not crash on tensors whose numel() is an
+        unbacked SymInt (e.g. from torch.nonzero in MoE expert routing).
+        The pass should conservatively keep such tensors."""
+        model = UnbackedCatModel()
+        model.eval()
+        ep = torch.export.export(
+            model,
+            (torch.randn(4, 8), torch.randn(4, 2)),
+            strict=False,
+        )
+        result = PruneEmptyTensorsPass()(ep.graph_module)
+        found_cat = False
+        for node in result.graph_module.graph.nodes:
+            if node.target == torch.ops.aten.cat.default:
+                found_cat = True
+                cat_inputs = node.args[0]
+                self.assertEqual(len(cat_inputs), 1)
+                val = cat_inputs[0].meta["val"]
+                self.assertGreater(len(val.shape), 0)
+        self.assertTrue(found_cat)

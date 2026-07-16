@@ -135,9 +135,8 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_11) {
   executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 1, 8},
       {99.375, 80.125, -81.0, 8.5, -70.375, -54.25, -80.25, 34.125});
-  std::optional<executorch::aten::Tensor> attn_mask =
-      std::optional<executorch::aten::Tensor>(
-          tfFloat.full({1, 1}, std::numeric_limits<float>::infinity()));
+  executorch::aten::Tensor attn_mask =
+      tfFloat.full({1, 1}, std::numeric_limits<float>::infinity());
   double dropout_p = 0.0;
   bool is_causal = false;
   std::optional<double> scale;
@@ -314,7 +313,7 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_18) {
   std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0.0;
   bool is_causal = false;
-  std::optional<double> scale = std::optional<double>(-INFINITY);
+  double scale = -INFINITY;
   executorch::aten::Tensor ret_expected = tfFloat.make(
       {3, 2, 2, 6},
       {NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN, NAN,
@@ -387,15 +386,14 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_19) {
        15.25,   53.75,   44.625,  -22.0,   -84.0,   -7.25,   22.0,    25.875,
        17.625,  -86.875, 22.75,   -74.0,   -79.875, -68.0,   -71.125, -81.625,
        -4.125,  65.875,  1.875,   76.125,  -43.75,  -15.25,  -4.625,  -66.125});
-  std::optional<executorch::aten::Tensor> attn_mask =
-      std::optional<executorch::aten::Tensor>(tfFloat.make(
+  executorch::aten::Tensor attn_mask = tfFloat.make(
           {3, 1, 2, 2, 4},
           {39.0,  49.375,  -87.125, -99.125, 49.375,  -41.125, 26.25,   79.75,
            91.0,  -3.125,  65.75,   63.5,    -48.375, 43.375,  22.5,    -53.625,
            -70.0, 2.125,   21.875,  6.375,   -6.375,  75.25,   -35.875, 86.375,
            71.5,  -35.875, 19.75,   11.625,  -87.25,  49.0,    -6.0,    62.875,
            7.125, 87.375,  -14.75,  55.5,    59.125,  24.75,   -66.5,   72.375,
-           2.25,  81.375,  -87.125, 35.125,  -39.125, 43.5,    52.875,  39.5}));
+           2.25,  81.375,  -87.125, 35.125,  -39.125, 43.5,    52.875,  39.5});
   double dropout_p = 0.0;
   bool is_causal = false;
   std::optional<double> scale;
@@ -479,6 +477,106 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_19) {
 }
 */
 
+namespace {
+// Runs the same problem as CorrectnessTest_105 in a reduced-precision dtype and
+// checks it against the float reference output within a loosened tolerance.
+template <executorch::aten::ScalarType DTYPE>
+void test_reduced_precision_matches_float(double rtol, double atol) {
+  TensorFactory<DTYPE> tf;
+
+  executorch::aten::Tensor query = tf.make(
+      {1, 1, 4, 4},
+      {0.4320f,
+       0.1461f,
+       0.6817f,
+       0.8756f,
+       0.8619f,
+       0.9165f,
+       0.1050f,
+       0.0488f,
+       0.9832f,
+       0.8024f,
+       0.3185f,
+       0.7671f,
+       0.5988f,
+       0.2772f,
+       0.3965f,
+       0.1101f});
+  executorch::aten::Tensor key = tf.make(
+      {1, 1, 4, 4},
+      {0.4951f,
+       0.1630f,
+       0.7805f,
+       0.7971f,
+       0.7538f,
+       0.5109f,
+       0.0012f,
+       0.0018f,
+       0.3541f,
+       0.6563f,
+       0.5831f,
+       0.0022f,
+       0.7363f,
+       0.2270f,
+       0.1862f,
+       0.2762f});
+  executorch::aten::Tensor value = tf.make(
+      {1, 1, 4, 4},
+      {0.2914f,
+       0.4977f,
+       0.0895f,
+       0.3630f,
+       0.6552f,
+       0.1495f,
+       0.1673f,
+       0.5845f,
+       0.8988f,
+       0.6690f,
+       0.5082f,
+       0.9999f,
+       0.0609f,
+       0.7338f,
+       0.2203f,
+       0.6971f});
+  std::optional<executorch::aten::Tensor> attn_mask;
+  double dropout_p = 0;
+  bool is_causal = false;
+  std::optional<double> scale;
+  executorch::aten::Tensor ret_expected = tf.make(
+      {1, 1, 4, 4},
+      {0.4473f,
+       0.5221f,
+       0.2302f,
+       0.6293f,
+       0.4910f,
+       0.5032f,
+       0.2501f,
+       0.6689f,
+       0.4630f,
+       0.5109f,
+       0.2368f,
+       0.6449f,
+       0.4741f,
+       0.5132f,
+       0.2444f,
+       0.6570f});
+  executorch::aten::Tensor out = tf.zeros({1, 1, 4, 4});
+  executorch::aten::Tensor ret = op_scaled_dot_product_attention(
+      query, key, value, attn_mask, dropout_p, is_causal, scale, out);
+  EXPECT_TENSOR_CLOSE_WITH_TOL(ret, ret_expected, rtol, atol);
+}
+} // namespace
+
+TEST(OpScaledDotProductAttentionTest, BFloat16MatchesFloat) {
+  test_reduced_precision_matches_float<executorch::aten::ScalarType::BFloat16>(
+      2e-2, 2e-2);
+}
+
+TEST(OpScaledDotProductAttentionTest, HalfMatchesFloat) {
+  test_reduced_precision_matches_float<executorch::aten::ScalarType::Half>(
+      1e-2, 1e-2);
+}
+
 TEST(OpScaledDotProductAttentionTest, CorrectnessTest_51) {
   TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
@@ -493,12 +591,10 @@ TEST(OpScaledDotProductAttentionTest, CorrectnessTest_51) {
   executorch::aten::Tensor value = tfFloat.make(
       {1, 1, 3, 3},
       {70.375, 30.875, 72.125, 53.0, 39.125, -4.625, 26.5, 79.5, 88.625});
-  std::optional<executorch::aten::Tensor> attn_mask =
-      std::optional<executorch::aten::Tensor>(tfFloat.make(
-          {8, 3},
-          {-59.25, -26.25, -3.0,  -24.125, 47.75,  92.375,  87.5,    21.5,
-           64.5,   45.0,   -54.0, 17.375,  -67.75, 14.625,  88.75,   36.0,
-           88.375, 25.75,  42.5,  -13.375, -82.75, -59.625, -21.125, 6.5}));
+  executorch::aten::Tensor attn_mask = tfFloat.make(
+      {8, 3}, {-59.25, -26.25, -3.0,  -24.125, 47.75,  92.375,  87.5,    21.5,
+               64.5,   45.0,   -54.0, 17.375,  -67.75, 14.625,  88.75,   36.0,
+               88.375, 25.75,  42.5,  -13.375, -82.75, -59.625, -21.125, 6.5});
   double dropout_p = 0.0;
   bool is_causal = false;
   std::optional<double> scale;

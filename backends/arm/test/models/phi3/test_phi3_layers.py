@@ -180,14 +180,16 @@ def _dtype_cases() -> list:
     ]
 
 
-def _vgf_dtype_cases() -> list:
+def _vgf_no_quant_dtype_cases() -> list:
     return [
         pytest.param(torch.float32, id="fp32"),
-        pytest.param(
-            torch.bfloat16,
-            marks=pytest.mark.xfail(reason="BF16 runtime support not ready for VGF."),
-            id="bf16",
-        ),
+        pytest.param(torch.bfloat16, id="bf16"),
+    ]
+
+
+def _vgf_quant_dtype_cases() -> list:
+    return [
+        pytest.param(torch.float32, id="fp32"),
     ]
 
 
@@ -233,12 +235,14 @@ def test_phi3_tosa_INT_layers(name, module_factory, input_factory):
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.parametrize("dtype", _vgf_dtype_cases())
+@pytest.mark.parametrize("dtype", _vgf_no_quant_dtype_cases())
 @pytest.mark.parametrize("name,module_factory,input_factory", _module_cases())
 def test_phi3_vgf_no_quant_layers(name, module_factory, input_factory, dtype):
     config = _phi3_config()
     module = module_factory(config).to(dtype)
     inputs = input_factory(config, dtype)
+    atol = 1e-02 if dtype == torch.bfloat16 else 1e-03
+    rtol = 1e-02 if dtype == torch.bfloat16 else 1e-03
 
     pipeline = VgfPipeline[input_t1 if len(inputs) == 1 else input_t2](
         module,
@@ -250,12 +254,14 @@ def test_phi3_vgf_no_quant_layers(name, module_factory, input_factory, dtype):
             InsertInt32CastsAfterInt64PlaceholdersPass(),
         ],
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.parametrize("dtype", _vgf_dtype_cases())
+@pytest.mark.parametrize("dtype", _vgf_quant_dtype_cases())
 @pytest.mark.parametrize("name,module_factory,input_factory", _module_cases())
 def test_phi3_vgf_quant_layers(name, module_factory, input_factory, dtype):
     config = _phi3_config()

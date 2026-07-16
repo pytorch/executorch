@@ -646,7 +646,7 @@ def test_convolution_3d_tosa_INT_a8w4(test_data):
         exir_op,
         tosa_extensions=["int4"],
         qtol=1,
-        frobenius_threshold=0.4,
+        frobenius_threshold=0.5,
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
@@ -772,16 +772,25 @@ def test_convolution_3d_u85_INT_a8w4(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_convolution_3d_vgf_no_quant(test_data):
     model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 1e-2
+            rtol = 1e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op,
         exir_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

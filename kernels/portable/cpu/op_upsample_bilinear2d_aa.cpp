@@ -30,17 +30,19 @@ inline T bilinear_aa_filter(T x) {
                                    : static_cast<T>(0.0);
 }
 
-// Compute anti-aliasing weights exactly matching PyTorch's algorithm
 template <typename T>
-void compute_aa_weights_for_pixel(
-    int64_t output_idx,
-    T scale,
-    int64_t input_size,
-    int64_t* indices,
-    T* weights,
-    int64_t* num_contributors) {
-  // Use the provided scale directly instead of recalculating
+struct AAKernelParams {
+  int64_t xmin;
+  int64_t xmax;
+  int64_t fallback_index;
+  T center;
+  T invscale;
+  T total_weight;
+};
 
+template <typename T>
+AAKernelParams<T>
+compute_aa_kernel_params(int64_t output_idx, T scale, int64_t input_size) {
   // PyTorch's center calculation for anti-aliasing
   // Always uses scale * (i + 0.5) for anti-aliasing, regardless of
   // align_corners
@@ -58,58 +60,58 @@ void compute_aa_weights_for_pixel(
       static_cast<int64_t>(0));
   const int64_t xmax = std::min(
       static_cast<int64_t>(center + support + static_cast<T>(0.5)), input_size);
-
-  *num_contributors = std::min(xmax - xmin, static_cast<int64_t>(4));
-
-  // Ensure we have at least one contributor
-  if (*num_contributors <= 0) {
-    *num_contributors = 1;
-    indices[0] = std::max(
-        static_cast<int64_t>(0),
-        std::min(static_cast<int64_t>(center), input_size - 1));
-    weights[0] = static_cast<T>(1.0);
-    // Clear unused weight slots
-    for (int64_t j = 1; j < 4; ++j) {
-      weights[j] = static_cast<T>(0.0);
-    }
-    return;
-  }
-
-  // PyTorch's weight computation
-  T total_weight = static_cast<T>(0.0);
   const T invscale = (scale >= static_cast<T>(1.0))
       ? (static_cast<T>(1.0) / scale)
       : static_cast<T>(1.0);
 
-  for (int64_t j = 0; j < *num_contributors; ++j) {
-    int64_t x = xmin + j;
-    // PyTorch's exact weight formula: (j + xmin - center + 0.5) * invscale
-    T arg = (static_cast<T>(j) + static_cast<T>(xmin) - center +
-             static_cast<T>(0.5)) *
-        invscale;
-    T weight = bilinear_aa_filter<T>(arg);
-    indices[j] = x;
-    weights[j] = weight;
-    total_weight += weight;
+  // Ensure we have at least one contributor
+  if (xmax <= xmin) {
+    const int64_t fallback_index = std::max(
+        static_cast<int64_t>(0),
+        std::min(static_cast<int64_t>(center), input_size - 1));
+    return {
+        fallback_index,
+        fallback_index + 1,
+        fallback_index,
+        center,
+        invscale,
+        static_cast<T>(1.0)};
   }
 
-  // Normalize weights to sum to 1 (PyTorch does this)
-  if (total_weight > static_cast<T>(0.0)) {
-    for (int64_t j = 0; j < *num_contributors; ++j) {
-      weights[j] /= total_weight;
-    }
-  } else {
-    // Fallback: if total weight is 0, set equal weights
-    T equal_weight = static_cast<T>(1.0) / static_cast<T>(*num_contributors);
-    for (int64_t j = 0; j < *num_contributors; ++j) {
-      weights[j] = equal_weight;
-    }
+  T total_weight = static_cast<T>(0.0);
+  for (int64_t x = xmin; x < xmax; ++x) {
+    total_weight += bilinear_aa_filter<T>(
+        (static_cast<T>(x) - center + static_cast<T>(0.5)) * invscale);
   }
 
-  // Clear unused weight slots
-  for (int64_t j = *num_contributors; j < 4; ++j) {
-    weights[j] = static_cast<T>(0.0);
+  if (total_weight <= static_cast<T>(0.0)) {
+    const int64_t fallback_index = std::max(
+        static_cast<int64_t>(0),
+        std::min(static_cast<int64_t>(center), input_size - 1));
+    return {
+        fallback_index,
+        fallback_index + 1,
+        fallback_index,
+        center,
+        invscale,
+        static_cast<T>(1.0)};
   }
+
+  return {xmin, xmax, -1, center, invscale, total_weight};
+}
+
+template <typename T>
+inline T compute_normalized_aa_weight(
+    const AAKernelParams<T>& params,
+    int64_t input_idx) {
+  if (params.fallback_index >= 0) {
+    return (input_idx == params.fallback_index) ? static_cast<T>(1.0)
+                                                : static_cast<T>(0.0);
+  }
+  return bilinear_aa_filter<T>(
+             (static_cast<T>(input_idx) - params.center + static_cast<T>(0.5)) *
+             params.invscale) /
+      params.total_weight;
 }
 
 template <typename CTYPE>
@@ -129,48 +131,28 @@ void upsample_bilinear2d_aa_kernel_impl(
   if (is_nchw) {
     // NCHW layout
     for (int64_t n = 0; n < out.size(0); ++n) {
-      for (int64_t c = 0; c < out.size(1); ++c) {
-        const auto in_plane =
-            in_data + (n * in.size(1) + c) * in.size(2) * in.size(3);
-        auto out_plane =
-            out_data + (n * out.size(1) + c) * out.size(2) * out.size(3);
+      for (int64_t oh = 0; oh < out.size(2); ++oh) {
+        const auto h_params =
+            compute_aa_kernel_params<float>(oh, scale_h, in.size(2));
 
-        for (int64_t oh = 0; oh < out.size(2); ++oh) {
-          // Compute height weights for this output row
-          int64_t h_indices[4];
-          float h_weights[4];
-          int64_t h_num_contributors;
-          compute_aa_weights_for_pixel<float>(
-              oh,
-              scale_h,
-              in.size(2),
-              h_indices,
-              h_weights,
-              &h_num_contributors);
+        for (int64_t ow = 0; ow < out.size(3); ++ow) {
+          const auto w_params =
+              compute_aa_kernel_params<float>(ow, scale_w, in.size(3));
 
-          for (int64_t ow = 0; ow < out.size(3); ++ow) {
-            // Compute width weights for this output column
-            int64_t w_indices[4];
-            float w_weights[4];
-            int64_t w_num_contributors;
-            compute_aa_weights_for_pixel<float>(
-                ow,
-                scale_w,
-                in.size(3),
-                w_indices,
-                w_weights,
-                &w_num_contributors);
-
+          for (int64_t c = 0; c < out.size(1); ++c) {
+            const auto in_plane =
+                in_data + (n * in.size(1) + c) * in.size(2) * in.size(3);
+            auto out_plane =
+                out_data + (n * out.size(1) + c) * out.size(2) * out.size(3);
             CTYPE value = 0;
 
             // Apply anti-aliased interpolation
-            for (int64_t ih_idx = 0; ih_idx < h_num_contributors; ++ih_idx) {
-              int64_t ih = h_indices[ih_idx];
-              float h_weight = h_weights[ih_idx];
+            for (int64_t ih = h_params.xmin; ih < h_params.xmax; ++ih) {
+              const float h_weight = compute_normalized_aa_weight(h_params, ih);
 
-              for (int64_t iw_idx = 0; iw_idx < w_num_contributors; ++iw_idx) {
-                int64_t iw = w_indices[iw_idx];
-                float w_weight = w_weights[iw_idx];
+              for (int64_t iw = w_params.xmin; iw < w_params.xmax; ++iw) {
+                const float w_weight =
+                    compute_normalized_aa_weight(w_params, iw);
 
                 value += in_plane[ih * in.size(3) + iw] * h_weight * w_weight;
               }
@@ -188,37 +170,23 @@ void upsample_bilinear2d_aa_kernel_impl(
       auto out_batch = out_data + n * out.size(1) * out.size(2) * out.size(3);
 
       for (int64_t oh = 0; oh < out.size(2); ++oh) {
-        // Compute height weights for this output row
-        int64_t h_indices[4];
-        float h_weights[4];
-        int64_t h_num_contributors;
-        compute_aa_weights_for_pixel<float>(
-            oh, scale_h, in.size(2), h_indices, h_weights, &h_num_contributors);
+        const auto h_params =
+            compute_aa_kernel_params<float>(oh, scale_h, in.size(2));
 
         for (int64_t ow = 0; ow < out.size(3); ++ow) {
-          // Compute width weights for this output column
-          int64_t w_indices[4];
-          float w_weights[4];
-          int64_t w_num_contributors;
-          compute_aa_weights_for_pixel<float>(
-              ow,
-              scale_w,
-              in.size(3),
-              w_indices,
-              w_weights,
-              &w_num_contributors);
+          const auto w_params =
+              compute_aa_kernel_params<float>(ow, scale_w, in.size(3));
 
           for (int64_t c = 0; c < out.size(1); ++c) {
             CTYPE value = 0;
 
             // Apply anti-aliased interpolation
-            for (int64_t ih_idx = 0; ih_idx < h_num_contributors; ++ih_idx) {
-              int64_t ih = h_indices[ih_idx];
-              float h_weight = h_weights[ih_idx];
+            for (int64_t ih = h_params.xmin; ih < h_params.xmax; ++ih) {
+              const float h_weight = compute_normalized_aa_weight(h_params, ih);
 
-              for (int64_t iw_idx = 0; iw_idx < w_num_contributors; ++iw_idx) {
-                int64_t iw = w_indices[iw_idx];
-                float w_weight = w_weights[iw_idx];
+              for (int64_t iw = w_params.xmin; iw < w_params.xmax; ++iw) {
+                const float w_weight =
+                    compute_normalized_aa_weight(w_params, iw);
 
                 value += in_batch[(ih * in.size(3) + iw) * in.size(1) + c] *
                     h_weight * w_weight;

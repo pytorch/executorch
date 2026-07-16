@@ -132,3 +132,13 @@ if(EXECUTORCH_BUILD_CADENCE_RUNNER)
   endif()
   target_link_options(cadence_executor_runner PRIVATE -static -lm)
 endif()
+
+# Cadence op-level gtest tests, cross-compiled for the Xtensa ISS (run via
+# xt-run). Built only when EXECUTORCH_BUILD_CADENCE_OP_TESTS is ON and the
+# selected backend ships a tests dir. See .ci/scripts/test-cadence-xtensa.sh.
+if(EXECUTORCH_BUILD_CADENCE_OP_TESTS
+   AND EXISTS
+       "${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators/tests/CMakeLists.txt"
+)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators/tests)
+endif()

@@ -3,7 +3,8 @@
 The ExecuTorch Vulkan (ET-VK) backend enables ExecuTorch models to execute on
 GPUs via the cross-platform [Vulkan API](https://www.vulkan.org/). Although the
 Vulkan API support is almost ubiquitous among modern GPUs, the ExecuTorch Vulkan
-backend is currently developed with a specific focus for **Android GPUs**.
+backend is developed with a focus on **Android GPUs**, and support for desktop
+platforms is experimental.
 
 ## Features
 

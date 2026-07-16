@@ -45,8 +45,10 @@ bool validate_flash_attention_args(
 
   ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == ScalarType::Float) ||
+          (query.scalar_type() == ScalarType::Half) ||
+          (query.scalar_type() == ScalarType::BFloat16) ||
           (query.scalar_type() == ScalarType::Char),
-      "Query must be Float type");
+      "Query must be Float, Half, BFloat16, or Char type");
 
   ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == key.scalar_type()) &&
@@ -266,7 +268,7 @@ Tensor& flash_attention_kernel_out(
 
   auto seq_len = query.size(2);
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
@@ -414,7 +416,7 @@ Tensor& custom_sdpa_out_impl(
 
   // TODO(task): replace the template param selection logic
   // with whatever apprpriately makes more sense for
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       output.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
