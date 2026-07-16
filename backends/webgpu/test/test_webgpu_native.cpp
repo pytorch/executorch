@@ -14,6 +14,7 @@
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/options.h>
 
+#include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -22,6 +23,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -1373,6 +1375,196 @@ const EmbConfig kEmbConfigs[] = {
      2048},
 };
 
+// Regression: an edge-dialect-serialized integer slice `start` can arrive as a
+// Double (e.g. Florence-2 DaViT serialized start=0 as Double 0.0), which once
+// threw "slice: dynamic/unsupported start". The Python op-tests can only emit
+// an Int start (the serializer keys on the Python runtime type), so this case
+// is unreachable from a .pte export -- it must be built natively. Here we
+// hand-author a VkGraph flatbuffer whose slice `start` is a Double value, run
+// it on the device, and assert the gather matches in[start + i*step]. Two
+// cases: a Double 0.0 (identity) and a Double 2.0 (non-zero offset).
+static bool test_slice_double_start_case(double start_d, int out_len) {
+  namespace vk = vkgraph;
+  // Slice x[1, kInLen] along dim 1 with `start` as a Double; out is
+  // [1,out_len].
+  constexpr int kInLen = 6;
+  printf(
+      "\n--- Test: slice Double start (start=%.1f -> out[1,%d]) ---\n",
+      start_d,
+      out_len);
+
+  // Value ids: 0=in tensor, 1=dim(Int), 2=start(Double), 3=end(Int),
+  // 4=step(Int), 5=out tensor. dims are uint vectors; tensors take distinct
+  // mem_obj_ids so build() allocates a real Storage buffer for each.
+  ::flatbuffers::FlatBufferBuilder fbb;
+
+  std::vector<uint32_t> in_dims = {1u, static_cast<uint32_t>(kInLen)};
+  std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(out_len)};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  // The value under test: `start` serialized as a Double, not an Int.
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/start_d).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Int,
+      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.slice_copy.Tensor", &args));
+
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {5};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    printf("FAIL: graph build threw: %s\n", e.what());
+    return false;
+  }
+
+  std::vector<float> in(kInLen);
+  for (int i = 0; i < kInLen; i++) {
+    in[i] = static_cast<float>(i) + 0.5f;
+  }
+  std::vector<InputData> inputs(1);
+  inputs[0] = {in.data(), in.size() * sizeof(float), false};
+  graph.copy_inputs(inputs);
+  graph.execute();
+
+  std::vector<float> out(out_len, -1.0f);
+  std::vector<std::pair<void*, size_t>> outputs(1);
+  outputs[0] = {out.data(), out.size() * sizeof(float)};
+  graph.copy_outputs(outputs);
+
+  const int start = static_cast<int>(start_d);
+  float max_abs_err = 0.0f;
+  for (int i = 0; i < out_len; i++) {
+    const float expected = in[start + i]; // step == 1
+    max_abs_err = std::max(max_abs_err, std::abs(out[i] - expected));
+  }
+  printf("Max abs error: %e (checked %d elements)\n", max_abs_err, out_len);
+  if (max_abs_err != 0.0f) { // pure gather: must be bit-exact
+    printf("FAIL: slice Double-start gather mismatch\n");
+    return false;
+  }
+  printf("PASS: slice Double start (start=%.1f)\n", start_d);
+  return true;
+}
+
+// Negative control: a Double `start` that is fractional, NaN, or outside the
+// int64 range must throw (never silently truncate, never invoke UB via the
+// int64_t cast).
+static bool test_slice_double_start_rejects(double bad_start) {
+  namespace vk = vkgraph;
+  constexpr int kInLen = 6;
+  printf("\n--- Test: slice Double start REJECTS (start=%g) ---\n", bad_start);
+
+  ::flatbuffers::FlatBufferBuilder fbb;
+  std::vector<uint32_t> in_dims = {1u, static_cast<uint32_t>(kInLen)};
+  std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(kInLen)};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/bad_start).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Int,
+      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.slice_copy.Tensor", &args));
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {5};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    printf("PASS: rejected as expected: %s\n", e.what());
+    return true;
+  }
+  printf("FAIL: expected a throw for start=%g, graph.build() succeeded\n", bad_start);
+  return false;
+}
+
+static bool test_slice_double_start() {
+  // start=0.0 (identity copy) + start=2.0 (non-zero gather offset).
+  bool ok = true;
+  ok = test_slice_double_start_case(/*start_d=*/0.0, /*out_len=*/6) && ok;
+  ok = test_slice_double_start_case(/*start_d=*/2.0, /*out_len=*/4) && ok;
+  // Reject: fractional, NaN, and out-of-int64-range Doubles.
+  ok = test_slice_double_start_rejects(/*bad_start=*/0.5) && ok;
+  ok = test_slice_double_start_rejects(
+           /*bad_start=*/std::numeric_limits<double>::quiet_NaN()) &&
+      ok;
+  ok = test_slice_double_start_rejects(/*bad_start=*/1e300) && ok;
+  return ok;
+}
+
 // apply_rotary_emb on-GPU configs: multi + decode (env-gated, run-if-present).
 struct RopeConfig {
   const char* name;
@@ -1497,6 +1689,11 @@ TEST(WebGPUNative, Prepack) {
     GTEST_SKIP() << "WEBGPU_TEST_PREPACK_MODEL/GOLDEN not set";
   }
   test_prepack(g_prepack_model_path, g_prepack_golden_path);
+}
+
+TEST(WebGPUNative, SliceDoubleStart) {
+  EXPECT_TRUE(test_slice_double_start())
+      << "slice Double-start gather/reject checks failed";
 }
 
 TEST(WebGPUNative, Prepack2) {
