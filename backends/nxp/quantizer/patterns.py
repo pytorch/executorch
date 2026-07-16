@@ -965,6 +965,17 @@ class MeanDimPattern(SharedSpecPattern):
         return [torch.ops.aten.mean.dim]
 
 
+class MinimumPattern(SharedSpecMultipleInputPattern):
+    """
+    Quantization pattern for Minimum quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.minimum.default]
+
+
 class MmPattern(QuantizationPattern):
     def __init__(self, neutron_quantizer, is_qat: bool = False):
         super().__init__(is_qat=is_qat)
