@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -1686,3 +1687,26 @@ class Inspector:
             df["stacktraces"] = df["aot_ops"].apply(get_stacktraces_for_row)
 
         return df
+
+    def get_vgf_neural_statistics(self) -> List[Dict[str, Any]]:
+        """
+        Return parsed VGF neural accelerator statistics records embedded as
+        delegate metadata in ETDump.
+
+        Each returned item is the JSON wrapper emitted by the VGF backend. Blob
+        fields under each segment contain both the original base64 string and a
+        decoded `raw_data: bytes` field.
+        """
+        from executorch.devtools.inspector.vgf_neural_statistics import (
+            parse_vgf_neural_statistics_delegate_metadata,
+        )
+
+        records: List[Dict[str, Any]] = []
+        for event_block in self.event_blocks:
+            for event in event_block.events:
+                records.extend(
+                    parse_vgf_neural_statistics_delegate_metadata(
+                        event.raw_delegate_debug_metadatas
+                    )
+                )
+        return records

@@ -21,7 +21,6 @@ using namespace ::testing;
 using executorch::extension::BufferDataLoader;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
-using executorch::extension::FlatTensorHeader;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
