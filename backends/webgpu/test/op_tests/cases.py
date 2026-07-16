@@ -758,6 +758,50 @@ def _batch_norm_suite() -> WebGPUTestSuite:
         atol=1e-3,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_split_with_sizes_copy import (
+    _det_input as _split_det_input,
+    SplitWithSizesModule,
+)
+
+
+@register_op_test("split_with_sizes_copy")
+def _split_with_sizes_copy_suite() -> WebGPUTestSuite:
+    # YOLO Detect-head split of concatenated predictions. Multi-output: the
+    # framework compares chunk 0 (out_index 0) while each case runs all N
+    # per-chunk dispatches. Covers a 3-way channel split, a dim-0 split, and
+    # a last-dim split. copy is bit-exact -> float32 golden.
+    return WebGPUTestSuite(
+        module_factory=lambda sizes, dim, out_order=None: SplitWithSizesModule(
+            sizes, dim, out_order
+        ),
+        cases=[
+            Case(
+                name="three_dim1",
+                construct={"sizes": [2, 3, 3], "dim": 1},
+                inputs=(InputSpec(shape=(1, 8, 4, 4), gen=_split_det_input),),
+            ),
+            Case(
+                name="two_dim0",
+                construct={"sizes": [3, 2], "dim": 0},
+                inputs=(InputSpec(shape=(5, 4), gen=_split_det_input),),
+            ),
+            Case(
+                name="dim_last",
+                construct={"sizes": [4, 4], "dim": -1},
+                inputs=(InputSpec(shape=(2, 8), gen=_split_det_input),),
+            ),
+            # Reorder so chunk 1 (running offset > 0) is output 0 -> verifies the
+            # per-chunk start accumulation (out_index 0 is all the framework checks).
+            Case(
+                name="offset_chunk1_first",
+                construct={"sizes": [2, 3, 3], "dim": 1, "out_order": [1, 0, 2]},
+                inputs=(InputSpec(shape=(1, 8, 4, 4), gen=_split_det_input),),
+            ),
+        ],
+        golden_dtype="float32",
+        atol=1e-4,
+        rtol=1e-3,
+    )
 from executorch.backends.webgpu.test.ops.test_max_pool2d import (
     _det_input as _maxpool_det_input,
     MaxPool2dModule,
