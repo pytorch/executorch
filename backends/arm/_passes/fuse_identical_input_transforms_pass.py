@@ -14,7 +14,92 @@ from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_
 from executorch.backends.arm._passes.dim_maps import PermuteMap, same_numel, ViewMap
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch.export.exported_program import ExportedProgram
+from torch.export.graph_signature import InputSpec, TensorArgument
 from torch.fx import GraphModule, Node
+
+
+class NormalizeTransformInputPlaceholdersPass(ExportPass):
+    """Normalize placeholder names for lifted transform inputs."""
+
+    def __init__(self, exported_program: ExportedProgram | None = None) -> None:
+        super().__init__()
+        self.exported_program = exported_program
+
+    def call(self, graph_module: GraphModule) -> PassResult:
+        return PassResult(
+            graph_module,
+            self._normalize_transform_user_input_placeholders(graph_module),
+        )
+
+    def _normalize_transform_user_input_placeholders(
+        self, graph_module: GraphModule
+    ) -> bool:
+        if self.exported_program is None:
+            return False
+
+        signature = self.exported_program.graph_signature
+        placeholder_names = {
+            node.name for node in graph_module.graph.nodes if node.op == "placeholder"
+        }
+        name_updates: dict[str, str] = {}
+        modified = False
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            if not self._placeholder_represents_transform(node):
+                continue
+            old_target = str(node.target)
+
+            if node.target != node.name:
+                node.target = node.name
+                modified = True
+                if old_target not in placeholder_names:
+                    name_updates[old_target] = node.name
+
+        if not modified:
+            return False
+
+        if name_updates:
+            signature.input_specs = [
+                self._renamed_input_spec(spec, name_updates)
+                for spec in signature.input_specs
+            ]
+        graph_module.graph.lint()
+        graph_module.recompile()
+        return True
+
+    def _placeholder_represents_transform(self, node: Node) -> bool:
+        return any(
+            self._matches_transform_placeholder_name(node.name, target)
+            or self._matches_transform_placeholder_name(str(node.target), target)
+            for target in FuseIdenticalInputTransformsPass._TARGETS
+        )
+
+    def _matches_transform_placeholder_name(
+        self, name: str, target: torch.fx.node.Target
+    ) -> bool:
+        base_name = self._target_placeholder_name(target)
+        if name == base_name:
+            return True
+
+        suffix = name.removeprefix(f"{base_name}_")
+        return suffix != name and suffix.isdecimal()
+
+    def _target_placeholder_name(self, target: torch.fx.node.Target) -> str:
+        return target.__name__.replace(".", "_")  # type: ignore[union-attr]
+
+    def _renamed_input_spec(
+        self, spec: InputSpec, name_updates: dict[str, str]
+    ) -> InputSpec:
+        if isinstance(spec.arg, TensorArgument) and spec.arg.name in name_updates:
+            return InputSpec(
+                kind=spec.kind,
+                arg=TensorArgument(name=name_updates[spec.arg.name]),
+                target=spec.target,
+                persistent=spec.persistent,
+            )
+        return spec
 
 
 class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
@@ -60,8 +145,16 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
 
     target_ops = _BINARY_ELEMENTWISE_OPS | _CONCAT_OPS
 
+    def __init__(self, exported_program: ExportedProgram | None = None) -> None:
+        super().__init__()
+        self.exported_program = exported_program
+
     def call(self, graph_module: GraphModule) -> PassResult:
-        modified = False
+        modified = (
+            NormalizeTransformInputPlaceholdersPass(self.exported_program)
+            .call(graph_module)
+            .modified
+        )
 
         while True:
             iteration_modified = False
@@ -124,7 +217,7 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
                 args=transform_args,
                 kwargs=dict(transform.kwargs),
             )
-        new_node.meta = copy.copy(transform.meta)
+        new_node.meta = self._new_transform_meta(node, transform)
         refresh_permute_view_meta(new_node)
 
         for user in list(node.users):
@@ -132,6 +225,14 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
                 user.replace_input_with(node, new_node)
 
         return True
+
+    def _new_transform_meta(self, node: Node, transform: Node) -> dict[str, Any]:
+        meta = copy.copy(transform.meta)
+        if "delegation_tag" in node.meta:
+            meta["delegation_tag"] = node.meta["delegation_tag"]
+        else:
+            meta.pop("delegation_tag", None)
+        return meta
 
     def _updated_node_args(
         self, node: Node, transform: Node, node_val: Any, input_transforms: list[Node]
