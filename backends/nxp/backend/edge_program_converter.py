@@ -31,6 +31,7 @@ functions_converters = {
     exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
+    exir_ops.edge.aten.amax.default: AmaxConverter,  # noqa F405
     exir_ops.edge.aten.amin.default: AminConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.bmm.default: BMMConverter,  # noqa F405
@@ -45,6 +46,7 @@ functions_converters = {
     exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
     exir_ops.edge.aten.log.default: LogConverter,  # noqa F405
     exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2DWithIndicesConverter,  # noqa F405
+    exir_ops.edge.aten.maximum.default: MaximumConverter,  # noqa F405
     exir_ops.edge.aten.mean.dim: MeanDimConverter,  # noqa F405
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
