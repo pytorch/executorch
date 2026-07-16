@@ -10,6 +10,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.addmm_converter import (
     AddMMConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.amax_converter import (
+    AmaxConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.amin_converter import (
     AminConverter,
 )
@@ -51,6 +54,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool2d_with_indices_converter import (
     MaxPool2DWithIndicesConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.maximum_converter import (
+    MaximumConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import (
     MeanDimConverter,
@@ -113,6 +119,7 @@ __all__ = [
     "AdaptiveAvgPool2dConverter",
     "AddMMConverter",
     "AddTensorConverter",
+    "AmaxConverter",
     "AminConverter",
     "AvgPool2dConverter",
     "BMMConverter",
@@ -127,6 +134,7 @@ __all__ = [
     "LeakyReluConverter",
     "LogConverter",
     "MaxPool2DWithIndicesConverter",
+    "MaximumConverter",
     "MeanDimConverter",
     "MMConverter",
     "MulTensorConverter",

@@ -258,7 +258,7 @@ class TestDispatchRouting(unittest.TestCase):
         # (scale = code * step[:, g // (256 // gs)]); the GGUF sub-scales are
         # constant within this single super-block, so the int8 re-encoding is
         # exact here.
-        intx = gt.to_intx_unpacked_to_int8_tensor()
+        intx = gt.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
         q_rt = unpack_int6(t.ql, t.qh, N, nb * 256).to(torch.int8)
         self.assertTrue(torch.equal(q_rt, intx.qdata))
         n_groups = intx.scale.shape[1]
