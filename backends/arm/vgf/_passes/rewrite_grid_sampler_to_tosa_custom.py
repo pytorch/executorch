@@ -158,16 +158,21 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
         padding_mode: int,
         align_corners: bool,
         input_tensor: torch.fx.Node,
+        output_tensor: torch.fx.Node,
         output_dtype: torch.dtype | None = None,
     ) -> list[int]:
         input_val = input_tensor.meta.get("val")
         if input_val is None:
             raise RuntimeError("grid_sampler_2d input is missing tensor metadata")
+        output_val = output_tensor.meta.get("val")
+        if output_val is None:
+            raise RuntimeError("grid_sampler_2d output is missing tensor metadata")
         payload = build_grid_sampler_2d_payload(
             interpolation_mode=interpolation_mode,
             padding_mode=padding_mode,
             align_corners=align_corners,
             input_shape=tuple(input_val.shape),
+            output_shape=tuple(output_val.shape),
             input_dtype=input_val.dtype,
             output_dtype=output_dtype,
         )
@@ -258,6 +263,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     padding_mode=padding_mode,
                     align_corners=align_corners,
                     input_tensor=custom_input,
+                    output_tensor=node,
                     output_dtype=output_dtype,
                 )
                 nhwc_input = create_node(
