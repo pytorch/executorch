@@ -326,6 +326,25 @@ class TestReinplacePass(unittest.TestCase):
         # kernels in the other tests in this file.
         edge.to_executorch()
 
+    def test_output_specs_updated_after_reinplace(self) -> None:
+        """reinplace_pass must update graph_signature.output_specs to match
+        the renamed output nodes (e.g. relu -> relu_)."""
+
+        class M(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.relu(x + 1.0)
+
+        ep = export(M(), (torch.randn(4),), strict=True)
+        edge_program = to_edge(ep).exported_program()
+
+        custom_set = {edge_ops.edge.aten.relu.default}
+        ep = reinplace_pass(edge_program, ops_to_inplace=custom_set)
+
+        output_node = next(n for n in ep.graph.nodes if n.op == "output")
+        actual_names = [arg.name for arg in output_node.args[0] if hasattr(arg, "name")]
+        spec_names = [s.arg.name for s in ep.graph_signature.output_specs]
+        self.assertEqual(actual_names, spec_names)
+
     def test_broadcasting_self_not_reinplaced(self) -> None:
         """An op whose mutated arg (self) broadcasts up to a larger output
         must NOT be reinplaced: the in-place form cannot grow self
