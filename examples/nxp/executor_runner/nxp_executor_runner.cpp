@@ -13,6 +13,7 @@
  * Neutron Backend.
  */
 
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -203,6 +204,28 @@ Error saveOutputs(
   }
   return Error::Ok;
 }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+void saveETDump(
+    executorch::etdump::ETDumpGen* etdump_gen,
+    const std::string& outputPath) {
+  struct stat st;
+  const auto trace = etdump_gen->get_etdump_data();
+  if (trace.buf && trace.size > 0) {
+    if (stat(outputPath.c_str(), &st) == -1) {
+      mkdir(outputPath.c_str(), 0700);
+    }
+    std::string fileName = outputPath + "/trace.etdump";
+    printf("Saving file %s\n", fileName.c_str());
+    FILE* f = fopen(fileName.c_str(), "w+");
+    if (f != NULL) {
+      fwrite(static_cast<uint8_t*>(trace.buf), 1, trace.size, f);
+      fclose(f);
+    }
+    free(trace.buf);
+  }
+}
+#endif
 
 template <typename T>
 Error printClassificationOutput(
@@ -438,8 +461,20 @@ int main(int argc, char* argv[]) {
       &method_allocator, &planned_memory, &tmp_allocator);
 
   {
-    Result<torch::executor::Method> method =
-        program->load_method(method_name, &memory_manager);
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Create ETDumpGen before inference
+    auto etdump_gen_ptr = std::make_unique<executorch::etdump::ETDumpGen>();
+    executorch::etdump::ETDumpGen* etdump_gen = etdump_gen_ptr.get();
+#endif
+    Result<torch::executor::Method> method = program->load_method(
+        method_name,
+        &memory_manager,
+#ifdef ET_EVENT_TRACER_ENABLED
+        etdump_gen
+#else
+        nullptr
+#endif
+    );
     if (!method.ok()) {
       fprintf(
           stderr,
@@ -572,6 +607,12 @@ int main(int argc, char* argv[]) {
         }
       }
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Save ETDump.
+    saveETDump(etdump_gen, FLAGS_output);
+#endif
+
   } // Destruct the method object before destroying the Neutron Device.
 
   printf("Finished...\n");

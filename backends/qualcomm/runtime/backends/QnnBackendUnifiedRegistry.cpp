@@ -16,6 +16,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackend.h>
 #include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiDevice.h>
 
+#include <pal/Path.h>
+
 #include <string>
 
 namespace executorch {
@@ -154,7 +156,8 @@ Error QnnBackendUnifiedRegistry::GetOrCreateBackendBundle(
   }
   // 5. Create QnnSystemImplementation and load qnn library
   std::unique_ptr<QnnSystemImplementation> system_implementation =
-      std::make_unique<QnnSystemImplementation>("libQnnSystem.so");
+      std::make_unique<QnnSystemImplementation>(
+          pal::path::GetLibraryName("QnnSystem"));
   ret = system_implementation->Load();
   ET_CHECK_OR_RETURN_ERROR(
       ret == Error::Ok, Internal, "Fail to load Qnn system library");
