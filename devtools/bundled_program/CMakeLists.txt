@@ -51,7 +51,7 @@ target_include_directories(
 install(
   TARGETS bundled_program
   EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

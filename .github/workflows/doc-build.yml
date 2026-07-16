@@ -104,9 +104,6 @@ jobs:
       repository: pytorch/executorch
       download-artifact: docs
       ref: gh-pages
-      # Publish on the host so actions/checkout's persisted credentials are
-      # available to git push.
-      run-with-docker: false
       timeout: 90
       script: |
         set -euo pipefail
