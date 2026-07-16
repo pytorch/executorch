@@ -1775,6 +1775,7 @@ def register_fused_ce():
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.le.Scalar,
         exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Scalar,
     ]
 )
 def register_compare_scalar_ops():
