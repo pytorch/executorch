@@ -62,14 +62,13 @@ set(WEBGPU_SRCS
     runtime/ops/div/BinaryOp.cpp
     runtime/ops/sub/BinaryOp.cpp
     runtime/ops/where/Where.cpp
-    runtime/ops/compare/Compare.cpp
+    runtime/ops/boolean_op/BooleanOp.cpp
     runtime/ops/gather/Gather.cpp
     runtime/ops/expand_copy/ExpandCopy.cpp
     runtime/ops/fill/Fill.cpp
     runtime/ops/dim_order/DimOrder.cpp
     runtime/ops/linear/Linear.cpp
     runtime/ops/embedding/Embedding.cpp
-    runtime/ops/logical_not/LogicalNot.cpp
     runtime/ops/quantized_linear/QuantizedLinearDw.cpp
     runtime/ops/quantized_linear/QuantizedLinearRequant.cpp
 )
