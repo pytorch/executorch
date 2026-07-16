@@ -54,7 +54,9 @@ from executorch.backends.webgpu.test.ops.test_select import (
 )
 from executorch.backends.webgpu.test.ops.test_sigmoid import (
     _det_input as _sigmoid_det_input,
+    _wide_det_input as _sigmoid_wide_det_input,
     N as _SIGMOID_N,
+    SigmoidChainedModule,
     SigmoidModule,
 )
 
@@ -188,11 +190,22 @@ def _sigmoid_full_range(_shape) -> torch.Tensor:
     return _sigmoid_det_input()
 
 
+def _sigmoid_wide_range(_shape) -> torch.Tensor:
+    return _sigmoid_wide_det_input()
+
+
+def _sigmoid_factory(variant: str = "regular") -> torch.nn.Module:
+    return {
+        "regular": SigmoidModule,
+        "chained": SigmoidChainedModule,
+    }[variant]()
+
+
 @register_op_test("sigmoid")
 def _sigmoid_suite() -> WebGPUTestSuite:
     # sigmoid has no CONFIGS table; cover unary shapes directly (tol 1e-4).
     return WebGPUTestSuite(
-        module_factory=lambda: SigmoidModule(),
+        module_factory=_sigmoid_factory,
         cases=[
             Case(name="vec", inputs=((M1,),)),
             Case(name="mat", inputs=((M1, M2),)),
@@ -201,6 +214,15 @@ def _sigmoid_suite() -> WebGPUTestSuite:
             # Saturation tails sigmoid(+-12) (~6e-6 / 0.999994) that randn shapes miss.
             Case(
                 name="saturation",
+                inputs=(InputSpec(shape=(_SIGMOID_N,), gen=_sigmoid_full_range),),
+            ),
+            Case(
+                name="wide_saturation",
+                inputs=(InputSpec(shape=(_SIGMOID_N,), gen=_sigmoid_wide_range),),
+            ),
+            Case(
+                name="chained",
+                construct={"variant": "chained"},
                 inputs=(InputSpec(shape=(_SIGMOID_N,), gen=_sigmoid_full_range),),
             ),
         ],
