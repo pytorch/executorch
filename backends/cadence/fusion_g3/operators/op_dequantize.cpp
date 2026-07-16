@@ -20,7 +20,6 @@
 
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
-using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
