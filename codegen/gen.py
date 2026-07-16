@@ -1009,8 +1009,6 @@ def main() -> None:
     parser.add_argument(
         "--manual-registration-lib-name",
         "--manual_registration_lib_name",
-        "--lib-name",
-        "--lib_name",
         help="library name to include in the manual registration API name. "
         "Characters that are not valid in a C++ identifier are converted to "
         "underscores. Requires --manual-registration.",
