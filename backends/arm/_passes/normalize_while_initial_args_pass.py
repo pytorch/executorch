@@ -62,7 +62,7 @@ class NormalizeWhileInitialArgsPass(ArmPass):
                     (placeholder,),
                 )
                 cloned_placeholders.append(clone)
-                clone.meta = placeholder.meta
+                clone.meta = placeholder.meta.copy()
         output_node = body_module.graph.output_node()
         output_values = output_node.args[0]
         if not isinstance(output_values, tuple):
