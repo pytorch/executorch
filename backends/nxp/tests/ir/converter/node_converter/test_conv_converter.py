@@ -8,19 +8,13 @@ import pytest
 import torch
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    EdgeProgramToIRConverter,
-    ExportedProgram,
-    graph_contains_any_of_ops,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
-)
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import Conv2dModule
+from executorch.backends.nxp.tests.models import Conv2dModule, Conv2dTransposedModule
 from executorch.backends.nxp.tests.nsys_testing import (
     AllCloseOutputComparator,
     lower_run_compare,
+    ReferenceModel,
 )
 from executorch.backends.nxp.tests.ops_aliases import (
     Convolution,
@@ -36,148 +30,531 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestTransposedConvFromLegacyFlow:
+def assert_delegated_and_correct(
+    model,
+    input_shape,
+    mocker,
+    request,
+    use_qat,
+    exp_delegated_ops=None,
+    exp_non_delegated_ops=None,
+    et_ref_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
+):
+    if exp_delegated_ops is None:
+        exp_delegated_ops = {Convolution: 1}
+    if exp_non_delegated_ops is None:
+        exp_non_delegated_ops = {}
+
+    graph_verifier = DetailedGraphVerifier(
+        mocker,
+        expected_delegated_ops=exp_delegated_ops,
+        expected_non_delegated_ops=exp_non_delegated_ops,
+    )
+    dataset = RandomDatasetCreator(low=-1.0, high=1.0)
+
+    # Use quantized dataset and allow single bit error.
+    remove_quant_io_ops = True
+    comparator = AllCloseOutputComparator(atol=1)
+
+    lower_run_compare(
+        model,
+        input_shape,
+        graph_verifier,
+        request,
+        dataset,
+        comparator,
+        use_qat=use_qat,
+        remove_quant_io_ops=remove_quant_io_ops,
+        reference_model=et_ref_model,
+    )
+
+
+def assert_not_delegated(model, input_shape, use_qat):
+    delegated_ep = to_quantized_edge_program(
+        model,
+        input_shape,
+        use_qat=use_qat,
+    ).exported_program()
+
+    # Make sure the `convolution` was NOT delegated.
+    assert not graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
+    assert graph_contains_any_of_ops(delegated_ep.graph, [Convolution])
+
+
+def _conv_id(ins, oc, ks=3, s=2, d=1, p=0, op=0, b=True, g=1):
+    return (
+        f"ins={ins}, "
+        f"oc={oc}, "
+        f"ks={ks}, "
+        f"s={s}, "
+        f"d={d}, "
+        f"p={p}, "
+        f"op={op}, "
+        f"b={b}, "
+        f"g={g}"
+    )
+
+
+class TestTrConv:
     @pytest.mark.parametrize(
-        "model, input_shape",
+        "input_shape, out_channels",
         [
             pytest.param(
-                torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2)),
-                (1, 8, 1, 16),
-                id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2)",
+                ins := (1, 8, 16, 24),
+                oc := 8,
+                id=f"basic inference: {_conv_id(ins, oc)}",
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(64, 64, (1, 2), stride=(1, 2)),
-                (1, 64, 3, 12),
-                id="In ch 64, out ch 64, kernel (1, 2), stride (1, 2)",
+                ins := (8, 16, 8, 32),
+                oc := 16,
+                id=f"basic inference: {_conv_id(ins, oc)}",
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(16, 40, (1, 4), stride=(1, 2), padding=(0, 1)),
-                (1, 16, 1, 27),
-                id="In ch 16, out ch 40, kernel (1, 4), stride (1, 2), padding (0, 1)",
+                ins := (16, 8, 32, 64),
+                oc := 32,
+                id=f"basic inference: {_conv_id(ins, oc)}",
+                marks=pytest.mark.xfail(reason="AIR-14853", strict=True),
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2), padding=(0, 1)),
-                (1, 8, 1, 16),
-                id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2), padding (0, 1)",
+                ins := (1, 8, 32, 64),
+                oc := 16,
+                id=f"basic inference: {_conv_id(ins, oc)}",
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(
-                    8, 16, (1, 4), stride=(1, 2), output_padding=(0, 1)
-                ),
-                (1, 8, 1, 16),
-                id="In ch 8, out ch 16, kernel (1, 8), stride (1, 2), output_padding (0, 1)",
-            ),
-            pytest.param(
-                torch.nn.ConvTranspose2d(16, 16, (1, 4), stride=(1, 2)),
-                (1, 16, 1, 16),
-                id="In ch 16, out ch 16, kernel (1, 4), stride (1, 2)",
-            ),
-            pytest.param(
-                torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2), bias=False),
-                (1, 8, 1, 16),
-                id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2), no bias",
-            ),
-            pytest.param(
-                torch.nn.ConvTranspose2d(
-                    8, 16, (1, 4), stride=(1, 2), padding=(0, 1), bias=False
-                ),
-                (1, 8, 1, 16),
-                id="In ch 8, out ch 16, kernel (1, 4), stride (1, 2),"
-                "padding (0, 1), no bias",
+                ins := (1, 32, 48, 8),
+                oc := 24,
+                id=f"basic inference: {_conv_id(ins, oc)}",
             ),
         ],
     )
-    def test_conv_transpose2d_conversion__quantized(
-        self, mocker, model: torch.nn.Module, input_shape, use_qat
-    ):
-        converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-        edge_program = to_quantized_edge_program(
-            model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-        ).exported_program()
-
-        # Make sure the `TransposeConv` was delegated.
-        assert not graph_contains_any_of_ops(
-            graph=edge_program.graph, ops=[Convolution]
-        )
-        assert graph_contains_any_of_ops(
-            graph=edge_program.graph, ops=[ExecutorchDelegateCall]
+    def test__tr_basic(self, input_shape, out_channels, use_qat, request, mocker):
+        in_channels = input_shape[1]
+        model = Conv2dTransposedModule(
+            in_channels=in_channels, out_channels=out_channels
         )
 
-        # Capture generated model
-        tflite_flatbuffers_model, *_ = converter_spy.spy_return
-
-        # Capture converted program
-        exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-        input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
-            np.int8
-        )
-
-        convert_run_compare(
-            exported_program,
-            tflite_input_preprocess=ToChannelLastPreprocess(),
-            tfl_model=tflite_flatbuffers_model,
-            tflite_output_preprocess=ToChannelFirstPreprocess(),
-            input_data=input_data,
-            atol=1.0,
-        )
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "model, input_shape",
+        "input_shape, out_channels, use_et_ref_model",
         [
             pytest.param(
-                torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2), dilation=(1, 2)),
-                (1, 8, 1, 16),
-                id="Dilation != (1, 1)",
+                ins := (1, 3, 7, 14),
+                oc := 3,
+                use_et_ref_model := True,
+                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+                + _conv_id(ins, oc),
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(6, 16, (1, 4), stride=(1, 2)),
-                (1, 6, 1, 16),
-                id="In channels % num_macs != 0",
+                ins := (2, 3, 13, 27),
+                oc := 7,
+                use_et_ref_model := True,
+                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+                + _conv_id(ins, oc),
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(8, 16, (1, 4), stride=(1, 2)),
-                (1, 8, 4, 16),
-                id="Out height != 1, stride width != kernel width",
+                ins := (3, 7, 3, 14),
+                oc := 4,
+                use_et_ref_model := True,
+                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+                + _conv_id(ins, oc),
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(8, 16, (2, 4), stride=(1, 2), padding=(0, 1)),
-                (1, 8, 1, 16),
-                id="Out height != 1, stride width != kernel width",
+                ins := (1, 9, 9, 13),
+                oc := 1,
+                use_et_ref_model := False,
+                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+                + _conv_id(ins, oc),
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(8, 16, (1, 5), stride=(1, 4)),
-                (1, 8, 1, 16),
-                id="Stride width != kernel width / 2, stride width != kernel width",
+                ins := (7, 7, 7, 7),
+                oc := 10,
+                use_et_ref_model := True,
+                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+                + _conv_id(ins, oc),
             ),
             pytest.param(
-                torch.nn.ConvTranspose2d(16, 12, (1, 4), stride=(3, 3)),
-                (1, 16, 1, 16),
-                id="Out channels % num_macs != 0",
-            ),
-            pytest.param(
-                torch.nn.ConvTranspose2d(64, 64, (1, 4), stride=(1, 2)),
-                (1, 64, 3, 12),
-                id="Out height != 1, stride width != kernel width",
-            ),
-            pytest.param(
-                torch.nn.ConvTranspose2d(16, 40, (1, 4), stride=(1, 4), padding=(0, 1)),
-                (1, 16, 4, 27),
-                id="Padding width != 1 and input height != 1",
+                ins := (4, 21, 13, 17),
+                oc := 27,
+                use_et_ref_model := True,
+                id=f"ET reference model used: {use_et_ref_model}, unusual shape inference: "
+                + _conv_id(ins, oc),
             ),
         ],
     )
-    def test_conv_transpose2d_non_delegated_conversion__quantized(
-        self, model: torch.nn.Module, input_shape, use_qat
+    def test__tr_unusual(
+        self, input_shape, out_channels, use_et_ref_model, use_qat, request, mocker
     ):
-        edge_program = to_quantized_edge_program(
-            model, input_shape, use_qat=use_qat
-        ).exported_program()
+        in_channels = input_shape[1]
+        model = Conv2dTransposedModule(
+            in_channels=in_channels, out_channels=out_channels
+        )
 
-        nodes = list(edge_program.graph.nodes)
-        assert len(nodes) == 15
-        assert nodes[11].target == Convolution  # TransposeConv not delegated.
+        # Running `conv_transpose2d` with `output_channels = 1` produces errors in Executorch. The issue has been reported:
+        # https://github.com/pytorch/executorch/issues/20804
+        ref_model = (
+            ReferenceModel.QUANTIZED_EXECUTORCH_CPP
+            if use_et_ref_model
+            else ReferenceModel.QUANTIZED_EDGE_PYTHON
+        )
+
+        assert_delegated_and_correct(
+            model,
+            input_shape,
+            mocker,
+            request,
+            use_qat,
+            exp_delegated_ops={Convolution: 1},
+            exp_non_delegated_ops={},
+            et_ref_model=ref_model,
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape, out_channels",
+        [
+            pytest.param(
+                ins := (21, 4, 7),
+                oc := 45,
+                id=f"`conv2d_transpose` implicit batch: {_conv_id(ins, oc)}",
+            ),
+        ],
+    )
+    def test__tr_impl_b(self, input_shape, out_channels, use_qat, mocker, request):
+        in_channels = input_shape[0]
+
+        model = Conv2dTransposedModule(
+            in_channels=in_channels, out_channels=out_channels
+        )
+
+        # `view_copy` is inserted to convert to explicit batch
+        assert_delegated_and_correct(
+            model,
+            input_shape,
+            mocker,
+            request,
+            use_qat,
+            exp_delegated_ops={Convolution: 1, ViewCopy: 2},
+            exp_non_delegated_ops={},
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape, out_channels, kernel_size, stride, dilation, padding",
+        [
+            pytest.param(
+                ins := (2, 3, 1, 8500),
+                oc := 7,
+                ks := (1, 4096),
+                s := 1,
+                d := 1,
+                p := 0,
+                id=f"bounds of kernel width: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+                marks=pytest.mark.xfail(reason="AIR-14853", strict=True),
+            ),
+            pytest.param(
+                ins := (3, 3, 8500, 1),
+                oc := 9,
+                ks := (4096, 1),
+                s := 1,
+                d := 1,
+                p := 0,
+                id=f"bounds of kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+                marks=pytest.mark.xfail(reason="AIR-14853", strict=True),
+            ),
+            pytest.param(
+                ins := (3, 3, 5, 7),
+                oc := 9,
+                ks := (2, 1),
+                s := (2, 1),
+                d := 1,
+                p := 0,
+                id=f"bounds of stride height - kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 3, 5, 7),
+                oc := 9,
+                ks := (1, 2),
+                s := (1, 2),
+                d := 1,
+                p := 0,
+                id=f"bounds of stride width - kernel width: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 3, 5, 7),
+                oc := 9,
+                ks := (3, 3),
+                s := 1,
+                d := 1,
+                p := (2, 1),
+                id=f"bounds of padding height - kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 3, 5, 7),
+                oc := 9,
+                ks := (3, 3),
+                s := 1,
+                d := 1,
+                p := (1, 2),
+                id=f"bounds of padding width - kernel width: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+            ),
+            pytest.param(
+                ins := (1, 20, 16, 24),
+                oc := 2,
+                ks := (16, 24),
+                s := 1,
+                d := 1,
+                p := 1,
+                id=f"(almost) bounds of kernel_h * kernel_w * round_ceil(input_channels, num_macs): {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+            ),
+        ],
+    )
+    def test__tr_big(
+        self,
+        input_shape,
+        out_channels,
+        kernel_size,
+        stride,
+        dilation,
+        padding,
+        use_qat,
+        request,
+        mocker,
+    ):
+        model = Conv2dTransposedModule(
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            dilation=dilation,
+            padding=padding,
+        )
+
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
+
+    @pytest.mark.parametrize(
+        "input_shape, out_channels, kernel_size, stride, dilation, padding, output_padding, bias",
+        [
+            pytest.param(
+                ins := (1, 8, 32, 32),
+                oc := 7,
+                ks := (5, 3),
+                s := (2, 1),
+                d := (1, 2),
+                p := (2, 1),
+                op := (0, 1),
+                b := True,
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
+                marks=pytest.mark.xfail(reason="AIR-14852", strict=True),
+            ),
+            pytest.param(
+                ins := (2, 7, 31, 17),
+                oc := 9,
+                ks := (7, 7),
+                s := (2, 2),
+                d := (6, 5),
+                p := (5, 4),
+                op := (2, 1),
+                b := False,
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
+                marks=pytest.mark.xfail(reason="AIR-14853", strict=True),
+            ),
+            pytest.param(
+                ins := (2, 12, 28, 28),
+                oc := 11,
+                ks := (3, 5),
+                s := (2, 2),
+                d := (2, 2),
+                p := (1, 2),
+                op := (1, 1),
+                b := True,
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
+                marks=pytest.mark.xfail(reason="AIR-14852", strict=True),
+            ),
+            pytest.param(
+                ins := (3, 2, 40, 20),
+                oc := 13,
+                ks := (1, 5),
+                s := (1, 2),
+                d := (3, 1),
+                p := (0, 4),
+                op := (1, 1),
+                b := False,
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
+            ),
+            pytest.param(
+                ins := (4, 6, 30, 30),
+                oc := 5,
+                ks := (3, 3),
+                s := (2, 2),
+                d := (3, 3),
+                p := (2, 2),
+                op := (2, 2),
+                b := True,
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
+                marks=pytest.mark.xfail(reason="AIR-14852", strict=True),
+            ),
+            pytest.param(
+                ins := (3, 12, 7, 7),
+                oc := 7,
+                ks := (5, 5),
+                s := (1, 2),
+                d := (1, 3),
+                p := (2, 4),
+                op := (0, 2),
+                b := False,
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
+                marks=pytest.mark.xfail(reason="AIR-14852", strict=True),
+            ),
+            pytest.param(
+                ins := (1, 4, 15, 15),
+                oc := 9,
+                ks := (2, 2),
+                s := (2, 2),
+                d := (2, 2),
+                p := (1, 1),
+                op := (1, 1),
+                b := True,
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
+                marks=pytest.mark.xfail(reason="AIR-14852", strict=True),
+            ),
+        ],
+    )
+    def test__tr_misc_arg(
+        self,
+        input_shape,
+        out_channels,
+        kernel_size,
+        stride,
+        dilation,
+        padding,
+        output_padding,
+        bias,
+        use_qat,
+        request,
+        mocker,
+    ):
+        model = Conv2dTransposedModule(
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            dilation=dilation,
+            padding=padding,
+            output_padding=output_padding,
+            bias=bias,
+        )
+
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
+
+    @pytest.mark.parametrize(
+        "input_shape, out_channels, kernel_size, stride, padding, groups",
+        [
+            pytest.param(
+                ins := (3, 7, 5000, 11),
+                oc := 7,
+                ks := (4097, 1),
+                s := 1,
+                p := 0,
+                g := 1,
+                id=f"kernel height too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 7, 13, 5000),
+                oc := 9,
+                ks := (1, 4097),
+                s := 1,
+                p := 0,
+                g := 1,
+                id=f"kernel width too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 7, 9, 11),
+                oc := 11,
+                ks := 1,
+                s := (2, 1),
+                p := 0,
+                g := 1,
+                id=f"stride height > kernel height: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 7, 13, 11),
+                oc := 5,
+                ks := 1,
+                s := (1, 2),
+                p := 0,
+                g := 1,
+                id=f"stride width > kernel width: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 7, 13, 11),
+                oc := 7,
+                ks := 3,
+                s := (3, 1),
+                p := 0,
+                g := 1,
+                id=f"stride height too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 7, 13, 11),
+                oc := 7,
+                ks := 3,
+                s := (1, 3),
+                p := 0,
+                g := 1,
+                id=f"stride width too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 7, 9, 11),
+                oc := 7,
+                ks := 3,
+                s := 1,
+                p := (3, 1),
+                g := 1,
+                id=f"padding height >= kernel height: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 7, 9, 11),
+                oc := 7,
+                ks := 3,
+                s := 1,
+                p := (1, 3),
+                g := 1,
+                id=f"padding width >= kernel width: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 113, 123, 133),
+                oc := 11,
+                ks := (41, 15),
+                s := 1,
+                p := 0,
+                g := 1,
+                id=f"kernel_h * kernel_w * round_ceil(input_channels, num_macs) too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+            ),
+            pytest.param(
+                ins := (3, 9, 11, 13),
+                oc := 3,
+                ks := 3,
+                s := 1,
+                p := 0,
+                g := 3,
+                id=f"groups > 1: {_conv_id(ins, oc, ks=ks, s=s, p=p, g=g)}",
+            ),
+        ],
+    )
+    def test__tr_no_deleg(
+        self, input_shape, out_channels, kernel_size, stride, padding, groups, use_qat
+    ):
+        in_channels = input_shape[1]
+
+        model = Conv2dTransposedModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            groups=groups,
+        )
+
+        assert_not_delegated(model, input_shape, use_qat)
 
 
 class TestConv:
@@ -194,351 +571,152 @@ class TestConv:
             f"g={g}"
         )
 
-    @staticmethod
-    def assert_delegated_and_correct(model, input_shape, mocker, request, use_qat):
-        graph_verifier = DetailedGraphVerifier(
-            mocker,
-            expected_delegated_ops={Convolution: 1},
-            expected_non_delegated_ops={},
-        )
-        dataset = RandomDatasetCreator(low=-1, high=1)
-
-        # Use quantized dataset and allow single bit error.
-        remove_quant_io_ops = True
-        comparator = AllCloseOutputComparator(atol=1)
-
-        lower_run_compare(
-            model,
-            input_shape,
-            graph_verifier,
-            request,
-            dataset,
-            comparator,
-            use_qat=use_qat,
-            remove_quant_io_ops=remove_quant_io_ops,
-        )
-
-    @staticmethod
-    def assert_not_delegated(model, input_shape, use_qat):
-        delegated_ep = to_quantized_edge_program(
-            model,
-            input_shape,
-            use_qat=use_qat,
-        ).exported_program()
-
-        # Make sure the `convolution` was NOT delegated.
-        assert not graph_contains_any_of_ops(
-            delegated_ep.graph, [ExecutorchDelegateCall]
-        )
-        assert graph_contains_any_of_ops(delegated_ep.graph, [Convolution])
-
     @pytest.mark.parametrize(
-        "input_shape, out_channels, is_qat",
+        "input_shape, out_channels",
         [
             pytest.param(
                 ins := (1, 8, 16, 24),
                 oc := 8,
-                qat := True,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (1, 8, 16, 24),
-                oc := 8,
-                qat := False,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
+                id="basic inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (8, 16, 8, 32),
                 oc := 16,
-                qat := True,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (8, 16, 8, 32),
-                oc := 16,
-                qat := False,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
+                id="basic inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (16, 8, 32, 64),
                 oc := 32,
-                qat := True,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (16, 8, 32, 64),
-                oc := 32,
-                qat := False,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
+                id="basic inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (1, 8, 32, 64),
                 oc := 16,
-                qat := True,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (1, 8, 32, 64),
-                oc := 16,
-                qat := False,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
+                id="basic inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (1, 32, 48, 8),
                 oc := 24,
-                qat := True,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (1, 32, 48, 8),
-                oc := 24,
-                qat := False,
-                id=f"qat={qat}, basic inference: " + _conv_id(ins, oc),
+                id="basic inference: " + _conv_id(ins, oc),
             ),
         ],
     )
-    def test__basic_nsys_inference(
-        self, input_shape, out_channels, is_qat, request, mocker
-    ):
+    def test__fwd_basic(self, input_shape, out_channels, use_qat, request, mocker):
         in_channels = input_shape[1]
         model = Conv2dModule(in_channels=in_channels, out_channels=out_channels)
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, is_qat",
+        "input_shape",
         [
             pytest.param(
                 ins := (1, 8, 16, 24),
-                qat := True,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (1, 8, 16, 24),
-                qat := False,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
+                id="basic inference, depthwise: " + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (8, 16, 8, 32),
-                qat := True,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (8, 16, 8, 32),
-                qat := False,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
+                id="basic inference, depthwise: " + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (16, 8, 32, 64),
-                qat := True,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (16, 8, 32, 64),
-                qat := False,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
+                id="basic inference, depthwise: " + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (1, 16, 32, 64),
-                qat := True,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (1, 16, 32, 64),
-                qat := False,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
+                id="basic inference, depthwise: " + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (1, 32, 48, 8),
-                qat := True,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (1, 32, 48, 8),
-                qat := False,
-                id=f"qat={qat}, basic inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
+                id="basic inference, depthwise: " + _conv_id(ins, ins[1], g=ins[1]),
             ),
         ],
     )
-    def test__depthwise(self, input_shape, is_qat, request, mocker):
+    def test__d_fwd_basic(self, input_shape, use_qat, request, mocker):
         out_channels = input_shape[1]
         group = input_shape[1]
         model = Conv2dModule(
             in_channels=input_shape[1], out_channels=out_channels, group=group
         )
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, out_channels, is_qat",
+        "input_shape, out_channels",
         [
             pytest.param(
                 ins := (1, 3, 7, 14),
                 oc := 3,
-                qat := True,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (1, 3, 7, 14),
-                oc := 3,
-                qat := False,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
+                id="unusual shape inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (2, 3, 13, 27),
                 oc := 7,
-                qat := True,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (2, 3, 13, 27),
-                oc := 7,
-                qat := False,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
+                id="unusual shape inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (3, 7, 3, 14),
                 oc := 4,
-                qat := True,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (3, 7, 3, 14),
-                oc := 4,
-                qat := False,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
+                id="unusual shape inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (1, 7, 7, 21),
                 oc := 1,
-                qat := True,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (1, 7, 7, 21),
-                oc := 1,
-                qat := False,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
+                id="unusual shape inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (7, 7, 7, 7),
                 oc := 10,
-                qat := True,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (7, 7, 7, 7),
-                oc := 10,
-                qat := False,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
+                id="unusual shape inference: " + _conv_id(ins, oc),
             ),
             pytest.param(
                 ins := (4, 21, 13, 17),
                 oc := 27,
-                qat := True,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (4, 21, 13, 17),
-                oc := 27,
-                qat := False,
-                id=f"qat={qat}, unusual shape inference: " + _conv_id(ins, oc),
+                id="unusual shape inference: " + _conv_id(ins, oc),
             ),
         ],
     )
-    def test__unusual_shapes(self, input_shape, out_channels, is_qat, request, mocker):
+    def test__fwd_unusual(self, input_shape, out_channels, use_qat, request, mocker):
         model = Conv2dModule(in_channels=input_shape[1], out_channels=out_channels)
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, is_qat",
+        "input_shape",
         [
             pytest.param(
                 ins := (1, 3, 7, 14),
-                qat := True,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (1, 3, 7, 14),
-                qat := False,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
+                id="unusual shape inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (2, 3, 13, 27),
-                qat := True,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (2, 3, 13, 27),
-                qat := False,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
+                id="unusual shape inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (3, 7, 3, 14),
-                qat := True,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (3, 7, 3, 14),
-                qat := False,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
+                id="unusual shape inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (1, 7, 7, 21),
-                qat := True,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (1, 7, 7, 21),
-                qat := False,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
+                id="unusual shape inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (7, 7, 7, 7),
-                qat := True,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (7, 7, 7, 7),
-                qat := False,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
+                id="unusual shape inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
             ),
             pytest.param(
                 ins := (4, 21, 13, 17),
-                qat := True,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
-                + _conv_id(ins, ins[1], g=ins[1]),
-            ),
-            pytest.param(
-                ins := (4, 21, 13, 17),
-                qat := False,
-                id=f"qat={qat}, unusual shape inference, depthwise: "
+                id="unusual shape inference, depthwise: "
                 + _conv_id(ins, ins[1], g=ins[1]),
             ),
         ],
     )
-    def test__depthwise__unusual_shapes(self, input_shape, is_qat, request, mocker):
+    def test__d_fwd_unusual(self, input_shape, use_qat, request, mocker):
         out_channels = input_shape[1]
         group = input_shape[1]
 
@@ -546,51 +724,36 @@ class TestConv:
             in_channels=input_shape[1], out_channels=out_channels, group=group
         )
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, out_channels, is_qat",
+        "input_shape, out_channels",
         [
             pytest.param(
                 ins := (21, 4, 7),
                 oc := 45,
-                qat := True,
-                id=f"qat={qat}, `conv2d` implicit batch: " + _conv_id(ins, oc),
-            ),
-            pytest.param(
-                ins := (21, 4, 7),
-                oc := 45,
-                qat := False,
-                id=f"qat={qat}, `conv2d` implicit batch: " + _conv_id(ins, oc),
+                id="`conv2d` implicit batch: " + _conv_id(ins, oc),
             ),
         ],
     )
-    def test__implicit_batch(self, input_shape, out_channels, is_qat, mocker, request):
+    def test__fwd_impl_b(self, input_shape, out_channels, use_qat, mocker, request):
         in_channels = input_shape[0]
 
         model = Conv2dModule(in_channels=in_channels, out_channels=out_channels)
 
         # `view_copy` is inserted to convert to explicit batch
-        graph_verifier = DetailedGraphVerifier(
-            mocker,
-            expected_delegated_ops={Convolution: 1, ViewCopy: 2},
-            expected_non_delegated_ops={},
-        )
-        dataset = RandomDatasetCreator(low=-256, high=256)
-        comparator = AllCloseOutputComparator(atol=1)
-
-        lower_run_compare(
+        assert_delegated_and_correct(
             model,
             input_shape,
-            graph_verifier,
+            mocker,
             request,
-            dataset,
-            comparator,
-            use_qat=is_qat,
+            use_qat,
+            exp_delegated_ops={Convolution: 1, ViewCopy: 2},
+            exp_non_delegated_ops={},
         )
 
     @pytest.mark.parametrize(
-        "input_shape, out_channels, kernel_size, stride, dilation, is_qat",
+        "input_shape, out_channels, kernel_size, stride, dilation",
         [
             pytest.param(
                 ins := (2, 3, 1, 4100),
@@ -598,17 +761,7 @@ class TestConv:
                 ks := (1, 4096),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of kernel width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (2, 3, 1, 4100),
-                oc := 7,
-                ks := (1, 4096),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of kernel width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                id=f"bounds of kernel width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
             ),
             pytest.param(
                 ins := (3, 3, 4100, 1),
@@ -616,17 +769,7 @@ class TestConv:
                 ks := (4096, 1),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 3, 4100, 1),
-                oc := 9,
-                ks := (4096, 1),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                id=f"bounds of kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
             ),
             pytest.param(
                 ins := (4, 3, 3, 8500),
@@ -634,17 +777,7 @@ class TestConv:
                 ks := 3,
                 s := (1, 4096),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of stride width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (4, 3, 3, 8500),
-                oc := 5,
-                ks := 3,
-                s := (1, 4096),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of stride width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                id=f"bounds of stride width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
             ),
             pytest.param(
                 ins := (2, 3, 8500, 3),
@@ -652,17 +785,7 @@ class TestConv:
                 ks := 3,
                 s := (4096, 1),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of stride height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (2, 3, 8500, 3),
-                oc := 11,
-                ks := 3,
-                s := (4096, 1),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of stride height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                id=f"bounds of stride height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
             ),
             pytest.param(
                 ins := (3, 3, 3, 8500),
@@ -670,17 +793,7 @@ class TestConv:
                 ks := 3,
                 s := 1,
                 d := (1, 4096),
-                qat := True,
-                id=f"qat={qat}, bounds of dilation width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 3, 3, 8500),
-                oc := 9,
-                ks := 3,
-                s := 1,
-                d := (1, 4096),
-                qat := False,
-                id=f"qat={qat}, bounds of dilation width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                id=f"bounds of dilation width: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
             ),
             pytest.param(
                 ins := (4, 3, 8500, 3),
@@ -688,17 +801,7 @@ class TestConv:
                 ks := 3,
                 s := 1,
                 d := (4096, 1),
-                qat := True,
-                id=f"qat={qat}, bounds of dilation height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (4, 3, 8500, 3),
-                oc := 7,
-                ks := 3,
-                s := 1,
-                d := (4096, 1),
-                qat := False,
-                id=f"qat={qat}, bounds of dilation height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                id=f"bounds of dilation height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
             ),
             pytest.param(
                 ins := (2, 80, 35, 34),
@@ -706,21 +809,7 @@ class TestConv:
                 ks := (32, 24),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of kernel_h * kernel_w * input_channels: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-                marks=pytest.mark.xfail(
-                    reason="AIR-14679",
-                    strict=True,
-                ),
-            ),
-            pytest.param(
-                ins := (2, 80, 35, 34),
-                oc := 13,
-                ks := (32, 24),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of kernel_h * kernel_w * input_channels: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                id=f"bounds of kernel_h * kernel_w * round_ceil(input_channels, num_macs): {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
                 marks=pytest.mark.xfail(
                     reason="AIR-14679",
                     strict=True,
@@ -728,14 +817,14 @@ class TestConv:
             ),
         ],
     )
-    def test__big(
+    def test__fwd_big(
         self,
         input_shape,
         out_channels,
         kernel_size,
         stride,
         dilation,
-        is_qat,
+        use_qat,
         request,
         mocker,
     ):
@@ -747,127 +836,64 @@ class TestConv:
             dilation=dilation,
         )
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, kernel_size, stride, dilation, is_qat",
+        "input_shape, kernel_size, stride, dilation",
         [
             pytest.param(
                 ins := (2, 3, 1, 4100),
                 ks := (1, 4096),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of kernel width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (2, 3, 1, 4100),
-                ks := (1, 4096),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of kernel width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                id=f"bounds of kernel width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
             ),
             pytest.param(
                 ins := (3, 3, 4100, 1),
                 ks := (4096, 1),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of kernel height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 3, 4100, 1),
-                ks := (4096, 1),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of kernel height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                id=f"bounds of kernel height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
             ),
             pytest.param(
                 ins := (2, 3, 3, 8500),
                 ks := 3,
                 s := (1, 4096),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of stride width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (2, 3, 3, 8500),
-                ks := 3,
-                s := (1, 4096),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of stride width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                id=f"bounds of stride width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
             ),
             pytest.param(
                 ins := (4, 3, 8500, 3),
                 ks := 3,
                 s := (4096, 1),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of stride height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (4, 3, 8500, 3),
-                ks := 3,
-                s := (4096, 1),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of stride height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                id=f"bounds of stride height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
             ),
             pytest.param(
                 ins := (4, 3, 3, 8500),
                 ks := 3,
                 s := 1,
                 d := (1, 4096),
-                qat := True,
-                id=f"qat={qat}, bounds of dilation width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (4, 3, 3, 8500),
-                ks := 3,
-                s := 1,
-                d := (1, 4096),
-                qat := False,
-                id=f"qat={qat}, bounds of dilation width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                id=f"bounds of dilation width: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
             ),
             pytest.param(
                 ins := (3, 3, 8500, 3),
                 ks := 3,
                 s := 1,
                 d := (4096, 1),
-                qat := True,
-                id=f"qat={qat}, bounds of dilation height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 3, 8500, 3),
-                ks := 3,
-                s := 1,
-                d := (4096, 1),
-                qat := False,
-                id=f"qat={qat}, bounds of dilation height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                id=f"bounds of dilation height: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
             ),
             pytest.param(
                 ins := (2, 80, 35, 34),
                 ks := (32, 24),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, bounds of kernel_h * kernel_w * input_channels: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (2, 80, 35, 34),
-                ks := (32, 24),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, bounds of kernel_h * kernel_w * input_channels: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                id=f"bounds of kernel_h * kernel_w * round_ceil(input_channels, num_macs): {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
             ),
         ],
     )
-    def test__depthwise__big(
-        self, input_shape, kernel_size, stride, dilation, is_qat, request, mocker
+    def test__d_fwd_big(
+        self, input_shape, kernel_size, stride, dilation, use_qat, request, mocker
     ):
         out_channels = input_shape[1]
         group = input_shape[1]
@@ -881,10 +907,10 @@ class TestConv:
             group=group,
         )
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, out_channels, kernel_size, stride, dilation, padding, bias, is_qat",
+        "input_shape, out_channels, kernel_size, stride, dilation, padding, bias",
         [
             pytest.param(
                 ins := (1, 8, 32, 32),
@@ -894,19 +920,7 @@ class TestConv:
                 d := (1, 2),
                 p := (2, 1),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-            ),
-            pytest.param(
-                ins := (1, 8, 32, 32),
-                oc := 7,
-                ks := (5, 3),
-                s := (2, 1),
-                d := (1, 2),
-                p := (2, 1),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
             ),
             pytest.param(
                 ins := (2, 7, 31, 17),
@@ -916,19 +930,7 @@ class TestConv:
                 d := (2, 1),
                 p := (3, 3),
                 b := False,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-            ),
-            pytest.param(
-                ins := (2, 7, 31, 17),
-                oc := 9,
-                ks := (7, 7),
-                s := (3, 2),
-                d := (2, 1),
-                p := (3, 3),
-                b := False,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
             ),
             pytest.param(
                 ins := (2, 12, 28, 28),
@@ -938,19 +940,7 @@ class TestConv:
                 d := (2, 2),
                 p := (1, 2),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-            ),
-            pytest.param(
-                ins := (2, 12, 28, 28),
-                oc := 11,
-                ks := (3, 5),
-                s := (2, 2),
-                d := (2, 2),
-                p := (1, 2),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
             ),
             pytest.param(
                 ins := (3, 2, 40, 20),
@@ -960,19 +950,7 @@ class TestConv:
                 d := (3, 1),
                 p := (0, 2),
                 b := False,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-            ),
-            pytest.param(
-                ins := (3, 2, 40, 20),
-                oc := 13,
-                ks := (1, 5),
-                s := (1, 2),
-                d := (3, 1),
-                p := (0, 2),
-                b := False,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
             ),
             pytest.param(
                 ins := (4, 6, 30, 30),
@@ -982,19 +960,7 @@ class TestConv:
                 d := (1, 1),
                 p := (2, 2),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-            ),
-            pytest.param(
-                ins := (4, 6, 30, 30),
-                oc := 5,
-                ks := (3, 3),
-                s := (2, 2),
-                d := (1, 1),
-                p := (2, 2),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
             ),
             pytest.param(
                 ins := (3, 12, 7, 7),
@@ -1004,19 +970,7 @@ class TestConv:
                 d := (1, 2),
                 p := (2, 4),
                 b := False,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-            ),
-            pytest.param(
-                ins := (3, 12, 7, 7),
-                oc := 7,
-                ks := (5, 5),
-                s := (1, 3),
-                d := (1, 2),
-                p := (2, 4),
-                b := False,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
             ),
             pytest.param(
                 ins := (1, 4, 15, 15),
@@ -1026,23 +980,11 @@ class TestConv:
                 d := (2, 2),
                 p := (1, 1),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
-            ),
-            pytest.param(
-                ins := (1, 4, 15, 15),
-                oc := 9,
-                ks := (2, 2),
-                s := (2, 2),
-                d := (2, 2),
-                p := (1, 1),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
+                id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b)}",
             ),
         ],
     )
-    def test__non_default_params(
+    def test__fwd_misc_arg(
         self,
         input_shape,
         out_channels,
@@ -1051,7 +993,7 @@ class TestConv:
         dilation,
         padding,
         bias,
-        is_qat,
+        use_qat,
         request,
         mocker,
     ):
@@ -1065,10 +1007,10 @@ class TestConv:
             bias=bias,
         )
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, kernel_size, stride, dilation, padding, bias, is_qat",
+        "input_shape, kernel_size, stride, dilation, padding, bias",
         [
             pytest.param(
                 ins := (1, 8, 32, 32),
@@ -1077,18 +1019,7 @@ class TestConv:
                 d := (1, 2),
                 p := (2, 1),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (1, 8, 32, 32),
-                ks := (5, 3),
-                s := (2, 1),
-                d := (1, 2),
-                p := (2, 1),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+                id=f"some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
                 ins := (3, 7, 31, 17),
@@ -1097,18 +1028,7 @@ class TestConv:
                 d := (2, 1),
                 p := (3, 3),
                 b := False,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 7, 31, 17),
-                ks := (7, 7),
-                s := (3, 2),
-                d := (2, 1),
-                p := (3, 3),
-                b := False,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+                id=f"some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
                 ins := (2, 12, 28, 28),
@@ -1117,18 +1037,7 @@ class TestConv:
                 d := (2, 2),
                 p := (1, 2),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (2, 12, 28, 28),
-                ks := (3, 5),
-                s := (2, 2),
-                d := (2, 2),
-                p := (1, 2),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+                id=f"some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
                 ins := (3, 2, 40, 20),
@@ -1137,18 +1046,7 @@ class TestConv:
                 d := (3, 1),
                 p := (0, 2),
                 b := False,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 2, 40, 20),
-                ks := (1, 5),
-                s := (1, 2),
-                d := (3, 1),
-                p := (0, 2),
-                b := False,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+                id=f"some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
                 ins := (4, 6, 30, 30),
@@ -1157,18 +1055,7 @@ class TestConv:
                 d := (1, 1),
                 p := (2, 2),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (4, 6, 30, 30),
-                ks := (3, 3),
-                s := (2, 2),
-                d := (1, 1),
-                p := (2, 2),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+                id=f"some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
                 ins := (3, 12, 7, 7),
@@ -1177,18 +1064,7 @@ class TestConv:
                 d := (1, 2),
                 p := (2, 4),
                 b := False,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 12, 7, 7),
-                ks := (5, 5),
-                s := (1, 3),
-                d := (1, 2),
-                p := (2, 4),
-                b := False,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+                id=f"some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
             pytest.param(
                 ins := (1, 4, 15, 15),
@@ -1197,22 +1073,11 @@ class TestConv:
                 d := (2, 2),
                 p := (1, 1),
                 b := True,
-                qat := True,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (1, 4, 15, 15),
-                ks := (2, 2),
-                s := (2, 2),
-                d := (2, 2),
-                p := (1, 1),
-                b := True,
-                qat := False,
-                id=f"qat={qat}, some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+                id=f"some params not default: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
             ),
         ],
     )
-    def test__depthwise__non_default_params(
+    def test__d_fwd_misc_arg(
         self,
         input_shape,
         kernel_size,
@@ -1220,7 +1085,7 @@ class TestConv:
         dilation,
         padding,
         bias,
-        is_qat,
+        use_qat,
         request,
         mocker,
     ):
@@ -1238,10 +1103,10 @@ class TestConv:
             group=group,
         )
 
-        self.assert_delegated_and_correct(model, input_shape, mocker, request, is_qat)
+        assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, out_channels, kernel_size, stride, dilation, is_qat",
+        "input_shape, out_channels, kernel_size, stride, dilation, padding",
         [
             pytest.param(
                 ins := (3, 7, 5000, 11),
@@ -1249,17 +1114,8 @@ class TestConv:
                 ks := (4097, 1),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, kernel height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 7, 5000, 11),
-                oc := 7,
-                ks := (4097, 1),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, kernel height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                p := 0,
+                id=f"kernel height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 5000),
@@ -1267,17 +1123,8 @@ class TestConv:
                 ks := (1, 4097),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, kernel width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 7, 13, 5000),
-                oc := 9,
-                ks := (1, 4097),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, kernel width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                p := 0,
+                id=f"kernel width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 5000, 11),
@@ -1285,17 +1132,8 @@ class TestConv:
                 ks := 3,
                 s := (4097, 1),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, stride height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 7, 5000, 11),
-                oc := 11,
-                ks := 3,
-                s := (4097, 1),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, stride height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                p := 0,
+                id=f"stride height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 5000),
@@ -1303,35 +1141,38 @@ class TestConv:
                 ks := 3,
                 s := (1, 4097),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, stride width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                p := 0,
+                id=f"stride width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
             ),
-            pytest.param(
-                ins := (3, 7, 13, 5000),
-                oc := 5,
-                ks := 3,
-                s := (1, 4097),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, stride width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
+            # The following two cases are delegable for now, the discussion about
+            # the validity of such cases is being discussed with Neutron team.
+            # See more in `convolution_converter`.
+            # pytest.param(
+            #     ins := (3, 7, 13, 11),
+            #     oc := 5,
+            #     ks := (3, 1),
+            #     s := 1,
+            #     d := 1,
+            #     p := (3, 1),
+            #     id=f"padding height >= kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+            # ),
+            # pytest.param(
+            #     ins := (3, 7, 13, 11),
+            #     oc := 5,
+            #     ks := (1, 3),
+            #     s := 1,
+            #     d := 1,
+            #     p := (1, 3),
+            #     id=f"padding width >= kernel width: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
+            # ),
             pytest.param(
                 ins := (3, 7, 8500, 11),
                 oc := 7,
                 ks := 3,
                 s := 1,
                 d := (4097, 1),
-                qat := True,
-                id=f"qat={qat}, dilation height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 7, 8500, 11),
-                oc := 7,
-                ks := 3,
-                s := 1,
-                d := (4097, 1),
-                qat := False,
-                id=f"qat={qat}, dilation height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                p := 0,
+                id=f"dilation height too big: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 8500),
@@ -1339,17 +1180,8 @@ class TestConv:
                 ks := 3,
                 s := 1,
                 d := (1, 4097),
-                qat := True,
-                id=f"qat={qat}, dilation width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 7, 13, 8500),
-                oc := 9,
-                ks := 3,
-                s := 1,
-                d := (1, 4097),
-                qat := False,
-                id=f"qat={qat}, dilation width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                p := 0,
+                id=f"dilation width too big: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
             ),
             pytest.param(
                 ins := (3, 113, 123, 133),
@@ -1357,22 +1189,13 @@ class TestConv:
                 ks := (41, 15),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, kernel_h * kernel_w * input_channels too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
-            ),
-            pytest.param(
-                ins := (3, 113, 123, 133),
-                oc := 11,
-                ks := (41, 15),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, kernel_h * kernel_w * input_channels too big: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                p := 0,
+                id=f"kernel_h * kernel_w * round_ceil(input_channels, num_macs) too big: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p)}",
             ),
         ],
     )
-    def test__non_delegation(
-        self, input_shape, out_channels, kernel_size, stride, dilation, is_qat
+    def test__fwd_no_deleg(
+        self, input_shape, out_channels, kernel_size, stride, dilation, padding, use_qat
     ):
         in_channels = input_shape[1]
 
@@ -1382,129 +1205,93 @@ class TestConv:
             kernel_size=kernel_size,
             stride=stride,
             dilation=dilation,
+            padding=padding,
         )
 
-        self.assert_not_delegated(model, input_shape, is_qat)
+        assert_not_delegated(model, input_shape, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, kernel_size, stride, dilation, is_qat",
+        "input_shape, kernel_size, stride, dilation, padding",
         [
             pytest.param(
                 ins := (3, 7, 5000, 11),
                 ks := (4097, 1),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, kernel height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 7, 5000, 11),
-                ks := (4097, 1),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, kernel height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                p := 0,
+                id=f"kernel height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 5000),
                 ks := (1, 4097),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, kernel width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 7, 13, 5000),
-                ks := (1, 4097),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, kernel width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                p := 0,
+                id=f"kernel width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 5000, 11),
                 ks := 3,
                 s := (4097, 1),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, stride height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 7, 5000, 11),
-                ks := 3,
-                s := (4097, 1),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, stride height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                p := 0,
+                id=f"stride height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 5000),
                 ks := 3,
                 s := (1, 4097),
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, stride width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                p := 0,
+                id=f"stride width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
             ),
-            pytest.param(
-                ins := (3, 7, 13, 5000),
-                ks := 3,
-                s := (1, 4097),
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, stride width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
+            # The following two cases are delegable for now, the discussion about
+            # the validity of such cases is being discussed with Neutron team.
+            # See more in `convolution_converter`.
+            # pytest.param(
+            #     ins := (3, 7, 13, 11),
+            #     ks := (3, 1),
+            #     s := 1,
+            #     d := 1,
+            #     p := (3, 1),
+            #     id=f"padding height >= kernel height, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
+            # ),
+            # pytest.param(
+            #     ins := (3, 7, 13, 11),
+            #     ks := (1, 3),
+            #     s := 1,
+            #     d := 1,
+            #     p := (1, 3),
+            #     id=f"padding width >= kernel width, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
+            # ),
             pytest.param(
                 ins := (3, 7, 8500, 11),
                 ks := 3,
                 s := 1,
                 d := (4097, 1),
-                qat := True,
-                id=f"qat={qat}, dilation height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 7, 8500, 11),
-                ks := 3,
-                s := 1,
-                d := (4097, 1),
-                qat := False,
-                id=f"qat={qat}, dilation height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                p := 0,
+                id=f"dilation height too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 8500),
                 ks := 3,
                 s := 1,
                 d := (1, 4097),
-                qat := True,
-                id=f"qat={qat}, dilation width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 7, 13, 8500),
-                ks := 3,
-                s := 1,
-                d := (1, 4097),
-                qat := False,
-                id=f"qat={qat}, dilation width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                p := 0,
+                id=f"dilation width too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
             ),
             pytest.param(
                 ins := (3, 113, 123, 133),
                 ks := (41, 15),
                 s := 1,
                 d := 1,
-                qat := True,
-                id=f"qat={qat}, kernel_h * kernel_w * input_channels too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
-            ),
-            pytest.param(
-                ins := (3, 113, 123, 133),
-                ks := (41, 15),
-                s := 1,
-                d := 1,
-                qat := False,
-                id=f"qat={qat}, kernel_h * kernel_w * input_channels too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1])}",
+                p := 0,
+                id=f"kernel_h * kernel_w * round_ceil(input_channels, num_macs) too big, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, g=ins[1], p=p)}",
             ),
         ],
     )
-    def test__non_delegation_depthwise(
-        self, input_shape, kernel_size, stride, dilation, is_qat
+    def test__d_fwd_no_deleg(
+        self, input_shape, kernel_size, stride, dilation, padding, use_qat
     ):
         out_channels = input_shape[1]
         group = input_shape[1]
@@ -1516,6 +1303,7 @@ class TestConv:
             stride=stride,
             dilation=dilation,
             group=group,
+            padding=padding,
         )
 
-        self.assert_not_delegated(model, input_shape, is_qat)
+        assert_not_delegated(model, input_shape, use_qat)
