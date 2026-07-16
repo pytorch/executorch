@@ -52,6 +52,16 @@ set(WEBGPU_SRCS
     runtime/ops/cat/Cat.cpp
     runtime/ops/index/Index.cpp
     runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
+    runtime/ops/gelu/Gelu.cpp
+    runtime/ops/layer_norm/NativeLayerNorm.cpp
+    runtime/ops/linear_fp32/LinearFp32.cpp
+    runtime/ops/et_vk_conv2d/Conv2d.cpp
+    runtime/ops/et_vk_sdpa/EtVkSdpa.cpp
+    runtime/ops/embedding/Embedding.cpp
+    runtime/ops/addmm/Addmm.cpp
+    runtime/ops/constant_pad_nd/ConstantPadNd.cpp
+    runtime/ops/upsample_nearest2d/UpsampleNearest2d.cpp
+    runtime/ops/max_pool2d/MaxPool2d.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
@@ -125,6 +135,7 @@ function(add_webgpu_native_test test_name test_src)
   target_link_libraries(
     ${test_name}
     PRIVATE webgpu_backend
+            vulkan_schema
             ${WEBGPU_GPU_LIB}
             executorch_core
             extension_module_static
@@ -169,10 +180,11 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
 
     # Device-free util unit test: no backend/Dawn link (pure manifest/tolerance
-    # helpers), so it does NOT use the native-test helper.
+    # + dispatch-grid-math helpers), so it does NOT use the native-test helper.
     add_executable(
-      webgpu_op_test_util_test test/op_tests/test_driver_util.cpp
-                               test/op_tests/driver_util.cpp
+      webgpu_op_test_util_test
+      test/op_tests/test_driver_util.cpp test/op_tests/driver_util.cpp
+      test/native/test_webgpu_utils.cpp
     )
     target_include_directories(
       webgpu_op_test_util_test
