@@ -27,6 +27,7 @@ from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
+from .fold_scale_into_quantize_pass import FoldScaleIntoQuantizePass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
@@ -36,6 +37,9 @@ PassClass = Type[ExportPass]
 
 class CortexMPassManager(PassManager):
     pass_list: list[PassClass] = [
+        # Fold constant scales (e.g. attention /sqrt(d)) into the adjacent
+        # quantize before its scale is folded into op meta.
+        FoldScaleIntoQuantizePass,
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
