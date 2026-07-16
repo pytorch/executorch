@@ -38,7 +38,12 @@ def _materialize(spec) -> torch.Tensor:
     else:
         shape, gen = spec, "randn"
     if callable(gen):
-        return gen(shape).to(torch.float32)
+        _t = gen(shape)
+        return (
+            _t.to(torch.int32)
+            if not _t.is_floating_point()
+            else _t.to(torch.float32)
+        )
     if gen == "randn":
         return torch.randn(*shape)
     if gen == "ramp":
@@ -97,7 +102,9 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> dict:
         elif golden_dtype == "float64":
             # fp64 oracle (~1e-15); deepcopy keeps the original module fp32.
             double_module = copy.deepcopy(module).double()
-            golden = double_module(*[x.double() for x in inputs])
+            golden = double_module(
+                *[x.double() if x.is_floating_point() else x for x in inputs]
+            )
         else:
             golden = eager  # gather/copy: fp64 is bit-identical, skip it
     golden_t = golden[out_index] if isinstance(golden, (tuple, list)) else golden
@@ -119,8 +126,15 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> dict:
     input_entries: list[dict] = []
     for i, t in enumerate(inputs):
         rel = f"{case_id}.in{i}.bin"
-        _write_fp32(t, os.path.join(out_dir, rel))
-        input_entries.append({"path": rel, "shape": list(t.shape), "dtype": "float32"})
+        if t.dtype == torch.int32:
+            t.detach().cpu().numpy().astype("<i4").tofile(os.path.join(out_dir, rel))
+            in_dtype = "int32"
+        else:
+            _write_fp32(t, os.path.join(out_dir, rel))
+            in_dtype = "float32"
+        input_entries.append(
+            {"path": rel, "shape": list(t.shape), "dtype": in_dtype}
+        )
 
     golden_rel = f"{case_id}.golden.bin"
     _write_fp32(out_t, os.path.join(out_dir, golden_rel))
