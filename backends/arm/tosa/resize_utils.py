@@ -39,6 +39,26 @@ def _max_scale(tosa_spec: TosaSpecification) -> int:
     return _MAX_SCALE_LEVEL_8K if getattr(tosa_spec, "level_8k", False) else _MAX_SCALE
 
 
+def _is_downscale_at_or_below_tosa_minimum(scale_ints: Sequence[int]) -> bool:
+    scale_y_n, scale_y_d, scale_x_n, scale_x_d = scale_ints
+    return scale_y_d >= 16 * scale_y_n or scale_x_d >= 16 * scale_x_n
+
+
+def is_exact_tosa_resize_boundary_downscale(
+    scale: Sequence[int | torch.SymInt],
+) -> bool:
+    """Return True for the exact 1/16 downscale boundary TOSA rejects."""
+    scale_ints = _as_concrete_ints(scale)
+    if scale_ints is None:
+        return False
+
+    scale_y_n, scale_y_d, scale_x_n, scale_x_d = scale_ints
+    if min(scale_y_n, scale_y_d, scale_x_n, scale_x_d) <= 0:
+        return False
+
+    return scale_y_d == 16 * scale_y_n and scale_x_d == 16 * scale_x_n
+
+
 def _validate_dimensions(
     input_hw: Sequence[int | torch.SymInt],
     output_hw: Sequence[int | torch.SymInt] | None,
@@ -89,6 +109,8 @@ def get_tosa_resize_output_hw_validation_error(
 def _validate_scale(
     scale: Sequence[int | torch.SymInt],
     tosa_spec: TosaSpecification,
+    *,
+    allow_exact_boundary_downscale: bool = False,
 ) -> str | None:
     invalid_scale = _first_outside_range(
         _concrete_int_values(scale), _INT16_MIN, _INT16_MAX
@@ -126,12 +148,53 @@ def _validate_scale(
     # The scale values are already in the doubled rational representation that
     # TOSA RESIZE lowering emits, so the lower-bound downscale rule can be
     # checked directly against them.
-    if scale_y_d >= 16 * scale_y_n or scale_x_d >= 16 * scale_x_n:
+    if _is_downscale_at_or_below_tosa_minimum(scale_ints):
+        if allow_exact_boundary_downscale and is_exact_tosa_resize_boundary_downscale(
+            scale_ints
+        ):
+            return None
         return (
             "RESIZE downscale must be strictly greater than 1/16; "
             f"got y={scale_y_n}/{scale_y_d}, x={scale_x_n}/{scale_x_d}"
         )
     return None
+
+
+def is_exact_tosa_resize_boundary_downscale_case(
+    *,
+    input_hw: Sequence[int | torch.SymInt],
+    output_hw: Sequence[int | torch.SymInt] | None,
+    scale: Sequence[int | torch.SymInt],
+    offset: Sequence[int | torch.SymInt],
+    border: Sequence[int | torch.SymInt],
+    tosa_spec: TosaSpecification,
+) -> bool:
+    if not is_exact_tosa_resize_boundary_downscale(scale):
+        return False
+
+    scale_ints = _as_concrete_ints(scale)
+
+    validation_error = _validate_dimensions(input_hw, output_hw)
+    if validation_error is not None:
+        return False
+    validation_error = _validate_scale(
+        scale,
+        tosa_spec,
+        allow_exact_boundary_downscale=True,
+    )
+    if validation_error is not None:
+        return False
+    if scale_ints is None:
+        return False
+
+    for validation_error in (
+        _validate_offset(offset, scale_ints),
+        _validate_border(border, scale_ints),
+        _validate_output_shape(input_hw, output_hw, scale, offset, border),
+    ):
+        if validation_error is not None:
+            return False
+    return True
 
 
 def _validate_offset(
