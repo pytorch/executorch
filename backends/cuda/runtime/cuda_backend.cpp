@@ -54,9 +54,7 @@ namespace executorch::backends::cuda {
 using namespace std;
 using namespace aoti;
 
-using executorch::aten::ScalarType;
 using executorch::runtime::ArrayRef;
-using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendOption;
@@ -67,7 +65,6 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::kMaxOptionValueLength;
-using executorch::runtime::MemoryAllocator;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
@@ -75,10 +72,8 @@ using executorch::runtime::etensor::Tensor;
 
 // SlimTensor type aliases
 using cuda::CudaGraphPhase;
-using slim::DeviceTraits;
 using slim::SlimTensor;
 using slim::c10::Device;
-using slim::c10::DeviceType;
 
 namespace {
 constexpr char kSkipCopyOutputToCpuForMethod[] =
