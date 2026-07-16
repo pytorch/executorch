@@ -27,10 +27,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::runtime::ArrayRef;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
-using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Kernel;
 using executorch::runtime::KernelKey;
 using executorch::runtime::KernelRuntimeContext;
