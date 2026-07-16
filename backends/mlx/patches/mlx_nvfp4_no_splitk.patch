@@ -1,0 +1,25 @@
+Do not use the split-K quantized matmul for the nvfp4 mode.
+
+MLX v0.32.0 added a split-K route (qmm_splitk / fp_qmm_t_splitk) selected in
+QuantizedMatmul::eval_gpu for M >= vector_limit with transposed weights and a
+single batch. The nvfp4 (fp4 + fp8-e4m3 block scale) variant of that path
+produces incorrect results (non-uniform ~2x error plus NaN/inf), while the
+non-split fp_qmm_t path is correct. Gate the split-K selection so nvfp4 falls
+back to the proven qmm path.
+
+Upstream candidate; carried locally until MLX fixes fp4 split-K.
+
+diff --git a/mlx/backend/metal/quantized.cpp b/mlx/backend/metal/quantized.cpp
+--- a/mlx/backend/metal/quantized.cpp
++++ b/mlx/backend/metal/quantized.cpp
+@@ -1511,7 +1511,9 @@ void QuantizedMatmul::eval_gpu(const std::vector<array>& inputs, array& out) {
+   if (M >= vector_limit) {
+     // Use split-K qmm for small M with transposed weights (non-batched only)
+     int B = out.size() / M / N;
+-    if (transpose_ && B == 1) {
++    // nvfp4 split-K (fp_qmm_t_splitk) produces incorrect results (NaN + ~2x
++    // error); route the fp4 tensor-scale mode through the non-split qmm path.
++    if (transpose_ && B == 1 && mode_ != QuantizationMode::Nvfp4) {
+       qmm_splitk(
+           x, w, scales, biases, out, group_size_, bits_, M, N, K, d, s, mode);
+       return;
