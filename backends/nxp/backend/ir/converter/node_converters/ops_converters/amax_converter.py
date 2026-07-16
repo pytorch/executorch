@@ -16,14 +16,14 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_
     get_reduce_node_attrs,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
-    sum_options,
+    reduce_max_options,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
-class SumDimIntListConverter(NodeConverter):
+class AmaxConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_on_target(
@@ -54,14 +54,12 @@ class SumDimIntListConverter(NodeConverter):
         return True
 
     def convert(self, node: Node):
-        """Convert the 'sum.dim_IntList' operator to NeutronIR 'Sum'.
+        """Convert the 'amax' operator to NeutronIR 'ReduceMax'.
         The ExecuTorch schema is:
-            sum.dim_IntList(
+            amax(
                 Tensor self,
                 int[1]? dim,
                 bool keepdim=False,
-                *,
-                dtype=None,
             ) -> Tensor
         """
         self.assert_convertible(node)
@@ -69,13 +67,13 @@ class SumDimIntListConverter(NodeConverter):
         dim, keepdim = get_reduce_node_attrs(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
-        t_op.builtin_options = sum_options.Sum(keepdim)
+        t_op.builtin_options = reduce_max_options.ReduceMax(keepdim)
 
         ops = OpsList(middle_op=t_op)
-        # dim default value is None, it that case no changes to dim or io_formats are needed and all dims are reduced
+        # dim default value is None, in that case no changes to dim or io_formats are needed and all dims are reduced
         dim = (
             get_dim_and_handle_io_formats(self.builder, ops, dim, keepdim)
-            if dim is not None and dim != []
+            if dim is not None
             else None
         )
 

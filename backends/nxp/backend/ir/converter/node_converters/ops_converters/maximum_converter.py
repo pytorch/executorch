@@ -10,21 +10,15 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_utils import (
-    convert_axes_from_attribute,
-    get_dim_and_handle_io_formats,
-    get_reduce_node_attrs,
-)
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
-    sum_options,
+    maximum_options,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
-class SumDimIntListConverter(NodeConverter):
-
+class MaximumConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
@@ -32,11 +26,12 @@ class SumDimIntListConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        if not NodeConverter.inputs_satisfy_broadcast_condition(node):
+            return False
+
+        supported_types = [torch.int8, torch.uint8]
         if not NodeConverter.uses_quantization_type_for_io(
-            node,
-            supported_types=[torch.int8, torch.uint8],
-            input_indices=[0],
-            output_indices=[0],
+            node, supported_types, [0, 1], [0]
         ):
             return False
 
@@ -48,36 +43,26 @@ class SumDimIntListConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if not NodeConverter._has_shared_q_params_if_quantized(node):
+        if len(node.args) != 2:
+            return False
+
+        if not NodeConverter._all_io_shares_quantization_parameters(node):
+            # The IR requires all inputs to have the same quantization parameters as the output.
+            # The quantizer should quantize the operator so that this case does not happen.
             return False
 
         return True
 
     def convert(self, node: Node):
-        """Convert the 'sum.dim_IntList' operator to NeutronIR 'Sum'.
+        """Convert 'maximum' operator to NeutronIR 'Maximum'.
         The ExecuTorch schema is:
-            sum.dim_IntList(
-                Tensor self,
-                int[1]? dim,
-                bool keepdim=False,
-                *,
-                dtype=None,
-            ) -> Tensor
+            maximum(Tensor input, Tensor other, *, Tensor out=None)
         """
         self.assert_convertible(node)
-
-        dim, keepdim = get_reduce_node_attrs(node)
-
         t_op = self._create_tflite_op_with_io_tensors(node)
-        t_op.builtin_options = sum_options.Sum(keepdim)
+        t_op.builtin_options = maximum_options.Maximum()
 
         ops = OpsList(middle_op=t_op)
-        # dim default value is None, it that case no changes to dim or io_formats are needed and all dims are reduced
-        dim = (
-            get_dim_and_handle_io_formats(self.builder, ops, dim, keepdim)
-            if dim is not None and dim != []
-            else None
-        )
-
-        convert_axes_from_attribute(t_op, self.builder, dim)
+        # Create additional ops in case of shape broadcasting
+        ops.add_pre(self.builder.ensure_correct_broadcasting(t_op, t_op.tmp_outputs[0]))
         self.builder.append_operators(ops.flatten())
