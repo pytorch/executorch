@@ -184,8 +184,9 @@ message(
 # idempotent (patches/apply.sh reverse-checks each before applying); a context
 # mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
 # each patch file under patches/ for its rationale.
-set(_mlx_patches ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
-                 ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nvfp4_no_splitk.patch
+set(_mlx_patches
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
 )
 ExternalProject_Add(
   mlx_external
