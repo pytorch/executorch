@@ -180,6 +180,7 @@ make_uniform(WGPUDevice device, const void* data, size_t size) {
 // loop over any excess work (vs compute_1d_workgroup_count, which throws).
 inline uint32_t clamp_workgroup_count(WGPUDevice device, uint32_t desired) {
   return std::min(desired, queried_max_workgroups(device));
+  return std::min(desired, queried_max_workgroups(device));
 }
 
 // Zero-filled storage buffer; used as a dummy binding for an optional tensor
