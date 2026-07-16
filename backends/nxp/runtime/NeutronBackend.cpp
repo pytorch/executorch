@@ -586,7 +586,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
       char* profile_info =
           static_cast<char*>(cfg->dcfg.outputs[profiling_index]);
       NeutronFullProfilingEvent* neutron_events =
-          reinterpreter_cast<NeutronFullProfilingEvent*>(profile_info);
+          reinterpret_cast<NeutronFullProfilingEvent*>(profile_info);
       executorch::runtime::EventTracer* tracer = context.event_tracer();
       uint32_t start_time = 0;
       int index = 0;
