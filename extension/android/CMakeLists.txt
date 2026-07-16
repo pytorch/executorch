@@ -12,6 +12,9 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
+set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+
 if(NOT ANDROID)
   find_package(JNI REQUIRED)
   if(NOT FBJNI_HEADERS_DIR OR NOT FBJNI_LIBRARY)
@@ -28,8 +31,6 @@ if(NOT ANDROID)
       $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
   )
 else()
-  set(EXECUTORCH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
-  include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
   set(_common_compile_options
       $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
       $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
@@ -251,19 +252,31 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fb/extended_targets/CMakeLists.txt")
   include("${CMAKE_CURRENT_SOURCE_DIR}/fb/extended_targets/CMakeLists.txt")
 endif()
 
-target_include_directories(
-  executorch_jni
-  PRIVATE
-    ${_common_include_directories}
-    "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
-)
+if(ANDROID)
+  target_include_directories(
+    executorch_jni
+    PRIVATE
+      ${_common_include_directories}
+      "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/include/"
+  )
+else()
+  target_include_directories(
+    executorch_jni
+    PRIVATE
+      ${_common_include_directories}
+      ${FBJNI_HEADERS_DIR}
+      ${JNI_INCLUDE_DIRS}
+  )
+endif()
 
 target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
-target_link_options(
-  executorch_jni PRIVATE
-  "LINKER:--version-script,${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script.txt"
-)
+if(NOT WIN32)
+  target_link_options(
+    executorch_jni PRIVATE
+    "LINKER:--version-script,${CMAKE_CURRENT_SOURCE_DIR}/jni/version_script.txt"
+  )
+endif()
 target_link_options_gc_sections(executorch_jni)
 
 if(ANDROID)

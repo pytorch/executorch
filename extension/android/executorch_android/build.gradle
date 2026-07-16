@@ -35,8 +35,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     sourceSets {
@@ -48,7 +48,7 @@ android {
         }
     }
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
         freeCompilerArgs += ["-Xjvm-default=all"]
     }
 }
@@ -58,6 +58,7 @@ task copyTestRes(type: Exec) {
 }
 
 dependencies {
+    api project(':executorch_java')
     implementation 'com.facebook.fbjni:fbjni:0.7.0'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
     implementation libs.core.ktx

@@ -9,12 +9,20 @@
 apply plugin: 'kotlin'
 apply plugin: 'java-library'
 apply plugin: 'com.vanniktech.maven.publish'
+apply plugin: 'com.diffplug.spotless'
+
+spotless {
+    kotlin {
+        target '**/*.kt'
+        ktfmt()
+    }
+}
 
 def execuTorchVersion = System.properties['execuTorchVersion']
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 repositories {
@@ -23,24 +31,13 @@ repositories {
 }
 
 dependencies {
+    api project(':executorch_java')
     implementation "org.jetbrains.kotlin:kotlin-stdlib:${libs.versions.kotlin.get()}"
-    implementation "com.facebook.fbjni:fbjni-java-only:${fbjniJavaOnlyVersion}"
-    implementation "com.facebook.soloader:nativeloader:${soLoaderNativeLoaderVersion}"
 }
 
-sourceSets {
-    main {
-        kotlin {
-            srcDirs = ['../executorch_android/src/main/java']
-            exclude '**/androidTest/**'
-            exclude '**/test/**'
-        }
-    }
-}
-
-compileKotlin {
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
         freeCompilerArgs += ["-Xjvm-default=all"]
     }
 }
@@ -54,7 +51,7 @@ mavenPublishing {
     pom {
         name = "ExecuTorch JVM"
         description = "ExecuTorch Java/Kotlin bindings for standard desktop JVM (Linux, macOS, Windows)"
-        inceptionYear = "2026"
+        inceptionYear = "2024"
         url = "https://github.com/pytorch/executorch/"
         licenses {
             license {

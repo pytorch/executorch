@@ -18,6 +18,11 @@ allprojects {
         }
     }
 
+    ext {
+        fbjniJavaOnlyVersion = "0.7.0"
+        soLoaderNativeLoaderVersion = "0.10.5"
+    }
+
     repositories {
         google()
         mavenCentral()
