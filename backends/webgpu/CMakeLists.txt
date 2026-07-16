@@ -67,6 +67,7 @@ set(WEBGPU_SRCS
     runtime/ops/leaky_relu/LeakyRelu.cpp
     runtime/ops/upsample_bilinear2d/UpsampleBilinear2d.cpp
     runtime/ops/batch_norm/BatchNorm.cpp
+    runtime/ops/split_with_sizes/SplitWithSizes.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
