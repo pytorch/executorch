@@ -15,6 +15,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     BOOL,
     DOUBLE,
     INT,
+    OLD_STRING,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
@@ -155,7 +156,7 @@ class CorrectnessTestGen:
 
     def create_input_data(self, arg: Argument, data: Any) -> str:  # noqa: C901
         ctype = cpp.argumenttype_type(arg.type, mutable=arg.is_write, binds=arg.name)
-        cpp_type = ctype.cpp_type(strip_ref=True).replace("c10::string_view", STRING)
+        cpp_type = ctype.cpp_type(strip_ref=True)
 
         # Short cut exit for TENSORLIST, because it needs multiple lines of
         # construction, deviates from the rest.
@@ -217,7 +218,7 @@ class CorrectnessTestGen:
                 ret_str += "std::nullopt;"
             else:
                 ret_str += f"{str(data)};"
-        elif cpp_type == STRING:
+        elif cpp_type == STRING or cpp_type == OLD_STRING:
             ret_str += f'std::string_view("{data}");'
         elif (
             cpp_type == OPT_SCALAR_TYPE
