@@ -26,7 +26,6 @@
 #include <algorithm>
 #include <fstream>
 
-using executorch::extension::Module;
 using executorch::extension::llm::get_rss_bytes;
 using executorch::extension::llm::print_report;
 using executorch::extension::llm::Stats;
