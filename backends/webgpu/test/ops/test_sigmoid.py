@@ -6,10 +6,11 @@
 
 """`aten.sigmoid.default` module + input for the WebGPU op-test framework.
 
-`SigmoidModule`, `N`, and `_det_input` are imported by `cases.py` to drive the
-declarative op-test suite. `SigmoidTest` is the export-delegation
-smoke test. Sigmoid is on the Llama critical path (`F.silu` -> `sigmoid` + `mul`); the
-deterministic inputs span the saturation tails.
+`SigmoidModule`, `SigmoidChainedModule`, `N`, `_det_input`, and
+`_wide_det_input` are imported by `cases.py` to drive the declarative op-test
+suite. `SigmoidTest` is the export-delegation smoke test. Sigmoid is on the
+Llama critical path (`F.silu` -> `sigmoid` + `mul`); the deterministic inputs
+span the saturation tails.
 """
 
 import unittest
