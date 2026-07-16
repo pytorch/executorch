@@ -63,6 +63,17 @@ def grid_sampler_2d_operator_name(
     padding_mode: int,
     align_corners: bool,
 ) -> str:
+    """Build the custom operator name for a 2D grid sampler variant.
+
+    Args:
+        interpolation_mode (int): PyTorch grid_sample interpolation mode.
+        padding_mode (int): PyTorch grid_sample padding mode.
+        align_corners (bool): Whether grid_sample aligns tensor corners.
+
+    Returns:
+        str: Fully qualified custom operator name.
+
+    """
     interpolation = _mode_name(
         int(interpolation_mode),
         _INTERPOLATION_MODE_NAMES,
@@ -86,9 +97,29 @@ def build_grid_sampler_2d_payload(
     padding_mode: int,
     align_corners: bool,
     input_shape: tuple[int, ...] | None = None,
+    output_shape: tuple[int, ...] | None = None,
     input_dtype: Any | None = None,
     output_dtype: Any | None = None,
 ) -> dict[str, Any]:
+    """Build Vulkan custom shader metadata for a 2D grid sampler variant.
+
+    Args:
+        interpolation_mode (int): PyTorch grid_sample interpolation mode.
+        padding_mode (int): PyTorch grid_sample padding mode.
+        align_corners (bool): Whether grid_sample aligns tensor corners.
+        input_shape (tuple[int, ...] | None): Input tensor shape, used to
+            select sampler-backed shader metadata when supported.
+        output_shape (tuple[int, ...] | None): Output tensor shape, required
+            to derive dispatch counts for the shader launch.
+        input_dtype (Any | None): Input tensor dtype, used to select sampler
+            Vulkan formats when supported.
+        output_dtype (Any | None): Output tensor dtype. Defaults to
+            input_dtype when omitted.
+
+    Returns:
+        dict[str, Any]: Custom shader metadata payload.
+
+    """
     _mode_name(
         int(interpolation_mode),
         _INTERPOLATION_MODE_NAMES,
@@ -99,6 +130,8 @@ def build_grid_sampler_2d_payload(
         _PADDING_MODE_NAMES,
         "padding_mode",
     )
+    if output_shape is None:
+        raise ValueError("grid_sampler payload requires output_shape for dispatch")
     if output_dtype is None:
         output_dtype = input_dtype
 
@@ -122,7 +155,10 @@ def build_grid_sampler_2d_payload(
 
     payload = {
         "entry_point": GRID_SAMPLER_2D_SHADER_ENTRY_POINT,
-        "workgroup_sizes": GRID_SAMPLER_2D_WORKGROUP_SIZES,
+        # Current runtime consumes this field as dispatch counts, not local
+        # shader workgroup size. The current grid-sample shaders use a 2D
+        # output-space work model with an 8x8 work volume per workgroup.
+        "workgroup_sizes": _dispatch_shape_for_output_shape(output_shape),
         "shader_language": GRID_SAMPLER_2D_SHADER_LANGUAGE,
         "shader_code": shader_code,
         "input_0_binding": 0,
@@ -158,13 +194,30 @@ def build_grid_sampler_2d_payload(
                 "input_0_type": "Tensor",
                 "input_0_vkformat": GRID_SAMPLER_2D_VK_FORMAT,
                 "input_0_vkdescriptortype": "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
-                "input_1_vkdescriptortype": "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
+                "input_1_vkdescriptortype": "VK_DESCRIPTOR_TYPE_TENSOR_ARM",
                 "output_0_type": "Tensor",
                 "output_0_vkformat": GRID_SAMPLER_2D_VK_FORMAT,
                 "output_0_vkdescriptortype": "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
             }
         )
     return payload
+
+
+def _dispatch_shape_for_output_shape(output_shape: tuple[int, ...]) -> list[int]:
+    if len(output_shape) != 4:
+        raise ValueError(
+            "grid_sampler output_shape must be rank 4 NCHW, "
+            f"got shape {output_shape}"
+        )
+    output_batch = int(output_shape[0])
+    output_height = int(output_shape[2])
+    output_width = int(output_shape[3])
+    group_x, group_y, group_z = GRID_SAMPLER_2D_WORKGROUP_SIZES
+    return [
+        (output_width + group_x - 1) // group_x,
+        (output_height + group_y - 1) // group_y,
+        (output_batch + group_z - 1) // group_z,
+    ]
 
 
 def _sampler_vk_format(input_dtype: Any | None, output_dtype: Any | None) -> str | None:
@@ -222,8 +275,27 @@ def _sampler_config(interpolation_mode: int, padding_mode: int) -> dict[str, str
 
 
 def encode_payload(payload: dict[str, Any]) -> list[int]:
+    """Encode a custom shader payload as implementation attributes.
+
+    Args:
+        payload (dict[str, Any]): Custom shader metadata payload.
+
+    Returns:
+        list[int]: UTF-8 JSON bytes represented as integer attributes.
+
+    """
     return list(json.dumps(payload, sort_keys=True).encode("utf-8"))
 
 
 def decode_payload(implementation_attrs: list[int]) -> dict[str, Any]:
+    """Decode implementation attributes into a custom shader payload.
+
+    Args:
+        implementation_attrs (list[int]): UTF-8 JSON bytes represented as
+            integer attributes.
+
+    Returns:
+        dict[str, Any]: Custom shader metadata payload.
+
+    """
     return json.loads(bytes(implementation_attrs).decode("utf-8"))

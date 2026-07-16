@@ -8,6 +8,7 @@ choose_qparams_per_row:
   parameter_names_with_default_values:
     DTYPE: float
     STORAGE: texture3d
+    ZP_DTYPE_MODE: zpint8
   generate_variant_forall:
     STORAGE:
       - VALUE: texture3d
@@ -15,5 +16,8 @@ choose_qparams_per_row:
     DTYPE:
       - VALUE: float
       - VALUE: half
+    ZP_DTYPE_MODE:
+      - VALUE: zpint8
+      - VALUE: zpinherit
   shader_variants:
     - NAME: choose_qparams_per_row

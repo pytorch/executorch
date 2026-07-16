@@ -24,6 +24,7 @@ Backends:
 """
 
 import argparse
+import json
 import os
 
 import torch
@@ -135,18 +136,26 @@ def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
 # Export + lower
 
 
+def _mutable_buffer_metadata(model: nn.Module) -> str:
+    mutable = [name for name, _ in model.named_buffers() if ".kv_cache." in name]
+    return json.dumps({"version": 1, "mutable_buffers": mutable})
+
+
 def export_and_lower(
     model: Gemma4_31B,
     config: Gemma4_31BConfig,
     output_dir: str,
     backend: str = "cuda",
     use_turboquant: bool = False,
+    sample: bool = False,
 ) -> None:
     """Export and lower the model to ExecuTorch for the given backend."""
     if backend == "cuda":
         _export_cuda(model, config, output_dir, use_turboquant=use_turboquant)
     elif backend == "mlx":
-        _export_mlx(model, config, output_dir, use_turboquant=use_turboquant)
+        _export_mlx(
+            model, config, output_dir, use_turboquant=use_turboquant, sample=sample
+        )
     else:
         raise ValueError(
             f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
@@ -181,13 +190,13 @@ def _export_cuda(
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
+    mutable_buffer_metadata = _mutable_buffer_metadata(model)
 
-    if use_turboquant:
-        from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
-            cuda_source_transformations,
-        )
+    from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
+        cuda_source_transformations,
+    )
 
-        cuda_source_transformations(model, use_turboquant=True)
+    cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     # Int4Tensor weights are used directly — no format conversion.
     # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).
@@ -255,6 +264,8 @@ def _export_cuda(
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
+            "get_min_prefill_chunk": 5,
+            "get_mutable_buffer_metadata": mutable_buffer_metadata,
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
@@ -303,6 +314,7 @@ def _export_mlx(
     config: Gemma4_31BConfig,
     output_dir: str,
     use_turboquant: bool = False,
+    sample: bool = False,
 ) -> None:
     """Export to .pte via torch.export + MLX backend.
 
@@ -350,15 +362,36 @@ def _export_mlx(
 
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
 
+    example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
+    example_input_pos = torch.tensor([0, 1], dtype=torch.long)
+    if sample:
+        # forward(tokens, input_pos, temperature, top_k, top_p, seed) -> token id.
+        # gemma's MLX forward already returns last-token logits (B, vocab), so
+        # SamplingHead is used directly with no per-model wrapper.
+        from executorch.backends.mlx.llm.sampling import SamplingHead
+
+        model = SamplingHead(model)
+        example_args = (
+            example_tokens,
+            example_input_pos,
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(0, dtype=torch.int64),
+        )
+        # SamplingHead.forward takes ``*args``; dynamic_shapes mirrors that single
+        # variadic parameter as one nested tuple over the positional inputs.
+        dynamic_shapes = (({1: seq_dim}, {0: seq_dim}, None, None, None, None),)
+    else:
+        example_args = (example_tokens, example_input_pos)
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+
     print(f"Exporting (T in [1, {max_prefill}])...")
     with torch.no_grad():
         exported = export(
             model,
-            (
-                torch.tensor([[0, 1]], dtype=torch.long),
-                torch.tensor([0, 1], dtype=torch.long),
-            ),
-            dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
+            example_args,
+            dynamic_shapes=dynamic_shapes,
             strict=True,
         )
 
@@ -382,6 +415,7 @@ def _export_mlx(
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
+            "use_sampling": sample,
         },
     )
 
@@ -466,10 +500,20 @@ def main() -> None:
         "sliding layers keep their default cache. Supported on both "
         "--backend mlx and --backend cuda.",
     )
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="MLX only: sample the next token on-device (Gumbel-max with "
+        "temperature/top_p/seed runtime inputs) instead of returning logits "
+        "for host-side sampling.",
+    )
     args = parser.parse_args()
 
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
+
+    if args.sample and args.backend != "mlx":
+        parser.error("--sample is only supported with --backend mlx")
 
     if args.prequantized:
         model, config = load_prequantized_model(
@@ -497,6 +541,7 @@ def main() -> None:
         args.output_dir,
         backend=args.backend,
         use_turboquant=args.turboquant,
+        sample=args.sample,
     )
 
 

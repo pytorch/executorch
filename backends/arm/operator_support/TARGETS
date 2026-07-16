@@ -7,6 +7,7 @@ runtime.python_library(
         "//executorch/backends/arm:ao_ext",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm/_passes:passes",
+        "//executorch/backends/arm/tosa:cast_support",
         "//executorch/backends/arm/tosa:resize_utils",
         "//executorch/backends/arm/tosa:tosa",
         "//executorch/backends/transforms:remove_getitem_op",

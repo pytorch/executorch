@@ -508,6 +508,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
 | `aten.cdist`, `aten._cdist_forward` | `DecomposeCDist` |
 | `aten.cosh` | `DecomposeHyperbolicVariants` |
+| `aten.diagonal` | `DecomposeDiagonal` |
 | `aten.div.Tensor_mode` | `DecomposeDivMode` |
 | `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |

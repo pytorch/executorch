@@ -364,7 +364,6 @@ def inference(
         # Generate the eval wrapper
         ppl_evaluator = TaskEval(
             args=args,
-            decoder_model_config=decoder_model_config,
             pte_paths=pte_paths,
             tokenizer=tokenizer,
             runtime_tokenizer_path=runtime_tokenizer_path,
@@ -619,6 +618,15 @@ def _build_parser():
         '"files" is optional and only required for multimodal models (VLM: image paths/URLs, ALM: audio paths/URLs). '
         '"messages" follows the HuggingFace chat template; "content" can be a plain string or a list of content blocks. '
         "Multiple files are merged.",
+    )
+
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=1,
+        help="Batch size for text decoder quantization. Larger values increase throughput "
+        "but require more host memory. Only affects the CALIBRATE graph; DECODE and "
+        "PREFILL graphs always use batch size 1.",
     )
 
     parser.add_argument(

@@ -55,7 +55,12 @@ def define_common_targets():
         },
         header_namespace = "",
         define_static_target = True,
-        platforms = [ANDROID],
+        # Match `:logging` and `:runtime` (both [ANDROID, CXX]) -- `:pal` is an
+        # exported dep of `:runtime`, so its host (CXX) variant must exist for the
+        # `:runtime` CXX build to resolve on Linux (OSS `//backends/qualcomm/...`
+        # buck build, and the internal x86 simulator runner). Sources are
+        # `pal/src/linux/*.cpp`, which build fine on any Linux host.
+        platforms = [ANDROID, CXX],
         visibility = ["PUBLIC"],
     )
 

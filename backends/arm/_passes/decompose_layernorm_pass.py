@@ -8,7 +8,7 @@ import operator
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node, insert_scalar
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
@@ -46,7 +46,7 @@ def get_layer_norm_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get layer_norm composition for op {op}")
 
 
-class DecomposeLayerNormPass(ArmPass):
+class DecomposeLayerNormPass(ArmOpTargetedPass):
     """
     layernorm is defined as: ((x - E[x]) / sqrt(Var[x] + eps)) * weights + bias
     Decompose layernorm(x, normalized_shape, weights, bias, eps) to a sequence of:
@@ -73,6 +73,8 @@ class DecomposeLayerNormPass(ArmPass):
         exir_ops.edge.aten.native_layer_norm.default,
         torch.ops.aten.layer_norm.default,
     }
+    target_ops = _TARGET_OPS
+    check_allowed_to_transform = True
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False

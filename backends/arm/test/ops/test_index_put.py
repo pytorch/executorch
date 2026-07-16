@@ -440,7 +440,6 @@ def test_index_put_u55_INT(test_module: input_t):
 @common.parametrize(
     "test_module",
     test_data_suite_fp | test_data_int,
-    xfails={"none_indices_4": "Incorrect numerical behavior: MLBEDSW-11589"},
 )
 def test_index_put_u85_INT(test_module: input_t):
     """same_index test case already supported on u85 even though it is not
@@ -464,7 +463,11 @@ def test_index_put_u85_INT(test_module: input_t):
 
 
 @common.SkipIfNoModelConverter
-@common.parametrize("test_module", test_data_suite_fp | test_data_int, xfails=xfails)
+@common.parametrize(
+    "test_module",
+    test_data_suite_fp | test_data_suite_bf16 | test_data_int,
+    xfails=xfails,
+)
 def test_index_put_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](
         IndexPut(),

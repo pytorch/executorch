@@ -20,7 +20,8 @@ void load_int8_input_scales_and_zps(
   [[unroll]] for (int m4 = 0; m4 < TILE_M4; m4++) {
     scales.data[m4] =
         VEC4_T(texelFetch(t_int8_input_scales, ivec3(m4_start + m4, 0, 0), 0));
-    zps.data[m4] = texelFetch(t_int8_input_zps, ivec3(m4_start + m4, 0, 0), 0);
+    zps.data[m4] =
+        ivec4(texelFetch(t_int8_input_zps, ivec3(m4_start + m4, 0, 0), 0));
   }
 }
 

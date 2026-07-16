@@ -175,7 +175,7 @@ def define_libs(is_fbcode=False):
         "//executorch/extension/threadpool:threadpool",
     ]
 
-    for libblas_name, mkl_dep, mkl_omp_define in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp", ["-DET_CPUBLAS_MKL_OMP"]), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl", [])]:
+    for libblas_name, mkl_dep in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp"), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl")]:
         # Merge platform-specific kwargs
         platform_kwargs = get_apple_framework_deps_kwargs(is_fbcode)
         if not is_fbcode:
@@ -214,13 +214,19 @@ def define_libs(is_fbcode=False):
                 # TODO: replace with get_compiler_optimization_flags from op_registration_util.bzl when that
                 # is re-enabled.
                 "DEFAULT": ["-Os"],
+            }) + select({
+                "DEFAULT": [],
+                # ATen vec headers trip -Werror warnings on the Windows clang
+                # host; MSVC cl.exe rejects the gcc-style flag. OSS buck2 has no
+                # compiler constraint, so guard the MSVC branch to non-OSS.
+                "ovr_config//os:windows": select({
+                    "DEFAULT": ["-Wno-error"],
+                    "ovr_config//compiler:msvc": [],
+                }) if not runtime.is_oss else ["-Wno-error"],
             }),
             header_namespace = "executorch/kernels/optimized",
             visibility = ["PUBLIC"],
-            preprocessor_flags = get_preprocessor_flags() + select({
-                ":linux-x86_64": mkl_omp_define,
-                "DEFAULT": [],
-            }),
+            preprocessor_flags = get_preprocessor_flags(),
             fbobjc_exported_preprocessor_flags = [
                 "-DET_BUILD_WITH_BLAS",
                 "-DET_BUILD_FOR_APPLE",

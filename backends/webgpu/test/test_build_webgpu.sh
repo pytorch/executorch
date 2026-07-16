@@ -25,8 +25,8 @@ $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/test_wgsl_codegen.py" -v
 # ── Step 1: Python export tests ──────────────────────────────────────────────
 
 echo "=== Step 1: Run Python export tests ==="
-$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/add/test_add.py" -v
-$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/rms_norm/test_rms_norm.py" -v
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/test_add.py" -v
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/test_rms_norm.py" -v
 
 # ── Step 2: Export .pte model ─────────────────────────────────────────────────
 
@@ -35,38 +35,38 @@ DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 PTE_UPDATE_CACHE_MODEL="/tmp/webgpu_update_cache_test.pte"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.dispatch_order.test_dispatch_order import export_dispatch_order_cases
+from executorch.backends.webgpu.test.ops.test_dispatch_order import export_dispatch_order_cases
 export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 "
 
 echo "=== Export update_cache model ==="
 UPDATE_CACHE_OK=1
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_update_cache import export_update_cache_model
+from executorch.backends.webgpu.test.ops.test_update_cache import export_update_cache_model
 export_update_cache_model('${PTE_UPDATE_CACHE_MODEL}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
 
 echo "=== Export SDPA sweep models (sdpa_<name>.pte + .golden.bin to /tmp) ==="
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_all_sdpa_models
+from executorch.backends.webgpu.test.ops.test_sdpa import export_all_sdpa_models
 export_all_sdpa_models('/tmp')
 " || echo "WARN: sdpa export failed; the native test self-skips configs whose .pte is absent"
 
 echo "=== Export SDPA replay sequences (sdpa_<seq>_step<t>_S<S>_pos<p>.* to /tmp) ==="
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_replay_sequences
+from executorch.backends.webgpu.test.ops.test_sdpa import export_replay_sequences
 export_replay_sequences('/tmp')
 " || echo "WARN: sdpa replay export failed; the native test self-skips absent sequences"
 
 echo "=== Export SDPA dynamic-input_pos decode (sdpa_dyn_<name>.* to /tmp) ==="
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_dynamic_decode
+from executorch.backends.webgpu.test.ops.test_sdpa import export_dynamic_decode
 export_dynamic_decode('/tmp')
 " || echo "WARN: sdpa dynamic export failed; the native test self-skips when absent"
 
 echo "=== Export SDPA in-graph-cache decode (sdpa_incache_<name>.* to /tmp) ==="
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import export_incache_decode
+from executorch.backends.webgpu.test.ops.test_sdpa import export_incache_decode
 export_incache_decode('/tmp')
 " || echo "WARN: sdpa in-graph-cache export failed; the native test self-skips when absent"
 
@@ -85,6 +85,7 @@ cmake \
     -DEXECUTORCH_BUILD_WEBGPU=ON \
     -DDawn_DIR="${Dawn_DIR}" \
     -DEXECUTORCH_BUILD_WEBGPU_TEST=ON \
+    -DEXECUTORCH_BUILD_TESTS=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \

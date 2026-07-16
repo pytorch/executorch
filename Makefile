@@ -127,8 +127,8 @@ help:
 	@echo "  llava-cpu           - Build Llava runner with CPU backend"
 	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
 	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
-	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner with CUDA backend"
-	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner with MLX backend"
+	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner and worker with CUDA backend"
+	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner and worker with MLX backend"
 	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
 	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
 	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
@@ -444,20 +444,23 @@ qwen3_5_moe-cuda:
 gemma4_31b-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
-	@echo "==> Building Gemma 4 31B runner with CUDA..."
+	@echo "==> Building Gemma 4 31B runner, worker, and no-bleed test with CUDA..."
 	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-cuda
 	@echo ""
 	@echo "✓ Build complete!"
-	@echo "  Binary: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
+	@echo "  Test:   cmake-out/examples/models/gemma4_31b/test_gemma4_31b_nobleed"
 
 gemma4_31b-mlx:
 	@echo "==> Building and installing ExecuTorch with MLX..."
 	cmake --workflow --preset mlx-release
-	@echo "==> Building Gemma 4 31B runner with MLX..."
+	@echo "==> Building Gemma 4 31B runner and worker with MLX..."
 	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-mlx
 	@echo ""
 	@echo "✓ Build complete!"
-	@echo "  Binary: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
 
 qwen3_5_moe-metal:
 	@echo "==> Building and installing ExecuTorch with Metal..."

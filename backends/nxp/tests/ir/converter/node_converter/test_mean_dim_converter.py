@@ -305,8 +305,8 @@ class TestMeanDim:
         def test__channels_first_input__reducing_all_spatial_dims(
             self, mocker, request, dim
         ):
-            # If tall he spatial dimensions are reduced (removed), the `mean` output will always be equal in channels
-            #  first and channels last, so no `Transpose` ops are added.
+            # If the spatial dimensions are reduced (removed), the `mean` output will always be equal in channels
+            #  first and channels last, so no `Transpose` ops before `Mean` are added.
             input_shape = (1, 7, 3, 3)
             model = MaxPoolMeanDimModule(dim, False)
 
@@ -380,9 +380,10 @@ class TestMeanDim:
                 pytest.param((2, 3, 4, 5, 6), [-3], id="dim=[-3], 5D->4D"),
                 pytest.param((1, 2, 3, 4, 5, 6), (1, -1), id="dim=(1, -1), 6D->4D"),
             ],
-            ids=lambda dim: f"dim={dim}",
         )
         def test__channels_first_output(self, mocker, request, input_shape, dim):
+            # If the following node requires channels input, a `Transpose` operator must be added to make the output
+            # channels first in Neutron IR.
             model = MeanDimMaxPoolModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")

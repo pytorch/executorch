@@ -27,7 +27,25 @@ setup_android_ndk() {
     mkdir -p "${NDK_INSTALL_DIR}"
     NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
 
-    curl --retry 3 --retry-delay 5 --retry-connrefused --continue-at - -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}"
+    # dl.google.com intermittently resets HTTP/2 streams mid-transfer
+    # (curl error 92, INTERNAL_ERROR). Force HTTP/1.1 to avoid it, and use
+    # --retry-all-errors so the retry count actually applies to such transport
+    # failures (plain --retry does not retry them). Re-download and re-verify
+    # the archive on each attempt rather than resuming a possibly-corrupt file.
+    for attempt in 1 2 3 4 5; do
+        rm -f "/tmp/${NDK_ZIP}"
+        curl --fail --http1.1 --retry 3 --retry-delay 5 --retry-connrefused --retry-all-errors \
+            -Lo "/tmp/${NDK_ZIP}" "https://dl.google.com/android/repository/${NDK_ZIP}" || true
+        if unzip -tq "/tmp/${NDK_ZIP}" >/dev/null 2>&1; then
+            break
+        fi
+        if [ "${attempt}" -eq 5 ]; then
+            echo "Failed to download a valid Android NDK archive after ${attempt} attempts" >&2
+            exit 1
+        fi
+        echo "NDK download/verify failed (attempt ${attempt}), retrying..."
+        sleep 5
+    done
     unzip -q "/tmp/${NDK_ZIP}" -d "${NDK_INSTALL_DIR}"
     mv "${NDK_INSTALL_DIR}/android-ndk-${NDK_VERSION}" "${NDK_INSTALL_DIR}/ndk"
 

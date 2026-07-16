@@ -12,6 +12,10 @@
 
 coopmat_mm:
   parameter_names_with_default_values:
+    # GL_KHR_cooperative_matrix requires SPIR-V 1.6, so target Vulkan 1.3 when
+    # compiling this shader (the default target-env of 1.1 is too low). Other
+    # shaders are unaffected and keep the default.
+    VK_VERSION: '1.3'
     DTYPE: float
     PRECISION: highp
     WEIGHT_LAYOUT: row_major

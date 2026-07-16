@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from functools import partial
 
 import torch
+
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
     ClampConverter,
 )
@@ -25,6 +26,8 @@ from torch._ops import OpOverload
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
+    MinMaxObserver,
+    MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
     PerChannelMinMaxObserver,
 )
@@ -40,11 +43,11 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 @dataclass
 class NodeArgsIdx:
     """
-    Specifies indexes to args paramater of Node in node input annotation.
+    Specifies indexes to args parameter of Node in node input annotation.
 
 
     Attributes:
-        idx (int): Index to Node's args paramater (list). Selects an input Node or a list of Nodes at the index.
+        idx (int): Index to Node's args parameter (list). Selects an input Node or a list of Nodes at the index.
         inner_idx (int): If specified, index to a list pointed by 'idx' attribute. Selects an input Node at the index.
                          Default: None.
     """
@@ -117,7 +120,7 @@ class SharedSpecPattern(QuantizationPattern):
     """
 
     @abstractmethod
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         pass
 
     @staticmethod
@@ -141,6 +144,52 @@ class SharedSpecPattern(QuantizationPattern):
             output=[
                 (node, qspec),
             ],
+        )
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        return self.get_shared_spec_anchors(gm, fused_partition)
+
+
+class SharedSpecMultipleInputPattern(QuantizationPattern):
+    """
+    Quantization pattern for shared quantization with multiple inputs.
+
+    The quantization is derived from the previous node quantization and inputs and the output shares the same
+    quantization parameters (scale and zero-point).
+    """
+
+    @abstractmethod
+    def partition_types(self) -> list[OpOverload]:
+        pass
+
+    @staticmethod
+    def get_shared_spec_anchors(
+        gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        quantized_input = None
+        for prev_node in node.args:
+            if Q_ANNOTATION_KEY in prev_node.meta:
+                quantized_input = prev_node
+                break
+
+        if quantized_input is not None:
+            inputs = []
+            for idx, _ in enumerate(node.args):
+                inputs.append(
+                    (node, NodeArgsIdx(idx), SharedQuantizationSpec(quantized_input))
+                )
+        else:
+            return None
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node, SharedQuantizationSpec(quantized_input))],
         )
 
     def get_anchors(
@@ -297,7 +346,7 @@ class AddTensorPattern(QuantizationPattern):
     Basic quantization for all inputs and output.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.add.Tensor]
 
     def get_anchors(
@@ -316,12 +365,30 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class AmaxPattern(SharedSpecPattern):
+    """
+    Quantizer for Amax operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amax.default]
+
+
+class AminPattern(SharedSpecPattern):
+    """
+    Quantizer for Amin operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amin.default]
+
+
 class BMMPattern(QuantizationPattern):
     """
     Quantizer for BatchMatMul operator.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.bmm.default]
 
     def get_anchors(
@@ -329,10 +396,24 @@ class BMMPattern(QuantizationPattern):
     ) -> PartitionAnchors | None:
         bmm_node = fused_partition[0].nodes[-1]
 
+        # Use per_tensor_symmetric to enforce zero_point=0 for both inputs
+        observer_or_fake_quant_ctr = (
+            FakeQuantize.with_args(observer=MovingAverageMinMaxObserver)
+            if self.is_qat
+            else MinMaxObserver
+        )
+        input_quantization_spec = QuantizationSpec(
+            dtype=torch.int8,
+            observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
+            quant_min=-127,
+            quant_max=127,
+            qscheme=torch.per_tensor_symmetric,  # Neutron requires the inputs to have zero point = 0.
+        )
+
         return PartitionAnchors(
             inputs=[
-                (bmm_node, NodeArgsIdx(0)),
-                (bmm_node, NodeArgsIdx(1)),
+                (bmm_node, NodeArgsIdx(0), input_quantization_spec),
+                (bmm_node, NodeArgsIdx(1), input_quantization_spec),
             ],
             biases=[],
             output=[(bmm_node,)],
@@ -346,7 +427,7 @@ class SubTensorPattern(QuantizationPattern):
     Basic quantization for all inputs and output.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.sub.Tensor]
 
     def get_anchors(
@@ -400,7 +481,7 @@ class CatPattern(QuantizationPattern):
 
         quantized_input = None
         for prev_node in node.args[0]:
-            if "quantization_annotation" in prev_node.meta:
+            if Q_ANNOTATION_KEY in prev_node.meta:
                 quantized_input = prev_node
                 break
 
@@ -850,6 +931,17 @@ class LogPattern(SingleInputBasicPattern):
         return [torch.ops.aten.log.default]
 
 
+class MaximumPattern(SharedSpecMultipleInputPattern):
+    """
+    Quantization pattern for Maximum quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.maximum.default]
+
+
 class MaxPool1DPattern(SharedSpecPattern):
     """Quantizer for the MaxPool1D operator."""
 
@@ -1113,6 +1205,24 @@ class SqueezeDimsPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.squeeze.dims]
+
+
+class SumPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.default]
+
+
+class SumDimIntListPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.dim_IntList` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.dim_IntList]
 
 
 class TanhPattern(QuantizationPattern):

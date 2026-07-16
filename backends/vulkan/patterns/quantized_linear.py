@@ -19,6 +19,9 @@ from executorch.backends.vulkan.patterns.pattern_registry import (
     register_pattern_detector,
     register_pattern_replacement,
 )
+from executorch.backends.vulkan.patterns.weight_packing_utils import (
+    pack_4bit_weight_tensor,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.graph_signature import InputKind
@@ -290,45 +293,6 @@ def find_quantized_linear_patterns(
 ##
 
 
-def pack_4bit_weight_tensor(weight_tensor: torch.Tensor) -> torch.Tensor:
-    """
-    Given a 8-bit weight tensor containing values quantized to 4 bits, create a packed
-    weight tensor by transposing the weight tensor, then packing 2 4-bit values in one
-    8-bit value.
-
-    An input weight tensor of shape (N, K) will produce a packed weight tensor of shape
-    (K, N / 2).
-    """
-
-    # Assert we got a properly quantized tensor.
-    min_val, max_val = weight_tensor.min().item(), weight_tensor.max().item()
-    assert (
-        max_val <= 7 and min_val >= -8
-    ), f"pack_4bit_weight_tensor: [min_val,max_val] out of [-8, 7] range, got [{min_val}, {max_val}]"
-
-    # Assuming we have a 2d tensor
-    if weight_tensor.ndim != 2:
-        weight_tensor = weight_tensor.squeeze()
-    assert (
-        weight_tensor.ndim == 2
-    ), f"pack_4bit_weight_tensor: expecting input tensor to be 2d, got {weight_tensor.ndim}"
-
-    # Need to pad innermost dim to be a multiple of 8, since the minimum load granularity
-    # is int32 (4 bytes), which contains 8 4-bit values.
-    if weight_tensor.shape[-1] % 8 != 0:
-        num_pad = 8 - (weight_tensor.shape[-1] % 8)
-        weight_tensor = F.pad(input=weight_tensor, pad=(0, num_pad))
-
-    # Shape after padding
-    _, in_channels = weight_tensor.shape
-    assert in_channels % 8 == 0, "convert_to_qc4w: expecting ic to be divisible by 8"
-
-    # Adjust weight_tensor tensor for zp
-    weight_tensor = weight_tensor.to(dtype=torch.uint8) + 8
-    # Pack each 4-bit value into a single 8-bit value
-    return weight_tensor[::, 1::2] << 4 | weight_tensor[::, ::2]
-
-
 def compute_per_group_sums(weight_tensor: torch.Tensor, group_size: int):
     """
     Compute the sum of weights per quantization group.
@@ -373,24 +337,25 @@ def make_linear_q4gsw_op(
     in_channels = weight_tensor.shape[-1]
     group_size = in_channels // num_groups
 
-    weight_tensor = pack_4bit_weight_tensor(weight_tensor)
-    # Use this function for convenience to update the state dict with the packed
-    # weight tensor. Alignment will already have been done in the above function.
-    weight_tensor = utils.align_width_and_update_state_dict(
-        ep, match.weight_node, weight_tensor, align_to=1, force_update=True
-    )
+    if utils.register_param_mutation(ep, match.weight_node, "4 bit linear weight"):
+        weight_tensor = pack_4bit_weight_tensor(weight_tensor)
+        # Use this function for convenience to update the state dict with the packed
+        # weight tensor. Alignment will already have been done in the above function.
+        weight_tensor = utils.align_width_and_update_state_dict(
+            ep, match.weight_node, weight_tensor, align_to=1, force_update=True
+        )
 
     # Also transpose the weight scales tensor to shape [num_groups, N]
-    weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
-    # Align to multiple of 8 to ensure that data loads from the weight scales
-    # tensor do not go out of bounds. Each thread computes 8 output channels.
-    utils.align_width_and_update_state_dict(
-        ep,
-        match.weight_scales_node,
-        weight_scales_tensor,
-        align_to=8,
-        force_update=True,
-    )
+    if utils.register_param_mutation(
+        ep, match.weight_scales_node, "4 bit linear scales"
+    ):
+        weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
+        utils.align_width_and_update_state_dict(
+            ep,
+            match.weight_scales_node,
+            weight_scales_tensor,
+            force_update=True,
+        )
 
     # Pad bias to multiple of 4 if present
     if match.bias_node is not None:
@@ -429,22 +394,25 @@ def make_linear_dq8ca_q4gsw_op(
     # Compute per quant group sums before packing the weight tensor
     sum_per_quant_group = compute_per_group_sums(weight_tensor, group_size)
 
-    weight_tensor = pack_4bit_weight_tensor(weight_tensor)
-    # Use this function for convenience to update the state dict with the packed
-    # weight tensor. Alignment will already have been done in the above function.
-    weight_tensor = utils.align_width_and_update_state_dict(
-        ep, match.weight_node, weight_tensor, align_to=1, force_update=True
-    )
+    if utils.register_param_mutation(ep, match.weight_node, "4 bit linear weight"):
+        weight_tensor = pack_4bit_weight_tensor(weight_tensor)
+        # Use this function for convenience to update the state dict with the packed
+        # weight tensor. Alignment will already have been done in the above function.
+        weight_tensor = utils.align_width_and_update_state_dict(
+            ep, match.weight_node, weight_tensor, align_to=1, force_update=True
+        )
 
     # Also transpose the weight scales tensor to shape [num_groups, N]
-    weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
-    utils.align_width_and_update_state_dict(
-        ep,
-        match.weight_scales_node,
-        weight_scales_tensor,
-        align_to=1,
-        force_update=True,
-    )
+    if utils.register_param_mutation(
+        ep, match.weight_scales_node, "4 bit linear scales"
+    ):
+        weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
+        utils.align_width_and_update_state_dict(
+            ep,
+            match.weight_scales_node,
+            weight_scales_tensor,
+            force_update=True,
+        )
 
     # Pad bias to multiple of 4 if present
     if match.bias_node is not None:

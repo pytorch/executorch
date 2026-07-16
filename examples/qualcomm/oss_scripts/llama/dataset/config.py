@@ -20,6 +20,7 @@ class DataConfig:
     # calibration
     calib_tasks: Optional[List[str]] = None
     calib_limit: int = 1
+    calib_num_fewshot: Optional[int] = None
     calib_samples: Optional[List[str]] = field(default_factory=list)
     batch_size: int = 1
 
@@ -34,6 +35,7 @@ class DataConfig:
             ),
             calib_tasks=getattr(args, "calib_tasks", None),
             calib_limit=getattr(args, "calib_limit", 1),
+            calib_num_fewshot=getattr(args, "calib_num_fewshot", None),
             calib_samples=getattr(args, "calib_samples", None) or [],
             batch_size=getattr(args, "batch_size", 1),
         )

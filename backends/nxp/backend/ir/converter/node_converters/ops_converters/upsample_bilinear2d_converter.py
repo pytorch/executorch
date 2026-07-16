@@ -6,12 +6,11 @@
 import numpy as np
 import torch
 
-from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import node_has_well_defined_shape
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.resize_bilinear_options import (
     ResizeBilinear,
@@ -23,6 +22,7 @@ from torch.nn import Parameter
 
 
 # noinspection SpellCheckingInspection
+@requires_channels_first_format
 class UpsampleBilinear2DConverter(NodeConverter):
 
     @classmethod
@@ -36,9 +36,7 @@ class UpsampleBilinear2DConverter(NodeConverter):
     ) -> bool:
         input_shape = node.all_input_nodes[0].meta["val"].shape
         output_shape = node.meta["val"].shape
-        is_alone_in_partition = cls.is_node_alone_in_partition(
-            node, partition_list, filter_fn=is_not_qdq_node
-        )
+        is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
 
         if is_alone_in_partition and input_shape == output_shape:
             # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the
@@ -53,14 +51,6 @@ class UpsampleBilinear2DConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-
-        if node.meta.get(NXP_NODE_FORMAT, DataFormat.NONE) != DataFormat.CHANNELS_FIRST:
-            # This should never happen.
-            raise NotImplementedError(
-                "NXP backend: `aten.upsample_bilinear2d.vec` didn't have correctly identified data"
-                " format. Please report this."
-            )
-
         # The conversion requires the output shape to be known and static.
         if not node_has_well_defined_shape(node):
             return False
@@ -123,7 +113,7 @@ class UpsampleBilinear2DConverter(NodeConverter):
         x = t_op.tmp_inputs[0]
         y = t_op.tmp_outputs[0]
 
-        # ExecuTorch has 1 paramter (align_corners). NeutronIR has 2 parameters (align_corners, half_pixel_centers).
+        # ExecuTorch has 1 parameter (align_corners). NeutronIR has 2 parameters (align_corners, half_pixel_centers).
         # In ExecuTorch, the pixel compute scale is:
         #  `(input_size - 1) / (output_size - 1)` if align_corners else `input_size / output_size`
         # https://github.com/pytorch/executorch/blob/v1.1.0/kernels/portable/cpu/util/upsample_util.h#L65

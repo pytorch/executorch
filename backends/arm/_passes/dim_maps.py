@@ -91,7 +91,21 @@ def _dim_expr(dim: _Dim) -> sympy.Basic:
     return sympy.Integer(dim) if isinstance(dim, int) else dim.node.expr
 
 
+def _simplify_dim(dim: _Dim) -> _Dim:
+    if isinstance(dim, int):
+        return dim
+
+    maybe_int = dim.node.maybe_as_int()
+    return maybe_int if maybe_int is not None else dim
+
+
+def _simplify_shape(shape: Iterable[_Dim]) -> list[_Dim]:
+    return [_simplify_dim(dim) for dim in shape]
+
+
 def _dim_equals(lhs: _Dim, rhs: _Dim) -> bool:
+    lhs = _simplify_dim(lhs)
+    rhs = _simplify_dim(rhs)
     if isinstance(lhs, int) and isinstance(rhs, int):
         return lhs == rhs
     return sympy.simplify(_dim_expr(lhs) - _dim_expr(rhs)) == 0
@@ -113,6 +127,7 @@ def _factor_int(dim: int) -> list[_FactorKey] | None:
 
 
 def _factor_dim(dim: _Dim) -> list[_FactorKey] | None:
+    dim = _simplify_dim(dim)
     if _dim_equals(dim, 1):
         return []
     if isinstance(dim, int):
@@ -143,12 +158,37 @@ def _dedupe(items: Iterable[int]) -> list[int]:
 def numel(shape: Iterable[_Dim]) -> _Dim:
     numel: _Dim = 1
     for dim in shape:
-        numel *= dim
+        numel = _simplify_dim(numel * _simplify_dim(dim))
     return numel
 
 
 def same_numel(first_shape: Iterable[_Dim], second_shape: Iterable[_Dim]) -> bool:
     return _dim_equals(numel(first_shape), numel(second_shape))
+
+
+def normalize_view_shape(
+    source_shape: Sequence[_Dim], target_shape: Sequence[_Dim]
+) -> list[_Dim]:
+    """Normalize a view shape with <=1 unknown dim, indicated by -1."""
+    source_shape = _simplify_shape(source_shape)
+    normalized_shape = _simplify_shape(target_shape)
+    inferred_dims = [
+        index for index, dim in enumerate(normalized_shape) if _dim_equals(dim, -1)
+    ]
+    if not inferred_dims:
+        return normalized_shape
+
+    assert len(inferred_dims) == 1, f"Invalid view shape {target_shape}"
+    inferred_dim = inferred_dims[0]
+    known_shape = [
+        dim for index, dim in enumerate(normalized_shape) if index != inferred_dim
+    ]
+    source_numel = numel(source_shape)
+    known_numel = numel(known_shape)
+    normalized_shape[inferred_dim] = _simplify_dim(
+        source_numel if _dim_equals(known_numel, 1) else source_numel // known_numel
+    )
+    return normalized_shape
 
 
 class _UnionFind:
@@ -210,8 +250,10 @@ class ViewMap:
         input_val = input_node.meta["val"]
         assert isinstance(input_val, torch.Tensor)
 
-        self.source_shape = cast(list[_Dim], list(input_val.shape))
-        self.target_shape = list(cast(Sequence[_Dim], view_node.args[1]))
+        self.source_shape = _simplify_shape(cast(Sequence[_Dim], input_val.shape))
+        self.target_shape = normalize_view_shape(
+            self.source_shape, cast(Sequence[_Dim], view_node.args[1])
+        )
         self._groups = self._build_groups(self.source_shape, self.target_shape)
 
     @classmethod
@@ -220,8 +262,10 @@ class ViewMap:
     ) -> ViewMap:
         """Build a view map directly from source and target shapes."""
         view_map = cls.__new__(cls)
-        view_map.source_shape = list(source_shape)
-        view_map.target_shape = list(target_shape)
+        view_map.source_shape = _simplify_shape(source_shape)
+        view_map.target_shape = normalize_view_shape(
+            view_map.source_shape, target_shape
+        )
         view_map._groups = cls._build_groups(
             view_map.source_shape, view_map.target_shape
         )
@@ -262,15 +306,28 @@ class ViewMap:
             return None
 
         groups = self._valid_groups()
-        if not self._is_valid_reduction(normalized_dims, groups.source_axis_to_groups):
+        if not self._is_valid_reduction_or_singleton(
+            normalized_dims, groups.source_axis_to_groups
+        ):
             return None
 
-        target_dims = self._map_dims(
-            normalized_dims,
-            groups.source_axis_to_groups,
-            groups.group_to_target_axes,
+        source_to_target_axes = self.source_to_target_axes()
+        target_dims = sorted(
+            _dedupe(
+                target_axis
+                for source_dim in normalized_dims
+                for target_axis in source_to_target_axes[source_dim]
+            )
         )
-        if not target_dims or not self._is_valid_reduction(
+        if not target_dims or any(
+            source_axis not in normalized_dims
+            for target_axis in target_dims
+            for source_axis in self.source_axes_for_target_axis(
+                target_axis, source_to_target_axes
+            )
+        ):
+            return None
+        if not self._is_valid_reduction_or_singleton(
             target_dims, groups.target_axis_to_groups
         ):
             return None
@@ -388,6 +445,226 @@ class ViewMap:
             else None
         )
 
+    def remap_target_shape(self, source_shape: Sequence[_Dim]) -> list[_Dim] | None:
+        if len(source_shape) != self.source_rank:
+            return None
+
+        source_to_target_axes = self.source_to_target_axes()
+        target_to_source_axes = [
+            self.source_axes_for_target_axis(target_axis, source_to_target_axes)
+            for target_axis in range(self.target_rank)
+        ]
+        target_shape: list[_Dim] = [1] * self.target_rank
+
+        for source_axis, target_axes in enumerate(source_to_target_axes):
+            updates = self._target_axis_updates_for_source_axis(
+                source_shape,
+                source_axis,
+                target_axes,
+                target_to_source_axes,
+            )
+            if updates is None:
+                return None
+            for target_axis, target_dim in updates:
+                target_shape[target_axis] = target_dim
+
+        if not same_numel(source_shape, target_shape):
+            return None
+        if not self._preserves_source_axis_order(source_shape, source_to_target_axes):
+            return None
+        return target_shape
+
+    def _target_axis_updates_for_source_axis(
+        self,
+        source_shape: Sequence[_Dim],
+        source_axis: int,
+        target_axes: Sequence[int],
+        target_to_source_axes: Sequence[Sequence[int]],
+    ) -> list[tuple[int, _Dim]] | None:
+        if not target_axes:
+            return []
+
+        if len(target_axes) == 1:
+            target_axis = target_axes[0]
+            source_axes = target_to_source_axes[target_axis]
+            if source_axis != source_axes[0]:
+                return []
+            target_dim = numel(source_shape[source_axis] for source_axis in source_axes)
+            return [(target_axis, target_dim)]
+
+        if any(
+            len(target_to_source_axes[target_axis]) > 1 for target_axis in target_axes
+        ):
+            return []
+
+        target_dims = [self.target_shape[target_axis] for target_axis in target_axes]
+        if _dim_equals(source_shape[source_axis], self.source_shape[source_axis]):
+            return list(zip(target_axes, target_dims))
+        if _dim_equals(numel(target_dims), 1):
+            return [(target_axes[0], source_shape[source_axis])]
+        if _dim_equals(numel(target_dims), self.source_shape[source_axis]):
+            return list(zip(target_axes, target_dims))
+        return None
+
+    def remap_unit_slice(
+        self,
+        producer_shape: Sequence[_Dim],
+        slice_dim: int,
+        start: _Dim,
+        end: _Dim,
+        step: _Dim = 1,
+    ) -> tuple[list[_Dim], int, _Dim, _Dim] | None:
+        """Move a view before a unit slice.
+
+        Returns the new view shape and slice interval for:
+
+            view(slice(x, dim, start, end), self.target_shape)
+            == slice(view(x, new_shape), new_dim, new_start, new_end)
+
+        This handles the case where a unit slice produces a singleton source
+        axis that the view removes, so normal source-to-target dim mapping has
+        no target axis for the slice dim.
+
+        """
+        if (
+            len(producer_shape) != self.source_rank
+            or not isinstance(slice_dim, int)
+            or not isinstance(start, (int, torch.SymInt))
+            or not isinstance(end, (int, torch.SymInt))
+            or not isinstance(step, (int, torch.SymInt))
+        ):
+            return None
+        if not _dim_equals(step, 1) or not _dim_equals(end - start, 1):
+            return None
+
+        try:
+            slice_dim = _normalize_dim(slice_dim, self.source_rank)
+        except AssertionError:
+            return None
+
+        source_to_target_axes = self.source_to_target_axes()
+        if source_to_target_axes[slice_dim]:
+            return None
+
+        prev_target_axes = [
+            target_axis
+            for target_axes in source_to_target_axes[:slice_dim]
+            for target_axis in target_axes
+        ]
+        next_target_axes = [
+            target_axis
+            for target_axes in source_to_target_axes[slice_dim + 1 :]
+            for target_axis in target_axes
+        ]
+        fold_axes = [
+            target_axes[0]
+            for target_axes in source_to_target_axes[slice_dim + 1 :]
+            if target_axes
+        ]
+        fold_axes = [
+            target_axis
+            for target_axis in fold_axes
+            if all(
+                prev_target_axis <= target_axis for prev_target_axis in prev_target_axes
+            )
+            and all(
+                target_axis <= next_target_axis for next_target_axis in next_target_axes
+            )
+        ]
+        if not fold_axes:
+            return None
+
+        fold_axis = fold_axes[0]
+        target_shape = list(self.target_shape)
+        chunk = target_shape[fold_axis]
+        target_shape[fold_axis] = chunk * producer_shape[slice_dim]
+        return target_shape, fold_axis, start * chunk, end * chunk
+
+    def source_to_target_axes(self) -> list[list[int]]:
+        groups = self._valid_groups()
+        source_to_target_axes = [
+            self._map_dims(
+                [source_axis],
+                groups.source_axis_to_groups,
+                groups.group_to_target_axes,
+            )
+            for source_axis in range(self.source_rank)
+        ]
+
+        self._add_singleton_axes(source_to_target_axes)
+        return source_to_target_axes
+
+    def map_source_dims_to_target_axes(
+        self, source_dims: int | Sequence[int]
+    ) -> list[int] | None:
+        try:
+            normalized_dims = _normalize_dims(source_dims, self.source_rank)
+        except AssertionError:
+            return None
+        source_to_target_axes = self.source_to_target_axes()
+        return _dedupe(
+            target_axis
+            for source_dim in normalized_dims
+            for target_axis in source_to_target_axes[source_dim]
+        )
+
+    @staticmethod
+    def source_axes_for_target_axis(
+        target_axis: int, source_to_target_axes: Sequence[Sequence[int]]
+    ) -> list[int]:
+        return [
+            source_axis
+            for source_axis, target_axes in enumerate(source_to_target_axes)
+            if target_axis in target_axes
+        ]
+
+    def _add_singleton_axes(self, source_to_target_axes: list[list[int]]) -> None:
+        mapped_source_axes = {
+            source_axis
+            for source_axis, target_axes in enumerate(source_to_target_axes)
+            if target_axes
+        }
+        mapped_target_axes = {
+            target_axis
+            for target_axes in source_to_target_axes
+            for target_axis in target_axes
+        }
+        source_singletons = [
+            axis
+            for axis, dim in enumerate(self.source_shape)
+            if axis not in mapped_source_axes and _dim_equals(dim, 1)
+        ]
+        target_singletons = [
+            axis
+            for axis, dim in enumerate(self.target_shape)
+            if axis not in mapped_target_axes and _dim_equals(dim, 1)
+        ]
+
+        if len(source_singletons) == len(target_singletons):
+            pairs = zip(source_singletons, target_singletons)
+        elif len(source_singletons) == 1:
+            pairs = zip(source_singletons * len(target_singletons), target_singletons)
+        elif len(target_singletons) == 1:
+            pairs = zip(source_singletons, target_singletons * len(source_singletons))
+        else:
+            pairs = zip(source_singletons, target_singletons)
+
+        for source_axis, target_axis in pairs:
+            source_to_target_axes[source_axis].append(target_axis)
+
+    @staticmethod
+    def _preserves_source_axis_order(
+        source_shape: Sequence[_Dim],
+        source_to_target_axes: Sequence[Sequence[int]],
+    ) -> bool:
+        target_axes = [
+            target_axis
+            for source_axis, axes in enumerate(source_to_target_axes)
+            if not _dim_equals(source_shape[source_axis], 1)
+            for target_axis in axes
+        ]
+        return target_axes == sorted(target_axes)
+
     @staticmethod
     def _map_dims(
         source_dims: Iterable[int],
@@ -504,6 +781,30 @@ class ViewMap:
 
         if any(not axis_to_groups[axis] for axis in normalized_dims):
             return False
+
+        return all(
+            group_to_axes[group].issubset(normalized_dims) for group in selected_groups
+        )
+
+    @staticmethod
+    def _is_valid_reduction_or_singleton(
+        normalized_dims: Iterable[int],
+        axis_to_groups: Sequence[Sequence[int]],
+    ) -> bool:
+        """Return whether dims cover complete groups, allowing singleton
+        axes.
+        """
+        normalized_dims = set(normalized_dims)
+        if not normalized_dims:
+            return False
+
+        group_to_axes: dict[int, set[int]] = defaultdict(set)
+        selected_groups: set[int] = set()
+        for axis, groups in enumerate(axis_to_groups):
+            for group in groups:
+                group_to_axes[group].add(axis)
+                if axis in normalized_dims:
+                    selected_groups.add(group)
 
         return all(
             group_to_axes[group].issubset(normalized_dims) for group in selected_groups

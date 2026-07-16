@@ -400,6 +400,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return self._is_pointwise(node.target)
 
     def permute_subgraph(self, subgraph: Subgraph) -> bool:  # noqa: C901
+        # Ensure that the subgraph's edges have not been modified by an earlier rewrite before applying changes.
+        if not self._subgraph_edges_are_current(subgraph):
+            return False
+
         # Validate: every view_copy node's permutation rank must match its
         # input tensor rank.  A mismatch can occur when a squeeze/unsqueeze
         # view is reached via upstream traversal with a permutation that was
@@ -492,6 +496,28 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         for inp, out in subgraph.edges_out:
             assert out.target == exir_ops.edge.aten.permute_copy.default
             out.replace_all_uses_with(inp)
+
+        return True
+
+    def _subgraph_edges_are_current(self, subgraph: Subgraph) -> bool:
+        """Return false if an earlier rewrite invalidated this candidate."""
+        for inp, out in subgraph.edges_in:
+            if (
+                inp.target != exir_ops.edge.aten.permute_copy.default
+                or inp not in out.all_input_nodes
+            ):
+                return False
+
+        for inp, out in subgraph.edges_out:
+            if (
+                out.target != exir_ops.edge.aten.permute_copy.default
+                or out not in inp.users
+            ):
+                return False
+
+        for const_node, user_node in subgraph.constant_edges_in:
+            if const_node not in user_node.all_input_nodes:
+                return False
 
         return True
 

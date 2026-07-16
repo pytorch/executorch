@@ -1,97 +1,115 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
-
-import kgb
 import numpy as np
+
+# noinspection PyUnusedImports
+import pytest
 import torch
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-)
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier, Operator
 from executorch.backends.nxp.tests.models import LinearModule, MmModule
-from executorch.exir.dialects._ops import ops as exir_ops
-from parameterized import parameterized
-from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import MM, PermuteCopy, ViewCopy
+from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
-class TestMmConversion(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        torch.manual_seed(23)
-        np.random.seed(42)
+@pytest.fixture(autouse=True)
+def reseed_model_per_test_run():
+    torch.manual_seed(42)
+    np.random.seed(23)
 
-    @parameterized.expand([("QAT", True), ("PTQ", False)])
-    def test_mm_conversion(self, _, use_qat: bool):
-        with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program,
-            call_original=True,
-            owner=EdgeProgramToIRConverter,
-        ) as converter_spy:
-            input_shape = (1, 32)
-            model = MmModule(input_shape[1])
 
-            edge_program = to_quantized_edge_program(
-                model, input_shape, use_qat=use_qat
-            ).exported_program()
+class TestMM:
 
-            # Make sure that all nodes were delegated.
-            assert not graph_contains_any_of_ops(
-                graph=edge_program.graph, ops=[exir_ops.edge.aten.mm.default]
-            )
-            assert any(
-                "lowered_module" in node.name for node in edge_program.graph.nodes
-            )
+    # noinspection PyMethodMayBeStatic
+    def assert_delegated(
+        self,
+        model,
+        input_shape,
+        mocker,
+        request,
+        use_qat=False,
+        expected_delegated_ops: dict[Operator, int] | None = None,
+    ):
+        if expected_delegated_ops is None:
+            expected_delegated_ops = {MM: 1}
 
-            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
-            exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
-            input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
-                np.int8
-            )
-            convert_run_compare(
-                exported_program,
-                input_data,
-                tfl_model=tflite_flatbuffers_model,
-                atol=1.0,
-            )
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops=expected_delegated_ops,
+            expected_non_delegated_ops={},
+        )
 
-    @parameterized.expand([("QAT", True), ("PTQ", False)])
-    def test_linear_conversion__without_bias(self, _, use_qat: bool):
-        with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program,
-            call_original=True,
-            owner=EdgeProgramToIRConverter,
-        ) as converter_spy:
-            input_shape = (10, 32)
-            model = LinearModule(bias=False)
+        # Create a RandomDatasetCreator that covers also negative numbers to properly test the operator.
+        dataset_creator = RandomDatasetCreator(low=-2, high=2)
 
-            edge_program = to_quantized_edge_program(
-                model, input_shape, use_qat=use_qat
-            ).exported_program()
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            dataset_creator,
+            use_qat=use_qat,
+        )
 
-            # Make sure that all nodes were delegated.
-            assert not graph_contains_any_of_ops(
-                graph=edge_program.graph, ops=[exir_ops.edge.aten.mm.default]
-            )
-            assert any(
-                "lowered_module" in node.name for node in edge_program.graph.nodes
-            )
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            # PyTorch allows only 2D inputs.
+            (1, 32),
+            (3, 11),
+        ],
+        ids=lambda s: f"input_shape = {s}",
+    )
+    def test__from_mm(self, mocker, request, use_qat, input_shape: tuple[int, ...]):
+        model = MmModule(input_shape[-1])
+        self.assert_delegated(model, input_shape, mocker, request, use_qat=use_qat)
 
-            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
-            exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
-            input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
-                np.int8
-            )
-            convert_run_compare(
-                exported_program,
-                input_data,
-                tfl_model=tflite_flatbuffers_model,
-            )
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            (1, 32),
+            (3, 11),
+        ],
+        ids=lambda s: f"input_shape = {s}",
+    )
+    def test__from_linear_without_bias(
+        self, mocker, request, use_qat, input_shape: tuple[int, ...]
+    ):
+        model = LinearModule(bias=False, in_features=input_shape[-1], out_features=7)
+        self.assert_delegated(
+            model,
+            input_shape,
+            mocker,
+            request,
+            use_qat=use_qat,
+            expected_delegated_ops={MM: 1, PermuteCopy: 1},
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            (1, 3, 8),
+            (2, 3, 5),
+            (2, 3, 3, 3),
+        ],
+        ids=lambda s: f"input_shape = {s}",
+    )
+    def test__from_linear_without_bias__higher_ranks(
+        self, mocker, request, use_qat, input_shape: tuple[int, ...]
+    ):
+        # More than 2D cases get reshaped to 2D, so two extra view_copy nodes are delegated.
+
+        model = LinearModule(bias=False, in_features=input_shape[-1], out_features=7)
+        self.assert_delegated(
+            model,
+            input_shape,
+            mocker,
+            request,
+            use_qat=use_qat,
+            expected_delegated_ops={MM: 1, PermuteCopy: 1, ViewCopy: 2},
+        )

@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import platform
 from typing import List
+
+import test_base
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
@@ -15,6 +19,7 @@ from executorch.examples.xnnpack import MODEL_NAME_TO_OPTIONS
 from executorch.examples.xnnpack.quantization.utils import quantize as quantize_xnn
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (
+    _get_registered_backend_names,
     _load_for_executorch_from_buffer,
 )
 from test_base import ModelTest
@@ -63,6 +68,17 @@ def run_tests(model_tests: List[ModelTest]) -> None:
 
 
 if __name__ == "__main__":
+    if platform.system() == "Windows":
+        registered = _get_registered_backend_names()
+        # Vulkan backend is optional: only present when the wheel was built with
+        # EXECUTORCH_BUILD_VULKAN=1 and the Vulkan SDK (glslc) was available.
+        if "VulkanBackend" in registered:
+            print("✓ VulkanBackend is registered")
+        else:
+            print("⚠ VulkanBackend not registered (expected for the default wheel)")
+
+        test_base.test_cmsis_nn_install()
+
     run_tests(
         model_tests=[
             ModelTest(

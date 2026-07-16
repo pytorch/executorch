@@ -113,6 +113,21 @@ class AotiBackend(ABC):
         return
 
     @classmethod
+    def move_program_to_device(
+        cls,
+        edge_program: ExportedProgram,
+        device: str,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Move the exported program to the target device for compilation.
+
+        Default implementation moves everything (params, buffers, constants) via
+        ``move_to_device_pass``. Concrete backends may override to keep large
+        non-parameter tensors off the device during a low-memory export.
+        """
+        return move_to_device_pass(edge_program, device)
+
+    @classmethod
     def release_moved_tensors(
         cls,
         device_edge_program: ExportedProgram,
@@ -196,9 +211,13 @@ class AotiBackend(ABC):
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
 
-        # Move the edge_program to the target device
-        device_edge_program = move_to_device_pass(
-            edge_program, device_name if device_name != "metal" else "mps"
+        # Move the edge_program to the target device. Routed through a hook so
+        # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
+        # off the device during a low-memory export.
+        device_edge_program = cls.move_program_to_device(
+            edge_program,
+            device_name if device_name != "metal" else "mps",
+            compile_specs,
         )
 
         # Replace view_copy with view
