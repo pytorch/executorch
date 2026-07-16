@@ -9,6 +9,9 @@ import sympy  # type: ignore
 import torch
 
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
+from executorch.backends.arm.tosa.resize_utils import (
+    is_exact_tosa_resize_boundary_downscale_case,
+)
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -51,6 +54,34 @@ def test_resize_rejects_exact_one_sixteenth_downscale(resize_mode: str):
                 [-15, -15],
                 resize_mode=resize_mode,
             )
+
+
+def test_exact_boundary_resize_case_helper_only_matches_boundary_rule():
+    spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+    assert is_exact_tosa_resize_boundary_downscale_case(
+        input_hw=(256, 448),
+        output_hw=(16, 28),
+        scale=[2, 32, 2, 32],
+        offset=[15, 15],
+        border=[-15, -15],
+        tosa_spec=spec,
+    )
+    assert not is_exact_tosa_resize_boundary_downscale_case(
+        input_hw=(20000, 448),
+        output_hw=(16, 28),
+        scale=[2, 32, 2, 32],
+        offset=[15, 15],
+        border=[-15, -15],
+        tosa_spec=spec,
+    )
+    assert not is_exact_tosa_resize_boundary_downscale_case(
+        input_hw=(256, 448),
+        output_hw=(15, 28),
+        scale=[2, 32, 2, 32],
+        offset=[15, 15],
+        border=[-15, -15],
+        tosa_spec=spec,
+    )
 
 
 def test_resize_rejects_scale_numerator_over_tosa_limit():
