@@ -4,7 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 import ast
 import logging
+import os
 import re
+from typing import Any, Union
 
 import numpy as np
 import pytest
@@ -13,17 +15,20 @@ from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     NumericalStatsOutputComparator,
 )
-
 from executorch.backends.nxp.tests.models import AvgPool2dModule, SoftmaxModule
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.nsys_testing import (
+    get_test_name,
+    lower_run_compare,
+    OUTPUTS_DIR,
+)
 
+from executorch.devtools.inspector._inspector import Inspector
 from executorch.examples.models.mlperf_tiny import (
     DeepAutoEncoder,
     DSCNNKWS,
     MobileNetV1025,
     ResNet8,
 )
-
 from executorch.examples.nxp.experimental.cifar_net.cifar_net import CifarNetModel
 
 
@@ -44,6 +49,103 @@ def extract_map_from_logs(caplog):
             dict_str = neutron_map_match.group(1)
             return ast.literal_eval(dict_str)
     return None
+
+
+def inspector_check(test_name: str) -> None:
+    """
+    Validate ExecuTorch Inspector profiling output.
+
+    Checks:
+      1. Required profiling artifacts (etrecord.bin, trace.etdump) exist.
+      2. Inspector can be created and profiling data can be parsed.
+      3. All numeric delegate events except the last contain
+         "Neutron kernel" metadata.
+      4. The last numeric delegate event contains
+         "Profiling dump" metadata.
+      5. The profiling dump event does not have associated op types.
+    """
+
+    def parse_delegate_metadata(
+        delegate_metadatas: list[bytes],
+    ) -> Union[list[str], dict[str, Any]]:
+        """Metadata parser for Neutron Backend metadata.
+
+        The parser is a callable that deserializes the data and returns neutron kernel number.
+        The deserialized data is then added back to the corresponding event in the event block for user consumption.
+        """
+
+        metadata_list = []
+        for metadata_bytes in delegate_metadatas:
+            if len(metadata_bytes) == 1:
+                function_code = metadata_bytes[0]
+                if function_code == 0:
+                    metadata_list.append("Profiling dump")
+                else:
+                    metadata_list.append("Neutron kernel " + str(function_code))
+            else:
+                metadata_list.append("Invalid metadata size")
+        return metadata_list
+
+    npu_results_path = os.path.join(OUTPUTS_DIR, test_name, "results_npu")
+    etrecord_path = os.path.join(npu_results_path, "etrecord.bin")
+    etdump_path = os.path.join(npu_results_path, "trace.etdump")
+
+    # Verify profiling artifacts were generated.
+    for file_path in (etrecord_path, etdump_path):
+        assert os.path.isfile(
+            file_path
+        ), f"Required profiling file does not exist: {file_path}"
+
+    # Create Inspector and parse profiling data.
+    try:
+        inspector = Inspector(
+            etdump_path=etdump_path,
+            etrecord=etrecord_path,
+            delegate_metadata_parser=parse_delegate_metadata,
+        )
+        inspector.print_data_tabular(include_delegate_debug_data=True)
+
+    except Exception as e:
+        raise RuntimeError(
+            "Failed to create or run Inspector for "
+            f"etdump='{etdump_path}', "
+            f"etrecord='{etrecord_path}'"
+        ) from e
+
+    # Collect delegated profiling events whose names are numeric
+    # (0, 1, 2, ..., N). These events are emitted by the Neutron backend.
+    numeric_events = [
+        event
+        for event_block in inspector.event_blocks
+        for event in event_block.events
+        if str(event.name).isdigit()
+    ]
+
+    assert numeric_events, "No numeric delegate profiling events found"
+
+    # All delegate events except the last one should describe
+    # individual Neutron kernels.
+    for event in numeric_events[:-1]:
+        metadata = str(event.delegate_debug_metadatas)
+
+        assert "Neutron kernel" in metadata, (
+            f"Event {event.name}: expected 'Neutron kernel', " f"got {metadata}"
+        )
+
+    # The final numeric event should represent the profiling dump.
+    profiling_dump_event = numeric_events[-1]
+    profiling_metadata = str(profiling_dump_event.delegate_debug_metadatas)
+
+    assert "Profiling dump" in profiling_metadata, (
+        f"Event {profiling_dump_event.name}: "
+        f"expected 'Profiling dump', got {profiling_metadata}"
+    )
+
+    # Profiling dump event is expected to have no associated operators.
+    assert profiling_dump_event.op_types == [], (
+        f"Event {profiling_dump_event.name}: expected empty op_types, "
+        f"got {profiling_dump_event.op_types}"
+    )
 
 
 class SimpleParallelPoolModel(torch.nn.Module):
@@ -84,7 +186,10 @@ class ParallelPoolModel(torch.nn.Module):
 
 
 class TestProfiling:
-    @pytest.mark.xfail(reason="SoftMax support PR is not merged so far.", strict=True)
+    @pytest.mark.xfail(
+        reason="Profiling support for cmodel and SoftMax fix will be available in Neutron SW 3.2.",
+        strict=True,
+    )
     def test__softmax(self, caplog, request):
         caplog.set_level(logging.INFO)
         model = SoftmaxModule(-1)
@@ -164,6 +269,7 @@ class TestProfiling:
             10: (21,),  # Slice
             11: (),  # Neutron Dump
         }
+        inspector_check(get_test_name(request))
 
     def test__avg_pool(self, caplog, request):
         caplog.set_level(logging.INFO)
