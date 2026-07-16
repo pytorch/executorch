@@ -90,6 +90,24 @@ class TestConv1d(unittest.TestCase):
             z = torch.add(y, z)
             return z
 
+    class Conv1dSamePadding(torch.nn.Module):
+        def __init__(self, kernel_size: int, dilation: int = 1):
+            super().__init__()
+            self.conv1d = torch.nn.Conv1d(
+                in_channels=2,
+                out_channels=4,
+                kernel_size=kernel_size,
+                dilation=dilation,
+                padding="same",
+                bias=True,
+            )
+
+        def forward(self, x):
+            return self.conv1d(x)
+
+    def _get_calibration_samples(self, inputs):
+        return [tuple(torch.randn_like(inputs[i]) for i in range(len(inputs)))]
+
     def _test_conv1d(
         self,
         module,
@@ -102,9 +120,7 @@ class TestConv1d(unittest.TestCase):
         skip_to_executorch=False,
     ):
         calibration_samples = (
-            [tuple(torch.randn_like(inputs[i]) for i in range(len(inputs)))]
-            if quantized
-            else None
+            self._get_calibration_samples(inputs) if quantized else None
         )
 
         tester = (
@@ -159,6 +175,43 @@ class TestConv1d(unittest.TestCase):
         self._test_conv1d(
             self.Conv1d(), inputs, 1, quantized=True, dynamic_shape=dynamic_shapes
         )
+
+    def test_qs8_conv1d_even_kernel_same_padding(self):
+        inputs = (torch.randn(1, 2, 16),)
+        configs = [
+            (2, 1),
+            (3, 1),
+            (4, 1),
+            (4, 2),
+        ]
+        for kernel_size, dilation in configs:
+            with self.subTest(kernel_size=kernel_size, dilation=dilation):
+                (
+                    Tester(
+                        self.Conv1dSamePadding(
+                            kernel_size=kernel_size, dilation=dilation
+                        ),
+                        inputs,
+                    )
+                    .quantize(
+                        Quantize(
+                            calibration_samples=self._get_calibration_samples(inputs)
+                        )
+                    )
+                    .export()
+                    .check_count({"torch.ops.aten.conv1d.padding": 1})
+                    .to_edge_transform_and_lower()
+                    .check_not(
+                        [
+                            "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                            "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                        ]
+                    )
+                    .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                    .to_executorch()
+                    .serialize()
+                    .run_method_and_compare_outputs(num_runs=10, atol=0.04, rtol=0.02)
+                )
 
     def test_qs8_conv1d_batchnorm_seq(self):
         inputs = (torch.randn(2, 2, 4),)
