@@ -365,6 +365,15 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class AmaxPattern(SharedSpecPattern):
+    """
+    Quantizer for Amax operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amax.default]
+
+
 class AminPattern(SharedSpecPattern):
     """
     Quantizer for Amin operator.
@@ -1196,6 +1205,15 @@ class SqueezeDimsPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.squeeze.dims]
+
+
+class SumPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.default]
 
 
 class SumDimIntListPattern(SharedSpecPattern):
