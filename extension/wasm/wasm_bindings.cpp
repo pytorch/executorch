@@ -56,7 +56,6 @@ using ::executorch::extension::BufferDataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracer;
-using ::executorch::runtime::Result;
 using ::executorch::runtime::Tag;
 using ::executorch::runtime::TensorInfo;
 
