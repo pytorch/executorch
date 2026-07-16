@@ -12,21 +12,26 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from compare.wgsl - DO NOT EDIT.
-// wgsl-sha256: f13da085195696aa6975cae62b4d0b2f5837fc02584d95b0a46fd06dc418c4a4
-inline constexpr const char* kCompareWGSL = R"(
-@group(0) @binding(0) var<storage, read> input: array<f32>;
+// @generated from boolean_op.wgsl - DO NOT EDIT.
+// wgsl-sha256: 06dc55c61e55c35eb12abf548fafb495097fa8d22daea930af6a32ed724a5b6a
+inline constexpr const char* kLogicalNotWGSL = R"(
+@group(0) @binding(0) var<storage, read> input: array<u32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
 
 struct Params {
   num_elements: u32,
-  mode: u32,
   scalar: f32,
-  _pad: u32,
+  _pad1: u32,
+  _pad2: u32,
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
 override wg_size: u32 = 64u;
+
+// Per-variant predicate substituted from boolean_op.yaml (compare / logical_not).
+fn elem_bool(i: u32) -> bool {
+  return ((input[i >> 2u] >> ((i & 3u) * 8u)) & 0xFFu) == 0u;
+}
 
 // One thread per output u32 word packs 4 bool bytes -> no inter-thread race.
 @compute @workgroup_size(wg_size, 1, 1)
@@ -40,20 +45,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var j: u32 = 0u; j < 4u; j = j + 1u) {
         let i = word_idx * 4u + j;
         if (i < params.num_elements) {
-            let v = input[i];
-            var r: bool;
-            if (params.mode == 0u) {
-                r = v == params.scalar;
-            } else if (params.mode == 1u) {
-                r = v != params.scalar;
-            } else if (params.mode == 2u) {
-                r = v <= params.scalar;
-            } else if (params.mode == 3u) {
-                r = v >= params.scalar;
-            } else {
-                r = v < params.scalar;
-            }
-            if (r) {
+            if (elem_bool(i)) {
                 packed = packed | (1u << (j * 8u));
             }
         }
@@ -62,8 +54,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 )";
 
-inline constexpr uint32_t kCompareWorkgroupSizeX = 64;
-inline constexpr uint32_t kCompareWorkgroupSizeY = 1;
-inline constexpr uint32_t kCompareWorkgroupSizeZ = 1;
+inline constexpr uint32_t kLogicalNotWorkgroupSizeX = 64;
+inline constexpr uint32_t kLogicalNotWorkgroupSizeY = 1;
+inline constexpr uint32_t kLogicalNotWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
