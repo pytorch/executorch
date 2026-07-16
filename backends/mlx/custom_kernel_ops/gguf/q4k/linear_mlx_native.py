@@ -9,8 +9,9 @@
 """GGUF **Q4_K** linear lowering via MLX's native 4-bit quantized matmul.
 
 Lowers a ``dequantize_gguf -> linear`` pattern to a ``QuantizedMatmulNode``
-(mode "affine", group_size 32); the GGUF blob is repacked into MLX qparams at
-export time (see :mod:`.repack_mlx`).
+(mode "affine"); the GGUF blob is repacked into MLX qparams at export time (see
+:mod:`.repack_mlx`). The group size is 32 by default, or the merged 64/128 when
+adjacent sub-blocks are identical.
 """
 
 from __future__ import annotations
@@ -45,7 +46,9 @@ def emit_linear(
     node. The blob is repacked into MLX qparams at export time, so only the
     MLX-format constants are serialized.
     """
-    w_slot, scales_slot, biases_slot, group_size = repack_mlx(P, weight_node)
+    w_slot, scales_slot, biases_slot, group_size = repack_mlx(
+        P, weight_node, scale_dtype=x_node.meta["val"].dtype
+    )
     x_slot, bias_slot = P.slot_map([x_node, bias_node])
 
     out = P.make_or_get_slot(head)
