@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""`aten.{eq,ne,le,ge,lt}.Scalar` export + golden for the WebGPU backend.
+"""`aten.{eq,ne,le,ge,lt,gt}.Scalar` export + golden for the WebGPU backend.
 
 Each scalar comparison lowers to a single `aten.<op>.Scalar` node that the
 kernel computes as `cmp(self[i], scalar)` and writes as a byte-packed bool. The
@@ -25,7 +25,7 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.exir import to_edge_transform_and_lower
 
 SCALAR = 0.0
-OPS = ("eq", "ne", "le", "ge", "lt")
+OPS = ("eq", "ne", "le", "ge", "lt", "gt")
 SHAPES = {"tail": (3, 5), "3d": (2, 4, 8)}
 
 _TORCH_OP = {
@@ -34,6 +34,7 @@ _TORCH_OP = {
     "le": torch.le,
     "ge": torch.ge,
     "lt": torch.lt,
+    "gt": torch.gt,
 }
 
 
@@ -52,7 +53,9 @@ class CompareModule(torch.nn.Module):
             return x <= self.scalar
         if self.op == "ge":
             return x >= self.scalar
-        return x < self.scalar
+        if self.op == "lt":
+            return x < self.scalar
+        return x > self.scalar
 
 
 def _det_input(shape: tuple[int, ...]) -> torch.Tensor:
