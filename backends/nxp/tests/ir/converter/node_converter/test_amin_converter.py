@@ -57,6 +57,12 @@ class AminModule(torch.nn.Module):
         return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
 
 
+class AminDefaultParamsModule(torch.nn.Module):
+    @staticmethod
+    def forward(x):
+        return torch.amin(x)
+
+
 class AminAddModule(AminModule):
     def forward(self, x):
         x = super().forward(x)
@@ -170,6 +176,19 @@ class TestAminConverter:
     )
     def test__tuple_dims(self, mocker, request, input_shape, dim, keep_dim):
         model = AminModule(dim, keep_dim)
+        assert_delegated(model, input_shape, mocker, request)
+
+    @pytest.mark.parametrize(
+        "input_shape",
+        [
+            pytest.param((4, 2), id="2D."),
+            pytest.param((2, 3, 4), id="3D."),
+            pytest.param((1, 3, 3, 7), id="4D."),
+            pytest.param((3, 1, 4, 1, 5), id="5D."),
+        ],
+    )
+    def test__default_params(self, mocker, request, input_shape):
+        model = AminDefaultParamsModule()
         assert_delegated(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
@@ -310,7 +329,7 @@ class TestAminConverter:
             self, mocker, request, dim
         ):
             # If the spatial dimensions are reduced (removed), the `amin` output will always be equal in channels
-            #  first and channels last, so no `Transpose` ops are added.
+            #  first and channels last, so no `Transpose` ops before `ReduceMin` are added.
             input_shape = (1, 7, 3, 3)
             model = MaxPoolAminModule(dim, False)
 
@@ -383,9 +402,10 @@ class TestAminConverter:
                 pytest.param((2, 3, 4, 5, 6), [-3], id="dim=[-3], 5D->4D"),
                 pytest.param((1, 2, 3, 4, 5, 6), (1, -1), id="dim=(1, -1), 6D->4D"),
             ],
-            ids=lambda dim: f"dim={dim}",
         )
         def test__channels_first_output(self, mocker, request, input_shape, dim):
+            # If the following node requires channels input, a `Transpose` operator must be added to make the output
+            # channels first in Neutron IR.
             model = AminMaxPoolModule(dim, False)
 
             model_builder_finish_spy = mocker.spy(ModelBuilder, "finish")
