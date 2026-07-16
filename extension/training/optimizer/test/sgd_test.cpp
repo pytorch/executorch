@@ -22,7 +22,6 @@ using executorch::aten::Tensor;
 using ::executorch::extension::training::optimizer::SGD;
 using ::executorch::extension::training::optimizer::SGDOptions;
 using ::executorch::extension::training::optimizer::SGDParamState;
-using ::executorch::runtime::Error;
 using ::executorch::runtime::testing::TensorFactory;
 
 class SGDOptimizerTest : public ::testing::Test {
