@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
-from executorch.backends.qualcomm.utils.utils import (
+from executorch.backends.qualcomm.utils.check_qnn_version import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )

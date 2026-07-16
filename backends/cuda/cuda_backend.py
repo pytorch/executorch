@@ -31,7 +31,6 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.nn.attention import SDPBackend
 
-
 # ---------------------------------------------------------------------------
 # AOTI compile-time CPU clones for mutated buffers
 # ---------------------------------------------------------------------------
@@ -386,6 +385,8 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_cuda_randint_low_out": None,
             "executorch_cuda::int4_plain_mm": None,
             "aoti_torch_cuda_int4_plain_mm": None,
+            "executorch_cuda::int5_plain_mm": None,
+            "aoti_torch_cuda_int5_plain_mm": None,
             "executorch_cuda::int6_plain_mm": None,
             "aoti_torch_cuda_int6_plain_mm": None,
             "executorch_cuda::int8_plain_mm": None,
@@ -415,8 +416,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 mode = spec.value.decode("utf-8").upper()
                 if mode not in ["ON", "OFF"]:
                     raise ValueError(
-                        f"Invalid triton_kernel_mode: {mode}. "
-                        f"Expected 'ON' or 'OFF'."
+                        f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
         passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
@@ -469,12 +469,19 @@ class CudaBackend(AotiBackend, BackendDetails):
                 torch.ops.executorch_cuda.int4_plain_mm.default: [
                     "AOTITorchError aoti_torch_cuda_int4_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "int64_t, AtenTensorHandle*)"
+                ],
+                torch.ops.executorch_cuda.int5_plain_mm.default: [
+                    "AOTITorchError aoti_torch_cuda_int5_plain_mm("
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],
                 torch.ops.executorch_cuda.int6_plain_mm.default: [
                     "AOTITorchError aoti_torch_cuda_int6_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                    "AtenTensorHandle, AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],
                 torch.ops.executorch_cuda.int8_plain_mm.default: [
                     "AOTITorchError aoti_torch_cuda_int8_plain_mm("

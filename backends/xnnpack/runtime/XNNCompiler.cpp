@@ -563,7 +563,7 @@ Error defineTensor(
         uint32_t scale_numel = 0;
 
         // Block scales are preferably serialized as bf16 but can also be
-        // serialized as fp32 for backwards compatability.
+        // serialized as fp32 for backwards compatibility.
         if (qparams->scale_buffer_idx() != 0) {
           auto scale_data_result = getConstantDataPtr(
               qparams->scale_buffer_idx(),

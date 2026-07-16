@@ -9,7 +9,6 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 
 """
 
-
 import operator
 import typing
 from typing import final, Optional, Sequence, Type
@@ -343,6 +342,7 @@ def _negative_checks(
     additional_checks: Optional[Sequence[OperatorSupportBase]],
 ) -> list[OperatorSupportBase]:
     checks: list[OperatorSupportBase] = [RankCheck(reporter, MAX_RANK)]
+    checks.append(CheckKnownUnsupportedTOSASemantics(reporter))
 
     if not tosa_spec.support_extension("int64"):
         checks.append(CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec))
@@ -370,6 +370,52 @@ def _negative_checks(
         checks.append(SymbolicShapeSupportCheck(reporter))
 
     return checks
+
+
+class CheckKnownUnsupportedTOSASemantics(OperatorSupportBase):
+    """Reject ops whose TOSA lowering is known to differ from PyTorch."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def _argmax_all_users_cast_to_int32(self, node: fx.Node) -> bool:
+        # TOSA ARGMAX produces int32 indices. This is only a faithful lowering
+        # when every user immediately narrows aten.argmax's int64 result:
+        #
+        #   aten.argmax -> _to_dim_order_copy(dtype=int32) -> users
+        cast_ops = (
+            torch.ops.dim_order_ops._to_dim_order_copy.default,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        )
+        # A live argmax should normally have users. Treat a no-user node as not
+        # proving the int64 result is intentionally narrowed to int32.
+        if not node.users:
+            return False
+        for user in node.users:
+            if user.target not in cast_ops:
+                return False
+            if user.kwargs.get("dtype") != torch.int32:
+                return False
+        return True
+
+    def _check_argmax(self, node: fx.Node) -> bool:
+        if self._argmax_all_users_cast_to_int32(node):
+            return True
+        self.reporter.report_reject(
+            node, "TOSA ARGMAX produces int32 but aten.argmax returns int64."
+        )
+        return False
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.target in (
+            torch.ops.aten.argmax.default,
+            exir_ops.edge.aten.argmax.default,
+        ):
+            return self._check_argmax(node)
+
+        return True
 
 
 def tosa_support_factory(

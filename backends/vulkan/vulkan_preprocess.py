@@ -201,7 +201,7 @@ class VulkanBackend(BackendDetails):
         # Optionally apply the memory metadata tagging pass, which will insert storage
         # type and memory layout transition nodes to ensure that all tensor arguments
         # to an operator is in a supported or optimal configuration. If this pass is not
-        # applied, there will be a risk that some operators recieve arguments with
+        # applied, there will be a risk that some operators receive arguments with
         # memory settings that are not supported by the implementation.
         if not compile_options.get("skip_tag_memory_metadata", False):
             program = apply_passes(

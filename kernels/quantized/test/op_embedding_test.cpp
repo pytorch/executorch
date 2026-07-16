@@ -28,6 +28,7 @@ using std::optional;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::embedding_out;
 using torch::executor::native::quantize_per_tensor_out;
+using torch::executor::native::quantized_embedding_byte_dtype_out;
 using torch::executor::native::quantized_embedding_byte_out;
 
 using torch::executor::testing::TensorFactory;
@@ -407,4 +408,107 @@ TEST(OpQuantizedEmbeddingTest, TestOutOfBoundsIndex) {
           indices,
           out),
       "");
+}
+
+// Runs embedding_byte.out with the scales, zero points, and output all in the
+// given reduced-precision dtype. Chosen values are exactly representable in
+// both fp16 and bf16, so the result must match exactly.
+template <ScalarType DTYPE>
+void test_reduced_precision_out() {
+  TensorFactory<DTYPE> tf;
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  Tensor weight_scales = tf.full({3}, 0.5);
+  Tensor weight_zero_points = tf.full({3}, 1);
+  // (q - 1) * 0.5
+  Tensor qweight = tfb.make({3, 2}, {8, 5, 9, 3, 12, 27});
+  Tensor indices = tf_l.make({2}, {0, 2});
+
+  Tensor out = tf.zeros({2, 2});
+  Tensor expected = tf.make({2, 2}, {3.5, 2, 5.5, 13});
+
+  quantized_embedding_byte_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST(OpQuantizedEmbeddingTest, ReducedPrecisionOut) {
+  et_pal_init();
+  test_reduced_precision_out<ScalarType::Half>();
+  test_reduced_precision_out<ScalarType::BFloat16>();
+}
+
+// embedding_byte.dtype_out with scales and output both bf16.
+TEST(OpQuantizedEmbeddingTest, BFloat16DtypeOut) {
+  et_pal_init();
+  TensorFactory<ScalarType::BFloat16> tf;
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  Tensor weight_scales = tf.full({3}, 0.5);
+  Tensor weight_zero_points = tf.full({3}, 1);
+  Tensor qweight = tfb.make({3, 2}, {8, 5, 9, 3, 12, 27});
+  Tensor indices = tf_l.make({2}, {0, 2});
+
+  Tensor out = tf.zeros({2, 2});
+  Tensor expected = tf.make({2, 2}, {3.5, 2, 5.5, 13});
+
+  quantized_embedding_byte_dtype_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      ScalarType::BFloat16,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+// bf16 output for scales that are not exactly representable, verifying the
+// dequant math is done in fp32 and only the store is rounded to bf16.
+TEST(OpQuantizedEmbeddingTest, BFloat16Rounding) {
+  et_pal_init();
+  TensorFactory<ScalarType::BFloat16> tf;
+  TensorFactory<ScalarType::Byte> tfb;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  Tensor weight_scales = tf.full({3}, 0.1);
+  Tensor weight_zero_points = tf.full({3}, 0);
+  Tensor qweight = tfb.make({3, 2}, {8, 5, 9, 3, 12, 27});
+  Tensor indices = tf_l.make({2}, {0, 2});
+
+  Tensor out = tf.zeros({2, 2});
+  // scale (0.1) rounds to bf16 before the multiply, so reference the bf16
+  // scale rather than the exact decimal.
+  Tensor expected = tf.make({2, 2}, {0.8, 0.5, 1.2, 2.7});
+
+  quantized_embedding_byte_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, 1e-2, 1e-2);
 }

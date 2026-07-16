@@ -3,6 +3,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Example build helper. This command-line interface is not a public API and may
+# change without deprecation.
 
 set -euo pipefail
 
@@ -23,6 +26,7 @@ input_file_pool_size="0x00100000"
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [options]
+Note: this example build script is not a stable public API.
 
 Options:
   --pte=PATH             Embed this PTE in the semihosting runner ELF.

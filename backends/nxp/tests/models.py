@@ -902,9 +902,39 @@ class LinearPReLUModule(torch.nn.Module):
 
         self.linear = nn.Linear(in_features=in_features, out_features=out_features)
         self.prelu = torch.nn.PReLU(num_parameters)
+        # Initialize the weight alpha with random values to simulate learned model with non-constant data
+        torch.nn.init.uniform(self.prelu.weight, -1.0, 1.0)
 
     def forward(self, x):
         x = self.linear(x)
+        return self.prelu(x)
+
+
+class PReLUModule(torch.nn.Module):
+    def __init__(self, num_parameters=1):
+        super().__init__()
+
+        self.prelu = torch.nn.PReLU(num_parameters)
+        # Initialize the weight alpha with random values to simulate learned model with non-constant data
+        torch.nn.init.uniform(self.prelu.weight, -1.0, 1.0)
+
+    def forward(self, x):
+        return self.prelu(x)
+
+
+class ConvPReLUModule(torch.nn.Module):
+    def __init__(self, in_channels, num_parameters=1):
+        super().__init__()
+
+        self.conv = Conv2dModule(
+            in_channels=in_channels, out_channels=in_channels, stride=1, padding=1
+        )
+        self.prelu = torch.nn.PReLU(num_parameters)
+        # Initialize the weight alpha with random values to simulate learned model with non-constant data
+        torch.nn.init.uniform(self.prelu.weight, -1.0, 1.0)
+
+    def forward(self, x):
+        x = self.conv(x)
         return self.prelu(x)
 
 

@@ -1,8 +1,10 @@
+$if DTYPE == "half":
+  enable f16;
 @group(0) @binding(0) var<storage, read_write> t_part_o: array<f32>;
 @group(0) @binding(1) var<storage, read_write> t_part_ml: array<f32>;
 @group(0) @binding(2) var<storage, read> t_q: array<f32>;
-@group(0) @binding(3) var<storage, read> t_k_cache: array<f32>;
-@group(0) @binding(4) var<storage, read> t_v_cache: array<f32>;
+@group(0) @binding(3) var<storage, read> t_k_cache: array<${buffer_scalar_type(DTYPE)}>;
+@group(0) @binding(4) var<storage, read> t_v_cache: array<${buffer_scalar_type(DTYPE)}>;
 
 struct Params {
   _pad0: u32,
@@ -66,9 +68,14 @@ fn main(
         let qi = q_base + i4 * 4u;
         let ki = kvbase + i4 * 4u;
         let qv = vec4<f32>(t_q[qi], t_q[qi + 1u], t_q[qi + 2u], t_q[qi + 3u]);
-        let kvv = vec4<f32>(
-            t_k_cache[ki], t_k_cache[ki + 1u],
-            t_k_cache[ki + 2u], t_k_cache[ki + 3u]);
+        $if DTYPE == "half":
+          let kvv = vec4<f32>(
+              f32(t_k_cache[ki]), f32(t_k_cache[ki + 1u]),
+              f32(t_k_cache[ki + 2u]), f32(t_k_cache[ki + 3u]));
+        $else:
+          let kvv = vec4<f32>(
+              t_k_cache[ki], t_k_cache[ki + 1u],
+              t_k_cache[ki + 2u], t_k_cache[ki + 3u]);
         acc4 = acc4 + qv * kvv;
       }
       s = (acc4.x + acc4.y + acc4.z + acc4.w) * params.scale;
@@ -107,7 +114,10 @@ fn main(
         var acc: f32 = rescale * o_acc[nd];
         for (var j: u32 = 0u; j < n; j = j + 1u) {
           let vbase = (block + j) * kv_row_stride + kv * D;
-          acc = acc + sh_s[j] * t_v_cache[vbase + d];
+          $if DTYPE == "half":
+            acc = acc + sh_s[j] * f32(t_v_cache[vbase + d]);
+          $else:
+            acc = acc + sh_s[j] * t_v_cache[vbase + d];
         }
         o_acc[nd] = acc;
       }
