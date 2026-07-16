@@ -65,6 +65,7 @@ set(WEBGPU_SRCS
     runtime/ops/upsample_nearest2d/UpsampleNearest2d.cpp
     runtime/ops/max_pool2d/MaxPool2d.cpp
     runtime/ops/leaky_relu/LeakyRelu.cpp
+    runtime/ops/upsample_bilinear2d/UpsampleBilinear2d.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
