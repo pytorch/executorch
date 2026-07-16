@@ -60,9 +60,8 @@ set(WEBGPU_SRCS
     runtime/ops/div/BinaryOp.cpp
     runtime/ops/sub/BinaryOp.cpp
     runtime/ops/where/Where.cpp
-    runtime/ops/compare/Compare.cpp
+    runtime/ops/boolean_op/BooleanOp.cpp
     runtime/ops/linear/Linear.cpp
-    runtime/ops/logical_not/LogicalNot.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
