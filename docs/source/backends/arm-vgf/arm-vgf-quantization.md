@@ -35,18 +35,23 @@ setting using the `set_module_name` or `set_module_type` methods.
 ### Quantization API
 
 ```python
-class VgfQuantizer(compile_spec: 'VgfCompileSpec', use_composable_quantizer: 'bool' = False) -> 'None'
+class VgfQuantizer(compile_spec: 'VgfCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'
 ```
 Quantizer supported by the Arm Vgf backend.
 
 .. warning::
-    Setting ``use_composable_quantizer=True`` enables an experimental API
-    surface that may change without notice.
+    The composable quantizer is now the default implementation. Setting
+    ``use_composable_quantizer=False`` is deprecated and will be removed in
+    two minor releases.
 
 Args:
 - **compile_spec (VgfCompileSpec)**: Backend compile specification for Vgf
         targets.
-- **use_composable_quantizer (bool)**: Whether to use the composable quantizer implementation. See https://github.com/pytorch/executorch/issues/17701" for details.
+- **use_composable_quantizer (bool)**: Whether to use the composable
+        quantizer implementation. Setting this to ``False`` is deprecated
+        and will be removed in two minor releases. See
+        [issue #17701](https://github.com/pytorch/executorch/issues/17701)
+        for details.
 
 ```python
 def VgfQuantizer.add_quantizer(self, quantizer: 'Quantizer') -> 'TOSAQuantizer':
