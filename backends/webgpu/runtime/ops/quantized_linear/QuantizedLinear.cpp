@@ -62,16 +62,6 @@ constexpr uint32_t kQ4gswSteelTile = 64u;
 constexpr uint32_t kQ4gswSteelBK = 16u;
 constexpr uint32_t kQ4gswSteelInvocations = 256u;
 
-// Max workgroups per 1D dispatch dimension: the device limit, or 65535 when the
-// query fails / reports 0.
-uint32_t max_workgroups_per_dim(WGPUDevice device) {
-  WGPULimits limits = {};
-  return (wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
-          limits.maxComputeWorkgroupsPerDimension > 0)
-      ? limits.maxComputeWorkgroupsPerDimension
-      : 65535u;
-}
-
 // One workgroup per (tile_m x tile_n) tile, no grid-stride: throw when the tile
 // count would exceed the 1D dispatch limit. Shared by the steel + shmem GEMM
 // routes; `kind` names the route in the error message.
@@ -85,7 +75,7 @@ uint32_t tiled_wg_count(
     const char* kind) {
   const int64_t total_wgs =
       utils::div_up<int64_t>(m, tile_m) * utils::div_up<int64_t>(n, tile_n);
-  if (total_wgs > static_cast<int64_t>(max_workgroups_per_dim(device))) {
+  if (total_wgs > static_cast<int64_t>(utils::queried_max_workgroups(device))) {
     throw std::runtime_error(
         std::string("WebGPU ") + op_name + ": " + kind +
         " tile count exceeds the 1D dispatch limit");
@@ -109,7 +99,7 @@ steel_workgroup_count(WGPUDevice device, uint32_t m, uint32_t n, uint32_t K) {
   const uint64_t total =
       static_cast<uint64_t>((m + kQ4gswSteelTile - 1u) / kQ4gswSteelTile) *
       static_cast<uint64_t>((n + kQ4gswSteelTile - 1u) / kQ4gswSteelTile);
-  const uint32_t max_count = max_workgroups_per_dim(device);
+  const uint32_t max_count = utils::queried_max_workgroups(device);
   return (total == 0u || total > max_count) ? 0u : static_cast<uint32_t>(total);
 }
 
