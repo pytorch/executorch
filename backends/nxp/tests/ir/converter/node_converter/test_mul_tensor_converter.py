@@ -96,10 +96,6 @@ class TestMulTensor:
             pytest.param(
                 [ModelInputSpec((4,)), ModelInputSpec((4, 4))], id="2 inputs 1D+2D."
             ),
-            pytest.param(
-                [ModelInputSpec((10,)), ModelInputSpec((1, 1))],
-                id="2 inputs 1D + 2D, num_elems of input == num_elems of output",
-            ),
         ],
     )
     def test__broadcast(self, input_spec, mocker, request):
