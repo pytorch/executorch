@@ -17,11 +17,13 @@ linear/embedding to::
 These handlers match that ``dequantize_gguf -> linear/embedding`` subgraph and
 lower it without materializing the dequantized weight:
 
-* **Q6_K** -> fused custom Metal kernels in :mod:`.q6k`.
-* **Q4_K** -> fused custom Metal kernels in :mod:`.q4k` (default), or the legacy
-  MLX-native repack path when ``ET_MLX_EMIT_DIRECT_GGUF=0``.
+* **Q4_K** / **Q5_K** -> MLX-native repack path by default; the fused custom
+  Metal kernels in :mod:`.q4k` / :mod:`.q5k` when ``ET_MLX_EMIT_DIRECT_GGUF=1``.
+* **Q6_K** -> MLX-native repack path when its sub-blocks merge to an
+  MLX-supported group size (>= 32), else the fused kernels in :mod:`.q6k`;
+  ``ET_MLX_EMIT_DIRECT_GGUF=1`` forces fused.
 
-Both cover linear and embedding.
+All cover linear and embedding.
 
 Other quant types are left unmatched (the caller is expected to convert them to a
 torchao ``Int4Tensor`` / ``IntxUnpackedToInt8Tensor`` first).
@@ -42,9 +44,10 @@ from executorch.backends.mlx.pattern_utils import has_single_user, match_target
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 
-# Quant types each pattern can lower (both via fused custom Metal kernels).
-_LINEAR_TYPES = {"q4_k", "q6_k"}
-_EMBEDDING_TYPES = {"q4_k", "q6_k"}
+# Quant types each pattern can lower (MLX-native repack by default, or fused
+# custom Metal kernels via ``ET_MLX_EMIT_DIRECT_GGUF=1``).
+_LINEAR_TYPES = {"q4_k", "q5_k", "q6_k"}
+_EMBEDDING_TYPES = {"q4_k", "q5_k", "q6_k"}
 
 
 def parse_dequantize_gguf_node(
@@ -78,8 +81,8 @@ class GGUFQuantizedLinearHandler(PatternHandler):
     """Lower ``dequantize_gguf + linear`` to a fused quantized matmul.
 
     Matches ``linear(x, dequantize_gguf(weight, ggml_type, out_dtype), bias)``
-    and dispatches on ``ggml_type``: Q6_K / Q4_K -> custom Metal kernels in
-    :mod:`.q6k` / :mod:`.q4k`.
+    and dispatches on ``ggml_type``: Q6_K / Q5_K / Q4_K -> custom Metal kernels in
+    :mod:`.q6k` / :mod:`.q5k` / :mod:`.q4k`.
     """
 
     def __init__(self, head, body, weight, ggml_type, output_dtype):
@@ -113,6 +116,10 @@ class GGUFQuantizedLinearHandler(PatternHandler):
             from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.linear import (
                 emit_linear,
             )
+        elif self.ggml_type == "q5_k":
+            from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.linear import (
+                emit_linear,
+            )
         else:  # q4_k
             from executorch.backends.mlx.custom_kernel_ops.gguf.q4k.linear import (
                 emit_linear,
@@ -125,8 +132,8 @@ class GGUFQuantizedEmbeddingHandler(PatternHandler):
     """Lower ``dequantize_gguf + embedding`` to a quantized gather.
 
     Matches ``embedding(dequantize_gguf(weight, ggml_type, out_dtype), indices)``
-    and dispatches on ``ggml_type``: Q6_K / Q4_K -> custom Metal gather kernels
-    in :mod:`.q6k` / :mod:`.q4k`.
+    and dispatches on ``ggml_type``: Q6_K / Q5_K / Q4_K -> custom Metal gather
+    kernels in :mod:`.q6k` / :mod:`.q5k` / :mod:`.q4k`.
     """
 
     def __init__(self, head, body, weight, ggml_type, output_dtype):
@@ -157,6 +164,10 @@ class GGUFQuantizedEmbeddingHandler(PatternHandler):
         indices_node = n.args[1]
         if self.ggml_type == "q6_k":
             from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.embedding import (
+                emit_embedding,
+            )
+        elif self.ggml_type == "q5_k":
+            from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.embedding import (
                 emit_embedding,
             )
         else:  # q4_k

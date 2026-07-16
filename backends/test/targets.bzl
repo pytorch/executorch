@@ -71,7 +71,7 @@ def define_common_targets(is_fbcode = False):
             deps = multi_method_delegate_test_deps,
             env = modules_env,
             modifiers = [
-                "ovr_config//build_mode/constraints:sanitizer",
+                "ovr_config//build_mode/constraints:build_mode[sanitizer]",
                 "ovr_config//build_mode:sanitizer_type[tsan]",
             ],
         )

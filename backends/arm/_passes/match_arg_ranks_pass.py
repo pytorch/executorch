@@ -8,7 +8,7 @@
 
 from typing import cast, Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -22,8 +22,8 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
-class MatchArgRanksPass(ArmPass):
-    """For ops in 'targeted_ops', make sure that the inputs share the same rank.
+class MatchArgRanksPass(ArmOpTargetedPass):
+    """For ops in 'target_ops', make sure that the inputs share the same rank.
     New dimensions are inserted from the beginning of the inputs that have a
     lower rank to match the input with the highest rank.
 
@@ -44,7 +44,7 @@ class MatchArgRanksPass(ArmPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
-    targeted_ops = [
+    target_ops = [
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.mul.Tensor,
@@ -89,7 +89,7 @@ class MatchArgRanksPass(ArmPass):
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
 
-            if node.op != "call_function" or node.target not in self.targeted_ops:
+            if node.op != "call_function" or node.target not in self.target_ops:
                 continue
 
             # Calculate max rank of all inputs to node

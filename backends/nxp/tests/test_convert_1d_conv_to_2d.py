@@ -333,6 +333,7 @@ def test_convert_conv_1d_to_conv2d_full_pipeline(
             True,
             1,
             id="output_padding = 2 (and kernel_size = 4, stride = 4, padding = 1)",
+            marks=pytest.mark.skip(reason="Neutron Converter hangs (AIR-14771)."),
         ),
         pytest.param(2, 2, 0, 0, 1, False, 1, id="bias=False"),
     ],

@@ -82,3 +82,37 @@ def rewrite_binary_operator(
             return None
 
     return DialectNodeSpec(target, node.args, dict(node.kwargs))
+
+
+def rewrite_unary_operator(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    match node.target:
+        case exir_ops.edge.aten.abs.default:
+            target = exir_ops.backend.tosa.ABS.default
+        case exir_ops.edge.aten.bitwise_not.default:
+            target = exir_ops.backend.tosa.BITWISE_NOT.default
+        case exir_ops.edge.aten.ceil.default:
+            target = exir_ops.backend.tosa.CEIL.default
+        case exir_ops.edge.aten.cos.default:
+            target = exir_ops.backend.tosa.COS.default
+        case exir_ops.edge.aten.exp.default:
+            target = exir_ops.backend.tosa.EXP.default
+        case exir_ops.edge.aten.floor.default:
+            target = exir_ops.backend.tosa.FLOOR.default
+        case exir_ops.edge.aten.log.default:
+            target = exir_ops.backend.tosa.LOG.default
+        case exir_ops.edge.aten.logical_not.default:
+            target = exir_ops.backend.tosa.LOGICAL_NOT.default
+        case exir_ops.edge.aten.neg.default:
+            target = exir_ops.backend.tosa.NEGATE.default
+        case exir_ops.edge.aten.reciprocal.default:
+            target = exir_ops.backend.tosa.RECIPROCAL.default
+        case exir_ops.edge.aten.rsqrt.default:
+            target = exir_ops.backend.tosa.RSQRT.default
+        case exir_ops.edge.aten.sin.default:
+            target = exir_ops.backend.tosa.SIN.default
+        case _:
+            return None
+
+    return DialectNodeSpec(target, node.args, dict(node.kwargs))

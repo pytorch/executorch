@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from permute.wgsl - DO NOT EDIT.
-// wgsl-sha256: d34f59730cda7317589b6ed5691a1ccab8666b9c94e17ac2cb3658b036300197
+// wgsl-sha256: 05884aeb14426c979ea037b066266d8cab11f4fed76ee21ee8778e7fc13ad84e
 inline constexpr const char* kPermuteWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -35,8 +35,11 @@ struct Params {
 override wg_size: u32 = 64u;
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let out_bufi = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    // 2D-folded flat index (lifts the 65535 1D-dispatch cap for large numel).
+    let out_bufi = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (out_bufi >= out_meta.numel) {
         return;
     }

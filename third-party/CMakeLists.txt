@@ -187,4 +187,4 @@ add_dependencies(flatccrt flatcc_cli)
 #
 # Learn more: https://github.com/pytorch/executorch/pull/2467
 set_property(TARGET flatccrt PROPERTY POSITION_INDEPENDENT_CODE ON)
-install(TARGETS flatccrt DESTINATION ${CMAKE_BINARY_DIR}/lib)
+install(TARGETS flatccrt DESTINATION ${CMAKE_INSTALL_LIBDIR})

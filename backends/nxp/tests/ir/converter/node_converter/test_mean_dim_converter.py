@@ -305,7 +305,7 @@ class TestMeanDim:
         def test__channels_first_input__reducing_all_spatial_dims(
             self, mocker, request, dim
         ):
-            # If tall he spatial dimensions are reduced (removed), the `mean` output will always be equal in channels
+            # If the spatial dimensions are reduced (removed), the `mean` output will always be equal in channels
             #  first and channels last, so no `Transpose` ops are added.
             input_shape = (1, 7, 3, 3)
             model = MaxPoolMeanDimModule(dim, False)

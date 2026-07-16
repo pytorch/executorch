@@ -100,7 +100,12 @@ def test_maximum_u85_INT(test_data: Tuple):
     ).run()
 
 
-@common.parametrize("test_data", Maximum.test_parameters | Maximum.test_parameters_fp16)
+@common.parametrize(
+    "test_data",
+    Maximum.test_parameters
+    | Maximum.test_parameters_bf16
+    | Maximum.test_parameters_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_maximum_vgf_no_quant(test_data: Tuple):
     pipeline = VgfPipeline[test_t](

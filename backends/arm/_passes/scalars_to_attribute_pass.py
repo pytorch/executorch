@@ -13,6 +13,7 @@ from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPa
 from executorch.exir.graph_module import get_cond_while_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
+from torch.fx.node import Argument
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
@@ -33,6 +34,29 @@ class ScalarsToAttributePass(ArmPass):
         torch.ops.aten.div.Tensor_mode,
     ]
 
+    @staticmethod
+    def _is_scalar_arg(arg: object) -> bool:
+        return isinstance(arg, (int, float))
+
+    def _has_scalar_arg(self, node: Node) -> bool:
+        return (
+            node.op == "call_function"
+            and node.target in self.targeted_ops
+            and any(self._is_scalar_arg(arg) for arg in node.args)
+        )
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if any(
+            self._has_scalar_arg(cast(Node, node)) for node in graph_module.graph.nodes
+        ):
+            return True
+        return any(
+            any(
+                self._has_scalar_arg(cast(Node, node)) for node in submodule.graph.nodes
+            )
+            for _, submodule, _ in get_cond_while_submodules(graph_module)
+        )
+
     def _convert_scalar_args(
         self,
         graph_module: GraphModule,
@@ -52,9 +76,12 @@ class ScalarsToAttributePass(ArmPass):
 
         modified = False
         output_fake_tensor = get_first_fake_tensor(n)
-        new_args: list[Node | int] = []
+        new_args: list[Argument] = []
         for arg in n.args:
             if isinstance(arg, Node):
+                new_args.append(arg)
+                continue
+            if not self._is_scalar_arg(arg):
                 new_args.append(arg)
                 continue
             if isinstance(arg, int) and not torch.is_floating_point(output_fake_tensor):
