@@ -719,3 +719,21 @@ def _relu_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+from executorch.backends.webgpu.test.ops.test_sub import (
+    CONFIGS as _SUB_CONFIGS,
+    SubModule,
+)
+
+
+@register_op_test("sub")
+def _sub_suite() -> WebGPUTestSuite:
+    # Full numeric coverage incl. the spatial broadcast + alpha (binary_sub.wgsl
+    # over a TensorMeta UBO); fp64 golden. Mirrors _mul_suite. alpha is a
+    # construct kwarg baked into the .pte, never a serialized input.
+    return WebGPUTestSuite(
+        module_factory=lambda alpha=1.0: SubModule(alpha),
+        cases=[
+            Case(name=name, construct={"alpha": alpha}, inputs=(sa, sb))
+            for name, (sa, sb, alpha) in _SUB_CONFIGS.items()
+        ],
+    )
