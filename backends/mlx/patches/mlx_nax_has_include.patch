@@ -1,0 +1,30 @@
+Guard the NAX MetalPerformancePrimitives include behind __has_include.
+
+MLX's NAX GEMM header unconditionally includes
+<MetalPerformancePrimitives/MetalPerformancePrimitives.h>, a framework that
+only ships in the macOS 26 / Xcode 26 SDK. On older SDKs the JIT preamble
+generator (make_compiled_preamble.sh) runs `metal -E` over this header, which
+fatals on the missing include and fails the build. MLX already gates NAX on the
+non-JIT metallib path (kernels/CMakeLists.txt), but the JIT path
+(MLX_METAL_JIT=ON, which ExecuTorch uses) is ungated.
+
+This wraps the include in `#if __has_include(...)` so preprocessing succeeds on
+pre-26 SDKs (NAX kernels are never JIT-compiled at runtime there anyway, since
+device.cpp:is_nax_available() returns false), while macOS 26 still gets NAX.
+
+Upstream candidate; carried locally until an MLX release gates the JIT path.
+
+diff --git a/mlx/backend/metal/kernels/steel/gemm/nax.h b/mlx/backend/metal/kernels/steel/gemm/nax.h
+--- a/mlx/backend/metal/kernels/steel/gemm/nax.h
++++ b/mlx/backend/metal/kernels/steel/gemm/nax.h
+@@ -9,7 +9,9 @@
+ #include "mlx/backend/metal/kernels/steel/defines.h"
+ #include "mlx/backend/metal/kernels/steel/utils/integral_constant.h"
+ 
+-#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
++#if __has_include(<MetalPerformancePrimitives/MetalPerformancePrimitives.h>)
++#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
++#endif
+ 
+ using namespace metal;
+ 

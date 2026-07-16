@@ -180,10 +180,20 @@ set(_mlx_metallib ${_mlx_binary_dir}/mlx/backend/metal/kernels/mlx.metallib)
 message(
   STATUS "Building MLX from submodule (ExternalProject): ${MLX_SOURCE_DIR}"
 )
+# Local patches applied to the MLX submodule before its build. Kept minimal and
+# idempotent (reverse-check skips an already-applied patch); a context mismatch
+# after an MLX bump fails loudly rather than silently no-op'ing. See each patch
+# file under patches/ for its rationale.
+set(_mlx_nax_patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
+)
 ExternalProject_Add(
   mlx_external
   SOURCE_DIR ${MLX_SOURCE_DIR}
   BINARY_DIR ${_mlx_binary_dir}
+  PATCH_COMMAND
+    bash -c
+    "git -C '${MLX_SOURCE_DIR}' apply --reverse --check '${_mlx_nax_patch}' 2>/dev/null || git -C '${MLX_SOURCE_DIR}' apply --verbose '${_mlx_nax_patch}'"
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
              -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
