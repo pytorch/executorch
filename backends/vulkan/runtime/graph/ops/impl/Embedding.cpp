@@ -20,9 +20,6 @@
 
 namespace vkcompute {
 
-using utils::GPUMemoryLayout;
-using utils::StorageType;
-
 void check_embedding_args(
     ComputeGraph& graph,
     const ValueRef weight,
