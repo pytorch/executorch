@@ -194,13 +194,18 @@ def _sigmoid_wide_range(_shape) -> torch.Tensor:
     return _sigmoid_wide_det_input()
 
 
+def _sigmoid_factory(variant: str = "regular") -> torch.nn.Module:
+    return {
+        "regular": SigmoidModule,
+        "chained": SigmoidChainedModule,
+    }[variant]()
+
+
 @register_op_test("sigmoid")
 def _sigmoid_suite() -> WebGPUTestSuite:
     # sigmoid has no CONFIGS table; cover unary shapes directly (tol 1e-4).
     return WebGPUTestSuite(
-        module_factory=lambda variant="regular": (
-            SigmoidChainedModule() if variant == "chained" else SigmoidModule()
-        ),
+        module_factory=_sigmoid_factory,
         cases=[
             Case(name="vec", inputs=((M1,),)),
             Case(name="mat", inputs=((M1, M2),)),

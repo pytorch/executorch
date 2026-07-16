@@ -44,11 +44,22 @@ def _wide_det_input() -> torch.Tensor:
     return torch.linspace(-20.0, 20.0, N, dtype=torch.float32)
 
 
-def _export(m: torch.nn.Module, x: torch.Tensor):
+def _lower(m: torch.nn.Module, x: torch.Tensor):
     ep = torch.export.export(m, (x,))
-    return to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
+    return to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+
+
+def _delegated(et) -> bool:
+    return any(
+        d.id == "VulkanBackend"
+        for plan in et.executorch_program.execution_plan
+        for d in plan.delegates
+    )
+
+
+def _op_delegated(edge, op_substr: str) -> bool:
+    gm = edge.exported_program().graph_module
+    return all(op_substr not in str(getattr(n, "target", "")) for n in gm.graph.nodes)
 
 
 class SigmoidTest(unittest.TestCase):
@@ -58,10 +69,12 @@ class SigmoidTest(unittest.TestCase):
             ("chained", SigmoidChainedModule().eval(), _det_input()),
         ):
             with self.subTest(name=name):
-                et = _export(module, x)
-                found = any(
-                    d.id == "VulkanBackend"
-                    for plan in et.executorch_program.execution_plan
-                    for d in plan.delegates
+                edge = _lower(module, x)
+                et = edge.to_executorch()
+                self.assertTrue(
+                    _delegated(et), f"Expected a VulkanBackend delegate ({name})"
                 )
-                self.assertTrue(found, f"Expected a VulkanBackend delegate ({name})")
+                self.assertTrue(
+                    _op_delegated(edge, "sigmoid.default"),
+                    f"sigmoid.default not delegated (fell back to CPU) for {name}",
+                )
