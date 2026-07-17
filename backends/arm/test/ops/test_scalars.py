@@ -231,17 +231,6 @@ def test_add_scalar_tosa_INT(test_data):
     pipeline.run()
 
 
-# ADD ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_add_scalar_tosa_INT")
-def test_add_scalar_u55_INT():
-    pass
-
-
-@pytest.mark.skip(reason="This is tested in test_add_scalar_tosa_INT")
-def test_add_scalar_u85_INT():
-    pass
-
-
 # SUB FP ------------------------------------------------------
 
 
@@ -290,17 +279,6 @@ def test_sub_scalar_tosa_INT(test_data):
     pipeline.run()
 
 
-# SUB ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_sub_scalar_tosa_INT")
-def test_sub_scalar_u55_INT():
-    pass
-
-
-@pytest.mark.skip(reason="This is tested in test_sub_scalar_tosa_INT")
-def test_sub_scalar_u85_INT():
-    pass
-
-
 # MUL FP ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
 def test_mul_tensor_tosa_FP_scalar(test_data):
@@ -345,17 +323,6 @@ def test_mul_scalar_tosa_INT(test_data):
     """Tests a scalar mul with one scalar input."""
     pipeline = TosaPipelineINT[input_t1](MulScalar(), test_data, aten_op=Mul.aten_op)
     pipeline.run()
-
-
-# MUL ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_mul_scalar_tosa_INT")
-def test_mul_scalar_u55_INT():
-    pass
-
-
-@pytest.mark.skip(reason="This is tested in test_mul_scalar_tosa_INT")
-def test_mul_scalar_u85_INT():
-    pass
 
 
 # DIV FP ------------------------------------------------------
@@ -412,20 +379,10 @@ def test_div_scalar_tosa_INT(test_data):
     pipeline.run()
 
 
-# DIV ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_div_scalar_tosa_INT")
-def test_div_scalar_u55_INT():
-    pass
-
-
-@pytest.mark.skip(reason="This is tested in test_div_scalar_tosa_INT")
-def test_div_scalar_u85_INT():
-    pass
-
-
 # SHIFT ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(
-    reason="integer operations (shift and sub) are not supported on FP profile"
+@pytest.mark.xfail(
+    reason="integer operations (shift and sub) are not supported on FP profile",
+    strict=True,
 )
 def test_bitwise_right_shift_tensor_tosa_FP_inplace():
     pipeline = TosaPipelineFP[input_t1](
