@@ -1060,3 +1060,24 @@ class MaxPoolMaximumModule(torch.nn.Module):
     def forward(self, x, y):
         x = self.max_pool2d(x)
         return torch.maximum(x, y)
+
+
+class MinimumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return torch.minimum(x, y)
+
+
+class MaxPoolMinimumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
+
+    def forward(self, x, y):
+        x = self.max_pool2d(x)
+        return torch.minimum(x, y)

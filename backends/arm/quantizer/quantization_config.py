@@ -356,7 +356,7 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         If node is a pooling or upsample operator, returns a shared quantization spec.
         If no weight spec is configured, return ``None``.
-        If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is float32.
+        If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is floating-point.
 
         """
 
@@ -391,7 +391,6 @@ class TOSAQuantizationConfig(QuantizationConfig):
                 isinstance(input_val, torch.Tensor)
                 and isinstance(output_val, torch.Tensor)
                 and CastCheck.is_integer_to_float(input_val.dtype, output_val.dtype)
-                and output_val.dtype == torch.float32
             ):
                 return FixedQParamsQuantizationSpec(
                     dtype=input_val.dtype,
