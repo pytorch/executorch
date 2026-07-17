@@ -598,11 +598,14 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             self._is_uint8_quantized_io_boundary(node) for node in model.graph.nodes
         )
 
-    def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any], bool]:
+    def _get_shared_clique(
+        self, root_node: Node
+    ) -> tuple[set[Node], list[Any], bool, bool]:
         shared_nodes = set()
         bfs_queue = [root_node]
         adjacent_qspecs: list[Any] = []
         touches_quantized_io = False
+        touches_uint8_quantized_io = False
 
         while bfs_queue:
             node = bfs_queue.pop(0)
@@ -612,13 +615,24 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
                 self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
                 self._append_output_qspec(input_node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(input_node)
+                touches_uint8_quantized_io |= self._is_uint8_quantized_io_boundary(
+                    input_node
+                )
 
             for output_node in node.users.keys():
                 self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
                 self._append_input_qspec(output_node, node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(output_node)
+                touches_uint8_quantized_io |= self._is_uint8_quantized_io_boundary(
+                    output_node
+                )
 
-        return shared_nodes, adjacent_qspecs, touches_quantized_io
+        return (
+            shared_nodes,
+            adjacent_qspecs,
+            touches_quantized_io,
+            touches_uint8_quantized_io,
+        )
 
     def _should_skip_while_shared_qspec(self, node: Node) -> bool:
         return node.target == torch.ops.higher_order.while_loop and bool(
@@ -673,9 +687,12 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             )
             return
 
-        shared_nodes, adjacent_qspecs, touches_quantized_io = self._get_shared_clique(
-            root_node
-        )
+        (
+            shared_nodes,
+            adjacent_qspecs,
+            touches_quantized_io,
+            touches_uint8_quantized_io,
+        ) = self._get_shared_clique(root_node)
 
         # If there is no neighbor qspec to propagate but the cluster sits on the
         # quantized I/O boundary (e.g. a state-passthrough cat whose only neighbors
@@ -694,6 +711,15 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
 
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
+
+        if touches_uint8_quantized_io and any(
+            node.target in self._UINT8_IO_BRIDGE_OPS for node in shared_nodes
+        ):
+            self.report_reject(
+                ordered_nodes,
+                "Shared-qspec bridge cluster touches uint8 model IO.",
+            )
+            return
 
         if self._annotate_while_with_additional_inputs(root_node, adjacent_qspecs):
             return
@@ -734,20 +760,9 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         return
 
     def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
-        targets = self.targets
-        if self._model_has_uint8_io(model):
-            targets = [
-                target for target in targets if target not in self._UINT8_IO_BRIDGE_OPS
-            ]
-
-        original_targets = self.targets
-        self.targets = targets
-        try:
-            for node in model.graph.nodes:
-                if node.target in self.targets and not self._is_annotated(node):
-                    self._annotate_shared_cluster(node)
-        finally:
-            self.targets = original_targets
+        for node in model.graph.nodes:
+            if node.target in self.targets and not self._is_annotated(node):
+                self._annotate_shared_cluster(node)
 
     def validate(self, model: torch.fx.GraphModule) -> bool:  # type: ignore[override]
         return True
