@@ -50,6 +50,19 @@ class CatWithHighRangeBranch(torch.nn.Module):
         return torch.clone(merged)
 
 
+class InternalCatBetweenConvs(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv0 = torch.nn.Conv2d(3, 4, 1)
+        self.conv1 = torch.nn.Conv2d(3, 4, 1)
+        self.conv2 = torch.nn.Conv2d(8, 4, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x0 = self.conv0(x)
+        x1 = self.conv1(x)
+        return self.conv2(torch.cat([x0, x1], dim=1))
+
+
 def _get_observer_scale(prepared, observer_node_name: str) -> float:
     observer = prepared.get_submodule(observer_node_name)
     scale, _ = observer.calculate_qparams()
@@ -129,8 +142,36 @@ def test_cat_does_not_bridge_shared_qspec_clusters():
     graph_nodes = {node.name: node for node in prepared.graph.nodes}
     img0_observer = next(iter(graph_nodes["img0"].users))
     img1_observer = next(iter(graph_nodes["img1"].users))
-    final_cat_observer = next(iter(graph_nodes["cat_1"].users))
+    clone_observer = next(iter(graph_nodes["clone"].users))
 
     assert _get_observer_scale(prepared, img0_observer.target) < 0.01
     assert _get_observer_scale(prepared, img1_observer.target) < 0.01
-    assert _get_observer_scale(prepared, final_cat_observer.target) > 0.05
+    assert Q_ANNOTATION_KEY not in graph_nodes["cat_1"].meta
+    assert _get_observer_scale(prepared, clone_observer.target) > 0.05
+
+
+def test_internal_cat_still_shares_qspec_with_uint8_io():
+    """Regression: preserved uint8 model IO must not disable shared-qspec
+    annotation for internal cats between quantized operators.
+    """
+    model = InternalCatBetweenConvs().eval()
+    test_data = (torch.rand(1, 3, 8, 8),)
+    compile_spec = common.get_tosa_compile_spec("TOSA-1.0+INT")
+
+    tosa_quantizer = TOSAQuantizer(compile_spec, use_composable_quantizer=True)
+    tosa_quantizer.set_global(get_symmetric_quantization_config())
+    tosa_quantizer.set_io(get_uint8_io_quantization_config())
+
+    exported = torch.export.export(model, test_data, strict=True)
+    prepared = prepare_pt2e(exported.module(), tosa_quantizer)
+
+    cat_nodes = [
+        n
+        for n in prepared.graph.nodes
+        if n.op == "call_function" and n.target == torch.ops.aten.cat.default
+    ]
+    assert len(cat_nodes) == 1, f"Expected 1 cat node, got {len(cat_nodes)}"
+    cat_node = cat_nodes[0]
+
+    assert Q_ANNOTATION_KEY in cat_node.meta
+    assert cat_node.meta[Q_ANNOTATION_KEY].output_qspec is not None
