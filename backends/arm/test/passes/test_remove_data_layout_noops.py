@@ -8,6 +8,7 @@ import pytest
 import torch
 from executorch.backends.arm._passes import (
     CanonicalizeViewCopyPermutePass,
+    DeduplicateConstShapesPass,
     EnsureUniqueOutputNodesPass,
     ExirToTosaPass,
     FuseDuplicateUsersPass,
@@ -499,4 +500,5 @@ def test_data_layout_noop_cleanup_pipeline_order():
     assert pass_types[pre_tosa_cleanup + 1] is CanonicalizeViewCopyPermutePass
     assert pass_types[post_tosa_cleanup + 1] is FuseDuplicateUsersPass
     assert pass_types[post_tosa_cleanup + 2] is InsertRescalePass
-    assert pass_types[post_tosa_cleanup + 3] is EnsureUniqueOutputNodesPass
+    assert pass_types[post_tosa_cleanup + 3] is DeduplicateConstShapesPass
+    assert pass_types[post_tosa_cleanup + 4] is EnsureUniqueOutputNodesPass
