@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <optional>
 
 #include <xa_nnlib_kernels_api.h>
 
