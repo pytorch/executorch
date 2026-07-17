@@ -199,9 +199,9 @@ class GGUFEmbeddingTest(OpTestCase):
     def compute_expected_outputs(self, model, test_inputs):
         if self._native_fires():
             if model.weight.ggml_type == "q4_k":
-                weight = _q4k_mlx_native_dequant(model.weight)
+                weight = _q4k_mlx_native_dequant(model.weight, model.weight.orig_dtype)
             else:
-                weight = _mlx_native_dequant(model.weight)
+                weight = _mlx_native_dequant(model.weight, model.weight.orig_dtype)
             out = torch.nn.functional.embedding(test_inputs[0], weight)
             return [out.to(model.weight.orig_dtype)]
         return model(*test_inputs)
