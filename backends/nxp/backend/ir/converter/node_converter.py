@@ -226,7 +226,12 @@ class NodeConverter(ABC):
 
     @staticmethod
     def _has_shared_q_params_if_quantized(node: Node) -> bool:
-        """Check if node has shared quantization parameters if it's quantized."""
+        """Check if node has shared quantization parameters for first input and output if it's quantized.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if first input and output parameters have the same quantization parameters.
+                 False otherwise.
+        """
         if len(node.users) < 1 or len(node.all_input_nodes) < 1:
             # Some exotic operator (only consumer or only produces)
             return True
@@ -236,17 +241,17 @@ class NodeConverter(ABC):
 
         if _is_dequant_node(pre_node) and _is_quant_node(post_node):
             # Node is quantized
-            pre_zp = pre_node.args[1]
-            pre_scale = pre_node.args[2]
+            pre_scale = pre_node.args[1]
+            pre_zp = pre_node.args[2]
             pre_type = pre_node.args[5]
 
-            post_zp = post_node.args[1]
-            post_scale = post_node.args[2]
+            post_scale = post_node.args[1]
+            post_zp = post_node.args[2]
             post_type = pre_node.args[5]
 
             # Q-params match?
             return (
-                pre_zp == post_zp and pre_scale == post_scale and pre_type == post_type
+                pre_scale == post_scale and pre_zp == post_zp and pre_type == post_type
             )
 
         # Node not quantized
@@ -493,3 +498,38 @@ class NodeConverter(ABC):
             prod(input_tensor.meta["val"].shape) == num_elements
             for input_tensor in node.all_input_nodes
         )
+
+    @staticmethod
+    def _all_io_shares_quantization_parameters(node: Node) -> bool:
+        """Determine if given PyTorch fx Node has all inputs and output with same quantization parameters.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if all input and output parameters have the same quantization parameters.
+                 False otherwise.
+        """
+        post_node = list(node.users.keys())[0]
+        if not _is_quant_node(post_node):
+            return False
+        output_scale, output_zp, output_type = (
+            post_node.args[1],
+            post_node.args[2],
+            post_node.args[5],
+        )
+
+        for input_node in node.all_input_nodes:
+            if not _is_dequant_node(input_node):
+                return False
+
+            input_scale, input_zp, input_type = (
+                input_node.args[1],
+                input_node.args[2],
+                input_node.args[5],
+            )
+            if (input_scale, input_zp, input_type) != (
+                output_scale,
+                output_zp,
+                output_type,
+            ):
+                return False
+
+        return True
