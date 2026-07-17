@@ -7,13 +7,14 @@
 from typing import Optional
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
-class SymbolicToTosaShapesPass(ArmPass):
+class SymbolicToTosaShapesPass(ArmOpTargetedPass):
 
     _passes_required_after = set()
+    target_ops = {torch.ops.aten.sym_size.int}
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
         if op == torch.ops.aten.sym_size.int:
