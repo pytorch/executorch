@@ -15,6 +15,7 @@ from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
+    CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -641,6 +642,10 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 FuseConsecutiveSlicesPass(),
+                # Remove rewritten PAD/SLICE no-ops before cleaning up any
+                # permute pairs they expose.
+                RemoveNoopPass(),
+                CanonicalizeViewCopyPermutePass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]
