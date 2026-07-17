@@ -80,6 +80,7 @@ class SwitchLinear(nn.Module):
         self.num_experts = num_experts
         self._packed = False
         self._is_quantized = False
+        self._int4_packed = False
 
         self.experts = nn.ModuleList(
             [nn.Linear(input_dims, output_dims, bias=bias) for _ in range(num_experts)]
@@ -93,6 +94,10 @@ class SwitchLinear(nn.Module):
         - Quantized: extracts inner tensors (qdata, scale, zero_point),
           stacks into [E, out, in_packed] buffers. Weight layout matches
           mlx::gather_qmm's expectations (transpose=True handles transposition).
+          4-bit qdata is nibble-packed to uint8 [E, out, in//2] (two values per
+          byte, value = signed q + 8) so it stays packed end-to-end — the
+          gather_qmm lowering reinterprets it as uint32 directly. 8-bit qdata
+          keeps the int8 [E, out, in] layout.
         - Unquantized: stacks weight.data into [E, out, in], then pretransposes
           to [E, in, out] so gather_mm receives the correct layout directly
           (no runtime transpose needed).
@@ -100,24 +105,62 @@ class SwitchLinear(nn.Module):
         if self._packed:
             return
 
+        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
         w0 = self.experts[0].weight
         self._is_quantized = hasattr(w0, "qdata")
 
-        if self._is_quantized:
-            _, metadata = w0.__tensor_flatten__()
-            self.group_size = metadata["block_size"][-1]
-
+        if isinstance(w0, ExportableInt4Tensor):
+            # Per-expert ExportableInt4Tensor: qdata is already nibble-packed
+            # uint8 (out, in//2); scale/zero_point are (in//gs, out) unsigned.
+            # Stack into the gather layout the gather_qmm handler expects
+            # (packed uint8 qdata + signed zero_point).
+            self.group_size = w0.group_size
+            self._int4_packed = True
             self.register_buffer(
-                "qdata",
-                torch.stack([e.weight.qdata for e in self.experts]),
+                "qdata", torch.stack([e.weight.qdata for e in self.experts])
             )
             self.register_buffer(
                 "scale",
-                torch.stack([e.weight.scale for e in self.experts]),
+                torch.stack([e.weight.scale.t().contiguous() for e in self.experts]),
             )
             self.register_buffer(
                 "zero_point",
-                torch.stack([e.weight.zero_point for e in self.experts]),
+                torch.stack(
+                    [
+                        (e.weight.zero_point.to(torch.int16) - 8)
+                        .t()
+                        .contiguous()
+                        .to(torch.int8)
+                        for e in self.experts
+                    ]
+                ),
+            )
+        elif isinstance(w0, IntxUnpackedToInt8Tensor):
+            _, metadata = w0.__tensor_flatten__()
+            self.group_size = metadata["block_size"][-1]
+
+            qdata = torch.stack([e.weight.qdata for e in self.experts])
+            scale = torch.stack([e.weight.scale for e in self.experts])
+            zero_point = torch.stack([e.weight.zero_point for e in self.experts])
+
+            # Nibble-pack 4-bit qdata into uint8 [E, out, in//2] so experts stay
+            # packed through export (half the storage; gather_qmm views as uint32).
+            if metadata.get("target_dtype") == torch.int4:
+                E, out, in_features = qdata.shape
+                qu = (qdata.to(torch.int16) + 8).to(torch.uint8)
+                qu = qu.reshape(E, out, in_features // 2, 2)
+                qdata = (qu[..., 0] | (qu[..., 1] << 4)).contiguous()
+                self._int4_packed = True
+
+            self.register_buffer("qdata", qdata)
+            self.register_buffer("scale", scale)
+            self.register_buffer("zero_point", zero_point)
+        elif self._is_quantized:
+            raise TypeError(
+                f"Unsupported quantized expert weight type: {type(w0).__name__}; "
+                "expected ExportableInt4Tensor or IntxUnpackedToInt8Tensor"
             )
         else:
             # Stack [E, out, in] then pretranspose to [E, in, out]

@@ -519,6 +519,7 @@ def to_mlx_qparams(
     zero_point: torch.Tensor,
     bits: int,
     compute_biases: bool = True,
+    prepacked: bool = False,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """
     Convert TorchAO quantization params to MLX format.
@@ -536,9 +537,30 @@ def to_mlx_qparams(
                        Returns (Q, None) in this case. This is valid when
                        zero_point is all zeros, as the C++ runtime will compute
                        biases = -scales * 2^(bits-1).
+        prepacked: If True, ``qdata`` is already nibble-packed uint8 holding the
+                       unsigned values ``q + offset`` (two 4-bit values per byte,
+                       even index -> low nibble) — the exact layout this function
+                       produces for ``bits == 4``. It is reinterpreted as uint32
+                       directly (``view``), skipping the int8 -> uint32 repack.
+                       Only supported for ``bits == 4``.
     """
-    assert qdata.dtype == torch.int8
     offset = 2 ** (bits - 1)
+
+    if prepacked:
+        assert bits == 4, "prepacked to_mlx_qparams only supports 4-bit"
+        assert (
+            qdata.dtype == torch.uint8
+        ), f"prepacked qdata must be uint8, got {qdata.dtype}"
+        # (rows, cols//2) uint8 -> (rows, cols//8) uint32. cols//2 must be a
+        # multiple of 4, i.e. in_features a multiple of 8 (holds: gs >= 32).
+        assert qdata.shape[-1] % 4 == 0, "packed cols must be a multiple of 4"
+        Q = qdata.contiguous().view(torch.uint32)
+        if compute_biases:
+            B = -scale * (zero_point.to(scale.dtype) + offset)
+            return Q, B
+        return Q, None
+
+    assert qdata.dtype == torch.int8
 
     # Pack data into a contiguous uint32 bitstream. cols*bits must be a
     # multiple of 32 (holds since in_features is a multiple of group_size>=32).
@@ -640,7 +662,9 @@ def parse_dequant_int4_node(
     """Parse a torchao.dequantize_int4_tensor node.
 
     Returns (qdata, scale, zero_point, group_size, output_dtype) or None if not a
-    dequantize_int4_tensor node or the custom op is not registered.
+    dequantize_int4_tensor node or the custom op is not registered. ``group_size``
+    is the MLX-legal group_size (16/32/64/128); coarser int4 groups (e.g. 256)
+    are regrouped to it via ``regroup_affine_scales`` at emit time.
     """
     target = get_aten_target(node.target)
     try:
@@ -652,6 +676,10 @@ def parse_dequant_int4_node(
         return None
 
     qdata, scale, zero_point, group_size = node.args[0:4]
+    mlx_group_size = mlx_affine_group_size(int(group_size))
+    if mlx_group_size is None:
+        return None
+    group_size = mlx_group_size
 
     output_dtype = None
     if len(node.args) > 4:
@@ -660,6 +688,53 @@ def parse_dequant_int4_node(
         output_dtype = node.kwargs["output_dtype"]
 
     return qdata, scale, zero_point, group_size, output_dtype
+
+
+_MLX_AFFINE_GROUP_SIZES = (128, 64, 32, 16)
+
+
+def mlx_affine_group_size(group_size: int) -> Optional[int]:
+    """Largest MLX-supported group_size (128/64/32/16) that divides ``group_size``.
+
+    MLX's affine quantized kernels only support group_size in {16, 32, 64, 128}.
+    torchao may quantize with a coarser or per-axis group_size (e.g. 256 or a
+    full row of 5376). A coarse group is a stack of finer groups that share one
+    scale, so any legal divisor is exact after repeating scale/zero_point (see
+    ``regroup_affine_scales``). Returns ``group_size`` unchanged when already
+    legal, the coarsest legal divisor otherwise, or ``None`` when none divides.
+    """
+    if group_size in _MLX_AFFINE_GROUP_SIZES:
+        return group_size
+    for candidate in _MLX_AFFINE_GROUP_SIZES:
+        if group_size % candidate == 0:
+            return candidate
+    return None
+
+
+def regroup_affine_scales(
+    scale: torch.Tensor,
+    zero_point: torch.Tensor,
+    in_features: int,
+    target_group_size: int,
+) -> Tuple[torch.Tensor, torch.Tensor, bool]:
+    """Repeat per-group scale/zero_point so the effective group_size becomes
+    ``target_group_size`` (an MLX-legal size from ``mlx_affine_group_size``).
+
+    ``scale``/``zero_point`` are shaped ``[..., in_features // old_group_size]``.
+    A coarse group shares one scale across ``old_group_size // target_group_size``
+    finer groups, so repeat-interleaving along the last axis is numerically exact.
+
+    Returns ``(scale, zero_point, changed)``; a no-op (``changed=False``) when the
+    group_size is already ``target_group_size``.
+    """
+    old_groups = scale.shape[-1]
+    old_group_size = in_features // old_groups
+    repeat = old_group_size // target_group_size
+    if repeat <= 1:
+        return scale, zero_point, False
+    scale = scale.repeat_interleave(repeat, dim=-1)
+    zero_point = zero_point.repeat_interleave(repeat, dim=-1)
+    return scale, zero_point, True
 
 
 def parse_dequant_node(
@@ -673,7 +748,9 @@ def parse_dequant_node(
       - Conv2d weights (4D):  block_size=[1, 32, 1, 1] → quantized_dim=1
 
     Returns (qdata, scale, zero_point, group_size, bits, out_dtype, quantized_dim)
-    or None if unsupported.
+    or None if unsupported. ``group_size`` is the MLX-legal group_size (16/32/64/
+    128); when the weight uses a coarser group, callers must regroup scale/
+    zero_point to it via ``regroup_affine_scales`` before packing.
     """
     qdata, block_size, scale, zero_point, dtype, qmin, qmax = node.args[0:7]
     out_dtype = (
@@ -687,8 +764,13 @@ def parse_dequant_node(
     if len(non_one) != 1:
         return None
     quantized_dim, group_size = non_one[0]
-    if group_size not in [16, 32, 64, 128]:
+    # MLX kernels only support group_size in {16,32,64,128}. Coarser/per-axis
+    # groups are lowered by repeating scale/zero_point to the coarsest legal
+    # divisor at emit time (regroup_affine_scales); reject if none divides.
+    mlx_group_size = mlx_affine_group_size(group_size)
+    if mlx_group_size is None:
         return None
+    group_size = mlx_group_size
 
     # MLX supports 2,3,4,5,6,8-bit affine quantization. to_mlx_qparams packs
     # 2/4/8 via fast paths and other widths (e.g. 5, 6) via a general
