@@ -32,47 +32,14 @@ set(WEBGPU_SRCS
     runtime/WebGPUDevice.cpp
     runtime/WebGPUQueryPool.cpp
     runtime/ops/OperatorRegistry.cpp
-    runtime/ops/add/BinaryOp.cpp
-    runtime/ops/rms_norm/RmsNorm.cpp
-    runtime/ops/update_cache/UpdateCache.cpp
-    runtime/ops/sdpa/Sdpa.cpp
-    runtime/ops/select_as_symint/SelectAsSymint.cpp
-    runtime/ops/quantized_linear/QuantizedLinear.cpp
-    runtime/ops/quantized_linear/QuantizedLinearBackward.cpp
-    runtime/ops/mul/BinaryOp.cpp
-    runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
-    runtime/ops/rope/RotaryEmbedding.cpp
-    runtime/ops/prepack/Prepack.cpp
-    runtime/ops/view_copy/ViewCopy.cpp
-    runtime/ops/select/Select.cpp
-    runtime/ops/sigmoid/UnaryOp.cpp
-    runtime/ops/squeeze/Squeeze.cpp
-    runtime/ops/unsqueeze/Unsqueeze.cpp
-    runtime/ops/slice/Slice.cpp
-    runtime/ops/permute/Permute.cpp
-    runtime/ops/cat/Cat.cpp
-    runtime/ops/index/Index.cpp
-    runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
-    runtime/ops/mm/Mm.cpp
-    runtime/ops/fused_ce/FusedCe.cpp
-    runtime/ops/log_softmax/LogSoftmax.cpp
-    runtime/ops/softmax/Softmax.cpp
-    runtime/ops/bmm/Bmm.cpp
-    runtime/ops/reduce/Reduce.cpp
-    runtime/ops/div/BinaryOp.cpp
-    runtime/ops/sub/BinaryOp.cpp
-    runtime/ops/where/Where.cpp
-    runtime/ops/boolean_op/BooleanOp.cpp
-    runtime/ops/gather/Gather.cpp
-    runtime/ops/expand_copy/ExpandCopy.cpp
-    runtime/ops/fill/Fill.cpp
-    runtime/ops/dim_order/DimOrder.cpp
-    runtime/ops/linear/Linear.cpp
-    runtime/ops/embedding/Embedding.cpp
-    runtime/ops/adamw/AdamwStep.cpp
-    runtime/ops/quantized_linear/QuantizedLinearDw.cpp
-    runtime/ops/quantized_linear/QuantizedLinearRequant.cpp
 )
+
+# Op handlers: glob so adding an op needs no CMakeLists edit. CONFIGURE_DEPENDS
+# re-globs at build time when op sources are added or removed.
+file(GLOB WEBGPU_OP_SRCS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ops/*/*.cpp"
+)
+list(APPEND WEBGPU_SRCS ${WEBGPU_OP_SRCS})
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
 
