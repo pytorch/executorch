@@ -80,7 +80,6 @@ class SwitchLinear(nn.Module):
         self.num_experts = num_experts
         self._packed = False
         self._is_quantized = False
-        self._int4_packed = False
 
         self.experts = nn.ModuleList(
             [nn.Linear(input_dims, output_dims, bias=bias) for _ in range(num_experts)]
@@ -117,7 +116,6 @@ class SwitchLinear(nn.Module):
             # Stack into the gather layout the gather_qmm handler expects
             # (packed uint8 qdata + signed zero_point).
             self.group_size = w0.group_size
-            self._int4_packed = True
             self.register_buffer(
                 "qdata", torch.stack([e.weight.qdata for e in self.experts])
             )
@@ -152,7 +150,6 @@ class SwitchLinear(nn.Module):
                 qu = (qdata.to(torch.int16) + 8).to(torch.uint8)
                 qu = qu.reshape(E, out, in_features // 2, 2)
                 qdata = (qu[..., 0] | (qu[..., 1] << 4)).contiguous()
-                self._int4_packed = True
 
             self.register_buffer("qdata", qdata)
             self.register_buffer("scale", scale)

@@ -47,6 +47,13 @@ from safetensors.torch import save_file
 # torchao's flatten/unflatten helpers. They deconstruct each subclass into its
 # plain inner tensors plus JSON reconstruction metadata in the safetensors
 # header. This matches the bundle format used by gemma4's quantize_and_save.
+#
+# Saving always uses the modern (torchao) format. Loading auto-detects the
+# format from the safetensors header and falls back to a legacy reader for
+# bundles written by the previous hand-rolled serializer. The legacy format was
+# only ever produced by the CUDA path (MLX prequant is new), so the legacy
+# branch exists purely for CUDA back-compat and can be dropped once all such
+# bundles are regenerated.
 # ---------------------------------------------------------------------------
 
 
@@ -63,6 +70,8 @@ def save_quantized_tensors(items, safetensors_path):
 
     state_dict = {}
     for key, val in items:
+        # First-wins dedup: tied weights (e.g. lm_head / embed_tokens) appear
+        # twice; params are iterated before buffers, so keep the first.
         if key in state_dict:
             continue
         if val is None or val.device.type == "meta":
@@ -89,19 +98,94 @@ def save_quantized_model(model, safetensors_path):
 def load_quantized_state_dict(safetensors_path):
     """Load a quantized state dict from safetensors, reconstructing tensor subclasses.
 
+    Auto-detects the bundle format from the safetensors header: modern bundles
+    (torchao) carry a ``tensor_names`` key, legacy bundles carry ``quantization``.
     Returns a state dict with plain tensors and reconstructed tensor subclasses
     ready for model.load_state_dict(state_dict, strict=False, assign=True).
     """
     from safetensors import safe_open
-    from torchao.prototype.safetensors.safetensors_support import (
-        unflatten_tensor_state_dict,
-    )
 
     with safe_open(safetensors_path, framework="pt", device="cpu") as f:
-        metadata = f.metadata()
+        metadata = f.metadata() or {}
         flat_tensors = {key: f.get_tensor(key) for key in f.keys()}
 
-    state_dict, _ = unflatten_tensor_state_dict(flat_tensors, metadata)
+    if "tensor_names" in metadata:
+        from torchao.prototype.safetensors.safetensors_support import (
+            unflatten_tensor_state_dict,
+        )
+
+        state_dict, _ = unflatten_tensor_state_dict(flat_tensors, metadata)
+        return state_dict
+
+    if "quantization" in metadata:
+        return _load_legacy_state_dict(flat_tensors, metadata)
+
+    raise ValueError(f"Unrecognized quantized bundle format: {safetensors_path}")
+
+
+# Legacy reader (CUDA back-compat) ------------------------------------------
+# Reconstructs bundles written by the previous hand-rolled serializer, which
+# stored inner tensors as ``{key}.__{name}`` and reconstruction metadata as JSON
+# under the ``quantization`` header key. Only the reader is kept; new bundles
+# are always written in the modern torchao format above.
+_LEGACY_SUBCLASS_REGISTRY = {}
+
+
+def _register_legacy_subclass(cls):
+    _LEGACY_SUBCLASS_REGISTRY[cls.__qualname__] = cls
+
+
+def _init_legacy_subclass_registry():
+    if _LEGACY_SUBCLASS_REGISTRY:
+        return
+    from torchao.quantization import IntxUnpackedToInt8Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tile_packed_to_4d_tensor import (
+        Int4TilePackedTo4dTensor,
+    )
+
+    _register_legacy_subclass(Int4TilePackedTo4dTensor)
+    _register_legacy_subclass(IntxUnpackedToInt8Tensor)
+    _register_legacy_subclass(Int4Tensor)
+
+
+def _load_legacy_state_dict(flat_tensors, header_metadata):
+    """Reconstruct a state dict from a legacy (pre-torchao) safetensors bundle."""
+    _init_legacy_subclass_registry()
+    quantization_meta = json.loads(header_metadata.get("quantization", "{}"))
+
+    state_dict = {}
+    reconstructed_keys = set()
+    for key, meta in quantization_meta.items():
+        cls = _LEGACY_SUBCLASS_REGISTRY[meta["_type"]]
+
+        tensor_data = {}
+        prefix = f"{key}.__"
+        for flat_key in list(flat_tensors.keys()):
+            if flat_key.startswith(prefix):
+                tensor_data[flat_key[len(prefix) :]] = flat_tensors[flat_key]
+                reconstructed_keys.add(flat_key)
+
+        # Restore Python types from JSON: lists stay lists (block_size), shape
+        # becomes torch.Size, and "torch.*" strings become dtypes.
+        attrs = {}
+        for attr_name, attr_val in meta.items():
+            if attr_name == "_type":
+                continue
+            elif attr_name == "shape":
+                attrs[attr_name] = torch.Size(attr_val)
+            elif isinstance(attr_val, str) and attr_val.startswith("torch."):
+                attrs[attr_name] = getattr(torch, attr_val.split(".")[-1])
+            else:
+                attrs[attr_name] = attr_val
+
+        # outer_size / outer_stride are unused by TorchAOBaseTensor.__tensor_unflatten__
+        state_dict[key] = cls.__tensor_unflatten__(tensor_data, attrs, None, None)
+
+    for key, tensor in flat_tensors.items():
+        if key not in reconstructed_keys:
+            state_dict[key] = tensor
+
     return state_dict
 
 

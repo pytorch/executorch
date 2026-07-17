@@ -729,8 +729,15 @@ def regroup_affine_scales(
     """
     old_groups = scale.shape[-1]
     old_group_size = in_features // old_groups
+    assert (
+        old_group_size >= target_group_size and old_group_size % target_group_size == 0
+    ), (
+        f"cannot regroup: weight group_size={old_group_size} is finer than, or "
+        f"not a multiple of, target_group_size={target_group_size} — "
+        f"repeat-interleave can only refine groups"
+    )
     repeat = old_group_size // target_group_size
-    if repeat <= 1:
+    if repeat == 1:
         return scale, zero_point, False
     scale = scale.repeat_interleave(repeat, dim=-1)
     zero_point = zero_point.repeat_interleave(repeat, dim=-1)
