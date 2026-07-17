@@ -325,10 +325,6 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         return super().get_input_act_qspec(node, input_node)
 
-
-class VGFQuantizationConfig(TOSAQuantizationConfig):
-    quantize_grid_sampler_grid = True
-
     def get_weight_qspec(
         self, node: Optional[Node] = None
     ) -> Optional[QuantizationSpecBase]:
@@ -421,3 +417,7 @@ class VGFQuantizationConfig(TOSAQuantizationConfig):
         if len(node.args) == 0:
             return super().get_output_act_qspec()
         return SharedQuantizationSpec((cast(Node, node.args[0]), node))
+
+
+class VGFQuantizationConfig(TOSAQuantizationConfig):
+    quantize_grid_sampler_grid = True
