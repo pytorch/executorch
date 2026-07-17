@@ -667,9 +667,12 @@ class ArmPassManager(ExportedProgramPassManager):
                 SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
                 FuseConsecutiveConcatShapesPass(),
-                EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
+                # Fuse duplicates exposed by late rewrites before inserting rescales;
+                # fusing generated RESCALE users can corrupt distinct quantized paths.
+                FuseDuplicateUsersPass(),
                 InsertRescalePass(),
+                EnsureUniqueOutputNodesPass(),
             ]
         )
 

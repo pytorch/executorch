@@ -7,14 +7,23 @@ from typing import Dict, Tuple
 
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
-from executorch.backends.arm._passes import FuseDuplicateUsersPass
+from executorch.backends.arm._passes import (
+    EnsureUniqueOutputNodesPass,
+    FuseDuplicateUsersPass,
+    InsertRescalePass,
+    RemoveNoopPass,
+)
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import export
 from torch.fx import Graph, GraphModule
 
 input_t = Tuple[torch.Tensor]  # Input x
@@ -167,3 +176,56 @@ def test_fuse_duplicate_users_removes_identical_rescale_users():
     assert len(rescale_nodes) == 1
     output_node = result.graph_module.graph.output_node()
     assert output_node.args[0] == (rescale_nodes[0], rescale_nodes[0])
+
+
+class LateDuplicateUsers(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("first", torch.ones(2, 3))
+        self.register_buffer("second", torch.ones(2, 3))
+
+    def forward(self, x):
+        return x + self.first, x + self.second
+
+
+def test_fuse_duplicate_users_runs_after_tosa_transformations():
+    exported_program = export(LateDuplicateUsers(), (torch.ones(2, 3),), strict=True)
+    edge_program = to_edge(
+        exported_program,
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    edge_exported_program = edge_program.exported_program()
+
+    pass_manager = ArmPassManager(TosaCompileSpec("TOSA-1.0+FP"))
+    graph_module = pass_manager.transform_to_backend_pipeline(
+        edge_exported_program, edge_exported_program.graph_module
+    )
+
+    add_nodes = [
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.backend.tosa.ADD.default
+    ]
+    identity_nodes = [
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.backend.tosa.IDENTITY.default
+    ]
+
+    graph_module.graph.lint()
+    assert len(add_nodes) == 1
+    assert len(identity_nodes) == 2
+    assert all(node.args[0] is add_nodes[0] for node in identity_nodes)
+    assert graph_module.graph.output_node().args[0] == tuple(identity_nodes)
+
+    pass_types = [type(pass_) for pass_ in pass_manager.passes]
+    post_noop_index = max(
+        index
+        for index, pass_type in enumerate(pass_types)
+        if pass_type is RemoveNoopPass
+    )
+    assert pass_types[post_noop_index + 1 : post_noop_index + 4] == [
+        FuseDuplicateUsersPass,
+        InsertRescalePass,
+        EnsureUniqueOutputNodesPass,
+    ]
