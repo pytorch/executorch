@@ -268,8 +268,28 @@ def cmsis_nn_avgpool_buffer_size(
     ]
 
 
+def cmsis_nn_lstm_buffer_size(
+    backend: cmsis_nn.Backend,
+    lstm_node: torch.fx.Node,
+) -> list[int]:
+    # arm_lstm_unidirectional_s8 needs three int16 working buffers (temp1,
+    # temp2, cell_state), each batch*hidden elements. CMSIS-NN has no buffer
+    # sizing helper for LSTM, so compute it directly; the multi-buffer scratch
+    # API allocates one alloc node per size.
+    del backend
+    x = cast(torch.fx.Node, lstm_node.args[0])
+    input_weights = cast(torch.fx.Node, lstm_node.args[1])
+    time_major = bool(lstm_node.args[19])
+    shape = _shape_from_node(x)
+    batch = int(shape[1] if time_major else shape[0])
+    hidden = int(_shape_from_node(input_weights)[0]) // 4
+    buffer_bytes = batch * hidden * 2  # int16
+    return [buffer_bytes, buffer_bytes, buffer_bytes]
+
+
 _target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
+    exir_ops.edge.cortex_m.quantized_lstm.default: cmsis_nn_lstm_buffer_size,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_batch_matmul.default: cmsis_nn_batch_matmul_buffer_size,
     exir_ops.edge.cortex_m.quantized_transpose_conv2d.default: cmsis_nn_transpose_conv_buffer_size,

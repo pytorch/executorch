@@ -37,6 +37,7 @@ class CortexMToEdge(ToEdge):
     def __init__(self):
         config = EdgeCompileConfig(
             preserve_ops=[
+                torch.ops.aten.lstm.input,
                 torch.ops.aten.linear.default,
                 torch.ops.aten.hardsigmoid.default,
                 torch.ops.aten.hardsigmoid_.default,

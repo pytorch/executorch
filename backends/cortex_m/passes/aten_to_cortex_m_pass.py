@@ -73,6 +73,31 @@ class AtenToCortexMPass(AtenToDialectPass):
             result.graph_module
         )
 
+        # The LSTM substitution rewires getitem(0)'s users onto a new
+        # single-output op, leaving getitem(0) dead and the tuple-returning
+        # aten.lstm.input with only that dead getitem as a user. DCE drops the
+        # dead getitem, but fx treats lstm.input as impure and won't remove it
+        # even once user-less, so erase it explicitly, then DCE its now-dead
+        # inputs (initial hidden/cell) and recompile.
+        graph = result.graph_module.graph
+        graph.eliminate_dead_code()
+        for n in list(graph.nodes):
+            if n.target == exir_ops.edge.aten.lstm.input and len(n.users) == 0:
+                graph.erase_node(n)
+        graph.eliminate_dead_code()
+
+        # A preserved aten.lstm.input that is still live was not fused (an
+        # unsupported configuration). There is no portable LSTM kernel, so fail
+        # here with a clear message rather than later with a missing-kernel error.
+        for n in graph.nodes:
+            if n.target == exir_ops.edge.aten.lstm.input:
+                raise RuntimeError(
+                    "cortex_m: an aten.lstm.input survived lowering unfused. Only "
+                    "single-layer, unidirectional, biased, zero-initial-state, "
+                    "output-only LSTM is supported by the Cortex-M backend."
+                )
+        result.graph_module.recompile()
+
         for node in result.graph_module.graph.nodes:
             self._initialize_alloc_node_size(node)
 
@@ -185,6 +210,147 @@ def _restore_max_pool2d_with_indices_fallback(
 
 
 _SOFTMAX_INPUT_INTEGER_BITS = 5
+
+# Power-of-two cell-state scale exponent used when lowering the fused LSTM.
+# The cell state is internal (never observed), so its scale cannot be
+# calibrated here; -12 gives an int16 range of +/-8, ample for typical cell
+# magnitudes. Values beyond the range saturate at cell_clip rather than wrap.
+# TODO: derive from calibration statistics (project_cortex_m_lstm R3).
+_DEFAULT_CELL_SCALE_POWER = -12
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.lstm.input)
+def _get_lstm_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    """Fuse a preserved, boundary-quantized aten.lstm.input into a single
+    cortex_m.quantized_lstm. Gate weights are quantized per-gate ahead of time
+    from the float params; boundary scales come from the input DQ (folded onto
+    this node) and the output Q (folded onto getitem(0)).
+
+    The op is single-output, so this rewires getitem(0)'s consumers directly and
+    returns None; the surrounding pass DCEs the now-dead tuple op.
+    """
+    from executorch.backends.cortex_m.passes.lstm_params import (
+        derive_lstm_params,
+        flatten_lstm_params,
+    )
+
+    input_qparams = node.meta.get("input_qparams")
+    if not input_qparams or 0 not in input_qparams:
+        # Not boundary-annotated (unsupported config); leave it for call() to
+        # flag as an un-fused, unlowerable LSTM.
+        return None
+
+    getitem0 = next(
+        (u for u in node.users if u.target == operator.getitem and u.args[1] == 0),
+        None,
+    )
+    if getitem0 is None:
+        return None
+    output_qparams = getitem0.meta.get("output_qparams")
+    if not output_qparams or 0 not in output_qparams:
+        return None
+
+    exported_program = dialect_pass.exported_program
+    in_qp = input_qparams[0]
+    out_qp = output_qparams[0]
+
+    params = cast(list[Node], node.args[2])
+    weight_ih = cast(torch.Tensor, get_param_tensor(exported_program, params[0]))
+    weight_hh = cast(torch.Tensor, get_param_tensor(exported_program, params[1]))
+    bias = cast(torch.Tensor, get_param_tensor(exported_program, params[2])) + cast(
+        torch.Tensor, get_param_tensor(exported_program, params[3])
+    )
+
+    lstm_params = derive_lstm_params(
+        weight_ih,
+        weight_hh,
+        bias,
+        float(in_qp.scale),
+        int(in_qp.zp),
+        float(out_qp.scale),
+        int(out_qp.zp),
+        _DEFAULT_CELL_SCALE_POWER,
+    )
+    iw, hw, ieb, heb, in_mult, in_shift, hid_mult, hid_shift = flatten_lstm_params(
+        lstm_params
+    )
+
+    graph = node.graph
+    # Const placeholders must live in the placeholder region (before user
+    # inputs), so insert them after an existing weight placeholder.
+    with graph.inserting_after(params[0]):
+        iw_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_input_weights",
+            InputKind.PARAMETER,
+            iw,
+        )
+        hw_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_hidden_weights",
+            InputKind.PARAMETER,
+            hw,
+        )
+        ieb_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_input_eff_bias",
+            InputKind.PARAMETER,
+            ieb,
+        )
+        heb_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_hidden_eff_bias",
+            InputKind.PARAMETER,
+            heb,
+        )
+    # CMSIS needs three int16 working buffers (temp1, temp2, cell_state); the
+    # multi-buffer scratch API sizes each one independently (scratch_buffer_sizes).
+    temp1 = _create_uninitialized_alloc_node(node, exported_program)
+    temp2 = _create_uninitialized_alloc_node(node, exported_program)
+    cell_state = _create_uninitialized_alloc_node(node, exported_program)
+
+    time_major = not bool(node.args[8])
+    op_args = (
+        node.args[0],
+        iw_c,
+        hw_c,
+        ieb_c,
+        heb_c,
+        in_mult,
+        in_shift,
+        hid_mult,
+        hid_shift,
+        lstm_params.input_offset,
+        lstm_params.output_offset,
+        lstm_params.forget_to_cell_multiplier,
+        lstm_params.forget_to_cell_shift,
+        lstm_params.input_to_cell_multiplier,
+        lstm_params.input_to_cell_shift,
+        lstm_params.output_multiplier,
+        lstm_params.output_shift,
+        lstm_params.cell_scale_power,
+        lstm_params.cell_clip,
+        time_major,
+        temp1,
+        temp2,
+        cell_state,
+    )
+    with graph.inserting_before(node):
+        op_node = graph.create_node(
+            "call_function",
+            target=exir_ops.edge.cortex_m.quantized_lstm.default,
+            args=op_args,
+        )
+    op_node.meta = dict(getitem0.meta)
+    op_node.meta["val"] = getitem0.meta["val"].to(torch.int8)
+    getitem0.replace_all_uses_with(op_node)
+    return None
 
 
 def _to_int_pair(

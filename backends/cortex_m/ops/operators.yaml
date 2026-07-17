@@ -106,3 +106,9 @@
   kernels:
     - arg_meta: null
       kernel_name: cortex_m::quantized_batch_matmul_out
+
+- func: cortex_m::quantized_lstm.out(Tensor input, Tensor input_weights, Tensor hidden_weights, Tensor input_effective_bias, Tensor hidden_effective_bias, int[] input_multipliers, int[] input_shifts, int[] hidden_multipliers, int[] hidden_shifts, int input_offset, int output_offset, int forget_to_cell_multiplier, int forget_to_cell_shift, int input_to_cell_multiplier, int input_to_cell_shift, int output_multiplier, int output_shift, int cell_scale_power, int cell_clip, bool time_major, Tensor temp1, Tensor temp2, Tensor cell_state, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: cortex_m::quantized_lstm_out
