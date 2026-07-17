@@ -284,8 +284,7 @@ const Q4gswConfig kQ4gswConfigs[] = {
     // The M==1 configs above (q/kv/gate/down_proj) exercise the bicol 2-col
     // decode GEMV (handler routes M==1 -> bicol; each reads its own per-column
     // scale over 64-256 K-groups). q4gsw requires N % 8 == 0, so odd-N is not
-    // exportable; bicol's has1 odd-N guard is defensive (mirrors coop4
-    // general-N robustness).
+    // exportable; bicol's has1 odd-N guard is defensive.
     // M>1: steel GEMM on a >=256-invocation device (K%16==0), else shmem/tiled.
     {"steel", 96, 2048, 256, 1e-4f, 1e-3f, true, false}, // steel-isolating
     // Same shape as "steel" run under the f16-multiply steel kernel; the f16
