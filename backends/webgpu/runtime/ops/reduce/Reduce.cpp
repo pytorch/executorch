@@ -111,8 +111,9 @@ void reduce_impl(
 
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kReduceWorkgroupSizeX);
-  const uint32_t workgroup_count = utils::compute_1d_workgroup_count(
-      device, static_cast<uint32_t>(outputs), wg_size, op_name);
+  // Cooperative reduction: one workgroup per output element (2D-folded grid).
+  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
+      device, static_cast<uint32_t>(outputs), 1u, op_name);
 
   ReduceParams params = {};
   params.outer = outer;
@@ -190,8 +191,8 @@ void reduce_impl(
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  const size_t dispatch_idx =
-      graph.add_dispatch({pipeline, bind_group, workgroup_count, op_name});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count.x, op_name, workgroup_count.y});
 
   // Dynamic shapes: recompute the decomposition for the reduced dim + dispatch.
   WGPUBuffer params_buf = uniform_buffer;
@@ -205,7 +206,6 @@ void reduce_impl(
        keepdim,
        is_mean_u,
        build_outputs,
-       wg_size,
        dispatch_idx,
        params_buf](WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
@@ -225,12 +225,13 @@ void reduce_impl(
         p.inner = n;
         p.is_mean = is_mean_u;
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-        g.dispatch_at(dispatch_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(
-                g.device(),
-                static_cast<uint32_t>(live_outputs),
-                wg_size,
-                "reduce(resize)");
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(),
+            static_cast<uint32_t>(live_outputs),
+            1u,
+            "reduce(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
         // Propagate reduced output dims for downstream resize hooks.
         int64_t nd = static_cast<int64_t>(d.size());
         int64_t rd = dim < 0 ? dim + nd : dim;
