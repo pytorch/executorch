@@ -45,6 +45,7 @@ Prelu = exir_ops.edge.aten.prelu.default
 QuantizePerChannel = exir_ops.edge.quantized_decomposed.quantize_per_channel.default
 QuantizePerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 Relu = exir_ops.edge.aten.relu.default
+Rsqrt = exir_ops.edge.aten.rsqrt.default
 Sigmoid = exir_ops.edge.aten.sigmoid.default
 Slice = exir_ops.edge.aten.slice.Tensor
 SliceCopy = exir_ops.edge.aten.slice_copy.Tensor
