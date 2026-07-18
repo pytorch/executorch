@@ -848,7 +848,8 @@ int main(int argc, char** argv) {
                 i,
                 j,
                 tensor.const_data_ptr<int8_t>()[j] ? "true " : "false",
-                tensor.const_data_ptr<int8_t>()[j]);
+                static_cast<unsigned int>(
+                    static_cast<uint8_t>(tensor.const_data_ptr<int8_t>()[j])));
           }
         }
       } else {
