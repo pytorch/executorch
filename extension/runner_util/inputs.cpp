@@ -56,7 +56,7 @@ Result<BufferCleanup> prepare_input_tensors(
   ET_CHECK_OR_RETURN_ERROR(
       inputs != nullptr,
       MemoryAllocationFailed,
-      "malloc(%zd) failed",
+      "malloc(%zu) failed",
       num_inputs * sizeof(void*));
 
   // Allocate memory for each input tensor.

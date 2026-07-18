@@ -57,7 +57,7 @@
 #define ET_CHECK_NON_ZERO_DIM_SIZE(DIM, T)           \
   const size_t udim = ET_NORMALIZE_IX(DIM, T.dim()); \
   ET_CHECK_MSG(                                      \
-      T.size(udim) != 0, "Expected dim %zd to have non-zero size.", udim);
+      T.size(udim) != 0, "Expected dim %zu to have non-zero size.", udim);
 
 /**
  * Asserts that all tensors have the same shape.
@@ -272,7 +272,7 @@
   do {                                                                         \
     ET_CHECK_MSG(                                                              \
         a__.dim() == b__.dim(),                                                \
-        "Two tensors shall have same number of strides, but not %zu and %zu.", \
+        "Two tensors shall have same number of strides, but not %zd and %zd.", \
         a__.dim(),                                                             \
         b__.dim());                                                            \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>          \
@@ -301,7 +301,7 @@
     ET_CHECK_MSG(                                                       \
         a__.dim() == b__.dim() && b__.dim() == c__.dim(),               \
         "Three tensors shall have same number of strides, "             \
-        "but not %zu, %zu and %zu.",                                    \
+        "but not %zd, %zd and %zd.",                                    \
         a__.dim(),                                                      \
         b__.dim(),                                                      \
         c__.dim());                                                     \
