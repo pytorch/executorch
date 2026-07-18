@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUQueryPool.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
 #include <stdexcept>
@@ -125,6 +126,32 @@ void WebGPUQueryPool::resolve(WGPUCommandEncoder encoder) {
       static_cast<uint64_t>(count) * kTimestampBytes);
 }
 
+// Mali pins begin-of-pass timestamps; use consecutive-end delta per op.
+void fill_shader_durations(
+    std::vector<ShaderDuration>& durations,
+    const uint64_t* ticks,
+    double ns_per_tick) {
+  std::sort(
+      durations.begin(),
+      durations.end(),
+      [](const ShaderDuration& a, const ShaderDuration& b) {
+        return a.idx < b.idx;
+      });
+  uint64_t prev_end = 0;
+  bool have_prev = false;
+  for (auto& d : durations) {
+    const uint64_t t0 = ticks[2 * d.idx];
+    const uint64_t t1 = ticks[2 * d.idx + 1];
+    const uint64_t base = have_prev ? std::max(t0, prev_end) : t0;
+    d.start_time_ns = static_cast<uint64_t>(base * ns_per_tick);
+    d.end_time_ns = static_cast<uint64_t>(t1 * ns_per_tick);
+    d.execution_duration_ns =
+        (t1 > base) ? static_cast<uint64_t>((t1 - base) * ns_per_tick) : 0;
+    prev_end = have_prev ? std::max(prev_end, t1) : t1;
+    have_prev = true;
+  }
+}
+
 void WebGPUQueryPool::extract_results(WGPUInstance instance) {
   if (num_pairs_ == 0) {
     return;
@@ -149,14 +176,7 @@ void WebGPUQueryPool::extract_results(WGPUInstance instance) {
   const uint64_t* ticks = static_cast<const uint64_t*>(
       wgpuBufferGetConstMappedRange(readback_buf_, 0, bytes));
   if (ticks != nullptr) {
-    for (auto& d : durations_) {
-      const uint64_t t0 = ticks[2 * d.idx];
-      const uint64_t t1 = ticks[2 * d.idx + 1];
-      d.start_time_ns = static_cast<uint64_t>(t0 * ns_per_tick_);
-      d.end_time_ns = static_cast<uint64_t>(t1 * ns_per_tick_);
-      d.execution_duration_ns =
-          (t1 >= t0) ? static_cast<uint64_t>((t1 - t0) * ns_per_tick_) : 0;
-    }
+    fill_shader_durations(durations_, ticks, ns_per_tick_);
   }
   wgpuBufferUnmap(readback_buf_);
 }
