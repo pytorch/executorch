@@ -278,7 +278,7 @@ void apply_over_dim(
   }
   ET_CHECK_MSG(
       out_ix < get_out_numel(in, dim),
-      "Out index %zd is out of bounds",
+      "Out index %zu is out of bounds",
       out_ix);
 
   if (in.numel() == 0) {
@@ -358,7 +358,7 @@ class ApplyOverDimListPlan {
 
   template <typename Fn>
   void execute(const Fn& fn, const size_t out_ix) const {
-    ET_CHECK_MSG(out_ix < out_numel_, "Out index %zd is out of bounds", out_ix);
+    ET_CHECK_MSG(out_ix < out_numel_, "Out index %zu is out of bounds", out_ix);
 
     switch (mode_) {
       case ExecutionMode::NothingToDo:
@@ -489,7 +489,7 @@ std::tuple<CTYPE_OUT, long> map_reduce_over_dim(
 
   ET_CHECK_MSG(
       out_ix < get_out_numel(in, dim),
-      "Out index %zd is out of bounds",
+      "Out index %zu is out of bounds",
       out_ix);
 
   ET_CHECK_MSG(in.numel() > 0, "Input tensor must be nonempty");

@@ -376,7 +376,7 @@ int main(int argc, char** argv) {
 
     ET_CHECK_MSG(
         status == Error::Ok,
-        "get_program_data() from bundle PTE failed: 0x%x" PRIx32,
+        "get_program_data() from bundle PTE failed: 0x%" PRIx32,
         static_cast<uint32_t>(status));
   } else {
     ET_LOG(Debug, "PTE Model has no bundled IO");
@@ -888,8 +888,7 @@ int main(int argc, char** argv) {
     } else {
       ET_LOG(
           Info,
-          "=== Error calculating stats for testset %zu ERROR: 0x%x" PRIx32
-          "===",
+          "=== Error calculating stats for testset %zu ERROR: 0x%" PRIx32 "===",
           testset_idx,
           static_cast<uint32_t>(stats.status));
     }

@@ -97,7 +97,7 @@ inline void assert_valid_numel(
       computed_numel.error(), "Invalid tensor sizes: numel computation failed");
   THROW_IF_FALSE(
       data.size() >= static_cast<size_t>(computed_numel.get()),
-      "Required %ld elements, given %ld",
+      "Required %zd elements, given %zu",
       computed_numel.get(),
       data.size());
 }
