@@ -411,7 +411,6 @@ ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/runtime/kernel:thread_parallel_interface",
             ":scalar_utils"
         ],
     ),
