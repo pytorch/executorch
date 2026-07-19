@@ -29,6 +29,12 @@ class ForwardOptions(TypedDict, total=False):
     # When provided, the attention layer skips its own K/V projection
     # and reuses the donor's K/V instead.
     shared_kv: Optional[Tuple[torch.Tensor, torch.Tensor]]
+    # Per-call KV cache override. Used by `MultimodalTransformer` when
+    # `transformer_block_repeat_config` repeats a TransformerBlock so that each
+    # *occurrence* of the layer in the schedule writes to its own KV cache
+    # rather than sharing the layer's `self.kv_cache`. When None or absent the
+    # attention falls back to `self.kv_cache`.
+    kv_cache_override: Optional["KVCache"]
 
 
 class Attention(nn.Module, ABC):
@@ -276,7 +282,7 @@ class RingKVCache(KVCache):
         [0, 1, 2, 3, 4, NA, NA, NA] After cache update we would have
         [8, 1, 2, 3, 4, 5, 6, 7]. We kicked out token at pos = 0. However, the
         current step still has access to [pos - sliding_window_size, pos] tokens.
-        
+
         To make sure we dont over attend, i.e. we dont have pos = 5
         to attend to pos = 1, mask calculaton has to account for the sliding window
         size.
@@ -573,8 +579,12 @@ class AttentionMHA(Attention):
             q, k, v = self._prepare_qkv(q, x, bsz, seqlen, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
+            # Per-call KV cache override (used when a TransformerBlock is invoked
+            # multiple times via `transformer_block_repeat_config` so each
+            # occurrence has its own KV cache). Falls back to `self.kv_cache`.
+            active_kv_cache = kwargs.get("kv_cache_override") or self.kv_cache
             assert input_pos is not None
-            is_ring_buffer = getattr(self.kv_cache, "is_ring_buffer", False)
+            is_ring_buffer = getattr(active_kv_cache, "is_ring_buffer", False)
 
             if is_ring_buffer:
                 # Ring buffer models compute their own mask after KV cache
@@ -594,14 +604,14 @@ class AttentionMHA(Attention):
 
             # Only update KV cache for non-shared layers
             if shared_kv is None:
-                assert self.kv_cache is not None, (
+                assert active_kv_cache is not None, (
                     "kv_cache is required when shared_kv is not provided. "
                     "This layer may be a YOCO shared layer that requires shared_kv from a donor."
                 )
-                k, v = self.kv_cache.update(input_pos, k, v)
+                k, v = active_kv_cache.update(input_pos, k, v)
 
             if is_ring_buffer:
-                attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
+                attn_mask = active_kv_cache.create_causal_mask_for_ring_buffer(
                     input_pos[0].item(), seqlen
                 )
 
