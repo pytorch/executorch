@@ -12,9 +12,9 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from q4gsw_dW.wgsl - DO NOT EDIT.
+// @generated from linear_dW.wgsl - DO NOT EDIT.
 // wgsl-sha256: be50075764ccd87e0d0c86124f13fd753aa618f994c9a5e1b8b631516aa51f84
-inline constexpr const char* kQ4gswDwWGSL = R"(
+inline constexpr const char* kLinearDwWGSL = R"(
 // STE weight-gradient d_W[N,K] = sum_m d_out[m,N]*x[m,K] (operands f32).
 
 @group(0) @binding(0) var<storage, read_write> t_dw: array<f32>;    // [N, K]
@@ -86,8 +86,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 )";
 
-inline constexpr uint32_t kQ4gswDwWorkgroupSizeX = 64;
-inline constexpr uint32_t kQ4gswDwWorkgroupSizeY = 1;
-inline constexpr uint32_t kQ4gswDwWorkgroupSizeZ = 1;
+inline constexpr uint32_t kLinearDwWorkgroupSizeX = 64;
+inline constexpr uint32_t kLinearDwWorkgroupSizeY = 1;
+inline constexpr uint32_t kLinearDwWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
