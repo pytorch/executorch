@@ -100,7 +100,6 @@ def define_common_targets():
         srcs = ["dtype_util.cpp"],
         exported_headers = [
             "dtype_util.h",
-            "operator_name.h",
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],

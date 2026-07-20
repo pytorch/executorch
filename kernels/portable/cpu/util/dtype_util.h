@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <executorch/kernels/portable/cpu/util/operator_name.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -403,8 +402,13 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
 }
 
 #ifndef EXECUTORCH_SELECTIVE_BUILD_DTYPE
+#if ET_USE_STRUCTURAL_OPERATOR_NAME
+inline constexpr auto kGenericElementwiseOpName =
+    ::executorch::runtime::OperatorName{"generic_elementwise_op"};
+#else
 inline constexpr const char kGenericElementwiseOpName[] =
     "generic_elementwise_op";
+#endif
 #endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
 
 template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
