@@ -201,9 +201,28 @@ void test_query_pool_delta_math() {
     const uint64_t ticks[] = {0, 100, 0, 40, 0, 120};
     auto d = durs({0, 1, 2});
     fill_shader_durations(d, ticks, 1.0);
+    EXPECT_EQ(d[0].start_time_ns, 0u);
+    EXPECT_EQ(d[0].end_time_ns, 100u);
     EXPECT_EQ(d[0].execution_duration_ns, 100u);
+    EXPECT_EQ(d[1].start_time_ns, 0u);
+    EXPECT_EQ(d[1].end_time_ns, 40u);
     EXPECT_EQ(d[1].execution_duration_ns, 0u);
+    EXPECT_EQ(d[2].start_time_ns, 0u);
+    EXPECT_EQ(d[2].end_time_ns, 120u);
     EXPECT_EQ(d[2].execution_duration_ns, 20u);
+  }
+  // Each extraction is independent; no previous-end state leaks across calls.
+  {
+    const uint64_t first_ticks[] = {0, 100, 0, 140};
+    auto first = durs({0, 1});
+    fill_shader_durations(first, first_ticks, 1.0);
+    EXPECT_EQ(first[1].execution_duration_ns, 40u);
+
+    const uint64_t second_ticks[] = {10, 30, 30, 60};
+    auto second = durs({0, 1});
+    fill_shader_durations(second, second_ticks, 1.0);
+    EXPECT_EQ(second[0].execution_duration_ns, 20u);
+    EXPECT_EQ(second[1].execution_duration_ns, 30u);
   }
 }
 #endif // WGPU_BACKEND_ENABLE_PROFILING

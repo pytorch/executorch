@@ -126,7 +126,9 @@ void WebGPUQueryPool::resolve(WGPUCommandEncoder encoder) {
       static_cast<uint64_t>(count) * kTimestampBytes);
 }
 
-// Mali pins begin-of-pass timestamps; use consecutive-end delta per op.
+// Mali can pin begin-of-pass timestamps. Preserve raw start/end timestamps but
+// derive durations from consecutive ends. State is local to this extraction;
+// the first dispatch can still include work before its recorded pass.
 void fill_shader_durations(
     std::vector<ShaderDuration>& durations,
     const uint64_t* ticks,
@@ -143,7 +145,7 @@ void fill_shader_durations(
     const uint64_t t0 = ticks[2 * d.idx];
     const uint64_t t1 = ticks[2 * d.idx + 1];
     const uint64_t base = have_prev ? std::max(t0, prev_end) : t0;
-    d.start_time_ns = static_cast<uint64_t>(base * ns_per_tick);
+    d.start_time_ns = static_cast<uint64_t>(t0 * ns_per_tick);
     d.end_time_ns = static_cast<uint64_t>(t1 * ns_per_tick);
     d.execution_duration_ns =
         (t1 > base) ? static_cast<uint64_t>((t1 - base) * ns_per_tick) : 0;

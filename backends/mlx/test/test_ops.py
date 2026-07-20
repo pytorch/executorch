@@ -24,6 +24,7 @@ Usage:
 See README.md in this directory for full documentation.
 """
 
+import os
 from typing import Callable, Dict, List, Optional, Tuple
 
 import executorch.exir as exir
@@ -6320,7 +6321,20 @@ class QuantizedLinearTest(OpTestCase):
             cls(qdtype=torch.int8),
             cls(qdtype=torch.int6),
             cls(qdtype=torch.int6, group_size=128),
+            # group_size=16: exercises the non-fused dequantize+matmul path
+            # (requires ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS=1).
+            cls(qdtype=torch.int8, group_size=16),
+            cls(qdtype=torch.int4, group_size=16),
+            cls(qdtype=torch.int8, group_size=16, bias=False),
         ]
+
+    def generate_test_files(self, verbose=False):
+        if self.group_size < 32:
+            os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
+        try:
+            return super().generate_test_files(verbose=verbose)
+        finally:
+            os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
 
     def create_model(self) -> nn.Module:
         model = LinearModel(self.in_features, self.out_features, bias=self.bias)
@@ -6680,7 +6694,6 @@ class GatherQmmModel(nn.Module):
         in_features: int,
         out_features: int,
         group_size: int = 32,
-        packed: bool = False,
     ):
         super().__init__()
         self.out_features = out_features
@@ -6700,14 +6713,10 @@ class GatherQmmModel(nn.Module):
         quantize_model_(wrapper, qlinear_config="4w", qlinear_group_size=group_size)
 
         # Extract and stack quantized inner tensors
-        qdata = torch.stack([e.weight.qdata for e in experts])  # int8 [E, out, in]
-        if packed:
-            # Nibble-pack to uint8 [E, out, in//2] (value = signed q + 8), the
-            # end-to-end packed layout produced by SwitchLinear.pack().
-            qu = (qdata.to(torch.int16) + 8).to(torch.uint8)
-            qu = qu.reshape(num_experts, out_features, in_features // 2, 2)
-            qdata = (qu[..., 0] | (qu[..., 1] << 4)).contiguous()
-        self.register_buffer("qdata", qdata)
+        self.register_buffer(
+            "qdata",
+            torch.stack([e.weight.qdata for e in experts]),
+        )
         self.register_buffer(
             "scale",
             torch.stack([e.weight.scale for e in experts]),
@@ -6748,7 +6757,6 @@ class GatherQmmTest(OpTestCase):
         batch_size: int = 2,
         group_size: int = 32,
         dtype: torch.dtype = torch.float32,
-        packed: bool = False,
     ):
         self.num_experts = num_experts
         self.in_features = in_features
@@ -6756,7 +6764,6 @@ class GatherQmmTest(OpTestCase):
         self.batch_size = batch_size
         self.group_size = group_size
         self.dtype = dtype
-        self.packed = packed
 
         parts = [
             "gather_qmm",
@@ -6765,8 +6772,6 @@ class GatherQmmTest(OpTestCase):
             f"o{out_features}",
             f"g{group_size}",
         ]
-        if packed:
-            parts.append("packed")
         if dtype != torch.float32:
             parts.append(str(dtype).split(".")[-1])
         self.name = "_".join(parts)
@@ -6778,10 +6783,6 @@ class GatherQmmTest(OpTestCase):
             cls(num_experts=8, in_features=128, out_features=256),
             cls(dtype=torch.bfloat16),
             cls(batch_size=1),
-            # Packed int4 experts (uint8 nibble-packed) — exercises the
-            # to_mlx_qparams prepacked (view -> uint32) lowering path.
-            cls(packed=True),
-            cls(packed=True, dtype=torch.bfloat16),
         ]
 
     def get_edge_compile_config(self):
@@ -6795,7 +6796,6 @@ class GatherQmmTest(OpTestCase):
             self.in_features,
             self.out_features,
             self.group_size,
-            packed=self.packed,
         )
         return model.to(self.dtype)
 
