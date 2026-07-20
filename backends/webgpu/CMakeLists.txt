@@ -68,7 +68,7 @@ set(WEBGPU_SRCS
     runtime/ops/dim_order/DimOrder.cpp
     runtime/ops/linear/Linear.cpp
     runtime/ops/embedding/Embedding.cpp
-    runtime/ops/quantized_linear/QuantizedLinearDw.cpp
+    runtime/ops/quantized_linear/LinearDw.cpp
     runtime/ops/quantized_linear/QuantizedLinearRequant.cpp
 )
 
