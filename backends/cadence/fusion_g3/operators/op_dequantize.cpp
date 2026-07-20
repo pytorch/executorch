@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <optional>
 
 #include <xa_nnlib_kernels_api.h>
 
@@ -22,8 +23,6 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 
-template <typename T>
-using optional = std::optional<T>;
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
  * updated to have support for below data types, these can be removed and
@@ -295,7 +294,7 @@ Tensor& dequantize_impl(
       const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();          \
       ET_CHECK_MSG(                                                           \
           *axis == 0, "Axis must be 0 for a single dimensional tensors");     \
-      const optional<int64_t> dim;                                            \
+      const std::optional<int64_t> dim;                                       \
       torch::executor::apply_over_dim(                                        \
           [input_data_ptr, out_data_ptr, zero_point_data, scale_data](        \
               size_t numel, size_t stride, size_t base_ix) {                  \
@@ -501,7 +500,7 @@ Tensor& dequantize_impl(
       const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();          \
       ET_CHECK_MSG(                                                           \
           *axis == 0, "Axis must be 0 for a single dimensional tensors");     \
-      const optional<int64_t> dim;                                            \
+      const std::optional<int64_t> dim;                                       \
       torch::executor::apply_over_dim(                                        \
           [input_data_ptr, out_data_ptr, zero_point_data, scale_data](        \
               size_t numel, size_t stride, size_t base_ix) {                  \
