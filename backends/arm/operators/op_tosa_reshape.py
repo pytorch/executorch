@@ -1,10 +1,11 @@
-# Copyright 2024-2026 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Any, cast, List
 
-from typing import Any, List
+import torch
 
 import tosa_serializer as ts
 
@@ -18,58 +19,54 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 from executorch.backends.arm.tosa.mapping import TosaArg
-from torch.fx import Node
 
 
 @register_node_visitor
-class CatVisitor(NodeVisitor):
-    target = "aten.cat.default"
+class ViewVisitor(NodeVisitor):
+    target = "tosa.RESHAPE.default"
 
     def __init__(self, *args):
         super().__init__(*args)
 
     def define_node(
         self,
-        node: Node,
+        node: torch.fx.Node,
         tosa_graph: Any,
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        supported_dtypes = [ts.DType.BOOL]
+        supported_dtypes = {ts.DType.BOOL}
         if self.tosa_spec.support_integer():
-            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT32])
-            if self.tosa_spec.support_extension("int16"):
-                supported_dtypes.append(ts.DType.INT16)
+            supported_dtypes.update([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
         if self.tosa_spec.support_float():
-            supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
+            supported_dtypes.update([ts.DType.FP16, ts.DType.FP32])
         if self.tosa_spec.support_extension("bf16"):
-            supported_dtypes.append(ts.DType.BF16)
+            supported_dtypes.add(ts.DType.BF16)
         if self.tosa_spec.support_extension("fp8e4m3"):
-            supported_dtypes.append(ts.DType.FP8E4M3)
+            supported_dtypes.add(ts.DType.FP8E4M3)
         if self.tosa_spec.support_extension("fp8e5m2"):
-            supported_dtypes.append(ts.DType.FP8E5M2)
-        validate_num_inputs(self.target, inputs, [1, 2])
-        input_tosa_args = [TosaArg(arg, self.tosa_spec) for arg in inputs[0].special]
-        validate_same_dtype(self.target, [*input_tosa_args, output], ts)
+            supported_dtypes.add(ts.DType.FP8E5M2)
+        if self.tosa_spec.support_extension("mxfp"):
+            supported_dtypes.update([ts.DType.FP8E4M3, ts.DType.FP8E5M2])
+
+        validate_num_inputs(self.target, inputs, 2)
+        validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
-            [*input_tosa_args, output],
-            supported_dtypes,
+            [inputs[0], output],
+            list(supported_dtypes),
             self.tosa_spec,
         )
 
-        dim = 0 if len(inputs) < 2 else inputs[1].number
-        rank = len(output.shape)
-        dim = (dim + rank) % rank
+        tosa_graph = cast(ts.TosaSerializer, tosa_graph)
 
         attr = ts.TosaSerializerAttribute()
-        attr.ConcatAttribute(dim)
-
+        attr.ReshapeAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CONCAT,
-            [tensor.name for tensor in input_tosa_args],
+            ts.Op.RESHAPE,
+            [inputs[0].name, inputs[1].name],
             [output.name],
             attr,
         )
