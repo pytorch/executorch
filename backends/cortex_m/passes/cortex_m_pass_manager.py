@@ -37,12 +37,12 @@ PassClass = Type[ExportPass]
 
 class CortexMPassManager(PassManager):
     pass_list: list[PassClass] = [
-        # Fold constant scales (e.g. attention /sqrt(d)) into the adjacent
-        # quantize before its scale is folded into op meta.
-        FoldScaleIntoQuantizePass,
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
+        # After qparam-folding: drop a constant scale (e.g. attention /sqrt(d))
+        # the quantizer already absorbed into the adjacent quantize scale.
+        FoldScaleIntoQuantizePass,
         ReplaceScalarWithTensorArgPass,
         ReplaceQuantNodesPass,
         ActivationFusionPass,
