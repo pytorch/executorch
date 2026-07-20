@@ -64,6 +64,14 @@ _Q4K_HEADER = """
 #include <metal_simdgroup_matrix>
 using namespace metal;
 
+#define FOR_UNROLL(x) _Pragma("clang loop unroll(full)") for (x)
+
+typedef matrix<bfloat, 2, 4> bfloat2x4;
+template<typename T> struct vec2x4;
+template<> struct vec2x4<float>   { using type = float2x4;  };
+template<> struct vec2x4<half>    { using type = half2x4;   };
+template<> struct vec2x4<bfloat>  { using type = bfloat2x4; };
+
 #define QK_K 256
 #define K_SCALE_SIZE 12
 

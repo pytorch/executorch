@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
@@ -30,6 +31,39 @@ struct RmsNormParams {
   uint32_t _pad;
 };
 static_assert(sizeof(RmsNormParams) == 16, "RmsNormParams must be 16 bytes");
+
+// Resize hook body: recompute num_rows + rewrite the UBO for the live input.
+void resize_rms_norm(
+    WebGPUGraph& g,
+    int in_id,
+    int out_id,
+    uint32_t row_width,
+    float epsilon,
+    size_t dispatch_idx,
+    WGPUBuffer params_buf) {
+  const auto& d = g.cur_dims(in_id);
+  const uint64_t numel = utils::numel_of(d);
+  if (numel % static_cast<uint64_t>(row_width) != 0) {
+    throw std::runtime_error(
+        "WebGPU rms_norm: numel not a multiple of row_width");
+  }
+  const uint32_t rows =
+      static_cast<uint32_t>(numel / static_cast<uint64_t>(row_width));
+  if (rows == 0) {
+    throw std::runtime_error("WebGPU rms_norm: zero rows");
+  }
+  if (rows > utils::queried_max_workgroups(g.device())) {
+    throw std::runtime_error(
+        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
+  }
+  RmsNormParams p = {};
+  p.num_rows = rows;
+  p.row_width = row_width;
+  p.epsilon = epsilon;
+  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+  g.dispatch_at(dispatch_idx).workgroup_count_x = rows;
+  g.set_cur_dims(out_id, d);
+}
 
 void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // et_vk.rms_norm.default args: [in, weight, eps, out]
@@ -70,9 +104,9 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU rms_norm: zero rows");
   }
   // Validate the 1D dispatch limit before allocating any GPU objects.
-  if (num_rows > 65535u) {
+  if (num_rows > utils::queried_max_workgroups(device)) {
     throw std::runtime_error(
-        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
+        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
   }
 
   // Create uniform buffer for params
@@ -144,11 +178,21 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUPipelineLayout pipeline_layout =
       wgpuDeviceCreatePipelineLayout(device, &pl_desc);
 
+  // Runtime-overridable workgroup size (mirrors add op); clamp only reduces.
+  // Pow2 required: the kernel halves the reduction stride (wg_size / 2u).
+  const uint32_t wg_size =
+      utils::clamp_workgroup_size_pow2(device, kRmsNormWorkgroupSizeX);
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
+
   // Create compute pipeline
   WGPUComputePipelineDescriptor pipeline_desc = {};
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
@@ -183,18 +227,29 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // One workgroup per row (kRmsNormWorkgroupSizeX threads cooperate per row)
   static_assert(
       kRmsNormWorkgroupSizeX == 64,
-      "must match @workgroup_size and WG_SIZE in rms_norm.wgsl");
+      "kRmsNormWorkgroupSizeX must match override wg_size default (64)");
   static_assert(
       kRmsNormVec4WorkgroupSizeX == 64,
-      "must match @workgroup_size and WG_SIZE in rms_norm_vec4.wgsl");
-  graph.add_dispatch({pipeline, bind_group, num_rows});
+      "kRmsNormVec4WorkgroupSizeX must match override wg_size default (64)");
+  const size_t dispatch_idx =
+      graph.add_dispatch({pipeline, bind_group, num_rows});
+
+  // Dynamic shapes: recompute num_rows + rewrite the UBO for the live input.
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, row_width, epsilon, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
+        resize_rms_norm(
+            g, in_id, out_id, row_width, epsilon, dispatch_idx, params_buf);
+      });
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // Drop our ref; the bind group keeps the uniform buffer alive until release.
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace

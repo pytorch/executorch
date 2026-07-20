@@ -92,6 +92,7 @@ runtime.cxx_library(
         "//executorch/runtime/core:device_allocator",
     ],
     deps = [
+        "//executorch/extension/cuda:caller_stream",
         "//executorch/runtime/platform:platform",
     ],
     nvcc_flags = get_nvcc_arch_args() + [
@@ -157,6 +158,23 @@ cpp_unittest(
     external_deps = [
         ("cuda", None, "cuda-lazy"),
     ],
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+    keep_gpu_sections = True,
+    remote_execution = re_test_utils.remote_execution(
+        platform = "gpu-remote-execution",
+    ),
+)
+
+cpp_unittest(
+    name = "test_cuda_allocator",
+    srcs = ["test/test_cuda_allocator.cpp"],
+    deps = [
+        ":cuda_allocator",
+        "//executorch/extension/cuda:caller_stream",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/platform:platform",
+    ],
+    external_deps = [("cuda", None, "cuda-lazy")],
     preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
     keep_gpu_sections = True,
     remote_execution = re_test_utils.remote_execution(

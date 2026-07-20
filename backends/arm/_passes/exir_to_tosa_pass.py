@@ -9,9 +9,14 @@ import executorch.backends.arm.tosa.dialect  # noqa: F401
 from executorch.backends.arm._passes.aten_to_tosa_activation_functions import (
     get_activation_replacement,
 )
+from executorch.backends.arm._passes.aten_to_tosa_data_layout import (
+    rewrite_data_layout_operator,
+)
 from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
     rewrite_argmax,
     rewrite_binary_operator,
+    rewrite_rfft2,
+    rewrite_unary_operator,
 )
 from executorch.backends.transforms.aten_to_dialect_pass import (
     AtenToDialectPass,
@@ -43,11 +48,22 @@ def register_dialect_substitutions(
     return decorator
 
 
-@ExirToTosaPass.register_dialect_substitution(exir_ops.edge.aten.argmax.default)
+@register_dialect_substitutions(
+    exir_ops.edge.aten.argmax.default,
+)
 def _get_tensor_operators_replacement(
     node: Node, pass_: AtenToDialectPass
-) -> DialectNodeSpec:
+) -> DialectNodeSpec | None:
     return rewrite_argmax(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.fft_rfft2.default,
+)
+def _get_fft_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_rfft2(node, pass_)
 
 
 @register_dialect_substitutions(
@@ -76,6 +92,26 @@ def _get_binary_operator_replacement(
 
 
 @register_dialect_substitutions(
+    exir_ops.edge.aten.abs.default,
+    exir_ops.edge.aten.bitwise_not.default,
+    exir_ops.edge.aten.ceil.default,
+    exir_ops.edge.aten.cos.default,
+    exir_ops.edge.aten.exp.default,
+    exir_ops.edge.aten.floor.default,
+    exir_ops.edge.aten.log.default,
+    exir_ops.edge.aten.logical_not.default,
+    exir_ops.edge.aten.neg.default,
+    exir_ops.edge.aten.reciprocal.default,
+    exir_ops.edge.aten.rsqrt.default,
+    exir_ops.edge.aten.sin.default,
+)
+def _get_unary_operator_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_unary_operator(node, pass_)
+
+
+@register_dialect_substitutions(
     exir_ops.edge.aten.clamp.default,
     exir_ops.edge.aten.erf.default,
     exir_ops.edge.aten.sigmoid.default,
@@ -85,3 +121,16 @@ def _get_activation_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return get_activation_replacement(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.flip.default,
+    exir_ops.edge.aten.permute_copy.default,
+    exir_ops.edge.aten.repeat.default,
+    exir_ops.edge.aten.view_copy.default,
+)
+def _get_data_layout_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_data_layout_operator(node, pass_)

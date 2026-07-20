@@ -293,16 +293,15 @@ class NodeVisitor:
         }
         # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
         quant_config[QCOM_OFFSET] = -quant_attrs[QCOM_ZERO_POINT]
-        range_ = quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN]
-        assert range_ > 3, (
-            f"2-bit quantization (range={range_}) does not support per-tensor encoding. "
-            "Use per-channel quantization instead."
-        )
-        # special case for 4 bits
-        if (
-            quant_config[QCOM_DTYPE] == torch.int8
-            and quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15
-        ):
+        # special case for 4-bit / 2-bit integer weights.
+        quant_range = quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN]
+        if quant_config[QCOM_DTYPE] == torch.int8 and quant_range <= 15:
+            if quant_range <= 3:
+                raise ValueError(
+                    f"2-bit quantization (range={quant_range}) "
+                    "does not support per-tensor encoding. Use per-channel quantization instead."
+                )
+            # special case for 4 bits
             quant_config[QCOM_BITWIDTH] = 4
             return (
                 PyQnnManager.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,

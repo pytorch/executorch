@@ -1,0 +1,11 @@
+sdpa_fd_split:
+  parameter_names_with_default_values:
+    DTYPE: float
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+        SUFFIX: ""
+      - VALUE: half
+        SUFFIX: half
+  shader_variants:
+    - NAME: sdpa_fd_split

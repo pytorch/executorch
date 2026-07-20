@@ -52,8 +52,8 @@ def _scalar_metadata(program, name, default):
 
 
 def _last_logits(outputs):
-    # forward returns logits shaped (1, T, vocab); take the final position.
-    return outputs[0][0, -1, :]
+    # forward returns last-token logits shaped (1, vocab).
+    return outputs[0][0]
 
 
 class TestChunkedPrefill(unittest.TestCase):

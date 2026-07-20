@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 set_overridable_option(EXECUTORCH_BUILD_PYBIND ON)
+set_overridable_option(EXECUTORCH_BUILD_CMSIS_NN_PYBINDS ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
 # Enable logging and program verification even when in release mode. We are

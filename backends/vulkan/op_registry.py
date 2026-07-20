@@ -294,28 +294,16 @@ def register_comparison_ops():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.bitwise_and.Tensor)
-def register_bitwise_and():
-    return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.BOOL_T,
-        supports_resize=True,
-        supports_highdim=True,
-    )
-
-
-@update_features(exir_ops.edge.aten.bitwise_not.default)
-def register_bitwise_not():
-    return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.BOOL_T,
-        supports_resize=True,
-        supports_highdim=True,
-    )
-
-
-@update_features(exir_ops.edge.aten.logical_and.default)
-def register_logical_and():
+@update_features(
+    [
+        exir_ops.edge.aten.bitwise_and.Tensor,
+        exir_ops.edge.aten.bitwise_or.Tensor,
+        exir_ops.edge.aten.bitwise_not.default,
+        exir_ops.edge.aten.logical_and.default,
+        exir_ops.edge.aten.logical_or.default,
+    ]
+)
+def register_bool_binary_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.BOOL_T,
@@ -334,6 +322,17 @@ def register_pow_tensor_scalar():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.eq.Scalar)
+def register_eq_scalar():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
     )

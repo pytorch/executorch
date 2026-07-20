@@ -91,8 +91,6 @@ def _q4k_matvec_source(has_bias: bool) -> str:
 
         for (short row = 0; row < N_R0; ++row) {{
             const int r = first_row + row;
-            if (r >= N) {{ break; }}
-
             device const block_q4_K * blk = xrows + (uint)r * nb + ib;
             device const uint16_t * sc = (device const uint16_t *)blk->scales + iq;
             device const uint16_t * q1 = (device const uint16_t *)blk->qs + 16 * iq + 4 * ir;
@@ -107,7 +105,7 @@ def _q4k_matvec_source(has_bias: bool) -> str:
 
             float4 acc1 = {{0.f, 0.f, 0.f, 0.f}};
             float4 acc2 = {{0.f, 0.f, 0.f, 0.f}};
-            for (short i = 0; i < 4; ++i) {{
+            FOR_UNROLL (short i = 0; i < 4; ++i) {{
                 acc1[0] += yl[2*i + 0] * (float)(q1[i] & 0x000F);
                 acc1[1] += yl[2*i + 1] * (float)(q1[i] & 0x0F00);
                 acc1[2] += yl[2*i + 8] * (float)(q1[i] & 0x00F0);
@@ -154,8 +152,8 @@ def _q4k_matmul_source(has_bias: bool) -> str:
     constexpr short NL0 = NK / 16;  // = 2 — dequant iterations per thread for weight
     constexpr short NL1 = NK / 8;   // = 4 — load iterations per thread for activation
 
-    threadgroup half sa[4096];  // NR0 * NK storage (strided by 64)
-    threadgroup half sb[4096];  // NR1 * NK storage (strided by 64)
+    threadgroup half sa[4096];  // NR0 * NK weight tile; reused as NR1*NR0 float output staging (8 KB)
+    threadgroup half sb[1024];  // NR1 * NK activation tile (strided by 64): 16 ib slots * 64
 
     const ushort tid   = thread_index_in_threadgroup;   // 0..127
     const ushort sgitg = simdgroup_index_in_threadgroup; // 0..3
@@ -220,9 +218,9 @@ def _q4k_matmul_source(has_bias: bool) -> str:
         const short ly_b = (tid / NL1) % 8;
         const short ib_b = 4 * sx_b + sy_b;
 
-        for (short i = 0; i < 8; ++i) {{
-            *(sb + 64 * ib_b + 8 * ly_b + i) = (half) *(yp + i);
-        }}
+        using InT2x4 = typename vec2x4<InT>::type;
+        *(threadgroup half2x4 *)(sb + 64 * ib_b + 8 * ly_b) =
+            (half2x4)(*(device const InT2x4 *)(yp));
 
         // Advance weight pointer through Q4_K sub-blocks.
         il = (il + 2 < NL) ? il + 2 : il % 2;
@@ -254,7 +252,9 @@ def _q4k_matmul_source(has_bias: bool) -> str:
         }}
     }}
 
-    // --- Write results: always via threadgroup memory for float→OutT cast ---
+    // --- Write results: stage the output tile in threadgroup memory, then
+    // drain it to device. Staging is required for the float->OutT cast and the
+    // optional bias add.
     // Barrier needed: sa was used for weight tiles during the K-loop and is now
     // reused as float staging for the output. Without this barrier, a fast
     // simdgroup could start writing mc[] into sa while a slower one is still
@@ -270,14 +270,15 @@ def _q4k_matmul_source(has_bias: bool) -> str:
         }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        if (sgitg == 0) {{
-            for (int j = tid; j < nr1; j += NR1) {{
-                device OutT * D = out + (uint)(r1 + j) * (uint)N + r0;
-                threadgroup float * Cp = ((threadgroup float *) sa) + j * NR0;
-                for (int i = 0; i < nr0; ++i) {{
-                    float v = Cp[i];
-                    D[i] = (OutT)(v {bias_add});
-                }}
+        // Drain all NR1*NR0 tile elements across the threadgroup's 128 threads.
+        // NR0/NR1 are compile-time constants, so idx / NR0 and idx % NR0 fold
+        // to a shift/mask.
+        for (int idx = tid; idx < NR1 * NR0; idx += 128) {{
+            const int j = idx / NR0;
+            const int i = idx % NR0;
+            if (j < nr1 && i < nr0) {{
+                const float v = ((threadgroup float *) sa)[j * NR0 + i];
+                out[(uint)(r1 + j) * (uint)N + (r0 + i)] = (OutT)(v {bias_add});
             }}
         }}
     }}
@@ -285,7 +286,9 @@ def _q4k_matmul_source(has_bias: bool) -> str:
 
 
 # Number of simdgroups per threadgroup for the mat-vec kernel.
-_Q4K_MV_NSG = 4
+# Matches llama.cpp N_SG_Q4_K=2; nsg=4 launched half as many (fatter) threadgroups,
+# hurting occupancy / wave-quantization tail on the bandwidth-bound decode matvec.
+_Q4K_MV_NSG = 2
 # Tile sizes for the mat-mat kernel (from llama.cpp kernel_mul_mm).
 _Q4K_MM_NR0 = 64  # weight/output rows (N dim) per threadgroup
 _Q4K_MM_NR1 = 32  # activation rows (M dim) per threadgroup
@@ -484,7 +487,7 @@ def emit_linear(
     weight_node: Node,
     bias_node: Optional[Node],
 ) -> Slot:
-    """Dispatch to fused Metal kernels or the legacy MLX-native repack path."""
+    """Dispatch to fused Metal kernels or the MLX-native repack path."""
     from executorch.backends.mlx.custom_kernel_ops.gguf.q4k import emit_direct_gguf
 
     if emit_direct_gguf():

@@ -354,6 +354,17 @@ def gather_qmm(
         s_sel = scales
         b_sel = biases
 
+    subbyte_packed = w_sel.dtype == torch.uint8
+    if subbyte_packed:
+        assert (
+            bits == 4
+        ), "Subbyte packing qdata (uint8) is only supported for bits=4 now."
+
+        offset = 2 ** (bits - 1)
+        lo = (w_sel & 0x0F).to(torch.int16)
+        hi = ((w_sel >> 4) & 0x0F).to(torch.int16)
+        w_sel = torch.stack([lo, hi], dim=-1).reshape(*w_sel.shape[:-1], -1) - offset
+
     # Dequantize
     w_float = w_sel.to(x.dtype)
     s_expanded = s_sel.repeat_interleave(group_size, dim=-1)
@@ -397,15 +408,19 @@ def gather_qmm_fake(
 def sample(
     logits: Tensor,
     temperature: Tensor,
+    top_k: Tensor,
     top_p: Tensor,
     seed: Optional[Tensor] = None,
 ) -> Tensor:
     """
-    Gumbel-max sampling from softmax(logits / temperature), with top-p (nucleus).
+    Gumbel-max sampling from softmax(logits / temperature), with top-k and
+    top-p (nucleus) filtering.
     logits:      [B, vocab]
     temperature: scalar float tensor    (runtime input). temperature <= 0 is
                  greedy: return argmax(logits) directly (matches the device,
                  which branches on temperature > 0).
+    top_k:       scalar int tensor. It is clipped to the vocab size; using the
+                 max int default keeps every token.
     top_p:       scalar float tensor in (0, 1]. top_p=1.0 keeps every
                  token, i.e. it is off.
     seed:        scalar int tensor or None
@@ -422,6 +437,14 @@ def sample(
         return torch.argmax(logits, dim=-1)
     # whole chain in fp32 to match the lowered graph (bf16 sums mis-rank ties).
     scaled = logits.float() / temperature
+
+    k = min(int(top_k.item()), scaled.shape[-1])
+    s_scaled, _ = torch.sort(scaled, dim=-1, descending=True)
+    kth = s_scaled[..., k - 1 : k]
+    scaled = torch.where(scaled >= kth, scaled, scaled.new_tensor(float("-inf")))
+
+    # Apply top-p after top-k so the probabilities are renormalized over the
+    # top-k subset.
     probs = torch.softmax(scaled, dim=-1)
     s_probs, _ = torch.sort(probs, dim=-1, descending=True)
     cum = torch.cumsum(s_probs, dim=-1)
@@ -440,5 +463,5 @@ def sample(
 
 
 @torch.library.register_fake("mlx::sample")
-def sample_fake(logits, temperature, top_p, seed=None):
+def sample_fake(logits, temperature, top_k, top_p, seed=None):
     return logits.new_empty(logits.shape[:-1], dtype=torch.long)

@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/llm/runner/util.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <gtest/gtest.h>
@@ -153,6 +154,34 @@ TEST(StopSafePrefixLenTest, HoldZeroDoesNotEmitDanglingUtf8LeadByte) {
   const std::string text = "ab\xc3";
   EXPECT_EQ(stop_safe_prefix_len(text, {"Z"}, hit), 2u);
   EXPECT_FALSE(hit);
+}
+
+::executorch::runtime::Result<int32_t> make_int_result(int32_t value, bool ok) {
+  if (ok) {
+    return value;
+  }
+  return ::executorch::runtime::Error::InvalidArgument;
+}
+
+// Uses ET_UNWRAP_TOKENIZER in expression position (on a prvalue, like real call
+// sites) to pin its expression-form contract (see util.h): a change requiring a
+// variable-name argument would stop this from compiling.
+::executorch::runtime::Error
+unwrap_tokenizer_expression(int32_t value, bool ok, int32_t& out) {
+  out = ET_UNWRAP_TOKENIZER(make_int_result(value, ok));
+  return ::executorch::runtime::Error::Ok;
+}
+
+TEST_F(ConvertToBFloat16Test, EtUnwrapTokenizerExpressionForm) {
+  int32_t out = -1;
+  auto ok_err = unwrap_tokenizer_expression(7, /*ok=*/true, out);
+  EXPECT_EQ(ok_err, ::executorch::runtime::Error::Ok);
+  EXPECT_EQ(out, 7);
+
+  out = -1;
+  auto bad_err = unwrap_tokenizer_expression(9, /*ok=*/false, out);
+  EXPECT_EQ(bad_err, ::executorch::runtime::Error::InvalidArgument);
+  EXPECT_EQ(out, -1);
 }
 
 } // namespace

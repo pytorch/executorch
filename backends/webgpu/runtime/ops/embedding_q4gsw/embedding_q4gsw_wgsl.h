@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from embedding_q4gsw.wgsl - DO NOT EDIT.
-// wgsl-sha256: 1fec9ed315696a88bb7db6c16454fc80e08ff73b0e39720b54515fda4ee1ef7c
+// wgsl-sha256: 94da1061b49b62556a79020182a4989439a7c51f919e83d577536c5b6d25f487
 inline constexpr const char* kEmbeddingQ4gswWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_indices: array<i32>;
@@ -28,7 +28,7 @@ struct Params {
   groups_per_row: u32,
   bytes_per_row: u32,
   total_blocks: u32,
-  _pad: u32,
+  is_linear_weight: u32,
 }
 @group(0) @binding(4) var<uniform> params: Params;
 
@@ -54,11 +54,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let byte_idx = row_byte_base + (dim >> 1u);
     let word = t_weight[byte_idx >> 2u];
     let b = (word >> ((byte_idx & 3u) * 8u)) & 0xFFu;
+    // Nibble packing depends on is_linear_weight: non-linear maps even dim ->
+    // high nibble / odd -> low; linear maps even -> low / odd -> high.
     var nib: u32;
-    if ((dim & 1u) == 0u) {
-      nib = (b >> 4u) & 0x0Fu;  // even dim -> high nibble
+    if (((dim & 1u) == 0u) != (params.is_linear_weight != 0u)) {
+      nib = (b >> 4u) & 0x0Fu;  // high nibble
     } else {
-      nib = b & 0x0Fu;          // odd dim -> low nibble
+      nib = b & 0x0Fu;          // low nibble
     }
     let q = f32(i32(nib) - 8); // +8-shifted on pack; recover signed [-8,7]
     let scale = t_scales[token * params.groups_per_row + dim / params.group_size];

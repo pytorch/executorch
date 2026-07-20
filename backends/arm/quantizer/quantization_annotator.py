@@ -474,8 +474,11 @@ _fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
         8: _QParams((0.999 - (-0.999)) / (1 << 8), 0),
         16: _QParams((0.99999 - (-0.99999)) / (1 << 16), 0),
     },
-    # grid_sampler image input/output use SNORM-compatible qparams. The grid
-    # coordinate tensor is intentionally left unquantized.
+    # grid_sampler image input/output use SNORM-compatible qparams. The broader
+    # quantized graph currently quantizes the grid-producing path as well, so
+    # input 1 follows the standard activation qspec and lowering materializes a
+    # dequant boundary before the shader. This is a functional stopgap; we may
+    # want to preserve float grid coordinates or use a higher-precision path.
     torch.ops.aten.grid_sampler.default: {
         8: _QParams(1.0 / 127.0, 0, -127, 127),
     },
@@ -545,6 +548,8 @@ _one_to_one: set[OpOverload] = {
     torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardswish_.default,
+    torch.ops.aten.leaky_relu.default,
+    torch.ops.aten.leaky_relu_.default,
     torch.ops.aten.full_like.default,
     torch.ops.aten.zeros_like.default,
     torch.ops.aten.pow.Tensor_Scalar,
@@ -822,13 +827,21 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target == torch.ops.aten.grid_sampler.default:
         image_node = ensure_type(Node, node.args[0])
+        grid_node = ensure_type(Node, node.args[1])
         grid_sampler_image_qspec = quantization_config.get_input_act_qspec(
             node, image_node
+        )
+        grid_sampler_grid_qspec = quantization_config.get_input_act_qspec(
+            node, grid_node
         )
         grid_sampler_output_qspec = quantization_config.get_output_act_qspec(node)
         if grid_sampler_image_qspec is None or grid_sampler_output_qspec is None:
             return None
         quant_properties.quant_inputs = [_QuantProperty(0, grid_sampler_image_qspec)]
+        if grid_sampler_grid_qspec is not None:
+            quant_properties.quant_inputs.append(
+                _QuantProperty(1, grid_sampler_grid_qspec)
+            )
         quant_properties.quant_output = _QuantProperty(0, grid_sampler_output_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         true_node = ensure_type(Node, node.args[1])
@@ -859,6 +872,7 @@ def get_quant_properties(  # noqa: C901
         )
     elif node.target in (
         torch.ops.aten.cat.default,
+        torch.ops.aten.concat.default,
         torch.ops.aten.concatenate.default,
         torch.ops.aten.stack.default,
     ):
@@ -956,6 +970,27 @@ def get_quant_properties(  # noqa: C901
         shared_qspec = SharedQuantizationSpec(input_node)
         quant_properties.quant_inputs = [_QuantProperty(0, shared_qspec)]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)
+    elif node.target == torch.ops.aten.to.dtype:
+        # If we quantize a cast(fp32) with unit scale and same dtype as input, we can handle it as a no-op in the backend.
+        input_val = node.all_input_nodes[0].meta.get("val", None)
+        if input_val is None:
+            return None
+
+        if input_val.dtype not in (torch.int8, torch.int16, torch.int32):
+            return None
+
+        quant_properties.quant_output = _QuantProperty(
+            0,
+            FixedQParamsQuantizationSpec(
+                dtype=input_val.dtype,
+                scale=1.0,
+                zero_point=0,
+                quant_max=torch.iinfo(input_val.dtype).max,
+                quant_min=torch.iinfo(input_val.dtype).min,
+                qscheme=torch.per_tensor_symmetric,
+                is_dynamic=False,
+            ),
+        )
     elif node.target in (
         torch.ops.higher_order.cond,
         torch.ops.higher_order.while_loop,

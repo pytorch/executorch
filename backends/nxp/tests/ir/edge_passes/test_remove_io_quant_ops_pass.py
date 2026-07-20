@@ -8,7 +8,6 @@ import itertools
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
-import pytest
 import torch
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.models import Conv2dReLUModule
@@ -95,7 +94,6 @@ class MultiInputOutputModule(torch.nn.Module):
         return x + y, z
 
 
-@pytest.mark.xfail(strict=True, reason="Known bug (EIEX-946).")
 def test_multiple_inputs__multiple_outputs():
     model = MultiInputOutputModule()
     model.eval()

@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import platform
 from typing import List
+
+import test_base
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
@@ -73,6 +76,8 @@ if __name__ == "__main__":
             print("✓ VulkanBackend is registered")
         else:
             print("⚠ VulkanBackend not registered (expected for the default wheel)")
+
+        test_base.test_cmsis_nn_install()
 
     run_tests(
         model_tests=[

@@ -14,7 +14,7 @@ from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import Conv2dModule, LinearModule, ReLUModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
-    AddMm,
+    AddMM,
     Convolution,
     DequantizePerChannel,
     DequantizePerTensor,
@@ -105,7 +105,7 @@ class TestReLU:
         graph_verifier = DetailedGraphVerifier(
             mocker=mocker,
             expected_delegated_ops=(
-                {Convolution: 1, Relu: 1} if is_conv_module else {AddMm: 1, Relu: 1}
+                {Convolution: 1, Relu: 1} if is_conv_module else {AddMM: 1, Relu: 1}
             ),
             expected_non_delegated_ops={},
             ops_to_ignore={

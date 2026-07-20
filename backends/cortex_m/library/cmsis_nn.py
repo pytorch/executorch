@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
+import importlib
 from types import ModuleType
 from typing import Any, cast, ClassVar, Sequence, TYPE_CHECKING
 
 _cmsis_nn: ModuleType | None = None
-_cmsis_nn_import_error: ModuleNotFoundError | None = None
+_cmsis_nn_module_candidates = (
+    "executorch.backends.cortex_m.library._cmsis_nn.cmsis_nn",
+    "cmsis_nn",
+)
 
 
 class _EnumValue:
@@ -83,30 +87,28 @@ DataType.A16W8 = cast(DataType, _EnumValue("DataType", "A16W8", 2))
 
 
 if not TYPE_CHECKING:
-    try:
-        import cmsis_nn as _real_cmsis_nn  # type: ignore[import-not-found, import-untyped]
-    except ModuleNotFoundError as exc:
-        if exc.name != "cmsis_nn":
-            raise
-        _cmsis_nn_import_error = exc
-    else:
-        _cmsis_nn = _real_cmsis_nn
-        Backend = _real_cmsis_nn.Backend
-        CortexM = _real_cmsis_nn.CortexM
-        DataType = _real_cmsis_nn.DataType
-
-
-def _missing_dependencies_error() -> ModuleNotFoundError:
-    return ModuleNotFoundError(
-        "Cortex-M backend dependencies are not installed. "
-        "Install by running `examples/arm/setup.sh --i-agree-to-the-contained-eula`, "
-        "or pip install from the CMSIS-NN repo."
-    )
+    # First try to load cmsis_nn from executorch build, then external.
+    # Load in such a way that we crash only if a cmsis_nn function is required.
+    for module_name in _cmsis_nn_module_candidates:
+        try:
+            _real_cmsis_nn = importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name not in module_name:
+                raise exc
+        else:
+            _cmsis_nn = _real_cmsis_nn
+            Backend = _real_cmsis_nn.Backend
+            CortexM = _real_cmsis_nn.CortexM
+            DataType = _real_cmsis_nn.DataType
+            break
 
 
 def _require_cmsis_nn() -> ModuleType:
     if _cmsis_nn is None:
-        raise _missing_dependencies_error() from _cmsis_nn_import_error
+        raise ModuleNotFoundError(
+            f"Cortex-M backend dependencies are not installed (tried {','.join(_cmsis_nn_module_candidates)}). "
+            "Build using install_executorch.sh, or pip install from the CMSIS-NN repo."
+        )
     return _cmsis_nn
 
 
