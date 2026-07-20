@@ -23,7 +23,6 @@ namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
-using string_view = std::string_view;
 
 namespace {
 
@@ -41,7 +40,7 @@ template <typename CTYPE>
 void gelu(
     executorch::runtime::KernelRuntimeContext& context,
     const Tensor& input,
-    string_view approximate,
+    std::string_view approximate,
     Tensor& output) {
   const CTYPE* in_data = input.const_data_ptr<CTYPE>();
   CTYPE* out_data = output.mutable_data_ptr<CTYPE>();
@@ -91,7 +90,7 @@ void gelu(
 Tensor& opt_gelu_out(
     KernelRuntimeContext& context,
     const Tensor& input,
-    string_view approximate,
+    std::string_view approximate,
     Tensor& out) {
   (void)context;
   ET_KERNEL_CHECK(
