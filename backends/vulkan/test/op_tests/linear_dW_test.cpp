@@ -21,8 +21,8 @@
 //
 
 // Golden: dW[N, K] = d_out^T @ x, contracting over the flattened leading dims.
-// Mirrors the CPU-eager linear_q4gsw_dW_impl in custom_ops_lib.py.
-at::Tensor linear_q4gsw_dW_reference_impl(
+// Mirrors the CPU-eager linear_dW_impl in custom_ops_lib.py.
+at::Tensor linear_dW_reference_impl(
     const at::Tensor& d_out,
     const at::Tensor& x) {
   const int64_t N = d_out.size(-1);
@@ -34,7 +34,7 @@ at::Tensor linear_q4gsw_dW_reference_impl(
 // Test function
 //
 
-void test_vulkan_linear_q4gsw_dW_impl(
+void test_vulkan_linear_dW_impl(
     const std::vector<int64_t>& d_out_sizes,
     const std::vector<int64_t>& x_sizes,
     const vkcompute::utils::StorageType storage = vkcompute::utils::kBuffer) {
@@ -42,7 +42,7 @@ void test_vulkan_linear_q4gsw_dW_impl(
       at::rand(d_out_sizes, at::device(at::kCPU).dtype(at::kFloat));
   at::Tensor x = at::rand(x_sizes, at::device(at::kCPU).dtype(at::kFloat));
 
-  at::Tensor dW_ref = linear_q4gsw_dW_reference_impl(d_out, x);
+  at::Tensor dW_ref = linear_dW_reference_impl(d_out, x);
 
   // Build Vulkan graph
   using namespace vkcompute;
@@ -58,7 +58,7 @@ void test_vulkan_linear_q4gsw_dW_impl(
   const ValueRef r_dW = graph.add_tensor(
       dW_ref.sizes().vec(), from_at_scalartype(dW_ref.scalar_type()), storage);
 
-  VK_GET_OP_FN("et_vk.linear_q4gsw_dW.default")
+  VK_GET_OP_FN("et_vk.linear_dW.default")
   (graph, {r_d_out.value, r_x.value, r_dW});
 
   ValueRef staging_out = graph.set_output_tensor(r_dW);
@@ -91,20 +91,20 @@ void test_vulkan_linear_q4gsw_dW_impl(
 }
 
 // Tile-aligned 2D shapes (M, N, K all multiples of 4).
-TEST(VulkanLinearQ4gswDwTest, test_tile_aligned) {
-  test_vulkan_linear_q4gsw_dW_impl(
+TEST(VulkanLinearDwTest, test_tile_aligned) {
+  test_vulkan_linear_dW_impl(
       /*d_out_sizes=*/{8, 16}, /*x_sizes=*/{8, 32});
 }
 
 // Non-tile-multiple shapes (M, N, K each not a multiple of 4) to exercise the
 // partial-tile min()-clamp paths in the shader.
-TEST(VulkanLinearQ4gswDwTest, test_non_tile_multiple) {
-  test_vulkan_linear_q4gsw_dW_impl(
+TEST(VulkanLinearDwTest, test_non_tile_multiple) {
+  test_vulkan_linear_dW_impl(
       /*d_out_sizes=*/{5, 6}, /*x_sizes=*/{5, 10});
 }
 
 // Leading dims > 2D: M is the flattened product of all leading dims.
-TEST(VulkanLinearQ4gswDwTest, test_leading_dims_flatten) {
-  test_vulkan_linear_q4gsw_dW_impl(
+TEST(VulkanLinearDwTest, test_leading_dims_flatten) {
+  test_vulkan_linear_dW_impl(
       /*d_out_sizes=*/{2, 3, 16}, /*x_sizes=*/{2, 3, 32});
 }
