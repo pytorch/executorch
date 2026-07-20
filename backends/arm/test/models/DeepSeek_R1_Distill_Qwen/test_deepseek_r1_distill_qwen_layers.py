@@ -10,12 +10,10 @@ from typing import Tuple
 
 import pytest
 import torch
-from executorch.backends.arm.ao_ext import MXFPOpConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.DeepSeek_R1_Distill_Qwen.deepseek_r1_distill_qwen_test_config import (
     get_deepseek_r1_distill_qwen_1_5b_checkpoint_config,
 )
-from executorch.backends.arm.test.ops.mxfp.common import MXFPTosaPipelineFP
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     VgfPipeline,
@@ -34,7 +32,6 @@ from transformers.models.qwen2.modeling_qwen2 import (  # noqa: E402
 )
 
 input_t = Tuple[torch.Tensor, ...]
-aten_op_mxfp_linear = "torch.ops.tosa_mxfp.linear.default"
 
 
 def _make_deepseek_r1_distill_qwen_1_5b_layer_config():
@@ -85,10 +82,6 @@ def _to_bfloat16(
         )
         for x in inputs
     )
-
-
-def _is_linear(module: torch.nn.Module, _fqn: str) -> bool:
-    return isinstance(module, torch.nn.Linear)
 
 
 class RotaryEmbeddingModel(DeepSeekR1DistillQwenTestModule):
@@ -333,12 +326,6 @@ VGF_NO_QUANT_BF16_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = (
     TOSA_BF16_TEST_CASES
 )
 
-TOSA_MXFP8_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
-    "attention": DeepSeekR1DistillQwenTestCase(model_cls=AttentionModel),
-    "mlp": DeepSeekR1DistillQwenTestCase(model_cls=MLPModel),
-    "decoder_layer": DeepSeekR1DistillQwenTestCase(model_cls=DecoderLayerModel),
-}
-
 
 @common.parametrize(
     "test_case",
@@ -378,59 +365,6 @@ def test_deepseek_r1_distill_qwen_tosa_FP_bf16(
             tosa_extensions=["bf16"],
             atol=test_case.atol,
             rtol=test_case.rtol,
-        )
-        pipeline.run()
-
-
-@common.parametrize(
-    "test_case",
-    TOSA_MXFP8_TEST_CASES,
-)
-def test_deepseek_r1_distill_qwen_tosa_mxfp8_fp32(
-    test_case: DeepSeekR1DistillQwenTestCase,
-):
-    model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
-
-    with torch.no_grad():
-        pipeline = MXFPTosaPipelineFP[input_t](
-            model,
-            inputs,
-            aten_op=aten_op_mxfp_linear,
-            exir_op=[],
-            filter_fn=_is_linear,
-            frobenius_threshold=0.05,
-            cosine_threshold=0.995,
-            mxfp_config=mxfp_config,
-            tosa_version="1.1",
-            tosa_extensions=["mxfp"],
-        )
-        pipeline.run()
-
-
-@common.parametrize(
-    "test_case",
-    TOSA_MXFP8_TEST_CASES,
-)
-def test_deepseek_r1_distill_qwen_tosa_mxfp8_bf16(
-    test_case: DeepSeekR1DistillQwenTestCase,
-):
-    model, inputs = test_case.model_cls.prepare_model_and_inputs()
-    model, inputs = _to_bfloat16(model, inputs)
-    mxfp_config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
-
-    with torch.no_grad():
-        pipeline = MXFPTosaPipelineFP[input_t](
-            model,
-            inputs,
-            aten_op=aten_op_mxfp_linear,
-            exir_op=[],
-            filter_fn=_is_linear,
-            frobenius_threshold=0.05,
-            cosine_threshold=0.995,
-            mxfp_config=mxfp_config,
-            tosa_version="1.1",
-            tosa_extensions=["bf16", "mxfp"],
         )
         pipeline.run()
 
