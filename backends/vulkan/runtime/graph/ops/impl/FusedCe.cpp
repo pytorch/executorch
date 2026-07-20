@@ -173,7 +173,7 @@ void fused_ce(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       fused_ce_sum_global_wg_size,
       fused_ce_sum_local_wg_size,
       // Inputs and Outputs
-      {{{loss}, vkapi::kWrite}, {{loss_partial}, vkapi::kRead}},
+      {{loss, vkapi::kWrite}, {loss_partial, vkapi::kRead}},
       // Shader params buffers
       {graph.create_params_buffer(n_rows)},
       // Push Constants
