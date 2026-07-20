@@ -44,6 +44,12 @@ class InsertDataLayoutCastsPass(ArmOpTargetedPass):
         exir_ops.edge.aten.permute_copy.default,
         exir_ops.edge.aten.slice_copy.Tensor,
         exir_ops.edge.aten.flip.default,
+        exir_ops.backend.tosa.PAD.default,
+        exir_ops.backend.tosa.RESHAPE.default,
+        exir_ops.backend.tosa.TILE.default,
+        exir_ops.backend.tosa.TRANSPOSE.default,
+        exir_ops.backend.tosa.SLICE.default,
+        exir_ops.backend.tosa.REVERSE.default,
     }
     target_ops = _concat_ops | _single_input_ops
 
