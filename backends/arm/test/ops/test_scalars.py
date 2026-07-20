@@ -21,8 +21,6 @@ FP:
 
 from typing import Tuple
 
-import pytest
-
 import torch
 
 from executorch.backends.arm.test import common
@@ -380,10 +378,6 @@ def test_div_scalar_tosa_INT(test_data):
 
 
 # SHIFT ETHOS-U ------------------------------------------------------
-@pytest.mark.xfail(
-    reason="integer operations (shift and sub) are not supported on FP profile",
-    strict=True,
-)
 def test_bitwise_right_shift_tensor_tosa_FP_inplace():
     pipeline = TosaPipelineFP[input_t1](
         ShiftInplaceSub(),
