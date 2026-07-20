@@ -1784,8 +1784,8 @@ def register_logical_not():
     )
 
 
-@update_features(exir_ops.edge.et_vk.linear_q4gsw_dW.default)
-def register_linear_q4gsw_dW():
+@update_features(exir_ops.edge.et_vk.linear_dW.default)
+def register_linear_dW():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
