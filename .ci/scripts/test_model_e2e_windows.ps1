@@ -185,8 +185,7 @@ try {
     # The dinov2 runner links the installed extension_image.lib; without this the
     # main install never builds it and dinov2_runner fails to link (LNK1181).
     cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON @cmakeCommonArgs @cmakeCudaArgs
-    cmake --build $cmakeOut --config Release -j $numCores
-    cmake --install $cmakeOut --config Release
+    cmake --build $cmakeOut --target install --config Release -j $numCores
     if (-not (Test-Path -Path $executorchConfig -PathType Leaf)) {
         throw "ExecuTorch CMake package config not found after install: $executorchConfig"
     }

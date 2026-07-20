@@ -77,7 +77,10 @@ def install_requirements(use_pytorch_nightly):
     )
 
     LOCAL_REQUIREMENTS = []
-    if os.environ.get("TORCHAO_BUILD_EXPERIMENTAL_MPS") == "1":
+    if (
+        os.environ.get("EXECUTORCH_BUILD_KERNELS_TORCHAO") == "1"
+        or os.environ.get("TORCHAO_BUILD_EXPERIMENTAL_MPS") == "1"
+    ):
         LOCAL_REQUIREMENTS.append("third-party/ao")
     if sys.platform != "win32":
         # TODO(larryliu0820): Setup a pypi package for this.
