@@ -1,8 +1,10 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "coalesced_int4_tensor",
     srcs = [
         "coalesced_int4_tensor.py",
@@ -16,7 +18,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "dp4a_planar_int5_tensor",
     srcs = [
         "dp4a_planar_int5_tensor.py",
@@ -30,7 +33,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "dp4a_planar_int6_tensor",
     srcs = [
         "dp4a_planar_int6_tensor.py",
@@ -44,7 +48,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "quantize_op_dispatch",
     srcs = [
         "quantize_op_dispatch/__init__.py",
@@ -66,7 +71,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_passes",
     srcs = [
         "passes/__init__.py",
@@ -82,7 +88,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
@@ -102,7 +109,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_partitioner",
     srcs = [
         "cuda_partitioner.py",
@@ -116,7 +124,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "triton_kernels",
     srcs = [
         "triton/kernels/__init__.py",
@@ -134,7 +143,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "triton_replacement_pass",
     srcs = [
         "triton/__init__.py",

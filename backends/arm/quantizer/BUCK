@@ -1,7 +1,9 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Exposed through __init__.py
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "quantization_config",
     srcs = ["quantization_config.py"],
     deps = [
@@ -10,7 +12,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "arm_quantizer",
     srcs = ["arm_quantizer.py"],
     deps = [
@@ -29,7 +32,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "quantization_annotator",
     srcs = ["quantization_annotator.py"],
     deps = [
@@ -40,7 +44,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "arm_quantizer_utils",
     srcs = ["arm_quantizer_utils.py"],
     deps = [
@@ -52,7 +57,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "quantizer_support",
     srcs = ["quantizer_support.py"],
     deps = [
@@ -62,7 +68,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "lib",
     srcs = ["__init__.py"],
     deps = [
