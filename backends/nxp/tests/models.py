@@ -100,6 +100,37 @@ class Conv2dModule(torch.nn.Module):
         return self.conv(x)
 
 
+class Conv2dTransposedModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool = True,
+        dilation: Union[int, tuple[int, int]] = 1,
+        in_channels: int = 4,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        out_channels: int = 8,
+        padding: Union[int, Collection[int]] = 0,
+        output_padding: Union[int, tuple[int, int]] = 0,
+        stride: Union[int, tuple[int, int]] = 2,
+        groups: int = 1,
+    ):
+        super().__init__()
+
+        self.conv_transp = torch.nn.ConvTranspose2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            dilation=dilation,
+            bias=bias,
+            groups=groups,
+        )
+
+    def forward(self, x):
+        return self.conv_transp(x)
+
+
 class Conv3dModule(torch.nn.Module):
     def __init__(
         self,
@@ -1008,3 +1039,45 @@ class BatchMatMulMaxPoolModel(torch.nn.Module):
         x = torch.bmm(x, y)
         x = self.noop_max_pool_1d(x)
         return x
+
+
+class MaximumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return torch.maximum(x, y)
+
+
+class MaxPoolMaximumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
+
+    def forward(self, x, y):
+        x = self.max_pool2d(x)
+        return torch.maximum(x, y)
+
+
+class MinimumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return torch.minimum(x, y)
+
+
+class MaxPoolMinimumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
+
+    def forward(self, x, y):
+        x = self.max_pool2d(x)
+        return torch.minimum(x, y)
