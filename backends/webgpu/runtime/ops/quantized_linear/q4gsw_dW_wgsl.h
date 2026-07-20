@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from q4gsw_dw.wgsl - DO NOT EDIT.
+// @generated from q4gsw_dW.wgsl - DO NOT EDIT.
 // wgsl-sha256: be50075764ccd87e0d0c86124f13fd753aa618f994c9a5e1b8b631516aa51f84
 inline constexpr const char* kQ4gswDwWGSL = R"(
 // STE weight-gradient d_W[N,K] = sum_m d_out[m,N]*x[m,K] (operands f32).
