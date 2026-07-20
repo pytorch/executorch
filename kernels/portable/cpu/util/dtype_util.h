@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/kernels/portable/cpu/util/operator_name.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -29,7 +30,7 @@ void convert_and_store(From f, void* dst) {
 template <typename CTYPE_COMPUTE>
 using load_to_compute_fn = CTYPE_COMPUTE (*)(const void*);
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_realhbbf16(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -41,7 +42,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_realhbbf16(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_realhbf16(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -53,7 +54,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_realhbf16(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_floathbf16(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -65,7 +66,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_floathbf16(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_intb(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -77,7 +78,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_intb(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_bool(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -88,14 +89,14 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_bool(
         Error,
         "Unhandled dtype %s for %s",
         ::executorch::runtime::toString(t.scalar_type()),
-        op_name);
+        static_cast<const char*>(op_name));
   } else {
     result = internal::load_and_convert<CTYPE_COMPUTE, bool>;
   }
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_bool_or_byte(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -113,7 +114,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_bool_or_byte(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_same_as_compute(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -125,7 +126,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_same_as_compute(
         Error,
         "Unhandled dtype %s for %s",
         ::executorch::runtime::toString(t.scalar_type()),
-        op_name);
+        static_cast<const char*>(op_name));
   } else {
     result = internal::load_and_convert<CTYPE_COMPUTE, CTYPE_COMPUTE>;
   }
@@ -134,7 +135,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_same_as_compute(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     std::enable_if_t<std::is_same_v<CTYPE_COMPUTE, float>, bool> = true>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_same_as_common(
     KernelRuntimeContext& context,
@@ -154,7 +155,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_same_as_common(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     std::enable_if_t<!std::is_same_v<CTYPE_COMPUTE, float>, bool> = true>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_same_as_common(
     KernelRuntimeContext& context,
@@ -166,7 +167,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_same_as_common(
 template <typename CTYPE_COMPUTE>
 using store_compute_to_tensor_fn = void (*)(CTYPE_COMPUTE, void*);
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_realhbbf16(
     KernelRuntimeContext& context,
@@ -179,7 +180,7 @@ get_store_compute_to_tensor_fn_realhbbf16(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_realhbf16(
     KernelRuntimeContext& context,
@@ -192,7 +193,7 @@ get_store_compute_to_tensor_fn_realhbf16(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_floathbf16(
     KernelRuntimeContext& context,
@@ -205,7 +206,7 @@ get_store_compute_to_tensor_fn_floathbf16(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_intb(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -217,7 +218,7 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_intb(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_bool(
     KernelRuntimeContext& context,
     const Tensor& t) {
@@ -228,14 +229,14 @@ store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn_bool(
         Error,
         "Unhandled dtype %s for %s",
         ::executorch::runtime::toString(t.scalar_type()),
-        op_name);
+        static_cast<const char*>(op_name));
   } else {
     result = internal::convert_and_store<bool, CTYPE_COMPUTE>;
   }
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_bool_or_byte(
     KernelRuntimeContext& context,
@@ -254,7 +255,7 @@ get_store_compute_to_tensor_fn_bool_or_byte(
   return result;
 }
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_same_as_compute(
     KernelRuntimeContext& context,
@@ -267,7 +268,7 @@ get_store_compute_to_tensor_fn_same_as_compute(
         Error,
         "Unhandled dtype %s for %s",
         ::executorch::runtime::toString(t.scalar_type()),
-        op_name);
+        static_cast<const char*>(op_name));
   } else {
     result = internal::convert_and_store<CTYPE_COMPUTE, CTYPE_COMPUTE>;
   }
@@ -276,7 +277,7 @@ get_store_compute_to_tensor_fn_same_as_compute(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     std::enable_if_t<std::is_same_v<CTYPE_COMPUTE, float>, bool> = true>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_same_as_common(
@@ -299,7 +300,7 @@ get_store_compute_to_tensor_fn_same_as_common(
 
 template <
     typename CTYPE_COMPUTE,
-    const char* op_name,
+    ET_OPERATOR_NAME_TYPE op_name,
     std::enable_if_t<!std::is_same_v<CTYPE_COMPUTE, float>, bool> = true>
 store_compute_to_tensor_fn<CTYPE_COMPUTE>
 get_store_compute_to_tensor_fn_same_as_common(
@@ -325,7 +326,7 @@ enum class SupportedTensorDtypes {
 
 namespace internal {
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_impl(
     KernelRuntimeContext& context,
     const Tensor& t,
@@ -362,7 +363,7 @@ load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn_impl(
 // technique used for get_load_to_compute_fn in this path was a size
 // regression rather than an improvement. Haven't fully investigated
 // why; just be aware when trying to improve size further.
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 store_compute_to_tensor_fn<CTYPE_COMPUTE> get_store_compute_to_tensor_fn(
     KernelRuntimeContext& context,
     const Tensor& t,
@@ -406,7 +407,7 @@ inline constexpr const char kGenericElementwiseOpName[] =
     "generic_elementwise_op";
 #endif // EXECUTORCH_SELECTIVE_BUILD_DTYPE
 
-template <typename CTYPE_COMPUTE, const char* op_name>
+template <typename CTYPE_COMPUTE, ET_OPERATOR_NAME_TYPE op_name>
 load_to_compute_fn<CTYPE_COMPUTE> get_load_to_compute_fn(
     KernelRuntimeContext& context,
     const Tensor& t,
