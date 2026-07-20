@@ -187,7 +187,7 @@ def define_common_targets(is_fbcode = False):
         ]
     )
     define_test_targets(
-        "linear_q4gsw_dw_test",
+        "linear_q4gsw_dW_test",
         extra_deps = [
             ":test_utils",
         ]
