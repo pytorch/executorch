@@ -244,8 +244,8 @@ def temp_attribute(obj, attr, new_value):
         )
 
 
-# No direct depedency between qnn_config and global_setup.
-# Keep following depedency for better practice so global_setup is done first.
+# No direct dependency between qnn_config and global_setup.
+# Keep following dependency for better practice so global_setup is done first.
 @pytest.fixture(autouse=True, scope="session")
 def qnn_config(global_setup, request):
     # generate QnnConfig for on-device test

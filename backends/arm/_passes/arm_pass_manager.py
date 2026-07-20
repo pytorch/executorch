@@ -15,7 +15,6 @@ from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
-    CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -100,6 +99,7 @@ from executorch.backends.arm._passes import (
     DecomposeTOSAUnsupportedClampPass,
     DecomposeTrilPass,
     DecomposeUnfoldToGatherPass,
+    DecomposeUnsupportedBilinearResizePass,
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
@@ -107,9 +107,11 @@ from executorch.backends.arm._passes import (
     EnsureUniqueOutputNodesPass,
     ExirToTosaPass,
     FoldAndAnnotateQParamsPass,
+    FoldScalarMulIntoConvPass,
     FuseBatchNorm2dPass,
     FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
+    FuseConsecutiveSlicesPass,
     FuseConstantArgsPass,
     FuseDuplicateUsersPass,
     FuseEqualPlaceholdersPass,
@@ -129,13 +131,15 @@ from executorch.backends.arm._passes import (
     NormalizeDelegateIOLayoutPass,
     NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
+    NormalizeTransformInputPlaceholdersPass,
     NormalizeWhileInitialArgsPass,
     PromoteBoolOperandsPass,
+    PropagateViewCopyPermuteDownPass,
+    PropagateViewCopyPermuteUpPass,
     QuantizeClampArgumentsPass,
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
-    RemovePermutesAroundElementwiseTosaOps,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
     RewriteAdaptiveAvgPool2dPass,
@@ -162,14 +166,14 @@ from executorch.backends.arm._passes import (
 )
 from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.common.pipeline_config import SoftmaxDecompositionConfig
+from executorch.backends.arm.common.pipeline_config import (
+    LeakyReLULoweringConfig,
+    SoftmaxDecompositionConfig,
+)
 from executorch.backends.arm.tosa.specification import (
     tosa_spec_in_set,
     TosaLoweringContext,
     TosaSpecification,
-)
-from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops import (
-    FuseCascadedTransposeOrPermuteOps,
 )
 
 from executorch.exir import ExportedProgram
@@ -290,7 +294,8 @@ class ArmPassManager(ExportedProgramPassManager):
                 pass
             case SoftmaxDecompositionConfig.STABLE:
                 skip_set.add(DecomposeMaskedFillPass)
-
+        if config.leaky_relu == LeakyReLULoweringConfig.TABLE:
+            skip_set.add(DecomposeLeakyReLUPass)
         self._skip_pass_types = tuple(skip_set)
         skip_names = [skipped_pass.__name__ for skipped_pass in self._skip_pass_types]
         logger.debug(f"Passes in skip list: {skip_names}")
@@ -502,7 +507,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
                 # Ticket: MLETORCH-1539
-                FuseIdenticalInputTransformsPass(),
+                FuseIdenticalInputTransformsPass(exported_program),
                 DecomposeLinearPass(),
                 InsertRescaleInt32Pass(),
                 FuseConsecutiveRescalesPass(),
@@ -547,6 +552,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeUnfoldToGatherPass(),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
+                CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeStridedSliceCopyPass(),
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
@@ -595,10 +601,12 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
+                DecomposeUnsupportedBilinearResizePass(self.tosa_spec),
                 RewriteAdaptiveAvgPool2dPass(),
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
                 FuseConstantArgsPass(exported_program),
+                CastInt64BuffersToInt32Pass(exported_program),
                 DecomposeSelectPass(),
                 ConvertSqueezesToViewPass(),
                 CastToInt32Pass(),
@@ -616,19 +624,24 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteUpsamplePass(),
                 RewriteMaxPool2dPass(),
                 DecomposeAdaptiveMaxPool2dPass(),
+                FoldScalarMulIntoConvPass(exported_program),
                 RewriteConvPass(exported_program),
                 RewriteMXFPConv2dPass(exported_program),
                 RewriteMXFPLinearPass(exported_program),
                 RewriteMatmulPass(),
                 RewritePadPass(),
                 FuseViewCopyTransformPass(),
-                RemovePermutesAroundElementwiseTosaOps(exported_program),
-                CanonicalizeViewCopyPermutePass(),
-                FuseCascadedTransposeOrPermuteOps(),
+                PropagateViewCopyPermuteDownPass(self.compile_spec, exported_program),
+                PropagateViewCopyPermuteUpPass(self.compile_spec, exported_program),
+                # Propagation can leave a binary op with mismatched operand ranks,
+                # which TOSA rejects; re-match ranks before lowering.
+                MatchArgRanksPass(exported_program),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
+                FuseConsecutiveSlicesPass(),
                 InsertConstShapesPass(),
+                InsertDataLayoutCastsPass(),
             ]
         )
 
@@ -637,6 +650,7 @@ class ArmPassManager(ExportedProgramPassManager):
             [
                 CastInt64BuffersToInt32Pass(exported_program),
                 FuseEqualPlaceholdersPass(exported_program),
+                NormalizeTransformInputPlaceholdersPass(exported_program),
                 ExirToTosaPass(exported_program),
                 SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
@@ -685,6 +699,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
                     ConvertInt64OutputOpsToInt32Pass(tfa_pass=True),
                     InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
+                    FoldScalarMulIntoConvPass(tfa_pass=True),
                     DecomposeEmbeddingPass(tfa_pass=True),
                     DecomposeScaledDotProductAttentionPass(tfa_pass=True),
                     DecomposeLogitPass(tfa_pass=True),
@@ -699,7 +714,6 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeEinsumPass(tfa_pass=True),
                     RewriteInplaceArithmeticPass(tfa_pass=True),
                     DecomposeAddSubAlphaPass(tfa_pass=True),
-                    DecomposeLeakyReLUPass(tfa_pass=True),
                     ConvertEluFamilyToEluPass(tfa_pass=True),
                     DecomposeGroupNormPass(tfa_pass=True),
                     DecomposeLayerNormPass(tfa_pass=True),
@@ -709,6 +723,12 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeAvgPool2dPass(tfa_pass=True),
                 ]
             )
+
+            if (
+                self.compile_spec._get_pass_pipeline_config().leaky_relu
+                is LeakyReLULoweringConfig.DECOMPOSE
+            ):
+                self.add_pass(DecomposeLeakyReLUPass(tfa_pass=True))
 
             # Scalars -> tensors
             self.add_passes(

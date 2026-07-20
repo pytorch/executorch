@@ -260,7 +260,7 @@ void KVManager::update_attention_mask(
       fill_mask(
           attention_mask_dtype_,
           cur_ptr - n_past * getDtypeSize(attention_mask_dtype_),
-          n_past + n_update,
+          n_past + n_update - available_cache_len,
           /*use_pos_value=*/false);
     }
     cur_ptr += metadata_.context_len * getDtypeSize(attention_mask_dtype_);

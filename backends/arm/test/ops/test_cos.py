@@ -98,15 +98,27 @@ def test_cos_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_cos_vgf_no_quant(test_data: Tuple):
+    data = test_data()
+    match data.dtype:
+        case torch.bfloat16:
+            atol = 5e-3
+            rtol = 5e-3
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Cos(),
-        (test_data(),),
+        (data,),
         aten_op,
         exir_op=[],
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

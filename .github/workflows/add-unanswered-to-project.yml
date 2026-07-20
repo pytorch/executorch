@@ -27,11 +27,11 @@ jobs:
             // List of authors to exclude
             const excludedAuthors = new Set([
               "nil-is-all", "tanvirislam-meta", "cbilgin", "kimishpatel", "psiddh", "digantdesai", "SS-JIA", "ahmtox", "mcr229", 
-              "shoumikhin", "manuelcandales", "metascroy", "cccclai", "rohansjoshi", "kirklandsign", "abhinaykukkadapu", 
-              "JacobSzwejbka", "Conarnar", "rascani", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", 
+              "shoumikhin", "manuelcandales", "metascroy", "cccclai", "rohansjoshi", "kirklandsign", "abhinaykukkadapu", "JacobSzwejbka", 
+              "Conarnar", "rascani", "kiymetakdemir", "JCNTH", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", 
               "jackzhxng", "GregoryComer", "leafs1", "swolchok", "mergennachin", "tarun292", "byjlw", "jathu", "Jack-Khuu", "georgehong", 
-              "zhenyan-zhang-meta", "silverguo", "harishs88ss", "AlannaBurke", "dbort", "huydhn", "mcremon-meta", "trivedivivek", 
-              "angelayi", "helunwencser", "hsharma35", "zhxchen17", "iseeyuan", "svekars", "nathanaelsee", "dulinriley", 
+              "zhenyan-zhang-meta", "silverguo", "harishs88ss", "AlannaBurke", "Doggeral", "laithsakka", "Reubend", "dbort", "huydhn", "mcremon-meta", 
+              "trivedivivek", "angelayi", "helunwencser", "hsharma35", "zhxchen17", "iseeyuan", "svekars", "nathanaelsee", "dulinriley", 
               "jerryzh168", "cmodi-meta", "bigfootjon", "sxu", "ydwu4", "Riandy", "tugsbayasgalan", "bsoyluoglu", "yangw-dev", 
               "YIWENX14", "namanahuja", "yushangdi", "limintang", "pianpwk", "viveknayakatmeta", "andreanicastro", "JakeStevens",
               "gmagogsfm", "zonglinpeng", "eigen-k", "derekxu", "salilsdesai", "skrtskrtfb", "pssrawat", "r-barnes",
@@ -50,7 +50,7 @@ jobs:
               "mansnils", "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", "perheld", "Jerry-Ge", "gggekov", "fumchin", "wwwind", 
               "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", "emmakujala", "annietllnd", 
               "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", "tgonzalezorlandoarm", 
-              "chizkiyahu", "sarah-blades", "itsMarco-G", "usamahz", "Rob-Hughes-Arm", 
+              "chizkiyahu", "sarah-blades", "itsMarco-G", "usamahz", "Rob-Hughes-Arm", "swha815", "FabulousSuperDude",
               "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti", 
               "chenweng-quic", "qti-horodnic", "qti-mmadhava", "quic-boyuc", "zhaoxul-qti", 
               "cymbalrush", "DenisVieriu97", "billmguo", 
@@ -63,7 +63,7 @@ jobs:
 
             // List of organization logins (lowercased) to exclude members of
             const excludedOrgs = new Set([
-              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung",
+              "meta", "facebook", "pytorch", "arm", "apple", "qualcomm", "nxp", "mediatek", "cadence", "intel", "samsung", "arm ltd.",
               "@meta", "@facebook", "@pytorch", "@arm", "@apple", "@qualcomm", "@nxp", "@mediatek", "@cadence", "@intel", "@samsung"
             ]);
 

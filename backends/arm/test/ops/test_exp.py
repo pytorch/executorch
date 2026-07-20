@@ -96,11 +96,13 @@ def test_exp_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_exp_vgf_no_quant(test_data: Tuple):
     data = test_data()
-    if data.dtype == torch.float16:
+    if data.dtype in (torch.float16, torch.bfloat16):
         atol = 2e-2
         rtol = 2e-2
     else:
