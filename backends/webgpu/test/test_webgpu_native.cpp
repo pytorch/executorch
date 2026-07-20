@@ -153,6 +153,78 @@ void test_query_pool_roundtrip(const WebGPUContext& ctx) {
   printf("  probe duration: %llu ns\n", (unsigned long long)dur);
   EXPECT_NE(dur, 0u) << "probe duration is zero (expected monotonic non-zero)";
 }
+
+// Device-free: tick->duration delta math (the Mali begin-pinning fix).
+void test_query_pool_delta_math() {
+  auto durs = [](std::vector<uint32_t> idxs) {
+    std::vector<ShaderDuration> v;
+    for (uint32_t i : idxs) {
+      ShaderDuration d;
+      d.idx = i;
+      v.push_back(d);
+    }
+    return v;
+  };
+  // Well-behaved backend (begin >= prev end): per-op == end - begin, unchanged.
+  {
+    const uint64_t ticks[] = {10, 20, 20, 35, 40, 50};
+    auto d = durs({0, 1, 2});
+    fill_shader_durations(d, ticks, 1.0);
+    EXPECT_EQ(d[0].execution_duration_ns, 10u);
+    EXPECT_EQ(d[1].execution_duration_ns, 15u);
+    EXPECT_EQ(d[2].execution_duration_ns, 10u);
+  }
+  // Tile GPU: begin pinned, ends cumulative -> recover per-op; sum == wall.
+  {
+    const uint64_t ticks[] = {0, 20, 0, 50, 0, 90};
+    auto d = durs({0, 1, 2});
+    fill_shader_durations(d, ticks, 1.0);
+    EXPECT_EQ(d[0].execution_duration_ns, 20u);
+    EXPECT_EQ(d[1].execution_duration_ns, 30u);
+    EXPECT_EQ(d[2].execution_duration_ns, 40u);
+    const uint64_t sum = d[0].execution_duration_ns +
+        d[1].execution_duration_ns + d[2].execution_duration_ns;
+    EXPECT_EQ(sum, 90u);
+  }
+  // Recorded out of order: the idx-sort keeps the delta correct.
+  {
+    const uint64_t ticks[] = {0, 20, 0, 50, 0, 90};
+    auto d = durs({2, 0, 1});
+    fill_shader_durations(d, ticks, 1.0);
+    for (const auto& x : d) {
+      const uint64_t exp = x.idx == 0 ? 20u : (x.idx == 1 ? 30u : 40u);
+      EXPECT_EQ(x.execution_duration_ns, exp) << "idx " << x.idx;
+    }
+  }
+  // Non-monotone end (op1 end < prev end): running-max base + zero-clamp.
+  {
+    const uint64_t ticks[] = {0, 100, 0, 40, 0, 120};
+    auto d = durs({0, 1, 2});
+    fill_shader_durations(d, ticks, 1.0);
+    EXPECT_EQ(d[0].start_time_ns, 0u);
+    EXPECT_EQ(d[0].end_time_ns, 100u);
+    EXPECT_EQ(d[0].execution_duration_ns, 100u);
+    EXPECT_EQ(d[1].start_time_ns, 0u);
+    EXPECT_EQ(d[1].end_time_ns, 40u);
+    EXPECT_EQ(d[1].execution_duration_ns, 0u);
+    EXPECT_EQ(d[2].start_time_ns, 0u);
+    EXPECT_EQ(d[2].end_time_ns, 120u);
+    EXPECT_EQ(d[2].execution_duration_ns, 20u);
+  }
+  // Each extraction is independent; no previous-end state leaks across calls.
+  {
+    const uint64_t first_ticks[] = {0, 100, 0, 140};
+    auto first = durs({0, 1});
+    fill_shader_durations(first, first_ticks, 1.0);
+    EXPECT_EQ(first[1].execution_duration_ns, 40u);
+
+    const uint64_t second_ticks[] = {10, 30, 30, 60};
+    auto second = durs({0, 1});
+    fill_shader_durations(second, second_ticks, 1.0);
+    EXPECT_EQ(second[0].execution_duration_ns, 20u);
+    EXPECT_EQ(second[1].execution_duration_ns, 30u);
+  }
+}
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
 void test_update_cache(const std::string& model_path) {
@@ -1593,6 +1665,10 @@ TEST(WebGPUNative, QueryPoolOverrunThrows) {
 
 TEST(WebGPUNative, QueryPoolRoundtrip) {
   test_query_pool_roundtrip(*get_default_webgpu_context());
+}
+
+TEST(WebGPUNative, QueryPoolDeltaMath) {
+  test_query_pool_delta_math();
 }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
