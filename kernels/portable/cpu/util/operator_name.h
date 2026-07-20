@@ -10,14 +10,15 @@
 
 #include <cstddef>
 
-#if (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L) || \
-    (!defined(_MSVC_LANG) && __cplusplus >= 202002L)
+#if defined(_MSC_VER) && defined(_MSVC_LANG) && _MSVC_LANG >= 202002L
 namespace torch {
 namespace executor {
 namespace native {
 namespace utils {
 namespace internal {
 
+// MSVC rejects pointers to function-local arrays as template arguments. Copy
+// the operator name into a C++20 structural type instead.
 template <std::size_t N>
 struct OperatorName {
   char value[N];
