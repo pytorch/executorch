@@ -120,8 +120,7 @@ if(TARGET vulkan_backend AND LIB_TORCH)
     adamw_step_test ${CMAKE_CURRENT_SOURCE_DIR}/adamw_step_test.cpp test_utils
   )
   vulkan_op_test(
-    linear_q4gsw_dW_test ${CMAKE_CURRENT_SOURCE_DIR}/linear_q4gsw_dW_test.cpp
-    test_utils
+    linear_dW_test ${CMAKE_CURRENT_SOURCE_DIR}/linear_dW_test.cpp test_utils
   )
 
   # Only build generated op tests if a path to tags.yaml and
