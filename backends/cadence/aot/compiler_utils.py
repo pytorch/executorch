@@ -60,6 +60,7 @@ def get_shape(
             return fake_tensor.shape
         # Case 3. node holds a param
         if node.op == "get_attr":
+            # pyrefly: ignore [bad-argument-type]
             attr_node = getattr(graph_module, node.target)
             return attr_node.shape
         # Default: return None
@@ -134,6 +135,7 @@ def get_tensor_from_attr(
     if node is None:
         return None
     assert node.op == "get_attr"
+    # pyrefly: ignore [bad-argument-type]
     return getattr(graph_module, node.target)
 
 

@@ -120,8 +120,11 @@ class AddmmPattern(QuantizationPattern):
         addmm_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
+            # pyrefly: ignore [bad-argument-type]
             derived_from=[
+                # pyrefly: ignore [missing-attribute]
                 (addmm_node.args[1], addmm_node),
+                # pyrefly: ignore [missing-attribute]
                 (addmm_node.args[2], addmm_node),
             ],
             derive_qparams_fn=get_bias_qparams,
@@ -131,11 +134,16 @@ class AddmmPattern(QuantizationPattern):
             qscheme=torch.per_tensor_affine,
         )
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(addmm_node, 1)],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(addmm_node, 2)],
+                # pyrefly: ignore [bad-argument-type]
                 biases=[(addmm_node, 0, bias_qspec)],
+                # pyrefly: ignore [bad-argument-type]
                 output=[(addmm_node,)],
             ),
             addmm_node,
@@ -193,10 +201,13 @@ class AddPattern(QuantizationPattern):
         # Bail if:
         #   - the add node is not a tensor add
         #   - the add node has kwargs (e.g. alpha)
+        # pyrefly: ignore [missing-attribute]
         is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
-            add_node.args[1], fx.Node
+            add_node.args[1], fx.Node  # pyrefly: ignore [missing-attribute]
         )
+        # pyrefly: ignore [missing-attribute]
         if not is_tensor_add or len(add_node.kwargs) > 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -204,11 +215,14 @@ class AddPattern(QuantizationPattern):
                 add_node,
             )
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(add_node, 0), (add_node, 1)],
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 output=[(add_node,)],
             ),
             add_node,
@@ -263,10 +277,13 @@ class AddReluBasePattern(QuantizationPattern):
         # Bail if:
         #   - the add node is not a tensor add
         #   - the add node has kwargs (e.g. alpha)
+        # pyrefly: ignore [missing-attribute]
         is_tensor_add = isinstance(add_node.args[0], fx.Node) and isinstance(
-            add_node.args[1], fx.Node
+            add_node.args[1], fx.Node  # pyrefly: ignore [missing-attribute]
         )
+        # pyrefly: ignore [missing-attribute]
         if not is_tensor_add or len(add_node.kwargs) > 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -274,11 +291,14 @@ class AddReluBasePattern(QuantizationPattern):
                 add_node,
             )
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(add_node, 0), (add_node, 1)],
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 output=[(relu_node,)],  # Output is from the relu node
             ),
             relu_node,
@@ -350,11 +370,14 @@ class BmmPattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         bmm_node = fused_partition[0].nodes[-1]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(bmm_node, 0), (bmm_node, 1)],
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 output=[(bmm_node,)],
             ),
             bmm_node,
@@ -401,22 +424,29 @@ class CatPattern(QuantizationPattern):
                     SharedQuantizationSpec,
                 ],
             ]
+        # pyrefly: ignore [bad-assignment]
         ] = [(cat_node, (0, 0))]
+        # pyrefly: ignore [missing-attribute]
         for i in range(1, len(cat_node.args[0])):
             args.append(
+                # pyrefly: ignore [bad-argument-type]
                 (
                     cat_node,
                     (0, i),
+                    # pyrefly: ignore [bad-argument-type, missing-attribute]
                     SharedQuantizationSpec((cat_node.args[0][0], cat_node)),
                 )
             )
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
                 inputs=args,
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 output=[
+                    # pyrefly: ignore [bad-argument-type, missing-attribute]
                     (cat_node, SharedQuantizationSpec((cat_node.args[0][0], cat_node)))
                 ],
             ),
@@ -457,8 +487,11 @@ class Conv1dPattern(QuantizationPattern):
         conv1d_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
+            # pyrefly: ignore [bad-argument-type]
             derived_from=[
+                # pyrefly: ignore [missing-attribute]
                 (conv1d_node.args[0], conv1d_node),
+                # pyrefly: ignore [missing-attribute]
                 (conv1d_node.args[1], conv1d_node),
             ],
             derive_qparams_fn=get_bias_qparams,
@@ -470,15 +503,20 @@ class Conv1dPattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
+        # pyrefly: ignore [bad-index, missing-attribute]
         if len(conv1d_node.args) > 2 and conv1d_node.args[2] is not None:
             bias = [(conv1d_node, 2, bias_qspec)]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(conv1d_node, 0)],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(conv1d_node, 1)],
                 # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
+                # pyrefly: ignore [bad-argument-type]
                 output=[(conv1d_node,)],
             ),
             conv1d_node,
@@ -511,8 +549,11 @@ class Conv2dPattern(QuantizationPattern):
         conv2d_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
+            # pyrefly: ignore [bad-argument-type]
             derived_from=[
+                # pyrefly: ignore [missing-attribute]
                 (conv2d_node.args[0], conv2d_node),
+                # pyrefly: ignore [missing-attribute]
                 (conv2d_node.args[1], conv2d_node),
             ],
             derive_qparams_fn=get_bias_qparams,
@@ -524,15 +565,20 @@ class Conv2dPattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
+        # pyrefly: ignore [bad-index, missing-attribute]
         if len(conv2d_node.args) > 2 and conv2d_node.args[2] is not None:
             bias = [(conv2d_node, 2, bias_qspec)]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(conv2d_node, 0)],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(conv2d_node, 1)],
                 # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
+                # pyrefly: ignore [bad-argument-type]
                 output=[(conv2d_node,)],
             ),
             conv2d_node,
@@ -567,22 +613,28 @@ class LayerNormPattern(QuantizationPattern):
         others = [(layer_norm_node, 1)]
 
         # Add weights if supplied
+        # pyrefly: ignore [bad-index, missing-attribute]
         if len(layer_norm_node.args) > 2 and layer_norm_node.args[2]:
             others.append((layer_norm_node, 2))
 
         # Add bias if supplied
+        # pyrefly: ignore [bad-index, missing-attribute]
         if len(layer_norm_node.args) > 3 and layer_norm_node.args[3]:
             others.append((layer_norm_node, 3))
 
         # Weights are used in quantized mode by our kernel, so they are
         # passed in as others here along with the normalized shape.
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(layer_norm_node, 0)],
                 weights=[],
                 biases=[],
                 # Ordering: normalized_shape, weights, bias
+                # pyrefly: ignore [bad-argument-type]
                 others=others,
+                # pyrefly: ignore [bad-argument-type]
                 output=[(layer_norm_node,)],
             ),
             layer_norm_node,
@@ -658,8 +710,11 @@ class LinearPattern(QuantizationPattern):
         linear_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
+            # pyrefly: ignore [bad-argument-type]
             derived_from=[
+                # pyrefly: ignore [missing-attribute]
                 (linear_node.args[0], linear_node),
+                # pyrefly: ignore [missing-attribute]
                 (linear_node.args[1], linear_node),
             ],
             derive_qparams_fn=get_bias_qparams,
@@ -671,15 +726,20 @@ class LinearPattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
+        # pyrefly: ignore [missing-attribute]
         if len(linear_node.args) > 2:
             bias = [(linear_node, 2, bias_qspec)]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(linear_node, 0)],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(linear_node, 1)],
                 # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
+                # pyrefly: ignore [bad-argument-type]
                 output=[(linear_node,)],
             ),
             linear_node,
@@ -724,11 +784,14 @@ class MatmulPattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         matmul_node = fused_partition[0].nodes[-1]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(matmul_node, 0), (matmul_node, 1)],
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 output=[(matmul_node,)],
             ),
             matmul_node,
@@ -777,27 +840,34 @@ class MaxPool2dPattern(QuantizationPattern):
         # prepare_pt2e silently skips it.
         # Expect exactly one user: getitem[0] extracting the values tensor. If indices
         # are also used or the structure is unexpected, bail out.
+        # pyrefly: ignore [missing-attribute]
         users = list(max_pool_node.users)
         if (
             len(users) != 1
             or users[0].target is not operator.getitem
             or users[0].args[1] != 0
         ):
+            # pyrefly: ignore [bad-return]
             return PartitionAnchors(empty=True), max_pool_node
         getitem_0 = users[0]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(max_pool_node, 0)],
                 weights=[],
                 biases=[],
                 # kernel_size, stride, padding, dilation, ceil_mode are literals
+                # pyrefly: ignore [bad-argument-type]
                 literals=[
+                    # pyrefly: ignore [missing-attribute]
                     (max_pool_node, i) for i in range(1, len(max_pool_node.args))
                 ],
                 output=[
                     (
                         getitem_0,
+                        # pyrefly: ignore [bad-argument-type, missing-attribute]
                         SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
                     )
                 ],
@@ -860,17 +930,23 @@ class MaxPool2dWithoutIndicesPattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         max_pool_node = fused_partition[0].nodes[-1]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(max_pool_node, 0)],
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 literals=[
+                    # pyrefly: ignore [missing-attribute]
                     (max_pool_node, i) for i in range(1, len(max_pool_node.args))
                 ],
+                # pyrefly: ignore [bad-argument-type]
                 output=[
                     (
                         max_pool_node,
+                        # pyrefly: ignore [bad-argument-type, missing-attribute]
                         SharedQuantizationSpec((max_pool_node.args[0], max_pool_node)),
                     )
                 ],
@@ -897,11 +973,14 @@ class ReluBasePattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         relu_node = fused_partition[0].nodes[-1]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(relu_node, 0)],
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 output=[(relu_node,)],
             ),
             relu_node,
@@ -961,8 +1040,11 @@ class ConvReluBasePattern(QuantizationPattern):
         relu_node = fused_partition[1].nodes[-1]  # Last node
 
         bias_qspec = DerivedQuantizationSpec(
+            # pyrefly: ignore [bad-argument-type]
             derived_from=[
+                # pyrefly: ignore [missing-attribute]
                 (conv_node.args[0], conv_node),
+                # pyrefly: ignore [missing-attribute]
                 (conv_node.args[1], conv_node),
             ],
             derive_qparams_fn=get_bias_qparams,
@@ -974,15 +1056,20 @@ class ConvReluBasePattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
+        # pyrefly: ignore [bad-index, missing-attribute]
         if len(conv_node.args) > 2 and conv_node.args[2] is not None:
             bias = [(conv_node, 2, bias_qspec)]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(conv_node, 0)],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(conv_node, 1)],
                 # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
+                # pyrefly: ignore [bad-argument-type]
                 output=[(relu_node,)],  # Output is from the relu node
             ),
             relu_node,
@@ -1076,8 +1163,11 @@ class ConvBNReluBasePattern(QuantizationPattern):
         relu_node = fused_partition[2].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
+            # pyrefly: ignore [bad-argument-type]
             derived_from=[
+                # pyrefly: ignore [missing-attribute]
                 (conv_node.args[0], conv_node),
+                # pyrefly: ignore [missing-attribute]
                 (conv_node.args[1], conv_node),
             ],
             derive_qparams_fn=get_bias_qparams,
@@ -1088,15 +1178,20 @@ class ConvBNReluBasePattern(QuantizationPattern):
         )
 
         bias = []
+        # pyrefly: ignore [bad-index, missing-attribute]
         if len(conv_node.args) > 2 and conv_node.args[2] is not None:
             bias = [(conv_node, 2, bias_qspec)]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(conv_node, 0)],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(conv_node, 1)],
                 # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
+                # pyrefly: ignore [bad-argument-type]
                 output=[(relu_node,)],
             ),
             relu_node,
@@ -1177,11 +1272,14 @@ class SoftmaxPattern(QuantizationPattern):
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         softmax_node = fused_partition[0].nodes[-1]
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
+                # pyrefly: ignore [bad-argument-type]
                 inputs=[(softmax_node, 0)],
                 weights=[],
                 biases=[],
+                # pyrefly: ignore [bad-argument-type]
                 output=[(softmax_node,)],
             ),
             softmax_node,
@@ -1249,7 +1347,9 @@ class MixedW8A32LinearPattern(QuantizationPattern):
         linear_layer = fused_partition[0].nodes[-1]
 
         # Bail if the arguments have different shapes than expected
+        # pyrefly: ignore [missing-attribute]
         if len(linear_layer.args) != 3 or len(linear_layer.kwargs) > 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -1257,11 +1357,13 @@ class MixedW8A32LinearPattern(QuantizationPattern):
                 linear_layer,
             )
 
+        # pyrefly: ignore [bad-index]
         input_node = linear_layer.args[0]
         input_shape = input_node.meta["tensor_meta"].shape
 
         # Bail if the weights are not multiple of 4 (SIMD)
         if input_shape[-1] % 4 != 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -1270,6 +1372,7 @@ class MixedW8A32LinearPattern(QuantizationPattern):
             )
         # Currenly only supporting vector-matrix multiplication
         if len(input_shape) > 0 and input_shape[-2] != 1:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -1277,12 +1380,16 @@ class MixedW8A32LinearPattern(QuantizationPattern):
                 linear_layer,
             )
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
                 inputs=[],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(linear_layer, 1)],
+                # pyrefly: ignore [bad-argument-type]
                 biases=[(linear_layer, 2)],
                 output=[],
+                # pyrefly: ignore [bad-argument-type]
                 others=[(linear_layer, 0)],
             ),
             linear_layer,
@@ -1334,7 +1441,9 @@ class MixedW8A32ConvPattern(QuantizationPattern):
 
         # Bail if the arguments have different shapes than expected
         # Stride, padding, dilation and groups are not supported
+        # pyrefly: ignore [missing-attribute]
         if len(conv_layer.args) != 3 or len(conv_layer.kwargs) > 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -1342,11 +1451,13 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                 conv_layer,
             )
 
+        # pyrefly: ignore [bad-index]
         cnn_weights = conv_layer.args[1]
         if "tensor_meta" in cnn_weights.meta:
             cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
             # Bail if the channels are not multiple of 4 (SIMD)
             if cnn_weights_shape[0] % 4 != 0:
+                # pyrefly: ignore [bad-return]
                 return (
                     PartitionAnchors(
                         empty=True,
@@ -1354,6 +1465,7 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                     conv_layer,
                 )
             if cnn_weights_shape[1] % 4 != 0:
+                # pyrefly: ignore [bad-return]
                 return (
                     PartitionAnchors(
                         empty=True,
@@ -1362,6 +1474,7 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                 )
             # Bail if the kernel size is not 3
             if cnn_weights_shape[2] != 3:
+                # pyrefly: ignore [bad-return]
                 return (
                     PartitionAnchors(
                         empty=True,
@@ -1369,11 +1482,13 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                     conv_layer,
                 )
 
+            # pyrefly: ignore [bad-index]
             inputs = conv_layer.args[0]
             if "tensor_meta" in inputs.meta:
                 inputs_shape = inputs.meta["tensor_meta"].shape
                 # Bail if length != kernel size - Not yet supported
                 if inputs_shape[-1] != cnn_weights_shape[2]:
+                    # pyrefly: ignore [bad-return]
                     return (
                         PartitionAnchors(
                             empty=True,
@@ -1381,12 +1496,16 @@ class MixedW8A32ConvPattern(QuantizationPattern):
                         conv_layer,
                     )
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
                 inputs=[],
+                # pyrefly: ignore [bad-argument-type]
                 weights=[(conv_layer, 1)],
+                # pyrefly: ignore [bad-argument-type]
                 biases=[(conv_layer, 2)],
                 output=[],
+                # pyrefly: ignore [bad-argument-type]
                 others=[(conv_layer, 0)],
             ),
             conv_layer,
@@ -1456,7 +1575,9 @@ class MixedW8A32GruPattern(QuantizationPattern):
     ) -> Tuple[PartitionAnchors, fx.Node]:
         # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         gru_layer = fused_partition[0].nodes[-1]
+        # pyrefly: ignore [missing-attribute]
         if len(gru_layer.kwargs) > 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -1465,16 +1586,20 @@ class MixedW8A32GruPattern(QuantizationPattern):
             )
 
         # Bail if input or states are not multiple of 4 (SIMD)
+        # pyrefly: ignore [missing-attribute]
         tensor_meta_0 = gru_layer.args[0].meta.get("tensor_meta", None)
         if tensor_meta_0 is None or tensor_meta_0.shape[-1] % 4 != 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
                 ),
                 gru_layer,
             )
+        # pyrefly: ignore [missing-attribute]
         tensor_meta_1 = gru_layer.args[1].meta.get("tensor_meta", None)
         if tensor_meta_1 is None or tensor_meta_1.shape[-1] % 4 != 0:
+            # pyrefly: ignore [bad-return]
             return (
                 PartitionAnchors(
                     empty=True,
@@ -1487,14 +1612,17 @@ class MixedW8A32GruPattern(QuantizationPattern):
                 self.args = args
                 self.meta = meta
 
+        # pyrefly: ignore [missing-attribute]
         wrapper = Wrapper(tuple(gru_layer.args[2]), gru_layer.meta)
 
         # Using SharedQuantizationSpec so that bias_hh has the same observer as bias_ih
         # Both biases get the same quantization scale to match the cpp operator
         bias_ih_node = wrapper.args[2]
         bias_ih_edge = (bias_ih_node, gru_layer)
+        # pyrefly: ignore [bad-argument-type]
         shared_bias_qspec = SharedQuantizationSpec(edge_or_node=bias_ih_edge)
 
+        # pyrefly: ignore [bad-return]
         return (
             PartitionAnchors(
                 inputs=[],
@@ -1510,6 +1638,7 @@ class MixedW8A32GruPattern(QuantizationPattern):
                     ),  # bias_hh shares observer with bias_ih
                 ],
                 output=[],
+                # pyrefly: ignore [bad-argument-type]
                 others=[(gru_layer, 0), (gru_layer, 1)],
             ),
             gru_layer,

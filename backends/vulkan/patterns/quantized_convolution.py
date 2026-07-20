@@ -107,6 +107,7 @@ class QuantizedConvolutionMatch(PatternMatch):
         # The implementation requires that for non-depthwise grouped convolutions, a
         # group does not cross the texel boundary. The output channels per group must be
         # a multiple of 4. If this is not true, then don't match the pattern.
+        # pyrefly: ignore [unsupported-operation]
         if (self.groups > 1 and self.groups < out_channels) and (
             out_channels / self.groups
         ) % 4 != 0:
@@ -182,6 +183,7 @@ def find_quantized_convolution_patterns(
 ##
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("quantized_convolution")
 def make_q8ta_conv2d_custom_op(  # noqa: C901
     ep: ExportedProgram,
@@ -207,7 +209,9 @@ def make_q8ta_conv2d_custom_op(  # noqa: C901
     if match.transposed:
         # Transposed conv weight shape: (IC, OC_per_group, H, W)
         IC, OC_per_group, H, W = weight_tensor.shape
+        # pyrefly: ignore [unsupported-operation]
         OC = OC_per_group * match.groups
+        # pyrefly: ignore [unsupported-operation]
         IC_per_group = IC // match.groups
         # Reshape to (OC, H*W*IC_per_group) matrix format for Im2Col-based
         # transposed convolution.
@@ -216,9 +220,11 @@ def make_q8ta_conv2d_custom_op(  # noqa: C901
         #   (groups, OC_per_group, H, W, IC_per_group) ->
         #   (OC, H*W*IC_per_group)
         weight_tensor = (
+            # pyrefly: ignore [bad-argument-type]
             weight_tensor.reshape(match.groups, IC_per_group, OC_per_group, H, W)
             .permute(0, 2, 3, 4, 1)
             .contiguous()
+            # pyrefly: ignore [bad-argument-type]
             .reshape(OC, H * W * IC_per_group)
             .contiguous()
         )
@@ -230,10 +236,12 @@ def make_q8ta_conv2d_custom_op(  # noqa: C901
     )
 
     if is_depthwise_conv:
+        # pyrefly: ignore [unsupported-operation]
         assert OC % 4 == 0, "depthwise conv requires that OC is divisible by 4"
         # Depthwise convs use a specialized layout; the weight tensor is reshaped to
         # (H, W, OC)
         weight_tensor = (
+            # pyrefly: ignore [bad-argument-type]
             weight_tensor.permute(2, 3, 1, 0).contiguous().view(H, W, OC).contiguous()
         )
     elif not match.transposed:
@@ -242,6 +250,7 @@ def make_q8ta_conv2d_custom_op(  # noqa: C901
         weight_tensor = (
             weight_tensor.permute(0, 2, 3, 1)
             .contiguous()
+            # pyrefly: ignore [bad-argument-type]
             .view(OC, H * W * IC_per_group)
             .contiguous()
         )
@@ -258,6 +267,7 @@ def make_q8ta_conv2d_custom_op(  # noqa: C901
     )
 
     if bias_tensor is not None:
+        # pyrefly: ignore [bad-argument-type]
         utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
 
     first_graph_node = list(graph_module.graph.nodes)[0]
@@ -300,9 +310,9 @@ def make_q8ta_conv2d_custom_op(  # noqa: C901
     is_pointwise_conv = (
         H == 1
         and W == 1
-        and list(match.stride) == [1, 1]
-        and list(match.dilation) == [1, 1]
-        and list(match.padding) == [0, 0]
+        and list(match.stride) == [1, 1]  # pyrefly: ignore [bad-argument-type]
+        and list(match.dilation) == [1, 1]  # pyrefly: ignore [bad-argument-type]
+        and list(match.padding) == [0, 0]  # pyrefly: ignore [bad-argument-type]
     )
 
     with graph_module.graph.inserting_before(match.output_node):

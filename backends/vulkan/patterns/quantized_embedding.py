@@ -104,15 +104,18 @@ def find_quantized_embedding_patterns(
     return None
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("quantized_embedding")
 def replace_quantized_embedding_patterns(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: QuantizedEmbeddingMatch,
 ):
+    # pyrefly: ignore [bad-argument-type]
     weight_tensor = get_param_tensor(ep, match.weight_node)
     assert weight_tensor is not None
 
+    # pyrefly: ignore [bad-argument-type]
     scales_tensor = get_param_tensor(ep, match.scales_node)
     assert scales_tensor is not None
 
@@ -125,6 +128,7 @@ def replace_quantized_embedding_patterns(
     # always repack the weight tensor in the format expected by 4 bit linear layers;
     # the runtime shader supports both the original and repacked packing formats
     # for weights.
+    # pyrefly: ignore [bad-argument-type]
     if utils.register_param_mutation(ep, match.weight_node, "4 bit linear weight"):
         # Repack using linear convention (low nibble = even, high nibble = odd)
         vocab_size = weight_tensor.shape[0]
@@ -133,6 +137,7 @@ def replace_quantized_embedding_patterns(
         unpacked = torch.stack([high, low], dim=-1).reshape(vocab_size, -1)
         weight_tensor = pack_4bit_weight_tensor(unpacked)
         utils.align_width_and_update_state_dict(
+            # pyrefly: ignore [bad-argument-type]
             ep, match.weight_node, weight_tensor, align_to=1, force_update=True
         )
 
@@ -154,7 +159,9 @@ def replace_quantized_embedding_patterns(
             ),
         )
 
+    # pyrefly: ignore [missing-attribute]
     embedding_q4gsw_node.meta["val"] = match.anchor_node.meta["val"]
+    # pyrefly: ignore [missing-attribute]
     match.anchor_node.replace_all_uses_with(embedding_q4gsw_node)
 
 
@@ -210,6 +217,7 @@ class TorchAOQuantizedEmbeddingMatch(PatternMatch):
             return
         if block_size[0] != 1:
             return
+        # pyrefly: ignore [bad-argument-type]
         self.group_size = int(block_size[1])
 
         # Trace weight (args[0]) and scales (args[2]) to their placeholders. A
@@ -287,6 +295,7 @@ def find_torchao_quantized_embedding_patterns(
     return None
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("torchao_quantized_embedding")
 def replace_torchao_quantized_embedding_patterns(
     ep: ExportedProgram,
@@ -338,5 +347,7 @@ def replace_torchao_quantized_embedding_patterns(
             ),
         )
 
+    # pyrefly: ignore [missing-attribute]
     embedding_q4gsw_node.meta["val"] = match.anchor_node.meta["val"]
+    # pyrefly: ignore [missing-attribute]
     match.anchor_node.replace_all_uses_with(embedding_q4gsw_node)

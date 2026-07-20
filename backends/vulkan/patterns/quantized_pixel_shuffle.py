@@ -71,6 +71,7 @@ class QuantizedPixelShuffleMatch(PatternMatch):
     """
 
     def __init__(self, dequantize_node: torch.fx.Node) -> None:
+        # pyrefly: ignore [bad-override-mutable-attribute]
         self.anchor_node: torch.fx.Node = dequantize_node
         self.match_found: bool = False
         self.all_nodes: List[torch.fx.Node] = [dequantize_node]
@@ -133,6 +134,7 @@ def find_quantized_pixel_shuffle_pattern(
     return None
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("quantized_pixel_shuffle")
 def make_quantized_pixel_shuffle_custom_op(
     ep: ExportedProgram,

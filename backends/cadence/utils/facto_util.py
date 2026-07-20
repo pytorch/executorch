@@ -449,6 +449,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             )
         case _:
             pass
+    # pyrefly: ignore [bad-return]
     return tensor_constraints
 
 
@@ -503,6 +504,7 @@ def facto_testcase_gen(  # noqa: C901
                     )
                 elif in_spec.name == "max":
                     # max must always be provided (not None), be >= min + 2 (sufficient gap), and bounded
+                    # pyrefly: ignore [bad-assignment]
                     spec.inspec[index].deps = [0, 1]  # deps on input tensor and min
                     spec.inspec[index].constraints.extend(
                         [
@@ -514,6 +516,7 @@ def facto_testcase_gen(  # noqa: C901
                         ]
                     )
             elif in_spec.name == "max_val":  # hardtanh
+                # pyrefly: ignore [bad-assignment]
                 spec.inspec[index].deps = [0, 1]
                 spec.inspec[index].constraints.extend(
                     [cp.Value.Ge(lambda deps, _: deps[1])]
@@ -547,6 +550,7 @@ def facto_testcase_gen(  # noqa: C901
                 )
         elif in_spec.type.is_tensor():
             spec.inspec[index].constraints.extend(
+                # pyrefly: ignore [bad-argument-type]
                 apply_tensor_contraints(op_name, index)
             )
         elif in_spec.type.is_dim_list():

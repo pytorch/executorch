@@ -57,9 +57,11 @@ class GraphBuilder(ExportPass):
 
     def __init__(self, fake_tensor_mode: Optional[FakeTensorMode] = None) -> None:
         self.exporter = ExportPass()
+        # pyrefly: ignore [bad-override-mutable-attribute]
         self.tracer: ExportPass.ExportTracer = self.ExportTracer(
             self, torch.fx.graph.CodeGen()
         )
+        # pyrefly: ignore [bad-override-mutable-attribute]
         self.fake_tensor_mode: FakeTensorMode = fake_tensor_mode or FakeTensorMode(
             allow_fallback_kernels=False,
             allow_non_fake_inputs=True,

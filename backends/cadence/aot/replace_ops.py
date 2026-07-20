@@ -100,6 +100,7 @@ class ReplaceSafeSoftmaxWithSoftmax(RemoveOrReplacePassInterface):  # keep
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
+        # pyrefly: ignore [bad-return]
         return [torch.ops.aten._safe_softmax.default]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
@@ -127,6 +128,7 @@ class ReplacePT2QuantWithCadenceQuantPass(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
+        # pyrefly: ignore [bad-return]
         return [
             torch.ops.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
@@ -155,6 +157,7 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
+        # pyrefly: ignore [bad-return]
         return [
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
@@ -360,7 +363,9 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
         (bias, mat1, mat2) = node.args[0:3]
 
         # The other two args are optional scale args
+        # pyrefly: ignore [bad-argument-type]
         beta = float(node.kwargs.get("beta", 1.0))
+        # pyrefly: ignore [bad-argument-type]
         alpha = float(node.kwargs.get("alpha", 1.0))
 
         bias, mat1, mat2 = cast(
@@ -1442,6 +1447,7 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         # If the convolution op was quantized, we need the input tensor's
         # zero_point for im2row. Otherwise in_zero_point defaults to a zero
         # tensor.
+        # pyrefly: ignore [bad-index]
         in_zero_point = node.args[7] if quantized_op else 0
 
         # im2row expects every kernel parameter to be 2d. So we extend the
@@ -1719,6 +1725,7 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
             ) = node.args[8:13]
             # pyre-ignore[58]: Division operands
             requantize_scale = bias_scale / out_scale
+            # pyrefly: ignore [bad-argument-type]
             (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale)
             linear_args = (
                 transposed_im2row,
@@ -1831,6 +1838,7 @@ class ReplaceScalarTensorWithFullPass(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
+        # pyrefly: ignore [bad-return]
         return [
             torch.ops.aten.scalar_tensor.default,
             exir_ops.edge.aten.scalar_tensor.default,
@@ -2187,6 +2195,7 @@ class ReplaceSplitWithSlicePass(RemoveOrReplacePassInterface):
         # Go over each getitem user, and replace it with slice op
         for user in list(node.users.keys()):
             assert user.target == operator.getitem
+            # pyrefly: ignore [bad-argument-type]
             item_idx = int(user.args[1])
             assert item_idx < len(slice_ops)
             cur_slice = slice_ops[item_idx]
@@ -2225,11 +2234,13 @@ class ReplaceSplitWithSlicePass(RemoveOrReplacePassInterface):
         split_start = 0
         assert isinstance(split_sizes, list)
         for split_size in split_sizes:
+            # pyrefly: ignore [unsupported-operation]
             split_end = split_start + split_size
             slice_args = (split_dim, split_start, split_end)
             slice_ops.append(slice_args)
             split_start = split_end
 
+        # pyrefly: ignore [bad-return]
         return slice_ops
 
 
@@ -2406,6 +2417,7 @@ class ReplaceMulTensorWithMulAndFullOpsPass(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
+        # pyrefly: ignore [bad-return]
         return [torch.ops.aten.mul.Tensor]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:

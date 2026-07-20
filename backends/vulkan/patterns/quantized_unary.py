@@ -90,6 +90,7 @@ def find_quantized_unary_patterns(
 ##
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("quantized_unary")
 def make_q8ta_unary_custom_op(
     ep: ExportedProgram,
@@ -97,6 +98,7 @@ def make_q8ta_unary_custom_op(
     match: QuantizedUnaryMatch,
 ):
     op_target = None
+    # pyrefly: ignore [missing-attribute]
     if match.anchor_node.target == exir_ops.edge.aten.relu.default:
         op_target = exir_ops.edge.et_vk.q8ta_relu.default
     else:

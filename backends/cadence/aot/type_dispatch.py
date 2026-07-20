@@ -143,6 +143,7 @@ class CompileTimeTypeDispatchPass(ExportPass):
         input_dtype = args[0].to_tensor().dtype
 
         if config.weight_arg_idx is not None:
+            # pyrefly: ignore [missing-attribute]
             weight_dtype = args[config.weight_arg_idx].to_tensor().dtype
             dtype_key = (input_dtype, weight_dtype)
         elif config.is_quant_op:
@@ -164,9 +165,10 @@ class CompileTimeTypeDispatchPass(ExportPass):
         ]:
             groups = cast(int, args[6])
             input_channels = (
+                # pyrefly: ignore [missing-attribute]
                 args[0].to_tensor().shape[1]
                 if op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
-                else args[0].to_tensor().shape[-1]
+                else args[0].to_tensor().shape[-1]  # pyrefly: ignore [missing-attribute]
             )
             is_depthwise = is_depthwise_conv(groups, input_channels)
             # pyre-ignore[16]: None has no attribute '__iter__'.

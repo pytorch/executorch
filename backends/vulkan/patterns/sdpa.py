@@ -56,6 +56,7 @@ class CausalSDPAMatch(PatternMatch):
 
         # try to find update key cache node
         self.update_key_cache_node = None
+        # pyrefly: ignore [missing-attribute]
         for user in self.key_cache_node.users:
             if is_update_cache_node(user):
                 self.update_key_cache_node = user
@@ -67,6 +68,7 @@ class CausalSDPAMatch(PatternMatch):
 
         # find update value cache node
         self.update_value_cache_node = None
+        # pyrefly: ignore [missing-attribute]
         for user in self.value_cache_node.users:
             if is_update_cache_node(user):
                 self.update_value_cache_node = user
@@ -114,6 +116,7 @@ def find_singleton_start_pos_node(graph_module: torch.fx.GraphModule):
     )
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("causal_sdpa")
 def replace_custom_sdpa_with_causal_sdpa(
     ep: ExportedProgram,
@@ -146,7 +149,9 @@ def replace_custom_sdpa_with_causal_sdpa(
             ),
         )
 
+    # pyrefly: ignore [missing-attribute]
     new_node.meta["val"] = match.anchor_node.meta["val"]
+    # pyrefly: ignore [missing-attribute]
     match.anchor_node.replace_all_uses_with(new_node)
 
     # Manually erase update_cache nodes since DCE will not remove them since they

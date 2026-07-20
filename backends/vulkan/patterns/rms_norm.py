@@ -257,6 +257,7 @@ def _extract_eps_value(eps_node) -> float:
     raise ValueError(f"Cannot extract epsilon value from {eps_node}")
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("rms_norm")
 def replace_rms_norm_with_fused_op(
     ep: ExportedProgram,
@@ -276,5 +277,7 @@ def replace_rms_norm_with_fused_op(
             ),
         )
 
+    # pyrefly: ignore [missing-attribute]
     rms_norm_node.meta["val"] = match.anchor_node.meta["val"]
+    # pyrefly: ignore [missing-attribute]
     match.anchor_node.replace_all_uses_with(rms_norm_node)

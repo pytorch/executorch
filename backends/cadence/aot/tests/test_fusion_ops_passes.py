@@ -1810,6 +1810,7 @@ class TestFuseSliceSameDimPass(TestFusionPassesBase):
         slices = result.graph_module.graph.find_nodes(
             op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
         )
+        # pyrefly: ignore [bad-specialization]
         ends = sorted(get_arg(s, "end") for s in slices)
         self.assertEqual(ends, [60, 78])
         validate_numerics(

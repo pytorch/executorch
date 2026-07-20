@@ -121,6 +121,7 @@ def find_quantized_binary_patterns(
 ##
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("quantized_binary")
 def make_add_q8ta_q8ta_q8to_custom_op(
     ep: ExportedProgram,
@@ -129,6 +130,7 @@ def make_add_q8ta_q8ta_q8to_custom_op(
 ):
     # Determine the operation type based on the anchor node
     op_target = None
+    # pyrefly: ignore [missing-attribute]
     if match.anchor_node.target in {
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.add_.Tensor,

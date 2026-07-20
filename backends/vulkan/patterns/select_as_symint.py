@@ -47,6 +47,7 @@ class SelectAsSymIntMatch(PatternMatch):
         self.dim_node = select_node.args[1]
         self.index_node = select_node.args[2]
 
+        # pyrefly: ignore [bad-assignment]
         self.all_nodes = [
             self.anchor_node,
             self.select_node,
@@ -77,6 +78,7 @@ def find_select_as_symint_patterns(
 ##
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("select_as_symint")
 def replace_select_local_scalar_dense_with_select_as_symint(
     ep: ExportedProgram,
@@ -94,7 +96,9 @@ def replace_select_local_scalar_dense_with_select_as_symint(
             ),
         )
 
+    # pyrefly: ignore [missing-attribute]
     new_node.meta["val"] = match.anchor_node.meta["val"]
+    # pyrefly: ignore [missing-attribute]
     match.anchor_node.replace_all_uses_with(new_node)
 
     # # Remove both the local_scalar_dense and select_copy nodes

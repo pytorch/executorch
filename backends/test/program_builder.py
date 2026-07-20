@@ -95,6 +95,7 @@ class ProgramBuilder(GraphBuilder):
     def get_verifiers(self) -> Optional[list[Verifier]]:
         if self.mode == IrMode.ATEN:
             return None
+        # pyrefly: ignore [bad-return]
         return [
             EXIREdgeDialectVerifier(
                 edge_compile_config=EdgeCompileConfig(

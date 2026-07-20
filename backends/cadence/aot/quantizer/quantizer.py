@@ -196,6 +196,7 @@ class CadenceAtenQuantizer(Quantizer):
             if not no_outside_users(fused_partition):
                 continue
 
+            # pyrefly: ignore [bad-argument-type]
             anchors, _ = self.pattern.get_anchors(model, fused_partition)
             if not anchors or anchors.empty:
                 continue
@@ -435,6 +436,7 @@ class CadenceW8A32MixedQuantizer(CadenceQuantizer):
         quantizers.append(
             CadenceAtenQuantizer(MixedW8A32GruPattern(), qconfig_A32W8sym)
         )
+        # pyrefly: ignore [bad-argument-type]
         super().__init__(quantizers)
 
 

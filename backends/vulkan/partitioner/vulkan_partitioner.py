@@ -264,6 +264,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, dtype_reason)
             return False
 
+        # pyrefly: ignore [not-callable]
         if not features.are_node_inputs_supported_fn(node):
             self.log_skip(node, "op args not supported")
             return False

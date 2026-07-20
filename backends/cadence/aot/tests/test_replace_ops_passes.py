@@ -3208,6 +3208,7 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
         self.assertTrue(
             op_counts_match(
                 graph_after_passes,
+                # pyrefly: ignore [bad-argument-type]
                 expected_op_counts={
                     torch.ops.aten.mul.Tensor: 1,
                     torch.ops.aten.full.default: 1,

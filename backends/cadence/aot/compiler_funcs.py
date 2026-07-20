@@ -174,9 +174,13 @@ def extract_output_dequant_params(
                 dtype = args[4]
                 assert isinstance(dtype, torch.dtype)
                 return (
+                    # pyrefly: ignore [bad-argument-type]
                     float(args[0]),  # scale
+                    # pyrefly: ignore [bad-argument-type]
                     int(args[1]),  # zero_point
+                    # pyrefly: ignore [bad-argument-type]
                     int(args[2]),  # qmin
+                    # pyrefly: ignore [bad-argument-type]
                     int(args[3]),  # qmax
                     dtype,
                 )
@@ -249,9 +253,13 @@ def extract_output_dequant_params_through_permute(
                     dtype = args[4]
                     assert isinstance(dtype, torch.dtype)
                     return (
+                        # pyrefly: ignore [bad-argument-type]
                         float(args[0]),  # scale
+                        # pyrefly: ignore [bad-argument-type]
                         int(args[1]),  # zero_point
+                        # pyrefly: ignore [bad-argument-type]
                         int(args[2]),  # qmin
+                        # pyrefly: ignore [bad-argument-type]
                         int(args[3]),  # qmax
                         dtype,
                     )

@@ -173,13 +173,17 @@ class TestMemTransform(unittest.TestCase):
         dim_offset = 0
         for arg in cast(list[torch.fx.Node], node.args[0]):
             arg_spec = arg.meta.get("spec", None)
+            # pyrefly: ignore [missing-attribute]
             self.assertEqual(arg_spec.mem_id, node_spec.mem_id)
             actual_offset = node_spec.mem_offset + dim_offset * inner_dim_elements
             self.assertEqual(
+                # pyrefly: ignore [missing-attribute]
                 arg_spec.mem_offset,
                 actual_offset,
+                # pyrefly: ignore [missing-attribute]
                 f"{arg=} of node {node=} has wrong memory offset: expected {arg_spec.mem_offset=}, but got {actual_offset=} = {node_spec.mem_offset=} + {dim_offset=} * {inner_dim_elements=}",
             )
+            # pyrefly: ignore [missing-attribute]
             dim_offset += arg_spec.shape[dim]
 
     def _verify_slice_nop_memory_alloc(self, node: torch.fx.Node) -> None:
@@ -200,10 +204,13 @@ class TestMemTransform(unittest.TestCase):
         )
         arg = cast(torch.fx.Node, node.args[0])
         arg_spec = arg.meta.get("spec", None)
+        # pyrefly: ignore [missing-attribute]
         self.assertEqual(arg_spec.mem_id, spec.mem_id)
         self.assertEqual(
             spec.mem_offset,
+            # pyrefly: ignore [missing-attribute]
             arg_spec.mem_offset + start * inner_dim_elements,
+            # pyrefly: ignore [missing-attribute]
             f"{arg=} for node {node=} has wrong memory offset: {arg_spec.mem_offset=} {start=} for slice on {dim=}, but output has {spec.mem_offset=}",
         )
 
@@ -225,10 +232,13 @@ class TestMemTransform(unittest.TestCase):
         )
         arg = cast(torch.fx.Node, node.args[0])
         arg_spec = arg.meta.get("spec", None)
+        # pyrefly: ignore [missing-attribute]
         self.assertEqual(arg_spec.mem_id, spec.mem_id)
         self.assertEqual(
             spec.mem_offset,
+            # pyrefly: ignore [missing-attribute]
             arg_spec.mem_offset + index * inner_dim_elements,
+            # pyrefly: ignore [missing-attribute]
             f"{arg=} for node {node=} has wrong memory offset: {arg_spec.mem_offset=} for select on {dim=} {index=}, "
             f"but output has {spec.mem_offset=}"
             f"{spec=} {arg_spec=}",
@@ -1151,6 +1161,7 @@ class TestMemTransform(unittest.TestCase):
             def __init__(self, memory_constraints: MemConstraints):
                 self.memory_constraints = memory_constraints
 
+            # pyrefly: ignore [bad-return]
             def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
                 for node in graph_module.graph.find_nodes(
                     op="call_function", target=torch.ops.aten.add.Scalar

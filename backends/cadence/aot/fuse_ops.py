@@ -385,6 +385,7 @@ class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
+        # pyrefly: ignore [bad-return]
         return self._CONV_TARGETS
 
     def _get_batchnorm_user(self, conv_node: torch.fx.Node) -> Optional[torch.fx.Node]:
@@ -421,6 +422,7 @@ class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
         """
         conv_packed_arg_node = get_arg(conv_node, "packed_weight", torch.fx.Node)
         assert conv_packed_arg_node.op == "get_attr"
+        # pyrefly: ignore [bad-argument-type]
         packed_args = getattr(graph_module, conv_packed_arg_node.target)
         weight_tensor, bias_tensor = packed_args.unpack()
 

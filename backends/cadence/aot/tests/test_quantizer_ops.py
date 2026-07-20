@@ -79,6 +79,7 @@ QUANTIZER_ANNOTATION_TEST_CASES: list[
         QuantizationSpec,
         list[QuantizationSpec | None],
     ]
+# pyrefly: ignore [bad-assignment]
 ] = [
     (
         "matmul_A16",

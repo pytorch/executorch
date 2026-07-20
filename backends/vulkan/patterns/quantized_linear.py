@@ -125,6 +125,7 @@ class QuantizedLinearMatch(PatternMatch):
             self.dequantize_input_node = anchor_primary_input_node
             self.all_nodes.append(self.dequantize_input_node)
             input_to_dq_node = self.dequantize_input_node.args[0]
+            # pyrefly: ignore [bad-assignment]
             self.pattern_input_node = input_to_dq_node
 
             # torchao dequantize has a slightly different function schema
@@ -140,10 +141,12 @@ class QuantizedLinearMatch(PatternMatch):
 
             # Check for dynamic quantization: input scales are dynamically
             # computed via a choose_qparams op
+            # pyrefly: ignore [bad-argument-type]
             if utils.is_quant_node(input_to_dq_node) and utils.is_dynamic_qscale(
                 self.input_scales_node
             ):
                 self.quantize_input_node = input_to_dq_node
+                # pyrefly: ignore [missing-attribute]
                 self.pattern_input_node = self.quantize_input_node.args[0]
 
         # The implementation has a limitation that input channels must be a
@@ -215,6 +218,7 @@ class QuantizedLinearMatch(PatternMatch):
 
     def is_weight_pergroup_quantized(self) -> bool:
         weight_shape = self.weight_node.meta["val"].shape
+        # pyrefly: ignore [missing-attribute]
         scales_shape = self.weight_scales_node.meta["val"].shape
         if len(scales_shape) != 2:
             return False
@@ -229,6 +233,7 @@ class QuantizedLinearMatch(PatternMatch):
 
     def is_weight_perchannel_quantized(self) -> bool:
         weight_shape = self.weight_node.meta["val"].shape
+        # pyrefly: ignore [missing-attribute]
         scales_shape = self.weight_scales_node.meta["val"].shape
         if len(scales_shape) != 1:
             return False
@@ -257,6 +262,7 @@ class QuantizedLinearMatch(PatternMatch):
             return False
 
         # The getitem node should be retrieving from a choose_qparams op
+        # pyrefly: ignore [bad-argument-type]
         if not utils.is_choose_qparams_node(self.input_scales_node.args[0]):
             return False
 
@@ -347,11 +353,13 @@ def make_linear_q4gsw_op(
 
     # Also transpose the weight scales tensor to shape [num_groups, N]
     if utils.register_param_mutation(
+        # pyrefly: ignore [bad-argument-type]
         ep, match.weight_scales_node, "4 bit linear scales"
     ):
         weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
         utils.align_width_and_update_state_dict(
             ep,
+            # pyrefly: ignore [bad-argument-type]
             match.weight_scales_node,
             weight_scales_tensor,
             force_update=True,
@@ -404,11 +412,13 @@ def make_linear_dq8ca_q4gsw_op(
 
     # Also transpose the weight scales tensor to shape [num_groups, N]
     if utils.register_param_mutation(
+        # pyrefly: ignore [bad-argument-type]
         ep, match.weight_scales_node, "4 bit linear scales"
     ):
         weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
         utils.align_width_and_update_state_dict(
             ep,
+            # pyrefly: ignore [bad-argument-type]
             match.weight_scales_node,
             weight_scales_tensor,
             force_update=True,
@@ -464,9 +474,11 @@ def make_linear_q8ta_q8csw_custom_op(
     weight_tensor: torch.Tensor,
 ):
     # Pad weight_scales to multiple of 4 so GPU shader reads don't go OOB
+    # pyrefly: ignore [bad-argument-type]
     weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
     assert weight_scales_tensor is not None
     utils.align_width_and_update_state_dict(
+        # pyrefly: ignore [bad-argument-type]
         ep, match.weight_scales_node, weight_scales_tensor
     )
 
@@ -529,9 +541,11 @@ def make_q8ta_linear_custom_op(
     weight_tensor: torch.Tensor,
 ):
     # Pad weight_scales to multiple of 4 so GPU shader reads don't go OOB
+    # pyrefly: ignore [bad-argument-type]
     weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
     assert weight_scales_tensor is not None
     utils.align_width_and_update_state_dict(
+        # pyrefly: ignore [bad-argument-type]
         ep, match.weight_scales_node, weight_scales_tensor
     )
 
@@ -591,10 +605,13 @@ def make_q8ta_linear_custom_op(
             ),
         )
 
+    # pyrefly: ignore [missing-attribute]
     qlinear_node.meta["val"] = match.quantize_output_node.meta["val"]
+    # pyrefly: ignore [missing-attribute]
     match.quantize_output_node.replace_all_uses_with(qlinear_node)
 
 
+# pyrefly: ignore [bad-argument-type]
 @register_pattern_replacement("quantized_linear")
 def replace_quantized_linear_patterns(
     ep: ExportedProgram,
