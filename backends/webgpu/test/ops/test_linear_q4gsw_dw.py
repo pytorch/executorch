@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""`et_vk.linear_q4gsw_dw` (STE weight gradient) export + fp64 golden.
+"""`et_vk.linear_q4gsw_dW` (STE weight gradient) export + fp64 golden.
 
 The weight gradient of a frozen 4-bit linear: `d_W[N, K] = d_out^T @ x`, the grad
 wrt the dequantized weight (both operands are fp32; no int4 unpack). Reached by a
@@ -31,7 +31,7 @@ CONFIGS = {
 
 class Q4gswDwModule(torch.nn.Module):
     def forward(self, d_out: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        return torch.ops.et_vk.linear_q4gsw_dw(d_out, x)
+        return torch.ops.et_vk.linear_q4gsw_dW(d_out, x)
 
 
 def _det_inputs(m: int, k: int, n: int):
@@ -70,7 +70,7 @@ class TestLinearQ4gswDw(unittest.TestCase):
                 et = _export(d_out, x)
                 self.assertTrue(
                     _delegated(et),
-                    f"Expected a VulkanBackend delegate (linear_q4gsw_dw {name})",
+                    f"Expected a VulkanBackend delegate (linear_q4gsw_dW {name})",
                 )
 
     def test_op_matches_fp64_golden(self) -> None:
@@ -78,7 +78,7 @@ class TestLinearQ4gswDw(unittest.TestCase):
         for name, (m, k, n) in CONFIGS.items():
             with self.subTest(config=name):
                 d_out, x = _det_inputs(m, k, n)
-                got = torch.ops.et_vk.linear_q4gsw_dw(d_out, x)
+                got = torch.ops.et_vk.linear_q4gsw_dW(d_out, x)
                 golden = _fp64_golden(d_out, x)
                 self.assertEqual(tuple(got.shape), (n, k))
                 torch.testing.assert_close(got, golden, atol=5e-4, rtol=1e-3)
