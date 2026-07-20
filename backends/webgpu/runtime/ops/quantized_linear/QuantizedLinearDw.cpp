@@ -9,7 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_dw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_dW_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
@@ -30,7 +30,7 @@ struct Q4gswDwParams {
 static_assert(sizeof(Q4gswDwParams) == 16, "params must be 16 bytes");
 
 // STE weight gradient d_W[N,K] = d_out^T @ x.
-void q4gsw_dw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+void q4gsw_dW_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int dout_id = args.at(0);
   const int x_id = args.at(1);
   const int dw_id = args.at(2);
@@ -41,12 +41,12 @@ void q4gsw_dw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& dw = graph.get_tensor(dw_id);
 
   if (dw.dims.size() != 2 || dout.dims.empty() || x.dims.empty()) {
-    throw std::runtime_error("q4gsw_dw: bad tensor ranks");
+    throw std::runtime_error("q4gsw_dW: bad tensor ranks");
   }
   const uint32_t N = static_cast<uint32_t>(dw.dims[0]);
   const uint32_t K = static_cast<uint32_t>(dw.dims[1]);
   if (N == 0 || K == 0) {
-    throw std::runtime_error("q4gsw_dw: N or K == 0");
+    throw std::runtime_error("q4gsw_dW: N or K == 0");
   }
 
   uint64_t dout_numel = 1;
@@ -59,18 +59,18 @@ void q4gsw_dw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
   if (static_cast<uint32_t>(dout.dims.back()) != N ||
       static_cast<uint32_t>(x.dims.back()) != K) {
-    throw std::runtime_error("q4gsw_dw: d_out/x last dim mismatch");
+    throw std::runtime_error("q4gsw_dW: d_out/x last dim mismatch");
   }
   const uint32_t M = static_cast<uint32_t>(dout_numel / N);
   if (dout_numel % N != 0 || x_numel % K != 0 || x_numel / K != M) {
-    throw std::runtime_error("q4gsw_dw: M mismatch across d_out/x");
+    throw std::runtime_error("q4gsw_dW: M mismatch across d_out/x");
   }
 
   // fp32-only byte-size guards (mirror the forward's byte checks).
   if (dw.nbytes != static_cast<uint64_t>(N) * K * sizeof(float) ||
       dout.nbytes != dout_numel * sizeof(float) ||
       x.nbytes != x_numel * sizeof(float)) {
-    throw std::runtime_error("q4gsw_dw: fp32-only (byte-size mismatch)");
+    throw std::runtime_error("q4gsw_dW: fp32-only (byte-size mismatch)");
   }
 
   Q4gswDwParams params = {};
@@ -83,10 +83,10 @@ void q4gsw_dw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const uint64_t tiles =
       utils::div_up<uint64_t>(N, 4u) * utils::div_up<uint64_t>(K, 4u);
   if (tiles > UINT32_MAX) {
-    throw std::runtime_error("q4gsw_dw: tile count exceeds u32");
+    throw std::runtime_error("q4gsw_dW: tile count exceeds u32");
   }
   const uint32_t workgroup_count = utils::compute_1d_workgroup_count(
-      device, static_cast<uint32_t>(tiles), wg_size, "q4gsw_dw");
+      device, static_cast<uint32_t>(tiles), wg_size, "q4gsw_dW");
 
   WGPUBuffer uniform_buffer =
       utils::make_uniform(device, &params, sizeof(params));
@@ -156,7 +156,7 @@ void q4gsw_dw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count, "q4gsw_dw"});
+  graph.add_dispatch({pipeline, bind_group, workgroup_count, "q4gsw_dW"});
 
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
@@ -167,7 +167,7 @@ void q4gsw_dw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
-  WEBGPU_REGISTER_OP(et_vk.linear_q4gsw_dw.default, q4gsw_dw_impl);
+  WEBGPU_REGISTER_OP(et_vk.linear_q4gsw_dW.default, q4gsw_dW_impl);
 }
 
 } // namespace executorch::backends::webgpu
