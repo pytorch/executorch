@@ -786,16 +786,18 @@ TEST_F(OpConvCorrectnessTest, BFloat16TypeSmokeTest) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-// Regression test for #20804: a transposed convolution weight with out_channels == 1
-// arrives with a non-default dim order (e.g. [1, 0, 2, 3], since the weight is laid out
-// as (in_channels, out_channels / groups, kH, kW)). The kernel indexes the weight through
-// its strides, so it must run and produce the same result as a default-order weight.
+// Regression test for #20804: a transposed convolution weight with
+// out_channels == 1 arrives with a non-default dim order (e.g. [1, 0, 2, 3],
+// since the weight is laid out as (in_channels, out_channels / groups, kH,
+// kW)). The kernel indexes the weight through its strides, so it must run and
+// produce the same result as a default-order weight.
 TEST_F(OpConvCorrectnessTest, TransposedWeightNonDefaultDimOrder) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor input = tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
 
-  // Weight (in_channels=2, out_channels=1, kH=2, kW=2) in dim order [1, 0, 2, 3].
+  // Weight (in_channels=2, out_channels=1, kH=2, kW=2)
+  // in dim order [1, 0, 2, 3].
   Tensor weight = tf.make_with_dimorder(
       {2, 1, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}, /*dim_order=*/{1, 0, 2, 3});
 
