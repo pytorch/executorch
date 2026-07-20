@@ -249,37 +249,6 @@ python export.py \
     --output-dir ./qwen35_moe_mlx
 ```
 
-### Prequantized Export (MLX)
-
-The examples above re-quantize on every export. To quantize once and reuse the
-result, build a self-contained bundle with `quantize_and_save.py --backend mlx`,
-then export from it with `--prequantized`:
-
-```bash
-# Step 1: Quantize once and save an MLX bundle
-python quantize_and_save.py \
-    --model-dir ~/models/Qwen3.5-35B-A3B \
-    --backend mlx \
-    --qlinear 4w \
-    --qlinear-group-size 64 \
-    --output qwen35_moe_mlx_int4
-
-# Step 2: Export from the bundle (fast, no --model-dir needed)
-python export.py \
-    --backend mlx \
-    --prequantized qwen35_moe_mlx_int4 \
-    --output-dir ./qwen35_moe_mlx
-```
-
-The bundle contains `model.safetensors` (torchao tensor subclasses), `config.json`,
-and tokenizer files, and can be shared via HuggingFace Hub.
-
-`--backend mlx` quantizes and saves one decoder layer at a time, so peak memory
-stays at roughly one bf16 layer instead of the full model — useful on Apple
-Silicon where unified memory is limited. `--qlinear-group-size` defaults to 64
-for MLX (32 for CUDA); `--hqq` is ignored (the MLX configs use torchao's
-`hqq_scale_only` qparams internally).
-
 ### MLX Options
 
 | Flag | Default | Description |

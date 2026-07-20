@@ -176,9 +176,8 @@ def load_and_quantize(args):  # noqa: C901
 
     if backend == "mlx":
         if args.prequantized:
-            return load_prequantized_model_mlx(
-                args.prequantized,
-                use_splitk_decode=use_splitk,
+            raise ValueError(
+                "MLX backend does not support custom prequantized weights. Use a prequantized torchao checkpoint instead."
             )
         _prepare_and_quantize_mlx(model, config, args)
 
@@ -289,110 +288,6 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
     # run_decompositions -> unwrap_tensor_subclass_parameters tries to wrap
     # int-dtype inner tensors of quantized subclasses as Parameters with
     # requires_grad=True, which fails. Disable grad on all parameters.
-    for p in model.parameters():
-        p.requires_grad_(False)
-    model.eval()
-
-    print(
-        f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
-        f"{config.num_experts} experts top-{config.num_experts_per_tok}"
-    )
-    return model, config
-
-
-def load_prequantized_model_mlx(prequantized_dir, use_splitk_decode=True):
-    """Load an MLX-format prequantized safetensors bundle into a model.
-
-    The bundle (from quantize_and_save.py --backend mlx) stores experts already
-    packed into stacked gather buffers and dense/lm_head weights as
-    ``ExportableInt4Tensor`` (embedding as ``IntxUnpackedToInt8Tensor``). Loading:
-
-      1. Build the model on meta and re-apply mlx_source_transformations so the
-         module tree, swapped forwards, and MLX KV cache match the bundle.
-      2. Convert each SwitchLinear to its packed buffer layout (experts are
-         already stacked/packed in the bundle) and assign the rest via
-         load_state_dict.
-
-    max_seq_len is derived from a saved KV cache buffer so the rebuilt cache
-    geometry and export dynamic-shape bounds always match the bundle.
-    """
-    from executorch.backends.mlx.llm.switch import pack_all_switch_linears
-    from executorch.examples.models.qwen3_5_moe.mlx_source_transformations import (
-        mlx_source_transformations,
-    )
-    from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
-        load_quantized_state_dict,
-    )
-
-    config_path = os.path.join(prequantized_dir, "config.json")
-    safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
-
-    print(f"Loading prequantized MLX weights from {safetensors_path}...")
-    state_dict = load_quantized_state_dict(safetensors_path)
-
-    # Int4Tensor -> ExportableInt4Tensor so dense linears export via
-    # dequantize_int4_tensor and experts pack via pack_all_switch_linears.
-    # Coarse/per-axis int8 (e.g. the embedding at group_size=hidden) keeps its
-    # group_size; the MLX pattern handlers regroup scale/zero_point to an
-    # MLX-legal size at export time (regroup_affine_scales).
-    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
-    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
-
-    for key, val in list(state_dict.items()):
-        if isinstance(val, Int4Tensor):
-            state_dict[key] = ExportableInt4Tensor.from_int4_tensor(val)
-
-    # Derive max_seq_len from a saved KV cache buffer ([1, H, max_seq_len, D]).
-    max_seq_len = None
-    for key, val in state_dict.items():
-        if key.endswith(".kv_cache.k_cache"):
-            max_seq_len = val.shape[2]
-            break
-    if max_seq_len is None:
-        raise RuntimeError(
-            "Prequantized MLX bundle has no KV cache buffer; cannot infer "
-            "max_seq_len (is this a CUDA bundle? use --backend cuda)."
-        )
-
-    config = Qwen35MoEConfig.from_hf_config(config_path)
-    config.max_seq_len = max_seq_len
-    config.use_splitk_decode = use_splitk_decode
-
-    print("Building model on meta device...")
-    with torch.device("meta"):
-        model = Qwen35MoE(config)
-        # Reproduce the source-transformed structure (per-expert SwitchLinear
-        # nn.Linears, swapped forwards, MLX KV cache) the bundle was saved in.
-        mlx_source_transformations(
-            model,
-            model_dtype=torch.bfloat16,
-            config=config,
-            sort_experts=True,
-            fuse_gate_up=False,
-        )
-
-    missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
-    del state_dict
-
-    runtime_prefixes = (".mask", ".inv_freq", ".cache_positions")
-    expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
-    weight_missing = set(missing) - expected_missing
-    if weight_missing:
-        raise RuntimeError(
-            f"Prequantized MLX checkpoint is missing {len(weight_missing)} weight "
-            f"keys (model/checkpoint version mismatch?): {sorted(weight_missing)[:10]}"
-        )
-    if unexpected:
-        raise RuntimeError(
-            f"Prequantized MLX checkpoint has {len(unexpected)} unexpected keys "
-            f"(model/checkpoint version mismatch?): {sorted(unexpected)[:10]}"
-        )
-
-    # Stack per-expert ExportableInt4Tensors into mlx::gather_qmm buffers.
-    pack_all_switch_linears(model)
-
-    # assign=True wraps assigned tensors as Parameter(requires_grad=True), which
-    # breaks unwrap_tensor_subclass_parameters on int-dtype quantized inners.
     for p in model.parameters():
         p.requires_grad_(False)
     model.eval()
@@ -1360,6 +1255,8 @@ def main():  # noqa: C901
             torch.cuda.reset_peak_memory_stats(0)
 
     if args.backend == "mlx":
+        if args.prequantized:
+            parser.error("--prequantized is not supported with --backend mlx")
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend mlx")
 

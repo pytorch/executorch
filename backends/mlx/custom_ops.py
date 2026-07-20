@@ -354,17 +354,6 @@ def gather_qmm(
         s_sel = scales
         b_sel = biases
 
-    subbyte_packed = w_sel.dtype == torch.uint8
-    if subbyte_packed:
-        assert (
-            bits == 4
-        ), "Subbyte packing qdata (uint8) is only supported for bits=4 now."
-
-        offset = 2 ** (bits - 1)
-        lo = (w_sel & 0x0F).to(torch.int16)
-        hi = ((w_sel >> 4) & 0x0F).to(torch.int16)
-        w_sel = torch.stack([lo, hi], dim=-1).reshape(*w_sel.shape[:-1], -1) - offset
-
     # Dequantize
     w_float = w_sel.to(x.dtype)
     s_expanded = s_sel.repeat_interleave(group_size, dim=-1)

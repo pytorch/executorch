@@ -25,7 +25,6 @@ from executorch.backends.mlx.builder.op_helpers import (
     emit_quantized_biases,
     emit_shape,
     parse_dequant_node,
-    regroup_affine_scales,
     to_mlx_qparams,
     torch_dtype_to_scalar_type,
 )
@@ -1850,12 +1849,7 @@ def _gather_qmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     if biases_node is not None:
         zp_target, zp_data = P.get_placeholder_target_and_tensor(biases_node)
 
-    # Reshape 3D [E, out, in] to 2D for to_mlx_qparams, then reshape back.
-    # Packed int4 experts store qdata as uint8 [E, out, in//2] (two 4-bit values
-    # per byte); unpacked experts store int8 [E, out, in]. Detect via dtype and
-    # let to_mlx_qparams take the prepacked (view -> uint32) fast path so packed
-    # weights never expand to int8 during lowering.
-    prepacked = w_data.dtype == torch.uint8
+    # Reshape 3D [E, out, in] to 2D for to_mlx_qparams, then reshape back
     orig_shape = w_data.shape
     E, out_dim = orig_shape[0], orig_shape[1]
     w_2d = w_data.reshape(E * out_dim, -1)
@@ -1866,7 +1860,7 @@ def _gather_qmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         else torch.zeros_like(s_2d, dtype=torch.int8)
     )
 
-    Q, B = to_mlx_qparams(w_2d, s_2d, zp_2d, bits, prepacked=prepacked)
+    Q, B = to_mlx_qparams(w_2d, s_2d, zp_2d, bits)
     Q = Q.reshape(E, out_dim, -1)
     B = B.reshape(E, out_dim, -1)
 
@@ -4442,12 +4436,6 @@ def _dequantize_affine_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     qdata_2d = qdata.reshape(-1, qdata.shape[-1])
     scale_2d = scale.reshape(-1, scale.shape[-1])
     zero_point_2d = zero_point.reshape(-1, zero_point.shape[-1])
-
-    # torchao may quantize with a coarser group_size than MLX supports; repeat
-    # scale/zero_point to the MLX-legal group_size (returned by parse_dequant_node).
-    scale_2d, zero_point_2d, _ = regroup_affine_scales(
-        scale_2d, zero_point_2d, qdata_2d.shape[-1], group_size
-    )
 
     Q, B = to_mlx_qparams(qdata_2d, scale_2d, zero_point_2d, bits)
 
