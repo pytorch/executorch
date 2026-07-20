@@ -26,12 +26,9 @@ if(NOT TARGET vulkan_schema)
 endif()
 
 set(WEBGPU_SRCS
-    runtime/WebGPUBackend.cpp
-    runtime/WebGPUGraph.cpp
-    runtime/WebGPUDelegateHeader.cpp
-    runtime/WebGPUDevice.cpp
-    runtime/WebGPUQueryPool.cpp
-    runtime/ops/OperatorRegistry.cpp
+    runtime/WebGPUBackend.cpp runtime/WebGPUGraph.cpp
+    runtime/WebGPUDelegateHeader.cpp runtime/WebGPUDevice.cpp
+    runtime/WebGPUQueryPool.cpp runtime/ops/OperatorRegistry.cpp
 )
 
 # Op handlers: glob so adding an op needs no CMakeLists edit. CONFIGURE_DEPENDS
