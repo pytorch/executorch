@@ -1204,25 +1204,25 @@ fused_ce_op = getattr(getattr(torch.ops, namespace), name)
 
 
 # STE weight gradient d_out^T @ x through the frozen 4-bit linear_q4gsw base.
-def linear_q4gsw_dw_impl(
+def linear_q4gsw_dW_impl(
     d_out: torch.Tensor,
     x: torch.Tensor,
 ) -> torch.Tensor:
     return d_out.reshape(-1, d_out.shape[-1]).t() @ x.reshape(-1, x.shape[-1])
 
 
-def linear_q4gsw_dw_meta(
+def linear_q4gsw_dW_meta(
     d_out: torch.Tensor,
     x: torch.Tensor,
 ) -> torch.Tensor:
     return d_out.new_empty((d_out.shape[-1], x.shape[-1]))
 
 
-name = "linear_q4gsw_dw"
+name = "linear_q4gsw_dW"
 lib.define(f"{name}(Tensor d_out, Tensor x) -> Tensor")
-lib.impl(name, linear_q4gsw_dw_impl, "CompositeExplicitAutograd")
-lib.impl(name, linear_q4gsw_dw_meta, "Meta")
-linear_q4gsw_dw_op = getattr(getattr(torch.ops, namespace), name)
+lib.impl(name, linear_q4gsw_dW_impl, "CompositeExplicitAutograd")
+lib.impl(name, linear_q4gsw_dW_meta, "Meta")
+linear_q4gsw_dW_op = getattr(getattr(torch.ops, namespace), name)
 
 
 ##################
