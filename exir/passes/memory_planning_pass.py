@@ -153,7 +153,6 @@ class MemoryPlanningPass(PassBase):
         alloc_mutable_buffers: bool = True,
         share_mutable_buffers: bool = False,
         alignment: int = ALIGNMENT,
-        enable_non_cpu_memory_planning: bool = False,
     ) -> None:
         r"""
         alloc_graph_input/alloc_graph_output will have 4 different combinations
@@ -174,8 +173,11 @@ class MemoryPlanningPass(PassBase):
         self.alloc_mutable_buffers = alloc_mutable_buffers
         self.share_mutable_buffers = share_mutable_buffers
         self.alignment = alignment
-        self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
         self.state = _MemoryPlanningState()
+        # Set by EdgeProgramManager.to_executorch() from the top-level
+        # ExecutorchBackendConfig. When True, apply_algo partitions specs by
+        # device so non-CPU buffers get their own memory arenas.
+        self.enable_non_cpu_memory_planning: bool = False
 
     def _set_alloc_node_spec(self, graph_module: torch.fx.GraphModule) -> None:
         """

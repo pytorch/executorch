@@ -87,7 +87,7 @@ target_compile_definitions(
 if(EXECUTORCH_BUILD_CUDA)
   find_package(CUDAToolkit REQUIRED)
   target_include_directories(slimtensor INTERFACE ${CUDAToolkit_INCLUDE_DIRS})
-  target_link_libraries(slimtensor INTERFACE CUDA::cudart)
+  target_link_libraries(slimtensor INTERFACE CUDA::cudart extension_cuda)
 endif()
 
 install(

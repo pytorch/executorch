@@ -182,6 +182,23 @@ def define_common_targets():
         ["portable"],
         deps = [
             "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    # ATen-mode kernels for et_copy use at::Tensor construction, which the
+    # portable TensorImpl-based op__device_copy_test above cannot express, so
+    # the ATen path has its own dedicated test.
+    runtime.cxx_test(
+        name = "op__device_copy_aten_test",
+        srcs = ["op__device_copy_aten_test.cpp"],
+        preprocessor_flags = ["-DUSE_ATEN_LIB"],
+        deps = [
+            "//executorch/kernels/portable/cpu:op__device_copy_aten",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/exec_aten:lib_aten",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
             "//executorch/runtime/platform:platform",
         ],
     )

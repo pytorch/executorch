@@ -4,8 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
+
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -19,14 +22,8 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     ModelInputSpec,
     to_quantized_edge_program,
 )
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-)
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    NumericalStatsOutputComparator,
-)
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
@@ -67,135 +64,36 @@ class AddClampModule(torch.nn.Module):
         return self.clamp(x)
 
 
-# noinspection PyShadowingBuiltins
-@pytest.mark.parametrize(
-    "min, max",
-    [
-        pytest.param(0, 6, id="min = 0, max = 6 (Relu6)"),
-        pytest.param(0, 1, id="min = 0, max = 1 (Relu0To1)"),
-        pytest.param(-1, 1, id="min = -1, max = 1 (ReluN1To1)"),
-        pytest.param(0, None, id="min = 0, max = None (Relu)"),
-        # float bounds.
-        pytest.param(0.0, 6.0, id="min = 0.0, max = 6.0 (Relu6)"),
-        pytest.param(0.0, 1.0, id="min = 0.0, max = 1.0 (Relu0To1)"),
-        pytest.param(-1.0, 1.0, id="min = -1.0, max = 1.0 (ReluN1To1)"),
-        pytest.param(0.0, None, id="min = 0.0, max = None (Relu)"),
-    ],
-)
-def test_convert_clamp__supported(mocker, min, max):
-    input_shape = (23,)
-    model = AddClampModule(min, max)
+class TestClamp:
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
-
-    # Make sure the `clamp` was delegated.
-    assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [Clamp])
-
-    # Verify correct behavior of the converted NeutronIR model.
-    intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
-
-    input_data = (
-        np.random.random(input_shape).astype(np.float32) * 256.0 - 128.0
-    ).astype(np.int8)
-
-    # Make sure the tested program contains the `clamp`.
-    assert graph_contains_any_of_ops(intermediate_ep.graph, [Clamp])
-
-    convert_run_compare(
-        intermediate_ep,
-        tfl_model=neutron_ir_model,
-        input_data=input_data,
+    @pytest.mark.parametrize(
+        "min, max",
+        [
+            pytest.param(-1, 2, id="min = -1, max = 2 (Max/Min)"),
+            pytest.param(0.0, None, id="min = 0, max = None (Relu)"),
+        ],
     )
+    def test__qat(self, mocker, request, min, max, use_qat):
+        input_shape = (2, 7, 2)  # Indivisible by num_macs
+        model = AddClampModule(min, max)
 
+        x_input_spec = ModelInputSpec(input_shape)
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={
+                AddTensor: 1,
+                Clamp: 1,
+            },
+            expected_non_delegated_ops={},
+        )
 
-# noinspection PyShadowingBuiltins
-@pytest.mark.parametrize(
-    "input_shape, min, max",
-    [
-        pytest.param(
-            (1, 7, 9, 11),
-            0,
-            6,
-            id="min = 0, max = 6 (Relu6), num_channels not divisible by NUM_MACS, alone in partition",
-        ),
-        pytest.param(
-            (1, 7, 9, 11),
-            0,
-            None,
-            id="min = 0, max = None (Relu), num_channels not divisible by NUM_MACS, alone in partition",
-        ),
-    ],
-)
-def test_convert_clamp__unsupported_shape(input_shape, min, max):
-    model = ClampModule(min, max)
+        lower_run_compare(
+            model=model,
+            input_spec=[x_input_spec],
+            request=request,
+            dlg_model_verifier=graph_verifier,
+        )
 
-    delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
-
-    # Make sure the `clamp` was NOT delegated.
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert graph_contains_any_of_ops(delegated_ep.graph, [Clamp])
-
-
-# noinspection PyShadowingBuiltins
-@pytest.mark.parametrize(
-    "min, max",
-    [
-        pytest.param(0, 1, id="min = 0, max = 1 (Relu0To1)"),
-        pytest.param(-1, 1, id="min = -1, max = 1 (ReluN1To1)"),
-    ],
-)
-def test_convert_clamp__single_op__delegated_variants(mocker, min, max):
-    # Test that Clamp representable as Relu0To1 or ReluN1To1 is delegated, even though it is a single op model.
-    input_shape = (23,)
-    model = ClampModule(min, max)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-    delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
-
-    # Make sure the `clamp` was delegated.
-    assert graph_contains_any_of_ops(delegated_ep.graph, [ExecutorchDelegateCall])
-    assert not graph_contains_any_of_ops(delegated_ep.graph, [Clamp])
-
-    # Verify correct behavior of the converted NeutronIR model.
-    intermediate_ep = converter_spy.call_args.args[1]
-    neutron_ir_model, _ = converter_spy.spy_return
-
-    input_data = (
-        np.random.random(input_shape).astype(np.float32) * 256.0 - 128.0
-    ).astype(np.int8)
-
-    # Make sure the tested program contains the `clamp`.
-    assert graph_contains_any_of_ops(intermediate_ep.graph, [Clamp])
-
-    convert_run_compare(
-        intermediate_ep,
-        tfl_model=neutron_ir_model,
-        input_data=input_data,
-    )
-
-
-# noinspection PyShadowingBuiltins
-@pytest.mark.parametrize(
-    "min, max",
-    [
-        pytest.param(-3, 3, id="min = -3, max = 3"),
-        pytest.param(None, 5, id="min = None, max = 5"),
-    ],
-)
-def test_convert_clamp__no_delegation__unsupported_bounds(min, max):
-    input_shape = (23,)
-    model = AddClampModule(min, max)
-
-    delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
-
-    # Make sure the `clamp` was NOT delegated.
-    assert graph_contains_any_of_ops(delegated_ep.graph, [Clamp])
-
-
-class TestClampNewNeutronFlow:
     @pytest.mark.parametrize(
         "min, max",
         [
@@ -218,12 +116,11 @@ class TestClampNewNeutronFlow:
             pytest.param(0.0, None, id="min = 0, max = None (Relu)"),
         ],
     )
-    def test_convert_clamp__full_pipeline(self, mocker, min, max, use_qat):
+    def test_convert_clamp__full_pipeline(self, mocker, request, min, max):
         input_shape = (2, 7, 2)  # Indivisible by num_macs
         model = AddClampModule(min, max)
 
         x_input_spec = ModelInputSpec(input_shape)
-        comparator = NumericalStatsOutputComparator()
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={
@@ -237,9 +134,7 @@ class TestClampNewNeutronFlow:
             model=model,
             input_spec=[x_input_spec],
             dlg_model_verifier=graph_verifier,
-            output_comparator=comparator,
-            use_new_flow_neutron_c=True,
-            use_qat=use_qat,
+            request=request,
         )
 
     @pytest.mark.parametrize(
@@ -301,7 +196,6 @@ class TestClampNewNeutronFlow:
         delegated_ep = to_quantized_edge_program(
             model,
             input_shape,
-            use_new_flow_neutron_c=True,
         ).exported_program()
 
         # Make sure the `clamp` was delegated.

@@ -1,0 +1,26 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+transpose_cast_contig_to_vectorized:
+  parameter_names_with_default_values:
+    DTYPE: float
+    OUT_DTYPE: half
+    IN_STORAGE: buffer
+    OUT_STORAGE: buffer
+  generate_variant_forall:
+    combination:
+      parameter_names: [DTYPE, IN_STORAGE, OUT_DTYPE, OUT_STORAGE]
+      combos:
+        - parameter_values: [float, buffer, half, buffer]
+        - parameter_values: [float, buffer, float, buffer]
+        - parameter_values: [float, buffer, half, texture2d]
+        - parameter_values: [float, buffer, float, texture2d]
+        - parameter_values: [half, buffer, half, buffer]
+        - parameter_values: [half, buffer, float, buffer]
+        - parameter_values: [half, buffer, half, texture2d]
+        - parameter_values: [half, buffer, float, texture2d]
+  shader_variants:
+    - NAME: transpose_cast_contig_to_vectorized

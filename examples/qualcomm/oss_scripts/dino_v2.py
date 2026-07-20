@@ -11,7 +11,7 @@ from multiprocessing.connection import Client
 
 import numpy as np
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.export_utils import (
     build_executorch_binary,
@@ -57,7 +57,7 @@ def main(args):
 
     pte_filename = "dino_v2"
     instance = get_instance()
-    passes_job = get_capture_program_passes()
+    passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
     quant_dtype = {
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: QuantDtype.use_8a8w,

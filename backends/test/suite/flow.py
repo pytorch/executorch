@@ -117,6 +117,12 @@ def _load_vulkan() -> list[TestFlow]:
     return [VULKAN_TEST_FLOW, VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW]
 
 
+def _load_webgpu() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.webgpu import WEBGPU_TEST_FLOW
+
+    return [WEBGPU_TEST_FLOW]
+
+
 def _load_openvino() -> list[TestFlow]:
     from executorch.backends.test.suite.flows.openvino import (
         OPENVINO_INT8_TEST_FLOW,
@@ -178,6 +184,7 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_xnnpack, "XNNPACK")
         + _register_flow(_load_coreml, "Core ML")
         + _register_flow(_load_vulkan, "Vulkan")
+        + _register_flow(_load_webgpu, "WebGPU")
         + _register_flow(_load_openvino, "OpenVINO")
         + _register_flow(_load_qnn, "QNN")
         + _register_flow(_load_arm, "ARM")

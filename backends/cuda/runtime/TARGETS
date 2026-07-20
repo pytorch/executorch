@@ -1,4 +1,6 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
 load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 
 oncall("executorch")
@@ -90,6 +92,7 @@ runtime.cxx_library(
         "//executorch/runtime/core:device_allocator",
     ],
     deps = [
+        "//executorch/extension/cuda:caller_stream",
         "//executorch/runtime/platform:platform",
     ],
     nvcc_flags = get_nvcc_arch_args() + [
@@ -105,9 +108,11 @@ runtime.cxx_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.cpp",
+        "cuda_mutable_state.cpp",
     ],
     headers = [
         "cuda_delegate_handle.h",
+        "cuda_mutable_state.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,
@@ -126,6 +131,7 @@ runtime.cxx_library(
         "//executorch/backends/aoti/slim/factory:empty",
         "//executorch/backends/aoti/slim/factory:from_blob",
         "//executorch/backends/aoti/slim/factory:from_etensor",
+        "//executorch/extension/cuda:caller_stream",
         "//executorch/extension/tensor:tensor",
         "//executorch/runtime/backend:interface",
         "//executorch/runtime/core/exec_aten/util:tensor_util",
@@ -133,4 +139,45 @@ runtime.cxx_library(
     external_deps = [
         ("cuda", None, "cuda-lazy"),
     ],
+)
+
+cpp_unittest(
+    name = "test_cuda_mutable_state",
+    srcs = [
+        "test/test_cuda_mutable_state.cpp",
+    ],
+    deps = [
+        ":cuda_backend",
+        "//executorch/backends/aoti:aoti_common_slim",
+        "//executorch/backends/aoti/slim/core:slimtensor",
+        "//executorch/backends/aoti/slim/factory:from_blob",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/core:evalue",
+        "//executorch/runtime/platform:platform",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+    keep_gpu_sections = True,
+    remote_execution = re_test_utils.remote_execution(
+        platform = "gpu-remote-execution",
+    ),
+)
+
+cpp_unittest(
+    name = "test_cuda_allocator",
+    srcs = ["test/test_cuda_allocator.cpp"],
+    deps = [
+        ":cuda_allocator",
+        "//executorch/extension/cuda:caller_stream",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/platform:platform",
+    ],
+    external_deps = [("cuda", None, "cuda-lazy")],
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+    keep_gpu_sections = True,
+    remote_execution = re_test_utils.remote_execution(
+        platform = "gpu-remote-execution",
+    ),
 )

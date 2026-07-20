@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
@@ -83,7 +84,10 @@ QnnManager::QnnManager(
         "Enable shared buffer: %d", options->shared_buffer());
     QNN_EXECUTORCH_LOG_INFO(
         "The number of op packages: %d",
-        options_->op_package_options()->op_package_infos()->size());
+        options_->op_package_options() &&
+                options_->op_package_options()->op_package_infos()
+            ? options_->op_package_options()->op_package_infos()->size()
+            : 0);
   }
 
   backend_params_ptr_ = std::make_unique<BackendConfigParameters>();

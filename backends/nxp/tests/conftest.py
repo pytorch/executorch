@@ -35,4 +35,4 @@ def pytest_sessionstart(session):
 
     # Remove all cached test files
     shutil.rmtree(outputs_dir.OUTPUTS_DIR, ignore_errors=True)
-    os.mkdir(outputs_dir.OUTPUTS_DIR)
+    os.makedirs(outputs_dir.OUTPUTS_DIR, exist_ok=True)

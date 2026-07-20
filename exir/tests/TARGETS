@@ -500,6 +500,7 @@ python_unittest(
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/backend/test:backend_with_compiler_demo",
+        "//executorch/exir/backend/test:device_util",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:propagate_device_pass",
         "//executorch/exir/passes:device_copy_ops_registry",

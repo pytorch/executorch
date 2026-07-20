@@ -8,3 +8,11 @@
 # QNN SDK Configuration
 QNN_VERSION="2.37.0.250724"
 QNN_ZIP_URL="https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QNN_VERSION}/v${QNN_VERSION}.zip"
+
+# Hexagon SDK Configuration (used only by direct-mode CI build).
+# HEXAGON_TOOLS_VERSION must match the toolchain shipped inside HEXAGON_SDK_VERSION.
+HEXAGON_SDK_VERSION="6.5.0.0"
+HEXAGON_TOOLS_VERSION="19.0.07"
+HEXAGON_SDK_ZIP_URL="https://apigwx-aws.qualcomm.com/qsc/public/v1/api/download/software/sdks/Hexagon_SDK/Linux/Debian/${HEXAGON_SDK_VERSION}/Hexagon_SDK_Linux.zip"
+# SHA-256 of the downloaded zip. Recompute and update when HEXAGON_SDK_VERSION changes. Command to gen followin sha: sha256sum Hexagon_SDK_Linux.zip
+HEXAGON_SDK_ZIP_SHA256="668626f75c38ce1ca993768953db9bf4b632753c3e32ed8363a8287e3aaffc9a"

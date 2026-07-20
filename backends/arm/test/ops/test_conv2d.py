@@ -21,7 +21,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-
 aten_op = "torch.ops.aten.conv2d.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_convolution_default"
 
@@ -523,7 +522,36 @@ test_data_FP_fp16 = {
     "fp16_3x3": conv2d_fp16_3x3,
     "fp16_1x1": conv2d_fp16_1x1,
 }
-
+test_data_FP_fp8 = {
+    "fp8e4m3": lambda: (
+        Conv2d(
+            height=8,
+            width=8,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "fp8e5m2": lambda: (
+        Conv2d(
+            height=8,
+            width=8,
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -575,6 +603,21 @@ def test_convolution_2d_tosa_FP(test_data):
         atol=3e-3,
         rtol=3e-3,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP_fp8)
+def test_convolution_2d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"CONV2D": 1, "CAST": 1})
     pipeline.run()
 
 
@@ -674,18 +717,25 @@ def test_convolution_2d_u85_INT_a8w4(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
+@common.parametrize("test_data", test_data_FP | test_data_FP_bf16 | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_no_quant(test_data):
     model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 2e-2
+            rtol = 2e-2
+        case _:
+            atol = 3e-3
+            rtol = 3e-3
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op,
         exir_op,
         quantize=False,
-        atol=3e-3,
-        rtol=3e-3,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

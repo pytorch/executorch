@@ -18,12 +18,15 @@ import operator
 from collections import deque
 from itertools import count
 from pathlib import Path
-from typing import Callable, cast, List, Optional, Sequence, Tuple
+from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
+)
+from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
+    is_exact_tosa_boundary_bilinear_downscale,
 )
 
 from executorch.backends.arm.common.type import ensure_type
@@ -33,6 +36,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -47,6 +51,31 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partit
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
+
+class DecomposableResizeSupported(OperatorSupportBase):
+    """Accept exact boundary bilinear downscales.
+
+    These are decomposed later.
+
+    """
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        """Initialize the check with the active TOSA specification."""
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when the resize matches the decomposable boundary case.
+
+        This keeps the node delegatable so a later pass can rewrite it.
+
+        """
+        del submodules
+        return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
 
 
 def _is_custom_partition_op(
@@ -112,6 +141,14 @@ def _is_noop_squeeze(node: torch.fx.Node) -> bool:
         return input_tensor.shape == output_tensor.shape
 
 
+def _is_noop_flip(node: torch.fx.node.Node) -> bool:
+    # flip over no dims is the identity; DecomposeFlipPass drops it entirely.
+    if node.target != exir_ops.edge.aten.flip.default:
+        return False
+    dims = node.args[1]
+    return isinstance(dims, (list, tuple)) and len(dims) == 0
+
+
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
     return node.target == exir_ops.edge.aten.view_copy.default
 
@@ -155,8 +192,7 @@ def reject_partition(
 
 
 def _validate_partition(nodes: set[torch.fx.Node]) -> bool:
-    """Check whether a set of nodes can be extracted as a subgraph without
-    cycles.
+    """Check whether a set of nodes can be extracted.
 
     Perform a BFS from the external users of partition nodes. If any node
     reached by BFS is itself inside the partition, then extracting the
@@ -256,13 +292,12 @@ class TOSAPartitioner(Partitioner):
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
 
     def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
-        """Register a custom op to be considered supported by this
-        partitioner.
-        """
+        """Register a custom op to be considered supported."""
         self._custom_partition_ops.add(op)
 
     def _detag_boundary_nodes(
@@ -284,9 +319,10 @@ class TOSAPartitioner(Partitioner):
             tag: The delegation tag assigned to the partition.
             reporter: A reporter to log rejected nodes.
             module: The GraphModule containing the partition.
+            detag_first_fp_node: Whether to de-tag the first floating-point
+                node in a partition.
 
         """
-
         # De-tag outermost q-nodes upwards and dq-nodes downwards.
         # De-tag if at least one input/output is not part of the partition.
         for node in module.graph.nodes:
@@ -309,7 +345,9 @@ class TOSAPartitioner(Partitioner):
             elif detag_first_fp_node and not is_q_node and not is_dq_node:
                 # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
                 for input in node.all_input_nodes:
-                    if is_partitioned(input, tag):
+                    if is_partitioned(input, tag) or isinstance(
+                        input.meta["val"], torch.SymInt
+                    ):
                         continue
                     if get_first_fake_tensor(input).dtype.is_floating_point:
                         reporter.report_reject(
@@ -320,9 +358,7 @@ class TOSAPartitioner(Partitioner):
                         break
 
     def _preserve_io_quantization_enabled(self) -> bool:
-        """Return True if IO quantization should be preserved from compile
-        specs.
-        """
+        """Return True if compile specs preserve IO quantization."""
         for spec in self.delegation_spec.compile_specs:
             if spec.key != "preserve_io_quantization":
                 continue
@@ -356,7 +392,13 @@ class TOSAPartitioner(Partitioner):
                 if dtype is None:
                     try:
                         dtype = get_first_fake_tensor(node).dtype
-                    except (AttributeError, KeyError, RuntimeError, ValueError):
+                    except (
+                        AttributeError,
+                        KeyError,
+                        RuntimeError,
+                        ValueError,
+                        TypeError,
+                    ):
                         dtype = None
             if dtype is None:
                 continue
@@ -407,9 +449,7 @@ class TOSAPartitioner(Partitioner):
                     "Got overlapping tags in two different modules, this shouldn't happen."
                 )
             tags = tags | submodule_tags
-        operator_support = tosa_support_factory(
-            self.tosa_spec, containing_program, reporter, self.additional_checks
-        )
+        operator_support = self._create_operator_support(containing_program, reporter)
         if self._custom_partition_ops:
             custom_ops = set(self._custom_partition_ops)
 
@@ -505,6 +545,7 @@ class TOSAPartitioner(Partitioner):
                     or _is_noop_detach_copy(node)
                     or _is_noop_to_dim_order_copy(node)
                     or _is_noop_squeeze(node)
+                    or _is_noop_flip(node)
                     or _is_view_copy(node)
                     or _is_noop_as_strided_copy(node)
                     or node.target in Q_OPS
@@ -520,6 +561,19 @@ class TOSAPartitioner(Partitioner):
                     if active_tag in tags:
                         tags.remove(active_tag)
         return tags
+
+    def _create_operator_support(
+        self,
+        containing_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+    ) -> OperatorSupportBase:
+        return tosa_support_factory(
+            self.tosa_spec,
+            containing_program,
+            reporter,
+            self.additional_checks,
+            additional_positive_checks=[self._decomposable_resize_support],
+        )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """Partition the program and tag TOSA-compatible subgraphs.
@@ -614,9 +668,10 @@ class TOSAPartitioner(Partitioner):
         }
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Filter function applied to ops in 'ops_to_not_decompose'. Returns
-            True if the op should not be decomposed. If this function returns
-            True, the partitioner *must* accept the node, or the lowering fails.
+            """Return True if an op should not be decomposed.
+
+            If this function returns True, the partitioner *must* accept the
+            node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.

@@ -120,6 +120,10 @@ int32_t aoti_torch_dtype_bfloat16() {
   return 15; // ScalarType::BFloat16
 }
 
+int32_t aoti_torch_dtype_float16() {
+  return 5; // ScalarType::Half
+}
+
 int32_t aoti_torch_dtype_int64() {
   return 4; // ScalarType::Long
 }

@@ -48,6 +48,13 @@ enum DecoderModelVersion {
 
 class Runner : public executorch::extension::llm::IRunner {
  public:
+  enum EvalMode {
+    kKVCached = 0,
+    kHybrid,
+    kLookaheadDecoding,
+    kUnsupported,
+  };
+
   explicit Runner(
       std::unique_ptr<executorch::extension::Module> module,
       const std::string& decoder_model,
@@ -86,13 +93,6 @@ class Runner : public executorch::extension::llm::IRunner {
   executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
 
  private:
-  enum EvalMode {
-    kKVCached = 0,
-    kHybrid,
-    kLookaheadDecoding,
-    kUnsupported,
-  };
-
   std::unique_ptr<executorch::extension::Module> module_;
   std::unique_ptr<executorch::extension::Module> attention_sink_rope_module_;
   int32_t context_len_{0};

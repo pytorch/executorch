@@ -44,7 +44,7 @@ target_sources(
 )
 
 set(platform target)
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES x86_64)
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
   set(platform host)
 endif()
 

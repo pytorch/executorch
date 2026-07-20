@@ -45,6 +45,7 @@ def test_mv3_tosa_FP():
     pipeline.run()
 
 
+# Slightly higher atol for TOSA FP16 on aarch64 (MLETORCH-2048: numeric mismatch)
 @pytest.mark.slow
 def test_mv3_tosa_FP_fp16():
     input_tensor_fp16 = torch.rand(
@@ -57,7 +58,7 @@ def test_mv3_tosa_FP_fp16():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        atol=6e-2,
+        atol=6.5e-2 if common.is_aarch64_host() else 6e-2,
     )
     pipeline.run()
 

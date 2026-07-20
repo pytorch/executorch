@@ -36,6 +36,11 @@ class DecomposeCDist(ExportPass):
     Decompose for math equivalent op.
     """
 
+    cdist_targets = {
+        torch.ops.aten.cdist.default,
+        torch.ops.aten._cdist_forward.default,
+    }
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -43,7 +48,7 @@ class DecomposeCDist(ExportPass):
         graph = graph_module.graph
         for node in graph.nodes:
             model = CDist()
-            if torch.ops.aten.cdist.default == node.target:
+            if node.target in self.cdist_targets:
                 if len(node.args) > 2:
                     assert (
                         node.args[2] == 2

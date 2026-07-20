@@ -3,9 +3,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+
+from executorch.backends.nxp.backend.graph_utils import (
+    is_clamp_preserved_under_quantization,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
     Partition,
 )
@@ -30,6 +33,15 @@ class ReLUConverter(NodeConverter):
     ) -> bool:
         return True
 
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        return activation_supported_on_target(node)
+
     @classmethod
     def supports_partitioning_result(
         cls,
@@ -39,11 +51,9 @@ class ReLUConverter(NodeConverter):
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
-        is_alone_in_partition = cls.is_node_alone_in_partition(
-            node, partition_list, filter_fn=is_not_qdq_node
-        )
+        is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
         if is_alone_in_partition:
-            return activation_supported_on_target(node, neutron_target_spec)
+            return is_clamp_preserved_under_quantization(node)
 
         return True
 

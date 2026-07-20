@@ -26,6 +26,7 @@ arm-scratch/
 executorch.egg-info
 pip-out/
 build-profiling/
+**/ddr_*_temp
 
 # Any exported models and profiling outputs
 *.bin
@@ -77,6 +78,9 @@ xcuserdata/
 *.dll
 *.pyd
 
+# Zephyr
+zephyr_dev_root/
+zephyr_dev_root.backup.*/
 
 # Agents
 .claude/*.local.*

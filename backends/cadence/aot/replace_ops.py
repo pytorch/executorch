@@ -632,6 +632,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
         value = 0 if len(node.args) == 2 else node.args[2]
 
         arg_shape = input_node.meta["val"].shape
+        dtype = input_node.meta["val"].dtype
 
         # Convert orig_padding to a list for manipulation
         # pyre-ignore[6]: Argument type
@@ -663,7 +664,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         left_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 left_padding_node.meta = node.meta
             cat_tensors.append(left_padding_node)
@@ -683,7 +684,7 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
                         right_padding_shape,
                         value,
                     ),
-                    kwargs={"dtype": torch.float32},
+                    kwargs={"dtype": dtype},
                 )
                 right_padding_node.meta = node.meta
             cat_tensors.append(right_padding_node)
@@ -2036,6 +2037,13 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
         # Check if im2row has dilation. If yes, we cannot replace it with view.
         dilation = cast(Sequence[int], node.args[2])
         if any(d != 1 for d in dilation):
+            return False
+
+        # When channel_last=True (NHWC layout), im2row rearranges data from
+        # kp-major (NHWC natural order) to channel-major output layout.
+        # A simple view_copy cannot perform this data rearrangement.
+        channel_last = node.args[6] if len(node.args) > 6 else False
+        if channel_last:
             return False
 
         # im2row works on 3D or 4D tensors.

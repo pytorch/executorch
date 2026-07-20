@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -6,6 +7,9 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+    if not is_fbcode():
+        return
+
     runtime.cxx_test(
         name = "make_boxed_from_unboxed_functor_test",
         srcs = [

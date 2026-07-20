@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 
@@ -49,6 +50,15 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& out_tensor = graph.get_tensor(out_id);
   uint32_t num_elements =
       static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
+
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kBinaryAddWorkgroupSizeX);
+  utils::WgCount workgroup_count =
+      utils::compute_2d_workgroup_count(device, num_elements, wg_size, "add");
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
 
   // Create uniform buffer for params
   AddParams params = {};
@@ -115,6 +125,8 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   pipeline_desc.layout = pipeline_layout;
   pipeline_desc.compute.module = shader;
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
@@ -146,16 +158,47 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
-  uint32_t workgroup_count =
-      (num_elements + kBinaryAddWorkgroupSize - 1) / kBinaryAddWorkgroupSize;
+  graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count.x, "", workgroup_count.y});
+  const size_t dispatch_idx = graph.num_dispatches() - 1;
 
-  graph.add_dispatch({pipeline, bind_group, workgroup_count});
+  // Dynamic shapes: recompute numel/dispatch; out follows the larger operand.
+  WGPUBuffer params_buf = uniform_buffer;
+  auto add_resize =
+      [in1_id, in2_id, out_id, alpha, wg_size, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
+        const auto& d1 = g.cur_dims(in1_id);
+        const auto& d2 = g.cur_dims(in2_id);
+        const uint64_t n1 = utils::numel_of(d1);
+        const uint64_t n2 = utils::numel_of(d2);
+        const uint64_t numel = n2 > n1 ? n2 : n1;
+        const uint64_t n_min = n2 > n1 ? n1 : n2;
+        // The flat add follows the larger operand and broadcasts the smaller;
+        // valid only when the smaller tiles evenly into it (rejects e.g. [4,1]
+        // vs [1,3], whose true [4,3] result this flat kernel cannot produce).
+        if (n_min == 0u || numel % n_min != 0u) {
+          throw std::runtime_error(
+              "add(resize): operands are not broadcast-compatible by numel");
+        }
+        g.set_cur_dims(out_id, n2 > n1 ? d2 : d1);
+        AddParams p = {};
+        p.num_elements = static_cast<uint32_t>(numel);
+        p.alpha = alpha;
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(), static_cast<uint32_t>(numel), wg_size, "add(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
+      };
+  graph.add_tensor_resize_hook(in1_id, add_resize);
+  graph.add_tensor_resize_hook(in2_id, add_resize);
 
   // Release intermediate objects (pipeline and bind_group are kept by dispatch)
   wgpuShaderModuleRelease(shader);
   wgpuBindGroupLayoutRelease(bgl);
   wgpuPipelineLayoutRelease(pipeline_layout);
-  // uniform_buffer is kept alive by the bind group
+  // Graph owns it so a resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace

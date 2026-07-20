@@ -199,6 +199,22 @@ auto tensor = clone_tensor_ptr(original_tensor);
 
 Note that, regardless of whether the original `TensorPtr` owns the data or not, the newly created `TensorPtr` will own a copy of the data.
 
+#### Cloning To or From a Device
+
+If a tensor lives on CPU and you want a copy on an accelerator, or the other way around, use `clone_tensor_ptr_to` with the device you want. It allocates memory on the target device, copies the data for you, and the returned `TensorPtr` owns that memory.
+
+```cpp
+auto cpu_tensor = make_tensor_ptr({2, 3}, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f});
+
+// CPU to device:
+auto device_tensor = clone_tensor_ptr_to(cpu_tensor, DeviceType::CUDA);
+
+// Device back to CPU:
+auto host_tensor = clone_tensor_ptr_to(device_tensor, DeviceType::CPU);
+```
+
+The direction is chosen from the source and target device. This needs a `DeviceAllocator` registered for the device, so it is available only in the portable (non-`USE_ATEN_LIB`) build. For a plain CPU-to-CPU copy, use `clone_tensor_ptr` instead.
+
 ### Resizing Tensors
 
 The `TensorShapeDynamism` enum specifies the mutability of a tensor's shape:
@@ -375,6 +391,7 @@ Here's a table matching `TensorPtr` creation functions with their corresponding 
 | `at::tensor(data, type)`                    | `make_tensor_ptr(data, type)`               |
 | `at::tensor(data, type).reshape(sizes)`     | `make_tensor_ptr(sizes, data, type)`        |
 | `tensor.clone()`                            | `clone_tensor_ptr(tensor)`                  |
+| `tensor.to(device)`                         | `clone_tensor_ptr_to(tensor, device)`       |
 | `tensor.resize_(new_sizes)`                 | `resize_tensor_ptr(tensor, new_sizes)`      |
 | `at::scalar_tensor(value)`                  | `scalar_tensor(value)`                      |
 | `at::from_blob(data, sizes, type)`          | `from_blob(data, sizes, type)`              |

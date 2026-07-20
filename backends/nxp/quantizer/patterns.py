@@ -10,8 +10,12 @@ from dataclasses import dataclass, field
 from functools import partial
 
 import torch
+
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
-    _is_convertible_to_relu,
+    ClampConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
+    HardTanhConverter,
 )
 from executorch.backends.nxp.quantizer.utils import (
     get_bias_qparams,
@@ -22,6 +26,8 @@ from torch._ops import OpOverload
 from torch.fx import Node
 from torchao.quantization.pt2e import (
     FakeQuantize,
+    MinMaxObserver,
+    MovingAverageMinMaxObserver,
     MovingAveragePerChannelMinMaxObserver,
     PerChannelMinMaxObserver,
 )
@@ -37,11 +43,11 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 @dataclass
 class NodeArgsIdx:
     """
-    Specifies indexes to args paramater of Node in node input annotation.
+    Specifies indexes to args parameter of Node in node input annotation.
 
 
     Attributes:
-        idx (int): Index to Node's args paramater (list). Selects an input Node or a list of Nodes at the index.
+        idx (int): Index to Node's args parameter (list). Selects an input Node or a list of Nodes at the index.
         inner_idx (int): If specified, index to a list pointed by 'idx' attribute. Selects an input Node at the index.
                          Default: None.
     """
@@ -114,7 +120,7 @@ class SharedSpecPattern(QuantizationPattern):
     """
 
     @abstractmethod
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         pass
 
     @staticmethod
@@ -138,6 +144,52 @@ class SharedSpecPattern(QuantizationPattern):
             output=[
                 (node, qspec),
             ],
+        )
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        return self.get_shared_spec_anchors(gm, fused_partition)
+
+
+class SharedSpecMultipleInputPattern(QuantizationPattern):
+    """
+    Quantization pattern for shared quantization with multiple inputs.
+
+    The quantization is derived from the previous node quantization and inputs and the output shares the same
+    quantization parameters (scale and zero-point).
+    """
+
+    @abstractmethod
+    def partition_types(self) -> list[OpOverload]:
+        pass
+
+    @staticmethod
+    def get_shared_spec_anchors(
+        gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        quantized_input = None
+        for prev_node in node.args:
+            if Q_ANNOTATION_KEY in prev_node.meta:
+                quantized_input = prev_node
+                break
+
+        if quantized_input is not None:
+            inputs = []
+            for idx, _ in enumerate(node.args):
+                inputs.append(
+                    (node, NodeArgsIdx(idx), SharedQuantizationSpec(quantized_input))
+                )
+        else:
+            return None
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node, SharedQuantizationSpec(quantized_input))],
         )
 
     def get_anchors(
@@ -294,7 +346,7 @@ class AddTensorPattern(QuantizationPattern):
     Basic quantization for all inputs and output.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.add.Tensor]
 
     def get_anchors(
@@ -313,12 +365,30 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class AmaxPattern(SharedSpecPattern):
+    """
+    Quantizer for Amax operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amax.default]
+
+
+class AminPattern(SharedSpecPattern):
+    """
+    Quantizer for Amin operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.amin.default]
+
+
 class BMMPattern(QuantizationPattern):
     """
     Quantizer for BatchMatMul operator.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.bmm.default]
 
     def get_anchors(
@@ -326,10 +396,24 @@ class BMMPattern(QuantizationPattern):
     ) -> PartitionAnchors | None:
         bmm_node = fused_partition[0].nodes[-1]
 
+        # Use per_tensor_symmetric to enforce zero_point=0 for both inputs
+        observer_or_fake_quant_ctr = (
+            FakeQuantize.with_args(observer=MovingAverageMinMaxObserver)
+            if self.is_qat
+            else MinMaxObserver
+        )
+        input_quantization_spec = QuantizationSpec(
+            dtype=torch.int8,
+            observer_or_fake_quant_ctr=observer_or_fake_quant_ctr,
+            quant_min=-127,
+            quant_max=127,
+            qscheme=torch.per_tensor_symmetric,  # Neutron requires the inputs to have zero point = 0.
+        )
+
         return PartitionAnchors(
             inputs=[
-                (bmm_node, NodeArgsIdx(0)),
-                (bmm_node, NodeArgsIdx(1)),
+                (bmm_node, NodeArgsIdx(0), input_quantization_spec),
+                (bmm_node, NodeArgsIdx(1), input_quantization_spec),
             ],
             biases=[],
             output=[(bmm_node,)],
@@ -343,7 +427,7 @@ class SubTensorPattern(QuantizationPattern):
     Basic quantization for all inputs and output.
     """
 
-    def partition_types(self) -> list[torch.nn.Module]:
+    def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.sub.Tensor]
 
     def get_anchors(
@@ -397,7 +481,7 @@ class CatPattern(QuantizationPattern):
 
         quantized_input = None
         for prev_node in node.args[0]:
-            if "quantization_annotation" in prev_node.meta:
+            if Q_ANNOTATION_KEY in prev_node.meta:
                 quantized_input = prev_node
                 break
 
@@ -438,10 +522,7 @@ class ClampPattern(QuantizationPattern):
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
 
-        if (
-            self.neutron_quantizer.neutron_target_spec.use_new_flow_neutron_c
-            and not _is_convertible_to_relu(node)
-        ):
+        if not ClampConverter._is_convertible_to_relu(node):
             return SharedSpecPattern.get_shared_spec_anchors(gm, fused_partition)
         else:
             return SingleInputBasicPattern.get_single_input_anchors(gm, fused_partition)
@@ -456,65 +537,6 @@ def _is_batch_norm(node_: Node) -> bool:
 
 
 class ConvPattern(QuantizationPattern):
-    @abstractmethod
-    def partition_types(self) -> list[OpOverload]:
-        pass
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors:
-        conv_node = fused_partition[0].nodes[-1]
-
-        bias_quantization_qspec = DerivedQuantizationSpec(
-            derived_from=[
-                (conv_node.args[0], conv_node),
-                (conv_node.args[1], conv_node),
-            ],
-            derive_qparams_fn=get_bias_qparams,
-            dtype=torch.int32,
-            quant_min=-(2**31) + 1,
-            quant_max=2**31 - 1,
-            qscheme=torch.per_channel_symmetric,
-            ch_axis=0,
-        )
-
-        weight_observer_or_fake_quant_ctr = (
-            FakeQuantize.with_args(observer=MovingAveragePerChannelMinMaxObserver)
-            if self.is_qat
-            else PerChannelMinMaxObserver
-        )
-        weight_quantization_spec = QuantizationSpec(
-            dtype=torch.int8,
-            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
-            quant_min=-127,
-            quant_max=127,
-            qscheme=torch.per_channel_symmetric,
-            ch_axis=0,
-        )
-
-        # Keep bias empty if not supplied
-        bias = []
-        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
-            bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
-
-        output_specs = [(conv_node,)]
-        # In order for QAT to be numerically correct, there should be no quantization between
-        # convolution node and batch norm node.
-        if self.is_qat:
-            conv_users = conv_node.users
-            possibly_bn = list(conv_users.keys())[0] if len(conv_users) == 1 else None
-            if possibly_bn and _is_batch_norm(possibly_bn):
-                output_specs = []
-
-        return PartitionAnchors(
-            inputs=[(conv_node, NodeArgsIdx(0))],
-            weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
-            biases=bias,
-            output=output_specs,
-        )
-
-
-class Conv2dPattern(ConvPattern):
     def __init__(self, neutron_quantizer, is_qat: bool = False):
         super().__init__(is_qat=is_qat)
 
@@ -523,8 +545,9 @@ class Conv2dPattern(ConvPattern):
             self.neutron_quantizer.neutron_target_spec.neutron_target_info
         )
 
+    @abstractmethod
     def partition_types(self) -> list[OpOverload]:
-        return [torch.ops.aten.conv2d.default]
+        pass
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
@@ -606,6 +629,16 @@ class Conv2dPattern(ConvPattern):
             biases=bias,
             output=output,
         )
+
+
+class Conv2dPattern(ConvPattern):
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.conv2d.default]
+
+
+class Conv2dPatternPadding(ConvPattern):
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.conv2d.padding]
 
 
 class ConvTranspose2dPattern(QuantizationPattern):
@@ -712,6 +745,15 @@ class DropoutPattern(SharedSpecPattern):
         return [torch.ops.aten.dropout.default]
 
 
+class ExpPattern(SharedSpecPattern):
+    """
+    Quantizer for Exp operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.exp.default]
+
+
 class FlattenPattern(SharedSpecPattern):
     """
     Quantizer for Flatten operator.
@@ -729,32 +771,27 @@ class HardTanhPattern(SingleInputBasicPattern):
     def partition_types(self):
         return [torch.ops.aten.hardtanh.default]
 
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        if not HardTanhConverter._is_convertible_to_relu(node):
+            return SharedSpecPattern.get_shared_spec_anchors(gm, fused_partition)
+        else:
+            return SingleInputBasicPattern.get_single_input_anchors(gm, fused_partition)
+
     def replacement_op(self):
         raise AssertionError()
 
 
-class HardTanhInPlacePattern(SingleInputBasicPattern):
+class HardTanhInPlacePattern(HardTanhPattern):
     """
     Quantizer for HardTanh operator with param inplace=True.
     """
 
     def partition_types(self):
         return [torch.ops.aten.hardtanh_.default]
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors | None:
-        node = fused_partition[0].nodes[-1]
-
-        return PartitionAnchors(
-            inputs=[(node, NodeArgsIdx(0))],
-            weights=[],
-            biases=[],
-            output=[(node,)],
-        )
-
-    def replacement_op(self):
-        raise AssertionError()
 
 
 class LeakyReluPattern(SingleInputBasicPattern):
@@ -839,6 +876,24 @@ class LinearPattern(QuantizationPattern):
         )
 
 
+class LogPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.log.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.log.default]
+
+
+class MaximumPattern(SharedSpecMultipleInputPattern):
+    """
+    Quantization pattern for Maximum quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.maximum.default]
+
+
 class MaxPool1DPattern(SharedSpecPattern):
     """Quantizer for the MaxPool1D operator."""
 
@@ -860,6 +915,17 @@ class MeanDimPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.mean.dim]
+
+
+class MinimumPattern(SharedSpecMultipleInputPattern):
+    """
+    Quantization pattern for Minimum quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.minimum.default]
 
 
 class MmPattern(QuantizationPattern):
@@ -915,7 +981,6 @@ class MulTensorPattern(QuantizationPattern):
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
-        input_nodes = node.all_input_nodes
 
         qspec = FixedQParamsQuantizationSpec(
             dtype=torch.int8,
@@ -925,15 +990,6 @@ class MulTensorPattern(QuantizationPattern):
             quant_max=127,
             qscheme=torch.per_tensor_affine,
         )
-
-        # The "Mul" operator in Neutron IR requires a specific scale and zero_point
-        # (defined above) for its inputs.
-        # Since these input nodes have already been annotated by their own patterns
-        # which didn't take the requirements of "Mul" into account, we need to overwrite
-        # the existing "quantization_annotation".
-        for input_node in input_nodes:
-            if "quantization_annotation" in input_node.meta:
-                input_node.meta["quantization_annotation"].output_qspec = qspec
 
         return PartitionAnchors(
             inputs=[(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)],
@@ -1112,6 +1168,24 @@ class SqueezeDimsPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.squeeze.dims]
+
+
+class SumPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.default` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.default]
+
+
+class SumDimIntListPattern(SharedSpecPattern):
+    """
+    Quantizer for the `aten.sum.dim_IntList` operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.sum.dim_IntList]
 
 
 class TanhPattern(QuantizationPattern):

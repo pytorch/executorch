@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+import hashlib
 import os
 import typing
 from abc import ABC, abstractmethod
@@ -112,6 +113,21 @@ class AotiBackend(ABC):
         return
 
     @classmethod
+    def move_program_to_device(
+        cls,
+        edge_program: ExportedProgram,
+        device: str,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Move the exported program to the target device for compilation.
+
+        Default implementation moves everything (params, buffers, constants) via
+        ``move_to_device_pass``. Concrete backends may override to keep large
+        non-parameter tensors off the device during a low-memory export.
+        """
+        return move_to_device_pass(edge_program, device)
+
+    @classmethod
     def release_moved_tensors(
         cls,
         device_edge_program: ExportedProgram,
@@ -195,9 +211,13 @@ class AotiBackend(ABC):
         decomposition_table = cls.get_decomposition_table()
         options = cls.get_aoti_compile_options(compile_specs)
 
-        # Move the edge_program to the target device
-        device_edge_program = move_to_device_pass(
-            edge_program, device_name if device_name != "metal" else "mps"
+        # Move the edge_program to the target device. Routed through a hook so
+        # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
+        # off the device during a low-memory export.
+        device_edge_program = cls.move_program_to_device(
+            edge_program,
+            device_name if device_name != "metal" else "mps",
+            compile_specs,
         )
 
         # Replace view_copy with view
@@ -276,18 +296,21 @@ class AotiBackend(ABC):
 
         # Create named data store
         named_data_store = NamedDataStore()
-        method_name = cls.method_name_from_compile_specs(compile_specs)
 
-        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
+        # Key each blob by a content hash so partitions in one method get distinct
+        # keys (a method-name-only key collides). Runtime recovers them from
+        # processed_bytes below.
+        so_blob_key = hashlib.sha256(so_data).hexdigest() + "_so_blob"
+        weights_blob_key = hashlib.sha256(blob_data).hexdigest() + "_weights_blob"
+
+        named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
         # External: save to separate .ptd file, otherwise merge with .pte file
         external_tag = (
             f"aoti_{device_name}_blob" if cls.save_data_externally() else None
         )
 
-        named_data_store.add_named_data(
-            method_name + "_weights_blob", blob_data, 1, external_tag
-        )
+        named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
 
         # Clean up the generated files
         os.remove(so_path)
@@ -299,8 +322,11 @@ class AotiBackend(ABC):
         # the next preprocess call (e.g. for the next method).
         cls.release_moved_tensors(device_edge_program, compile_specs)
 
+        # The runtime cannot recompute these hash keys, so carry them (one per line).
+        processed_bytes = (so_blob_key + "\n" + weights_blob_key).encode("utf-8")
+
         return PreprocessResult(
-            processed_bytes=b"",
+            processed_bytes=processed_bytes,
             debug_handle_map={},
             data_store_output=named_data_store.get_named_data_store_output(),
         )

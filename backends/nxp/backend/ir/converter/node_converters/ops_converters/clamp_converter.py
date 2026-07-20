@@ -8,6 +8,9 @@ import math
 import numpy as np
 import torch
 from executorch.backends.nxp.backend.edge_helper import try_get_arg
+from executorch.backends.nxp.backend.graph_utils import (
+    is_clamp_preserved_under_quantization,
+)
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
@@ -15,11 +18,11 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     _is_dequant_node,
     _is_quant_node,
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
     propagate_quantization,
+    quantize,
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
@@ -36,17 +39,6 @@ from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpe
 from torch.fx import Node
 from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
-
-
-def _is_convertible_to_relu(node):
-    bounds = ClampConverter._get_clamp_bounds(node)
-    bounds = tuple(v if v is not None and math.isfinite(v) else None for v in bounds)
-
-    # Some specific bounds can be replaced with single op ReLU.
-    if bounds not in ClampConverter.RELU_COMPATIBLE_BOUNDS.values():
-        return False
-
-    return True
 
 
 class ClampConverter(NodeConverter):
@@ -66,11 +58,24 @@ class ClampConverter(NodeConverter):
 
     # noinspection PyShadowingBuiltins
     @staticmethod
-    def _get_clamp_bounds(clamp_node: Node) -> tuple[float | None, float | None]:
+    def _get_bounds(node: Node) -> tuple[float | None, float | None]:
         """Extract min and max bounds from `aten.clamp.default` node."""
-        min = try_get_arg(clamp_node, 1)
-        max = try_get_arg(clamp_node, 2)
+        min = try_get_arg(node, 1)
+        max = try_get_arg(node, 2)
         return min, max
+
+    @classmethod
+    def _is_convertible_to_relu(cls, node):
+        bounds = cls._get_bounds(node)
+        bounds = tuple(
+            v if v is not None and math.isfinite(v) else None for v in bounds
+        )
+
+        # Some specific bounds can be replaced with single op ReLU.
+        if bounds not in cls.RELU_COMPATIBLE_BOUNDS.values():
+            return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -96,72 +101,61 @@ class ClampConverter(NodeConverter):
         dq_params = dequant.args[1:]
         return all(q == dq for q, dq in zip(q_params, dq_params))
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        relu_compatible = _is_convertible_to_relu(node)
-        bounds = ClampConverter._get_clamp_bounds(node)
+        relu_compatible = cls._is_convertible_to_relu(node)
+        bounds = cls._get_bounds(node)
 
         if all(b is None or math.isinf(b) for b in bounds):
             return False
 
-        if neutron_target_spec.use_new_flow_neutron_c:
-            io_quant_consistent = ClampConverter._io_quant_is_same(node)
-            quant_supported = NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            )
+        io_quant_consistent = cls._io_quant_is_same(node)
+        quant_supported = NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        )
 
-            # We either convert to ReLU -> SingleInputQuantization pattern
-            # or we convert to Min/Max, which requires same quantization on
-            # both input and output.
-            return (relu_compatible | io_quant_consistent) and quant_supported
+        if relu_compatible and activation_supported_on_target(
+            node,
+        ):
+            return True
 
-        return relu_compatible
+        # We convert to Min/Max, which requires same quantization for both input and output.
+        return io_quant_consistent and quant_supported
 
     @classmethod
     def supports_partitioning_result(
         cls,
         node: Node,
         partition_list: list[Partition],
-        _: CustomDelegationOptions,
+        custom_delegation_options: CustomDelegationOptions,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
-        bounds = cls._get_clamp_bounds(node)
+        bounds = cls._get_bounds(node)
 
         # Neutron cannot delegate a partition where ReLU or ReLU6 is the only operator
         # and at the same time the node does not satisfy delegation requirements.
-        # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfuly.
-        if bounds in [
-            cls.RELU_COMPATIBLE_BOUNDS["Relu"],
-            cls.RELU_COMPATIBLE_BOUNDS["Relu6"],
-        ]:
-            is_alone_in_partition = cls.is_node_alone_in_partition(
-                node, partition_list, filter_fn=is_not_qdq_node
-            )
+        # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfully.
+        if bounds in cls.RELU_COMPATIBLE_BOUNDS.values():
+            is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
             if is_alone_in_partition:
-                return activation_supported_on_target(node, neutron_target_spec)
+                # noinspection PyTypeChecker
+                return is_clamp_preserved_under_quantization(
+                    node,
+                    min_val=bounds[0] if bounds[0] is not None else 0,
+                    max_val=bounds[1],
+                )
 
         return True
-
-    @staticmethod
-    def _quantize_value(
-        value: int,
-        zp: int,
-        scale: float,
-        quant_min: int,
-        quant_max: int,
-        dtype: type = np.int8,
-    ) -> np.integer:
-        rescaled_value = round(value / scale) + zp
-        return dtype(np.clip(rescaled_value, quant_min, quant_max))
 
     def convert(self, node: Node):
         """Convert the `aten.clamp.default` operator to either
@@ -174,16 +168,16 @@ class ClampConverter(NodeConverter):
             ) -> Tensor
         """
         self.assert_convertible(node)
-        to_relu = _is_convertible_to_relu(node)
+        to_relu = self._is_convertible_to_relu(node)
 
-        bounds = self._get_clamp_bounds(node)
+        bounds = self._get_bounds(node)
         bounds = tuple(
             v if v is not None and math.isfinite(v) else None for v in bounds
         )
         t_op = self._create_tflite_op_with_io_tensors(node)
 
         # Clamp convertible to some variant of ReLU
-        if not self.neutron_target_spec.use_new_flow_neutron_c or to_relu:
+        if to_relu:
             # noinspection PyTypeChecker,PyUnboundLocalVariable
             t_op.opcode_index = self.builder.op_code_index_for_op_type(
                 self.BOUNDS_TO_RELU_NEUTRON_IR_OP[bounds]
@@ -205,9 +199,9 @@ class ClampConverter(NodeConverter):
         min_value, max_value = bounds
 
         if min_value is not None:
-            min_value = self._quantize_value(
+            min_value = quantize(
                 value=min_value,
-                zp=zp,
+                zero_point=zp,
                 scale=scale,
                 quant_min=quant_min,
                 quant_max=quant_max,
@@ -219,9 +213,9 @@ class ClampConverter(NodeConverter):
             propagate_quantization(x, min_tensor)
 
         if max_value is not None:
-            max_value = self._quantize_value(
+            max_value = quantize(
                 value=max_value,
-                zp=zp,
+                zero_point=zp,
                 scale=scale,
                 quant_min=quant_min,
                 quant_max=quant_max,

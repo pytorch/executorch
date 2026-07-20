@@ -426,6 +426,7 @@ fbcode_target(_kind = runtime.python_library,
     typing = True,
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/transforms:permute_pass_utils",
         "//pytorch/ao:torchao",
     ],
 )
@@ -530,6 +531,22 @@ fbcode_target(_kind = python_unittest,
         "//executorch/backends/cadence/aot:remove_ops",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
         "//executorch/exir/dialects:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_remove_bn_tracking_pass",
+    srcs = [
+        "tests/test_remove_bn_tracking_pass.py",
+    ],
+    supports_static_listing = False,
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:remove_ops",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/exir:lib",
+        "//pytorch/ao:torchao",
     ],
 )
 

@@ -9,6 +9,7 @@
 #include <executorch/backends/aoti/slim/cuda/guard.h>
 #include <executorch/runtime/platform/log.h>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 
 namespace executorch::backends::cuda {
@@ -50,6 +51,33 @@ Result<cudaStream_t> getCurrentCUDAStream(DeviceIndex device_index) {
   ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&stream));
   setCurrentCUDAStream(stream, device_index);
   return stream;
+}
+
+std::optional<cudaStream_t> peekCurrentCUDAStream(DeviceIndex device_index) {
+  if (device_index == -1) {
+    int tmp_device = -1;
+    if (cudaGetDevice(&tmp_device) != cudaSuccess) {
+      return std::nullopt;
+    }
+    device_index = static_cast<DeviceIndex>(tmp_device);
+  }
+
+  auto it = current_streams_.find(device_index);
+  if (it == current_streams_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
+}
+
+void clearCurrentCUDAStream(DeviceIndex device_index) {
+  if (device_index == -1) {
+    int tmp_device = -1;
+    if (cudaGetDevice(&tmp_device) != cudaSuccess) {
+      return;
+    }
+    device_index = static_cast<DeviceIndex>(tmp_device);
+  }
+  current_streams_.erase(device_index);
 }
 
 CUDAGuard::CUDAGuard(CUDAGuard&& other) noexcept

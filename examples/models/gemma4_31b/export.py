@@ -24,11 +24,11 @@ Backends:
 """
 
 import argparse
+import json
 import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
     Gemma4_31BConfig,
@@ -136,35 +136,41 @@ def _pack_for_backend(model: nn.Module, path: str, backend: str) -> None:
 # Export + lower
 
 
+def _mutable_buffer_metadata(model: nn.Module) -> str:
+    mutable = [name for name, _ in model.named_buffers() if ".kv_cache." in name]
+    return json.dumps({"version": 1, "mutable_buffers": mutable})
+
+
 def export_and_lower(
     model: Gemma4_31B,
     config: Gemma4_31BConfig,
     output_dir: str,
     backend: str = "cuda",
     use_turboquant: bool = False,
+    sample: bool = False,
 ) -> None:
     """Export and lower the model to ExecuTorch for the given backend."""
     if backend == "cuda":
-        if use_turboquant:
-            raise ValueError(
-                "--turboquant is only supported with --backend mlx "
-                "(the CUDA path here uses a different TurboQuant integration; "
-                "see examples/models/qwen3_5_moe/export.py)."
-            )
-        _export_cuda(model, config, output_dir)
+        _export_cuda(model, config, output_dir, use_turboquant=use_turboquant)
     elif backend == "mlx":
-        _export_mlx(model, config, output_dir, use_turboquant=use_turboquant)
+        _export_mlx(
+            model, config, output_dir, use_turboquant=use_turboquant, sample=sample
+        )
     else:
         raise ValueError(
             f"Unsupported backend: {backend!r}. Supported: {_SUPPORTED_BACKENDS}."
         )
 
 
-def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -> None:
+def _export_cuda(
+    model: Gemma4_31B,
+    config: Gemma4_31BConfig,
+    output_dir: str,
+    use_turboquant: bool = False,
+) -> None:
     import gc
 
     import torch._inductor.config as inductor_config
-
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
     from executorch.exir import (
@@ -174,15 +180,23 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
     )
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
+    from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
     from torch.export import Dim, export
 
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Register Int4Tensor dispatch → executorch_cuda::int4_plain_mm shim
-    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+    # Register Int4/Int8 dispatch → executorch_cuda::int{4,8}_plain_mm shims
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
+    mutable_buffer_metadata = _mutable_buffer_metadata(model)
+
+    from executorch.examples.models.gemma4_31b.cuda_source_transformations import (
+        cuda_source_transformations,
+    )
+
+    cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     # Int4Tensor weights are used directly — no format conversion.
     # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).
@@ -250,6 +264,8 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             "get_vocab_size": config.vocab_size,
             "get_n_layers": config.num_hidden_layers,
             "get_max_prefill_chunk": max_prefill,
+            "get_min_prefill_chunk": 5,
+            "get_mutable_buffer_metadata": mutable_buffer_metadata,
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
@@ -264,9 +280,16 @@ def _export_cuda(model: Gemma4_31B, config: Gemma4_31BConfig, output_dir: str) -
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                share_mutable_buffers=True,
             ),
             emit_mutable_buffer_names=True,
+            # Keep method inputs/outputs device-resident so the CUDA backend
+            # does not insert boundary H2D/D2H copies: the runner stages inputs
+            # in CUDA memory and reads the sampled token back with a single
+            # small D2H. CUDA-only (no effect on the MLX path).
+            propagate_device_config=PropagateDeviceConfig(
+                skip_h2d_for_method_inputs=True,
+                skip_d2h_for_method_outputs=True,
+            ),
         ),
     )
 
@@ -291,12 +314,13 @@ def _export_mlx(
     config: Gemma4_31BConfig,
     output_dir: str,
     use_turboquant: bool = False,
+    sample: bool = False,
 ) -> None:
     """Export to .pte via torch.export + MLX backend.
 
     Unlike CUDA (which exports separate decode/prefill methods with an
     Int4Tensor dispatch override), MLX uses a single method with dynamic
-    sequence length.  No int4_dispatch import — IntxUnpackedToInt8Tensor's
+    sequence length.  No quantize_op_dispatch import — IntxUnpackedToInt8Tensor's
     default dispatch produces the ``dequantize_affine → linear`` pattern
     that MLX's QuantizedLinearHandler matches.
 
@@ -306,9 +330,14 @@ def _export_mlx(
     """
     import gc
 
+    # Register the GGUF dequant op + MLX GGUF pattern handlers so quantized GGUF
+    # weights lower to the fused Q6_K kernels / Q4_K quantized matmul.
+    import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
+    import executorch.extension.llm.export.gguf  # noqa: F401
+    import executorch.extension.llm.export.int4  # noqa: F401
+
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
-
     from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
         mlx_source_transformations,
     )
@@ -320,24 +349,49 @@ def _export_mlx(
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
+    max_prefill = 256
+
     mlx_source_transformations(
-        model, dtype=torch.bfloat16, use_turboquant=use_turboquant
+        model,
+        dtype=torch.bfloat16,
+        use_turboquant=use_turboquant,
+        max_write_len=max_prefill,
     )
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
 
-    max_prefill = 256
     seq_dim = Dim("seq_len", min=1, max=max_prefill)
+
+    example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
+    example_input_pos = torch.tensor([0, 1], dtype=torch.long)
+    if sample:
+        # forward(tokens, input_pos, temperature, top_k, top_p, seed) -> token id.
+        # gemma's MLX forward already returns last-token logits (B, vocab), so
+        # SamplingHead is used directly with no per-model wrapper.
+        from executorch.backends.mlx.llm.sampling import SamplingHead
+
+        model = SamplingHead(model)
+        example_args = (
+            example_tokens,
+            example_input_pos,
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(0, dtype=torch.int64),
+        )
+        # SamplingHead.forward takes ``*args``; dynamic_shapes mirrors that single
+        # variadic parameter as one nested tuple over the positional inputs.
+        dynamic_shapes = (({1: seq_dim}, {0: seq_dim}, None, None, None, None),)
+    else:
+        example_args = (example_tokens, example_input_pos)
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
 
     print(f"Exporting (T in [1, {max_prefill}])...")
     with torch.no_grad():
         exported = export(
             model,
-            (
-                torch.tensor([[0, 1]], dtype=torch.long),
-                torch.tensor([0, 1], dtype=torch.long),
-            ),
-            dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
+            example_args,
+            dynamic_shapes=dynamic_shapes,
             strict=True,
         )
 
@@ -361,6 +415,7 @@ def _export_mlx(
             "use_kv_cache": True,
             "use_sdpa_with_kv_cache": False,
             "enable_dynamic_shape": True,
+            "use_sampling": sample,
         },
     )
 
@@ -440,16 +495,25 @@ def main() -> None:
     parser.add_argument(
         "--turboquant",
         action="store_true",
-        help="Use TurboQuant TQ4 KV cache compression (MLX backend only). "
-        "~3.8× cache memory savings; applies only to full-attention "
-        "(non-sliding) layers — sliding layers keep RingBufferKVCache.",
+        help="Use TurboQuant TQ4 KV cache compression. ~3.8× cache memory "
+        "savings; applies only to full-attention (non-sliding) layers — "
+        "sliding layers keep their default cache. Supported on both "
+        "--backend mlx and --backend cuda.",
+    )
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="MLX only: sample the next token on-device (Gumbel-max with "
+        "temperature/top_p/seed runtime inputs) instead of returning logits "
+        "for host-side sampling.",
     )
     args = parser.parse_args()
 
-    if args.turboquant and args.backend != "mlx":
-        parser.error("--turboquant requires --backend mlx.")
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
+
+    if args.sample and args.backend != "mlx":
+        parser.error("--sample is only supported with --backend mlx")
 
     if args.prequantized:
         model, config = load_prequantized_model(
@@ -471,18 +535,14 @@ def main() -> None:
             backend=args.backend,
         )
 
-    if args.gguf and args.backend == "mlx":
-        os.environ["ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS"] = "1"
-    try:
-        export_and_lower(
-            model,
-            config,
-            args.output_dir,
-            backend=args.backend,
-            use_turboquant=args.turboquant,
-        )
-    finally:
-        os.environ.pop("ET_MLX_ALLOW_NON_FUSED_QUANTIZED_OPS", None)
+    export_and_lower(
+        model,
+        config,
+        args.output_dir,
+        backend=args.backend,
+        use_turboquant=args.turboquant,
+        sample=args.sample,
+    )
 
 
 if __name__ == "__main__":

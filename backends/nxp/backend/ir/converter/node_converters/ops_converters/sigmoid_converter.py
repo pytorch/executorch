@@ -35,22 +35,15 @@ class SigmoidConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if neutron_target_spec.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        if not NodeConverter.uses_quantization_type_for_io(
+            node,
+            supported_types=[torch.int8, torch.uint8],
+            input_indices=[0],
+            output_indices=[0],
+        ):
+            return False
 
-            if not NodeConverter.uses_quantization_type_for_io(
-                node,
-                supported_types=[torch.int8, torch.uint8],
-                input_indices=[0],
-                output_indices=[0],
-            ):
-                return False
-
-            return True
-
-        else:
-            # Requirements of the old Neutron flow.
-            return True
+        return True
 
     def convert(self, node: Node):
         """Convert the `aten.sigmoid.default` node to NeutronIR `Logistic` operator.

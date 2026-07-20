@@ -14,27 +14,34 @@
 
 import logging
 import os  # nosec B404 - used alongside subprocess for tool invocation
+import shlex
 import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
-from typing import final, List
+from dataclasses import dataclass
+from typing import Any, final, List
 
-from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes import DecomposeQuantNodesPass, RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
+    _registered_pass_insertions,
+    PassInsertions,
     register_pass_insertions_before,
 )
 from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf._passes import RewriteGridSamplerToTosaCustomPass
+from executorch.backends.arm.vgf._passes import (  # type: ignore[import-not-found]
+    InsertGridSamplerGridDequantPass,
+    RewriteGridSamplerToTosaCustomPass,
+)
 
 from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
     VgfCompileSpec,
 )
 from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
     model_converter_env,
-    require_model_converter_binary,
+    require_model_converter_executable,
 )
 from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
     BackendDetails,
@@ -43,24 +50,133 @@ from executorch.exir.backend.backend_details import (  # type: ignore[import-not
 from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
     CompileSpec,
 )
+from executorch.exir.pass_base import ExportPass
 from torch.export.exported_program import ExportedProgram
 
 # debug functionality
 logger = logging.getLogger(__name__)
 
-_grid_sampler_rewrite_registered = False
+STATUS_OK = "PASS"
+STATUS_FAIL = "FAIL"
+VGF_BACKEND_NAME = "VgfBackend"
 
 
-def _register_grid_sampler_rewrite_pass() -> None:
-    """Register VGF-only custom shader lowering passes."""
-    global _grid_sampler_rewrite_registered
-    if _grid_sampler_rewrite_registered:
-        return
-    register_pass_insertions_before(
-        RewriteConvPass,
-        [RewriteGridSamplerToTosaCustomPass()],
+@dataclass(frozen=True)
+class VgfRuntimeEnvironmentCheck:
+    """One VGF runtime backend environment preflight result.
+
+    This lives next to the Python VGF backend name and backend implementation,
+    while importing the actual ExecuTorch runtime lazily so AoT import behavior
+    remains unchanged.
+
+    """
+
+    name: str
+    status: str
+    detail: str
+    action: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Return True when the check did not fail."""
+        return self.status != STATUS_FAIL
+
+    def to_dict(self) -> dict[str, str | None]:
+        """Return the check as a JSON-serializable dictionary."""
+        return {
+            "name": self.name,
+            "status": self.status,
+            "detail": self.detail,
+            "action": self.action,
+        }
+
+
+def _load_runtime() -> Any:
+    from executorch.runtime import Runtime
+
+    return Runtime.get()
+
+
+def check_vgf_runtime_backend_environment() -> VgfRuntimeEnvironmentCheck:
+    """Check whether the installed runtime exposes the VGF backend."""
+    try:
+        runtime = _load_runtime()
+    except Exception as exc:
+        return VgfRuntimeEnvironmentCheck(
+            "VGF runtime backend",
+            STATUS_FAIL,
+            f"Could not initialize executorch.runtime.Runtime: {exc}",
+            "Install or rebuild ExecuTorch with runtime pybindings. For source "
+            "builds, enable the VGF runtime backend and reinstall the package.",
+        )
+
+    try:
+        registered_backend_names = list(
+            runtime.backend_registry.registered_backend_names
+        )
+        is_available = runtime.backend_registry.is_available(
+            backend_name=VGF_BACKEND_NAME
+        )
+    except Exception as exc:
+        return VgfRuntimeEnvironmentCheck(
+            "VGF runtime backend",
+            STATUS_FAIL,
+            f"Runtime backend registry query failed: {exc}",
+            "Reinstall or rebuild ExecuTorch with backend registry pybindings.",
+        )
+
+    if is_available:
+        return VgfRuntimeEnvironmentCheck(
+            "VGF runtime backend",
+            STATUS_OK,
+            f"{VGF_BACKEND_NAME} is available in the runtime backend registry.",
+        )
+
+    rendered = ", ".join(registered_backend_names[:20])
+    if len(registered_backend_names) > 20:
+        rendered += ", ..."
+
+    return VgfRuntimeEnvironmentCheck(
+        "VGF runtime backend",
+        STATUS_FAIL,
+        f"{VGF_BACKEND_NAME} is not available. Registered backends: "
+        f"{rendered or '<none>'}.",
+        "Use a runtime build/package that includes the VGF backend. For source "
+        "builds, configure with -DEXECUTORCH_BUILD_VGF=ON and reinstall.",
     )
-    _grid_sampler_rewrite_registered = True
+
+
+def _register_pass_before(target_pass_type: type, pass_: ExportPass) -> None:
+    existing_insertions = _registered_pass_insertions.get(target_pass_type)
+    if existing_insertions is not None and any(
+        isinstance(existing_pass, type(pass_))
+        for existing_pass in existing_insertions.before_passes
+    ):
+        return
+    register_pass_insertions_before(target_pass_type, [pass_])
+
+
+def _register_vgf_rewrite_passes() -> None:
+    """Register VGF-only custom shader lowering passes."""
+    _register_pass_before(DecomposeQuantNodesPass, InsertGridSamplerGridDequantPass())
+    _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
+
+
+def _snapshot_registered_pass_insertions() -> dict[type, PassInsertions]:
+    return {
+        pass_type: PassInsertions(
+            before_passes=list(insertions.before_passes),
+            after_passes=list(insertions.after_passes),
+        )
+        for pass_type, insertions in _registered_pass_insertions.items()
+    }
+
+
+def _restore_registered_pass_insertions(
+    snapshot: dict[type, PassInsertions],
+) -> None:
+    _registered_pass_insertions.clear()
+    _registered_pass_insertions.update(snapshot)
 
 
 @final
@@ -115,26 +231,76 @@ class VgfBackend(BackendDetails):
         """
         logger.info(f"{VgfBackend.__name__} preprocess")
 
-        _register_grid_sampler_rewrite_pass()
-        compile_spec = VgfCompileSpec._from_list(compile_specs)
-        # deduce TOSA compile_spec from VGF compile spec. We get a new
-        # compile spec list, containing only elements relevant for the
-        # TOSABackend.
-        tosa_compile_spec = TOSABackend.filter_tosa_compile_specs(compile_spec)
+        insertions_snapshot = _snapshot_registered_pass_insertions()
+        try:
+            _register_vgf_rewrite_passes()
+            compile_spec = VgfCompileSpec._from_list(compile_specs)
+            # deduce TOSA compile_spec from VGF compile spec. We get a new
+            # compile spec list, containing only elements relevant for the
+            # TOSABackend.
+            tosa_compile_spec = TOSABackend.filter_tosa_compile_specs(compile_spec)
 
-        # Backends doesn't allow inheritance, as stated in comments in exir/backend/backend_api.py
-        # ('All backend implementation are final...'), so use composition instead.
-        # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
-        # which can be passed on to next compilation step.
-        tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
+            # Backends doesn't allow inheritance, as stated in comments in exir/backend/backend_api.py
+            # ('All backend implementation are final...'), so use composition instead.
+            # preprocess returns the serialized TOSA flatbuffer in .processed_bytes,
+            # which can be passed on to next compilation step.
+            tosa_preprocess = TOSABackend._preprocess(edge_program, tosa_compile_spec)
 
-        tag_name = arm_get_first_delegation_tag(edge_program.graph_module)
+            tag_name = arm_get_first_delegation_tag(edge_program.graph_module)
 
-        binary = VgfBackend._compile_tosa_flatbuffer(
-            tosa_preprocess.processed_bytes, compile_spec, tag_name
-        )
+            binary = VgfBackend._compile_tosa_flatbuffer(
+                tosa_preprocess.processed_bytes, compile_spec, tag_name
+            )
+        finally:
+            _restore_registered_pass_insertions(insertions_snapshot)
 
         return PreprocessResult(processed_bytes=binary)
+
+
+def _format_repro_command(command: List[str]) -> str:
+    """Return a shell-safe command string for reproducing converter failures."""
+    return " ".join(shlex.quote(arg) for arg in command)
+
+
+def _copy_failure_artifacts(
+    tosa_path: str,
+    artifact_path: str | None,
+    tag_name: str,
+) -> str | None:
+    """Copy the failing TOSA input to the artifact directory, if configured.
+
+    Args:
+        tosa_path: Temporary TOSA flatbuffer passed to model-converter.
+        artifact_path: User-configured intermediate artifact directory.
+        tag_name: Optional delegation tag used to disambiguate artifacts.
+
+    Returns:
+        Path to the copied TOSA file, or None if no artifact path was configured.
+
+    """
+    if not artifact_path:
+        return None
+
+    os.makedirs(artifact_path, exist_ok=True)
+
+    suffix = f"_{tag_name}" if tag_name else ""
+    failure_tosa_path = os.path.join(
+        artifact_path,
+        f"failed_model_converter_input{suffix}.tosa",
+    )
+    shutil.copy2(tosa_path, failure_tosa_path)
+    return failure_tosa_path
+
+
+def _replace_converter_input_path(
+    conversion_command: List[str],
+    input_path: str,
+) -> List[str]:
+    """Return a converter command that uses a preserved TOSA input path."""
+    input_flag_index = conversion_command.index("-i")
+    repro_command = list(conversion_command)
+    repro_command[input_flag_index + 1] = input_path
+    return repro_command
 
 
 def vgf_compile(
@@ -166,7 +332,7 @@ def vgf_compile(
             f.write(tosa_flatbuffer)
 
         compile_flags = [f for f in compile_flags if f and f.strip()]
-        converter_binary = require_model_converter_binary()
+        converter_binary = str(require_model_converter_executable())
         vgf_path = tosa_path + ".vgf"
         conversion_command = [
             converter_binary,
@@ -185,11 +351,37 @@ def vgf_compile(
                 env=model_converter_env(),
             )
         except subprocess.CalledProcessError as process_error:
-            conversion_command_str = " ".join(conversion_command)
+            failure_tosa_path = None
+            failure_artifact_error = None
+
+            try:
+                failure_tosa_path = _copy_failure_artifacts(
+                    tosa_path,
+                    artifact_path,
+                    tag_name,
+                )
+            except Exception as artifact_error:
+                failure_artifact_error = artifact_error
+                logger.warning(
+                    "Failed to copy VGF model-converter failure artifacts.",
+                    exc_info=True,
+                )
+            repro_command = (
+                _replace_converter_input_path(conversion_command, failure_tosa_path)
+                if failure_tosa_path
+                else conversion_command
+            )
+            artifact_note = (
+                f"Failure artifact copy failed:\n{failure_artifact_error}\n"
+                if failure_artifact_error
+                else ""
+            )
             raise RuntimeError(
-                f"Vgf compiler ('{conversion_command_str}') failed with error:\n \
-                {process_error.stderr.decode()}\n \
-                Stdout:\n{process_error.stdout.decode()}"
+                "Vgf compiler failed.\n"
+                f"Repro command:\n  {_format_repro_command(repro_command)}\n"
+                f"{artifact_note}"
+                f"Stderr:\n{process_error.stderr.decode()}\n"
+                f"Stdout:\n{process_error.stdout.decode()}"
             )
 
         if artifact_path:

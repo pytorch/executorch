@@ -152,10 +152,7 @@ if(NOT ET_MODEL_PTE_ADDR
   )
 endif()
 
-if(NOT SEMIHOSTING
-   AND NOT ET_MODEL_PTE_ADDR
-   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
-)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   if(NOT EXISTS "${ET_PTE_FILE_PATH}")
     message(
       FATAL_ERROR
@@ -228,7 +225,7 @@ if(NOT CMAKE_SKIP_INSTALL_RULES AND TARGET ethosu_core_driver)
 endif()
 
 # Convert pte to header
-if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   add_custom_target(
     gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
   )
@@ -252,20 +249,31 @@ target_sources(
 # Check for "U55" in SYSTEM_CONFIG
 string(FIND "${SYSTEM_CONFIG}" "U55" U55_FOUND)
 
+# Check for "U65" in SYSTEM_CONFIG
+string(FIND "${SYSTEM_CONFIG}" "U65" U65_FOUND)
+
 # Check for "U85" in SYSTEM_CONFIG
 string(FIND "${SYSTEM_CONFIG}" "U85" U85_FOUND)
 
-# Check if neither "U55" nor "U85" was found
-if(U55_FOUND EQUAL -1 AND U85_FOUND EQUAL -1)
+# Check if neither "U55", "U65" nor "U85" was found
+if(U55_FOUND EQUAL -1
+   AND U65_FOUND EQUAL -1
+   AND U85_FOUND EQUAL -1
+)
   message(
     FATAL_ERROR
-      "SYSTEM_CONFIG does not contain 'U55' or 'U85'. Configuration aborting."
+      "SYSTEM_CONFIG does not contain 'U55', 'U65' or 'U85'. Configuration aborting."
   )
 endif()
 
 # Proceed with specific actions if either is found
 if(NOT U55_FOUND EQUAL -1)
   message(STATUS "SYSTEM_CONFIG contains 'U55'.")
+  set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
+endif()
+
+if(NOT U65_FOUND EQUAL -1)
+  message(STATUS "SYSTEM_CONFIG contains 'U65'.")
   set(LINK_FILE_IN "${CMAKE_CURRENT_LIST_DIR}/Corstone-300.ld")
 endif()
 
@@ -280,29 +288,34 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(COMPILER_PREPROCESSOR_OPTIONS -E -x c -P)
 endif()
 
+set(_arm_runner_linker_preprocessor_options ${COMPILER_PREPROCESSOR_OPTIONS})
+foreach(_arm_runner_linker_define IN ITEMS HEAP_SIZE STACK_SIZE)
+  if(DEFINED ${_arm_runner_linker_define})
+    list(APPEND _arm_runner_linker_preprocessor_options
+         "-D${_arm_runner_linker_define}=${${_arm_runner_linker_define}}"
+    )
+  endif()
+endforeach()
+
 get_filename_component(LINK_FILE_OUT_BASE "${LINK_FILE}" NAME)
 set(LINK_FILE_OUT
     "${CMAKE_CURRENT_BINARY_DIR}/${LINK_FILE_OUT_BASE}.${LINK_FILE_EXT}"
 )
 
 execute_process(
-  COMMAND ${CMAKE_C_COMPILER} ${COMPILER_PREPROCESSOR_OPTIONS} -o
+  COMMAND ${CMAKE_C_COMPILER} ${_arm_runner_linker_preprocessor_options} -o
           ${LINK_FILE_OUT} ${LINK_FILE_IN}
 )
 target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
-
-# Apply whole-archive helper where available to keep static initializers.
-executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
-executorch_target_link_options_shared_lib(quantized_kernels)
-executorch_target_link_options_shared_lib(cortex_m_kernels)
-executorch_target_link_options_shared_lib(portable_kernels)
 
 set(arm_executor_runner_link)
 list(
   APPEND
   arm_executor_runner_link
+  -Wl,--start-group
   extension_runner_util
   ethosu_target_init
+  -Wl,--whole-archive
   executorch
   quantized_ops_lib
   cortex_m_ops_lib
@@ -310,6 +323,16 @@ list(
   quantized_kernels
   cortex_m_kernels
   portable_kernels
+  executorch_core
+  cmsis-nn
+  ethosu_core_driver
+  timing_adapter
+  ethosu_mhu_dummy
+  ethosu_mailbox
+  ethosu_uart_cmsdk_apb
+  -Wl,--no-whole-archive
+  kernels_util_all_deps
+  -Wl,--end-group
   -Xlinker
   -Map=arm_executor_runner.map
 )
@@ -319,8 +342,7 @@ list(
 # EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
 # no undelegated ops, use neither.
 set(FOUND_OPS_IN_FILE FALSE)
-if(NOT SEMIHOSTING
-   AND NOT ET_MODEL_PTE_ADDR
+if(NOT ET_MODEL_PTE_ADDR
    AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
    AND EXISTS "${ET_PTE_FILE_PATH}"
 )
@@ -337,7 +359,7 @@ if(NOT SEMIHOSTING
   endif()
 endif()
 
-if(SEMIHOSTING)
+if(SEMIHOSTING AND "${ET_PTE_FILE_PATH}" STREQUAL "")
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
     "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
@@ -351,7 +373,7 @@ elseif(FOUND_OPS_IN_FILE)
 else()
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   message(
-    "gen_oplist: No non delagated ops was found in ${ET_PTE_FILE_PATH} no ops added to build"
+    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
   )
 endif()
 
@@ -390,7 +412,12 @@ if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
     DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
-  list(APPEND arm_executor_runner_link arm_portable_ops_lib)
+  list(FIND arm_executor_runner_link -Wl,--no-whole-archive
+       _arm_runner_no_whole_archive_idx
+  )
+  list(INSERT arm_executor_runner_link ${_arm_runner_no_whole_archive_idx}
+       arm_portable_ops_lib
+  )
 endif()
 
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
@@ -447,8 +474,42 @@ if(ET_BUNDLE_IO)
   endif()
 endif()
 
-# Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
-# bin size as we link in a number of other symbols
+# Keep static registration libraries force-loaded, but do it in the executable
+# link list rather than through INTERFACE_LINK_OPTIONS. The latter is emitted
+# before this target's objects and before the runner's dependency closure, which
+# breaks bare-metal archive resolution for the runner.
+set(_arm_runner_whole_archive_targets
+    executorch
+    quantized_ops_lib
+    cortex_m_ops_lib
+    executorch_delegate_ethos_u
+    quantized_kernels
+    cortex_m_kernels
+    portable_kernels
+    executorch_core
+    cmsis-nn
+    ethosu_core_driver
+    timing_adapter
+    ethosu_mhu_dummy
+    ethosu_mailbox
+    ethosu_uart_cmsdk_apb
+)
+if(TARGET arm_portable_ops_lib)
+  list(APPEND _arm_runner_whole_archive_targets arm_portable_ops_lib)
+endif()
+foreach(_arm_runner_whole_archive_target IN
+        LISTS _arm_runner_whole_archive_targets
+)
+  if(TARGET ${_arm_runner_whole_archive_target})
+    set_property(
+      TARGET ${_arm_runner_whole_archive_target} PROPERTY INTERFACE_LINK_OPTIONS
+                                                          ""
+    )
+  endif()
+endforeach()
+
+# Need whole-archive to ensure C++ ctors are called. This may be wasteful for
+# binary size as we link in a number of other symbols.
 target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 # Ensure the ELF lands next to the CMake build tree so run.sh (and downstream
@@ -506,7 +567,7 @@ target_compile_definitions(
   arm_executor_runner PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
 
-if(NOT "${ET_MODEL_PTE_ADDR}" AND NOT SEMIHOSTING)
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
   add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
@@ -569,6 +630,10 @@ if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
 endif()
 
+if(NOT ET_MODEL_PTE_ADDR AND NOT "${ET_PTE_FILE_PATH}" STREQUAL "")
+  target_compile_definitions(arm_executor_runner PUBLIC ET_COMPILED_PTE)
+endif()
+
 # Memory buffer sizes for Executorch flow
 
 if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
@@ -576,6 +641,14 @@ if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
     arm_executor_runner
     PUBLIC
       ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE}
+  )
+endif()
+
+if(DEFINED ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(
+    arm_executor_runner
+    PUBLIC
+      ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE}
   )
 endif()
 

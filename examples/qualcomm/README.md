@@ -52,7 +52,7 @@ cd $EXECUTORCH_ROOT/examples/qualcomm/scripts
 
 ## Simple Examples to Verify the Backend is Working
 ```bash
-python export_example.py -m add -g
+python export_example.py --soc_model add -g
 ```
 
 It will generate a simple add model targeting for "SM8550". You can manually push the `add.pte` file to the device following https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html and run it with
@@ -63,12 +63,12 @@ It will generate a simple add model targeting for "SM8550". You can manually pus
 
 #### For MobileNet_v2
 ```bash
-python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build-android/ -d /path/to/imagenet-mini/val
+python mobilenet_v2.py --device <device_serial> --soc_model "SM8550" --build_folder path/to/build-android/ -d /path/to/imagenet-mini/val
 ```
 
 #### For DeepLab_v3
 ```bash
-python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/build-android/ --download
+python deeplab_v3.py --device <device_serial> --soc_model "SM8550" --build_folder path/to/build-android/ --download
 ```
 
 ## Model Structure
@@ -92,7 +92,7 @@ This section outlines the essential APIs and utilities provided to streamline th
 
 4. `SimpleADB`:
 
-   `SimpleADB` provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands such as:     
+   `SimpleADB` provides a simplified interface for interacting with Android devices. It allows users to execute ADB commands such as:
       1. Push necessary artifacts to device
       2. Execute the runner
       3. Pull the execution outputs/results
@@ -104,7 +104,7 @@ This section shows how to use shared buffer for input/output tensors in QNN Exec
 ### Run example scipts with shared buffer
 You can specify `--shared_buffer` flag to run example scripts with shared buffer such as:
 ```
-python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build-android/ -d /path/to/imagenet-mini/val --shared_buffer
+python mobilenet_v2.py --device <device_serial> --soc_model "SM8550" --build_folder path/to/build-android/ -d /path/to/imagenet-mini/val --shared_buffer
 ```
 
 ### Workflow of using shared memory

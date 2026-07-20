@@ -14,19 +14,15 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
+using std::optional;
 
 namespace {
 
 optional<Tensor> none_tensor() {
   return optional<Tensor>();
-}
-
-optional<int64_t> none_axis() {
-  return optional<int64_t>();
 }
 
 } // namespace
@@ -73,19 +69,16 @@ TEST_F(FusedQuantBmmTest, AllQuantizedPerTensor) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(out_sizes, {2, 4, 6, 8}));
@@ -121,19 +114,16 @@ TEST_F(FusedQuantBmmTest, FloatInputsQuantizedOutput) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(out_sizes, {2, 4, 6, 8}));
@@ -171,19 +161,16 @@ TEST_F(FusedQuantBmmTest, QuantizedInputsFloatOutput) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_float.make(out_sizes, {1.0, 2.0, 3.0, 4.0}));
@@ -221,19 +208,16 @@ TEST_F(FusedQuantBmmTest, QuantizedInpFloatOther) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(out_sizes, {2, 4, 6, 8}));
@@ -284,19 +268,16 @@ TEST_F(FusedQuantBmmTest, NonZeroZeroPoint) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(out_sizes, {3, 6, 2, 5}));
@@ -341,19 +322,16 @@ TEST_F(FusedQuantBmmTest, LargerBatch) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       out);
 
   EXPECT_TENSOR_EQ(out, tf_int8.make(out_sizes, {2, 4, 6, 8, 10, 12, 14, 16}));

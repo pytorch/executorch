@@ -59,6 +59,8 @@ elf_file=$(realpath ${elf_file})
 # the Corstone-300 M55 (ISA superset).
 if [[ ${target} == *"ethos-u55"* || ${target} == cortex-m* && ${target} != cortex-m85* ]]; then
     fvp_model=FVP_Corstone_SSE-300_Ethos-U55
+elif [[ ${target} == *"ethos-u65"* ]]; then
+    fvp_model=FVP_Corstone_SSE-300_Ethos-U65
 else
     fvp_model=FVP_Corstone_SSE-320
 fi
@@ -144,7 +146,7 @@ if [[ ${target} == cortex-m* ]]; then
         rm "${log_file}"
         exit 1
     fi
-elif [[ ${target} == *"ethos-u55"*  ]]; then
+elif [[ ${target} == *"ethos-u55"* || ${target} == *"ethos-u65"* ]]; then
     ${nobuf} ${fvp_model}                                   \
         -C ethosu.num_macs=${num_macs}                      \
         -C mps3_board.visualisation.disable-visualisation=1 \

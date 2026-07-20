@@ -21,17 +21,51 @@ if(NOT TARGET vulkan_schema)
   # target), but vulkan_schema is unconditionally defined.
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/../vulkan
-    ${CMAKE_CURRENT_BINARY_DIR}/_vulkan_schema
+    ${CMAKE_CURRENT_BINARY_DIR}/_vulkan_schema EXCLUDE_FROM_ALL
   )
 endif()
 
 set(WEBGPU_SRCS
-    runtime/WebGPUBackend.cpp runtime/WebGPUGraph.cpp
-    runtime/WebGPUDelegateHeader.cpp runtime/WebGPUDevice.cpp
-    runtime/ops/OperatorRegistry.cpp runtime/ops/add/BinaryOp.cpp
+    runtime/WebGPUBackend.cpp
+    runtime/WebGPUGraph.cpp
+    runtime/WebGPUDelegateHeader.cpp
+    runtime/WebGPUDevice.cpp
+    runtime/WebGPUQueryPool.cpp
+    runtime/ops/OperatorRegistry.cpp
+    runtime/ops/add/BinaryOp.cpp
+    runtime/ops/rms_norm/RmsNorm.cpp
+    runtime/ops/update_cache/UpdateCache.cpp
+    runtime/ops/sdpa/Sdpa.cpp
+    runtime/ops/select_as_symint/SelectAsSymint.cpp
+    runtime/ops/quantized_linear/QuantizedLinear.cpp
+    runtime/ops/mul/BinaryOp.cpp
+    runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
+    runtime/ops/rope/RotaryEmbedding.cpp
+    runtime/ops/prepack/Prepack.cpp
+    runtime/ops/view_copy/ViewCopy.cpp
+    runtime/ops/select/Select.cpp
+    runtime/ops/sigmoid/UnaryOp.cpp
+    runtime/ops/squeeze/Squeeze.cpp
+    runtime/ops/unsqueeze/Unsqueeze.cpp
+    runtime/ops/slice/Slice.cpp
+    runtime/ops/permute/Permute.cpp
+    runtime/ops/cat/Cat.cpp
+    runtime/ops/index/Index.cpp
+    runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
+
+# Verify committed *_wgsl.h match their *.wgsl (drift fails the build).
+resolve_python_executable()
+add_custom_target(
+  webgpu_wgsl_headers_check ALL
+  COMMAND "${PYTHON_EXECUTABLE}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_wgsl_headers.py" --check
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "Checking WebGPU embedded-WGSL headers are in sync"
+)
+add_dependencies(webgpu_backend webgpu_wgsl_headers_check)
 
 target_include_directories(
   webgpu_backend PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
@@ -39,28 +73,14 @@ target_include_directories(
 
 target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 
-# Native build: link against wgpu-native
-set(WGPU_NATIVE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/third-party/wgpu-native"
-    CACHE PATH "Path to wgpu-native installation"
-)
-
-if(NOT EXISTS "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a")
-  message(FATAL_ERROR "wgpu-native not found at ${WGPU_NATIVE_DIR}. "
-                      "Run: bash backends/webgpu/scripts/setup-wgpu-native.sh"
-  )
-endif()
-
-add_library(wgpu_native STATIC IMPORTED)
-set_target_properties(
-  wgpu_native PROPERTIES IMPORTED_LOCATION
-                         "${WGPU_NATIVE_DIR}/lib/libwgpu_native.a"
-)
-
-target_include_directories(
-  webgpu_backend PUBLIC $<BUILD_INTERFACE:${WGPU_NATIVE_DIR}/include>
-)
-target_link_libraries(webgpu_backend PRIVATE wgpu_native)
+# Native WebGPU backend: Dawn (Tint) + SwiftShader; deps script sets Dawn_DIR.
+# Native-only: browser/Emscripten builds use the system webgpu.h and never reach
+# this find_package (root CMake gates it via EXECUTORCH_BUILD_WEBGPU).
+# dawn::webgpu_dawn's link interface references Threads::Threads.
+find_package(Threads REQUIRED)
+find_package(Dawn REQUIRED)
+set(WEBGPU_GPU_LIB dawn::webgpu_dawn)
+target_link_libraries(webgpu_backend PUBLIC ${WEBGPU_GPU_LIB})
 
 if(APPLE)
   target_link_libraries(
@@ -73,6 +93,17 @@ endif()
 
 target_compile_options(webgpu_backend PRIVATE -fexceptions)
 
+# Opt-in GPU timestamp profiling (WebGPUQueryPool); OFF so production builds
+# request no TimestampQuery device feature. Mirrors Vulkan's compile-flag gate.
+option(EXECUTORCH_BUILD_WEBGPU_PROFILING
+       "Enable WebGPU GPU timestamp-query profiling" OFF
+)
+if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+  target_compile_definitions(
+    webgpu_backend PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+  )
+endif()
+
 # Link with --whole-archive for static registration of backend + ops
 executorch_target_link_options_shared_lib(webgpu_backend)
 
@@ -84,19 +115,17 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-# Native test target
-if(EXECUTORCH_BUILD_WEBGPU_TEST)
-  add_executable(webgpu_native_test test/test_webgpu_native.cpp)
-
+# Native test targets. Helper mirrors backends/vulkan's vulkan_op_test: every
+# test executable links the same backend + runtime libs.
+function(add_webgpu_native_test test_name test_src)
+  add_executable(${test_name} ${test_src})
   target_include_directories(
-    webgpu_native_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
-                               "${WGPU_NATIVE_DIR}/include"
+    ${test_name} PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
   )
-
   target_link_libraries(
-    webgpu_native_test
+    ${test_name}
     PRIVATE webgpu_backend
-            wgpu_native
+            ${WEBGPU_GPU_LIB}
             executorch_core
             extension_module_static
             extension_data_loader
@@ -104,16 +133,87 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
             portable_kernels
             portable_ops_lib
   )
-
   if(APPLE)
     target_link_libraries(
-      webgpu_native_test PRIVATE "-framework Metal" "-framework QuartzCore"
-                                 "-framework CoreGraphics"
+      ${test_name} PRIVATE "-framework Metal" "-framework QuartzCore"
+                           "-framework CoreGraphics"
     )
   else()
-    target_link_libraries(webgpu_native_test PRIVATE dl m pthread)
+    target_link_libraries(${test_name} PRIVATE dl m pthread)
   endif()
+  target_compile_options(${test_name} PRIVATE -fexceptions)
+  if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+    target_compile_definitions(
+      ${test_name} PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+    )
+  endif()
+  set_property(TARGET ${test_name} PROPERTY CXX_STANDARD 17)
+endfunction()
 
-  target_compile_options(webgpu_native_test PRIVATE -fexceptions)
-  set_property(TARGET webgpu_native_test PROPERTY CXX_STANDARD 17)
+if(EXECUTORCH_BUILD_WEBGPU_TEST)
+  # All WebGPU native tests use GTest (device-dependent ones bring up the device
+  # in their own main(); the fold unit test is device-free via gtest_main).
+  # GTest needs -DEXECUTORCH_BUILD_TESTS=ON.
+  if(NOT TARGET GTest::gtest)
+    find_package(GTest QUIET)
+  endif()
+  if(TARGET GTest::gtest)
+    # Reuse add_webgpu_native_test for the backend link + frameworks + flags;
+    # add only driver_util, GTest, and the header-only nlohmann/json include.
+    add_webgpu_native_test(webgpu_op_test test/op_tests/op_test_driver.cpp)
+    target_sources(webgpu_op_test PRIVATE test/op_tests/driver_util.cpp)
+    target_link_libraries(webgpu_op_test PRIVATE GTest::gtest)
+    target_include_directories(
+      webgpu_op_test
+      PRIVATE "${EXECUTORCH_ROOT}/third-party/json/single_include"
+    )
+
+    # Device-free util unit test: no backend/Dawn link (pure manifest/tolerance
+    # helpers), so it does NOT use the native-test helper.
+    add_executable(
+      webgpu_op_test_util_test test/op_tests/test_driver_util.cpp
+                               test/op_tests/driver_util.cpp
+    )
+    target_include_directories(
+      webgpu_op_test_util_test
+      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+              "${EXECUTORCH_ROOT}/third-party/json/single_include"
+    )
+    target_link_libraries(
+      webgpu_op_test_util_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+    target_compile_options(webgpu_op_test_util_test PRIVATE -fexceptions)
+    set_property(TARGET webgpu_op_test_util_test PROPERTY CXX_STANDARD 17)
+
+    # Device-dependent native tests: each has its own main() that brings up the
+    # device once, then RUN_ALL_TESTS(); link GTest::gtest (not gtest_main).
+    add_webgpu_native_test(webgpu_native_test test/test_webgpu_native.cpp)
+    target_link_libraries(webgpu_native_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_dispatch_order_test test/native/test_dispatch_order.cpp
+    )
+    target_link_libraries(webgpu_dispatch_order_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_scratch_buffer_test test/native/test_scratch_buffer.cpp
+    )
+    target_link_libraries(webgpu_scratch_buffer_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_update_cache_test test/native/test_update_cache.cpp
+    )
+    target_link_libraries(webgpu_update_cache_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(
+      webgpu_dynamic_shape_test test/native/test_dynamic_shape.cpp
+    )
+    target_link_libraries(webgpu_dynamic_shape_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(webgpu_index_test test/native/test_index.cpp)
+    target_link_libraries(webgpu_index_test PRIVATE GTest::gtest)
+
+    # Device-free fold unit test (gtest_main provides main; no device needed).
+    add_webgpu_native_test(
+      webgpu_dispatch_2d_test test/native/test_dispatch_2d.cpp
+    )
+    target_link_libraries(
+      webgpu_dispatch_2d_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+  endif()
 endif()

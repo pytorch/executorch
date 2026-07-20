@@ -23,11 +23,11 @@ Among currently supported machine learning models are:
 ## Development Requirements
 
 - [MCUXpresso IDE](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE) or [MCUXpresso Visual Studio Code extension](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC)
-- [MCUXpresso SDK 25.12](https://mcuxpresso.nxp.com/mcuxsdk/25.12.00/html/index.html)
-- eIQ Neutron SDK version 3.1.1, what you can download from eIQ PyPI:
+- [MCUXpresso SDK 26.06](https://mcuxpresso.nxp.com/mcuxsdk/26.06.00/html/index.html)
+- eIQ Neutron SDK version 3.1.3, what you can download from eIQ PyPI:
 
 ```commandline
-$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.1.1
+$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.1.3
 ```
 
 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: 
@@ -64,6 +64,8 @@ here https://www.nxp.com/design/design-center/software/eiq-ai-development-enviro
 
 **→{doc}`nxp-kernel-selection` — Neutron Firmware Kernel Selection support.**
 
+**→{doc}`nxp-profiling` — Neutron models profiling.**
+
 ```{toctree}
 :maxdepth: 2
 :hidden:
@@ -74,4 +76,5 @@ nxp-quantization
 tutorials/nxp-tutorials
 nxp-dim-order
 nxp-kernel-selection
+nxp-profiling
 ```

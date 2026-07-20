@@ -9,6 +9,7 @@ import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
+from torch.fx.node import map_arg
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
@@ -23,6 +24,13 @@ class DeduplicateGetAttrPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    def _replace_input_node(self, node: Node, old_node: Node, new_node: Node) -> None:
+        def maybe_replace_node(arg: Any) -> Any:
+            return new_node if arg is old_node else arg
+
+        node.args = map_arg(node.args, maybe_replace_node)
+        node.kwargs = map_arg(node.kwargs, maybe_replace_node)
 
     def _get_attr(self, graph_module: GraphModule, target: str) -> Any:
         attr: Any = graph_module
@@ -51,9 +59,26 @@ class DeduplicateGetAttrPass(ArmPass):
 
         return attr_name
 
+    def _split_shared_get_attrs(self, graph_module: GraphModule) -> bool:
+        modified = False
+
+        for node in list(graph_module.graph.find_nodes(op="get_attr")):
+            users = list(node.users)
+            if len(users) <= 1:
+                continue
+
+            for user in users[1:]:
+                with graph_module.graph.inserting_before(user):
+                    new_node = graph_module.graph.get_attr(node.target)
+                    new_node.meta.update(node.meta)
+                self._replace_input_node(user, node, new_node)
+                modified = True
+
+        return modified
+
     def call(self, graph_module: GraphModule) -> PassResult:
         seen_targets: set[str] = set()
-        modified = False
+        modified = self._split_shared_get_attrs(graph_module)
 
         for node in graph_module.graph.find_nodes(op="get_attr"):
 

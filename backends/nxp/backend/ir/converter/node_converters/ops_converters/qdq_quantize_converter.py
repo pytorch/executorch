@@ -33,14 +33,14 @@ class QDQQuantizeConverter(NodeConverter):
     def convert(self, node: Node):
         self.assert_convertible(node)
 
-        from_tensor = self.builder.tensor_for_name(node.name)
-        to_tensor = self.builder.tensor_for_name(node.args[0].name)
+        output_tensor = self.builder.tensor_for_name(node.name)
+        input_tensor = self.builder.tensor_for_name(node.args[0].name)
 
         scale = np.array(node.args[1], dtype=np.float32)
         zero_point = np.array(node.args[2], dtype=np.int8)
 
-        set_quantization_parameters_to_tensor(to_tensor, scale, zero_point, 0)
+        set_quantization_parameters_to_tensor(input_tensor, scale, zero_point, 0)
 
         # Change type so we pass check tensor similarity check when redirecting
-        to_tensor.type = from_tensor.type
-        self.builder.redirect_tensor(from_tensor, to_tensor)
+        input_tensor.type = output_tensor.type
+        self.builder.redirect_tensor(output_tensor, input_tensor)

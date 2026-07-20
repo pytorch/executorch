@@ -28,7 +28,7 @@ class ScalarTensor(NodeVisitor):
         val = node.args[0]
         out_tensor = torch.tensor([val], dtype=node.meta["val"].dtype)
 
-        # The following clamping will only occur in FP mode. Clamping for quantized mode will happen in the pass ReplaceInfValues.
+        # The following clamping will only occur in FP mode. Clamping for quantized mode will happen in the quantizer.py.
         # negative infinite
         if torch.isinf(out_tensor)[0] and (out_tensor < 0):
             out_tensor = torch.tensor(

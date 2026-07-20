@@ -13,6 +13,11 @@ from typing import cast, Optional, Sequence
 
 import torch
 import torch.fx
+
+from executorch.backends.arm._passes.dim_maps import (
+    _normalize_dims,
+    normalize_view_shape,
+)
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
@@ -20,7 +25,6 @@ from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import NodeMetadata
-
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,
@@ -33,12 +37,17 @@ from torch._ops import OpOverload
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind
 
+_Dim = int | torch.SymInt
+
 
 def is_submodule_node(node: torch.fx.Node):
     if node.op not in ("get_attr", "placeholder"):
         return False
+    owning_module = node.graph.owning_module
+    if owning_module is None or not isinstance(node.target, str):
+        return False
     try:
-        node.graph.owning_module.get_submodule(node.target)
+        owning_module.get_submodule(node.target)
     except AttributeError:
         return False
     return True
@@ -241,6 +250,43 @@ def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
     plain_meta_dict["input_qparams"] = {}
     plain_meta_dict["output_qparams"] = {}
     return NodeMetadata(plain_meta_dict)
+
+
+def refresh_permute_view_meta(node: torch.fx.Node) -> None:
+    """Compute new meta-vals, specifically preserving SymInts for view/permute
+    nodes.
+    """
+    input_node = node.all_input_nodes[0]
+    input_val = input_node.meta.get("val")
+    if input_val is None or node.target not in {
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+    }:
+        return
+
+    if not isinstance(input_val, torch.Tensor):
+        node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
+        return
+
+    # Compute new meta shapes to preserve SymInts.
+    match node.target:
+        case exir_ops.edge.aten.view_copy.default:
+            node.meta["val"] = input_val.new_empty(
+                tuple(
+                    normalize_view_shape(
+                        input_val.shape, cast(Sequence[_Dim], node.args[1])
+                    )
+                )
+            )
+        case exir_ops.edge.aten.permute_copy.default:
+            dims = _normalize_dims(
+                cast(Sequence[int], node.args[1]), len(input_val.shape)
+            )
+            node.meta["val"] = input_val.new_empty(
+                tuple(input_val.shape[dim] for dim in dims)
+            )
+        case _:
+            node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
 
 
 def insert_scalar(

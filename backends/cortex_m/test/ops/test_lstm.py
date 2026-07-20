@@ -85,14 +85,18 @@ test_cases = {
 
 
 @pytest.mark.skip("Not implemented yet.")
-def test_dialect_lstm(test_case: McuTestCase) -> None:
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_lstm(test_case: McuTestCase, cortex_m_target) -> None:
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
     )
 
 
 @pytest.mark.skip("Not implemented yet.")
-def test_implementation_lstm(test_case: McuTestCase) -> None:
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_lstm(test_case: McuTestCase, cortex_m_target) -> None:
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation()

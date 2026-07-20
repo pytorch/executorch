@@ -170,8 +170,8 @@ using namespace executorch::runtime;
 - (BOOL)loadWithError:(NSError**)error {
   if (![self isLoaded]) {
     _runner = llm::create_multimodal_runner(
-      _modelPath.UTF8String,
-      llm::load_tokenizer(_tokenizerPath.UTF8String)
+      _modelPath.UTF8String ?: "",
+      llm::load_tokenizer(_tokenizerPath.UTF8String ?: "")
     );
     if (!_runner) {
       if (error) {
@@ -206,7 +206,7 @@ using namespace executorch::runtime;
   for (ExecuTorchLLMMultimodalInput *input in inputs) {
     switch (input.type) {
       case ExecuTorchLLMMultimodalInputTypeText:
-        nativeInputs.emplace_back(llm::MultimodalInput(input.text.UTF8String));
+        nativeInputs.emplace_back(llm::MultimodalInput(input.text.UTF8String ?: ""));
         break;
       case ExecuTorchLLMMultimodalInputTypeImage: {
         ExecuTorchLLMImage *image = input.image;

@@ -34,7 +34,6 @@ import os
 import time
 
 import torch
-
 from executorch.examples.models.gemma4_31b.export import load_prequantized_model
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31B,
@@ -235,7 +234,7 @@ def main() -> None:
     _move_to_cuda(model, config)
     model.eval()
 
-    import executorch.backends.cuda.int4_dispatch  # noqa: F401
+    import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     if not args.no_compile:
         print("Compiling model with torch.compile...")

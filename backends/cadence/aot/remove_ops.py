@@ -30,9 +30,16 @@ from executorch.backends.transforms.remove_permutes_around_elementwise_ops impor
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import (
+    ExportedProgramPassBase,
+    ExportedProgramPassResult,
+    ExportPass,
+    PassResult,
+)
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
+from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind, OutputKind
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
 
@@ -867,6 +874,103 @@ class CommonRemovePasses:
         RemoveCatFromSliceCopyPass,
         RemoveCloneOpsTransformImported,
     ]
+
+
+class RemoveBNTrackingMutationsPass(ExportedProgramPassBase):
+    """Remove num_batches_tracked buffer mutations from an ExportedProgram.
+
+    run_decompositions() re-introduces num_batches_tracked mutable buffer
+    outputs even when batch_norm uses training=False. These mutations are
+    dead (the counter is never read in eval mode) but inflate the PTE.
+
+    Removes both the mutation outputs AND the dead input placeholders,
+    along with their corresponding graph signature entries and state dict
+    tensors.
+    """
+
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        ep = exported_program
+        nbt_fqns = {
+            fqn
+            for fqn in ep.graph_signature.buffers_to_mutate.values()
+            if "num_batches_tracked" in fqn
+        }
+        if not nbt_fqns:
+            return ExportedProgramPassResult(ep, False)
+
+        nbt_output_names = {
+            name
+            for name, fqn in ep.graph_signature.buffers_to_mutate.items()
+            if fqn in nbt_fqns
+        }
+        # buffers_to_mutate / inputs_to_buffers are keyed by the FX node name
+        # (arg.name), which can differ from node.target when export
+        # uniquifies or sanitizes placeholder names. Match on node.name.
+        nbt_input_names = {
+            name
+            for name, fqn in ep.graph_signature.inputs_to_buffers.items()
+            if fqn in nbt_fqns
+        }
+
+        gm = ep.graph_module
+
+        # Remove mutation outputs
+        output_node = gm.graph.output_node()
+        output_args = list(output_node.args[0])
+        for idx in sorted(
+            (
+                i
+                for i, n in enumerate(output_args)
+                if isinstance(n, torch.fx.Node) and n.name in nbt_output_names
+            ),
+            reverse=True,
+        ):
+            output_args.pop(idx)
+        output_node.args = (tuple(output_args),)
+
+        gm.graph.eliminate_dead_code()
+
+        removed_nbt_fqns: Set[str] = set()
+
+        # Remove dead input placeholders
+        for node in list(gm.graph.nodes):
+            if (
+                node.op == "placeholder"
+                and node.name in nbt_input_names
+                and len(node.users) == 0
+            ):
+                removed_nbt_fqns.add(ep.graph_signature.inputs_to_buffers[node.name])
+                gm.graph.erase_node(node)
+
+        gm.recompile()
+
+        # Update output specs
+        ep.graph_signature.output_specs = [
+            s
+            for s in ep.graph_signature.output_specs
+            if not (
+                s.kind == OutputKind.BUFFER_MUTATION
+                and s.target is not None
+                and s.target in nbt_fqns
+            )
+        ]
+
+        ep.graph_signature.input_specs = [
+            s
+            for s in ep.graph_signature.input_specs
+            if not (
+                s.kind == InputKind.BUFFER
+                and s.target is not None
+                and s.target in removed_nbt_fqns
+            )
+        ]
+
+        # Remove state for buffers whose placeholders were removed.
+        for fqn in removed_nbt_fqns:
+            ep.state_dict.pop(fqn, None)
+            ep.constants.pop(fqn, None)
+
+        return ExportedProgramPassResult(ep, True)
 
 
 class CadenceRemoveNops:

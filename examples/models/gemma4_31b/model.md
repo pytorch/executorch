@@ -109,11 +109,13 @@ Decoder norms per layer: `input_layernorm`, `post_attention_layernorm`,
 | `decode`  | tokens `(1, 1)` + input_pos `(1,)` + temperature `(1,)`    | `(1, 1)` float   |
 | `prefill` | tokens `(1, T)` + input_pos `(T,)` + temperature `(1,)`, T∈[5, min(max_seq_len-1, 2×sliding_window)] | `(1, 1)` float   |
 
-Both methods share the same KV-cache buffers via
-`MemoryPlanningPass(share_mutable_buffers=True)` and
-`emit_mutable_buffer_names=True`. The exported program performs Gumbel-max
-sampling on-device and returns a single token ID per call so the C++ runner
-only has to feed tokens.
+Both methods share the same KV-cache buffers. On the CUDA/AOTI backend the
+stateful buffers are lifted into the delegate as constants and shared across
+`decode`/`prefill` at runtime via the backend's per-FQN buffer cache, so the
+CUDA export leaves `share_mutable_buffers` off (other backends, e.g. MLX, instead
+share graph-level buffers via `share_mutable_buffers`). The exported program
+performs Gumbel-max sampling on-device and returns a single token ID per call so
+the C++ runner only has to feed tokens.
 
 ### MLX (`--backend mlx`)
 
@@ -152,10 +154,12 @@ Modules in `quant/`:
 - **Pack** (`pack.py` + `pack_cuda.py` + `pack_mlx.py`): `pack_model` groups
   weights by parent module, `pack_one` handles single weights. Per-module
   packers dispatch by module type (`nn.Linear`, `nn.Embedding`). CUDA passes
-  Int4Tensor through (dispatch handled by `int4_dispatch.py`); MLX converts
+  Int4Tensor through (dispatch handled by `quantize_op_dispatch`); MLX converts
   Int4Tensor → IntxUnpackedToInt8Tensor and regroups per-axis embeddings.
-- **GGUF** (`gguf.py`): `unpack_gguf_tensor` / `iter_gguf_tensors` for
-  loading community-quantized GGUF files (Q4_K, Q6_K).
+- **GGUF**: community-quantized GGUF files (Q4_K, Q6_K) are loaded by the
+  shared, backend-agnostic `extension/llm/export/gguf.py` (`load_gguf` /
+  `iter_gguf` → `ExportableGGUFTensor`); `gguf_loader.py` remaps GGUF names to
+  model FQNs and picks the per-backend weight representation.
 
 The quantize-once flow:
 
@@ -169,7 +173,7 @@ quantize_and_save.py                    export.py / inference.py
   Int4Tensor / IntxUnpacked             pack for backend:
      |                                       |
   save (torchao safetensors)            CUDA: Int4Tensor passed through
-     |                                    → int4_dispatch → dp4a / dequant+cuBLAS
+     |                                    → quantize_op_dispatch → dp4a / dequant+cuBLAS
   model.safetensors                     MLX:  Int4Tensor → IntxUnpacked(int4)
                                           → dequantize_affine → QuantizedMatmulNode
 ```

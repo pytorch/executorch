@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 import torch
 from executorch.exir._warnings import experimental
@@ -14,9 +14,15 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.backend.utils import (
+    get_non_lowered_nodes,
+    tag_constant_data,
+    tag_mutated_buffer,
+)
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export.exported_program import ExportedProgram
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 @experimental(
@@ -26,12 +32,10 @@ class AotiPartitioner(Partitioner):
     """
     Base partitioner for AOTInductor-driven backend integration.
 
-    This partitioner creates a single partition containing all operators from the input graph.
-    It skips core ATen decomposition, allowing the backend to handle decomposition using
+    Delegates the non-lowered operators to AOTInductor as one or more convex
+    partitions (a single partition when nothing else has claimed part of the
+    graph). It skips core ATen decomposition, letting the backend decompose via
     AOTInductor's backend-specific decomposition table.
-
-    Only operators that cannot be handled by the aoti library will be excluded from
-    the partition and fall back to ExecuTorch's default or custom handling.
     """
 
     def __init__(self, backend_name: str, compile_spec: List[CompileSpec]) -> None:
@@ -45,48 +49,76 @@ class AotiPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(backend_name, compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        """Delegate the non-lowered ops to AOTInductor.
+
+        Uses CapabilityBasedPartitioner rather than a single tag because a
+        delegated submodule must be convex: if a node that is not delegated sits
+        between the delegated ops, one tag would span a non-convex set and fusion
+        would fail with a dependency cycle.
         """
-        Fully delegate the graph to AOTInductor by tagging all nodes as a single partition.
-        """
+        # Only nodes not already lowered are candidates for this backend.
+        non_lowered_nodes = set(get_non_lowered_nodes(exported_program.graph))
+
+        control_flow_targets = [
+            torch.ops.higher_order.cond,
+            torch.ops.higher_order.map_impl,
+            torch.ops.higher_order.while_loop,
+            torch.ops.higher_order.scan,
+        ]
+
+        class AotiOperatorSupport(OperatorSupportBase):
+            def is_node_supported(
+                self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
+            ) -> bool:
+                return node.op == "call_function" and node in non_lowered_nodes
+
+        partitioner = CapabilityBasedPartitioner(
+            exported_program.graph_module,
+            AotiOperatorSupport(),
+            allows_single_node_partition=True,
+        )
 
         partition_tags: Dict[str, DelegationSpec] = {}
-        tag = "tag0"
-
-        # Tag torch.cond and other control flow operations
-        def is_control_flow(node: torch.fx.Node) -> bool:
-            return node.op == "call_function" and node.target in [
-                torch.ops.higher_order.cond,
-                torch.ops.higher_order.map_impl,
-                torch.ops.higher_order.while_loop,
-            ]
-
-        for node in exported_program.graph.nodes:
-            if node.op == "call_function":
+        for partition in partitioner.propose_partitions():
+            tag = f"aoti_{partition.id}"
+            partition_tags[tag] = self.delegation_spec
+            for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
-            # Tag get_attr nodes that are used by control flow operations
-            elif node.op == "get_attr":
-                # Check if any user is a control flow operation
-                for user in node.users:
-                    if is_control_flow(user):
-                        node.meta["delegation_tag"] = tag
-                        break
 
-        partition_tags[tag] = self.delegation_spec
+        # A control-flow op carries its branch GraphModules as get_attr operands;
+        # they must share the op's tag so they land inside the same submodule. A
+        # branch module feeds a single control-flow op, so first match wins.
+        for node in exported_program.graph.nodes:
+            if node.op != "get_attr":
+                continue
+            for user in node.users:
+                if (
+                    user.op == "call_function"
+                    and user.target in control_flow_targets
+                    and "delegation_tag" in user.meta
+                ):
+                    node.meta["delegation_tag"] = user.meta["delegation_tag"]
+                    break
 
         tag_constant_data(exported_program)
         tag_mutated_buffer(exported_program)
 
-        # Tag constant placeholders that have no users
-        # tag_constant_data only tags constants that have users with delegation_tag
-        # but we need to tag all constants for this partition
-        for node in exported_program.graph.nodes:
-            if node.op == "placeholder" and (
-                is_param(exported_program, node)
-                or is_buffer(exported_program, node)
-                or is_lifted_tensor_constant(exported_program, node)
-            ):
-                if "delegation_tag" not in node.meta:
-                    node.meta["delegation_tag"] = tag
+        # tag_constant_data only tags constants that have users; tag the
+        # genuinely unused ones too so none are left dangling.
+        if partition_tags:
+            fallback_tag = next(iter(partition_tags))
+            for node in exported_program.graph.nodes:
+                if (
+                    node.op == "placeholder"
+                    and not node.users
+                    and "delegation_tag" not in node.meta
+                    and (
+                        is_param(exported_program, node)
+                        or is_buffer(exported_program, node)
+                        or is_lifted_tensor_constant(exported_program, node)
+                    )
+                ):
+                    node.meta["delegation_tag"] = fallback_tag
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

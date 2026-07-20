@@ -96,6 +96,9 @@ class LoraConfig:
     lora_rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
+    # Per-adapter quantization/precision: "int8" | "fp16" | "fp32" | None.
+    # Overrides the global --lora_precision flag for this adapter only.
+    adapter_quant: Optional[str] = None
 
 
 @dataclass
@@ -377,6 +380,7 @@ class Pt2eQuantize(str, Enum):
     vulkan_8w = "vulkan_8w"
     tosa_8a8w = "tosa_8a8w"
     ethosu_8a8w = "ethosu_8a8w"
+    ethosu_16a8w = "ethosu_16a8w"
     vgf_8a8w = "vgf_8a8w"
     vgf_16a8w = "vgf_16a8w"
 
@@ -384,6 +388,11 @@ class Pt2eQuantize(str, Enum):
 class SpinQuant(str, Enum):
     cuda = "cuda"
     native = "native"
+
+
+class QuantizeScope(str, Enum):
+    full = "full"
+    linear = "linear"
 
 
 @dataclass
@@ -403,6 +412,9 @@ class QuantizationConfig:
         use_spin_quant: Which spin quant mode to use. If unspecified, don't use
             spin quant.
         use_qat: Whether the checkpoint is quantization-awarely trained.
+        quantize_scope: Scope for Arm PT2E quantization. "full" quantizes the
+            full supported graph, while "linear" limits quantization to
+            torch.nn.Linear modules.
         calibration_tasks: Tasks for GPTQ calibration from lm_eval.
         calibration_limit: Number of samples used for calibration from lm_eval.
         calibration_seq_length: Sequence length for GPTQ calibration from lm_eval.
@@ -427,6 +439,7 @@ class QuantizationConfig:
     group_size: Optional[int] = None
     use_spin_quant: Optional[SpinQuant] = None
     use_qat: bool = False
+    quantize_scope: QuantizeScope = QuantizeScope.full
     calibration_tasks: Optional[List[str]] = None
     calibration_limit: Optional[int] = None
     calibration_seq_length: Optional[int] = None
@@ -587,6 +600,7 @@ class EthosUConfig:
     target: str = "ethos-u85-128"  # Default target, can be overridden.
     memory_mode: str = "default"
     system_config: str = "default"
+    extra_flags: List[str] = field(default_factory=list)
 
 
 class VgfQuantizeScope(str, Enum):
@@ -832,7 +846,9 @@ class LlmConfig:
             llm_config.backend.vgf.quantize_scope = VgfQuantizeScope(
                 args.vgf_quantize_scope
             )
-
+            llm_config.quantization.quantize_scope = QuantizeScope(
+                args.vgf_quantize_scope
+            )
         # TorchAoKernels
         if any(
             hasattr(args, a)

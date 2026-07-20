@@ -58,6 +58,7 @@ class TableOps:
         exir_ops.edge.aten.acos.default: torch.acos,
         exir_ops.edge.aten.tan.default: torch.tan,
         exir_ops.edge.aten.silu.default: torch.nn.functional.silu,
+        exir_ops.edge.aten.round.default: torch.round,
     }
 
     # Targets that must be treated explicitly
@@ -65,6 +66,7 @@ class TableOps:
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
         exir_ops.edge.aten.elu.default,
+        exir_ops.edge.aten.leaky_relu.default,
         exir_ops.edge.aten.remainder.Scalar,
     }
 
@@ -105,6 +107,18 @@ class TableOps:
                     scale = cast(float, node.meta.get("float_scale", 1.0))
                     return lambda x: torch.ops.aten.elu.default(
                         x, input_alpha, scale, input_scale
+                    ).flatten()
+                case exir_ops.edge.aten.leaky_relu.default:
+                    negative_slope = cast(
+                        float,
+                        (
+                            node.args[1]
+                            if len(node.args) > 1
+                            else node.kwargs.get("negative_slope", 0.01)
+                        ),
+                    )
+                    return lambda x: torch.nn.functional.leaky_relu(
+                        x, negative_slope=negative_slope
                     ).flatten()
                 case exir_ops.edge.aten.remainder.Scalar:
                     divisor = cast(float | int, node.args[1])
@@ -175,8 +189,8 @@ class InsertTableOpsPass(ArmPass):
         )
         return (f(effective_codes).to(dtype=torch.int8), 0)
 
+    @staticmethod
     def generate_16_bit_table_values(
-        self,
         torch_op: Callable[[torch.Tensor], torch.Tensor],
         in_quantargs: QuantArgs,
         out_quantargs: QuantArgs,
@@ -223,6 +237,15 @@ class InsertTableOpsPass(ArmPass):
         #       but due to signedness this is a negative number! So we need to shift it one more bit.
         # Note: for out_quantargs.dtype=torch.int16, rshift == 0 and rescale_lshift = -7.
         rshift = int(torch.ceil(torch.log2(lut_values.abs().max()))) + 1 - 16
+        # When the table values use fewer than 16 bits (e.g. a sigmoid output
+        # quantized with a small scale, so the max table value is well below
+        # 2**15), the formula above yields a negative rshift. The values already
+        # fit in signed int16, and a negative right-shift is undefined (on host it
+        # masks the shift count and zeroes the table, giving a degenerate
+        # step-function LUT on device). Clamp to 0 so no shift is applied; this is
+        # the documented int16 case (rshift == 0, rescale_lshift == -7) and keeps
+        # rescale_lshift consistent with the shift actually performed below.
+        rshift = max(rshift, 0)
         # The 7 fractional bits are equivalent to a lshift of 7, so subtract 7 from the lshift we do.
         rescale_lshift = rshift - 7
         lut_values = lut_values >> rshift

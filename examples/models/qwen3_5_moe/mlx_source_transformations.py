@@ -113,12 +113,14 @@ def _full_attention_forward(self, x, input_pos):
 
     k, v = self.kv_cache.update(input_pos, k, v)
 
-    if self.n_kv_groups > 1:
-        k = k.repeat_interleave(self.n_kv_groups, dim=1)
-        v = v.repeat_interleave(self.n_kv_groups, dim=1)
-
-    attn_mask = self.mask[input_pos].unsqueeze(0).unsqueeze(0)
-    y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+    y = torch.ops.mlx.custom_sdpa(
+        q,
+        k,
+        v,
+        start_pos=pos,
+        dropout_p=0.0,
+        is_causal=True,
+    )
 
     y = y.transpose(1, 2).contiguous().view(B, T, -1)
 
@@ -184,17 +186,15 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
         k, (self.head_k_dim,), self._qk_rms_weight, eps=1e-6
     )
 
-    # head_repeat for k_heads != v_heads
-    if self.head_repeat > 1:
-        q = q.repeat_interleave(self.head_repeat, dim=2)
-        k = k.repeat_interleave(self.head_repeat, dim=2)
+    # GQA head expansion (k_heads != v_heads) is handled inside
+    # mlx::gated_delta_rule
 
     # Mamba-style gating
     beta = b.sigmoid()
     x = a + self.dt_bias
     g = (-self.A_log.exp() * torch.logaddexp(x, torch.zeros_like(x))).exp()
 
-    import executorch.backends.mlx.model_ops.gated_delta_rule as _  # noqa: ensure op registered
+    import executorch.backends.mlx.custom_kernel_ops.gated_delta_rule as _  # noqa: ensure op registered
 
     output = torch.ops.mlx.gated_delta_rule(
         q,
@@ -278,17 +278,13 @@ def _swap_gated_delta_net(model, model_dtype):
 
 
 def _swap_full_attention(model, config):
-    """FullAttention → mlx::rope custom op + causal mask."""
+    """FullAttention → mlx::rope custom op"""
     rope_theta = config.rope_theta if config else 10000.0
-    max_seq_len = config.max_seq_len if config else 4096
     count = 0
     for _name, module in model.named_modules():
         if isinstance(module, FullAttention):
             module._rope_dims = module.rotary_emb.rotary_dim
             module._rope_base = rope_theta
-            mask = torch.full((max_seq_len, max_seq_len), float("-inf"))
-            mask = torch.triu(mask, diagonal=1)
-            module.register_buffer("mask", mask)
             module.forward = types.MethodType(_full_attention_forward, module)
             count += 1
     return count

@@ -15,6 +15,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.h>
 #include <executorch/runtime/core/error.h>
 
+#include <pal/Path.h>
+
 #include <memory>
 #include <mutex>
 #include <string>
@@ -79,12 +81,16 @@ class QnnBackendUnifiedRegistry {
   // For macro, refer to executorch/backends/qualcomm/CMakeLists.txt
   static constexpr const char* htp_library_name_ = HEXAGON_LIB;
 #else
-  static constexpr const char* htp_library_name_ = "libQnnHtp.so";
+  static inline const std::string htp_library_name_ =
+      pal::path::GetLibraryName("QnnHtp");
 #endif
-  static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
-  static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
+  static inline const std::string gpu_library_name_ =
+      pal::path::GetLibraryName("QnnGpu");
+  static inline const std::string dsp_library_name_ =
+      pal::path::GetLibraryName("QnnDsp");
   // Lpai library name is same for both traditional build and hexagon build.
-  static constexpr const char* lpai_library_name_ = "libQnnLpai.so";
+  static inline const std::string lpai_library_name_ =
+      pal::path::GetLibraryName("QnnLpai");
 
   std::unique_ptr<const QnnSaver_Config_t*[]> GetImplementationConfig(
       const QnnExecuTorchOptions* options) {

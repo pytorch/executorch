@@ -156,6 +156,8 @@ After `build_executorch_binary()`, the debugger holds:
 
 Ensure `dump_intermediate_outputs` is enabled in your `QnnConfig` (or pass `--dump_intermediate_outputs` via CLI). Only run **one inference** for debugging — multiple executions are not supported.
 
+**Note:** Intermediate tensor dumping is not currently supported in direct mode on HTP/LPAI backends.
+
 ```python
 from executorch.examples.qualcomm.utils import SimpleADB
 
@@ -266,7 +268,7 @@ python -m examples.qualcomm.util_scripts.qnn_intermediate_debugger_demo -b build
 3. Does not support graphs with partitions (partial delegation).
 4. Does not support LLM models.
 5. Does not support graphs with multiple methods.
-
+6. Intermediate tensor dumping is not currently supported in direct mode on HTP/LPAI backends.
 
 ## ExecuTorch QNN HTP Heap Profiling
 

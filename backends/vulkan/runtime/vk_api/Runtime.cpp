@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -239,19 +240,64 @@ VkDebugReportCallbackEXT create_debug_report_callback(
 // Adapter selection methods
 //
 
-uint32_t select_first(const std::vector<Runtime::DeviceMapping>& devices) {
+// Ranks compute-capable devices so that a real GPU is preferred over a software
+// rasterizer (e.g. SwiftShader/lavapipe, which report as CPU). On a single-GPU
+// system (e.g. mobile) there is only one candidate, so the choice is unchanged.
+int compute_device_priority(const PhysicalDevice& device) {
+  if (device.num_compute_queues == 0) {
+    return -1; // not compute-capable, never select
+  }
+  switch (device.properties.deviceType) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+      return 5;
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+      return 4;
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+      return 3;
+    case VK_PHYSICAL_DEVICE_TYPE_CPU:
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+uint32_t select_compute_device(
+    const std::vector<Runtime::DeviceMapping>& devices) {
+  const uint32_t invalid =
+      devices.size() + 1; // out of range signals invalidity
   if (devices.empty()) {
-    return devices.size() + 1; // return out of range to signal invalidity
+    return invalid;
   }
 
-  // Select the first adapter that has compute capability
-  for (size_t i = 0; i < devices.size(); ++i) {
-    if (devices[i].first.num_compute_queues > 0) {
-      return i;
+  // Allow overriding device selection via the ETVK_DEVICE_INDEX environment
+  // variable, which is useful on multi-GPU desktop systems. Invalid values fall
+  // through to automatic selection below.
+  const char* device_index_env = std::getenv("ETVK_DEVICE_INDEX");
+  if (device_index_env != nullptr) {
+    char* end = nullptr;
+    const long idx = std::strtol(device_index_env, &end, 10);
+    // strtol always sets `end`; the explicit null-check makes the `*end`
+    // dereference safe for the static analyzer.
+    if (end != nullptr && end != device_index_env && *end == '\0' && idx >= 0 &&
+        static_cast<size_t>(idx) < devices.size() &&
+        devices[static_cast<size_t>(idx)].first.num_compute_queues > 0) {
+      return static_cast<uint32_t>(idx);
     }
   }
 
-  return devices.size() + 1;
+  // Otherwise pick the highest-priority compute-capable device, preferring the
+  // first one on ties (preserving the previous first-match behavior).
+  uint32_t best_i = invalid;
+  int best_priority = -1;
+  for (size_t i = 0; i < devices.size(); ++i) {
+    const int priority = compute_device_priority(devices[i].first);
+    if (priority > best_priority) {
+      best_priority = priority;
+      best_i = static_cast<uint32_t>(i);
+    }
+  }
+
+  return best_i;
 }
 
 //
@@ -283,7 +329,7 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime(
   const RuntimeConfig default_config{
       enable_validation_messages,
       init_default_device,
-      AdapterSelector::First,
+      AdapterSelector::Auto,
       num_requested_queues,
       cache_data_path,
   };
@@ -311,8 +357,8 @@ Runtime::Runtime(const RuntimeConfig config)
   if (config.init_default_device) {
     try {
       switch (config.default_selector) {
-        case AdapterSelector::First:
-          default_adapter_i_ = create_adapter(select_first);
+        case AdapterSelector::Auto:
+          default_adapter_i_ = create_adapter(select_compute_device);
       }
     } catch (...) {
     }

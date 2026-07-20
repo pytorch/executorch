@@ -7,9 +7,9 @@
 # wrappers
 target_sources(
   wrappers
-  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/TensorWrapper.cpp
-         ${CMAKE_CURRENT_LIST_DIR}/TensorWrapper.h
-  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QuantizeParamsWrapper.cpp
+  PUBLIC ${CMAKE_CURRENT_LIST_DIR}/TensorWrapper.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/TensorWrapper.cpp
+          ${CMAKE_CURRENT_LIST_DIR}/QuantizeParamsWrapper.cpp
           ${CMAKE_CURRENT_LIST_DIR}/QuantizeParamsWrapper.h
           ${CMAKE_CURRENT_LIST_DIR}/OpWrapper.cpp
           ${CMAKE_CURRENT_LIST_DIR}/OpWrapper.h

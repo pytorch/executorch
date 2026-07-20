@@ -23,7 +23,7 @@ import numpy as np
 import torch
 
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
+    get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.export_utils import (
     get_backend_type,
@@ -254,7 +254,10 @@ def compile(args):
         sample_inputs = ep.example_inputs[0]
         # step 1: start lowering to QnnBackend
         logger.info(f"start lowering program for {args.artifact}")
-        passes, user_passes = get_capture_program_passes(), []
+        passes, user_passes = (
+            get_qnn_pass_manager_cls(backend_type).get_capture_program_passes(),
+            [],
+        )
         if args.pass_job is not None:
             for job in args.pass_job:
                 try:

@@ -1,0 +1,26 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+solution:
+  created-for: CMSIS-Toolbox@2.13.0
+  cdefault:
+  compiler: GCC@14.3.1
+
+  packs:
+    - pack: ARM::CMSIS@>=6.0.0
+    - pack: ARM::Cortex_DFP@>=1.1.0
+    - pack: PyTorch::ExecuTorch@1.3.0-stage
+
+  target-types:
+    - type: ARMCM55
+      device: ARM::ARMCM55
+
+  build-types:
+    - type: Debug
+      debug: on
+      optimize: debug
+
+  projects:
+    - project: ./smoke.cproject.yml

@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <cstddef>
 #include <memory>
+#include <vector>
 
 // Template struct to hold tensor data and tensor
 

@@ -13,12 +13,17 @@ from typing import Optional
 
 # Import to register the et_copy ops so torch.ops.et_copy is available.
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
-
 import executorch.exir.schema as schema
-
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+
+# Re-exported for backward compatibility; the dataclass lives in a lightweight
+# module so that ExecutorchBackendConfig can reference it without importing the
+# et_copy op registry above.
+from executorch.exir.passes.propagate_device_config import (  # noqa: F401
+    PropagateDeviceConfig,
+)
 from executorch.exir.tensor import TensorSpec
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
@@ -172,6 +177,17 @@ class PropagateDevicePass(PassBase):
         self.skip_d2h_for_method_outputs = skip_d2h_for_method_outputs
         self.enable_non_cpu_memory_planning = enable_non_cpu_memory_planning
 
+        if (
+            skip_h2d_for_method_inputs or skip_d2h_for_method_outputs
+        ) and not enable_non_cpu_memory_planning:
+            raise ValueError(
+                "skip_h2d_for_method_inputs and skip_d2h_for_method_outputs are "
+                "only meaningful when enable_non_cpu_memory_planning=True, since "
+                "they control host/device copy insertion which only happens during "
+                "device-aware memory planning. Set enable_non_cpu_memory_planning="
+                "True, or leave the skip options disabled."
+            )
+
     def _is_placeholder(self, node: torch.fx.Node) -> bool:
         """Check if a node is a graph-level input (placeholder)."""
         return node.op == "placeholder"
@@ -284,8 +300,67 @@ class PropagateDevicePass(PassBase):
             )
         return True
 
+    def _elide_redundant_same_device_copies(
+        self,
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        """Remove ``_h2d_copy(_d2h_copy(x))`` round-trips that never leave a device.
+
+        H2D and D2H copies are inserted per delegate boundary independently (an
+        H2D before every device delegate input, a D2H after every device delegate
+        output), so two consecutive delegates on the *same* device leave a
+        redundant ``device -> host -> device`` bounce: the first delegate's output
+        is copied to host by a ``_d2h_copy`` and immediately copied back to the
+        same device by a ``_h2d_copy`` feeding the second delegate.
+
+        This walks each ``_h2d_copy`` whose input is a ``_d2h_copy`` and, when the
+        tensor before the D2H already lives on the device the H2D copies back to,
+        rewires the consumer straight to that device tensor and drops both copies.
+        The device comparison is the correctness guard: a genuine cross-device
+        move (e.g. ``cuda:0 -> host -> cuda:1``) has differing devices and is left
+        intact. A D2H feeding other (host) consumers keeps those users and is
+        removed only once it becomes dead.
+        """
+        h2d = torch.ops.et_copy._h2d_copy.default
+        d2h = torch.ops.et_copy._d2h_copy.default
+        changed = False
+        for node in list(graph_module.graph.nodes):
+            if node.op != "call_function" or node.target != h2d:
+                continue
+            src = node.args[0]
+            if not (
+                isinstance(src, torch.fx.Node)
+                and src.op == "call_function"
+                and src.target == d2h
+            ):
+                continue
+
+            x = src.args[0]  # the tensor before the d2h (the device delegate output)
+            x_spec = x.meta.get("spec") if isinstance(x, torch.fx.Node) else None
+            h2d_spec = node.meta.get("spec")
+            if not (
+                isinstance(x_spec, TensorSpec) and isinstance(h2d_spec, TensorSpec)
+            ):
+                continue
+
+            # Only elide a proven same-device round-trip.
+            if (
+                x_spec.device != h2d_spec.device
+                or x_spec.device_index != h2d_spec.device_index
+            ):
+                continue
+
+            node.replace_all_uses_with(x)
+            graph_module.graph.erase_node(node)
+            changed = True
+
+        if changed:
+            # Drop the d2h copies that are now dead (kept if they still feed a
+            # host consumer).
+            graph_module.graph.eliminate_dead_code()
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
-        # Two-pass approach:
+        # Three-pass approach:
         #   Pass 1 – For each delegate with a target_device CompileSpec, insert
         #            H2D copy nodes before delegate inputs and tag the delegate
         #            output specs with the target device.  Delegates without a
@@ -294,6 +369,8 @@ class PropagateDevicePass(PassBase):
         #            (tracked in device_delegates), propagate the device onto the
         #            getitem spec and insert a D2H copy after it so downstream
         #            non-delegated ops receive CPU tensors.
+        #   Pass 3 – Elide the redundant device->host->device round-trips left
+        #            between consecutive same-device delegates by passes 1 and 2.
         changed = False
         device_delegates: set[torch.fx.Node] = set()
 
@@ -368,6 +445,14 @@ class PropagateDevicePass(PassBase):
                                     source_spec.device_index,
                                 )
                                 changed = True
+
+        # Third pass: elide the redundant device->host->device round-trips left
+        # between consecutive same-device delegates by the per-boundary H2D/D2H
+        # insertion above. Only meaningful when passes 1/2 modified the graph
+        # (there was a device delegate); when nothing changed there are no copies
+        # to elide, so skip the scan entirely.
+        if changed:
+            self._elide_redundant_same_device_copies(graph_module)
 
         graph_module.recompile()
         return PassResult(graph_module, changed)

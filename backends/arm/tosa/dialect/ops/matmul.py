@@ -5,7 +5,7 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
@@ -14,7 +14,7 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "MATMUL(Tensor input1, Tensor input2) -> Tensor",  # schema
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -51,9 +51,22 @@ def MATMUL(x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
                 f"TOSA spec {tosa_spec} doesn't support bf16", op="MATMUL"
             )
         dtype = torch.float32
+    elif x1.dtype == torch.float8_e4m3fn:
+        if not tosa_spec.support_extension("fp8e4m3"):
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} doesn't support fp8e4m3", op="MATMUL"
+            )
+        dtype = torch.float16
+    elif x1.dtype == torch.float8_e5m2:
+        if not tosa_spec.support_extension("fp8e5m2"):
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} doesn't support fp8e5m2", op="MATMUL"
+            )
+        dtype = torch.float16
     else:
         raise TosaValueError(
-            "Input tensors must be of type int8, float16, float32, or bfloat16, "
+            "Input tensors must be of type int8, float16, float32, bfloat16, "
+            "float8_e4m3fn, or float8_e5m2, "
             f"got {x1.dtype}",
             op="MATMUL",
         )

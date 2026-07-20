@@ -21,15 +21,15 @@ import sys, os
 devnull = open(os.devnull, 'w')
 old_stdout = sys.stdout
 sys.stdout = devnull
-from executorch.backends.qualcomm.utils.utils import get_soc_to_htp_arch_map
+from executorch.backends.qualcomm.serialization.qc_schema import _soc_info_table
 sys.stdout = old_stdout
-m = get_soc_to_htp_arch_map()
+m = {soc.name: info.htp_info.htp_arch for soc, info in _soc_info_table.items()}
 if '${soc_model}' not in m:
     sys.exit(1)
 print(m['${soc_model}'].value)
 " 2>/dev/null) || {
         echo "Error: SoC model '${soc_model}' not found in HTP arch map."
-        echo "Check supported models in executorch/backends/qualcomm/utils/utils.py get_soc_to_htp_arch_map()."
+        echo "Check supported models in executorch/backends/qualcomm/serialization/qc_schema.py _soc_info_table."
         exit 1
     }
 
@@ -39,15 +39,19 @@ import sys, os
 devnull = open(os.devnull, 'w')
 old_stdout = sys.stdout
 sys.stdout = devnull
-from executorch.backends.qualcomm.utils.utils import get_soc_to_lpai_hw_ver_map
+from executorch.backends.qualcomm.serialization.qc_schema import _soc_info_table
 sys.stdout = old_stdout
-m = get_soc_to_lpai_hw_ver_map()
+m = {
+    soc.name: info.lpai_info.lpai_hardware_version
+    for soc, info in _soc_info_table.items()
+    if info.lpai_info is not None
+}
 if '${soc_model}' not in m:
     sys.exit(1)
 print(m['${soc_model}'].value)
 " 2>/dev/null) || {
             echo "Error: SoC model '${soc_model}' not found in LPAI hardware version map."
-            echo "Check supported models in executorch/backends/qualcomm/utils/utils.py get_soc_to_lpai_hw_ver_map()."
+            echo "Check supported models in executorch/backends/qualcomm/serialization/qc_schema.py _soc_info_table."
             exit 1
         }
     fi

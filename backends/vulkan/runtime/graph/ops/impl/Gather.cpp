@@ -20,9 +20,6 @@
 
 namespace vkcompute {
 
-using utils::GPUMemoryLayout;
-using utils::StorageType;
-
 void resize_gather_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,

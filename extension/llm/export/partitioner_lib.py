@@ -252,6 +252,7 @@ def get_ethosu_partitioner(
     target: str,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
+    extra_flags: Optional[List[str]] = None,
 ):
     from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
     from executorch.backends.arm.ethosu.partitioner import EthosUPartitioner
@@ -260,6 +261,7 @@ def get_ethosu_partitioner(
         target,
         system_config=None if system_config == "default" else system_config,
         memory_mode=None if memory_mode == "default" else memory_mode,
+        extra_flags=extra_flags,
     )
 
     return EthosUPartitioner(compile_spec)

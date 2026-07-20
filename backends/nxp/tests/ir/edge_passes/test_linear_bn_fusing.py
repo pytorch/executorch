@@ -251,7 +251,7 @@ def test_linear_bn_full_qat_pipeline_conversion(
     assert any("lowered_module" in node.name for node in edge_program.graph.nodes)
 
     # Capture generated model
-    tflite_flatbuffers_model, _ = converter_spy.spy_return
+    tflite_flatbuffers_model, *_ = converter_spy.spy_return
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

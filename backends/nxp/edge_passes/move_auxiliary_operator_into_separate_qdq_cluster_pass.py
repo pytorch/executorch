@@ -9,6 +9,7 @@ import torch
 
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
+from executorch.backends.nxp.tests.ops_aliases import PermuteCopy
 
 # noinspection PyProtectedMember
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -109,9 +110,11 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
     main_cluster_node_to_auxiliary_nodes = {
         AddMM: [
             ViewCopy,
+            PermuteCopy,
         ],
         MM: [
             ViewCopy,
+            PermuteCopy,
         ],
         ViewCopy: [Clone, CloneDimOrder],
         Conv: [

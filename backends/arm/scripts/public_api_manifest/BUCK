@@ -1,0 +1,22 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "public_api_manifest",
+    srcs = [
+        "__init__.py",
+        "generate_public_api_manifest.py",
+        "validate_public_api_manifest.py",
+    ],
+    deps = [
+        "//executorch/backends/arm:public_api",
+        "fbsource//third-party/pypi/tomli:tomli",
+    ],
+)

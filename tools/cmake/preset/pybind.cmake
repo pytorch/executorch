@@ -1,10 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 set_overridable_option(EXECUTORCH_BUILD_PYBIND ON)
+set_overridable_option(EXECUTORCH_BUILD_CMSIS_NN_PYBINDS ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT ON)
 # Enable logging and program verification even when in release mode. We are
@@ -25,9 +27,22 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
 set_overridable_option(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE ON)
 
+# Optional VGF enable for the default pybind/install flow. This is intentionally
+# scoped to this preset rather than acting as a general environment-to-CMake
+# override mechanism.
+set(_executorch_pybind_enable_vgf OFF)
+if(DEFINED ENV{EXECUTORCH_PYBIND_ENABLE_VGF})
+  if("$ENV{EXECUTORCH_PYBIND_ENABLE_VGF}" STREQUAL "ON")
+    set(_executorch_pybind_enable_vgf ON)
+  else()
+    set(_executorch_pybind_enable_vgf OFF)
+  endif()
+endif()
+
 # TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
 # due to the issue of tokenizer file path length limitation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
@@ -51,6 +66,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     endif()
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
@@ -96,4 +112,32 @@ else()
   message(
     FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for pybind: ${CMAKE_SYSTEM_NAME}"
   )
+endif()
+
+# Opt-in Vulkan backend for Linux/Windows wheels. Enabled ONLY when the build
+# requests it via the EXECUTORCH_BUILD_VULKAN env var AND glslc (Vulkan SDK) is
+# available to compile the shaders. This keeps the default wheel (and
+# macOS/Android) byte-for-byte unchanged: GPU backends are opt-in rather than
+# bundled into the universal wheel.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   OR CMAKE_SYSTEM_NAME STREQUAL "Windows"
+   OR CMAKE_SYSTEM_NAME STREQUAL "WIN32"
+)
+  if(DEFINED ENV{EXECUTORCH_BUILD_VULKAN}
+     AND NOT "$ENV{EXECUTORCH_BUILD_VULKAN}" STREQUAL "0"
+     AND NOT "$ENV{EXECUTORCH_BUILD_VULKAN}" STREQUAL "OFF"
+  )
+    find_program(
+      GLSLC_PATH glslc HINTS $ENV{VULKAN_SDK}/bin $ENV{VULKAN_SDK}/Bin
+    )
+    if(GLSLC_PATH)
+      set_overridable_option(EXECUTORCH_BUILD_VULKAN ON)
+      message(STATUS "Enabling Vulkan backend for wheel; glslc: ${GLSLC_PATH}")
+    else()
+      message(
+        STATUS "EXECUTORCH_BUILD_VULKAN requested but glslc was not found; "
+               "the Vulkan backend will not be included."
+      )
+    endif()
+  endif()
 endif()

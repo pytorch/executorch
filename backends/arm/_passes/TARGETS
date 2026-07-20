@@ -51,6 +51,7 @@ runtime.python_library(
     deps = [
         ":core",
         ":arm_pass_manager_base" if runtime.is_oss else ":arm_pass_manager_fb",
+        "//executorch/backends/transforms:aten_to_dialect_pass",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/transforms:fuse_view_copy",

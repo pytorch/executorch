@@ -101,12 +101,19 @@ jobs:
       script: |
         #!/bin/bash
 
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+        set -euo pipefail
+
+        # Zephyr requires a Python 3.12 venv; keep this independent of the
+        # base image's default ExecuTorch Python environment.
+        python3.12 -m venv zephyr_test_venv
+        source zephyr_test_venv/bin/activate
+
+        # The Zephyr SDK host tools carry their own runtime. The CI Docker image
+        # sets a global LD_LIBRARY_PATH for other jobs, which can make SDK tools
+        # pick host libs.
+        unset LD_LIBRARY_PATH
 
         # Test zephyr backend
-        set -e
-
         .ci/scripts/test_zephyr.sh \
           --targets "${TARGET_LIST:-${{ matrix.target }}}" \
           --zephyr-samples-readme-path "${{ matrix.readme }}"
@@ -257,7 +264,8 @@ jobs:
           - test_arm_backend: test_pytest_ops_ethos_u85
           - test_arm_backend: test_pytest_models_ethos_u85
           - test_arm_backend: test_run_ethos_u85
-          - test_arm_backend: test_smaller_stories_llama
+          - test_arm_backend: test_smaller_stories_llama_tosa
+          - test_arm_backend: test_model_smollm2_135M_ethos_u85
           - test_arm_backend: test_memory_allocation
           - test_arm_backend: test_ootb_tests_ethos_u
           - test_arm_backend: test_ootb_tests_tosa
@@ -305,6 +313,7 @@ jobs:
           - test_arm_backend: test_pytest_ops_vkml
           - test_arm_backend: test_pytest_models_vkml
           - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -988,44 +997,6 @@ jobs:
               - 'examples/qualcomm/**'
               - 'examples/models/llama/**'
 
-  test-static-llama-qnn-eval-linux:
-    needs: changes # has dependency on changes jobs defined above
-    if: needs.changes.outputs.qnn == 'true'
-    name: test-static-llama-qnn-eval-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - name: "baseline"
-            flags: ""
-            threshold: 62.0
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 180
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-        BUILD_TOOL="cmake"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-        # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Setup install_requirements for llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
-
-        echo ">>> Running config: ${{ matrix.config.name }}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh \
-          --flags "${{ matrix.config.flags }}" \
-          --threshold "${{ matrix.config.threshold }}"
-
   unittest-release:
     uses: ./.github/workflows/_unittest.yml
     permissions:
@@ -1035,6 +1006,20 @@ jobs:
       build-mode: Release
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  llm-server:
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: ./.github/workflows/_llm_server.yml
+    permissions:
+      id-token: write
+      contents: read
 
   test-models-windows:
     needs: run-decision
@@ -1073,3 +1058,13 @@ jobs:
     uses: ./.github/workflows/_test_cortex_m_e2e.yml
     with:
       models: '["mv2", "mv3"]'
+      targets: '["cortex-m55", "cortex-m7", "cortex-m0plus"]'
+
+  test-cortex-m-ops:
+    name: test-cortex-m-ops
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/_test_cortex_m_ops.yml
+    with:
+      targets: '["cortex-m7", "cortex-m0plus"]'

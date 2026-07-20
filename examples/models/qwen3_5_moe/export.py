@@ -176,8 +176,9 @@ def load_and_quantize(args):  # noqa: C901
 
     if backend == "mlx":
         if args.prequantized:
-            raise ValueError(
-                "MLX backend does not support custom prequantized weights. Use a prequantized torchao checkpoint instead."
+            return load_prequantized_model_mlx(
+                args.prequantized,
+                use_splitk_decode=use_splitk,
             )
         _prepare_and_quantize_mlx(model, config, args)
 
@@ -288,6 +289,110 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
     # run_decompositions -> unwrap_tensor_subclass_parameters tries to wrap
     # int-dtype inner tensors of quantized subclasses as Parameters with
     # requires_grad=True, which fails. Disable grad on all parameters.
+    for p in model.parameters():
+        p.requires_grad_(False)
+    model.eval()
+
+    print(
+        f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
+        f"{config.num_experts} experts top-{config.num_experts_per_tok}"
+    )
+    return model, config
+
+
+def load_prequantized_model_mlx(prequantized_dir, use_splitk_decode=True):
+    """Load an MLX-format prequantized safetensors bundle into a model.
+
+    The bundle (from quantize_and_save.py --backend mlx) stores experts already
+    packed into stacked gather buffers and dense/lm_head weights as
+    ``ExportableInt4Tensor`` (embedding as ``IntxUnpackedToInt8Tensor``). Loading:
+
+      1. Build the model on meta and re-apply mlx_source_transformations so the
+         module tree, swapped forwards, and MLX KV cache match the bundle.
+      2. Convert each SwitchLinear to its packed buffer layout (experts are
+         already stacked/packed in the bundle) and assign the rest via
+         load_state_dict.
+
+    max_seq_len is derived from a saved KV cache buffer so the rebuilt cache
+    geometry and export dynamic-shape bounds always match the bundle.
+    """
+    from executorch.backends.mlx.llm.switch import pack_all_switch_linears
+    from executorch.examples.models.qwen3_5_moe.mlx_source_transformations import (
+        mlx_source_transformations,
+    )
+    from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
+        load_quantized_state_dict,
+    )
+
+    config_path = os.path.join(prequantized_dir, "config.json")
+    safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
+
+    print(f"Loading prequantized MLX weights from {safetensors_path}...")
+    state_dict = load_quantized_state_dict(safetensors_path)
+
+    # Int4Tensor -> ExportableInt4Tensor so dense linears export via
+    # dequantize_int4_tensor and experts pack via pack_all_switch_linears.
+    # Coarse/per-axis int8 (e.g. the embedding at group_size=hidden) keeps its
+    # group_size; the MLX pattern handlers regroup scale/zero_point to an
+    # MLX-legal size at export time (regroup_affine_scales).
+    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+    for key, val in list(state_dict.items()):
+        if isinstance(val, Int4Tensor):
+            state_dict[key] = ExportableInt4Tensor.from_int4_tensor(val)
+
+    # Derive max_seq_len from a saved KV cache buffer ([1, H, max_seq_len, D]).
+    max_seq_len = None
+    for key, val in state_dict.items():
+        if key.endswith(".kv_cache.k_cache"):
+            max_seq_len = val.shape[2]
+            break
+    if max_seq_len is None:
+        raise RuntimeError(
+            "Prequantized MLX bundle has no KV cache buffer; cannot infer "
+            "max_seq_len (is this a CUDA bundle? use --backend cuda)."
+        )
+
+    config = Qwen35MoEConfig.from_hf_config(config_path)
+    config.max_seq_len = max_seq_len
+    config.use_splitk_decode = use_splitk_decode
+
+    print("Building model on meta device...")
+    with torch.device("meta"):
+        model = Qwen35MoE(config)
+        # Reproduce the source-transformed structure (per-expert SwitchLinear
+        # nn.Linears, swapped forwards, MLX KV cache) the bundle was saved in.
+        mlx_source_transformations(
+            model,
+            model_dtype=torch.bfloat16,
+            config=config,
+            sort_experts=True,
+            fuse_gate_up=False,
+        )
+
+    missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
+    del state_dict
+
+    runtime_prefixes = (".mask", ".inv_freq", ".cache_positions")
+    expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
+    weight_missing = set(missing) - expected_missing
+    if weight_missing:
+        raise RuntimeError(
+            f"Prequantized MLX checkpoint is missing {len(weight_missing)} weight "
+            f"keys (model/checkpoint version mismatch?): {sorted(weight_missing)[:10]}"
+        )
+    if unexpected:
+        raise RuntimeError(
+            f"Prequantized MLX checkpoint has {len(unexpected)} unexpected keys "
+            f"(model/checkpoint version mismatch?): {sorted(unexpected)[:10]}"
+        )
+
+    # Stack per-expert ExportableInt4Tensors into mlx::gather_qmm buffers.
+    pack_all_switch_linears(model)
+
+    # assign=True wraps assigned tensors as Parameter(requires_grad=True), which
+    # breaks unwrap_tensor_subclass_parameters on int-dtype quantized inners.
     for p in model.parameters():
         p.requires_grad_(False)
     model.eval()
@@ -623,8 +728,9 @@ def _materialize_buffers(model, config):
 
     Replaces meta buffers with real tensors on CPU, recomputes RoPE
     inv_freq and causal masks. State buffers (KV cache, conv/recurrent
-    state) are zero-initialized registered buffers that will be shared
-    across methods via share_mutable_buffers.
+    state) are zero-initialized registered buffers. On the CUDA/AOTI backend
+    they are lifted into the delegate as named constants; per-session sharing
+    and isolation are handled by runtime rebinding.
     """
     # Masks stay bool, inv_freq stays float32.
     for fqn, buf in list(model.named_buffers()):
@@ -727,7 +833,7 @@ def _strip_sampler_from_forward(model):
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        return self.lm_head(x)
+        return self.lm_head(x[:, -1, :])
 
     model.forward = types.MethodType(_clean_forward, model)
 
@@ -748,16 +854,38 @@ def _export_mlx(model, config, args):
 
     _strip_sampler_from_forward(model)
 
+    sample = getattr(args, "sample", False)
+
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
     seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
-    dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+
+    if sample:
+        # forward(tokens, input_pos, temperature, top_k, top_p, seed) -> token id.
+        # Scalars are static (None in dynamic_shapes); only the seq dim is dynamic.
+        from executorch.backends.mlx.llm.sampling import SamplingHead
+
+        model = SamplingHead(model)
+        example_args = (
+            example_tokens,
+            example_input_pos,
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(0, dtype=torch.int64),
+        )
+        # SamplingHead.forward takes ``*args``; dynamic_shapes mirrors that single
+        # variadic parameter as one nested tuple over the positional inputs.
+        dynamic_shapes = (({1: seq_dim}, {0: seq_dim}, None, None, None, None),)
+    else:
+        example_args = (example_tokens, example_input_pos)
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
 
     print("Exporting with torch.export...")
     with torch.no_grad():
         exported = export(
             model,
-            (example_tokens, example_input_pos),
+            example_args,
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
@@ -767,13 +895,20 @@ def _export_mlx(model, config, args):
     gc.collect()
 
     print("Lowering to ExecuTorch with MLX backend...")
+    # Largest prefill chunk the runner may submit in one forward call. The MLX
+    # runner chunks long prompts to cap peak memory; bound it by the compiled
+    # dynamic max (max_seq_len - 1) so a chunk can never exceed what `forward`
+    # was compiled for.
+    max_prefill_chunk = min(1024, config.max_seq_len - 1)
     metadata = {
         "get_max_seq_len": config.max_seq_len,
         "get_vocab_size": config.vocab_size,
         "get_n_layers": config.num_hidden_layers,
+        "get_max_prefill_chunk": max_prefill_chunk,
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
+        "use_sampling": sample,
     }
     et_prog = to_edge_transform_and_lower(
         exported,
@@ -913,6 +1048,47 @@ def _export_metal(model, config, args):
     print("Done!")
 
 
+def _qwen_mutable_buffer_fqns(model):
+    from executorch.examples.models.qwen3_5_moe.model import GatedDeltaNet, KVCache
+
+    fqns = []
+    for prefix, module in model.named_modules():
+        if module.__class__.__name__ == "TurboQuantKVCache":
+            fqns += [
+                f"{prefix}.k_packed",
+                f"{prefix}.k_norms",
+                f"{prefix}.v_packed",
+                f"{prefix}.v_norms",
+            ]
+        elif isinstance(module, KVCache):
+            fqns += [f"{prefix}.k_cache", f"{prefix}.v_cache"]
+        elif isinstance(module, GatedDeltaNet):
+            fqns += [f"{prefix}.conv_state", f"{prefix}.recurrent_state"]
+
+    named = dict(model.named_buffers())
+    missing = [f for f in fqns if f not in named]
+    if missing:
+        raise RuntimeError(
+            f"Qwen mutable-buffer contract references missing buffers: {missing}"
+        )
+    if not fqns:
+        raise RuntimeError("Qwen mutable-buffer contract is empty")
+    return sorted(fqns)
+
+
+def _mutable_buffer_metadata_json(model):
+    import json
+
+    fqns = _qwen_mutable_buffer_fqns(model)
+    named = dict(model.named_buffers())
+    total = sum(named[f].numel() * named[f].element_size() for f in fqns)
+    print(
+        f"  Recorded {len(fqns)} mutable buffers "
+        f"({total} B / {total / 1024:.1f} KiB per session)"
+    )
+    return json.dumps({"version": 1, "mutable_buffers": fqns})
+
+
 def _export_cuda(model, config, args):
     """Export model to .pte via torch.export + CUDA backend.
 
@@ -921,9 +1097,9 @@ def _export_cuda(model, config, args):
       - "prefill": prefill path (T>=2), batched tensor-core MoE kernel
         via fused_moe_batched_gemm, with dynamic sequence length.
 
-    Both methods share mutable state buffers (KV cache, conv_state,
-    recurrent_state) via share_mutable_buffers=True. The model uses
-    registered buffers with in-place updates — no state in/out args.
+    The model uses registered buffers with in-place updates for KV,
+    conv_state, and recurrent_state. The export records which named buffers
+    are per-session mutable state.
     """
     import torch._inductor.config as inductor_config
 
@@ -1000,6 +1176,7 @@ def _export_cuda(model, config, args):
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
+        "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
@@ -1033,7 +1210,6 @@ def _export_cuda(model, config, args):
             do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
-                share_mutable_buffers=True,
             ),
             emit_mutable_buffer_names=True,
         ),
@@ -1135,6 +1311,13 @@ def main():  # noqa: C901
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
     parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="MLX only: sample the next token on-device (Gumbel-max with "
+        "temperature/top_p/seed runtime inputs) instead of returning logits "
+        "for host-side sampling.",
+    )
+    parser.add_argument(
         "--moe-activation-dtype",
         choices=["bf16", "int8"],
         default="bf16",
@@ -1177,10 +1360,11 @@ def main():  # noqa: C901
             torch.cuda.reset_peak_memory_stats(0)
 
     if args.backend == "mlx":
-        if args.prequantized:
-            parser.error("--prequantized is not supported with --backend mlx")
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend mlx")
+
+    if args.sample and args.backend != "mlx":
+        parser.error("--sample is only supported with --backend mlx")
 
     if args.backend == "metal":
         if args.turboquant:

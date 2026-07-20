@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -38,6 +39,23 @@ from examples.models import Backend, Model
 class ModelTest:
     model: Model
     backend: Backend
+
+
+def test_cmsis_nn_install():
+    import executorch.backends.cortex_m.library.cmsis_nn as cmsis_nn
+
+    buf_size = cmsis_nn.convolve_wrapper_buffer_size(
+        cmsis_nn.Backend.MVE,
+        cmsis_nn.DataType.A8W8,
+        input_nhwc=[1, 8, 8, 16],
+        filter_nhwc=[8, 3, 3, 16],
+        output_nhwc=[1, 6, 6, 8],
+        padding_hw=[0, 0],
+        stride_hw=[1, 1],
+        dilation_hw=[1, 1],
+    )
+
+    assert buf_size == 576
 
 
 def run_tests(model_tests: List[ModelTest]) -> None:

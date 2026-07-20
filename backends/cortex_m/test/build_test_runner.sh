@@ -33,13 +33,14 @@ ${build_executorch} --devtools --target_cpu="${target_cpu}" --cmake-args="-DCORT
 # Build executor runner with selected aten ops and semi hosting
 build_dir="${et_root_dir}/arm_test"
 build_executor_runner="${et_root_dir}/backends/arm/scripts/build_executor_runner.sh"
-build_root_test_dir="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300"
+build_root_test_dir="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300_${target}"
 
 select_ops_list="\
 aten::add.out,\
 aten::clamp.out,\
 aten::mul.out,\
 aten::convolution.out,\
+aten::max_pool2d_with_indices.out,\
 dim_order_ops::_clone_dim_order.out,\
 aten::cat.out,\
 aten::full.out,\

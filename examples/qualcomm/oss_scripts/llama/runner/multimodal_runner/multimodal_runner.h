@@ -69,6 +69,13 @@ inline Modality modality_of(const ModelVersion& model_version) {
 class QNNMultimodalRunner
     : public executorch::extension::llm::MultimodalRunner {
  public:
+  enum EvalMode {
+    kKVCached = 0,
+    kHybrid,
+    kLookaheadDecoding,
+    kUnsupported,
+  };
+
   explicit QNNMultimodalRunner(
       std::unique_ptr<executorch::extension::Module> encoder,
       std::unique_ptr<executorch::extension::Module> tok_embedding,
@@ -99,13 +106,6 @@ class QNNMultimodalRunner
   get_encoder_method_meta();
 
  private:
-  enum EvalMode {
-    kKVCached = 0,
-    kHybrid,
-    kLookaheadDecoding,
-    kUnsupported,
-  };
-
   // Modules
   std::unique_ptr<executorch::extension::Module> encoder_;
   std::unique_ptr<executorch::extension::Module> tok_embedding_;

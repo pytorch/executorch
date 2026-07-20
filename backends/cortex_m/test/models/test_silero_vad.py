@@ -36,9 +36,18 @@ ops_before_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
     "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 12,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 11,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 15,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 14,
 }
+# The final `sigmoid(final_conv(x))` now lowers to cortex_m.quantized_activation.
+# The 3 remaining sigmoids and 2 tanhs are LSTMCell gates: PyTorch export
+# captures nn.LSTMCell as a single high-level op, so the quantizer never sees
+# the gate activations and can't annotate them. They're decomposed only at
+# to_edge -- which runs after the quantizer, so by then the gates have no
+# qparams to fold and the lowering pass correctly skips them. The unblocker
+# is a pre-annotation decompose pass that splits nn.LSTMCell into linear +
+# split + sigmoid + tanh + add + mul *before* prepare_pt2e runs; tracked as
+# the LSTMCell verification follow-up.
 ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_abs_default": 2,
     "executorch_exir_dialects_edge__ops_aten_add_Tensor": 2,
@@ -52,7 +61,7 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 2,
     "executorch_exir_dialects_edge__ops_aten_relu_default": 5,
     "executorch_exir_dialects_edge__ops_aten_select_copy_int": 2,
-    "executorch_exir_dialects_edge__ops_aten_sigmoid_default": 4,
+    "executorch_exir_dialects_edge__ops_aten_sigmoid_default": 3,
     "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 2,
     "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default": 1,
     "executorch_exir_dialects_edge__ops_aten_sqrt_default": 1,
@@ -61,8 +70,9 @@ ops_after_transforms: dict[str, int] = {
     "executorch_exir_dialects_edge__ops_aten_tanh_default": 2,
     "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 2,
     "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 6,
-    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 6,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 7,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 7,
+    "executorch_exir_dialects_edge__ops_cortex_m_quantized_activation_default": 1,
     "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
 }
 

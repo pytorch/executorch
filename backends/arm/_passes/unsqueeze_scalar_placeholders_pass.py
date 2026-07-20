@@ -28,7 +28,20 @@ class UnsqueezeScalarPlaceholdersPass(ArmPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
+    def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            if node.meta["val"].dim() != 0:
+                continue
+            if is_buffer(self.exported_program, node) or is_param(
+                self.exported_program, node
+            ):
+                return True
+        return False
+
     def call(self, graph_module: torch.fx.GraphModule):
+        modified = False
         for node in graph_module.graph.nodes:
             if node.op != "placeholder":
                 continue
@@ -69,10 +82,11 @@ class UnsqueezeScalarPlaceholdersPass(ArmPass):
                 node.meta["val"] = node.meta["val"].fake_mode.from_tensor(
                     tensor, static_shapes=True
                 )
+                modified = True
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)
 
     def ensures(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:

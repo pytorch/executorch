@@ -7,6 +7,7 @@ fbcode_target(_kind = runtime.python_library,
     name = "passes",
     srcs = glob([
         "*.py",
+        "backends/**/*.py",
     ]),
     visibility = ["PUBLIC"],
     deps = [

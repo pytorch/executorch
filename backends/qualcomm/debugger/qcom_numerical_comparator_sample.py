@@ -11,6 +11,7 @@ import torch
 from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_base import (
     QcomNumericalComparatorBase,
 )
+from torchao.quantization.utils import compute_error
 
 
 """
@@ -55,3 +56,20 @@ class QcomCosineSimilarityComparator(QcomNumericalComparatorBase):
             a.to(torch.float32).flatten(), b.to(torch.float32).flatten(), dim=0
         ).item()
         return score
+
+
+class QcomSQNRComparator(QcomNumericalComparatorBase):
+    """Signal-to-Quantization-Noise Ratio comparator (in dB) for Qualcomm intermediate outputs."""
+
+    def __init__(self, edge_ep: exir.ExportedProgram, threshold: float = 10.0) -> None:
+        super().__init__(edge_ep)
+        self.threshold = threshold
+
+    def metric_name(self) -> str:
+        return "sqnr"
+
+    def is_valid_score(self, score: float) -> bool:
+        return score >= self.threshold
+
+    def element_compare(self, a: Any, b: Any) -> float:
+        return compute_error(a.to(torch.float32), b.to(torch.float32)).item()

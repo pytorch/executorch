@@ -13,7 +13,7 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
     register_attention,
 )
-from executorch.examples.models.llama.lora import LoRALinear
+from executorch.examples.models.llama.lora import lora_call, LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import ScalelessRMSNorm
 from executorch.examples.models.llama.rope import Rope
@@ -1030,7 +1030,13 @@ class StaticAttention(Attention):
         if self.use_conv2d:
             x = x.reshape(bsz, -1, 1, dim).transpose(1, 3)
 
-        new_qs = [wq(x) for wq in self.wqs]
+        # CoreML LoRA-as-IO Path-2: when an upstream wrapper has stashed
+        # a per-key LoRA blob in attn_options, route per-projection slices
+        # to LoRALinear instances that have been tagged with `_lora_key`.
+        # Default behavior (no blob, or no `_lora_key`) is unchanged.
+        _lora_blob = kwargs.get("__lora_io_blob__")
+
+        new_qs = [lora_call(wq, x, _lora_blob) for wq in self.wqs]
 
         shared_kv = kwargs.get("shared_kv")
         if shared_kv is not None:
@@ -1040,8 +1046,8 @@ class StaticAttention(Attention):
             new_ks = []
             new_vs = []
         else:
-            new_ks = [wk(x) for wk in self.wks]
-            new_vs = [wv(x) for wv in self.wvs]
+            new_ks = [lora_call(wk, x, _lora_blob) for wk in self.wks]
+            new_vs = [lora_call(wv, x, _lora_blob) for wv in self.wvs]
 
         if self.use_conv2d:
 
@@ -1078,14 +1084,16 @@ class StaticAttention(Attention):
 
         if self.use_conv2d:
             y = (
-                self.wo(
-                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3)
+                lora_call(
+                    self.wo,
+                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3),
+                    _lora_blob,
                 )
                 .transpose(1, 3)
                 .reshape(bsz, -1, self.dim)
             )
         else:
-            y = self.wo(y)
+            y = lora_call(self.wo, y, _lora_blob)
 
         update = {"out_cache_state": out_cache_state}
         if kv_to_share is not None:

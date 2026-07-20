@@ -97,13 +97,16 @@ def annotate_single_in_share_out(
         return
 
     input_qspec_map = {}
-    if _is_float_tensor(node.args[0]):
-        input_act = node.args[0]
+    input_act_qspec = quantization_config.input_activation
+    input_act = node.args[0]
+    if _is_float_tensor(input_act) and input_act_qspec is not None:
         assert isinstance(input_act, Node)
-        input_qspec_map[input_act] = quantization_config.input_activation
+        input_qspec_map[input_act] = input_act_qspec
 
     output_act_qspec = (
-        SharedQuantizationSpec((input_act, node)) if _is_float_tensor(node) else None
+        SharedQuantizationSpec((input_act, node))
+        if _is_float_tensor(node) and input_act_qspec is not None
+        else None
     )
     if len(input_qspec_map) > 0 or output_act_qspec is not None:
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -118,9 +121,11 @@ def annotate_single_in(node: Node, quantization_config: QuantizationConfig) -> N
         return
 
     input_qspec_map = {}
+    input_act_qspec = quantization_config.input_activation
     input_act = node.args[0]
     assert isinstance(input_act, Node)
-    input_qspec_map[input_act] = quantization_config.input_activation
+    if input_act_qspec is not None:
+        input_qspec_map[input_act] = input_act_qspec
 
     if len(input_qspec_map) > 0:
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -136,10 +141,11 @@ def annotate_single_in_single_out(
         return
 
     input_qspec_map = {}
-    if _is_float_tensor(node.args[0]):
+    input_act_qspec = quantization_config.input_activation
+    if _is_float_tensor(node.args[0]) and input_act_qspec is not None:
         input_act = node.args[0]
         assert isinstance(input_act, Node)
-        input_qspec_map[input_act] = quantization_config.input_activation
+        input_qspec_map[input_act] = input_act_qspec
 
     output_act_qspec = (
         quantization_config.output_activation if _is_float_tensor(node) else None
@@ -164,11 +170,11 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
 
     input_qspec_map = {}
     input_act0 = node.args[0]
-    if _is_float_tensor(input_act0):
+    if _is_float_tensor(input_act0) and input_act_qspec is not None:
         input_qspec_map[input_act0] = input_act_qspec
 
     input_act1 = node.args[1]
-    if _is_float_tensor(input_act1):
+    if _is_float_tensor(input_act1) and input_act_qspec is not None:
         input_qspec_map[input_act1] = input_act_qspec
 
     if len(input_qspec_map) > 0 or output_act_qspec is not None:
@@ -190,10 +196,11 @@ def annotate_conv(node: Node, quantization_config: QuantizationConfig) -> None:
         )
 
     input_qspec_map = {}
+    input_act_qspec = quantization_config.input_activation
     input_act = node.args[0]
     assert isinstance(input_act, Node)
-    input_spec = quantization_config.input_activation
-    input_qspec_map[input_act] = input_spec
+    if input_act_qspec is not None:
+        input_qspec_map[input_act] = input_act_qspec
 
     weight = node.args[1]
     assert isinstance(weight, Node)

@@ -6,11 +6,13 @@
 
 """MLX packer: convert quantized weights to MLX-compatible format.
 
-MLX's ``QuantizedLinearHandler`` matches ``dequantize_affine → linear``
-in the exported graph.  ``IntxUnpackedToInt8Tensor`` produces this
-pattern naturally, but ``Int4Tensor`` does not (its dispatch calls
-CUDA-specific mslk kernels).  So INT4 weights are converted to
-``IntxUnpackedToInt8Tensor(target_dtype=torch.int4)`` at pack time.
+``Int4Tensor`` weights are wrapped as ``ExportableInt4Tensor`` so they export to
+``dequantize_int4_tensor -> linear/embedding`` (matched by MLX's Int4 handlers).
+``IntxUnpackedToInt8Tensor`` (e.g. int8 / Q6_K) already exports to
+``dequantize_affine -> linear`` and is assigned directly. Coarse/per-axis group
+sizes are regrouped to an MLX-legal size (16/32/64/128) inside the MLX pattern
+handlers at export time (``regroup_affine_scales``), so no pack-time regroup is
+needed here.
 
 The backend-agnostic ``pack_model`` dispatcher lives in ``pack.py``.
 """
@@ -22,98 +24,6 @@ import torch.nn as nn
 
 from .pack import ModulePackerFn, pack_model  # noqa: F401
 
-_MLX_SUPPORTED_GROUP_SIZES = (128, 64, 32, 16)
-
-
-# ---------------------------------------------------------------------------
-# Int4Tensor → IntxUnpackedToInt8Tensor conversion
-
-
-def _int4_to_intx_unpacked(w: torch.Tensor) -> torch.Tensor:
-    """Convert an ``Int4Tensor`` to ``IntxUnpackedToInt8Tensor``.
-
-    Int4Tensor stores qdata as nibble-packed uint8 ``(N, K/2)`` with
-    scale/zero transposed to ``(K//gs, N)``.  IntxUnpackedToInt8Tensor
-    stores qdata as int8 ``(N, K)`` with scale/zero as ``(N, K//gs)``.
-    """
-    from torchao.quantization import IntxUnpackedToInt8Tensor
-
-    # Unpack nibbles: packed = even | (odd << 4), unsigned [0, 15]
-    p = w.qdata.to(torch.uint8)
-    low = (p & 0x0F).to(torch.int8)
-    high = ((p >> 4) & 0x0F).to(torch.int8)
-    qdata = torch.stack([low, high], dim=-1).reshape(w.shape)
-
-    # Shift unsigned [0, 15] → signed [-8, 7]
-    qdata = qdata - 8
-
-    gs = w.block_size[-1]
-
-    # Transpose scale/zero from (K//gs, N) → (N, K//gs)
-    scale = w.scale.t().contiguous()
-    zero_point = (w.zero_point - 8).t().contiguous()
-
-    return IntxUnpackedToInt8Tensor(
-        qdata=qdata,
-        scale=scale,
-        zero_point=zero_point,
-        target_dtype=torch.int4,
-        block_size=(1, gs),
-        dtype=scale.dtype,
-        activation_quantization=None,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Embedding group_size regrouping
-
-
-def _mlx_group_size(gs: int, K: int) -> int:
-    """Find an MLX-compatible group_size for the given weight group_size.
-
-    If ``gs`` is already in {32, 64, 128}, return it.  Otherwise find the
-    largest supported group_size that divides ``gs`` so per-axis scales can
-    be repeated to fill finer groups.
-    """
-    if gs in _MLX_SUPPORTED_GROUP_SIZES:
-        return gs
-    for candidate in _MLX_SUPPORTED_GROUP_SIZES:
-        if gs % candidate == 0 and K % candidate == 0:
-            return candidate
-    raise ValueError(
-        f"MLX requires group_size in {set(_MLX_SUPPORTED_GROUP_SIZES)} "
-        f"(or a multiple thereof), got {gs}"
-    )
-
-
-def _regroup_intx(w: torch.Tensor, new_gs: int) -> torch.Tensor:
-    """Regroup an ``IntxUnpackedToInt8Tensor`` to a finer group_size."""
-    from torchao.quantization import IntxUnpackedToInt8Tensor
-
-    old_gs = w.block_size[-1]
-    if old_gs % new_gs != 0:
-        raise ValueError(
-            f"new group_size {new_gs} must evenly divide old group_size {old_gs}"
-        )
-    repeat_factor = old_gs // new_gs
-    N = w.qdata.shape[0]
-    n_groups = w.qdata.shape[-1] // new_gs
-
-    scale = w.scale.repeat_interleave(repeat_factor, dim=-1).reshape(N, n_groups)
-    zero_point = w.zero_point.repeat_interleave(repeat_factor, dim=-1).reshape(
-        N, n_groups
-    )
-
-    return IntxUnpackedToInt8Tensor(
-        qdata=w.qdata,
-        scale=scale,
-        zero_point=zero_point,
-        target_dtype=w.target_dtype,
-        block_size=(1, new_gs),
-        dtype=w.dtype,
-        activation_quantization=w.activation_quantization,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Per-module packer
@@ -122,26 +32,19 @@ def _regroup_intx(w: torch.Tensor, new_gs: int) -> torch.Tensor:
 def pack_for_mlx(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     """Pack a quantized weight for MLX.
 
-    ``Int4Tensor`` is converted to ``IntxUnpackedToInt8Tensor`` so the
-    default dispatch produces the ``dequantize_affine → linear`` pattern
-    MLX expects.  Regroups to a compatible group_size when needed (e.g.
-    per-axis group_size=5376 → group_size=128) since MLX's
-    ``parse_dequant_node`` only accepts group_size in {16, 32, 64, 128}.
-    Group sizes ≥ 32 use the fused ``QuantizedMatmulNode``; group_size=16
-    (e.g. GGUF Q6_K) falls back to ``DequantizeNode`` + matmul at export.
+    ``Int4Tensor`` is wrapped as ``ExportableInt4Tensor`` (exports to
+    ``dequantize_int4_tensor → linear/embedding``). ``IntxUnpackedToInt8Tensor``
+    is assigned directly; coarse/per-axis group sizes are regrouped to an
+    MLX-legal size in the MLX pattern handlers at export time.
     """
-    from torchao.quantization import IntxUnpackedToInt8Tensor
+    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 
     w = weights["weight"]
     if isinstance(w, Int4Tensor):
-        w = _int4_to_intx_unpacked(w)
-    if isinstance(w, IntxUnpackedToInt8Tensor):
-        gs = w.block_size[-1]
-        K = w.qdata.shape[-1]
-        target_gs = _mlx_group_size(gs, K)
-        if target_gs != gs:
-            w = _regroup_intx(w, target_gs)
+        # Int4 group is MLX-native (32); wrap so it exports to
+        # dequantize_int4_tensor -> linear/embedding.
+        w = ExportableInt4Tensor.from_int4_tensor(w)
     module.weight = nn.Parameter(w, requires_grad=False)
 
 

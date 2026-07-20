@@ -7,9 +7,9 @@
 # This file adapts backend_opinfo from the QNN SDK for use with ExecuTorch.
 # The backend_opinfo is utilized to verify the quantization constraints for each operator.
 import logging
-
 import os
 import sys
+from functools import lru_cache
 from typing import Any, List, Optional
 
 from executorch.backends.qualcomm.quantizer.validators import (
@@ -70,6 +70,7 @@ if not _HAS_BACKEND_OPINFO:
     backend_opinfo = _NoOpNamespace()
 
 
+@lru_cache()
 def get_backend_opinfo(backend: str, soc_model: QcomChipset):
     backend_type = getattr(backend_opinfo, backend.upper())
     # For qnn 2.41, it only supports HTP backend

@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "d933672e7ca97eec70ef43230baee7b20c2a28ae"
+    "dbf45dbfcc515421dd6099037d3e2637b90748c8"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH
@@ -35,12 +35,19 @@ option(CORTEX_M_ENABLE_RUNTIME_CHECKS
        OFF
 )
 
+set(CMSISNN_BUILD_PYBIND
+    ${EXECUTORCH_BUILD_CMSIS_NN_PYBINDS}
+    CACHE BOOL "Build CMSIS-NN Python bindings" FORCE
+)
+
 # Try to find existing / local CMSIS-NN installation. This is useful for
 # debugging and testing with local changes. This is not common, as the CMSIS-NN
 # library is downloaded via FetchContent in the default/regular case.
 if(CMSIS_NN_LOCAL_PATH AND EXISTS "${CMSIS_NN_LOCAL_PATH}")
   message(STATUS "Using CMSIS-NN from specified path: ${CMSIS_NN_LOCAL_PATH}")
-  add_subdirectory(${CMSIS_NN_LOCAL_PATH} _deps/cmsis_nn-build)
+  add_subdirectory(
+    ${CMSIS_NN_LOCAL_PATH} ${CMAKE_CURRENT_BINARY_DIR}/cmsis_nn-build
+  )
 else()
   # Use FetchContent with automatic fallback
   message(STATUS "Using CMSIS-NN via FetchContent")
@@ -49,6 +56,9 @@ else()
     cmsis_nn
     GIT_REPOSITORY https://github.com/ARM-software/CMSIS-NN.git
     GIT_TAG ${CMSIS_NN_VERSION}
+    SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/cmsis_nn-src BINARY_DIR
+    ${CMAKE_CURRENT_BINARY_DIR}/cmsis_nn-build SUBBUILD_DIR
+    ${CMAKE_CURRENT_BINARY_DIR}/cmsis_nn-subbuild
   )
 
   FetchContent_MakeAvailable(cmsis_nn)
@@ -74,64 +84,72 @@ if(TARGET cmsis-nn)
   endif()
 endif()
 
-# Cortex-M ops kernel sources
-set(_cortex_m_kernels__srcs
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_maximum.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_pad.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_avg_pool2d.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_batch_matmul.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_max_pool2d.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_transpose_conv2d.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_transpose.cpp
-)
+if(EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
+  if(NOT TARGET cmsis_nn)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS is ON, but CMSIS-NN did not define the cmsis_nn pybind target."
+    )
+  endif()
+endif()
+if(EXECUTORCH_BUILD_CORTEX_M)
+  # Cortex-M ops kernel sources
+  set(_cortex_m_kernels__srcs
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_maximum.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_minimum.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_pad.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_activation.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_avg_pool2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_batch_matmul.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_max_pool2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_transpose_conv2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_softmax.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_transpose.cpp
+  )
 
-# Generate C++ bindings to register kernels into Executorch
-set(_yaml_file ${CMAKE_CURRENT_LIST_DIR}/ops/operators.yaml)
-gen_selected_ops(LIB_NAME "cortex_m_ops_lib" OPS_SCHEMA_YAML "${_yaml_file}")
-generate_bindings_for_kernels(
-  LIB_NAME "cortex_m_ops_lib" CUSTOM_OPS_YAML "${_yaml_file}"
-)
+  # Generate C++ bindings to register kernels into Executorch
+  set(_yaml_file ${CMAKE_CURRENT_LIST_DIR}/ops/operators.yaml)
+  gen_selected_ops(LIB_NAME "cortex_m_ops_lib" OPS_SCHEMA_YAML "${_yaml_file}")
+  generate_bindings_for_kernels(
+    LIB_NAME "cortex_m_ops_lib" CUSTOM_OPS_YAML "${_yaml_file}"
+  )
 
-# Build library for cortex_m_kernels
-add_library(cortex_m_kernels ${_cortex_m_kernels__srcs})
+  # Build library for cortex_m_kernels
+  add_library(cortex_m_kernels ${_cortex_m_kernels__srcs})
 
-# Use PRIVATE for implementation dependencies to avoid INTERFACE pollution
-target_link_libraries(
-  cortex_m_kernels
-  PRIVATE cmsis-nn
-  PRIVATE executorch
-  PRIVATE kernels_util_all_deps
-)
-target_compile_definitions(
-  cortex_m_kernels
-  PRIVATE
-    $<$<BOOL:${CORTEX_M_ENABLE_RUNTIME_CHECKS}>:CORTEX_M_ENABLE_RUNTIME_CHECKS>
-)
+  target_link_libraries(
+    cortex_m_kernels
+    PRIVATE cmsis-nn
+    PRIVATE executorch
+    PRIVATE kernels_util_all_deps
+  )
+  target_compile_definitions(
+    cortex_m_kernels
+    PRIVATE
+      $<$<BOOL:${CORTEX_M_ENABLE_RUNTIME_CHECKS}>:CORTEX_M_ENABLE_RUNTIME_CHECKS>
+  )
 
-# Include directories for cortex_m_kernels
-target_include_directories(
-  cortex_m_kernels PRIVATE ${EXECUTORCH_ROOT}/..
-                           ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
-)
+  target_include_directories(
+    cortex_m_kernels PRIVATE ${EXECUTORCH_ROOT}/..
+                             ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+  )
 
-# cortex_m_ops_lib: Register Cortex-M ops kernels into Executorch runtime
-gen_operators_lib(
-  LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS executorch
-)
+  gen_operators_lib(
+    LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS executorch
+  )
 
-install(
-  TARGETS cortex_m_kernels cortex_m_ops_lib cmsis-nn
-  EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  PUBLIC_HEADER
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cortex_m/ops/
-)
+  install(
+    TARGETS cortex_m_kernels cortex_m_ops_lib cmsis-nn
+    EXPORT ExecuTorchTargets
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cortex_m/ops/
+  )
+endif()

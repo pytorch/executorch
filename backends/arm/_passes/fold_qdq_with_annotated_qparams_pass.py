@@ -305,13 +305,34 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             return False
         return True
 
+    @staticmethod
+    def _correct_output_dtype(node: torch.fx.Node):
+        if node.target not in {
+            exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        }:
+            return
+        if len(node.meta["output_qparams"]) == 0:
+            return
+        output_qparams = cast(QuantArgs, node.meta["output_qparams"][0])
+
+        if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+            if output_qparams.scale != 1.0 or output_qparams.zp != 0.0:
+                raise ValueError(
+                    f"Expected quantized {node.target} '{node.name}' to have unit scale and zero point."
+                )
+
+        set_node_arg(node, "dtype", output_qparams.dtype)
+
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
+        modified = False
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
             if not FoldAndAnnotateQParamsPass.is_foldable(n):
                 continue
+            modified = True
 
             # Make sure we haven't already set qparams meta information on the node
             if "input_qparams" in n.meta:
@@ -353,13 +374,7 @@ class FoldAndAnnotateQParamsPass(ArmPass):
 
             # Some op(s) contain a "dtype" key in their node kwargs. Set this
             # to the type of output qparams.
-            output_qparams = n.meta["output_qparams"]
-            if (
-                n.target in {exir_ops.edge.aten.sum.dim_IntList}
-                and len(output_qparams) > 0
-            ):
-                output_dtype = output_qparams[0].dtype
-                set_node_arg(n, "dtype", output_dtype)
+            FoldAndAnnotateQParamsPass._correct_output_dtype(n)
 
             if n.target in (
                 torch.ops.higher_order.cond,
@@ -368,10 +383,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 self._handle_control_flow_node(n, graph_module)
 
         # retrace the graph to update the fake tensor types
-        graph_module = super().call(graph_module).graph_module
+        if modified:
+            graph_module = super().call(graph_module).graph_module
 
-        graph_module.recompile()
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)
 
 
 class QuantizeClampArgumentsPass(ArmPass):
@@ -423,6 +438,5 @@ class QuantizeClampArgumentsPass(ArmPass):
         if modified:
             # Retrace to refresh fake tensor metadata after updating clamp min/max.
             graph_module = super().call(graph_module).graph_module
-            graph_module.recompile()
 
         return PassResult(graph_module, modified)

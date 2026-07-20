@@ -5,7 +5,7 @@ def _operator_registry_preprocessor_flags():
     if max_kernel_num != None:
         return select({
             "DEFAULT": ["-DMAX_KERNEL_NUM=" + max_kernel_num],
-            "ovr_config//build_mode/constraints:arvr_is_host_platform": []
+            "ovr_config//build_mode/constraints:arvr_is_host_or_target_platform[arvr_is_host_platform]": []
         })
     elif not runtime.is_oss:
         return select({

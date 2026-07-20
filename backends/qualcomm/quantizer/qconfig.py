@@ -110,6 +110,144 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
     )
 
 
+def get_fp16a8w_qnn_ptq_config(
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    # input_activation=None, output_activation=None means FP activation (no quantization)
+    return QuantizationConfig(
+        input_activation=None,
+        output_activation=None,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+
+def get_fp16a8w_per_channel_quant_config(
+    act_observer=MovingAverageMinMaxObserver,
+    act_symmetric: bool = False,
+    ch_axis: int = 0,
+    eps: float = None,
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_channel_symmetric,
+        ch_axis=ch_axis,
+        observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),
+    )
+
+    return QuantizationConfig(
+        input_activation=None,
+        output_activation=None,
+        weight=weight_quantization_spec,
+        bias=None,
+    )
+
+
+# TODO merge qat and ptq to a function, and use a bool flag to control it
+def get_fp16a8w_qnn_qat_config(
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
+
+    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
+    )
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=weight_fake_quant_ctr,
+    )
+
+    bias_fake_quant_ctr = FakeQuantize.with_args(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
+    )
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=bias_fake_quant_ctr,
+    )
+
+    # input_activation=None, output_activation=None means FP activation (no quantization)
+    return QuantizationConfig(
+        input_activation=None,
+        output_activation=None,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+
+def get_fp16a8w_qat_per_channel_quant_config(
+    act_observer=MovingAverageMinMaxObserver,
+    act_symmetric: bool = False,
+    ch_axis: int = 0,
+    eps: float = None,
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_8BIT}
+
+    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_channel_symmetric,
+        observer=MovingAveragePerChannelMinMaxObserver.with_args(**extra_args),
+    )
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=torch.iinfo(torch.int8).min + 1,
+        quant_max=torch.iinfo(torch.int8).max,
+        qscheme=torch.per_channel_symmetric,
+        ch_axis=ch_axis,
+        observer_or_fake_quant_ctr=weight_fake_quant_ctr,
+    )
+
+    return QuantizationConfig(
+        input_activation=None,
+        output_activation=None,
+        weight=weight_quantization_spec,
+        bias=None,
+    )
+
+
 def get_8a8w_qnn_ptq_config(
     act_symmetric: bool = False,
     act_observer=MovingAverageMinMaxObserver,
@@ -198,6 +336,51 @@ def get_8a4w_qnn_ptq_config(
         quant_max=7,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
+
+
+# 2 bits weight quantization only supports per channel and symmetric.
+def get_16a2w_qnn_ptq_config(
+    act_symmetric: bool = False,
+    act_observer=MovingAverageMinMaxObserver,
+    eps: float = None,
+) -> QuantizationConfig:
+    # the smallest defaults to DEFAULT_EPS_16BIT
+    extra_args: Dict[str, Any] = {"eps": eps if eps else DEFAULT_EPS_16BIT}
+
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
+        qscheme=(
+            torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
+        ),
+        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
+    )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8,
+        quant_min=-2,
+        quant_max=1,
+        qscheme=torch.per_tensor_symmetric,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
 
@@ -435,7 +618,7 @@ def get_ptq_per_channel_quant_config(
         torch.int8,
         torch.int16,
     }
-    supported_weight_dtypes = {torch.int4, torch.int8, torch.int16}
+    supported_weight_dtypes = {torch.int2, torch.int4, torch.int8, torch.int16}
     assert (
         act_dtype in supported_act_types
     ), f"act_dtype, {act_dtype} is not one of supported types, {supported_act_types}"
@@ -468,12 +651,23 @@ def get_ptq_per_channel_quant_config(
             observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
         )
 
+    q_dtype = weight_dtype
+    if weight_dtype == torch.int4:
+        q_dtype = torch.int8
+        q_min = -7
+        q_max = 7
+    elif weight_dtype == torch.int2:
+        q_dtype = torch.int8
+        q_min = -2
+        q_max = 1
+    else:
+        q_min = torch.iinfo(weight_dtype).min + 1
+        q_max = torch.iinfo(weight_dtype).max
+
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
-        quant_min=(
-            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
-        ),
-        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
+        dtype=q_dtype,
+        quant_min=q_min,
+        quant_max=q_max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
         observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(**extra_args),

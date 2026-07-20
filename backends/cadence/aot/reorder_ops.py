@@ -11,7 +11,7 @@
 
 from collections import defaultdict
 from math import prod
-from typing import Callable, cast, DefaultDict, List, Tuple
+from typing import Callable, cast, DefaultDict, List, Optional, Tuple
 
 import torch
 import torch.fx
@@ -248,12 +248,22 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
     """
-    If the input to quantize op is linear chain of view, transpose, permute, or
-    slice ops that are trivially quantized, we can convert the pattern
-    view/transpose/permute/slice(fp32) -> quantize(int8/uint8) to
-    quantize(int8/uint8) -> view/transpose/permute/slice(int8/uint8).
-    The benefit of such reordering is that the view/transpose/permute/slice
-    will move far less data.
+    Advances a quantize op above data-movement ops to reduce data volume.
+
+    Handles two cases:
+
+    1. Linear chain: if the input to a quantize op is a chain of trivially
+       quantizable ops (view, transpose, permute, slice), rewrite
+       data_movement(fp32) -> quantize to quantize -> data_movement(quantized)
+       so the data movement operates on smaller quantized tensors.
+
+    2. Cat: if the input to a quantize op is a cat with a single user (the
+       quantize), advance the quantize above the cat by quantizing each cat
+       input individually.  A later pass can clean up any redundant
+       dequant-quant pairs on the inputs.
+
+    For the cat case, SplitDequantizedCatPass should run first to ensure
+    each cat has at most one quantize consumer.
     """
 
     def __init__(self):
@@ -302,6 +312,47 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         # All the conditions satisfied, we advance.
         return True
 
+    def _advance_above_cat(
+        self, quant_node: torch.fx.Node, cat_node: torch.fx.Node
+    ) -> None:
+        """Advance a quantize op above a cat by quantizing each cat input."""
+        graph = quant_node.graph
+        quant_params = quant_node.args[1:]
+
+        cat_inputs = cat_node.args[0]
+        assert isinstance(cat_inputs, (list, tuple))
+
+        new_inputs: list[torch.fx.Node] = []
+        for inp in cat_inputs:
+            # cat concatenates tensors, so every input must be a node.
+            assert isinstance(inp, torch.fx.Node)
+
+            with graph.inserting_before(cat_node):
+                new_quant = graph.call_function(
+                    # pyre-ignore[6]
+                    quant_node.target,
+                    args=(inp, *quant_params),
+                )
+                # This copies the fp32 input's meta, so meta["val"] keeps the
+                # fp32 dtype rather than the quantized output dtype. That's fine:
+                # nothing in this pass reads dtype from meta (only shape, which
+                # is correct), and call() re-runs super().call() to re-propagate
+                # fake tensors, making meta dtype-consistent before we return.
+                new_quant.meta = inp.meta.copy()
+            new_inputs.append(new_quant)
+
+        dim = get_arg(cat_node, "dim", int)
+        with graph.inserting_before(quant_node):
+            new_cat = graph.call_function(
+                # pyre-ignore[6]
+                cat_node.target,
+                args=(new_inputs, dim),
+            )
+            new_cat.meta = quant_node.meta.copy()
+
+        quant_node.replace_all_uses_with(new_cat)
+        graph.erase_node(quant_node)
+
     def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
         graph = graph_module.graph
         modified = False
@@ -312,6 +363,17 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
                 exir_ops.edge.cadence.quantize_per_tensor,
                 torch.ops.cadence.quantize_per_tensor,
             ):
+                continue
+
+            inp = node.args[0]
+            if (
+                isinstance(inp, torch.fx.Node)
+                and get_overload_packet(inp.target)
+                in (exir_ops.edge.aten.cat, torch.ops.aten.cat)
+                and len(inp.users) == 1
+            ):
+                self._advance_above_cat(node, inp)
+                modified = True
                 continue
 
             if not self.advancing_feasible(node):
@@ -720,6 +782,239 @@ class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
+class MoveSliceBeforeViewPass(RemoveOrReplacePassInterface):
+    """Move a slice_copy above a view_copy when the slice is re-expressible as a
+    single slice on one dim of the pre-view tensor.
+
+    Rewrites  view(x) -> slice(dim=d, start, end, step)  into
+    slice(x, dim=d', start', end', step') -> view(sliced, slice_out_shape), so the
+    slice lands directly on x. This may be useful in attention patterns, where
+    we view outputs of a large linear into a new shape where the number of
+    attention heads are the last dim, and we need to run independent computation
+    per head. Moving the slice before the view can allow us to then directly slice
+    the constant linear weights.
+
+    A view is a contiguous reshape: it never moves or reorders elements, it only
+    re-groups the shared row-major index space into different dims. A slice keeps
+    an arithmetic progression of indices (start, start+step, ...) along one viewed
+    dim, and that progression collapses back to a *single* slice on one pre-view
+    dim exactly when the row-major strides line up. ``_derive_pre_view_slice``
+    handles the three cases that qualify:
+
+      * untouched dim: the viewed dim is left unchanged by the view -- same size
+        and same inner stride as some pre-view dim -- so the slice copies over
+        verbatim (any step).
+      * contiguous: the viewed dim and a pre-view dim span the same flat extent
+        (a split's outermost factor, or a merge that aligns), so a contiguous
+        (step==1) slice maps to a contiguous pre-view slice.
+      * strided: the viewed dim is an innermost factor of a pre-view dim
+        (identical inner stride) selected width-1, so it maps to a strided
+        pre-view slice with step == the viewed dim's size.
+
+    Everything else -- middle factors, wider strided selections -- is block-strided
+    (runs separated by gaps), which no single slice can express, so it is left
+    unchanged.
+
+    Each slice is handled independently, so a view that fans out to several slices
+    is rewritten one slice at a time and the now-dead view is removed by dead-code
+    elimination -- there is no single-user requirement on the view.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        view_node = get_arg(node, "input", torch.fx.Node)
+        if view_node.target != exir_ops.edge.aten.view_copy.default:
+            return False
+
+        x_node = get_arg(view_node, "input", torch.fx.Node)
+        pre_view_shape = tuple(x_node.meta["val"].shape)
+        post_view_shape = tuple(view_node.meta["val"].shape)
+        if 0 in pre_view_shape or 0 in post_view_shape:
+            return False
+
+        dim = get_arg(node, "dim", int)
+        if dim < 0:
+            dim += len(post_view_shape)
+        post_view_size = post_view_shape[dim]
+
+        bounds = self._normalize_slice(node, post_view_size)
+        if bounds is None:
+            return False
+        start, stop, step = bounds
+
+        # The slice's own output shape gives the selected-element count along the
+        # sliced dim directly -- it is exactly output_shape[dim].
+        slice_out_shape = tuple(node.meta["val"].shape)
+        post_view_count = slice_out_shape[dim]
+        if post_view_count == 0:
+            return False
+
+        # Row-major stride of the sliced viewed dim, and of every pre-view dim.
+        post_view_stride = prod(post_view_shape[dim + 1 :])
+        pre_view_strides = self._row_major_strides(pre_view_shape)
+
+        derived = self._derive_pre_view_slice(
+            pre_view_shape,
+            pre_view_strides,
+            post_view_stride,
+            post_view_size,
+            start,
+            stop,
+            step,
+            post_view_count,
+        )
+        if derived is None:
+            return False
+        pre_view_dim, pre_view_start, pre_view_stop, pre_view_step = derived
+
+        graph = node.graph
+        with graph.inserting_before(node):
+            new_slice_args = (
+                x_node,
+                pre_view_dim,
+                pre_view_start,
+                pre_view_stop,
+                pre_view_step,
+            )
+            new_slice = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=new_slice_args,
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                x_node.meta["val"], *new_slice_args[1:]
+            )
+            new_view = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.view_copy.default,
+                args=(new_slice, list(slice_out_shape)),
+            )
+            new_view.meta["val"] = exir_ops.edge.aten.view_copy.default(
+                new_slice.meta["val"], list(slice_out_shape)
+            )
+
+        node.replace_all_uses_with(new_view)
+        return True
+
+    @staticmethod
+    def _row_major_strides(shape: tuple[int, ...]) -> list[int]:
+        """Row-major (contiguous) strides for ``shape``."""
+        strides = [1] * len(shape)
+        acc = 1
+        for i in range(len(shape) - 1, -1, -1):
+            strides[i] = acc
+            acc *= shape[i]
+        return strides
+
+    def _normalize_slice(
+        self, node: torch.fx.Node, post_view_size: int
+    ) -> Optional[tuple[int, int, int]]:
+        """Resolve the slice to concrete, clamped ``(start, stop, step)`` ints, or
+        None if the bounds are dynamic or the step is non-positive (neither of
+        which this pass handles)."""
+        step = get_arg(node, "step")
+
+        if not isinstance(step, int):
+            return None
+
+        if step <= 0:
+            return None
+
+        raw_start = get_arg(node, "start")
+        raw_stop = get_arg(node, "end")
+
+        # Make sure raw_start/raw_stop are not symbolic.
+        if (raw_start is not None and not isinstance(raw_start, int)) or (
+            raw_stop is not None and not isinstance(raw_stop, int)
+        ):
+            return None
+
+        start = 0 if raw_start is None else raw_start
+        stop = post_view_size if raw_stop is None else raw_stop
+        if start < 0:
+            start += post_view_size
+        if stop < 0:
+            stop += post_view_size
+        start = max(0, min(start, post_view_size))
+        stop = max(0, min(stop, post_view_size))
+        return start, stop, step
+
+    def _derive_pre_view_slice(
+        self,
+        pre_view_shape: tuple[int, ...],
+        pre_view_strides: list[int],
+        post_view_stride: int,
+        post_view_size: int,
+        start: int,
+        stop: int,
+        step: int,
+        post_view_count: int,
+    ) -> tuple[int, int, int, int] | None:
+        """Return ``(dim, start, stop, step)`` for the single pre-view-tensor slice
+        equivalent to slicing the viewed dim, or None if no single pre-view slice
+        reproduces it.
+
+        Both shapes index the same row-major flat space, so the sliced viewed dim
+        (size ``post_view_size``, inner stride ``post_view_stride``) lines up with
+        one pre-view dim (size ``pre_view_size``, inner stride ``pre_view_stride``)
+        in one of three ways.
+        """
+        for pre_view_dim, (pre_view_stride, pre_view_size) in enumerate(
+            zip(pre_view_strides, pre_view_shape)
+        ):
+            # Untouched: the viewed dim is identical to this pre-view dim (same
+            # size and same inner stride), so the slice applies verbatim, any step.
+            if pre_view_stride == post_view_stride and pre_view_size == post_view_size:
+                return pre_view_dim, start, stop, step
+
+            # Contiguous: the viewed dim and this pre-view dim span the same flat
+            # extent (same period), and the selected band aligns to this dim's
+            # boundaries. A contiguous (step==1) viewed slice
+            # [start, start+post_view_count) is the flat band [start*
+            # post_view_stride, (start+post_view_count)*post_view_stride), a
+            # contiguous slice on this pre-view dim iff both ends are multiples of
+            # its stride.
+            if (
+                step == 1
+                and post_view_size * post_view_stride == pre_view_size * pre_view_stride
+            ):
+                flat_start = start * post_view_stride
+                flat_stop = (start + post_view_count) * post_view_stride
+                if (
+                    flat_start % pre_view_stride == 0
+                    and flat_stop % pre_view_stride == 0
+                ):
+                    return (
+                        pre_view_dim,
+                        flat_start // pre_view_stride,
+                        flat_stop // pre_view_stride,
+                        1,
+                    )
+
+            # Strided is the ONLY way the reshape itself introduces a stride, and
+            # it requires a width-1 selection (post_view_count == 1): the viewed
+            # dim is an innermost factor of this pre-view dim (identical inner
+            # stride), so fixing that single factor index and letting the rest of
+            # the pre-view dim run yields a uniform stride equal to the viewed dim's
+            # size. Any wider selection (post_view_count > 1) of an inner factor
+            # leaves runs separated by gaps -- block-strided, not a single slice --
+            # so width-1 is required.
+            if (
+                post_view_count == 1
+                and post_view_size > 1
+                and pre_view_stride == post_view_stride
+                and pre_view_size % post_view_size == 0
+            ):
+                pre_view_count = pre_view_size // post_view_size
+                pre_view_stop = start + (pre_view_count - 1) * post_view_size + 1
+                return pre_view_dim, start, pre_view_stop, post_view_size
+        return None
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class PropagateSlice(RemoveOrReplacePassInterface):
     """Propagate slice_copy before element-wise ops when the cost model
     indicates it reduces total data movement.
@@ -893,6 +1188,77 @@ class PropagateSlice(RemoveOrReplacePassInterface):
 
         should_swap, do_swap = entry
         return should_swap(parent, node) and do_swap(parent, node)
+
+
+_QUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    exir_ops.edge.cadence.quantize_per_tensor,
+}
+
+_DEQUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    exir_ops.edge.cadence.dequantize_per_tensor,
+}
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class SplitDequantizedCatPass(RemoveOrReplacePassInterface):
+    """Split a cat node so that quantize consumers get their own copy.
+
+    Fires when a cat has all floating-point inputs, at least one dequantize
+    input, and at least one quantize consumer.  Quant consumers are grouped
+    by matching qparams; each group receives a dedicated duplicate of the
+    cat node.  Non-quant consumers stay on the original cat, whose
+    semantics are unchanged.
+
+    A later pass (e.g. AdvanceQuantizeOpAboveDefChainPass extended for cat)
+    can then hoist each quant above its single-consumer cat copy without
+    affecting the non-quant paths.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        cat_inputs = node.args[0]
+        if not isinstance(cat_inputs, (list, tuple)):
+            return False
+
+        has_dequant_input = False
+        for inp in cat_inputs:
+            assert isinstance(inp, torch.fx.Node)
+            val = inp.meta["val"]
+            if val is None or not val.is_floating_point():
+                return False
+            if get_overload_packet(inp.target) in _DEQUANT_OVERLOAD_PACKETS:
+                has_dequant_input = True
+
+        if not has_dequant_input:
+            return False
+
+        quant_groups: DefaultDict[Tuple, List[torch.fx.Node]] = defaultdict(list)
+        for user in list(node.users.keys()):
+            if get_overload_packet(user.target) in _QUANT_OVERLOAD_PACKETS:
+                quant_groups[user.args[1:]].append(user)
+
+        if not quant_groups:
+            return False
+
+        graph = node.graph
+        dim = get_arg(node, "dim", int)
+        for quant_consumers in quant_groups.values():
+            with graph.inserting_after(node):
+                dup_cat = graph.call_function(
+                    exir_ops.edge.aten.cat.default,
+                    args=(list(cat_inputs), dim),
+                )
+                dup_cat.meta = node.meta.copy()
+
+            for q_node in quant_consumers:
+                q_node.replace_input_with(node, dup_cat)
+
+        return True
 
 
 # The following class consolidates functions to reoder ops (i.e., either hoist

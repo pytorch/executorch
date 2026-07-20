@@ -1,12 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import cmsis_nn  # type: ignore[import-not-found, import-untyped]
 import pytest
 
+from executorch.backends.cortex_m.library import cmsis_nn
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 
 

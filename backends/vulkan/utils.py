@@ -546,6 +546,80 @@ def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
     return ""
 
 
+def register_param_mutation(ep: ExportedProgram, node: torch.fx.Node, tag: str) -> bool:
+    """Register an in-place mutation of a param/buffer's state-dict storage,
+    keyed on the stable identity of that storage, and report whether the caller
+    should perform the mutation.
+
+    A graph pass that repacks (or otherwise mutates in place) the constant tensor
+    backing a placeholder must run the mutation exactly once per backing storage;
+    repeating it on the already-mutated tensor corrupts it. Keying the guard on
+    node identity is unsafe, because two distinct placeholder nodes can resolve to
+    the same state-dict entry (e.g. aliased weights), and each would miss a
+    per-node flag and re-run the mutation. This guard instead keys on the
+    state-dict FQN that backs `node` -- the same identity the in-place mutation
+    targets (see `update_program_state_dict`, which overwrites
+    `state_dict[input_spec.target]`). The FQN is resolved via `get_tensor_name`
+    (`graph_signature.inputs_to_{parameters,buffers,lifted_tensor_constants}`) and
+    is stable across the mutation, unlike `data_ptr()` which changes once the
+    state-dict tensor object is replaced.
+
+    `tag` identifies the mutation/packing FORMAT, not the op. Two callers that
+    produce the same packed bytes for a weight should pass the same `tag` and
+    share this guard; observing two different tags on one weight means it would be
+    mutated two incompatible ways, which is corruption, so that case raises.
+
+    A per-ExportedProgram registry mapping `param_key -> tag` is lazily
+    initialized on `ep` (`ep._et_vk_param_modification_tags`) without
+    module-scope mutable state. Because it is stored on `ep`, it persists for the
+    lifetime of that ExportedProgram -- across all pass runs on it, not just one
+    -- and there is no reset hook, so a pass that legitimately needs to re-mutate
+    an already-tagged param must clear `ep._et_vk_param_modification_tags`
+    itself.
+
+    Returns True on the first call for a given param (and records the tag),
+    signalling the caller to proceed with the mutation. Returns False on a
+    subsequent call with the SAME tag, signalling the caller to skip (already
+    mutated this way). Raises RuntimeError on a call whose tag differs from the
+    recorded one.
+    """
+    registry: Dict[str, str] = getattr(ep, "_et_vk_param_modification_tags", None)
+    if registry is None:
+        registry = {}
+        ep._et_vk_param_modification_tags = registry
+
+    # The guard keys on the state-dict FQN that get_tensor_name resolves, which
+    # only exists for parameter / buffer / lifted-constant placeholders (via
+    # inputs_to_{parameters,buffers,lifted_tensor_constants}). For any other node
+    # kind get_tensor_name falls through to node.target, which is not a stable
+    # storage key, so the guard would silently key on the wrong identity. Reject
+    # such nodes up front.
+    if not (
+        is_param(ep, node) or is_buffer(ep, node) or is_lifted_tensor_constant(ep, node)
+    ):
+        raise RuntimeError(
+            "register_param_mutation expects a parameter / buffer / "
+            f"lifted-constant placeholder, but got node {node.name!r} "
+            f"(op={node.op!r}, target={node.target!r})."
+        )
+
+    param_key = get_tensor_name(ep, node)
+
+    recorded_tag = registry.get(param_key)
+    if recorded_tag is None:
+        registry[param_key] = tag
+        return True
+
+    if recorded_tag != tag:
+        raise RuntimeError(
+            f"Param tensor {param_key!r} was already modified with tag "
+            f"{recorded_tag!r}, but a conflicting modification with tag {tag!r} "
+            "was attempted; a weight modified two different ways is corrupt."
+        )
+
+    return False
+
+
 def find_dequant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     """
     Search the direct users of the given node and return the first one that is a
@@ -588,6 +662,10 @@ def node_has_target(node: Any, target: str):
 ImageExtents = Tuple[int, int, int]
 
 DEFAULT_TEXTURE_LIMITS = (16384, 16384, 2048)
+# Conservative 3D texture limit compatible with most desktop/laptop GPUs. The
+# Vulkan spec only guarantees maxImageDimension3D >= 2048, whereas mobile GPUs
+# commonly support 16384. Used when the small_texture_limits option is set.
+SMALL_TEXTURE_LIMITS = (2048, 2048, 2048)
 DEFAULT_BUFFER_LIMIT = 128 * (1024 * 1024)
 
 all_storage_types: Set[VkStorageType] = {

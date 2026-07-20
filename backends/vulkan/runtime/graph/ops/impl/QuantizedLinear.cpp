@@ -145,6 +145,7 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
   const ValueRef fp_input = args.at(1).refs.at(0);
   const ValueRef int_input = args.at(1).refs.at(1);
   (void)int_input;
+  const ValueRef input_zp = args.at(1).refs.at(4);
   const ValueRef int_weight = args.at(1).refs.at(5);
 
   const bool weight_is_4bit = resize_args.at(0) != kDummyValueRef;
@@ -165,6 +166,7 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
   add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph->storage_type_of(int_weight));
   add_dtype_suffix(kernel_name, graph->dtype_of(out));
+  add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zp));
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
@@ -757,36 +759,6 @@ void linear_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output);
 }
 
-void linear_q4gsw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  int32_t idx = 0;
-  const ValueRef fp_input = args.at(idx++);
-  const ValueRef weight_data = args.at(idx++);
-  const ValueRef weight_scales_data = args.at(idx++);
-  const ValueRef group_size = args.at(idx++);
-  const ValueRef bias_data = args.at(idx++);
-  const ValueRef output = args.at(idx++);
-
-  const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size);
-
-  QuantizationConfig input_quant_config(32, kNoQuantization, {});
-  QuantizationConfig weight_quant_config(4, kPerGroup, {group_size_val});
-
-  quantized_linear_impl(
-      graph,
-      input_quant_config,
-      weight_quant_config,
-      fp_input,
-      kDummyValueRef, // input scale
-      kDummyValueRef, // input zp
-      weight_data,
-      kDummyValueRef, // weight sums
-      weight_scales_data,
-      kDummyValueRef, // weight zeros
-      group_size, // group size
-      bias_data,
-      output);
-}
-
 void linear_dq8ca_q4gsw(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
@@ -825,7 +797,6 @@ void linear_dq8ca_q4gsw(
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.linear_q8ta_q8csw.default, linear_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.linear_q8csw.default, linear_q8csw);
-  VK_REGISTER_OP(et_vk.linear_q4gsw.default, linear_q4gsw);
   VK_REGISTER_OP(et_vk.linear_dq8ca_q4gsw.default, linear_dq8ca_q4gsw);
 }
 

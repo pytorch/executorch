@@ -3,11 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
-from executorch.backends.nxp.backend.edge_helper import input_tensor
-from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
-    dims_to_channels_last,
-)
+import torch
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 
@@ -35,71 +31,27 @@ def transposition_is_supported_on_neutron(
     :param permutation: The permutation the `Transpose` operator is computing.
     :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
     """
-    num_macs = neutron_target_spec.get_num_macs()
-
-    if is_tensor_invariant_permutation(input_shape, permutation):
-        # The `Transpose` will be turned into a `Reshape` by Neutron. The check includes the identity permutation.
-        return True
-
-    if permutation == [0, 3, 1, 2]:
-        # NHWC -> NCHW
-        n, h, w, c = input_shape
-
-        if h * w * c % num_macs != 0:  # Official Neutron requirement.
-            return False
-
-        if not (
-            c % num_macs == 0 and h * w % num_macs == 0
-        ):  # Neutron would produce incorrect outputs.
-            return False
-
-        if n != 1:
-            # Neutron only supports `Transpose` operators where the dimensions can be combined into 2 consecutive
-            #  groups. These 2 groups are then transposed like a matrix, and the result is reshaped. Therefore, for the
-            #  [0, 3, 1, 2] permutation, when h * w != 1 and c != 1, batch size must be 1.
-            return False
-
-        return True
-
-    elif permutation == [0, 2, 3, 1]:
-        # NCHW -> NHWC
-
-        n, c, h, w = input_shape
-
-        if w % num_macs != 0:  # Official Neutron requirement.
-            return False
-
-        if not (
-            c % num_macs == 0 and h * w % num_macs == 0
-        ):  # Neutron would produce incorrect outputs.
-            return False
-
-        if n != 1:
-            # Neutron only supports `Transpose` operators where the dimensions can be combined into 2 consecutive
-            #  groups. These 2 groups are then transposed like a matrix, and the result is reshaped. Therefore, for the
-            #  [0, 2, 3, 1] permutation, when h * w != 1 and c != 1, batch size must be 1.
-            return False
-
-        return True
-
-    return False
+    # Neutron C currently supports all transpositions.
+    # The function is not removed in case the support conditions ever change (for example with the introduction of
+    #  Neutron S into ExecuTorch).
+    return True
 
 
 def activation_supported_on_target(
-    node: Node, neutron_target_spec: NeutronTargetSpec
+    node: Node,
 ) -> bool:
     """This function determines if the current NeutronSoftware properly supports an activation operator represented by the given node.
 
     :param node: The node representing the activation operator.
-    :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
     """
-    input_shape = list(input_tensor(node, 0).shape)
-    if node.args[0].meta[NXP_NODE_FORMAT].is_channels_first():
-        input_shape = dims_to_channels_last(input_shape)
+    # Prevent circular import
+    from executorch.backends.nxp.backend.ir.converter.node_converter import (
+        NodeConverter,
+    )
 
-    c = input_shape[-1]
-    num_macs = neutron_target_spec.get_num_macs()
-
-    # activations in Neutron are delegable only
-    # if `num_channels` % `num_macs` == 0
-    return c % num_macs == 0
+    return NodeConverter.uses_quantization_type_for_io(
+        node,
+        supported_types=[torch.int8, torch.uint8],
+        input_indices=[0],
+        output_indices=[0],
+    )

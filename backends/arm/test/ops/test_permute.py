@@ -78,6 +78,12 @@ class SimplePermute(torch.nn.Module):
         return torch.permute(x, self.dims)
 
 
+class SimpleMoveAxis(torch.nn.Module):
+
+    def forward(self, x):
+        return torch.moveaxis(x, 1, -1)
+
+
 @common.parametrize(
     "test_data", test_data_suite | test_data_suite_fp16 | test_data_suite_bf16
 )
@@ -118,6 +124,17 @@ def test_permute_u55_INT(test_data):
     pipeline.run()
 
 
+def test_moveaxis_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t1](
+        SimpleMoveAxis(),
+        (torch.rand(1, 4, 5, 6),),
+        "torch.ops.aten.moveaxis.int",
+        exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_suite_u55_reject)
 def test_permute_u55_INT_not_delegated(test_data: torch.Tensor):
     test_data, dims = test_data()
@@ -144,7 +161,9 @@ def test_permute_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_permute_vgf_no_quant(test_data):
     test_data, dims = test_data()

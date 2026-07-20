@@ -163,7 +163,7 @@ void add_prepack_standard_node(
     ComputeGraph& graph,
     const ValueRef tensor_data,
     const ValueRef tensor,
-    const bool transpose_hw = false) {
+    const bool transpose_hw) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
       graph,
       tensor,
