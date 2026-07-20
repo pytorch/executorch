@@ -7,7 +7,7 @@ from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
 
 
 def get_deepseek_r1_distill_qwen_1_5b_checkpoint_config() -> Qwen2Config:
-    return Qwen2Config(
+    config = Qwen2Config(
         architectures=["Qwen2ForCausalLM"],
         attention_dropout=0.0,
         bos_token_id=151643,
@@ -28,10 +28,15 @@ def get_deepseek_r1_distill_qwen_1_5b_checkpoint_config() -> Qwen2Config:
         },
         sliding_window=4096,
         tie_word_embeddings=False,
-        torch_dtype="bfloat16",
         transformers_version="4.44.0",
         use_cache=True,
-        use_mrope=False,
         use_sliding_window=False,
         vocab_size=151936,
     )
+    config.update(
+        {
+            "torch_dtype": "bfloat16",
+            "use_mrope": False,
+        }
+    )
+    return config
