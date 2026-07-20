@@ -12,6 +12,7 @@ from executorch.backends.arm.quantizer import (
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
+from executorch.backends.arm.quantizer.arm_quantizer_utils import SharedQspecQuantizer
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeline
 from executorch.backends.arm.tosa import TosaSpecification
@@ -687,3 +688,24 @@ def test_maximum_mixed_int8_int16_inputs():
     )
     pipeline.run()
     _check_quant_params(pipeline, model.quant_params)
+
+
+def test_shared_qspec_ops_default_covers_concat_family():
+    """The composable (V2) quantizer must share qspecs across the whole
+    concat family so each op lowers to a single TOSA CONCAT (one delegate).
+
+    torch.concat traced under dynamic shapes is captured as
+    aten.concat.default; when it was missing from SHARED_QSPEC_OPS_DEFAULT its
+    inputs got independent observers, splitting the graph into two Ethos-U
+    delegates. The analogous gap in the V1 annotator was fixed earlier (see
+    pytorch/executorch#20600); this guards against the two concat-family lists
+    drifting apart again.
+    """
+    concat_family = {
+        torch.ops.aten.cat.default,
+        torch.ops.aten.concat.default,
+        torch.ops.aten.concatenate.default,
+        torch.ops.aten.stack.default,
+    }
+    missing = concat_family - set(SharedQspecQuantizer.SHARED_QSPEC_OPS_DEFAULT)
+    assert not missing, f"concat-family ops missing from shared qspec set: {missing}"
