@@ -55,6 +55,44 @@ def _avg_pool2d(
     return out.permute(0, 2, 3, 1).contiguous()
 
 
+def _adaptive_avg_pool2d(input, output_size):
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.adaptive_avg_pool2d(nchw, output_size)
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
+def _upsample_bilinear2d(input, output_size, align_corners, scale_factors):
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.upsample_bilinear2d.vec(
+        nchw, output_size, align_corners, scale_factors
+    )
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
+def _upsample_nearest2d(input, output_size, scale_factors):
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.upsample_nearest2d.vec(nchw, output_size, scale_factors)
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
+def _max_pool2d_with_indices(input, kernel_size, stride, padding, dilation, ceil_mode):
+    nchw = input.permute(0, 3, 1, 2)
+    values, indices = torch.ops.aten.max_pool2d_with_indices(
+        nchw, kernel_size, stride, padding, dilation, ceil_mode
+    )
+    values = values.permute(0, 2, 3, 1).contiguous()
+    indices = indices.permute(0, 2, 3, 1).contiguous()
+    return values, indices
+
+
+def _grid_sampler_2d(input, grid, interpolation_mode, padding_mode, align_corners):
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.grid_sampler_2d(
+        nchw, grid, interpolation_mode, padding_mode, align_corners
+    )
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
 def _permute_copy(input, dims):
     return torch.ops.aten.permute_copy(input, dims).contiguous()
 
@@ -73,6 +111,42 @@ lib.define(
 )
 lib.impl("avg_pool2d", _avg_pool2d, "CompositeExplicitAutograd")
 register_fake("channels_last::avg_pool2d", _avg_pool2d, lib=lib)
+
+lib.define("adaptive_avg_pool2d(Tensor input, int[2] output_size) -> Tensor")
+lib.impl("adaptive_avg_pool2d", _adaptive_avg_pool2d, "CompositeExplicitAutograd")
+register_fake("channels_last::adaptive_avg_pool2d", _adaptive_avg_pool2d, lib=lib)
+
+lib.define(
+    "upsample_bilinear2d(Tensor input, int[]? output_size, bool align_corners, "
+    "float[]? scale_factors) -> Tensor"
+)
+lib.impl("upsample_bilinear2d", _upsample_bilinear2d, "CompositeExplicitAutograd")
+register_fake("channels_last::upsample_bilinear2d", _upsample_bilinear2d, lib=lib)
+
+lib.define(
+    "upsample_nearest2d(Tensor input, int[]? output_size, float[]? scale_factors) "
+    "-> Tensor"
+)
+lib.impl("upsample_nearest2d", _upsample_nearest2d, "CompositeExplicitAutograd")
+register_fake("channels_last::upsample_nearest2d", _upsample_nearest2d, lib=lib)
+
+lib.define(
+    "max_pool2d_with_indices(Tensor input, int[2] kernel_size, int[2] stride, "
+    "int[2] padding, int[2] dilation, bool ceil_mode) -> (Tensor, Tensor)"
+)
+lib.impl(
+    "max_pool2d_with_indices", _max_pool2d_with_indices, "CompositeExplicitAutograd"
+)
+register_fake(
+    "channels_last::max_pool2d_with_indices", _max_pool2d_with_indices, lib=lib
+)
+
+lib.define(
+    "grid_sampler_2d(Tensor input, Tensor grid, int interpolation_mode, "
+    "int padding_mode, bool align_corners) -> Tensor"
+)
+lib.impl("grid_sampler_2d", _grid_sampler_2d, "CompositeExplicitAutograd")
+register_fake("channels_last::grid_sampler_2d", _grid_sampler_2d, lib=lib)
 
 lib.define("permute_copy(Tensor input, int[] dims) -> Tensor")
 lib.impl("permute_copy", _permute_copy, "CompositeExplicitAutograd")
