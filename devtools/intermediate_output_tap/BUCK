@@ -1,13 +1,16 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "spec",
     srcs = ["_spec.py"],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "custom_ops_lib",
     srcs = ["custom_ops_lib.py"],
     deps = [
@@ -15,7 +18,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "selectors",
     srcs = ["_selectors.py"],
     deps = [
@@ -23,7 +27,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "reducers",
     srcs = ["_reducers.py"],
     deps = [
@@ -32,7 +37,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "tap_pass",
     srcs = ["_tap_pass.py"],
     deps = [
@@ -44,7 +50,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "strip_pass",
     srcs = ["_strip_pass.py"],
     deps = [
@@ -54,7 +61,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "convenience",
     srcs = ["_convenience.py"],
     deps = [
@@ -70,7 +78,8 @@ runtime.python_library(
     ],
 )
 
-runtime.python_library(
+fbcode_target(
+    _kind = runtime.python_library,
     name = "lib",
     srcs = ["__init__.py"],
     deps = [
