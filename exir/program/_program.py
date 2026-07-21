@@ -688,14 +688,13 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
     new_gm = new_ep.exported_program.graph_module
-    if config._use_edge_ops:
-        new_gm_res = OpReplacePass()(new_gm)
+    new_gm_res = OpReplacePass()(new_gm)
+    assert new_gm_res is not None
+    new_gm = new_gm_res.graph_module
+    if not config._skip_dim_order:
+        new_gm_res = MemoryFormatOpsPass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
-        if not config._skip_dim_order:
-            new_gm_res = MemoryFormatOpsPass()(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -824,10 +823,9 @@ def _generate_edge_program(
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
     passes.extend(pre_op_replace_passes)
-    if config._use_edge_ops:
-        passes.append(OpReplacePass())
-        if not config._skip_dim_order:
-            passes.append(MemoryFormatOpsPass())
+    passes.append(OpReplacePass())
+    if not config._skip_dim_order:
+        passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module
     for p in passes:
