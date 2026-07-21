@@ -13,7 +13,6 @@ import torch.nn as nn
 
 from executorch.examples.models.gemma4_31b.quant.pack import pack_model
 from executorch.examples.models.gemma4_31b.quant.pack_mlx import (
-    _mlx_group_size,
     DEFAULT_MLX_PACKERS,
     pack_for_mlx,
 )
@@ -49,8 +48,12 @@ class TestPackLinearForMlx(unittest.TestCase):
         self.assertIsInstance(module.weight.data, IntxUnpackedToInt8Tensor)
         self.assertEqual(module.weight.shape, torch.Size([64, 128]))
 
-    def test_regroup_preserves_dequant(self):
-        """Linear with non-standard group_size regroups and dequantizes correctly."""
+    def test_int8_coarse_passes_through(self):
+        """Linear with a coarse group_size passes through unchanged.
+
+        Regrouping to an MLX-legal group_size now happens in the MLX pattern
+        handlers at export time, so the packer leaves block_size untouched.
+        """
         torch.manual_seed(0)
         weight = torch.randn(64, 256, dtype=torch.bfloat16)
         config = QuantConfig(bits=8, group_size=256, symmetric=True, method="min_max")
@@ -60,28 +63,12 @@ class TestPackLinearForMlx(unittest.TestCase):
         module = nn.Linear(256, 64, bias=False)
         pack_for_mlx(module, {"weight": w})
 
-        self.assertEqual(module.weight.data.block_size, (1, 128))
+        self.assertEqual(module.weight.data.block_size, (1, 256))
         after = dequantize_weight(module.weight.data, torch.float32)
         self.assertTrue(
             torch.allclose(before, after, atol=1e-5),
             f"max diff: {(before - after).abs().max():.6g}",
         )
-
-
-class TestMlxGroupSize(unittest.TestCase):
-    def test_passthrough(self):
-        for gs in (16, 32, 64, 128):
-            self.assertEqual(_mlx_group_size(gs, 256), gs)
-
-    def test_regroup_5376(self):
-        self.assertEqual(_mlx_group_size(5376, 5376), 128)
-
-    def test_regroup_256(self):
-        self.assertEqual(_mlx_group_size(256, 256), 128)
-
-    def test_rejects_indivisible(self):
-        with self.assertRaises(ValueError):
-            _mlx_group_size(7, 7)
 
 
 class TestPackLinearGroupSize16(unittest.TestCase):
@@ -134,13 +121,14 @@ class TestPackEmbeddingForMlx(unittest.TestCase):
         pack_for_mlx(module, {"weight": w})
         self.assertEqual(module.weight.shape, torch.Size([100, 64]))
 
-    def test_per_axis_regroups(self):
+    def test_per_axis_passes_through(self):
         module = nn.Embedding(50, 256)
         config = QuantConfig(bits=8, group_size=256, symmetric=True, method="min_max")
         w = quantize_weight(torch.randn(50, 256, dtype=torch.bfloat16), config)
         pack_for_mlx(module, {"weight": w})
         self.assertEqual(module.weight.shape, torch.Size([50, 256]))
-        self.assertEqual(module.weight.data.block_size, (1, 128))
+        # Regrouping happens in the MLX handlers at export time, not at pack time.
+        self.assertEqual(module.weight.data.block_size, (1, 256))
 
     def test_int4_wraps_exportable(self):
         from executorch.extension.llm.export.int4 import ExportableInt4Tensor
