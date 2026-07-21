@@ -26,3 +26,11 @@ sdpa_compute_out_coop:
     - NAME: sdpa_compute_out_coop
     - NAME: sdpa_compute_out_gqa_coop
       GQA: True
+    # head_dim output-tiled GQA variant: each workgroup owns TILE_N4 head_dim
+    # texels, amortizing the attn-weight loads and shared-memory reduction over
+    # G x TILE_N4 outputs. A win on Adreno but a regression on Mali at common
+    # decode contexts, so it is selected vendor-adaptively (Adreno only) in
+    # SDPA.cpp; the partial_n_tile guard handles D4 % TILE_N4 != 0.
+    - NAME: sdpa_compute_out_gqa_coop_tile2
+      GQA: True
+      TILE_N4: 2

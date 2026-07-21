@@ -118,9 +118,11 @@ static void test_sdpa_impl(
 // Decode vs prefill is selected automatically inside the nodes via
 // is_single_token() (S == 1 -> coop/GEMV shaders, S > 1 -> tiled shaders). For
 // single-token decode the AV shader is picked by impl_selector:
-//   "default" -> auto-select (GQA-reuse coop shader when it applies)
-//   "gqa"     -> force the GQA-reuse coop shader
-//   "non_gqa" -> force the per-query-head coop shader
+//   "default"   -> auto-select (GQA-reuse coop shader when it applies)
+//   "gqa"       -> force the GQA-reuse coop shader (vendor picks base vs tile2)
+//   "gqa_tile2" -> force the head_dim output-tiled GQA variant (any device)
+//   "gqa_base"  -> force the base (non-tiled) GQA variant (any device)
+//   "non_gqa"   -> force the per-query-head coop shader
 // impl_selector has no effect on prefill (tiled).
 //
 // Args: q, k_cache, v_cache, impl_selector, out
@@ -135,8 +137,10 @@ void test_sdpa(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const std::string impl_selector = graph.extract_string(impl_selector_str);
   VK_CHECK_COND(
       impl_selector == "default" || impl_selector == "gqa" ||
+          impl_selector == "gqa_tile2" || impl_selector == "gqa_base" ||
           impl_selector == "non_gqa",
-      "test_sdpa: impl_selector must be one of {default, gqa, non_gqa}");
+      "test_sdpa: impl_selector must be one of {default, gqa, gqa_tile2, "
+      "gqa_base, non_gqa}");
 
   const int64_t seq_len = graph.size_at<int64_t>(-3, q);
   const int64_t context_len = graph.size_at<int64_t>(-3, k_cache);
@@ -146,12 +150,17 @@ void test_sdpa(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   const ValueRef input_pos_symint = graph.add_symint(input_pos_val);
 
-  // shader_override (see SDPA.h): -1 auto, 0 force non-GQA, 1 force GQA.
+  // shader_override (see SDPA.h): kDummyValueRef auto; otherwise a
+  // kShaderOverride* scalar forcing the AV shader family / variant.
   ValueRef shader_override = kDummyValueRef;
   if (impl_selector == "gqa") {
-    shader_override = graph.add_scalar<int64_t>(1);
+    shader_override = graph.add_scalar<int64_t>(kShaderOverrideForceGqa);
+  } else if (impl_selector == "gqa_tile2") {
+    shader_override = graph.add_scalar<int64_t>(kShaderOverrideForceTile2);
+  } else if (impl_selector == "gqa_base") {
+    shader_override = graph.add_scalar<int64_t>(kShaderOverrideForceBase);
   } else if (impl_selector == "non_gqa") {
-    shader_override = graph.add_scalar<int64_t>(0);
+    shader_override = graph.add_scalar<int64_t>(kShaderOverrideForceNonGqa);
   }
 
   test_sdpa_impl(

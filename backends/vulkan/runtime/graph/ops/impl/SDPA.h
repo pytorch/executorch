@@ -44,16 +44,31 @@ void add_sdpa_attn_weights_softmax_node(
     const ValueRef attn_weights_softmax,
     const SDPAMode mode);
 
+// Scalar values for the shader_override knob (see add_sdpa_compute_out_node).
+constexpr int64_t kShaderOverrideForceNonGqa = 0;
+constexpr int64_t kShaderOverrideForceGqa = 1;
+constexpr int64_t kShaderOverrideForceTile2 = 2;
+constexpr int64_t kShaderOverrideForceBase = 3;
+
 // shader_override: test-only knob selecting the single-token decode AV shader.
-//   kDummyValueRef (-1) — auto: use the GQA-reuse coop shader
-//                         (`sdpa_compute_out_gqa_coop`) when it applies.
-//   0                   — force the per-query-head coop shader
-//                         (`sdpa_compute_out_coop`).
-//   1                   — force the GQA-reuse coop shader.
-// Lets the benchmark/test exercise both AV shaders on the same shape. Forcing
-// GQA (1) requires a GQA-eligible shape (Hq divisible by Hkv, group size <= the
-// shader's compile-time bound); this is VK_CHECK'd, so an ineligible forced
-// shape fails loudly rather than silently dropping query heads.
+// It is a ValueRef holding one of the kShaderOverride* int64 scalars above, or
+// kDummyValueRef for "no override" (auto).
+//   auto (kDummyValueRef)   — use the GQA-reuse coop shader when it applies,
+//                             with the tiled vs base variant chosen by vendor.
+//   kShaderOverrideForceNonGqa — force the per-query-head coop shader
+//                             (`sdpa_compute_out_coop`).
+//   kShaderOverrideForceGqa    — force the GQA-reuse coop shader; vendor picks
+//   the
+//                             base (`sdpa_compute_out_gqa_coop`) vs head_dim
+//                             output-tiled (`sdpa_compute_out_gqa_coop_tile2`)
+//                             variant (tile2 on Adreno).
+//   kShaderOverrideForceTile2  — force the tiled variant regardless of vendor.
+//   kShaderOverrideForceBase   — force the base variant regardless of vendor.
+// Lets the benchmark/test exercise every AV shader on the same shape, and gives
+// the Adreno-only tile2 variant deterministic coverage on any device. Forcing
+// the GQA family requires a GQA-eligible shape (Hq divisible by Hkv, group size
+// <= the shader's compile-time bound); this is VK_CHECK'd, so an ineligible
+// forced shape fails loudly rather than silently dropping query heads.
 void add_sdpa_compute_out_node(
     ComputeGraph& graph,
     const ValueRef attn_weights_softmax,
