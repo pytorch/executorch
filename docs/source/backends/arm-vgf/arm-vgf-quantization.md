@@ -61,51 +61,22 @@ Insert a quantizer with highest precedence.
 ```python
 def VgfQuantizer.set_global(self, quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
 ```
-Set quantization_config for submodules not matched by other filters.
-
-Args:
-- **quantization_config (Optional[QuantizationConfig])**: Configuration to
-        apply to modules that are not captured by name or type filters.
-        ``None`` indicates no quantization.
+Set the global quantization config for VGF lowering.
 
 ```python
 def VgfQuantizer.set_io(self, quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
 ```
-Set quantization_config for input and output nodes.
-
-Args:
-- **quantization_config (Optional[QuantizationConfig])**: Configuration
-        describing activation quantization for model inputs and outputs.
-        ``None`` indicates no quantization.
+Set the quantization config used for model inputs and outputs.
 
 ```python
 def VgfQuantizer.set_module_name(self, module_name: 'str', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
 ```
-Set quantization_config for submodules with a given module name.
-
-For example, calling set_module_name("blocks.sub") quantizes supported
-patterns for that submodule with the provided quantization_config.
-
-Args:
-- **module_name (str)**: Fully qualified module name to configure.
-- **quantization_config (Optional[QuantizationConfig])**: Configuration
-        applied to the named submodule. ``None`` indicates no
-        quantization.
+Set the quantization config for a specific module name.
 
 ```python
 def VgfQuantizer.set_module_type(self, module_type: 'Callable', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
 ```
-Set quantization_config for submodules with a given module type.
-
-For example, calling set_module_type(Softmax) quantizes supported
-patterns in each Softmax instance with the provided quantization_config.
-
-Args:
-- **module_type (Callable)**: Type whose submodules should use the
-        provided quantization configuration.
-- **quantization_config (Optional[QuantizationConfig])**: Configuration to
-        apply to submodules of the given type. ``None`` indicates no
-        quantization.
+Set the quantization config for a specific module type.
 
 ```python
 def VgfQuantizer.set_node_finder(self, quantization_config: 'Optional[QuantizationConfig]', node_finder: 'NodeFinder') -> 'TOSAQuantizer':
