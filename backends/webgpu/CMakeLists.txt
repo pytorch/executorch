@@ -59,6 +59,8 @@ set(WEBGPU_SRCS
     runtime/ops/reduce/Reduce.cpp
     runtime/ops/div/BinaryOp.cpp
     runtime/ops/sub/BinaryOp.cpp
+    runtime/ops/where/Where.cpp
+    runtime/ops/boolean_op/BooleanOp.cpp
     runtime/ops/linear/Linear.cpp
 )
 
