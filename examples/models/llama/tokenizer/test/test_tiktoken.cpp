@@ -20,7 +20,6 @@
 
 using namespace ::testing;
 
-using ::example::Version;
 using ::tokenizers::Error;
 using ::tokenizers::Result;
 using ::tokenizers::Tokenizer;
