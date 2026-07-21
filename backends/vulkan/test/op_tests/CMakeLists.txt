@@ -119,6 +119,9 @@ if(TARGET vulkan_backend AND LIB_TORCH)
   vulkan_op_test(
     adamw_step_test ${CMAKE_CURRENT_SOURCE_DIR}/adamw_step_test.cpp test_utils
   )
+  vulkan_op_test(
+    linear_dW_test ${CMAKE_CURRENT_SOURCE_DIR}/linear_dW_test.cpp test_utils
+  )
 
   # Only build generated op tests if a path to tags.yaml and
   # native_functions.yaml is provided. These files are required for codegen.
