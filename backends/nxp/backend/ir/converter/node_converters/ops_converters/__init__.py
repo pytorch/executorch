@@ -61,6 +61,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import (
     MeanDimConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.minimum_converter import (
+    MinimumConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mm_converter import (
     MMConverter,
 )
@@ -114,6 +117,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     ViewCopyConverter,
 )
 
+
 __all__ = [
     "AbsConverter",
     "AdaptiveAvgPool2dConverter",
@@ -136,6 +140,7 @@ __all__ = [
     "MaxPool2DWithIndicesConverter",
     "MaximumConverter",
     "MeanDimConverter",
+    "MinimumConverter",
     "MMConverter",
     "MulTensorConverter",
     "NegConverter",
