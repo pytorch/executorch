@@ -35,7 +35,7 @@ def assert_delegated_and_correct(
     input_shape,
     mocker,
     request,
-    use_qat,
+    use_qat=False,
     exp_delegated_ops=None,
     exp_non_delegated_ops=None,
     et_ref_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
@@ -558,19 +558,6 @@ class TestTrConv:
 
 
 class TestConv:
-    @staticmethod
-    def _conv_id(ins, oc, ks=3, s=2, d=1, p=0, b=True, g=1):
-        return (
-            f"ic={ins}, "
-            f"oc={oc}, "
-            f"ks={ks}, "
-            f"s={s}, "
-            f"d={d}, "
-            f"p={p}, "
-            f"b={b}, "
-            f"g={g}"
-        )
-
     @pytest.mark.parametrize(
         "input_shape, out_channels",
         [
@@ -1104,6 +1091,104 @@ class TestConv:
         )
 
         assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
+
+    @pytest.mark.parametrize(
+        "input_shape, kernel_size, stride, dilation, padding, bias",
+        [
+            pytest.param(
+                ins := (2, 5, 13, 11),
+                ks := 3,
+                s := 2,
+                d := 2,
+                p := "valid",
+                b := True,
+                id=f"string padding arg: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b)}",
+            ),
+            pytest.param(
+                ins := (2, 5, 13, 11),
+                ks := 3,
+                s := 1,
+                d := 2,
+                p := "same",
+                b := True,
+                id=f"string padding arg: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b)}",
+            ),
+        ],
+    )
+    def test__fwd_str_arg(
+        self,
+        input_shape,
+        kernel_size,
+        stride,
+        dilation,
+        padding,
+        bias,
+        request,
+        mocker,
+    ):
+        out_channels = input_shape[1]
+
+        model = Conv2dModule(
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            dilation=dilation,
+            padding=padding,
+            bias=bias,
+        )
+
+        assert_delegated_and_correct(model, input_shape, mocker, request)
+
+    @pytest.mark.parametrize(
+        "input_shape, kernel_size, stride, dilation, padding, bias",
+        [
+            pytest.param(
+                ins := (2, 5, 13, 11),
+                ks := 3,
+                s := 2,
+                d := 2,
+                p := "valid",
+                b := True,
+                id=f"string padding arg, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+            ),
+            pytest.param(
+                ins := (2, 5, 13, 11),
+                ks := 3,
+                s := 1,
+                d := 2,
+                p := "same",
+                b := True,
+                id=f"string padding arg, depthwise: {_conv_id(ins, ins[1], ks=ks, s=s, d=d, p=p, b=b, g=ins[1])}",
+            ),
+        ],
+    )
+    def test__d_fwd_str_arg(
+        self,
+        input_shape,
+        kernel_size,
+        stride,
+        dilation,
+        padding,
+        bias,
+        request,
+        mocker,
+    ):
+        out_channels = input_shape[1]
+        group = input_shape[1]
+
+        model = Conv2dModule(
+            in_channels=input_shape[1],
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            dilation=dilation,
+            padding=padding,
+            bias=bias,
+            group=group,
+        )
+
+        assert_delegated_and_correct(model, input_shape, mocker, request)
 
     @pytest.mark.parametrize(
         "input_shape, out_channels, kernel_size, stride, dilation, padding",
