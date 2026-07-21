@@ -103,7 +103,7 @@ Compare:
 2. `setSync(patch)`, `destroy()`
 3. `setTiled()` / `setCompact()` — no-ops (tiled layout is always used in compare mode)
 4. `sync.mode`: `'auto'` (default) | `'id'` | `'layer'` | `'none'`
-   - `'auto'`: tries `debug_handle` set-intersection first, falls back to node-ID match
+   - `'auto'`: tries `from_node_root` first, then `debug_handle` set-intersection, falls back to node-ID match
    - `'id'`: matches by node id only
    - `'layer'`: matches by `extensions[layer].nodes[nodeId].info[field]`; set `sync.layer` and `sync.field`
    - `'none'`: no sync
@@ -168,7 +168,7 @@ All minimap cells are the same fixed height (CSS `minmax(100px, 200px)`). All ca
 
 | Mode | Sidebar label | Behavior |
 |------|--------------|----------|
-| `'auto'` (default) | Auto (handle→id) | `debug_handle` set-intersection first; falls back to node-ID match |
+| `'auto'` (default) | Auto (from_node→handle→id) | `from_node_root` first, then `debug_handle` set-intersection, falls back to node-ID match |
 | `'id'` | ID only | Matches by node id; no-op if absent |
 | `'layer'` | Ext: \<extId\>.\<field\> | Matches by extension field value; picks last in topo order on multiple matches |
 | `'none'` | Don't sync | No propagation |
@@ -242,6 +242,102 @@ Rule selection:
 2. Use numeric for continuous measured metrics.
 3. Keep `handle_outliers=True` for noisy distributions.
 4. For rank/index-like metrics, set `handle_outliers=False`.
+
+## Multi-Graph Compare Export
+
+`FXGraphCompareExporter` renders N `FXGraphExporter` instances as a single
+standalone HTML page wired to `FXGraphCompare` on the JS side. Column order
+follows the insertion order of the mapping.
+
+```python
+from collections import OrderedDict
+from executorch.devtools.fx_viewer import (
+    FXGraphExporter, FXGraphCompareExporter, GraphExtension,
+    CategoricalColorRule,
+)
+
+aten = FXGraphExporter(aten_gm)
+edge = FXGraphExporter(edge_gm)
+overlay = GraphExtension(id="backend", name="Backend Assignment")
+overlay.add_node_data("aten_convolution_default", {"backend": "XnnpackBackend"})
+overlay.set_color_rule(CategoricalColorRule(attribute="backend"))
+edge.add_extension(overlay)
+
+FXGraphCompareExporter(
+    OrderedDict([("Aten", aten), ("Edge", edge)]),
+    title="MV2 compare",
+    sync_mode="auto",         # from_node_root -> debug_handle -> id
+    active_extensions=["backend"],
+    color_by="backend",
+).export_html("compare.html")
+```
+
+Constructor arguments:
+
+- `viewers`: ordered mapping / pairs of `{column_name: FXGraphExporter}`. At
+  least one entry is required; duplicate names raise.
+- `title`: browser tab and page title.
+- `sync_mode`: one of `"auto"`, `"id"`, `"layer"`, `"none"`. `"layer"` also
+  requires `sync_layer` + `sync_field`.
+- `active_extensions`, `color_by`: applied uniformly to every viewer at mount.
+
+Methods parallel `FXGraphExporter`:
+
+- `generate_json_payload()` -> `{title, viewers[{name, payload}], sync, state}`.
+- `export_json(path)` — write the payload to disk.
+- `export_html(path)` — write a standalone HTML that mounts each viewer and
+  builds one `FXGraphCompare` inside `#compare_root`.
+
+## ETRecord -> Compare HTML
+
+ETRecord bundles are turned into a compare view with one function:
+
+```python
+from executorch.devtools.fx_viewer import export_etrecord_to_html
+
+export_etrecord_to_html("mv2.etrecord", "mv2_compare.html")
+```
+
+Panes are added in this order when the bundle contains them:
+
+1. **Aten** — `rec.exported_program`. Bundles produced by
+   `torch.export.export` have no `from_node` / `debug_handle` on this
+   program; the adapter re-runs `run_decompositions({})` and
+   `DebugHandleGeneratorPass` when either key is missing (independent
+   checks per key).
+2. **Extra stored programs** — one pane per entry in `rec.graph_map`,
+   sorted by key. The exir pipeline writes
+   `graph_map["edge_after_transform/<method>"]` when
+   `to_edge_transform_and_lower(..., transform_passes=...)` is used —
+   which is exactly what `to_edge_transform_and_lower_to_qnn` does. The
+   QNN demo produces a 3-pane view; the XNNPACK demo produces 2 panes
+   (XNNPACK runs its passes inside `preprocess()` rather than
+   `transform_passes`).
+3. **Edge dialect** — `rec.edge_dialect_program`, colored by a `backend`
+   `GraphExtension` derived from `_debug_handle_map × _delegate_map` when
+   the bundle names any backend.
+
+`build_compare_from_etrecord(etrecord, ...)` returns the underlying
+`FXGraphCompareExporter` for callers that want to attach extra extensions
+or override title/sync mode before writing. `etrecord` may be a path or an
+in-memory `ETRecord`.
+
+`Inspector.export_fx_viewer_html(path)` provides the same one-liner when
+an `Inspector` is already available with an ETRecord attached.
+
+### End-to-end demos
+
+```bash
+# XNNPACK (2 panes: aten -> edge, backend overlay)
+python -m executorch.devtools.fx_viewer.examples.demo_etrecord_compare_xnnpack
+
+# QNN (3 panes: aten -> edge_after_transform -> edge, backend overlay)
+export QNN_SDK_ROOT=/path/to/qairt
+python -m executorch.devtools.fx_viewer.examples.demo_etrecord_compare_qnn
+```
+
+Both scripts export MobileNetV2, save an `.etrecord`, and render the compare
+HTML.
 
 ## 3-Graph Compare Demo
 

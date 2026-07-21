@@ -1686,3 +1686,53 @@ class Inspector:
             df["stacktraces"] = df["aot_ops"].apply(get_stacktraces_for_row)
 
         return df
+
+    def export_fx_viewer_html(
+        self,
+        output_html: str,
+        *,
+        title: str = "ETRecord Compare",
+        enrich_missing_meta: bool = True,
+        include_backend_overlay: bool = True,
+    ) -> None:
+        """Render this Inspector's ETRecord as an interactive fx_viewer compare page.
+
+        Emits a standalone HTML file with one pane per stored program in the
+        bundle: aten (``exported_program``), each entry from ``graph_map``
+        (typically ``edge_after_transform`` when the exir pipeline was run
+        with ``transform_passes``), and edge (``edge_dialect_program``). The
+        edge pane is colored by backend when ``_delegate_map`` names one.
+
+        Args:
+            output_html: destination file path.
+            title: page title.
+            enrich_missing_meta: re-run ``run_decompositions({})`` and
+                ``DebugHandleGeneratorPass`` on any stored program that lacks
+                ``from_node`` or ``debug_handle``. Independent checks per key.
+            include_backend_overlay: attach a ``backend`` GraphExtension to
+                the edge pane when ``_delegate_map`` names a backend.
+
+        Raises:
+            RuntimeError: this Inspector was constructed without an ETRecord.
+        """
+        # Local import to keep the fx_viewer / fast-sugiyama dependency out
+        # of the Inspector import path unless this method is called.
+        from executorch.devtools.fx_viewer.etrecord_adapter import (
+            build_compare_from_etrecord,
+        )
+
+        if self._etrecord is None:
+            raise RuntimeError(
+                "Inspector.export_fx_viewer_html requires an ETRecord; construct "
+                "the Inspector with etrecord=<path or ETRecord>."
+            )
+        # Re-use the same adapter path as the free function; the adapter
+        # accepts either a path or an in-memory ETRecord. We pass through the
+        # in-memory record we already have.
+        exporter = build_compare_from_etrecord(
+            self._etrecord,
+            title=title,
+            enrich_missing_meta=enrich_missing_meta,
+            include_backend_overlay=include_backend_overlay,
+        )
+        exporter.export_html(output_html)
