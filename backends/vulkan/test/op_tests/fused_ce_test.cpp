@@ -48,7 +48,7 @@ void test_vulkan_fused_ce(
     const int vocab,
     const std::vector<int32_t>& labels_data,
     const double n_valid) {
-  torch::manual_seed(0);
+  at::manual_seed(0);
 
   at::Tensor logits =
       at::rand({n_rows, vocab}, at::device(at::kCPU).dtype(at::kFloat)) * 4.0 -
