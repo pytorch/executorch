@@ -305,14 +305,27 @@ def test_upsample_bilinear2d_vec_tosa_FP_Interpolate(
     pipeline.run()
 
 
-def test_upsample_bilinear2d_vec_tosa_does_not_delegate_exact_one_sixteenth_downscale():
-    pipeline = OpNotSupportedPipeline[input_t1](
+def test_upsample_bilinear2d_vec_tosa_delegates_exact_one_sixteenth_downscale():
+    pipeline = TosaPipelineFP[input_t1](
         InterpolateAlignCornersFalse(size=None, scale_factor=1.0 / 16.0),
         (torch.randn(1, 3, 256, 448),),
-        {exir_op: 1},
-        n_expected_delegates=0,
+        aten_op,
+        exir_op=[],
     )
+    pipeline.pop_stage(-1)
+    pipeline.run()
 
+
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vec_vgf_delegates_exact_one_sixteenth_downscale():
+    pipeline = VgfPipeline[input_t1](
+        InterpolateAlignCornersFalse(size=None, scale_factor=1.0 / 16.0),
+        (torch.randn(1, 3, 256, 448),),
+        aten_op,
+        exir_op,
+        quantize=False,
+    )
+    pipeline.pop_stage(-1)
     pipeline.run()
 
 
