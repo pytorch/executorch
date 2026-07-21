@@ -56,6 +56,7 @@ set(WEBGPU_SRCS
     runtime/ops/layer_norm/NativeLayerNorm.cpp
     runtime/ops/linear_fp32/LinearFp32.cpp
     runtime/ops/et_vk_conv2d/Conv2d.cpp
+    runtime/ops/et_vk_sdpa/EtVkSdpa.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
