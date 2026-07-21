@@ -103,6 +103,9 @@ void clone_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.view_copy.default, view_copy_impl);
   WEBGPU_REGISTER_OP(aten.clone.default, clone_impl);
+  WEBGPU_REGISTER_OP(aten.alias_copy.default, clone_impl);
+  // _clone_dim_order ignores dim_order (AOT pass elides via shape+dtype).
+  WEBGPU_REGISTER_OP(dim_order_ops._clone_dim_order.default, clone_impl);
 }
 
 } // namespace executorch::backends::webgpu
