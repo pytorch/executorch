@@ -3,6 +3,7 @@ aten.abs.default,int8,static int8,
 aten._adaptive_avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.addmm.default,int8,static int8,2D tensor only
 aten.add.Tensor,int8,static int8,"alpha = 1, input tensors of equal shape"
+aten.amax.default,int8,static int8,
 aten.amin.default,int8,static int8,
 aten.avg_pool1d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
 aten.avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
@@ -21,9 +22,11 @@ aten.log.default,int8,static int8,
 aten.max_pool1d.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
 aten.max_pool2d.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
 aten.max_pool2d_with_indices.default,int8,static int8,"dilation=1, ceil_mode=False, channels%8=0, batch_size=1, stride_h=1 or 2"
+aten.maximum.default,int8,static int8,
 aten.mean.dim,int8,static int8,"4D tensor only, dims = [-1,-2] or [-2,-1]"
-aten.mul.Tensor,int8,static int8,"tensor-size % 8 = 0"
+aten.minimum.default,int8,static int8,
 aten.mm.default,int8,static int8,"2D tensor only"
+aten.mul.Tensor,int8,static int8,"tensor-size % 8 = 0"
 aten.neg.default,int8,static int8,
 aten.permute_copy.default,int8, static int8, "Only specific transpositions supported, see backends/nxp/backend/ir/converter/node_converters/ops_converters/permute_copy_converter.py"
 aten.prelu.default,int8, static int8, "rank = 4, channels % 8 = 0, flat input size / channels <= 4096"
