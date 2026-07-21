@@ -28,10 +28,8 @@
 #include <gtest/gtest.h>
 
 using executorch::aten::Tensor;
-using executorch::runtime::DeviceAllocator;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
-using executorch::runtime::get_device_allocator;
 using executorch::runtime::HierarchicalAllocator;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
@@ -41,7 +39,6 @@ using executorch::runtime::register_device_allocator;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::deserialization::parseTensor;
-using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::testing::ManagedMemoryManager;
 using executorch::runtime::testing::MockCudaAllocator;
