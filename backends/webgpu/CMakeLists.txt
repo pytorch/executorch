@@ -60,6 +60,7 @@ set(WEBGPU_SRCS
     runtime/ops/embedding/Embedding.cpp
     runtime/ops/addmm/Addmm.cpp
     runtime/ops/constant_pad_nd/ConstantPadNd.cpp
+    runtime/ops/upsample_nearest2d/UpsampleNearest2d.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
