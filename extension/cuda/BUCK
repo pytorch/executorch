@@ -1,8 +1,14 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
-# targets.bzl. This file can contain xplat-only targets.
+# targets.bzl. This file can contain fbcode-only targets.
+#
+# caller_stream unconditionally includes <cuda_runtime.h>, whose headers only
+# resolve through the fbcode cell's CUDA third-party. Like the other executorch
+# CUDA targets, it must therefore be defined fbcode-only; defining it in the
+# xplat cell produces a target that cannot compile ("cuda_runtime.h not found").
 
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+fbcode_target(_kind = define_common_targets,)
