@@ -6,6 +6,9 @@
 from executorch.backends.nxp.edge_passes.convert_reshaping_nodes_to_view import (
     ConvertReshapingNodesToViewPass,
 )
+from executorch.backends.nxp.edge_passes.fold_redundant_qdq_pass import (
+    FoldRedundantDequantizeQuantizePass,
+)
 from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_qdq_cluster_pass import (
     MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass,
     MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass,
@@ -25,6 +28,7 @@ class NeutronEdgePassManager(PassManager):
             MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
             RemoveUselessAsStridedCopyNodes(),
             ConvertReshapingNodesToViewPass(),
+            FoldRedundantDequantizeQuantizePass(),
         ]
 
         super().__init__(
