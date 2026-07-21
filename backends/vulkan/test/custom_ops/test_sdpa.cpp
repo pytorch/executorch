@@ -54,7 +54,6 @@ struct SDPAConfig {
   int64_t context_len; // total KV length (kv_len)
   std::string model; // label only
   std::string regime; // "decode" / "prefill", label only
-  std::string impl_selector = "default";
 };
 
 static std::vector<float> as_float_data(const ValueSpec& spec) {
@@ -75,7 +74,8 @@ static std::vector<float> as_float_data(const ValueSpec& spec) {
 static TestCase create_sdpa_test_case(
     const SDPAConfig& config,
     vkapi::ScalarType dtype,
-    utils::StorageType storage_type) {
+    utils::StorageType storage_type,
+    const std::string& impl) {
   TestCase test_case;
 
   const bool is_perf = config.context_len > kRefContextLenLimit;
@@ -89,7 +89,8 @@ static TestCase create_sdpa_test_case(
       std::to_string(config.seq_len) + " C" +
       std::to_string(config.context_len);
 
-  const std::string suffix = "[" + config.model + " " + config.regime + "]";
+  const std::string suffix =
+      "[" + config.model + " " + config.regime + " " + impl + "]";
 
   test_case.set_name(make_test_label(
       prefix, dtype_str, dtype_str, shape, storage_str, suffix));
@@ -117,7 +118,7 @@ static TestCase create_sdpa_test_case(
       utils::kWidthPacked,
       DataGenType::RANDOM);
 
-  ValueSpec impl_selector = ValueSpec::make_string(config.impl_selector);
+  ValueSpec impl_selector = ValueSpec::make_string(impl);
 
   // out: [1, S, n_heads, head_dim]
   ValueSpec output(
@@ -263,6 +264,11 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
   const auto dtype = vkapi::kHalf;
   const auto storage = utils::kTexture3D;
 
+  // Decode (S==1) picks a coop AV shader; exercise both the GQA-reuse variant
+  // and the per-query-head variant for every decode case. Prefill (tiled) is
+  // unaffected by the selector, so it runs a single case.
+  const std::vector<std::string> decode_impls = {"gqa", "non_gqa"};
+
   for (const auto& m : models) {
     for (int64_t c : decode_context_lens) {
       SDPAConfig cfg;
@@ -273,7 +279,9 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
       cfg.context_len = c;
       cfg.model = m.name;
       cfg.regime = "decode";
-      test_cases.push_back(create_sdpa_test_case(cfg, dtype, storage));
+      for (const auto& impl : decode_impls) {
+        test_cases.push_back(create_sdpa_test_case(cfg, dtype, storage, impl));
+      }
     }
     if (decode_only_mode()) {
       continue;
@@ -287,7 +295,8 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
       cfg.context_len = s;
       cfg.model = m.name;
       cfg.regime = "prefill";
-      test_cases.push_back(create_sdpa_test_case(cfg, dtype, storage));
+      test_cases.push_back(
+          create_sdpa_test_case(cfg, dtype, storage, "default"));
     }
   }
 
@@ -295,16 +304,28 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
     return test_cases;
   }
 
-  // Small ACCU correctness cases (fp32, texture), decode + prefill. Texture is
-  // the production LLM path; the buffer decode path has a known GQA-head
-  // discrepancy that is out of scope for this perf harness.
+  // Small ACCU correctness cases (fp32), decode + prefill. Texture is the
+  // production LLM path; buffer is also validated for decode to guard the
+  // attn_weights S/context alignment (a decode-shaped buffer allocation has no
+  // headroom for the shaders' align_up_4 stride unless padded — see sdpa_impl).
   {
-    SDPAConfig dec{64, 8, 2, 1, 32, "accu", "decode"};
-    test_cases.push_back(
-        create_sdpa_test_case(dec, vkapi::kFloat, utils::kTexture3D));
+    // Cover both D=64 (D4=16) and D=128 (D4=32) so the GQA AV path is
+    // validated across head_dim.
+    const std::vector<SDPAConfig> decs = {
+        {64, 8, 2, 1, 32, "accu", "decode"},
+        {128, 8, 2, 1, 32, "accu_d128", "decode"},
+    };
+    for (const auto& dec : decs) {
+      for (const auto& storage : {utils::kTexture3D, utils::kBuffer}) {
+        for (const auto& impl : decode_impls) {
+          test_cases.push_back(
+              create_sdpa_test_case(dec, vkapi::kFloat, storage, impl));
+        }
+      }
+    }
     SDPAConfig pre{64, 8, 2, 16, 16, "accu", "prefill"};
-    test_cases.push_back(
-        create_sdpa_test_case(pre, vkapi::kFloat, utils::kTexture3D));
+    test_cases.push_back(create_sdpa_test_case(
+        pre, vkapi::kFloat, utils::kTexture3D, "default"));
   }
 
   return test_cases;
