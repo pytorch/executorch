@@ -21,7 +21,7 @@
 #include <limits>
 
 static inline void
-_check_dims(c10::string_view name, int64_t expected, int64_t actual) {
+_check_dims(std::string_view name, int64_t expected, int64_t actual) {
   VK_CHECK_COND(
       expected == actual,
       name,
@@ -35,11 +35,11 @@ at::Tensor quantize_affine_reference_impl(
     const at::Tensor& input_,
     const std::vector<int64_t>& block_size,
     const at::Tensor& scale,
-    const c10::optional<at::Tensor>& zero_point_opt,
+    const std::optional<at::Tensor>& zero_point_opt,
     int64_t quant_min,
     int64_t quant_max,
     at::ScalarType out_dtype,
-    c10::optional<std::string> zero_point_domain_opt = std::string("INT")) {
+    std::optional<std::string> zero_point_domain_opt = std::string("INT")) {
   constexpr float kEps = 1e-7f;
 
   const int64_t ndim = input_.dim();
@@ -138,11 +138,11 @@ at::Tensor dequantize_affine_reference_impl(
     const at::Tensor& input_,
     const std::vector<int64_t>& block_size,
     const at::Tensor& scale,
-    const c10::optional<at::Tensor>& zero_point_opt,
+    const std::optional<at::Tensor>& zero_point_opt,
     int64_t quant_min,
     int64_t quant_max,
     at::ScalarType out_dtype,
-    c10::optional<std::string> zero_point_domain_opt = std::string("INT")) {
+    std::optional<std::string> zero_point_domain_opt = std::string("INT")) {
   const int64_t ndim = input_.dim();
   _check_dims("input", block_size.size(), ndim);
 
@@ -236,47 +236,6 @@ at::Tensor dequantize_affine_reference_impl(
   dq = dq.view(in_sizes);
 
   return dq;
-}
-
-// Wrapper function to maintain compatibility with existing test code (above is
-// a good reference for how the python implementation works)
-at::Tensor quantize_affine_reference_impl(
-    const at::Tensor& input,
-    const std::vector<int64_t>& block_size,
-    const at::Tensor& scale,
-    const at::Tensor& zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType dtype) {
-  return quantize_affine_reference_impl(
-      input,
-      block_size,
-      scale,
-      c10::optional<at::Tensor>(zero_point),
-      quant_min,
-      quant_max,
-      dtype,
-      std::string("INT"));
-}
-
-// Wrapper function for dequantize_affine
-at::Tensor dequantize_affine_reference_impl(
-    const at::Tensor& input,
-    const std::vector<int64_t>& block_size,
-    const at::Tensor& scale,
-    const at::Tensor& zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    at::ScalarType dtype) {
-  return dequantize_affine_reference_impl(
-      input,
-      block_size,
-      scale,
-      c10::optional<at::Tensor>(zero_point),
-      quant_min,
-      quant_max,
-      dtype,
-      std::string("INT"));
 }
 
 void test_vulkan_quantize_affine_impl(

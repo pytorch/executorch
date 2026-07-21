@@ -280,7 +280,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_OptionalTensor) {
 
   // Convert optional et to at.
   torch::executor::testing::TensorFactory<ScalarType::Int> tf;
-  auto et_in = std::optional<torch::executor::Tensor>(tf.ones({3}));
+  std::optional<torch::executor::Tensor> et_in = tf.ones({3});
   auto optional_at_out = type_convert<
                              std::optional<torch::executor::Tensor>,
                              std::optional<at::Tensor>>(optional_et)
@@ -403,7 +403,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_EmbeddingByte) {
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_OptionalScalarAdd) {
-  std::optional<int64_t> a = std::optional<int64_t>(3);
+  std::optional<int64_t> a = 3;
   std::optional<int64_t> b = std::optional<int64_t>();
   at::Tensor out = torch::tensor({0});
 
@@ -418,7 +418,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_OptionalScalarAdd) {
 }
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_OptionalTensorAdd) {
-  std::optional<at::Tensor> a = std::optional<at::Tensor>(torch::tensor({8}));
+  std::optional<at::Tensor> a = torch::tensor({8});
   std::optional<at::Tensor> b = std::optional<at::Tensor>();
   at::Tensor out = torch::tensor({0});
 
@@ -465,9 +465,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefTensorAdd) {
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefOptional) {
   std::vector<std::optional<at::Tensor>> vec{
-      std::optional<at::Tensor>(torch::tensor({1})),
-      std::optional<at::Tensor>(),
-      std::optional<at::Tensor>(torch::tensor({3}))};
+      torch::tensor({1}), std::optional<at::Tensor>(), torch::tensor({3})};
   at::Tensor out = torch::tensor({0});
 
   at::ArrayRef arrayref = at::ArrayRef(vec.data(), vec.size());
@@ -512,8 +510,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_TupleOut) {
 
 TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   // Test const optional scalar conversion
-  const std::optional<int64_t> const_optional_at_in =
-      std::optional<int64_t>(42);
+  const std::optional<int64_t> const_optional_at_in = 42;
   auto const_optional_et =
       type_convert<const std::optional<int64_t>, std::optional<int64_t>>(
           const_optional_at_in)
@@ -522,7 +519,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   EXPECT_EQ(const_optional_et.value(), 42);
 
   // Test optional scalar reference conversion
-  std::optional<int64_t> optional_at_ref_in = std::optional<int64_t>(24);
+  std::optional<int64_t> optional_at_ref_in = 24;
   auto optional_et_from_ref =
       type_convert<std::optional<int64_t>&, std::optional<int64_t>>(
           optional_at_ref_in)
@@ -531,8 +528,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   EXPECT_EQ(optional_et_from_ref.value(), 24);
 
   // Test const optional scalar reference conversion
-  const std::optional<int64_t> const_optional_at_ref_in =
-      std::optional<int64_t>(84);
+  const std::optional<int64_t> const_optional_at_ref_in = 84;
   auto const_optional_et_from_ref =
       type_convert<const std::optional<int64_t>&, std::optional<int64_t>>(
           const_optional_at_ref_in)
@@ -542,7 +538,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
 
   // Test const optional tensor conversion
   const std::optional<at::Tensor> const_optional_tensor_at_in =
-      std::optional<at::Tensor>(torch::tensor({5}));
+      torch::tensor({5});
   auto const_optional_tensor_converter = type_convert<
       const std::optional<at::Tensor>,
       std::optional<torch::executor::Tensor>>(const_optional_tensor_at_in);
@@ -551,8 +547,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
   EXPECT_EQ(const_optional_tensor_et.value().const_data_ptr<int64_t>()[0], 5);
 
   // Test optional tensor reference conversion
-  std::optional<at::Tensor> optional_tensor_at_ref_in =
-      std::optional<at::Tensor>(torch::tensor({7}));
+  std::optional<at::Tensor> optional_tensor_at_ref_in = torch::tensor({7});
   auto optional_tensor_converter_from_ref = type_convert<
       std::optional<at::Tensor>&,
       std::optional<torch::executor::Tensor>>(optional_tensor_at_ref_in);
@@ -563,7 +558,7 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestConvert_ConstRefOptionals) {
 
   // Test const optional tensor reference conversion
   const std::optional<at::Tensor> const_optional_tensor_at_ref_in =
-      std::optional<at::Tensor>(torch::tensor({9}));
+      torch::tensor({9});
   auto const_optional_tensor_converter_from_ref = type_convert<
       const std::optional<at::Tensor>&,
       std::optional<torch::executor::Tensor>>(const_optional_tensor_at_ref_in);

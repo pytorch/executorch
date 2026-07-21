@@ -39,7 +39,9 @@ def emit_embedding(
     gathered rows (MLX affine 5-bit) -- the same shape as MLX's generic quantized
     embedding.
     """
-    w_slot, scales_slot, biases_slot, group_size = repack_mlx(P, weight_node)
+    w_slot, scales_slot, biases_slot, group_size = repack_mlx(
+        P, weight_node, scale_dtype=output_dtype
+    )
     (indices_slot,) = P.slot_map([indices_node])
 
     out = P.make_or_get_slot(head)
