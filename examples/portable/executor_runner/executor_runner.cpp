@@ -134,8 +134,6 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
-using executorch::runtime::Tag;
-using executorch::runtime::TensorInfo;
 using executorch::runtime::etensor::Device;
 
 enum class PrintOutputMode { None, Summary, All };
