@@ -28,7 +28,6 @@ namespace delegate {
 using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 
 /*
