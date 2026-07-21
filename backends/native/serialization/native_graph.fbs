@@ -1,0 +1,357 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+//
+// FlatBuffer schema for the ExecuTorch native backend - THIS IS THE SOURCE OF TRUTH.
+//
+// This is a GENERIC representation of an fx graph: a topological list of nodes,
+// where each node carries an op-kind, a target op-name string, and generic
+// arguments encoded through a tagged Argument union. It is modeled on
+// torch._export.serde (caffe2/torch/_export/serde/schema.py). Nodes and tensors
+// are referenced by name; tensor metadata lives in a side table. Constant tensor
+// data is NOT stored here - it is referenced by fully-qualified name
+// (ConstantRef.fqn) and resolved at load time through an external fqn -> tensor
+// map. That map is runtime-specific: an ExecuTorch NamedDataStore/NamedDataMap
+// for ET, or a custom store / safetensors for the standalone native runtime.
+// This schema stays independent of any particular data-store implementation.
+//
+// BACKWARD COMPATIBILITY RULES:
+//   - New fields in tables: APPEND ONLY (add at the end, with a default value)
+//   - New union members:    APPEND ONLY (add at the end of the union)
+//   - New tables:           Safe to add freely
+//   - New enum values:      APPEND ONLY
+//   - NEVER remove, reorder, or change the type of existing fields/members
+
+namespace native_backend;
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+// Mirrors ExecuTorch's ScalarType ordering (runtime/core/portable_type/scalar_type.h).
+enum ScalarType : byte {
+    BYTE = 0,
+    CHAR = 1,
+    SHORT = 2,
+    INT = 3,
+    LONG = 4,
+    HALF = 5,
+    FLOAT = 6,
+    DOUBLE = 7,
+    BOOL = 11,
+    BFLOAT16 = 15,
+    UINT16 = 16,
+    UINT32 = 17,
+    UINT64 = 18,
+    // Values are pinned to ExecuTorch's ScalarType ids; gaps (complex/qint) are
+    // reserved and may be filled later at their canonical id (append-only).
+}
+
+// fx node kind (node.op).
+enum OpKind : byte {
+    CALL_FUNCTION = 0,
+    PLACEHOLDER = 1,
+    OUTPUT = 2,
+}
+
+// Classifies a graph input placeholder. Mirrors torch.export InputKind for the
+// subset the native backend serializes. USER_INPUT placeholders are also listed
+// by name in Graph.inputs; PARAMETER/BUFFER/CONSTANT_TENSOR placeholders each
+// additionally get a ConstantRef carrying this kind.
+enum InputKind : byte {
+    USER_INPUT = 0,
+    PARAMETER = 1,
+    BUFFER = 2,
+    CONSTANT_TENSOR = 3,
+}
+
+// Classifies a graph output. USER_OUTPUT is a real result; the mutation kinds
+// mark an output value that writes back into a persistent buffer or a user input
+// (its OutputSpec.target names the mutated buffer fqn / user-input name). A
+// runtime returns USER_OUTPUTs and applies the mutations as state updates.
+enum OutputKind : byte {
+    USER_OUTPUT = 0,
+    BUFFER_MUTATION = 1,
+    USER_INPUT_MUTATION = 2,
+}
+
+// =============================================================================
+// Symbolic ints and tensor metadata
+// =============================================================================
+
+// A dimension / value that is either concrete (as_int, with as_symbol empty) or
+// symbolic (as_symbol holds the symbol name, e.g. "s0").
+table SymInt {
+    as_int: long = 0;
+    as_symbol: string;
+}
+
+table TensorMeta {
+    dtype: ScalarType;
+    sizes: [SymInt];
+    strides: [SymInt];
+}
+
+// Side-table entry: maps an fx value name to its tensor metadata.
+table TensorValue {
+    name: string (required);
+    meta: TensorMeta (required);
+}
+
+// =============================================================================
+// Argument union - one variant per kind of value an fx arg/kwarg can hold.
+// Each variant is a table so the union can be nested inside other tables.
+// =============================================================================
+
+// Reference to another value by its fx SSA name.
+table TensorArg {
+    name: string (required);
+}
+
+table NoneArg {}
+
+table IntArg {
+    value: long;
+}
+
+table FloatArg {
+    value: double;
+}
+
+table BoolArg {
+    value: bool;
+}
+
+table StringArg {
+    value: string (required);
+}
+
+table ScalarTypeArg {
+    value: ScalarType;
+}
+
+table SymIntArg {
+    value: SymInt (required);
+}
+
+table IntListArg {
+    values: [long] (required);
+}
+
+// A list mixing concrete ints and symbolic dims, e.g. a dynamic view/expand size
+// like [1, s0, -1, 64]. Each element is a SymInt (concrete via as_int, or symbolic
+// via as_symbol). Used whenever an int-list arg contains at least one SymInt.
+table SymIntListArg {
+    values: [SymInt] (required);
+}
+
+table FloatListArg {
+    values: [double] (required);
+}
+
+table BoolListArg {
+    values: [bool] (required);
+}
+
+// A list of tensor references (e.g. cat's input list).
+table TensorListArg {
+    names: [string] (required);
+}
+
+// A list of optional tensor references (Tensor?[]). names[i] is only meaningful
+// when has_value[i] is true; otherwise the element is None.
+table OptionalTensorListArg {
+    names: [string] (required);
+    has_value: [bool] (required);
+}
+
+// A subgraph passed to a higher-order op (torch.cond / torch.while_loop / map).
+// `name` is the referenced submodule attr in the parent graph; `graph` is the
+// branch/body itself, inlined (mirrors torch._export.serde's GraphArgument).
+// This makes Graph recursive.
+table GraphArg {
+    name: string (required);
+    graph: Graph (required);
+}
+
+// BC: APPEND ONLY - new members go at the end.
+union ArgumentValue {
+    TensorArg,
+    NoneArg,
+    IntArg,
+    FloatArg,
+    BoolArg,
+    StringArg,
+    ScalarTypeArg,
+    SymIntArg,
+    IntListArg,
+    FloatListArg,
+    BoolListArg,
+    TensorListArg,
+    OptionalTensorListArg,
+    SymIntListArg,
+    GraphArg,
+}
+
+table Argument {
+    value: ArgumentValue;
+}
+
+// A positional or keyword argument. `name` is the operator-schema parameter name
+// (empty for positional-only where a name is unavailable).
+table NamedArgument {
+    name: string;
+    arg: Argument (required);
+    // True if the op writes this input in-place (op-schema alias annotation
+    // Tensor(a!), e.g. `self` in scatter_add_). This is the source of truth for
+    // mutation: the op-name '_' suffix is only a convention and cannot say *which*
+    // args are written. Sourced AOT from the op schema at serialization time.
+    mutated: bool = false;
+}
+
+table KeyValue {
+    key: string (required);
+    value: string (required);
+}
+
+// =============================================================================
+// Node
+// =============================================================================
+
+// A value produced by a node.
+table Output {
+    // fx SSA name of the produced value.
+    name: string (required);
+    // If non-empty, this output shares storage with the input value named here
+    // (op-schema view/alias annotation, e.g. aten.view/slice/transpose whose
+    // return is Tensor(a)). Whether that sharing is a write is determined by the
+    // aliased input's NamedArgument.mutated, so it is not duplicated here. Empty
+    // means the output owns fresh storage.
+    alias_of: string;
+}
+
+table Node {
+    // fx node name (SSA name of this node's output).
+    name: string (required);
+    op_kind: OpKind;
+    // Fully-qualified op name, e.g. "torch.ops.aten.add.Tensor". Empty for
+    // placeholder/output nodes.
+    target: string;
+    inputs: [NamedArgument];
+    // Output value(s) produced by this node (usually a single entry; multiple for
+    // tuple-returning ops).
+    outputs: [Output];
+    metadata: [KeyValue];
+    // Provenance handle tracing this node back to its source op instance (from
+    // node.meta["debug_handle"]). 0 = unset (matches ExecuTorch
+    // UNSET_DEBUG_HANDLE); nodes decomposed from one source op share a handle.
+    // Resolved out-of-band by runtime tooling; richer source info (stack_trace,
+    // from_node) lives in `metadata`.
+    debug_handle: ulong;
+}
+
+// =============================================================================
+// Constants - data shipped separately, resolved by fqn from an external store.
+// =============================================================================
+
+table ConstantRef {
+    // Placeholder SSA name in the graph.
+    name: string (required);
+    // Fully-qualified name; the key into the external fqn -> tensor map the
+    // target runtime resolves constants from (ExecuTorch NamedDataStore/
+    // NamedDataMap for ET, or a custom store / safetensors for the native runtime).
+    fqn: string (required);
+    meta: TensorMeta (required);
+    // Whether this input is a parameter, buffer, or constant tensor. Never
+    // USER_INPUT (those are listed by name in Graph.inputs instead).
+    kind: InputKind;
+    // True for buffers the graph mutates in-place whose initial values are saved
+    // (persistent buffers). Their updated values are state that must persist across
+    // executions; unlike parameters and frozen constants they are not read-only.
+    // Non-persistent mutable buffers (e.g. zero-initialized KV caches) carry no
+    // data and are listed in Graph.mutable_buffers instead.
+    mutated: bool = false;
+}
+
+// Classifies a graph-level output value (by SSA name), so a runtime can tell a
+// real result from a buffer/user-input mutation writeback.
+table OutputSpec {
+    // SSA name of the output value (matches an entry in Graph.outputs).
+    name: string (required);
+    kind: OutputKind;
+    // For BUFFER_MUTATION: fqn of the mutated buffer. For USER_INPUT_MUTATION:
+    // the mutated user input's name. Empty for USER_OUTPUT.
+    target: string;
+}
+
+// A mutable buffer that is graph state but is NOT data-backed: a non-persistent
+// buffer (e.g. a zero-initialized KV cache) that is not saved in the state dict.
+// It is neither a user input nor a ConstantRef. Its shape/dtype live in
+// tensor_values (keyed by `name`); no bytes are shipped (zero-initialized at
+// load). Cross-method sharing is by `fqn` -- an ASSERTED, validated contract (the
+// bundled methods must come from one model namespace; see serialize_program),
+// not an inference from name/fqn equality alone.
+table MutableBufferSpec {
+    // Placeholder SSA name in THIS graph.
+    name: string (required);
+    // Stable identity used to correlate the same buffer across methods.
+    fqn: string (required);
+}
+
+// =============================================================================
+// Root type: Program (one or more named methods)
+// =============================================================================
+
+// A graph (a single fx graph in topological order). Used both for a method body
+// and, recursively, for higher-order-op subgraphs (see GraphArg).
+//
+// Input vs output asymmetry (there is `output_specs` but deliberately no
+// `input_specs`): outputs are homogeneous -- every output is an SSA value already
+// produced by a node, so all they need is a small parallel classification tag
+// (`output_specs`). Inputs are heterogeneous and each category carries a
+// different payload, so input classification is spread across three fields
+// instead of one flat spec list:
+//   - user inputs           -> listed by name in `inputs` (meta in tensor_values)
+//   - params/consts/buffers -> `constants` (ConstantRef: fqn + meta + kind + data)
+//   - non-persistent buffers -> `mutable_buffers` (fqn, no shipped data)
+// A flat InputSpec parallel to OutputSpec would only duplicate ConstantRef or
+// become a union-heavy table, so ConstantRef effectively *is* the input spec for
+// data-backed inputs.
+table Graph {
+    // All nodes, in topological order (fx graph iteration order).
+    nodes: [Node] (required);
+    // Names of graph-level input placeholders (user inputs), in order.
+    inputs: [string];
+    // Names of graph-level outputs, in order.
+    outputs: [string];
+    // Per-output classification (user output vs buffer/user-input mutation),
+    // parallel to `outputs` by name.
+    output_specs: [OutputSpec];
+    // Side table: value name -> tensor metadata.
+    tensor_values: [TensorValue];
+    // Constant/parameter/buffer references. These bind a placeholder SSA name in
+    // THIS graph to a data fqn, so they live per-graph even though the underlying
+    // data (resolved at load time from an external fqn-keyed store) is shared
+    // across methods.
+    constants: [ConstantRef];
+    // Non-persistent mutable buffers (e.g. KV caches): graph state with no shipped
+    // data, zero-initialized at load. See MutableBufferSpec.
+    mutable_buffers: [MutableBufferSpec];
+}
+
+// A named method within a program (e.g. "forward", "encode", "decode").
+table Method {
+    name: string (required);
+    graph: Graph (required);
+}
+
+// Root: a program bundling one or more methods. Methods share constant data
+// (resolved by fqn from an external store); each method's Graph carries its own
+// ConstantRef bindings.
+table Program {
+    // Schema version for compatibility.
+    version: string;
+    methods: [Method] (required);
+}
+
+root_type Program;
+
+file_identifier "NPTG";
