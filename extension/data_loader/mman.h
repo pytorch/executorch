@@ -81,9 +81,13 @@ ET_INLINE void fcntl_rdadvise_apple(int fd, size_t file_size) {
 
 #else
 
+#ifndef NOMINMAX
 #define NOMINMAX
 #include <windows.h>
 #undef NOMINMAX
+#else
+#include <windows.h>
+#endif
 #include <io.h>
 
 #include <executorch/extension/data_loader/mman_windows.h>
