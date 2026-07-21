@@ -24,8 +24,8 @@ namespace {
 template <typename CTYPE>
 void group_norm(
     const Tensor& input,
-    const std::optional<Tensor>& weight,
-    const std::optional<Tensor>& bias,
+    const optional<Tensor>& weight,
+    const optional<Tensor>& bias,
     int64_t sN,
     int64_t sC,
     int64_t sHxW,

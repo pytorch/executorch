@@ -27,8 +27,8 @@ template <typename CTYPE>
 void layer_norm(
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const std::optional<Tensor>& weight,
-    const std::optional<Tensor>& bias,
+    const optional<Tensor>& weight,
+    const optional<Tensor>& bias,
     CTYPE eps,
     Tensor& out,
     Tensor& mean,

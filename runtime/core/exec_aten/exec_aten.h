@@ -14,6 +14,7 @@
 #include <executorch/runtime/core/error.h> // @manual
 #include <executorch/runtime/core/result.h> // @manual
 #include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
+#include <executorch/runtime/platform/assert.h> // @manual
 #include <executorch/runtime/platform/compiler.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual
@@ -26,6 +27,7 @@
 #include <c10/util/BFloat16-math.h> // @manual
 #include <c10/util/BFloat16.h> // @manual
 #include <c10/util/Half.h> // @manual
+#include <c10/util/Optional.h> // @manual
 #include <c10/util/complex.h> // @manual
 #include <c10/util/qint32.h> // @manual
 #include <c10/util/qint8.h> // @manual
@@ -33,6 +35,7 @@
 #include <c10/util/quint4x2.h> // @manual
 #include <c10/util/quint8.h> // @manual
 #include <c10/util/safe_numerics.h> // @manual
+#include <c10/util/string_view.h> // @manual
 #include <torch/torch.h>
 #else // use executor
 #include <executorch/runtime/core/array_ref.h> // @manual

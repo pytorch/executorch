@@ -20,7 +20,7 @@ using ScalarType = executorch::aten::ScalarType;
 Tensor& prod_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   (void)ctx;
 
@@ -53,7 +53,7 @@ Tensor& prod_int_out(
     const Tensor& in,
     int64_t dim,
     bool keepdim,
-    std::optional<ScalarType> dtype,
+    optional<ScalarType> dtype,
     Tensor& out) {
   (void)ctx;
 
