@@ -171,7 +171,7 @@ void build_dispatch(
        uniform_buffer,
        uniform_size});
 
-  // QK/AV/update_cache have an `override wg_size`; softmax (0) keeps a const.
+  // All callers pass an override wg_size; a 0 would keep the shader default.
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
@@ -486,6 +486,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     // One workgroup per (h,s) row; wg_size 1 keeps the device dispatch check.
     const utils::WgCount wgc = utils::compute_2d_workgroup_count(
         device, static_cast<uint32_t>(Hq * S), 1, "softmax");
+    const uint32_t sm_wg =
+        utils::clamp_workgroup_size_pow2(device, kSdpaSoftmaxWorkgroupSizeX);
     SoftmaxParams p = make_softmax_params(Hq, S, context_len);
     WGPUBuffer ubuf = graph.make_uniform_buffer(&p, sizeof(p));
     BufferBinding bindings[2] = {
@@ -499,7 +501,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc.x,
         wgc.y,
-        0,
+        sm_wg,
         true,
         "sdpa_softmax");
     softmax_buf = ubuf;
