@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: 1f916bcd30dbbbcc7eca37e795ecc26e3c72e645ccd2c361fa0ac4e66f1a174a
+// wgsl-sha256: 1b3f5e384e09bde50c66d43db4797e01e5610d70af235355dbc4966643bf9103
 inline constexpr const char* kQ4gswLinearGemmSteelHalfPwdqWGSL = R"(
 enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
@@ -50,6 +50,7 @@ struct Params {
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
 var<workgroup> As: array<f16, 1024>;   // BM*BK
 var<workgroup> Bs: array<f16, 1024>;   // BK*BN
+// 16x16 = 256 threads, bound to the 64x64 tile + 4x4 reg tile (not a knob).
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
