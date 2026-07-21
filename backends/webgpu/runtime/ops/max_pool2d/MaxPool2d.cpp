@@ -24,7 +24,7 @@ namespace {
 struct PoolParams {
   uint32_t N, C, IH, IW, OH, OW;
   uint32_t kH, kW, sH, sW, pH, pW, dH, dW;
-  uint32_t _p0, _p1;
+  uint32_t write_indices, _p1;
 };
 static_assert(sizeof(PoolParams) == 64, "PoolParams must be 64 bytes");
 
@@ -145,17 +145,13 @@ void max_pool2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.pW = pW;
   params.dH = dH;
   params.dW = dW;
+  params.write_indices = has_indices ? 1u : 0u;
 
   WGPUBuffer uniform_buffer =
       utils::make_uniform(device, &params, sizeof(PoolParams));
   graph.add_uniform_buffer_bytes(sizeof(PoolParams));
 
   auto grid_constants = utils::make_grid_constants(grid);
-  WGPUConstantEntry constants[3] = {};
-  constants[0] = grid_constants[0];
-  constants[1] = grid_constants[1];
-  constants[2].key = {"write_indices", WGPU_STRLEN};
-  constants[2].value = has_indices ? 1.0 : 0.0;
 
   // write_indices==0 -> the shader never stores to out_idx, so a tiny dummy
   // buffer is safe (mirrors NativeLayerNorm.cpp's dummy_affine pattern).
@@ -177,8 +173,8 @@ void max_pool2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
            sizeof(PoolParams)},
           {3, WGPUBufferBindingType_Storage, idx.buffer, idx.nbytes},
       },
-      constants,
-      3);
+      grid_constants.data(),
+      grid_constants.size());
 
   graph.add_dispatch_2d(
       bundle.pipeline, bundle.bind_group, grid.count_x, grid.count_y);
