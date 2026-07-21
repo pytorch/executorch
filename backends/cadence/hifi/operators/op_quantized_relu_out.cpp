@@ -14,7 +14,6 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 
