@@ -241,17 +241,15 @@ class ConvolutionConverter(NodeConverter):
     ) -> bool:
         input_tensor_rank = len(node.meta["val"].shape)
         dimensions = input_tensor_rank - 2
-        is_transposed = node.args[6]
-        output_padding = node.args[7]
-        groups = node.args[8]
+        conv_params = ConvolutionConverter._get_conv_params(node)
 
-        if is_transposed and conv_utils.group_conv_convertible_as_depthwise(
-            node, groups
+        if conv_params.transposed and conv_utils.group_conv_convertible_as_depthwise(
+            node, conv_params.groups
         ):
             # TFLite does not support transposed depthwise convolution
             return False
 
-        if not is_transposed and output_padding != [0] * dimensions:
+        if not conv_params.transposed and conv_params.out_padding != [0] * dimensions:
             return False
 
         if input_tensor_safe(node, 2) is None:
@@ -284,14 +282,21 @@ class ConvolutionConverter(NodeConverter):
     def _get_conv_params(
         conv_node: Node,
     ) -> ConvParameters:
+        def _normalize_ls_arg(ls):
+            # sometimes, `conv2d` args can be a list of one element. In such case, convert it to 2d arg
+            # example: padding = [0] => [0, 0]
+            return [ls[0], ls[0]] if len(ls) == 1 else ls
+
         x, w, b, stride, padding, dilation, transposed, out_padding, groups = (
             conv_node.args
         )
 
-        stride = list(stride)
-        padding = list(padding)
-        dilation = list(dilation)
-        out_padding = None if out_padding is None else list(out_padding)
+        stride = _normalize_ls_arg(list(stride))
+        padding = _normalize_ls_arg(list(padding))
+        dilation = _normalize_ls_arg(list(dilation))
+        out_padding = (
+            None if out_padding is None else _normalize_ls_arg(list(out_padding))
+        )
 
         return ConvParameters(
             x, w, b, stride, padding, dilation, transposed, out_padding, groups
