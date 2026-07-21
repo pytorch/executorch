@@ -59,7 +59,7 @@ void linear_dW(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int32_t i = 0;
   const ValueRef d_out = args.at(i++);
   const ValueRef x = args.at(i++);
-  const ValueRef dW = args.at(i++);
+  const ValueRef dW = args.at(i);
 
   VK_CHECK_COND(graph.dtype_of(d_out) == vkapi::kFloat);
   VK_CHECK_COND(graph.dtype_of(x) == vkapi::kFloat);
