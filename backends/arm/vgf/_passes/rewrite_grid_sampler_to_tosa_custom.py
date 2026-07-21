@@ -245,6 +245,11 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                 interpolation_mode,
                 align_corners,
             )
+            if not grid.meta["val"].dtype.is_floating_point:
+                raise RuntimeError(
+                    "grid_sampler rewrite expected float grid input; "
+                    "InsertGridSamplerGridDequantPass should run before this pass"
+                )
 
             operator_name = grid_sampler_2d_operator_name(
                 interpolation_mode=interpolation_mode,
@@ -278,11 +283,12 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                         custom_input.meta["val"], list(NHWC_ORDER)
                     ),
                 )
+                custom_grid = grid
 
                 custom_node = create_node(
                     graph_module.graph,
                     op_target=exir_ops.backend.tosa.CUSTOM.default,
-                    args=([nhwc_input, grid],),
+                    args=([nhwc_input, custom_grid],),
                     kwargs={
                         "operator_name": operator_name,
                         "domain_name": CUSTOM_SHADER_DOMAIN_NAME,
@@ -291,7 +297,6 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     from_node=node,
                     inherit_qparams=True,
                 )
-
             with graph_module.graph.inserting_after(custom_node):
                 getitem_node = graph_module.graph.create_node(
                     "call_function",
@@ -300,7 +305,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     kwargs={},
                 )
                 custom_output = _grid_sampler_2d_custom_fake_impl(
-                    [nhwc_input.meta["val"], grid.meta["val"]],
+                    [nhwc_input.meta["val"], custom_grid.meta["val"]],
                     operator_name,
                     CUSTOM_SHADER_DOMAIN_NAME,
                     implementation_attrs,

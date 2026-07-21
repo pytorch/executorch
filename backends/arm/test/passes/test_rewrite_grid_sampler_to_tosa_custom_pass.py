@@ -8,15 +8,18 @@ import pytest
 import torch
 import torch.nn.functional as F
 from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
-    TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
-from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom import (
+from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.arm.vgf._passes import (
+    InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 from executorch.backends.arm.vgf.shaders.grid_sampler import (
@@ -171,8 +174,8 @@ def test_quantized_grid_sampler_uses_int8_sampler_payload(
         torch.randn(1, channels, 8, 8),
         torch.rand(1, 4, 4, 2),
     )
-    quantizer = TOSAQuantizer(
-        TosaSpecification.create_from_string("TOSA-1.0+INT"),
+    quantizer = VgfQuantizer(
+        VgfCompileSpec("TOSA-1.0+INT"),
         use_composable_quantizer=use_composable_quantizer,
     )
     quantizer.set_global(get_symmetric_quantization_config(is_per_channel=False))
@@ -185,7 +188,11 @@ def test_quantized_grid_sampler_uses_int8_sampler_payload(
     edge_model = to_edge(export(converted, example_inputs, strict=True))
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP+INT")):
         edge_model = edge_model.transform(
-            [FoldAndAnnotateQParamsPass(), RewriteGridSamplerToTosaCustomPass()]
+            [
+                FoldAndAnnotateQParamsPass(),
+                InsertGridSamplerGridDequantPass(),
+                RewriteGridSamplerToTosaCustomPass(),
+            ]
         )
     nodes = list(edge_model.exported_program().graph.nodes)
 
@@ -193,6 +200,7 @@ def test_quantized_grid_sampler_uses_int8_sampler_payload(
         node for node in nodes if node.target == exir_ops.backend.tosa.CUSTOM.default
     )
     payload = decode_payload(custom_node.kwargs["implementation_attrs"])
+    grid_input = custom_node.args[0][1]
 
     assert payload["input_0_type"] == "Image"
     assert payload["input_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
@@ -200,10 +208,59 @@ def test_quantized_grid_sampler_uses_int8_sampler_payload(
     assert payload["input_1_vkformat"] == GRID_SAMPLER_2D_VK_FORMAT
     assert payload["output_0_type"] == "Image"
     assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    assert grid_input.meta["val"].dtype == torch.float32
+    assert grid_input.target in (
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    )
     assert custom_node.meta["input_qparams"][0].qmin == -127
     assert custom_node.meta["input_qparams"][0].qmax == 127
+    assert 1 not in custom_node.meta["input_qparams"]
     assert next(iter(custom_node.meta["output_qparams"].values())).qmin == -127
     assert next(iter(custom_node.meta["output_qparams"].values())).qmax == 127
+
+
+def test_quantized_grid_sampler_rejects_dequantized_grid_with_int8_image_payload():
+    model = GridSampler2d().eval()
+    example_inputs = (
+        torch.randn(1, 4, 8, 8),
+        torch.rand(1, 4, 4, 2),
+    )
+    quantizer = VgfQuantizer(VgfCompileSpec("TOSA-1.0+INT"))
+    quantizer.set_global(get_symmetric_quantization_config(is_per_channel=False))
+
+    exported = export(model, example_inputs, strict=True)
+    prepared = prepare_pt2e(exported.module(), quantizer)
+    prepared(*example_inputs)
+    converted = convert_pt2e(prepared)
+
+    edge_model = to_edge(export(converted, example_inputs, strict=True))
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP+INT")):
+        edge_model = edge_model.transform([FoldAndAnnotateQParamsPass()])
+
+    exported_program = edge_model.exported_program()
+    grid_sampler_node = next(
+        node
+        for node in exported_program.graph.nodes
+        if node.target == exir_ops.edge.aten.grid_sampler_2d.default
+    )
+    grid_node = grid_sampler_node.args[1]
+    grid_node.meta["val"] = torch.zeros_like(grid_node.meta["val"], dtype=torch.int8)
+    grid_sampler_node.meta["input_qparams"][1] = QuantArgs(
+        scale=[0.01, 0.01],
+        zp=[0, 0],
+        qmin=-128,
+        qmax=127,
+        dtype=torch.int8,
+        axis=3,
+        per_channel=True,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="grid_sampler grid dequant only supports per-tensor qparams",
+    ):
+        InsertGridSamplerGridDequantPass()(exported_program.graph_module)
 
 
 def test_rewrite_grid_sampler_to_tosa_custom_c3_pad_for_align_corners():
