@@ -34,12 +34,20 @@ static void test_sdpa_impl(
   const utils::StorageType attn_weights_storage =
       graph.storage_type_of(q_projected);
 
-  // Clamp attn-weight seq_len so a buffer-backed tensor stays within the numel
-  // limit (mirrors sdpa_impl; a no-op for the texture path the harness uses).
+  // S and context dims are padded to a multiple of 4 to match sdpa_impl() (see
+  // the allocation comment there): the buffer SDPA shaders index each head at
+  // an align_up_4(S)/align_up_4(context) stride, so the allocation must reserve
+  // the padded extent or later heads land out of bounds on the buffer path.
+  const int64_t padded_context_len = utils::align_up_4(max_context_len);
+
+  // Clamp attn-weight seq_len so the PADDED buffer stays within the numel limit
+  // (mirrors sdpa_impl; a no-op for the texture path the harness uses). The
+  // check must use the padded sizes actually allocated, not the raw ones.
   if (attn_weights_storage == utils::kBuffer) {
     const int64_t max_buffer_numel = graph.max_buffer_numel();
-    if (num_q_heads * max_seq_len * max_context_len >= max_buffer_numel) {
-      max_seq_len = max_buffer_numel / (num_q_heads * max_context_len);
+    if (num_q_heads * utils::align_up_4(max_seq_len) * padded_context_len >=
+        max_buffer_numel) {
+      max_seq_len = max_buffer_numel / (num_q_heads * padded_context_len);
       if (max_seq_len % 4 != 0) {
         max_seq_len = (max_seq_len / 4) * 4;
       } else {
@@ -48,15 +56,8 @@ static void test_sdpa_impl(
     }
   }
 
-  // S and context dims padded to a multiple of 4 to match sdpa_impl() (see the
-  // allocation comment there): the buffer SDPA shaders index each head at an
-  // align_up_4(S)/align_up_4(context) stride, so the allocation must reserve
-  // the padded extent or later heads land out of bounds on the buffer path.
   const std::vector<int64_t> attn_weight_full_sizes = {
-      1,
-      num_q_heads,
-      utils::align_up_4(max_seq_len),
-      utils::align_up_4(max_context_len)};
+      1, num_q_heads, utils::align_up_4(max_seq_len), padded_context_len};
 
   TmpTensor attn_weights(
       &graph,
