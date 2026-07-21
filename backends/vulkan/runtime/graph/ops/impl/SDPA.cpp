@@ -718,25 +718,6 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const utils::StorageType attn_weights_storage =
       graph.storage_type_of(q_projected);
 
-  // If using buffer storage for attn weights, we need to ensure that the buffer
-  // numel limit is not exceeded. If needed, manually adjust max_seq_len based
-  // on the buffer numel limit.
-  if (attn_weights_storage == utils::kBuffer) {
-    const int64_t max_buffer_numel = graph.max_buffer_numel();
-    if (num_q_heads * max_seq_len * max_context_len >= max_buffer_numel) {
-      // Compute the maximum possible value for max_seq_len that will hit
-      // the buffer numel limit.
-      max_seq_len = max_buffer_numel / (num_q_heads * max_context_len);
-      // Adjust down to the nearest multiple of 4 to make sure the limit is
-      // not hit.
-      if (max_seq_len % 4 != 0) {
-        max_seq_len = (max_seq_len / 4) * 4;
-      } else {
-        max_seq_len -= 4;
-      }
-    }
-  }
-
   // The attn_weights S and context dims are padded up to a multiple of 4 to
   // match resize_sdpa_attn_weights_node(), which virtual_resizes to
   // align_up_4(seq_len)/align_up_4(context_len). The alignment originates from
@@ -746,11 +727,35 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // allocation must reserve that padded extent — otherwise heads past the first
   // few read/write out of bounds. The texture path is immune: it addresses each
   // head as an image layer rather than via a linear stride.
+  const int64_t padded_context_len = utils::align_up_4(max_context_len);
+
+  // If using buffer storage for attn weights, ensure the buffer numel limit is
+  // not exceeded by the PADDED allocation. Checking the raw (unpadded) sizes is
+  // insufficient: padding can push the actual allocation past the limit even
+  // when the raw size fits — e.g. max_seq_len=2047 pads to 2048, so
+  // 32*2048*2048 lands exactly on maxStorageBufferRange/4 and the shaders index
+  // out of bounds, corrupting attention output.
+  if (attn_weights_storage == utils::kBuffer) {
+    const int64_t max_buffer_numel = graph.max_buffer_numel();
+    if (num_q_heads * utils::align_up_4(max_seq_len) * padded_context_len >=
+        max_buffer_numel) {
+      // Largest max_seq_len whose padded allocation stays under the limit.
+      max_seq_len = max_buffer_numel / (num_q_heads * padded_context_len);
+      // Round down to a multiple of 4 (so align_up_4 is a no-op below) and keep
+      // the allocation strictly below the limit.
+      if (max_seq_len % 4 != 0) {
+        max_seq_len = (max_seq_len / 4) * 4;
+      } else {
+        max_seq_len -= 4;
+      }
+    }
+  }
+
   std::vector<int64_t> attn_weight_full_sizes = {
       1, // batch
       num_q_heads,
       utils::align_up_4(max_seq_len),
-      utils::align_up_4(max_context_len)};
+      padded_context_len};
 
   TmpTensor attn_weights(
       &graph,
