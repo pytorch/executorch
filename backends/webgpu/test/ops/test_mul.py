@@ -9,7 +9,8 @@
 `MulModule` + `CONFIGS` are imported by `cases.py` to drive the declarative op-test
 suite (export via VulkanPartitioner + fp64 torch golden, run on Dawn). `MulTest` is
 the export-delegation smoke test. Configs span the same-shape
-fast path (SwiGLU), last-dim broadcast at LLM width, and a mixed-rank left-pad case.
+fast path (SwiGLU), last-dim broadcast at LLM width, same-rank leading-dim
+broadcast, mixed 4D broadcast, and a mixed-rank left-pad case.
 """
 
 import unittest
@@ -23,6 +24,8 @@ from executorch.exir import to_edge_transform_and_lower
 CONFIGS = {
     "same": ((8, 32), (8, 32)),  # fast path (SwiGLU same-shape)
     "bcast_lastdim": ((1, 1, 7, 896), (1, 1, 7, 1)),  # last-dim broadcast, LLM width
+    "bcast_firstdim": ((4, 4), (1, 4)),  # same-rank leading-dim broadcast
+    "bcast_4d_mixed": ((3, 5, 7, 11), (1, 5, 1, 11)),
     "mixedrank": ((4,), (3, 4)),  # right-aligned left-pad (in.ndim < out.ndim)
 }
 
