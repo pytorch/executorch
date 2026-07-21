@@ -21,7 +21,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any, final, List
 
-from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes import DecomposeQuantNodesPass, RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
     _registered_pass_insertions,
     PassInsertions,
@@ -31,7 +31,8 @@ from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-fo
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf._passes import (  # type: ignore[import-not-found]
+    InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
@@ -49,6 +50,7 @@ from executorch.exir.backend.backend_details import (  # type: ignore[import-not
 from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
     CompileSpec,
 )
+from executorch.exir.pass_base import ExportPass
 from torch.export.exported_program import ExportedProgram
 
 # debug functionality
@@ -144,18 +146,20 @@ def check_vgf_runtime_backend_environment() -> VgfRuntimeEnvironmentCheck:
     )
 
 
-def _register_grid_sampler_rewrite_pass() -> None:
-    """Register VGF-only custom shader lowering passes."""
-    existing_insertions = _registered_pass_insertions.get(RewriteConvPass)
+def _register_pass_before(target_pass_type: type, pass_: ExportPass) -> None:
+    existing_insertions = _registered_pass_insertions.get(target_pass_type)
     if existing_insertions is not None and any(
-        isinstance(pass_, RewriteGridSamplerToTosaCustomPass)
-        for pass_ in existing_insertions.before_passes
+        isinstance(existing_pass, type(pass_))
+        for existing_pass in existing_insertions.before_passes
     ):
         return
-    register_pass_insertions_before(
-        RewriteConvPass,
-        [RewriteGridSamplerToTosaCustomPass()],
-    )
+    register_pass_insertions_before(target_pass_type, [pass_])
+
+
+def _register_vgf_rewrite_passes() -> None:
+    """Register VGF-only custom shader lowering passes."""
+    _register_pass_before(DecomposeQuantNodesPass, InsertGridSamplerGridDequantPass())
+    _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
 
 
 def _snapshot_registered_pass_insertions() -> dict[type, PassInsertions]:
@@ -229,7 +233,7 @@ class VgfBackend(BackendDetails):
 
         insertions_snapshot = _snapshot_registered_pass_insertions()
         try:
-            _register_grid_sampler_rewrite_pass()
+            _register_vgf_rewrite_passes()
             compile_spec = VgfCompileSpec._from_list(compile_specs)
             # deduce TOSA compile_spec from VGF compile spec. We get a new
             # compile spec list, containing only elements relevant for the
