@@ -97,6 +97,18 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "update_and_attend_py",
+        srcs = [
+            "op_update_and_attend.py",
+            "op_update_and_attend_reference.py",
+        ],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
     runtime.cxx_test(
         name = "op_sdpa_test",
         srcs = [
