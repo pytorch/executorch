@@ -60,7 +60,6 @@ using ::executorch::extension::image::ImageProcessor;
 using ::executorch::extension::image::ImageProcessorConfig;
 using ::executorch::extension::image::Normalization;
 using ::executorch::runtime::Error;
-using ::executorch::runtime::EValue;
 
 namespace {
 

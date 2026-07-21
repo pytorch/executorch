@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
+import torch
+
 from executorch.backends.mlx.builder.op_helpers import (
     emit_quantized_biases,
     to_mlx_qparams,
@@ -39,7 +41,9 @@ _MIN_MLX_GROUP_SIZE = 32
 
 
 def repack_mlx(
-    P: MLXProgramBuilder, weight_node: Node
+    P: MLXProgramBuilder,
+    weight_node: Node,
+    scale_dtype: Optional[torch.dtype] = None,
 ) -> Optional[Tuple[Slot, Slot, Slot, int]]:
     """Unpack a raw Q6_K blob and repack into MLX qparam constants.
 
@@ -47,12 +51,16 @@ def repack_mlx(
     (up to 128) when lossless. Returns ``(packed_slot, scales_slot, biases_slot,
     group_size)`` when the merged ``group_size`` is MLX-compatible (>= 32), or
     ``None`` when it is not (so the caller can fall back to fused kernels).
+
+    ``scale_dtype`` sets the dtype of the emitted scales/biases constants; pass
+    the activation dtype so MLX ``quantized_matmul`` does not promote (a bf16
+    activation with f16 scales, or vice versa, promotes to float32).
     """
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
     weight_target, raw = P.get_placeholder_target_and_tensor(weight_node)
     intx = ExportableGGUFTensor.from_raw(raw, "q6_k").to_intx_unpacked_to_int8_tensor(
-        max_group_size=128
+        max_group_size=128, scale_dtype=scale_dtype
     )
     group_size = int(intx.block_size[-1])
     if group_size < _MIN_MLX_GROUP_SIZE:
