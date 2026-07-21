@@ -54,6 +54,7 @@ set(WEBGPU_SRCS
     runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
     runtime/ops/gelu/Gelu.cpp
     runtime/ops/layer_norm/NativeLayerNorm.cpp
+    runtime/ops/linear_fp32/LinearFp32.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
