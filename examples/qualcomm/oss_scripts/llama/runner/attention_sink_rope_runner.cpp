@@ -11,12 +11,10 @@
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 
-using executorch::aten::Tensor;
 using executorch::extension::Module;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;
-using executorch::runtime::Span;
 namespace example {
 
 AttentionSinkRopeRunner::AttentionSinkRopeRunner(Module* module)

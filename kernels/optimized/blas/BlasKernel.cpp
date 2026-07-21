@@ -25,7 +25,6 @@
 #endif
 
 namespace vec = at::vec;
-using executorch::extension::parallel_for;
 using torch::executor::BFloat16;
 using torch::executor::Half;
 
