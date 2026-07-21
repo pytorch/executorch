@@ -72,8 +72,35 @@ class _ScaleFirstMul(torch.nn.Module):
         return torch.softmax(self.scale * torch.bmm(q, k.transpose(-2, -1)), dim=-1)
 
 
+class _MultiHeadMatmulAttn(torch.nn.Module):
+    # Rank-4 multi-head attention with q @ k^T scaled by 1/sqrt(head_dim), like
+    # SAM's mask-decoder attention. MatmulToBmmPass rewrites the matmul to a
+    # quantizable bmm at annotation, so the scale lands in the requantize sandwich
+    # the fold removes -- the realistic path a bare rank-3 torch.bmm skips.
+    def __init__(self, dim=32, heads=4):
+        super().__init__()
+        self.heads = heads
+        self.head_dim = dim // heads
+        self.q_proj = torch.nn.Linear(dim, dim)
+        self.k_proj = torch.nn.Linear(dim, dim)
+        self.v_proj = torch.nn.Linear(dim, dim)
+
+    def _heads(self, x):
+        b, n, c = x.shape
+        return x.reshape(b, n, self.heads, self.head_dim).transpose(1, 2)
+
+    def forward(self, x):
+        q = self._heads(self.q_proj(x))
+        k = self._heads(self.k_proj(x))
+        v = self._heads(self.v_proj(x))
+        attn = (q @ k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        attn = torch.softmax(attn, dim=-1)
+        return (attn @ v).transpose(1, 2).reshape(x.shape)
+
+
 _ATTN_INPUTS = (torch.rand(1, 8, 16), torch.rand(1, 8, 16))
 _POOL_INPUTS = (torch.rand(1, 1, 8, 8),)
+_MHA_INPUT = (torch.rand(1, 8, 32),)
 
 
 def _to_edge(model, inputs):
@@ -121,6 +148,21 @@ def test_mul_folds():
     assert _count(_run(edge, []).graph_module, "aten.mul.Tensor") == 1
     assert (
         _count(_run(edge, [FoldScaleIntoQuantizePass]).graph_module, "aten.mul.Tensor")
+        == 0
+    )
+
+
+def test_matmul_multihead_attention_scale_folds():
+    # SAM-faithful path: the rank-4 q @ k^T matmul becomes a quantizable bmm via
+    # MatmulToBmmPass at annotation, so the /sqrt(head_dim) scale lands in a
+    # dequantize -> div -> quantize sandwich the fold removes. A bare rank-3
+    # torch.bmm (the tests above) has its output quantized directly, so it does
+    # not exercise this matmul->bmm dependency -- if that pass regresses, the
+    # scale would stay fp32 and this test fails.
+    edge = _to_edge(_MultiHeadMatmulAttn(), _MHA_INPUT)
+    assert _count(_run(edge, []).graph_module, "aten.div.Tensor") == 1
+    assert (
+        _count(_run(edge, [FoldScaleIntoQuantizePass]).graph_module, "aten.div.Tensor")
         == 0
     )
 
