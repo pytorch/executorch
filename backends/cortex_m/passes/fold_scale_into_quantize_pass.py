@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from typing import cast, Optional, Set, Tuple, Type
+from typing import cast, Optional, Tuple
 
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_param_tensor,
@@ -43,12 +43,11 @@ class FoldScaleIntoQuantizePass(ExportPass):
     qparams, a non-scalar constant, or a scale the quantizer did not absorb --
     the fold is skipped and the fp32 op is left in place.
 
-    A constant add/sub cannot fold this way: an additive shift makes the affine
-    observer change the scale (not just the zero-point), so no such identity
-    holds -- a separate, lossy transform, and no current model needs it.
+    A constant add/sub cannot fold this way: an additive shift moves the affine
+    quantization parameters by a generally non-integer amount, so no
+    integer-preserving requantize identity exists -- a separate, lossy transform,
+    and no current model needs it.
     """
-
-    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: Optional[ExportedProgram] = None) -> None:
         super().__init__()

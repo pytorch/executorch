@@ -98,9 +98,21 @@ class _MultiHeadMatmulAttn(torch.nn.Module):
         return (attn @ v).transpose(1, 2).reshape(x.shape)
 
 
+class _RuntimeDiv(torch.nn.Module):
+    # Divisor is a runtime graph input, not a param/buffer, so is_param_node is
+    # False -- the scale is non-constant and must not fold.
+    def forward(self, q, k, d):
+        return torch.softmax(torch.bmm(q, k.transpose(-2, -1)) / d, dim=-1)
+
+
 _ATTN_INPUTS = (torch.rand(1, 8, 16), torch.rand(1, 8, 16))
 _POOL_INPUTS = (torch.rand(1, 1, 8, 8),)
 _MHA_INPUT = (torch.rand(1, 8, 32),)
+_RUNTIME_INPUTS = (
+    torch.rand(1, 8, 16),
+    torch.rand(1, 8, 16),
+    torch.rand(1, 8, 8) + 0.5,
+)
 
 
 def _to_edge(model, inputs):
@@ -186,7 +198,7 @@ def test_fold_is_bit_exact():
 
 
 def test_sharedqspec_consumer_scale_is_untouched():
-    # Adrian's case: a constant scale feeding a SharedQspec pool. The fold
+    # A constant scale feeding a SharedQspec pool (RFC #19299). The fold
     # rewrites no scale, so the pool's shared in/out qparams are identical before
     # and after -- the shared cluster can never be corrupted -- and the divide
     # still folds.
@@ -198,7 +210,7 @@ def test_sharedqspec_consumer_scale_is_untouched():
     pool_before = _find(annotated.graph_module, "max_pool2d")
     pool_after = _find(folded.graph_module, "max_pool2d")
     # Pin the premise: max_pool2d is a SharedQspec op (input scale == output
-    # scale). Without this the test would silently stop guarding Adrian's case.
+    # scale). Without this the test would silently stop guarding that case.
     assert (
         get_input_qparams(pool_before)[0].scale
         == get_output_qparams(pool_before)[0].scale
@@ -255,3 +267,29 @@ def test_constant_first_operand_does_not_crash():
     )
     assert not result.modified
     assert _count(program.graph_module, "aten.mul.Tensor") == 1
+
+
+def test_skips_on_dtype_or_range_mismatch():
+    # A quantize whose dtype/clamp range (args 3..5) differs from the dequantize
+    # makes the removed requantize a real conversion, not a no-op (e.g. the int16
+    # activation path). The scale/zero-point relation still holds, so only the
+    # args[3:6] guard prevents the fold.
+    program = _run(_to_edge(_AttnDiv(), _ATTN_INPUTS), [])
+    _perturb_softmax_quantize(program, 5, lambda _: torch.int16)
+    result = FoldScaleIntoQuantizePass(exported_program=program).call(
+        program.graph_module
+    )
+    assert not result.modified
+    assert _count(program.graph_module, "aten.div.Tensor") == 1
+
+
+def test_skips_non_param_divisor():
+    # The divisor is a runtime graph input, not a param/buffer, so is_param_node
+    # is False: the scale is genuinely non-constant and must not fold -- and the
+    # pass must not crash reading a param tensor for a non-param node.
+    program = _run(_to_edge(_RuntimeDiv(), _RUNTIME_INPUTS), [])
+    result = FoldScaleIntoQuantizePass(exported_program=program).call(
+        program.graph_module
+    )
+    assert not result.modified
+    assert _count(program.graph_module, "aten.div.Tensor") == 1
