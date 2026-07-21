@@ -33,7 +33,6 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
     GRID_SAMPLER_2D_SHADER_LANGUAGE,
     GRID_SAMPLER_2D_SHADER_SOURCE,
     GRID_SAMPLER_2D_VK_FORMAT,
-    GRID_SAMPLER_2D_WORKGROUP_SIZES,
 )
 from torch.export import export
 
@@ -107,12 +106,13 @@ def test_buffer_shader_payload_vgf_encodes_bindings_and_formats():
                 interpolation_mode=0,
                 padding_mode=0,
                 align_corners=False,
+                output_shape=(1, 4, 8, 8),
             )
         )
     )
 
     assert payload["entry_point"] == GRID_SAMPLER_2D_SHADER_ENTRY_POINT
-    assert payload["workgroup_sizes"] == GRID_SAMPLER_2D_WORKGROUP_SIZES
+    assert payload["workgroup_sizes"] == [1, 1, 1]
     assert payload["shader_language"] == GRID_SAMPLER_2D_SHADER_LANGUAGE
     assert payload["input_0_binding"] == 0
     assert payload["input_1_binding"] == 1
@@ -150,6 +150,7 @@ def test_shader_payload_vgf_uses_expected_glsl_and_spirv_asset():
         interpolation_mode=0,
         padding_mode=0,
         align_corners=False,
+        output_shape=(1, 4, 8, 8),
     )
 
     assert GRID_SAMPLER_2D_SHADER_SOURCE == "grid_sampler.glsl"
