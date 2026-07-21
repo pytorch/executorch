@@ -303,6 +303,9 @@ def _prepare_genrule_and_lib(
         },
     }
     """
+    if manual_registration_lib_name and not manual_registration:
+        fail("manual_registration_lib_name requires manual_registration = True")
+
     aten_src_path = runtime.external_dep_location("aten-src-path")
     genrule_cmd = [
         "$(exe //executorch/codegen:gen)",

@@ -341,14 +341,12 @@ class TestManualRegistrationFunctionName(unittest.TestCase):
             "register_portable_ops_lib_kernels",
         )
 
-    def test_named_function_sanitizes_library_name(self) -> None:
-        self.assertEqual(
+    def test_named_function_rejects_invalid_library_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "valid C\\+\\+ identifier"):
             get_manual_registration_function_name(
                 manual_registration=True,
                 manual_registration_lib_name="portable-ops.lib::debug",
-            ),
-            "register_portable_ops_lib_debug_kernels",
-        )
+            )
 
     def test_named_function_requires_manual_registration(self) -> None:
         with self.assertRaisesRegex(
@@ -359,11 +357,11 @@ class TestManualRegistrationFunctionName(unittest.TestCase):
                 manual_registration_lib_name="portable_ops_lib",
             )
 
-    def test_named_function_requires_name_content(self) -> None:
-        with self.assertRaisesRegex(ValueError, "alphanumeric or underscore"):
+    def test_named_function_rejects_leading_digit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "valid C\\+\\+ identifier"):
             get_manual_registration_function_name(
                 manual_registration=True,
-                manual_registration_lib_name="---",
+                manual_registration_lib_name="1_portable_ops_lib",
             )
 
 

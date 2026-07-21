@@ -56,6 +56,9 @@ option(
   "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
   or no custom op at all." OFF
 )
+option(TEST_NAMED_MANUAL_REGISTRATION
+       "Build two custom-op libraries with named manual registration." OFF
+)
 # ------------------------------- OPTIONS END --------------------------------
 
 #
@@ -129,3 +132,44 @@ target_link_libraries(
 target_compile_options(
   custom_ops_executor_runner PUBLIC ${_common_compile_options}
 )
+
+if(TEST_NAMED_MANUAL_REGISTRATION)
+  function(add_manual_registration_lib lib_name op_name kernel_source)
+    gen_selected_ops(LIB_NAME "${lib_name}" ROOT_OPS "${op_name}")
+    generate_bindings_for_kernels(
+      LIB_NAME "${lib_name}" CUSTOM_OPS_YAML
+      ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml MANUAL_REGISTRATION
+    )
+
+    add_library(${lib_name}_kernels ${kernel_source})
+    target_link_libraries(${lib_name}_kernels PRIVATE executorch)
+    target_compile_options(
+      ${lib_name}_kernels PUBLIC ${_common_compile_options}
+    )
+    gen_operators_lib(
+      LIB_NAME "${lib_name}" KERNEL_LIBS ${lib_name}_kernels DEPS executorch
+    )
+  endfunction()
+
+  add_manual_registration_lib(
+    manual_ops_1_lib "my_ops::mul3.out"
+    ${CMAKE_CURRENT_LIST_DIR}/custom_ops_1_out.cpp
+  )
+  add_manual_registration_lib(
+    manual_ops_2_lib "my_ops::mul4.out"
+    ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp
+  )
+
+  add_executable(
+    named_manual_registration_test named_manual_registration_test.cpp
+  )
+  add_dependencies(
+    named_manual_registration_test manual_ops_1_lib manual_ops_2_lib
+  )
+  target_include_directories(
+    named_manual_registration_test PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
+  )
+  target_link_libraries(
+    named_manual_registration_test manual_ops_1_lib manual_ops_2_lib executorch
+  )
+endif()

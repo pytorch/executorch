@@ -81,19 +81,7 @@ if TYPE_CHECKING:
 
 
 DEFAULT_MANUAL_REGISTRATION_FUNCTION_NAME = "register_all_kernels"
-MANUAL_REGISTRATION_LIB_NAME_SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_]+")
-
-
-def sanitize_manual_registration_lib_name(lib_name: str) -> str:
-    sanitized = MANUAL_REGISTRATION_LIB_NAME_SANITIZE_PATTERN.sub("_", lib_name).strip(
-        "_"
-    )
-    if not sanitized:
-        raise ValueError(
-            "--manual-registration-lib-name must contain at least one "
-            "alphanumeric or underscore character"
-        )
-    return sanitized
+CPP_IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def get_manual_registration_function_name(
@@ -109,10 +97,12 @@ def get_manual_registration_function_name(
             "--manual-registration-lib-name requires --manual-registration"
         )
 
-    sanitized_lib_name = sanitize_manual_registration_lib_name(
-        manual_registration_lib_name
-    )
-    return f"register_{sanitized_lib_name}_kernels"
+    if not CPP_IDENTIFIER_PATTERN.fullmatch(manual_registration_lib_name):
+        raise ValueError(
+            "--manual-registration-lib-name must be a valid C++ identifier"
+        )
+
+    return f"register_{manual_registration_lib_name}_kernels"
 
 
 def _sig_decl_wrapper(sig: CppSignature | ExecutorchCppSignature) -> str:
