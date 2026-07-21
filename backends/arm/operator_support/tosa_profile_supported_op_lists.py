@@ -70,6 +70,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.gt.Scalar,
     exir_ops.edge.aten.le.Tensor,
     exir_ops.edge.aten.le.Scalar,
+    exir_ops.edge.aten.leaky_relu.default,
     exir_ops.edge.aten.lt.Tensor,
     exir_ops.edge.aten.lt.Scalar,
     exir_ops.edge.aten.mul.Tensor,

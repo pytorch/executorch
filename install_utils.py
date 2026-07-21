@@ -65,10 +65,9 @@ def is_vulkan_available() -> bool:
     Windows, the desktop GPU platforms the backend supports (macOS would require
     MoltenVK).
 
-    glslc is looked up on PATH and, failing that, under $VULKAN_SDK/{bin,Bin} to
-    match the find_program() HINTS the build uses (see pybind.cmake and
-    ShaderLibrary.cmake): the Windows Vulkan SDK sets VULKAN_SDK but does not add
-    its bin directory to PATH, so a PATH-only probe would miss it there.
+    glslc is accepted from PATH or under $VULKAN_SDK/{bin,Bin}. The Windows
+    Vulkan SDK sets VULKAN_SDK but does not add its bin directory to PATH, so a
+    PATH-only probe would miss it there.
 
     Returns:
         True if glslc is available on a supported platform, False otherwise.

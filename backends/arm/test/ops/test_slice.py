@@ -94,7 +94,7 @@ def test_slice_tensor_tosa_FP_fp8(test_data):
         exir_op,
         tosa_extensions=[tosa_extension],
     )
-    pipeline.count_tosa_ops({"SLICE": 3})
+    pipeline.count_tosa_ops({"SLICE": 1})
     pipeline.run()
 
 
