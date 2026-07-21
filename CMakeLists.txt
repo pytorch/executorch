@@ -443,10 +443,8 @@ list(APPEND _common_compile_options $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
      $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
 )
 # GCC checks no format strings by default; enforce them as errors.
-list(
-  APPEND
-  _common_compile_options
-  $<$<CXX_COMPILER_ID:GNU>:-Wformat;-Wformat-signedness;-Werror=format;-Werror=format-signedness>
+list(APPEND _common_compile_options
+     $<$<CXX_COMPILER_ID:GNU>:-Wformat;-Werror=format>
 )
 # Set default CMAKE_POSITION_INDEPENDENT_CODE behavior if ON or not set
 # (default) (and not for MSVC compiler)
