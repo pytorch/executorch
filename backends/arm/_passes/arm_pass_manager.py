@@ -656,14 +656,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
                 FuseConsecutiveConcatShapesPass(),
-                # No-op removal can expose duplicate users and outputs, so run
-                # FuseDuplicateUsersPass and EnsureUniqueOutputNodesPass afterward.
+                EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
-                # Late TOSA transformations can introduce duplicate users after
-                # the first FuseDuplicateUsersPass invocation.
-                FuseDuplicateUsersPass(),
-                EnsureUniqueOutputNodesPass(),
             ]
         )
 
