@@ -101,18 +101,13 @@ void fused_ce(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef logits = args[arg_idx++];
   const ValueRef labels = args[arg_idx++];
   const ValueRef n_valid_ref = args[arg_idx++];
-  const ValueRef out_tuple_ref = args[arg_idx++];
+  const ValueRef out_tuple_ref = args[arg_idx];
 
-  // Release the ValueListPtr before allocating loss_partial: add_tensor (via
-  // TmpTensor) asserts no live get_*() pointer exists, because adding Values
-  // may reallocate values_ and invalidate it (check_no_active_value_ptrs).
-  ValueRef loss = kDummyValueRef;
-  ValueRef dlogits = kDummyValueRef;
-  {
-    const ValueListPtr out_tuple = graph.get_value_list(out_tuple_ref);
-    loss = out_tuple->at(0);
-    dlogits = out_tuple->at(1);
-  }
+  // Read loss/dlogits via short-lived get_value_list() temporaries: no get_*()
+  // pointer may be alive when loss_partial is added below, else adding Values
+  // can reallocate values_ and check_no_active_value_ptrs() throws.
+  const ValueRef loss = graph.get_value_list(out_tuple_ref)->at(0);
+  const ValueRef dlogits = graph.get_value_list(out_tuple_ref)->at(1);
 
   VK_CHECK_COND(
       graph.is_buffer_storage(logits) && graph.is_buffer_storage(dlogits),
