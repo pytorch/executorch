@@ -27,6 +27,7 @@ from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
+from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
 
@@ -51,6 +52,7 @@ class CortexMPassManager(PassManager):
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
         DecomposeMeanPass,
+        MatmulToBmmPass,
         DeduplicateGetAttrPass,
     ]
 

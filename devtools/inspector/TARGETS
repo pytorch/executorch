@@ -13,12 +13,20 @@ runtime.python_library(
         "fbsource//third-party/pypi/pandas:pandas",
         "fbsource//third-party/pypi/tabulate:tabulate",
         ":inspector_utils",
+        ":vgf_neural_statistics",
         "//executorch/devtools/debug_format:et_schema",
         "//executorch/devtools/etdump:schema_flatcc",
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/exir:lib",
         "//executorch/devtools/inspector:intermediate_output_capturer",
         "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "vgf_neural_statistics",
+    srcs = [
+        "vgf_neural_statistics.py",
     ],
 )
 
@@ -65,5 +73,6 @@ runtime.python_library(
     deps = [
         ":inspector",
         ":inspector_utils",
+        ":vgf_neural_statistics",
     ],
 )

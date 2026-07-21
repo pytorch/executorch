@@ -73,7 +73,6 @@
   })
 
 namespace py = pybind11;
-using executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs;
 using ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_name;
@@ -87,8 +86,6 @@ using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::extension::pybindings::PyDataLoader;
-using ::executorch::extension::pybindings::SharedPtrDataLoader;
-using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
