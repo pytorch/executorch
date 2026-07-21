@@ -331,7 +331,12 @@ void conv2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (use_gemm) {
     // 2D tile grid over (N cols, M rows); folds past the 65535 per-dim ceiling.
     gemm_grid = utils::compute_tile_grid_2d(
-        device, B * OH * OW, OC, kConv2dGemmTile, "et_vk_conv2d_gemm");
+        device,
+        utils::checked_u32(
+            uint64_t(B) * uint64_t(OH) * uint64_t(OW), "et_vk_conv2d_gemm"),
+        OC,
+        kConv2dGemmTile,
+        "et_vk_conv2d_gemm");
   } else {
     // Adaptive 1D->2D dispatch: wg=clamp(256) + 2D-spill past the 65535 ceiling
     // (the SAM FpnNeck @1008^2 blocker); stride_x decodes
