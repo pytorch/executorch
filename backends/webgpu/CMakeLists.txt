@@ -61,7 +61,9 @@ set(WEBGPU_SRCS
     runtime/ops/sub/BinaryOp.cpp
     runtime/ops/where/Where.cpp
     runtime/ops/boolean_op/BooleanOp.cpp
+    runtime/ops/gather/Gather.cpp
     runtime/ops/linear/Linear.cpp
+    runtime/ops/embedding/Embedding.cpp
 )
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
