@@ -32,9 +32,9 @@ struct ET_EXPERIMENTAL Stats {
   long inference_start_ms = 0;
   // End of the tokenizer encode time.
   long token_encode_end_ms = 0;
-  /// Start timestamp of the most recent model execution (forward) window.
+  // Start timestamp of the most recent model execution (forward) window.
   long model_execution_start_ms = 0;
-  /// End timestamp of the most recent model execution (forward) window.
+  // End timestamp of the most recent model execution (forward) window.
   long model_execution_end_ms = 0;
   // prompt_eval_end_ms: Prompt array allocation and tokenization. Ends right
   // before the inference loop starts
@@ -45,7 +45,7 @@ struct ET_EXPERIMENTAL Stats {
   long inference_end_ms = 0;
   // Keep a running total of the time spent in sampling.
   long aggregate_sampling_time_ms = 0;
-  /// Running total of time spent in model execution (forward).
+  // Running total of time spent in model execution (forward).
   long aggregate_model_execution_time_ms = 0;
   // Token count from prompt
   int64_t num_prompt_tokens = 0;
