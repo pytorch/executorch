@@ -40,6 +40,16 @@ inline uint32_t clamp_workgroup_size(WGPUDevice device, uint32_t desired) {
   return desired;
 }
 
+// Clamp to device limit, then floor to pow2 (reduction kernels halve stride).
+inline uint32_t clamp_workgroup_size_pow2(WGPUDevice device, uint32_t desired) {
+  uint32_t v = clamp_workgroup_size(device, desired);
+  uint32_t p = 1u;
+  while (p <= (v >> 1u)) {
+    p <<= 1u;
+  }
+  return p;
+}
+
 struct WgCount {
   uint32_t x;
   uint32_t y;
