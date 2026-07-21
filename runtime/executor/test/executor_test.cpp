@@ -20,7 +20,6 @@
 using executorch::aten::IntArrayRef;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
-using executorch::aten::SizesType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::get_op_function_from_registry;
 using executorch::ET_RUNTIME_NAMESPACE::Kernel;

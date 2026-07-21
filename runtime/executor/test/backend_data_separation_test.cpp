@@ -21,7 +21,6 @@
 
 using namespace ::testing;
 using executorch::extension::FlatTensorDataMap;
-using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
