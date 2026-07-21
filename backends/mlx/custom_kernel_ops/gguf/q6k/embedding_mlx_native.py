@@ -42,7 +42,7 @@ def emit_embedding(
     Returns the output slot, or ``None`` when the weight does not merge to an
     MLX-supported group size (the caller should fall back to the fused gather).
     """
-    repacked = repack_mlx(P, weight_node)
+    repacked = repack_mlx(P, weight_node, scale_dtype=output_dtype)
     if repacked is None:
         return None
     w_slot, scales_slot, biases_slot, group_size = repacked
