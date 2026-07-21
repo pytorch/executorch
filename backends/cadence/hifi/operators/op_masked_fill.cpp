@@ -14,7 +14,6 @@
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using executorch::runtime::is_integral_type;
 using executorch::runtime::tensors_have_same_dim_order;
 using torch::executor::apply_binary_elementwise_fn;
 using torch::executor::check_masked_fill_args;
