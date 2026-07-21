@@ -135,7 +135,7 @@ class TestExportableGGUFTensor(unittest.TestCase):
             t = ExportableGGUFTensor.from_raw(raw, ggml_type)
             ix = t.to_intx_unpacked_to_int8_tensor()
             self.assertEqual(tuple(ix.shape), (3, 512))
-            # bf16 storage tolerance.
+            # fp16 storage tolerance.
             self.assertTrue(
                 torch.allclose(
                     ix.dequantize().float(),
@@ -199,6 +199,55 @@ class TestExportableGGUFTensor(unittest.TestCase):
                 ),
                 ggml_type,
             )
+
+    def test_to_intx_scale_dtype_default_and_override(self):
+        # GGUF stores super-block scales as fp16, so the default scale dtype is
+        # float16; callers override it (the MLX repack passes the activation
+        # dtype, the CUDA integrations pass bfloat16). Verify the emitted
+        # scale / zero-point / tensor dtypes match the request.
+        for ggml_type, make in (
+            ("q4_k", _make_q4k_raw),
+            ("q5_k", _make_q5k_raw),
+            ("q6_k", _make_q6k_raw),
+        ):
+            t = ExportableGGUFTensor.from_raw(make(N=2, nb=2), ggml_type)
+
+            ix = t.to_intx_unpacked_to_int8_tensor()  # default
+            self.assertEqual(ix.scale.dtype, torch.float16, f"{ggml_type} default")
+            self.assertEqual(ix.dtype, torch.float16, f"{ggml_type} default")
+
+            for dt in (torch.bfloat16, torch.float16, torch.float32):
+                ix = t.to_intx_unpacked_to_int8_tensor(scale_dtype=dt)
+                self.assertEqual(ix.scale.dtype, dt, f"{ggml_type} {dt}")
+                self.assertEqual(ix.dtype, dt, f"{ggml_type} {dt}")
+                # Q4_K/Q5_K carry an affine (float) zero-point that follows
+                # scale_dtype; Q6_K is symmetric (int8 zero-point).
+                if ggml_type in ("q4_k", "q5_k"):
+                    self.assertEqual(ix.zero_point.dtype, dt, f"{ggml_type} zp {dt}")
+                else:
+                    self.assertEqual(ix.zero_point.dtype, torch.int8, ggml_type)
+
+    def test_iter_gguf_preserves_native_float_dtype(self):
+        # Unquantized F16 tensors must be returned in their native fp16 dtype,
+        # not silently cast to bf16 (callers that need bf16 cast explicitly).
+        import os
+        import tempfile
+
+        from executorch.extension.llm.export.gguf import iter_gguf
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "dtypes.gguf")
+            writer = gguf.GGUFWriter(path, "test")
+            writer.add_tensor("f16", np.ones((2, 4), dtype=np.float16))
+            writer.add_tensor("f32", np.full((2, 4), 2.0, dtype=np.float32))
+            writer.write_header_to_file()
+            writer.write_kv_data_to_file()
+            writer.write_tensors_to_file()
+            writer.close()
+
+            got = dict(iter_gguf(path))
+            self.assertEqual(got["f16"].dtype, torch.float16)
+            self.assertEqual(got["f32"].dtype, torch.float32)
 
     def test_to_int4_tensor_matches_reference(self):
         raw = _make_q4k_raw(N=3, nb=2)
