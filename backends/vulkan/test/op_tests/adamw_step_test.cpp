@@ -62,7 +62,7 @@ void test_vulkan_adamw_step(
     const double eps,
     const double weight_decay,
     const int step) {
-  torch::manual_seed(0);
+  at::manual_seed(0);
 
   const double bias_correction1 = 1.0 - std::pow(beta1, step);
   const double bias_correction2 = 1.0 - std::pow(beta2, step);
