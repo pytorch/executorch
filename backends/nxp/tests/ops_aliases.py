@@ -40,6 +40,7 @@ Maximum = exir_ops.edge.aten.maximum.default
 MaxPool2D = exir_ops.edge.aten.max_pool2d.default
 MaxPool2DWithIndices = exir_ops.edge.aten.max_pool2d_with_indices.default
 MeanDim = exir_ops.edge.aten.mean.dim
+Minimum = exir_ops.edge.aten.minimum.default
 MulTensor = exir_ops.edge.aten.mul.Tensor
 Neg = exir_ops.edge.aten.neg.default
 PermuteCopy = exir_ops.edge.aten.permute_copy.default
