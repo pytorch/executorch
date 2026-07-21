@@ -34,14 +34,25 @@ class Gemma4MLP(nn.Module):
 
     def __init__(self, hidden_size: int, intermediate_size: int):
         super().__init__()
+        self.intermediate_size = intermediate_size
         self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
         self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
         self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.down_proj(
-            F.gelu(self.gate_proj(x), approximate="tanh") * self.up_proj(x)
-        )
+        # If a loader fused gate_proj|up_proj into one gate_up_proj (single
+        # matmul; e.g. the GGUF loader's coalesced fusion), use it and split the
+        # [.., 2*intermediate_size] output back into gate/up. Otherwise fall back
+        # to the separate projections (unfused checkpoints / non-fusing loaders).
+        gate_up = getattr(self, "gate_up_proj", None)
+        if gate_up is not None:
+            fused = gate_up(x)
+            gate = fused[..., : self.intermediate_size]
+            up = fused[..., self.intermediate_size :]
+        else:
+            gate = self.gate_proj(x)
+            up = self.up_proj(x)
+        return self.down_proj(F.gelu(gate, approximate="tanh") * up)
 
 
 class Gemma4DecoderLayer(nn.Module):
