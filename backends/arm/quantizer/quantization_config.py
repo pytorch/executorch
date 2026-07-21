@@ -259,6 +259,8 @@ class QuantizationConfig:
 class TOSAQuantizationConfig(QuantizationConfig):
     """Configures quantization, while enforcing TOSA specific constraints."""
 
+    quantize_grid_sampler_grid = False
+
     SHARED_OUTPUT_ACT_QSPEC_PATTERNS = {
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.upsample_bilinear2d.vec,
@@ -307,12 +309,14 @@ class TOSAQuantizationConfig(QuantizationConfig):
             else:
                 return SharedQuantizationSpec((node.args[0], node))
         elif node.target == torch.ops.aten.grid_sampler.default:
-            if input_node != node.args[0]:
+            if input_node == node.args[0]:
+                input_act_qspec = super().get_input_act_qspec(node, input_node)
+                return _get_fixed_qparams_qspec(
+                    node.target, _fixed_input_qspec_ops, input_act_qspec
+                )
+            if not self.quantize_grid_sampler_grid:
                 return None
-            input_act_qspec = super().get_input_act_qspec(node, input_node)
-            return _get_fixed_qparams_qspec(
-                node.target, _fixed_input_qspec_ops, input_act_qspec
-            )
+            return super().get_input_act_qspec(node, input_node)
         elif node.target in _fixed_input_qspec_ops:
             input_act_qspec = super().get_input_act_qspec(node, input_node)
             return _get_fixed_qparams_qspec(
@@ -356,7 +360,7 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         If node is a pooling or upsample operator, returns a shared quantization spec.
         If no weight spec is configured, return ``None``.
-        If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is floating-point.
+        If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is float32.
 
         """
 
@@ -391,6 +395,7 @@ class TOSAQuantizationConfig(QuantizationConfig):
                 isinstance(input_val, torch.Tensor)
                 and isinstance(output_val, torch.Tensor)
                 and CastCheck.is_integer_to_float(input_val.dtype, output_val.dtype)
+                and output_val.dtype == torch.float32
             ):
                 return FixedQParamsQuantizationSpec(
                     dtype=input_val.dtype,
@@ -413,3 +418,7 @@ class TOSAQuantizationConfig(QuantizationConfig):
         if len(node.args) == 0:
             return super().get_output_act_qspec()
         return SharedQuantizationSpec((cast(Node, node.args[0]), node))
+
+
+class VGFQuantizationConfig(TOSAQuantizationConfig):
+    quantize_grid_sampler_grid = True
