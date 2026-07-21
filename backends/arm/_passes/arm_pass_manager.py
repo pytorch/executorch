@@ -633,6 +633,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 FuseViewCopyTransformPass(),
                 PropagateViewCopyPermuteDownPass(self.compile_spec, exported_program),
                 PropagateViewCopyPermuteUpPass(self.compile_spec, exported_program),
+                # Propagation can leave a binary op with mismatched operand ranks,
+                # which TOSA rejects; re-match ranks before lowering.
+                MatchArgRanksPass(exported_program),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
