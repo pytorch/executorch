@@ -217,8 +217,9 @@ class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_pass = cast(Any, self.graph_pass)
+        has_exported_program_attr = hasattr(graph_pass, "exported_program")
         pass_exported_program = getattr(graph_pass, "exported_program", None)
-        if pass_exported_program is not None:
+        if has_exported_program_attr:
             # ExportedProgramPassManager works on a shallow copy; Arm graph
             # passes that store an ExportedProgram must update that copy.
             graph_pass.exported_program = exported_program
@@ -226,7 +227,7 @@ class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
         try:
             result = self.graph_pass(exported_program.graph_module)
         finally:
-            if pass_exported_program is not None:
+            if has_exported_program_attr:
                 graph_pass.exported_program = pass_exported_program
 
         if result is None:

@@ -16,6 +16,47 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import export
 
 
+class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_emulate_precision_casts_compile_spec(self):
+        options = CudaBackend.get_aoti_compile_options(
+            [CompileSpec(key="emulate_precision_casts", value=b"OFF")]
+        )
+
+        self.assertFalse(options["emulate_precision_casts"])
+
+    def test_invalid_emulate_precision_casts_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid emulate_precision_casts"):
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="emulate_precision_casts", value=b"MAYBE")]
+            )
+
+    def test_max_autotune_compile_spec(self):
+        options = CudaBackend.get_aoti_compile_options(
+            [CompileSpec(key="max_autotune", value=b"OFF")]
+        )
+
+        self.assertFalse(options["max_autotune"])
+
+    def test_invalid_max_autotune_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid max_autotune"):
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="max_autotune", value=b"MAYBE")]
+            )
+
+    def test_autotune_at_compile_time_compile_spec(self):
+        options = CudaBackend.get_aoti_compile_options(
+            [CompileSpec(key="autotune_at_compile_time", value=b"OFF")]
+        )
+
+        self.assertFalse(options["triton.autotune_at_compile_time"])
+
+    def test_invalid_autotune_at_compile_time_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid autotune_at_compile_time"):
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
+            )
+
+
 class TestCudaExport(unittest.TestCase):
     """Test CUDA export functionality for various operations using to_edge_transform_and_lower."""
 

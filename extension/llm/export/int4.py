@@ -97,6 +97,37 @@ class ExportableInt4Tensor(TorchAOBaseTensor):
             w.dtype,
         )
 
+    @classmethod
+    def from_intx_unpacked_to_int8_tensor(cls, w: Tensor) -> "ExportableInt4Tensor":
+        """Build from a 4-bit weight-only ``IntxUnpackedToInt8Tensor``.
+
+        Raises ``ValueError`` if ``w`` is not 4-bit (``target_dtype`` is not
+        ``torch.int4``) or carries activation quantization — neither can be
+        represented as an ``ExportableInt4Tensor``.
+
+        Nibble-packs the unpacked int8 ``qdata`` (values in [-8, 7]) into uint8
+        and offsets ``qdata``/``zero_point`` to the unsigned [0, 15] convention;
+        the ``+8`` offset cancels in ``scale * (q - z)``, so the dequantized
+        values are unchanged. ``scale``/``zero_point`` are transposed from the
+        IntxUnpacked ``(N, K//gs)`` layout to the Int4Tensor ``(K//gs, N)``.
+        """
+        if w.target_dtype != torch.int4:
+            raise ValueError(
+                "from_intx_unpacked_to_int8_tensor requires a 4-bit tensor "
+                f"(target_dtype=torch.int4), got target_dtype={w.target_dtype}"
+            )
+        if w.activation_quantization is not None:
+            raise ValueError(
+                "from_intx_unpacked_to_int8_tensor requires a weight-only tensor; "
+                "activation quantization cannot be represented as an "
+                "ExportableInt4Tensor"
+            )
+        q = (w.qdata.to(torch.int16) + 8).to(torch.uint8)  # [-8, 7] -> [0, 15]
+        packed = q[..., ::2] | (q[..., 1::2] << 4)  # (N, K) -> (N, K//2)
+        scale = w.scale.t().contiguous()
+        zero_point = (w.zero_point.to(w.scale.dtype) + 8).t().contiguous()
+        return cls(packed, scale, zero_point, int(w.block_size[-1]), w.dtype)
+
     def dequantize(self, output_dtype=None):
         return torch.ops.torchao.dequantize_int4_tensor(
             self.qdata,
@@ -104,6 +135,26 @@ class ExportableInt4Tensor(TorchAOBaseTensor):
             self.zero_point,
             self.group_size,
             output_dtype=output_dtype or self.orig_dtype,
+        )
+
+    def to(self, *args, **kwargs) -> "ExportableInt4Tensor":
+        """Move device and/or set the output dtype *without* dequantizing.
+
+        Mirrors ``IntxUnpackedToInt8Tensor.to``: the packed int4 ``qdata`` only
+        moves across devices, while ``scale``/``zero_point`` and the output
+        dtype follow ``dtype``. Use :meth:`dequantize` to materialize a dense
+        tensor.
+        """
+        kwargs = self._get_to_kwargs(*args, **kwargs)
+        device = kwargs.pop("device")
+        dtype = kwargs.pop("dtype")
+        assert dtype.is_floating_point, f"expected a floating dtype; got {dtype}"
+        return ExportableInt4Tensor(
+            self.qdata.to(device),
+            self.scale.to(device=device, dtype=dtype),
+            self.zero_point.to(device=device, dtype=dtype),
+            self.group_size,
+            dtype,
         )
 
     __torch_function__ = torch._C._disabled_torch_function_impl
