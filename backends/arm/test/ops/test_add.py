@@ -263,7 +263,9 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data | Add.test_data_fp16)
+@common.parametrize(
+    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
+)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -503,5 +505,46 @@ def test_add_tensor_u85_INT_16a8w(test_data: input_t1):
 
     pipeline.quantizer.set_global(
         get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+aten_op_scalar = "torch.ops.aten.add.Scalar"
+exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_add_Scalar"
+
+
+class AddScalar(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return torch.ops.aten.add.Scalar(x, 1.5)
+
+
+@common.parametrize(
+    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
+)
+@common.SkipIfNoModelConverter
+def test_add_scalar_vgf_no_quant(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AddScalar(),
+        test_data(),
+        aten_op_scalar,
+        exir_op_scalar,
+        run_on_vulkan_runtime=True,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_scalar_vgf_quant(test_data: input_t1):
+    # Quantized scalar add is lowered through the Tensor overload.
+    # We keep this as add.Tensor rather than add.Scalar.
+    pipeline = VgfPipeline[input_t1](
+        AddScalar(),
+        test_data(),
+        aten_op,
+        exir_op,
+        run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()

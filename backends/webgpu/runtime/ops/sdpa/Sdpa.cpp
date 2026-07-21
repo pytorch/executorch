@@ -9,10 +9,13 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
+#include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -185,7 +188,7 @@ void build_dispatch(
   WGPUPipelineLayout pipeline_layout =
       wgpuDeviceCreatePipelineLayout(device, &pl_desc);
 
-  // QK/AV/update_cache have an `override wg_size`; softmax (0) keeps a const.
+  // All callers pass an override wg_size; a 0 would keep the shader default.
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
@@ -255,9 +258,13 @@ static WGPUBuffer record_update_cache_dispatch(
   WGPUBuffer ubuf = graph.make_uniform_buffer(&uc, sizeof(uc));
   BufferBinding bindings[2] = {
       {cache.buffer, cache.nbytes}, {src.buffer, src.nbytes}};
+  const char* uc_src = kUpdateCacheWGSL;
+  if (graph.kv_f16()) {
+    uc_src = kUpdateCacheHalfWGSL;
+  }
   build_dispatch(
       graph,
-      kUpdateCacheWGSL,
+      uc_src,
       bindings,
       2,
       ubuf,
@@ -474,8 +481,11 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   // QK/softmax scratch — allocated only on the non-FD path (Hq*S*Cmax prefill).
-  WGPUBuffer attn_weights = graph.create_scratch_buffer(aw_bytes);
-  WGPUBuffer attn_weights_softmax = graph.create_scratch_buffer(aw_bytes);
+  WGPUBuffer attn_weights = graph.acquire_scratch(aw_bytes);
+  WebGPUGraph::ScopedScratch attn_weights_guard(&graph, attn_weights);
+  WGPUBuffer attn_weights_softmax = graph.acquire_scratch(aw_bytes);
+  WebGPUGraph::ScopedScratch attn_weights_softmax_guard(
+      &graph, attn_weights_softmax);
 
   // --- Dispatch 3: QK -> attn_weights. One thread per TM x TN tile.
   {
@@ -494,9 +504,13 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         {attn_weights, aw_bytes},
         {q.buffer, q.nbytes},
         {k_cache.buffer, k_cache.nbytes}};
+    const char* qk_src = kSdpaComputeAttnWeightsWGSL;
+    if (graph.kv_f16()) {
+      qk_src = kSdpaComputeAttnWeightsHalfWGSL;
+    }
     build_dispatch(
         graph,
-        kSdpaComputeAttnWeightsWGSL,
+        qk_src,
         bindings,
         3,
         ubuf,
@@ -515,6 +529,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     // One workgroup per (h,s) row; wg_size 1 keeps the device dispatch check.
     const utils::WgCount wgc = utils::compute_2d_workgroup_count(
         device, static_cast<uint32_t>(Hq * S), 1, "softmax");
+    const uint32_t sm_wg =
+        utils::clamp_workgroup_size_pow2(device, kSdpaSoftmaxWorkgroupSizeX);
     SoftmaxParams p = make_softmax_params(Hq, S, context_len);
     WGPUBuffer ubuf = graph.make_uniform_buffer(&p, sizeof(p));
     BufferBinding bindings[2] = {
@@ -528,7 +544,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         sizeof(p),
         wgc.x,
         wgc.y,
-        0,
+        sm_wg,
         true,
         "sdpa_softmax");
     softmax_buf = ubuf;
@@ -547,9 +563,13 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         {out.buffer, out.nbytes},
         {attn_weights_softmax, aw_bytes},
         {v_cache.buffer, v_cache.nbytes}};
+    const char* av_src = kSdpaComputeOutWGSL;
+    if (graph.kv_f16()) {
+      av_src = kSdpaComputeOutHalfWGSL;
+    }
     build_dispatch(
         graph,
-        kSdpaComputeOutWGSL,
+        av_src,
         bindings,
         3,
         ubuf,

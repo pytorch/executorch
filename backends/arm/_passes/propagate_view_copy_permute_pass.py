@@ -149,7 +149,7 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
             next_nodes = list(self._get_next_nodes(frontier))
 
             if len(next_nodes) == 0:
-                assert node.op in (
+                assert frontier.op in (
                     "placeholder",
                     "output",
                 ), f"{self.__class__.__name__} reached an endpoint node which is not a placeholder or output: {frontier}"
@@ -339,6 +339,36 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
             return True
         return len(node.all_input_nodes) == 1
 
+    def _would_strand_layout_op_on_wider_elements(
+        self, next_node: torch.fx.Node
+    ) -> bool:
+        """Whether crossing next_node leaves the layout op on wider elements.
+
+        Crossing next_node upward moves the layout op onto next_node's input. When
+        next_node narrows the dtype (its input has wider elements than its output,
+        e.g. an int32 to int8 rescale), the layout op then has more bytes to move, so
+        block the crossing and keep it on the narrow side. The sole exception is a
+        placeholder input consumed only by next_node: moving the layout op onto such
+        a graph input folds it into the input's dim_order at no runtime cost. A
+        placeholder with other consumers cannot be relaid out for free, so the
+        crossing is still blocked. Valid for upward propagation only, where
+        next_node's single input is where the layout op would land.
+
+        """
+        input_nodes = next_node.all_input_nodes
+        if len(input_nodes) != 1:
+            return False
+        node_val = next_node.meta.get("val")
+        producer = input_nodes[0]
+        producer_val = producer.meta.get("val")
+        if not isinstance(node_val, torch.Tensor) or not isinstance(
+            producer_val, torch.Tensor
+        ):
+            return False
+        if producer_val.element_size() <= node_val.element_size():
+            return False
+        return producer.op != "placeholder" or len(producer.users) != 1
+
     @staticmethod
     def _is_contiguous_nonempty(dims: Sequence[int]) -> bool:
         sorted_dims = sorted(set(dims))
@@ -376,6 +406,11 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         if any(
             user.target == exir_ops.backend.tosa.SCATTER.default
             for user in frontier.users
+        ):
+            return False
+        if any(
+            self._would_strand_layout_op_on_wider_elements(next_node)
+            for next_node in next_nodes
         ):
             return False
         return all(

@@ -12,6 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -27,6 +28,33 @@ class IndexTensorTestCommon:
     BEFORE = "BEFORE"
     MIDDLE = "MIDDLE"
     AFTER = "AFTER"
+
+
+class IndexTensorInt64Buffer(torch.nn.Module):
+    """Swin-style indexing with an int64 get_attr index buffer."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("index", torch.tensor([0, 2], dtype=torch.int64))
+
+    def forward(self, x: torch.Tensor):
+        return x[self.index]
+
+
+def test_index_tensor_tosa_FP_int64_buffer_index():
+    # This mirrors torchvision Swin relative_position_bias_table[index]. The
+    # int64 get_attr must be cast before index.Tensor is decomposed to GATHER:
+    #
+    #   x[index:int64 buffer] -> x[index:int32 buffer] -> TOSA GATHER
+    pipeline = TosaPipelineFP[Tuple[torch.Tensor]](
+        IndexTensorInt64Buffer(),
+        (torch.rand(4, 3),),
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        atol=IndexTensorTestCommon.atol,
+        rtol=IndexTensorTestCommon.rtol,
+    )
+    pipeline.run()
 
 
 input_params_slice = Tuple[torch.Tensor, int, int, str, Tuple[torch.Tensor]]
@@ -560,3 +588,37 @@ def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
             quantize=True,
             u55_subset=True,
         ).run()
+
+
+@common.parametrize(
+    "test_data",
+    IndexTensor.test_data_fp | IndexTensor.test_data_bf16 | IndexTensor.test_data_fp16,
+)
+@common.SkipIfNoModelConverter
+def test_index_tensor_vgf_no_quant(test_data: input_params):
+    test_input = test_data
+    pipeline = VgfPipeline[input_params](
+        IndexTensor(),
+        test_input,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        atol=IndexTensorTestCommon.atol,
+        rtol=IndexTensorTestCommon.rtol,
+        tosa_extensions=["bf16"],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
+@common.SkipIfNoModelConverter
+def test_index_tensor_vgf_quant(test_data: input_params):
+    test_input = test_data
+    pipeline = VgfPipeline[input_params](
+        IndexTensor(),
+        test_input,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        quantize=True,
+    )
+    pipeline.run()

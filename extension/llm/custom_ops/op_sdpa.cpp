@@ -15,6 +15,11 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/kernel/operator_registry.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <vector>
 
 #ifdef ET_USE_THREADPOOL
 #include <executorch/extension/threadpool/threadpool.h>
@@ -45,8 +50,10 @@ bool validate_flash_attention_args(
 
   ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == ScalarType::Float) ||
+          (query.scalar_type() == ScalarType::Half) ||
+          (query.scalar_type() == ScalarType::BFloat16) ||
           (query.scalar_type() == ScalarType::Char),
-      "Query must be Float type");
+      "Query must be Float, Half, BFloat16, or Char type");
 
   ET_CHECK_OR_RETURN_FALSE(
       (query.scalar_type() == key.scalar_type()) &&
@@ -178,6 +185,79 @@ bool validate_cache_params(
   return true;
 }
 
+bool validate_channelwise_gated_delta_rule_args(
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& decay,
+    const Tensor& beta,
+    const Tensor& initial_state) {
+  ET_CHECK_OR_RETURN_FALSE(query.dim() == 4, "query must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(key.dim() == 4, "key must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(value.dim() == 4, "value must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(decay.dim() == 4, "decay must be a 4D tensor");
+  ET_CHECK_OR_RETURN_FALSE(beta.dim() == 3, "beta must be a 3D tensor");
+  ET_CHECK_OR_RETURN_FALSE(
+      initial_state.dim() == 4, "initial_state must be a 4D tensor");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      query.scalar_type() == ScalarType::Float, "query must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      key.scalar_type() == ScalarType::Float, "key must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      value.scalar_type() == ScalarType::Float, "value must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      decay.scalar_type() == ScalarType::Float, "decay must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      beta.scalar_type() == ScalarType::Float, "beta must be float32");
+  ET_CHECK_OR_RETURN_FALSE(
+      initial_state.scalar_type() == ScalarType::Float,
+      "initial_state must be float32");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      query.size(0) == key.size(0) && query.size(1) == key.size(1) &&
+          query.size(2) == key.size(2) && query.size(3) == key.size(3),
+      "query and key must have matching shapes");
+  ET_CHECK_OR_RETURN_FALSE(
+      query.size(0) == decay.size(0) && query.size(1) == decay.size(1) &&
+          query.size(2) == decay.size(2) && query.size(3) == decay.size(3),
+      "query and decay must have matching shapes");
+  ET_CHECK_OR_RETURN_FALSE(
+      query.size(0) == value.size(0) && query.size(1) == value.size(1) &&
+          query.size(2) == value.size(2),
+      "query and value must match in batch/head/sequence dims");
+  ET_CHECK_OR_RETURN_FALSE(
+      beta.size(0) == query.size(0) && beta.size(1) == query.size(1) &&
+          beta.size(2) == query.size(2),
+      "beta must match query batch/head/sequence dims");
+  ET_CHECK_OR_RETURN_FALSE(
+      initial_state.size(0) == query.size(0) &&
+          initial_state.size(1) == query.size(1) &&
+          initial_state.size(2) == query.size(3) &&
+          initial_state.size(3) == value.size(3),
+      "initial_state shape must match [B, H, K, V]");
+
+  for (const Tensor* tensor :
+       {&query, &key, &value, &decay, &beta, &initial_state}) {
+    ET_CHECK_OR_RETURN_FALSE(
+        is_contiguous_dim_order((*tensor).dim_order().data(), (*tensor).dim()),
+        "channelwise gated delta rule expects contiguous inputs");
+  }
+
+  return true;
+}
+
+bool tensor_memory_ranges_overlap(const Tensor& a, const Tensor& b) {
+  if (a.nbytes() == 0 || b.nbytes() == 0) {
+    return false;
+  }
+  const auto a_begin = reinterpret_cast<uintptr_t>(a.const_data_ptr());
+  const auto b_begin = reinterpret_cast<uintptr_t>(b.const_data_ptr());
+  const auto a_end = a_begin + a.nbytes();
+  const auto b_end = b_begin + b.nbytes();
+  return a_begin < b_end && b_begin < a_end;
+}
+
 // TODO: seq_length is not yet used for copy
 void update_cache(
     const Tensor& projected_value,
@@ -266,7 +346,7 @@ Tensor& flash_attention_kernel_out(
 
   auto seq_len = query.size(2);
 
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
@@ -414,7 +494,7 @@ Tensor& custom_sdpa_out_impl(
 
   // TODO(task): replace the template param selection logic
   // with whatever apprpriately makes more sense for
-  ET_SWITCH_FLOAT_TYPES(
+  ET_SWITCH_FLOATHBF16_TYPES(
       output.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
         // TODO we need to re-evaluate this for ARM CPUs
         // And there can be many so instead of templatizing
@@ -610,6 +690,183 @@ Tensor& sdpa_with_kv_cache_out(
 
   return output;
 }
+
+std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
+    RuntimeContext& ctx,
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& decay,
+    const Tensor& beta,
+    const Tensor& initial_state,
+    Tensor& out,
+    Tensor& final_state_out) {
+  std::tuple<Tensor&, Tensor&> ret(out, final_state_out);
+  ET_KERNEL_CHECK(
+      ctx,
+      validate_channelwise_gated_delta_rule_args(
+          query, key, value, decay, beta, initial_state),
+      InvalidArgument,
+      ret);
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !tensor_memory_ranges_overlap(initial_state, final_state_out),
+      InvalidArgument,
+      ret,
+      "channelwise_gated_delta_rule final_state_out must not alias initial_state.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, value.sizes()) == Error::Ok,
+      InvalidArgument,
+      ret,
+      "Failed to resize channelwise_gated_delta_rule output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(final_state_out, initial_state.sizes()) == Error::Ok,
+      InvalidArgument,
+      ret,
+      "Failed to resize channelwise_gated_delta_rule final_state tensor.");
+  ET_KERNEL_CHECK(
+      ctx, out.scalar_type() == ScalarType::Float, InvalidArgument, ret);
+  ET_KERNEL_CHECK(
+      ctx,
+      final_state_out.scalar_type() == ScalarType::Float,
+      InvalidArgument,
+      ret);
+  ET_KERNEL_CHECK(
+      ctx,
+      is_contiguous_dim_order(out.dim_order().data(), out.dim()),
+      InvalidArgument,
+      ret);
+  ET_KERNEL_CHECK(
+      ctx,
+      is_contiguous_dim_order(
+          final_state_out.dim_order().data(), final_state_out.dim()),
+      InvalidArgument,
+      ret);
+
+  const auto batch_size = query.size(0);
+  const auto num_heads = query.size(1);
+  const auto sequence_length = query.size(2);
+  const auto k_head_dim = query.size(3);
+  const auto v_head_dim = value.size(3);
+
+  const auto qk_batch_stride = num_heads * sequence_length * k_head_dim;
+  const auto qk_head_stride = sequence_length * k_head_dim;
+  const auto qk_seq_stride = k_head_dim;
+
+  const auto value_batch_stride = num_heads * sequence_length * v_head_dim;
+  const auto value_head_stride = sequence_length * v_head_dim;
+  const auto value_seq_stride = v_head_dim;
+
+  const auto beta_batch_stride = num_heads * sequence_length;
+  const auto beta_head_stride = sequence_length;
+
+  const auto state_batch_stride = num_heads * k_head_dim * v_head_dim;
+  const auto state_head_stride = k_head_dim * v_head_dim;
+
+  const auto* query_data = query.const_data_ptr<float>();
+  const auto* key_data = key.const_data_ptr<float>();
+  const auto* value_data = value.const_data_ptr<float>();
+  const auto* decay_data = decay.const_data_ptr<float>();
+  const auto* beta_data = beta.const_data_ptr<float>();
+  const auto* initial_state_data = initial_state.const_data_ptr<float>();
+  auto* state_data = final_state_out.mutable_data_ptr<float>();
+  auto* output_data = out.mutable_data_ptr<float>();
+
+  const int64_t scratch_numel = 2 * v_head_dim;
+  std::unique_ptr<float[]> fallback_scratch;
+  float* scratch_data = nullptr;
+  Result<void*> scratch = ctx.allocate_temp(
+      scratch_numel * sizeof(float), /*alignment=*/alignof(float));
+  if (scratch.ok()) {
+    scratch_data = reinterpret_cast<float*>(scratch.get());
+  } else {
+    fallback_scratch = std::make_unique<float[]>(scratch_numel);
+    scratch_data = fallback_scratch.get();
+  }
+  float* v_pred = scratch_data;
+  float* delta = scratch_data + v_head_dim;
+
+  for (int64_t batch = 0; batch < batch_size; ++batch) {
+    for (int64_t head = 0; head < num_heads; ++head) {
+      const auto qk_offset = batch * qk_batch_stride + head * qk_head_stride;
+      const auto value_offset =
+          batch * value_batch_stride + head * value_head_stride;
+      const auto beta_offset =
+          batch * beta_batch_stride + head * beta_head_stride;
+      const auto state_offset =
+          batch * state_batch_stride + head * state_head_stride;
+
+      const auto* q_head = query_data + qk_offset;
+      const auto* k_head = key_data + qk_offset;
+      const auto* decay_head = decay_data + qk_offset;
+      const auto* value_head = value_data + value_offset;
+      const auto* beta_head = beta_data + beta_offset;
+      const auto* initial_state_head = initial_state_data + state_offset;
+      auto* state_head = state_data + state_offset;
+      auto* output_head = output_data + value_offset;
+
+      // Functional: seed the running state from initial_state without mutating
+      // the (read-only) input.
+      for (int64_t idx = 0; idx < state_head_stride; ++idx) {
+        state_head[idx] = initial_state_head[idx];
+      }
+
+      for (int64_t token = 0; token < sequence_length; ++token) {
+        const auto* q_t = q_head + token * qk_seq_stride;
+        const auto* k_t = k_head + token * qk_seq_stride;
+        const auto* decay_t = decay_head + token * qk_seq_stride;
+        const auto* v_t = value_head + token * value_seq_stride;
+        const float beta_t = beta_head[token];
+        auto* output_t = output_head + token * value_seq_stride;
+
+        // The recurrence needs only two passes over the K x V state S:
+        //   pass 1 (read-only): v_pred = (Diag(decay) S)^T k
+        //   pass 2 (read+write): S = Diag(decay) S + k (x) delta;  o = S^T q
+        // Decay is folded into both passes (never materialized separately), and
+        // the rank-1 write and output readout share pass 2, so S is streamed
+        // twice per token instead of four times. Multiply groupings match the
+        // naive form, so results are identical up to floating-point contraction
+        // (e.g. compiler FMA).
+
+        // Pass 1: predicted value off the decayed state (S left untouched).
+        std::fill(v_pred, v_pred + v_head_dim, 0.0f);
+        for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+          const float decay_value = decay_t[k_idx];
+          const float key_value = k_t[k_idx];
+          const auto* state_row = state_head + k_idx * v_head_dim;
+          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+            v_pred[v_idx] += (state_row[v_idx] * decay_value) * key_value;
+          }
+        }
+
+        // delta = beta * (v - v_pred).
+        for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+          delta[v_idx] = (v_t[v_idx] - v_pred[v_idx]) * beta_t;
+        }
+
+        // Pass 2: apply decay + rank-1 write in place, and read back the
+        // updated row for the output projection in the same sweep.
+        std::fill(output_t, output_t + v_head_dim, 0.0f);
+        for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+          const float decay_value = decay_t[k_idx];
+          const float key_value = k_t[k_idx];
+          const float query_value = q_t[k_idx];
+          auto* state_row = state_head + k_idx * v_head_dim;
+          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+            const float updated =
+                state_row[v_idx] * decay_value + key_value * delta[v_idx];
+            state_row[v_idx] = updated;
+            output_t[v_idx] += updated * query_value;
+          }
+        }
+      }
+    }
+  }
+
+  return ret;
+}
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -628,3 +885,41 @@ EXECUTORCH_LIBRARY(
     llama,
     "custom_quantized_sdpa.out",
     torch::executor::native::custom_quantized_sdpa_out);
+
+namespace {
+
+void channelwise_gated_delta_rule_out_boxed(
+    executorch::runtime::KernelRuntimeContext& ctx,
+    executorch::runtime::Span<executorch::runtime::EValue*> stack) {
+  // Multi-output out variants get a trailing TensorList aggregating the two
+  // outputs appended by the emitter, so the boxed stack has 9 entries: 6 inputs
+  // + out + final_state_out + [out, final_state_out]. The aggregate (stack[8])
+  // duplicates stack[6]/stack[7] and is ignored.
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      stack.size() == 9,
+      InvalidProgram,
+      /* void */,
+      "Expected %zu args, got %zu",
+      static_cast<size_t>(9),
+      stack.size());
+
+  auto& query = stack[0]->toTensor();
+  auto& key = stack[1]->toTensor();
+  auto& value = stack[2]->toTensor();
+  auto& decay = stack[3]->toTensor();
+  auto& beta = stack[4]->toTensor();
+  auto& initial_state = stack[5]->toTensor();
+  auto& out = stack[6]->toTensor();
+  auto& final_state_out = stack[7]->toTensor();
+
+  (void)torch::executor::native::channelwise_gated_delta_rule_out(
+      ctx, query, key, value, decay, beta, initial_state, out, final_state_out);
+}
+
+const auto channelwise_gated_delta_rule_out_registration =
+    executorch::runtime::register_kernel(executorch::runtime::Kernel(
+        "llama::channelwise_gated_delta_rule.out",
+        channelwise_gated_delta_rule_out_boxed));
+
+} // namespace

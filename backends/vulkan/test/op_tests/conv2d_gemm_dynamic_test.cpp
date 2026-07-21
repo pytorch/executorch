@@ -258,7 +258,7 @@ std::vector<float> conv2d_ref_xnnpack(
   }
 
   size_t workspace_size = 0;
-  size_t workspace_alignment = 0;
+  size_t workspace_alignment = 128;
   size_t out_h = 0;
   size_t out_w = 0;
   const xnn_status reshape_status = xnn_reshape_convolution2d_nhwc_f32(

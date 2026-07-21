@@ -96,6 +96,10 @@ class TestMulTensor:
             pytest.param(
                 [ModelInputSpec((4,)), ModelInputSpec((4, 4))], id="2 inputs 1D+2D."
             ),
+            pytest.param(
+                [ModelInputSpec((10,)), ModelInputSpec((1, 1))],
+                id="2 inputs 1D + 2D, num_elems of input == num_elems of output",
+            ),
         ],
     )
     def test__broadcast(self, input_spec, mocker, request):
@@ -204,6 +208,9 @@ class TestMulTensor:
             expected_non_delegated_ops={},
         )
         dataset_creator = RandomDatasetCreator(low=-1.0, high=1.0)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -213,5 +220,5 @@ class TestMulTensor:
             request,
             dataset_creator,
             comparator,
-            remove_quant_io_ops=True,
+            remove_quant_io_ops=remove_quant_io_ops,
         )

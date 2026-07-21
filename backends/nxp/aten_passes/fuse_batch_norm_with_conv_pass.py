@@ -66,7 +66,7 @@ class FuseBatchNormWithConvPass(PassBase):
                 torch.ops.aten.conv1d.default,
                 torch.ops.aten.conv2d.default,
             )
-            has_single_user = len(node.users) == 1
+            has_single_user = len(node_.users) == 1
 
             return is_conv and has_single_user
 

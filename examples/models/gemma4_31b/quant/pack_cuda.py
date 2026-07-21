@@ -11,6 +11,9 @@ layouts read by the decode kernels:
 
   * ``Int4Tensor`` -> ``CudaCoalescedInt4Tensor`` (bakes the scale/zero transpose
     into the coalesced [N, n_groups] layout).
+  * Q5_K ``ExportableGGUFTensor`` -> ``CudaDp4aPlanarInt5Tensor`` (the genuine 5-bit
+    ql/qh split bit-planes, asymmetric; the Q5_K block decode is reused from
+    gguf.py, not duplicated).
   * Q6_K ``ExportableGGUFTensor`` -> ``CudaDp4aPlanarInt6Tensor`` (the genuine 6-bit
     ql/qh split bit-planes; the Q6_K block decode is reused from gguf.py, not
     duplicated).
@@ -31,7 +34,6 @@ import torch.nn as nn
 
 from .pack import ModulePackerFn, pack_model  # noqa: F401
 
-
 # ---------------------------------------------------------------------------
 # Per-module packers
 
@@ -39,11 +41,14 @@ from .pack import ModulePackerFn, pack_model  # noqa: F401
 def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) -> None:
     """Assign a quantized weight to an ``nn.Linear`` module.
 
-    Routes by weight type: ``Int4Tensor`` -> coalesced INT4, Q6_K
-    ``ExportableGGUFTensor`` -> packed INT6, genuine ``IntxUnpackedToInt8Tensor``
-    -> int8 passthrough.
+    Routes by weight type: ``Int4Tensor`` -> coalesced INT4, Q5_K
+    ``ExportableGGUFTensor`` -> packed INT5, Q6_K ``ExportableGGUFTensor`` ->
+    packed INT6, genuine ``IntxUnpackedToInt8Tensor`` -> int8 passthrough.
     """
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+    from executorch.backends.cuda.dp4a_planar_int5_tensor import (
+        CudaDp4aPlanarInt5Tensor,
+    )
     from executorch.backends.cuda.dp4a_planar_int6_tensor import (
         CudaDp4aPlanarInt6Tensor,
     )
@@ -63,6 +68,13 @@ def pack_linear_for_cuda(module: nn.Module, weights: dict[str, torch.Tensor]) ->
         # constant-fold ops on parameters, so the transpose must already live in
         # the constant for the coalesced layout to pay off.
         w = CudaCoalescedInt4Tensor.from_int4_tensor(w)
+    elif isinstance(w, ExportableGGUFTensor) and w.ggml_type == "q5_k":
+        # GGUF Q5_K: repack the native ExportableGGUFTensor into the genuine 5-bit
+        # CudaDp4aPlanarInt5Tensor (ql/qh split bit-planes, 0.625 B/elem) for the
+        # W5A8 dp4a decode kernel. Q5_K is asymmetric (has dmin), so this tensor
+        # carries a zero point like INT4. from_exportable_gguf reuses the shared
+        # Q5_K decode (gguf.py) then bakes the bit-pack into the weight constant.
+        w = CudaDp4aPlanarInt5Tensor.from_exportable_gguf(w)
     elif isinstance(w, ExportableGGUFTensor) and w.ggml_type == "q6_k":
         # GGUF Q6_K: repack the native ExportableGGUFTensor into the genuine 6-bit
         # CudaDp4aPlanarInt6Tensor (ql/qh split bit-planes, 0.75 B/elem) for the

@@ -8,7 +8,7 @@ from typing import List, Union
 import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_shape_env,
     get_context_spec,
@@ -68,7 +68,7 @@ def validate_max_pool2d_dtype(
         raise TosaValueError(f"Unsupported input dtype {x.dtype} pools", op=op)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "MAX_POOL2D(Tensor input, int[2] kernel, int[2] stride, SymInt[4] pad) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
