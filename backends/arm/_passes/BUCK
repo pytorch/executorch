@@ -1,0 +1,70 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "core",
+    srcs = [
+        "arm_pass.py",
+        "arm_pass_utils.py",
+        "quant_args.py",
+    ],
+    deps = [
+        "//executorch/backends/arm:common",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm/tosa:utils",
+        "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/backends/transforms:utils",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "arm_pass_manager_base",
+    srcs = ["arm_pass_manager.py"],
+    deps = [
+        ":core",
+        "//executorch/backends/arm:common",
+        "//executorch/backends/arm/tosa:utils",
+        "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/backends/transforms:fuse_cascaded_transpose_or_permute_ops",
+        "//executorch/backends/transforms:postpone_permute_below_squeeze_view",
+        "//executorch/backends/transforms:remove_permutes_around_elementwise_ops",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "arm_pass_manager_fb",
+    srcs = [],
+    deps = [
+        ":arm_pass_manager_base",
+        # @oss-disable[end= ]: "//executorch/backends/arm/_passes/fb:fb",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "passes",
+    srcs = glob(["*.py"], exclude = [
+        "arm_pass.py",
+        "arm_pass_utils.py",
+        "quant_args.py",
+    ]),
+    deps = [
+        ":core",
+        ":arm_pass_manager_base" if runtime.is_oss else ":arm_pass_manager_fb",
+        "//executorch/backends/transforms:aten_to_dialect_pass",
+        "//executorch/backends/arm/tosa:utils",
+        "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/backends/transforms:fuse_view_copy",
+        "//executorch/backends/transforms:remove_getitem_op",
+        "//executorch/backends/transforms:replace_scalar_with_tensor",
+        "//executorch/backends/xnnpack/_passes:xnnpack_passes",
+        "//executorch/exir:lib",
+        "//executorch/backends/transforms:utils",
+        "//executorch/backends/transforms:decompose_sdpa",
+    ],
+)
