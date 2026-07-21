@@ -4,11 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
 
-python_library(
+fbcode_target(
+    _kind = python_library,
     name = "quantizer_reporter",
     srcs = [
         "quantizer_reporter.py",
@@ -20,7 +22,8 @@ python_library(
     ],
 )
 
-python_library(
+fbcode_target(
+    _kind = python_library,
     name = "cmsis_nn",
     srcs = [
         "library/__init__.py",
@@ -31,7 +34,8 @@ python_library(
     ],
 )
 
-python_library(
+fbcode_target(
+    _kind = python_library,
     name = "target_config",
     srcs = [
         "target_config.py",
