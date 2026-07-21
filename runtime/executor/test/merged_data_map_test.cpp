@@ -18,9 +18,7 @@
 using namespace ::testing;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
-using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
-using executorch::runtime::FreeableBuffer;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::TensorLayout;

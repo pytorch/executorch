@@ -10,6 +10,8 @@
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <tuple>
+
 namespace torch {
 namespace executor {
 
@@ -75,6 +77,17 @@ Tensor& custom_quantized_sdpa_out(
     const optional<Tensor>& v_scales,
     const bool is_seq_at_dim_1,
     Tensor& output);
+
+std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
+    RuntimeContext& ctx,
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const Tensor& decay,
+    const Tensor& beta,
+    const Tensor& initial_state,
+    Tensor& out,
+    Tensor& final_state_out);
 } // namespace native
 } // namespace executor
 } // namespace torch
