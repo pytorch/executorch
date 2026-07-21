@@ -60,6 +60,24 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "int4",
+    srcs = [
+        "int4.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "gguf",
     srcs = [
         "gguf.py",
@@ -72,10 +90,56 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/extension/llm/...",
     ],
     deps = [
+        ":int4",
         "//caffe2:torch",
         "//pytorch/ao:torchao",
         "fbsource//third-party/pypi/gguf:gguf",
         "fbsource//third-party/pypi/numpy:numpy",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "quant",
+    srcs = [
+        "quant/__init__.py",
+        "quant/convert.py",
+        "quant/quantize.py",
+        "quant/recipe.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+    deps = [
+        ":gguf",
+        ":int4",
+        "//caffe2:torch",
+        "//executorch/backends/cuda:dp4a_planar_int6_tensor",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "load",
+    srcs = [
+        "load.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+    deps = [
+        ":gguf",
+        ":quant",
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/safetensors:safetensors",
     ],
 )
 
