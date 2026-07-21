@@ -309,8 +309,8 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
   // attn_weights S/context alignment (a decode-shaped buffer allocation has no
   // headroom for the shaders' align_up_4 stride unless padded — see sdpa_impl).
   {
-    // Cover both D=64 (D4=16) and D=128 (D4=32) so the GQA AV path is
-    // validated across head_dim.
+    // Cover D=64 (D4=16) and D=128 (D4=32) with the vendor-default GQA and the
+    // per-query-head shaders, across texture + buffer.
     const std::vector<SDPAConfig> decs = {
         {64, 8, 2, 1, 32, "accu", "decode"},
         {128, 8, 2, 1, 32, "accu_d128", "decode"},
@@ -323,6 +323,23 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
         }
       }
     }
+
+    // Force the head_dim output-tiled GQA variant (Adreno-only in production)
+    // so its wg x-collapse and the partial_n_tile tail get deterministic
+    // coverage on any device: D=64/128 give even D4 (fast path); D=4 gives D4=1
+    // (odd), exercising the partial-tile checked load.
+    const std::vector<SDPAConfig> tile2_decs = {
+        {64, 8, 2, 1, 32, "accu_tile2", "decode"},
+        {128, 8, 2, 1, 32, "accu_tile2_d128", "decode"},
+        {4, 8, 2, 1, 32, "accu_tile2_d4", "decode"},
+    };
+    for (const auto& dec : tile2_decs) {
+      for (const auto& storage : {utils::kTexture3D, utils::kBuffer}) {
+        test_cases.push_back(
+            create_sdpa_test_case(dec, vkapi::kFloat, storage, "gqa_tile2"));
+      }
+    }
+
     SDPAConfig pre{64, 8, 2, 16, 16, "accu", "prefill"};
     test_cases.push_back(create_sdpa_test_case(
         pre, vkapi::kFloat, utils::kTexture3D, "default"));
