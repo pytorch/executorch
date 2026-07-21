@@ -265,7 +265,7 @@ bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out) {
   const ssize_t dim_size = in.size(dim);
   ET_CHECK_OR_RETURN_FALSE(
       dim_size == static_cast<ssize_t>(out.size()),
-      "out tensorlist's length %zd must equal unbind dim %" PRId64
+      "out tensorlist's length %zu must equal unbind dim %" PRId64
       " size = %zd.",
       out.size(),
       dim,

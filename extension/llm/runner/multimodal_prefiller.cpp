@@ -104,7 +104,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
 
     ET_LOG(
         Info,
-        "Image tensor dim: %zu, dtype: %s",
+        "Image tensor dim: %zd, dtype: %s",
         image_tensor->dim(),
         ::executorch::runtime::toString(image_tensor->scalar_type()));
     // Run image encoder
@@ -161,7 +161,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
 
     ET_LOG(
         Info,
-        "Audio tensor dim: %zu, dtype: %s",
+        "Audio tensor dim: %zd, dtype: %s",
         audio_tensor->dim(),
         ::executorch::runtime::toString(audio_tensor->scalar_type()));
 
