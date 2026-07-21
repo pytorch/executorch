@@ -190,8 +190,9 @@ bool use_gqa_av_coop(
 }
 
 // Resolve whether the AV decode path uses the GQA-reuse coop shader, honoring
-// the test-only shader_override knob (see SDPA.h): -1/kDummyValueRef
-// auto-selects via use_gqa_av_coop; 0 forces off; 1 forces on.
+// the test-only shader_override knob (see SDPA.h): auto selects via
+// use_gqa_av_coop; kShaderOverrideForceNonGqa forces off; any other value
+// forces the GQA family on.
 bool resolve_use_gqa(
     ComputeGraph* graph,
     const ValueRef shader_override,
@@ -200,7 +201,8 @@ bool resolve_use_gqa(
   if (shader_override == kDummyValueRef) {
     return use_gqa_av_coop(graph, num_q_heads, num_kv_heads);
   }
-  const bool force_gqa = graph->extract_scalar<int64_t>(shader_override) != 0;
+  const bool force_gqa = graph->extract_scalar<int64_t>(shader_override) !=
+      kShaderOverrideForceNonGqa;
   // Forcing the GQA shader on an ineligible shape would silently drop query
   // heads (z-dispatch = Hkv cannot cover Hq, or group size exceeds the shader's
   // fixed accumulator array). Fail loudly instead of producing garbage output.
@@ -208,10 +210,27 @@ bool resolve_use_gqa(
     VK_CHECK_COND(
         num_kv_heads > 0 && num_q_heads % num_kv_heads == 0 &&
             num_q_heads / num_kv_heads <= kMaxGqaGroupSize,
-        "shader_override=1 requires a GQA-eligible shape: Hq divisible by Hkv and "
-        "group size <= kMaxGqaGroupSize");
+        "forcing GQA via shader_override requires a GQA-eligible shape: Hq "
+        "divisible by Hkv and group size <= kMaxGqaGroupSize");
   }
   return force_gqa;
+}
+
+// Resolve whether the GQA-reuse AV path uses the head_dim output-tiled (_tile2)
+// variant. Auto (no override) and kShaderOverrideForceGqa defer to the vendor
+// gate (tile2 on Adreno); the force values pin the variant on any device (see
+// SDPA.h), giving the Adreno-only tile2 variant deterministic test coverage.
+bool resolve_use_tile2(ComputeGraph* graph, const ValueRef shader_override) {
+  if (shader_override != kDummyValueRef) {
+    const int64_t ov = graph->extract_scalar<int64_t>(shader_override);
+    if (ov == kShaderOverrideForceTile2) {
+      return true;
+    }
+    if (ov == kShaderOverrideForceBase) {
+      return false;
+    }
+  }
+  return graph->device_is_adreno();
 }
 
 vkapi::ShaderInfo pick_sdpa_qk_shader(
@@ -347,6 +366,16 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
         // reusing it across the group. Cuts the dominant V-cache traffic ~Gx
         // for this bandwidth-bound kernel.
         shader_name += "_gqa_coop";
+        // The _tile2 (head_dim output-tiled) variant amortizes the attn-weight
+        // loads and shared-memory reduction over more outputs per workgroup. A
+        // consistent win on Adreno (AV ~1.14-1.63x) but a regression on Mali at
+        // common decode contexts (~0.67-0.86x, interleaved median), so it is
+        // selected vendor-adaptively (tests can pin it via shader_override; see
+        // resolve_use_tile2). pick_sdpa_av_global_wg_size keys the x-dim
+        // collapse off this same _tile2 suffix.
+        if (resolve_use_tile2(graph, shader_override)) {
+          shader_name += "_tile2";
+        }
       } else {
         shader_name += "_coop";
       }
@@ -389,7 +418,14 @@ utils::uvec3 pick_sdpa_av_global_wg_size(
   if (shader.kernel_name.find("_gqa_coop") != std::string::npos) {
     const ValueRef v = args.at(1).refs.at(1);
     const uint32_t num_kv_heads = graph->size_at<uint32_t>(-2, v);
-    return {N4, M4, static_cast<uint32_t>(num_kv_heads * d.B)};
+    // The _tile2 variant has each workgroup own 2 head_dim texels, so its x-dim
+    // collapses to div_up(D4, 2). The plain (TILE_N4 == 1) variant keeps x ==
+    // D4.
+    const uint32_t x_dim =
+        shader.kernel_name.find("_tile2") != std::string::npos
+        ? utils::div_up(N4, 2u)
+        : N4;
+    return {x_dim, M4, static_cast<uint32_t>(num_kv_heads * d.B)};
   }
 
   return {N4, M4, static_cast<uint32_t>(d.H * d.B)};
