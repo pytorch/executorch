@@ -1006,6 +1006,7 @@ jobs:
       build-mode: Release
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      linux-timeout: 120
 
   llm-server:
     needs: [changed-files, run-decision]
