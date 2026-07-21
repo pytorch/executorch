@@ -64,7 +64,11 @@ class BaseLinear(torch.nn.Module):
         self.ic = input_channels
         self.oc = output_channels
 
-        assert dtype in [torch.float, torch.half], "Unsupported op dtype"
+        assert dtype in [
+            torch.float,
+            torch.half,
+            torch.bfloat16,
+        ], "Unsupported op dtype"
         self.op_dtype = dtype
         self.in_size = in_size
 
@@ -706,9 +710,15 @@ class TestLinear(unittest.TestCase):
                     # Mean: 0.2373046875, 0.237060546875
                     # Max: 1.0078125, 1.0078125
                     # Min: -0.08465576171875, -0.08441162109375
-                    atol = (
-                        1e-2 if dtype == torch.half else 5e-3
-                    )  # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    # bf16 has ~8x coarser mantissa than fp16, so it needs a
+                    # looser atol.
+                    # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    if dtype == torch.bfloat16:
+                        atol = 8e-2
+                    elif dtype == torch.half:
+                        atol = 1e-2
+                    else:
+                        atol = 5e-3
                     self._test_groupwise_dq_linear(
                         lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
                     )
@@ -838,6 +848,13 @@ class TestLinear(unittest.TestCase):
     )
     def test_linear_qd8_f32_per_token_weight_per_channel_group_int4(self):
         self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.float)
+
+    # Tests for q[dp]8-bf16-qb4w
+    @unittest.skipIf(
+        not torchao_installed, "Per Channel Group Quantization Required TorchAO"
+    )
+    def test_linear_qd8_bf16_per_token_weight_per_channel_group_int4(self):
+        self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.bfloat16)
 
     @unittest.skipIf(
         not torchao_installed, "Per Channel Group Quantization Required TorchAO"
