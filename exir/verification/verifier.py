@@ -263,7 +263,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             _edge_compile_config = edge_compile_config or EdgeCompileConfig()
 
             self.enable = _edge_compile_config._check_ir_validity
-            self.check_edge_ops = _edge_compile_config._use_edge_ops
             self.use_dim_order = not _edge_compile_config._skip_dim_order
 
             self._core_aten_ops_exception_list = _core_aten_ops_exception_list
@@ -274,11 +273,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 preserve_ops=_preserve_ops,
             )
             self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
-
-            if self.check_edge_ops:
-                self.check_valid_op = self.check_valid_edge_op
-            else:
-                self.check_valid_op = self.check_valid_aten_op
+            self.check_valid_op = self.check_valid_edge_op
 
         def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
             return (
@@ -319,9 +314,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
         def check_additional(self, gm: GraphModule) -> None:
             if not self.enable:
                 return
-            if self.check_edge_ops:
-                _check_tensors_are_contiguous(gm)
-                _check_tensor_args_matching_op_allowed_dtype(gm)
+            _check_tensors_are_contiguous(gm)
+            _check_tensor_args_matching_op_allowed_dtype(gm)
 
         def is_valid(self, gm: GraphModule) -> bool:
             try:
