@@ -109,6 +109,17 @@ def define_op_library(name, compiler_flags, deps):
             "ovr_config//os:zephyr": [
                 "-Wno-pass-failed",
             ],
+            # The vendored ATen vec headers trip several -Werror warnings on
+            # the Windows (clang) host, so disable warnings-as-errors there.
+            "ovr_config//os:windows": select({
+                "DEFAULT": [
+                    "-Wno-missing-prototypes",
+                    "-Wno-pass-failed",
+                    "-Wno-error",
+                ],
+                # MSVC cl.exe rejects the gcc-style flags above.
+                "ovr_config//compiler:msvc": [],
+            }),
         }) if not runtime.is_oss else [
             "-Wno-missing-prototypes",
             "-Wno-pass-failed",

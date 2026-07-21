@@ -1,0 +1,74 @@
+name: Test QNN Windows MSVC build
+
+# Changes to backends/qualcomm/, top-level CMake files, extension/,
+# examples/, runtime/, and other shared infrastructure can affect
+# the QNN Windows MSVC build. Rather than maintaining a fragile list
+# of relevant path filters, this workflow runs on every PR to ensure
+# build coverage.
+#
+# Reasons for keeping qnn-windows-msvc.yml separate from test-backend-qnn.yml:
+#
+# - Two workflows are triggered by different tags.
+#   - test-backend-qnn.yml runs under ciflow/nightly/*.
+#   - qnn-windows-msvc.yml runs under ciflow/trunk/*.
+#   Merging them would introduce the behavior change to the existing flow.
+#
+# - Workflow reruns are more efficient when they remain separate.
+#   A Windows-only failure would still require rerunning jobs in test-backend-qnn.yml
+#   if they are combined into a single workflow, resulting in unnecessary CI
+#   resource consumption (and vice versa).
+#
+# - Failure signals are clearer when the workflows are isolated.
+#   With a combined workflow, additional inspection of the job list would be required to
+#   identify the root cause of a failing status. Keeping the workflows separate provides
+#   distinct top-level CI statuses, making the failure domain immediately obvious.
+#
+# For now, qnn-windows-msvc.yml should remain separate from trunk.yml and pull.yml:
+#
+# - trunk.yml is only triggered for PRs that modify files matching:
+#     - .ci/docker/ci_commit_pins/pytorch.txt
+#     - .ci/scripts/**
+#     - zephyr/**
+#   As a result, trunk.yml would not run for PRs that touch backends/qualcomm/**.
+#
+# - pull.yml runs on every PR without path filters, but currently contains only
+#   Linux jobs. Keeping qnn-windows-msvc.yml as a standalone workflow provides
+#   independent status visibility and more efficient reruns for QNN Windows build.
+#
+# Once the QNN Windows CI path has demonstrated sufficient stability, we can revisit
+# whether it makes sense to consolidate qnn-windows-msvc.yml into pull.yml.
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/trunk/*
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-qnn-windows-msvc:
+    name: build-qnn-windows-msvc
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    with:
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive
+        conda init powershell
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+          .ci/scripts/build-qnn-windows-msvc.ps1
+        }"
