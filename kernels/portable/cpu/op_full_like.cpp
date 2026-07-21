@@ -21,7 +21,7 @@ Tensor& full_like_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     const Scalar& fill_value,
-    std::optional<MemoryFormat> memory_format,
+    optional<MemoryFormat> memory_format,
     Tensor& out) {
   (void)ctx;
 

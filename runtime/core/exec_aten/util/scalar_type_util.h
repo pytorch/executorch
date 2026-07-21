@@ -25,7 +25,6 @@
 #include <cinttypes>
 #include <cstdint>
 #include <limits>
-#include <string_view>
 #include <type_traits>
 
 #include <c10/macros/Macros.h>
@@ -48,10 +47,11 @@ using ScalarType = at::ScalarType;
 } // namespace executorch
 #else // !USE_ATEN_LIB
 #include <executorch/runtime/core/portable_type/scalar_type.h>
+#include <executorch/runtime/core/portable_type/string_view.h>
 namespace executorch {
 namespace aten {
 using ScalarType = torch::executor::ScalarType;
-using string_view ET_DEPRECATED = std::string_view;
+using string_view = std::string_view;
 } // namespace aten
 } // namespace executorch
 #endif // USE_ATEN_LIB

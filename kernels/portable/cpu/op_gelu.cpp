@@ -19,11 +19,12 @@ namespace native {
 
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
+using string_view = std::string_view;
 
 Tensor& gelu_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    std::string_view approximate,
+    string_view approximate,
     Tensor& out) {
   (void)ctx;
 
