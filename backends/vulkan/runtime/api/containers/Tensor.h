@@ -549,11 +549,11 @@ class vTensor final {
     return sizes_;
   }
 
-  inline const int64_t size(size_t dim) const {
+  inline int64_t size(size_t dim) const {
     return sizes().at(dim);
   }
 
-  inline const int64_t dim() const {
+  inline int64_t dim() const {
     return sizes_.size();
   }
 

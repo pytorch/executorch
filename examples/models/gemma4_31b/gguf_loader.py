@@ -148,7 +148,7 @@ def _untie_embed_lm_head(model, gtensor, weight, backend):
         return weight, gtensor
 
     if gtensor.ggml_type in ("q6_k", "q4_k"):
-        intx = gtensor.to_intx_unpacked_to_int8_tensor()
+        intx = gtensor.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
         if gtensor.ggml_type == "q6_k":
             import torch.nn as nn
             from executorch.backends.cuda.dp4a_planar_int6_tensor import (
@@ -229,7 +229,7 @@ def load_gguf_model(
                     model, value, weight, backend
                 )
             value = weight
-        elif value.dtype == torch.float32:
+        elif value.dtype in (torch.float32, torch.float16):
             value = value.to(torch.bfloat16)
 
         pack_one(model, model_key, value, packers)
