@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/SDPA.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
@@ -26,19 +27,6 @@
 namespace vkcompute {
 
 namespace {
-
-//
-// SDPA mode: distinguishes the two dispatch families sharing this file.
-//   LLM   — Llama-style KV-cache SDPA. Q layout [B=1, S, H,    D] (DHSB).
-//           Separate k_cache/v_cache inputs + input_pos_symint for dynamic
-//           context_len. attn_weights are padded to multiples of 4 in the
-//           S/context_len dims and carry the input dtype. A coop (GEMV)
-//           shader variant is selected for single-token decode.
-//   FUSED — General SDPA fused op. Q layout [B, H, S, D] (DSHB). No cache,
-//           optional additive attn_mask, optional scale arg. attn_weights
-//           are unpadded and always fp32. Tiled shader variant only.
-//
-enum class SDPAMode { LLM, FUSED };
 
 //
 // Common dimension helper: folds the axis-swap for LLM vs fused Q layouts.
@@ -178,6 +166,54 @@ static inline SDPAMode mode_of(const std::vector<ValueRef>& resize_args) {
   return static_cast<SDPAMode>(resize_args.at(3));
 }
 
+// Upper bound on the GQA group size the coop-GQA shader supports; must match
+// MAX_GROUP_SIZE in the GQA branch of sdpa_compute_out_coop.glsl.
+constexpr int64_t kMaxGqaGroupSize = 8;
+
+// Whether the LLM decode AV path should use the GQA-reuse coop shader: one
+// workgroup computes all G = Hq / Hkv query heads sharing a KV head, loading
+// each V texel once. Requires GQA (Hq > Hkv, evenly divisible) and a group size
+// within the shader's compile-time bound.
+bool use_gqa_av_coop(
+    ComputeGraph* graph,
+    const int64_t num_q_heads,
+    const int64_t num_kv_heads) {
+  (void)graph;
+  if (num_kv_heads <= 0 || num_q_heads <= num_kv_heads) {
+    return false;
+  }
+  if (num_q_heads % num_kv_heads != 0) {
+    return false;
+  }
+  const int64_t group_size = num_q_heads / num_kv_heads;
+  return group_size <= kMaxGqaGroupSize;
+}
+
+// Resolve whether the AV decode path uses the GQA-reuse coop shader, honoring
+// the test-only shader_override knob (see SDPA.h): -1/kDummyValueRef
+// auto-selects via use_gqa_av_coop; 0 forces off; 1 forces on.
+bool resolve_use_gqa(
+    ComputeGraph* graph,
+    const ValueRef shader_override,
+    const int64_t num_q_heads,
+    const int64_t num_kv_heads) {
+  if (shader_override == kDummyValueRef) {
+    return use_gqa_av_coop(graph, num_q_heads, num_kv_heads);
+  }
+  const bool force_gqa = graph->extract_scalar<int64_t>(shader_override) != 0;
+  // Forcing the GQA shader on an ineligible shape would silently drop query
+  // heads (z-dispatch = Hkv cannot cover Hq, or group size exceeds the shader's
+  // fixed accumulator array). Fail loudly instead of producing garbage output.
+  if (force_gqa) {
+    VK_CHECK_COND(
+        num_kv_heads > 0 && num_q_heads % num_kv_heads == 0 &&
+            num_q_heads / num_kv_heads <= kMaxGqaGroupSize,
+        "shader_override=1 requires a GQA-eligible shape: Hq divisible by Hkv and "
+        "group size <= kMaxGqaGroupSize");
+  }
+  return force_gqa;
+}
+
 vkapi::ShaderInfo pick_sdpa_qk_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -297,8 +333,26 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
     const ValueRef q_projected = resize_args.at(0);
     const bool is_gemv = is_single_token(graph, q_projected);
 
+    // Test-only knob (see SDPA.h): -1 auto, 0 forces per-query-head, 1 forces
+    // the GQA-reuse shader.
+    const ValueRef shader_override = resize_args.at(4);
+
     std::string shader_name = "sdpa_compute_out";
-    shader_name += is_gemv ? "_coop" : "_tiled";
+    if (is_gemv) {
+      const int64_t num_q_heads = graph->size_at<int64_t>(-2, q_projected);
+      const int64_t num_kv_heads = graph->size_at<int64_t>(-2, v_cache);
+      if (resolve_use_gqa(graph, shader_override, num_q_heads, num_kv_heads)) {
+        // Grouped-query attention: one workgroup computes all G = Hq / Hkv
+        // query heads that share a KV head, loading each V texel once and
+        // reusing it across the group. Cuts the dominant V-cache traffic ~Gx
+        // for this bandwidth-bound kernel.
+        shader_name += "_gqa_coop";
+      } else {
+        shader_name += "_coop";
+      }
+    } else {
+      shader_name += "_tiled";
+    }
     add_storage_type_suffix(shader_name, graph->storage_type_of(out));
     add_storage_type_suffix(shader_name, graph->storage_type_of(v_cache));
     add_dtype_suffix(shader_name, graph->dtype_of(out));
@@ -319,7 +373,6 @@ utils::uvec3 pick_sdpa_av_global_wg_size(
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)shader;
   const SDPAMode mode = mode_of(resize_args);
   const ValueRef q = resize_args.at(0);
   const ValueRef k = resize_args.at(1);
@@ -328,6 +381,17 @@ utils::uvec3 pick_sdpa_av_global_wg_size(
 
   const uint32_t N4 = utils::div_up_4(static_cast<uint32_t>(d.D));
   const uint32_t M4 = utils::div_up_4(static_cast<uint32_t>(d.S));
+
+  // The GQA-reuse AV coop shader assigns one workgroup per (d4, kv_h) and emits
+  // all G query heads in the group, so the z-dim is the number of KV heads
+  // rather than the number of Q heads. d.H is the Q-head count; recover the KV
+  // count from the V cache (args read group: [attn_weights_softmax, v]).
+  if (shader.kernel_name.find("_gqa_coop") != std::string::npos) {
+    const ValueRef v = args.at(1).refs.at(1);
+    const uint32_t num_kv_heads = graph->size_at<uint32_t>(-2, v);
+    return {N4, M4, static_cast<uint32_t>(num_kv_heads * d.B)};
+  }
+
   return {N4, M4, static_cast<uint32_t>(d.H * d.B)};
 }
 
@@ -498,7 +562,8 @@ void add_sdpa_compute_out_node(
     const ValueRef k,
     const ValueRef input_pos_symint,
     const ValueRef out,
-    const SDPAMode mode) {
+    const SDPAMode mode,
+    const ValueRef shader_override) {
   vkapi::ParamsBindList param_ubos;
   if (mode == SDPAMode::LLM) {
     param_ubos = {
@@ -510,6 +575,24 @@ void add_sdpa_compute_out_node(
   }
 
   const ValueRef mode_ref = static_cast<ValueRef>(mode);
+
+  // The GQA-reuse AV coop shader needs its group size G = Hq / Hkv as a
+  // specialization constant. The shader declares spec consts [inv_scale (unused
+  // in AV), group_size]; pass both positionally so group_size lands at the
+  // right slot. Non-GQA AV shaders declare only inv_scale (or none), so the
+  // trailing group_size entry is simply ignored there. The GQA gate is fixed at
+  // build time (Hq/Hkv/capability don't change across decode steps), matching
+  // pick_sdpa_av_shader.
+  vkapi::SpecVarList spec_vars = {};
+  if (mode == SDPAMode::LLM) {
+    const int64_t num_q_heads = graph.size_at<int64_t>(-2, q);
+    const int64_t num_kv_heads = graph.size_at<int64_t>(-2, v);
+    if (resolve_use_gqa(&graph, shader_override, num_q_heads, num_kv_heads)) {
+      const int32_t group_size =
+          utils::safe_downcast<int32_t>(num_q_heads / num_kv_heads);
+      spec_vars = {1.0f, group_size};
+    }
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -523,9 +606,9 @@ void add_sdpa_compute_out_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
-      // Resize Args: [q, k, input_pos_symint_or_dummy, mode]
-      {q, k, input_pos_symint, mode_ref},
+      spec_vars,
+      // Resize Args: [q, k, input_pos_symint_or_dummy, mode, shader_override]
+      {q, k, input_pos_symint, mode_ref, shader_override},
       // Resizing Logic
       resize_sdpa_out_node));
 }
@@ -618,11 +701,20 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
     }
   }
 
+  // The attn_weights S and context dims are padded up to a multiple of 4 to
+  // match resize_sdpa_attn_weights_node(), which virtual_resizes to
+  // align_up_4(seq_len)/align_up_4(context_len). The alignment originates from
+  // an Adreno 750 (Samsung S24) correctness workaround (D86226134 / PR #15578).
+  // With buffer-backed attn_weights the SDPA shaders index each head at a
+  // per-head stride of align_up_4(S) * div_up_4(context) texels, so the
+  // allocation must reserve that padded extent — otherwise heads past the first
+  // few read/write out of bounds. The texture path is immune: it addresses each
+  // head as an image layer rather than via a linear stride.
   std::vector<int64_t> attn_weight_full_sizes = {
       1, // batch
       num_q_heads,
-      max_seq_len,
-      max_context_len};
+      utils::align_up_4(max_seq_len),
+      utils::align_up_4(max_context_len)};
 
   TmpTensor attn_weights(
       &graph,
