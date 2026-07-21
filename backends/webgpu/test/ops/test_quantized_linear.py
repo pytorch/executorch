@@ -57,8 +57,8 @@ CONFIGS = [
     # decode GEMV: the handler routes M==1 -> bicol, so each reads its own per-
     # column scale (col0/col1) across many K-groups (down_proj: 256 groups). q4gsw
     # requires N % 8 == 0 (torchao pads N for the scale layout), so odd-N / N=1 are
-    # not exportable -- bicol's has1 odd-N guard is defensive (mirrors coop4's
-    # general-N robustness) and unreachable through this op.
+    # not exportable -- bicol's has1 odd-N guard is defensive and unreachable
+    # through this op.
     # M>1 prefill: prefer the steel GEMM (K%16==0) on a >=256-invocation device
     # (e.g. lvp); else shmem (K>=4096 or N>=2048) or register-tiled (SwiftShader
     # caps at 128). Same fp64 golden regardless of which kernel runs.
