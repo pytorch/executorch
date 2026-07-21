@@ -384,7 +384,9 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         )
 
     def to_intx_unpacked_to_int8_tensor(
-        self, max_group_size: Optional[int] = None
+        self,
+        max_group_size: Optional[int] = None,
+        scale_dtype: Optional[torch.dtype] = None,
     ) -> Tensor:
         """Convert to a torchao ``IntxUnpackedToInt8Tensor`` (Q4_K, Q5_K or Q6_K).
 
@@ -403,6 +405,13 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
         """
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
+        # Scale/zero-point dtype. GGUF stores the super-block scale as float16,
+        # so float16 is the faithful default. Callers pass their own compute
+        # dtype: the MLX repack passes the activation dtype so quantized_matmul
+        # scales match activations and MLX does not promote (e.g. bf16 + f16 ->
+        # f32); the CUDA integrations pass bfloat16.
+        sdt = scale_dtype if scale_dtype is not None else torch.float16
+
         N, K = int(self.shape[0]), int(self.shape[1])
         if self.ggml_type == "q6_k":
             q, eff_scale = _q6_k_fields(self.raw, N, K)
@@ -418,11 +427,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
                 )
             return IntxUnpackedToInt8Tensor(
                 qdata=q,
-                scale=eff_scale.to(torch.bfloat16),
+                scale=eff_scale.to(sdt),
                 zero_point=torch.zeros_like(eff_scale, dtype=torch.int8),
                 target_dtype=torch.int8,
                 block_size=(1, group_size),
-                dtype=torch.bfloat16,
+                dtype=sdt,
                 activation_quantization=None,
             )
         if self.ggml_type == "q5_k":
@@ -439,11 +448,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
             # match (dequant = scale * (q - zp) is preserved).
             return IntxUnpackedToInt8Tensor(
                 qdata=q.to(torch.int8) - 16,
-                scale=eff_scale.to(torch.bfloat16),
-                zero_point=(zero - 16).to(torch.bfloat16),
+                scale=eff_scale.to(sdt),
+                zero_point=(zero - 16).to(sdt),
                 target_dtype=torch.int5,
                 block_size=(1, group_size),
-                dtype=torch.bfloat16,
+                dtype=sdt,
                 activation_quantization=None,
             )
         if self.ggml_type == "q4_k":
@@ -460,11 +469,11 @@ class ExportableGGUFTensor(TorchAOBaseTensor):
             # (dequant = scale * (q - zp) is preserved).
             return IntxUnpackedToInt8Tensor(
                 qdata=q.to(torch.int8) - 8,
-                scale=eff_scale.to(torch.bfloat16),
-                zero_point=(zero - 8).to(torch.bfloat16),
+                scale=eff_scale.to(sdt),
+                zero_point=(zero - 8).to(sdt),
                 target_dtype=torch.int4,
                 block_size=(1, group_size),
-                dtype=torch.bfloat16,
+                dtype=sdt,
                 activation_quantization=None,
             )
         raise NotImplementedError(
@@ -517,8 +526,8 @@ def iter_gguf(
     """Stream ``(name, value)`` for every tensor in a GGUF file (low peak mem).
 
     Quantized tensors (Q4_K, Q5_K, Q6_K) are wrapped as ``ExportableGGUFTensor``
-    with the raw block bytes; F32/F16 are returned as plain float tensors (bf16
-    for F16). GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
+    with the raw block bytes; F32/F16/BF16 are returned as plain float tensors in
+    their native dtype. GGUF shapes are reversed to PyTorch ``(N, K)`` convention.
     """
     from gguf import GGMLQuantizationType, GGUFReader
 
@@ -538,10 +547,7 @@ def iter_gguf(
         elif tensor.tensor_type == GGMLQuantizationType.F32:
             yield tensor.name, flat.view(torch.float32).reshape(shape).clone()
         elif tensor.tensor_type == GGMLQuantizationType.F16:
-            yield (
-                tensor.name,
-                flat.view(torch.float16).reshape(shape).to(torch.bfloat16),
-            )
+            yield tensor.name, flat.view(torch.float16).reshape(shape).clone()
         elif tensor.tensor_type == GGMLQuantizationType.BF16:
             yield tensor.name, flat.view(torch.bfloat16).reshape(shape).clone()
         else:
