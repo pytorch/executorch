@@ -12,14 +12,16 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from sigmoid.wgsl - DO NOT EDIT.
-// wgsl-sha256: 557a9ca337edf26863fc29db2cf2db4e783131ca89254c052eb4600764ef7a35
-inline constexpr const char* kSigmoidWGSL = R"(
+// @generated from clamp.wgsl - DO NOT EDIT.
+// wgsl-sha256: 5499a682a06ed900a41c31de2c4e2d11db85051dc464315878e671beae662819
+inline constexpr const char* kClampWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
 struct Params {
   num_elements: u32,
+  minimum: f32,
+  maximum: f32,
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
@@ -33,12 +35,12 @@ fn main(
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    output[idx] = clamp(input[idx], params.minimum, params.maximum);
 }
 )";
 
-inline constexpr uint32_t kSigmoidWorkgroupSizeX = 256;
-inline constexpr uint32_t kSigmoidWorkgroupSizeY = 1;
-inline constexpr uint32_t kSigmoidWorkgroupSizeZ = 1;
+inline constexpr uint32_t kClampWorkgroupSizeX = 256;
+inline constexpr uint32_t kClampWorkgroupSizeY = 1;
+inline constexpr uint32_t kClampWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
