@@ -27,12 +27,14 @@ $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/test_wgsl_codegen.py" -v
 echo "=== Step 1: Run Python export tests ==="
 $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/test_add.py" -v
 $PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/test_rms_norm.py" -v
+$PYTHON_EXECUTABLE -m pytest "${SCRIPT_DIR}/ops/test_rope_hf.py" -v
 
 # ── Step 2: Export .pte model ─────────────────────────────────────────────────
 
 echo "=== Step 2: Export test models ==="
 DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 PTE_UPDATE_CACHE_MODEL="/tmp/webgpu_update_cache_test.pte"
+ROPE_HF_DIR="/tmp/webgpu_rope_hf"
 cd "${EXECUTORCH_ROOT}"
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.test_dispatch_order import export_dispatch_order_cases
@@ -45,6 +47,12 @@ $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.test_update_cache import export_update_cache_model
 export_update_cache_model('${PTE_UPDATE_CACHE_MODEL}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
+
+echo "=== Export dynamic HuggingFace RoPE model and goldens ==="
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.test_rope_hf import export_rope_hf_dynamic
+export_rope_hf_dynamic('${ROPE_HF_DIR}')
+"
 
 echo "=== Export SDPA sweep models (sdpa_<name>.pte + .golden.bin to /tmp) ==="
 $PYTHON_EXECUTABLE -c "
@@ -108,6 +116,7 @@ else
 fi
 env \
     ${UPDATE_CACHE_ENV_VAR} \
+    WEBGPU_TEST_ROPE_HF_DIR="${ROPE_HF_DIR}" \
     WEBGPU_TEST_SDPA_DIR=/tmp/ \
     "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_native_test"
 

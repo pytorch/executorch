@@ -764,6 +764,109 @@ void test_rope(
       << "apply_rotary_emb exceeds tolerance 1e-3 (abs AND rel)";
 }
 
+void test_rope_hf_dynamic(const std::string& dir) {
+  constexpr int S = 1;
+  constexpr int NH = 16;
+  constexpr int NKV = 8;
+  constexpr int HD = 128;
+  constexpr int MAXS = 16;
+  constexpr int positions[] = {0, 7, 15};
+  constexpr int xq_numel = S * NH * HD;
+  constexpr int xk_numel = S * NKV * HD;
+  constexpr int freqs_numel = MAXS * HD;
+
+  Module module(dir + "rope_hf_dynamic.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load HF RoPE dynamic model";
+
+  std::vector<float> xq = load_golden(dir + "rope_hf_dynamic.xq.bin", xq_numel);
+  std::vector<float> xk = load_golden(dir + "rope_hf_dynamic.xk.bin", xk_numel);
+  std::vector<float> freqs_cos =
+      load_golden(dir + "rope_hf_dynamic.freqs_cos.bin", freqs_numel);
+  std::vector<float> freqs_sin =
+      load_golden(dir + "rope_hf_dynamic.freqs_sin.bin", freqs_numel);
+  ASSERT_FALSE(
+      xq.empty() || xk.empty() || freqs_cos.empty() || freqs_sin.empty())
+      << "could not load HF RoPE input binaries from " << dir;
+
+  auto has_shape = [](const executorch::aten::Tensor& tensor,
+                      const std::vector<int64_t>& expected) {
+    if (tensor.dim() != static_cast<int64_t>(expected.size())) {
+      return false;
+    }
+    for (size_t i = 0; i < expected.size(); i++) {
+      if (tensor.size(static_cast<int64_t>(i)) != expected[i]) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  for (const int position : positions) {
+    auto xqt = make_tensor_ptr({1, S, NH, HD}, std::vector<float>(xq));
+    auto xkt = make_tensor_ptr({1, S, NKV, HD}, std::vector<float>(xk));
+    auto fct = make_tensor_ptr({MAXS, HD}, std::vector<float>(freqs_cos));
+    auto fst = make_tensor_ptr({MAXS, HD}, std::vector<float>(freqs_sin));
+    auto post = make_tensor_ptr(
+        {1}, std::vector<int64_t>{static_cast<int64_t>(position)});
+    auto result = module.forward(
+        {EValue(xqt), EValue(xkt), EValue(fct), EValue(fst), EValue(post)});
+    ASSERT_TRUE(result.ok())
+        << "HF RoPE forward failed at position " << position << " (error "
+        << static_cast<int>(result.error()) << ")";
+    const auto& outputs = result.get();
+    ASSERT_TRUE(
+        outputs.size() == 2 && outputs[0].isTensor() && outputs[1].isTensor())
+        << "expected exactly two HF RoPE tensor outputs";
+    const auto& xq_out = outputs[0].toTensor();
+    const auto& xk_out = outputs[1].toTensor();
+    ASSERT_TRUE(has_shape(xq_out, {1, S, NH, HD}))
+        << "HF RoPE query output has the wrong shape at position " << position;
+    ASSERT_TRUE(has_shape(xk_out, {1, S, NKV, HD}))
+        << "HF RoPE key output has the wrong shape at position " << position;
+
+    const std::string prefix =
+        dir + "rope_hf_dynamic.pos" + std::to_string(position);
+    const std::vector<float> golden_q =
+        load_golden(prefix + ".xq.golden.bin", xq_numel);
+    const std::vector<float> golden_k =
+        load_golden(prefix + ".xk.golden.bin", xk_numel);
+    ASSERT_FALSE(golden_q.empty() || golden_k.empty())
+        << "could not load HF RoPE goldens for position " << position;
+
+    float q_abs = 0.0f, q_rel = 0.0f, k_abs = 0.0f, k_rel = 0.0f;
+    const bool q_ok = quant_within_tol(
+        xq_out.const_data_ptr<float>(),
+        golden_q.data(),
+        xq_numel,
+        1e-4f,
+        1e-3f,
+        &q_abs,
+        &q_rel);
+    const bool k_ok = quant_within_tol(
+        xk_out.const_data_ptr<float>(),
+        golden_k.data(),
+        xk_numel,
+        1e-4f,
+        1e-3f,
+        &k_abs,
+        &k_rel);
+    EXPECT_TRUE(q_ok && k_ok)
+        << "HF RoPE mismatch at position " << position << ": q abs=" << q_abs
+        << " rel=" << q_rel << ", k abs=" << k_abs << " rel=" << k_rel;
+  }
+
+  auto xqt = make_tensor_ptr({1, S, NH, HD}, std::vector<float>(xq));
+  auto xkt = make_tensor_ptr({1, S, NKV, HD}, std::vector<float>(xk));
+  auto fct = make_tensor_ptr({MAXS, HD}, std::move(freqs_cos));
+  auto fst = make_tensor_ptr({MAXS, HD}, std::move(freqs_sin));
+  auto post = make_tensor_ptr({1}, std::vector<int64_t>{MAXS});
+  auto out_of_range = module.forward(
+      {EValue(xqt), EValue(xkt), EValue(fct), EValue(fst), EValue(post)});
+  EXPECT_FALSE(out_of_range.ok())
+      << "HF RoPE accepted start_pos + seq beyond the frequency table";
+}
+
 void test_prepack(
     const std::string& model_path,
     const std::string& golden_path,
@@ -1797,6 +1900,18 @@ TEST(WebGPUNative, Rope) {
   if (!any) {
     GTEST_SKIP() << "no apply_rotary_emb config env set";
   }
+}
+
+TEST(WebGPUNative, RopeHfDynamic) {
+  const char* env = std::getenv("WEBGPU_TEST_ROPE_HF_DIR");
+  if (env == nullptr || *env == '\0') {
+    GTEST_SKIP() << "WEBGPU_TEST_ROPE_HF_DIR not set";
+  }
+  std::string dir = env;
+  if (dir.back() != '/') {
+    dir += '/';
+  }
+  test_rope_hf_dynamic(dir);
 }
 
 TEST(WebGPUNative, Prepack) {
