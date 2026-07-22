@@ -1,0 +1,174 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
+
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+
+#include <webgpu/webgpu.h>
+
+#include <stdexcept>
+#include <string>
+
+namespace executorch::backends::webgpu {
+
+namespace {
+
+// Canonical unary uniform layout; min/max mirror Vulkan min_max.
+struct UnaryParams {
+  uint32_t num_elements;
+  float min;
+  float max;
+  uint32_t _pad;
+};
+
+} // namespace
+
+void add_unary_op(
+    WebGPUGraph& graph,
+    int in_id,
+    int out_id,
+    const char* wgsl_source,
+    uint32_t wg_size_x,
+    const char* op_name,
+    float min,
+    float max) {
+  WGPUDevice device = graph.device();
+
+  const auto& in_tensor = graph.get_tensor(in_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+  if (in_tensor.buffer == nullptr || out_tensor.buffer == nullptr) {
+    throw std::runtime_error(std::string(op_name) + ": null buffer binding");
+  }
+
+  // 4-byte (fp32) alignment guard on both operands; also the dtype guard.
+  if (in_tensor.nbytes % sizeof(float) != 0 ||
+      out_tensor.nbytes % sizeof(float) != 0) {
+    throw std::runtime_error(
+        std::string(op_name) + ": operand not 4-byte aligned");
+  }
+  if (in_tensor.nbytes != out_tensor.nbytes) {
+    throw std::runtime_error(
+        std::string(op_name) + ": input/output size mismatch");
+  }
+
+  uint32_t num_elements =
+      static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
+
+  uint32_t wg_size = utils::clamp_workgroup_size(device, wg_size_x);
+  utils::WgCount workgroup_count =
+      utils::compute_2d_workgroup_count(device, num_elements, wg_size, op_name);
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
+
+  UnaryParams params = {};
+  params.num_elements = num_elements;
+  params.min = min;
+  params.max = max;
+
+  WGPUBuffer uniform_buffer =
+      utils::make_uniform(device, &params, sizeof(UnaryParams));
+  graph.add_uniform_buffer_bytes(sizeof(UnaryParams));
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
+
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  // Bind group layout: input (read storage) + output (storage) + params.
+  WGPUBindGroupLayoutEntry entries[3] = {};
+
+  entries[0].binding = 0;
+  entries[0].visibility = WGPUShaderStage_Compute;
+  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+
+  entries[1].binding = 1;
+  entries[1].visibility = WGPUShaderStage_Compute;
+  entries[1].buffer.type = WGPUBufferBindingType_Storage;
+
+  entries[2].binding = 2;
+  entries[2].visibility = WGPUShaderStage_Compute;
+  entries[2].buffer.type = WGPUBufferBindingType_Uniform;
+
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 3;
+  bgl_desc.entries = entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pipeline_layout =
+      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = pipeline_layout;
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+
+  WGPUBindGroupEntry bg_entries[3] = {};
+
+  bg_entries[0].binding = 0;
+  bg_entries[0].buffer = in_tensor.buffer;
+  bg_entries[0].size = in_tensor.nbytes;
+
+  bg_entries[1].binding = 1;
+  bg_entries[1].buffer = out_tensor.buffer;
+  bg_entries[1].size = out_tensor.nbytes;
+
+  bg_entries[2].binding = 2;
+  bg_entries[2].buffer = uniform_buffer;
+  bg_entries[2].size = sizeof(UnaryParams);
+
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 3;
+  bg_desc.entries = bg_entries;
+  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+
+  const size_t dispatch_idx = graph.add_dispatch(
+      {pipeline, bind_group, workgroup_count.x, "", workgroup_count.y});
+
+  // Dynamic shapes: rewrite full params (incl. min/max) + 2D dispatch count.
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max](
+          WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        const uint64_t numel = utils::numel_of(d);
+        g.set_cur_dims(out_id, d);
+        UnaryParams p = {};
+        p.num_elements = static_cast<uint32_t>(numel);
+        p.min = min;
+        p.max = max;
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(), static_cast<uint32_t>(numel), wg_size, "unary(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
+      });
+
+  // Release intermediates (pipeline + bind_group are kept by dispatch).
+  wgpuShaderModuleRelease(shader);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuPipelineLayoutRelease(pipeline_layout);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
+}
+
+} // namespace executorch::backends::webgpu
