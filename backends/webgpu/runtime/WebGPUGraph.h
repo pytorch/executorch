@@ -154,6 +154,9 @@ class WebGPUGraph {
   bool get_bool(int id) const {
     return bools_[id];
   }
+  const std::string& get_string(int id) const {
+    return strings_[id];
+  }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
   // set_symint writes the buffer + marks dirty only if the value changed.
@@ -378,6 +381,7 @@ class WebGPUGraph {
   std::vector<std::vector<int>> value_lists_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
+  std::vector<std::string> strings_;
 
   // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
   struct SymIntSlot {

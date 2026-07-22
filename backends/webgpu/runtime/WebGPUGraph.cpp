@@ -418,6 +418,7 @@ void WebGPUGraph::build(
   value_lists_.resize(num_vals);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
+  strings_.resize(num_vals);
 
   // Pre-scan the op chain: a constant may be DEFERRED (no eager GPU buffer; the
   // prepack node materializes it once) only if it is a prepack source AND never
@@ -624,6 +625,11 @@ void WebGPUGraph::build(
       case vkgraph::GraphTypes::Bool: {
         value_types_[i] = ValueType::Bool;
         bools_[i] = val->value_as_Bool()->bool_val();
+        break;
+      }
+      case vkgraph::GraphTypes::String: {
+        value_types_[i] = ValueType::String;
+        strings_[i] = val->value_as_String()->string_val()->str();
         break;
       }
       case vkgraph::GraphTypes::SymInt: {
