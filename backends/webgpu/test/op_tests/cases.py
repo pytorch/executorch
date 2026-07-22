@@ -47,6 +47,9 @@ from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
 from executorch.backends.webgpu.test.ops.test_grid_priors import GridPriorsModule
+from executorch.backends.webgpu.test.ops.test_conv_with_clamp import (
+    ConvWithClampModule,
+)
 from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
     GridSampler2dModule,
 )
@@ -610,6 +613,42 @@ def _index_select_suite() -> WebGPUTestSuite:
             ),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("conv_with_clamp")
+def _conv_with_clamp_suite() -> WebGPUTestSuite:
+    # nn.Conv2d + F.relu6 -> delegated et_vk.conv_with_clamp (fp32 conv + clamp
+    # [0,6]). Golden = fp32 eager. Covers k3/stride/dilation/no_bias (groups==1).
+    def case(name, shape, ic, oc, k, stride, padding, dilation, bias=True):
+        return Case(
+            name=name,
+            construct={
+                "ic": ic,
+                "oc": oc,
+                "k": k,
+                "stride": stride,
+                "padding": padding,
+                "dilation": dilation,
+                "bias": bias,
+            },
+            inputs=(shape,),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: ConvWithClampModule(**kw),
+        cases=[
+            case("k3p1", (1, 4, 8, 8), 4, 8, 3, 1, 1, 1),
+            case("stride2", (1, 3, 10, 10), 3, 6, 3, 2, 1, 1),
+            case("dil2", (2, 3, 9, 9), 3, 5, 3, 1, 2, 2),
+            case("no_bias", (1, 4, 8, 8), 4, 8, 3, 1, 1, 1, bias=False),
+            # Fully axis-asymmetric (Kh!=Kw, H!=W, sh!=sw, ph!=pw, dh!=dw) so an
+            # H<->W index swap would diverge from the golden.
+            case("asym", (1, 3, 7, 9), 3, 5, (2, 3), (1, 2), (1, 0), (2, 1)),
+        ],
+        golden_dtype="float32",
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
