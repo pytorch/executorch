@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 from typing import Sequence, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -210,7 +211,7 @@ class QnnTool:
         self.adb = adb
         self.sample_input = sample_input
         self.build_folder = build_folder
-        self.root = os.getcwd()
+        self.root = str(Path(__file__).resolve().parents[3])
         self.config = {
             "backend_extension_config": {
                 "backend_extensions": {

@@ -181,6 +181,8 @@ void run_linear(
       << prefix << " M=" << m_rows << " max_abs=" << max_abs
       << " max_rel=" << max_rel << " tolerances=" << atol << "/" << rtol;
   if (nrmse_limit > 0.0f) {
+    ASSERT_GT(golden_sq_sum, 0.0)
+        << prefix << " M=" << m_rows << " zero golden norm (NRMSE undefined)";
     const double nrmse = std::sqrt(error_sq_sum / golden_sq_sum);
     EXPECT_LT(nrmse, nrmse_limit)
         << prefix << " M=" << m_rows << " full-output NRMSE";
@@ -201,6 +203,8 @@ void run_linear(
       tail_error_sq_sum += error * error;
       tail_golden_sq_sum += static_cast<double>(golden[i]) * golden[i];
     }
+    ASSERT_GT(tail_golden_sq_sum, 0.0)
+        << prefix << " M=" << m_rows << " zero final-row golden norm";
     const double tail_nrmse = std::sqrt(tail_error_sq_sum / tail_golden_sq_sum);
     EXPECT_LT(tail_nrmse, tail_nrmse_limit)
         << prefix << " M=" << m_rows << " final-row NRMSE";
