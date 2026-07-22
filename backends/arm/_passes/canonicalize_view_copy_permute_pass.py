@@ -361,7 +361,10 @@ class CanonicalizeViewCopyPermutePass(ArmPass):
     ) -> None:
         node.target = target
         node.args = (input_node, list(arg))
-        refresh_node_meta(node)
+        try:
+            refresh_node_meta(node)
+        except KeyError:
+            pass
 
     def _permute_dims(self, node: Node) -> list[int]:
         assert node.target == self._PERMUTE_TARGET, "Expected permute node"

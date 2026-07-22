@@ -248,15 +248,18 @@ def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
 
 
 def refresh_node_meta(node: torch.fx.Node) -> None:
-    """Best-effort refresh of a call_function node's output value metadata.
+    """Refresh a call_function node's output value metadata.
 
     Node arguments are replaced by their metadata values and evaluated through
     the operator's FakeTensor/meta implementation, which preserves symbolic
-    dimensions when the operator supports them. Missing input metadata or
-    unsupported meta evaluation leaves the existing output metadata unchanged.
+    dimensions when the operator supports them.
 
     """
-    if node.op != "call_function" or "val" not in node.meta:
+    if (
+        node.op != "call_function"
+        or "val" not in node.meta
+        or any("val" not in input_node.meta for input_node in node.all_input_nodes)
+    ):
         return
 
     args = map_arg(
