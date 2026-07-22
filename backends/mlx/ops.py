@@ -20,10 +20,13 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.backends.mlx.builder.op_helpers import (
+    emit_floordiv,
     emit_if_else,
     emit_lifted_constant,
+    emit_product,
     emit_quantized_biases,
     emit_shape,
+    emit_sub_int,
     parse_dequant_node,
     regroup_affine_scales,
     to_mlx_qparams,
@@ -1790,6 +1793,39 @@ def _split_with_sizes_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     return output_slots
 
 
+def _resolve_sorted_indices_flag(P: MLXProgramBuilder, sorted_indices):
+    """Convert a gather_mm/gather_qmm ``sorted_indices`` arg to an IntOrVid for
+    the ``sorted_indices_flag`` schema field. Accepts either a static bool
+    (legacy call sites) or a 0-d runtime tensor (Slot) carrying 0/1.
+
+    Slot results are memoized on the builder (keyed by slot identity):
+    _moe_gather_inputs_handler pre-seeds the memo with the shape-derived
+    condition Vid, so the common MoE case reads the flag without emitting an
+    ItemIntNode (and without its device sync); otherwise a single ItemIntNode
+    is emitted per distinct flag tensor and reused by every consumer.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        ItemIntNode,
+    )
+
+    if not isinstance(sorted_indices, Slot):
+        return IntOrVid.from_literal(1 if sorted_indices else 0)
+
+    memo = getattr(P, "_sorted_indices_flag_memo", None)
+    if memo is None:
+        memo = P._sorted_indices_flag_memo = {}
+    cached = memo.get(id(sorted_indices))
+    if cached is not None:
+        return cached
+
+    _, item_slot = P.make_tmp_value_slot()
+    P.emit(ItemIntNode(x=P.slot_to_tid(sorted_indices), out=P.slot_to_vid(item_slot)))
+    flag = P.to_int_or_vid(item_slot)
+    memo[id(sorted_indices)] = flag
+    return flag
+
+
 @REGISTRY.register(target=[torch.ops.mlx.gather_mm.default])
 def _gather_mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     """Handle mlx::gather_mm — fused gather + matmul for MoE experts."""
@@ -1802,7 +1838,8 @@ def _gather_mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     b = args[1]
     rhs_indices = args[2] if len(args) > 2 else kwargs.get("rhs_indices")
     lhs_indices = args[3] if len(args) > 3 else kwargs.get("lhs_indices")
-    sorted_indices = args[4] if len(args) > 4 else kwargs.get("sorted_indices", False)
+    sorted_indices = args[4] if len(args) > 4 else kwargs.get("sorted_indices")
+    sorted_indices_iov = _resolve_sorted_indices_flag(P, sorted_indices)
 
     out = P.make_or_get_slot(n)
     P.emit(
@@ -1812,7 +1849,8 @@ def _gather_mm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             out=P.slot_to_tid(out),
             lhs_indices=P.slot_to_tid(lhs_indices) if lhs_indices is not None else None,
             rhs_indices=P.slot_to_tid(rhs_indices) if rhs_indices is not None else None,
-            sorted_indices=sorted_indices,
+            sorted_indices=False,
+            sorted_indices_flag=sorted_indices_iov,
         )
     )
     return out
@@ -1840,7 +1878,8 @@ def _gather_qmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     group_size = args[7] if len(args) > 7 else kwargs.get("group_size", 32)
     bits = args[8] if len(args) > 8 else kwargs.get("bits", 4)
     mode = args[9] if len(args) > 9 else kwargs.get("mode", "affine")
-    sorted_indices = args[10] if len(args) > 10 else kwargs.get("sorted_indices", False)
+    sorted_indices = args[10] if len(args) > 10 else kwargs.get("sorted_indices")
+    sorted_indices_iov = _resolve_sorted_indices_flag(P, sorted_indices)
 
     # Convert quantized weights to MLX format
     w_target, w_data = P.get_placeholder_target_and_tensor(w_node)
@@ -1888,10 +1927,309 @@ def _gather_qmm_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             group_size=group_size,
             bits=bits,
             mode=mode,
-            sorted_indices=sorted_indices,
+            sorted_indices=False,
+            sorted_indices_flag=sorted_indices_iov,
         )
     )
     return out
+
+
+@REGISTRY.register(target=[torch.ops.mlx.moe_gather_inputs.default])
+def _moe_gather_inputs_handler(P: MLXProgramBuilder, n: Node):
+    """Lowering for mlx::moe_gather_inputs. Mirrors the moe_gather_inputs
+    eager reference (custom_ops.py) branch-for-branch: emit_sorted for the
+    N > sort_cutoff case, emit_unsorted otherwise. emit_if_else requires both
+    branches to write the same fixed output slots, so each branch's final
+    producer targets out_slots directly (no IdCopy indirection).
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        ARangeNode,
+        ArgsortNode,
+        AsTypeNode,
+        FloatOrVid,
+        FloorDivideNode,
+        FullNode,
+        IntOrVid,
+        IntOrVidOrTid,
+        RepeatNode,
+        ReshapeNode,
+        TakeNode,
+    )
+
+    args = P.args(n)
+    x, expert_indices = args[0], args[1]
+    top_k = args[2]  # static int
+    sort_cutoff = args[3]  # static int, consulted here at emission
+    if not isinstance(top_k, int) or top_k < 1:
+        raise ValueError(f"moe_gather_inputs: top_k must be a static int >= 1, got {top_k!r}")
+    if not isinstance(sort_cutoff, int) or sort_cutoff < 1:
+        raise ValueError(
+            f"moe_gather_inputs: sort_cutoff must be a static int >= 1, got {sort_cutoff!r}"
+        )
+
+    out_slots = P.make_or_get_slots(n)  # (x_input, idx, sort_experts, inv_order)
+
+    m_iov = emit_shape(P, n.args[0], x, end_dim=1)[0]  # M = N (token count)
+    int32_st = torch_dtype_to_scalar_type(torch.int32)
+
+    def emit_flag(value: int) -> None:
+        # 0-d int32 flag written straight into out_slots[2].
+        P.emit(
+            FullNode(
+                shape=[],
+                v=FloatOrVid.from_literal(float(value)),
+                scalar_type=int32_st,
+                out=P.slot_to_tid(out_slots[2]),
+            )
+        )
+
+    def emit_sorted():
+        # Mirror eager: flat = expert_indices.flatten() before argsort.
+        # Argsorting a [N, top_k] tensor on axis=0 sorts columns independently
+        # and yields the wrong permutation / output layout.
+        _, flat_slot = P.make_tmp_slot()
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(expert_indices),
+                out=P.slot_to_tid(flat_slot),
+                shape=[IntOrVid.from_literal(-1)],
+            )
+        )
+
+        # MLX argsort returns uint32; cast to int32 like eager (.to(torch.int32)).
+        _, order_u_slot = P.make_tmp_slot()
+        P.emit(
+            ArgsortNode(
+                x=P.slot_to_tid(flat_slot), out=P.slot_to_tid(order_u_slot), axis=0
+            )
+        )
+        _, order_slot = P.make_tmp_slot()
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(order_u_slot),
+                out=P.slot_to_tid(order_slot),
+                scalar_type=int32_st,
+            )
+        )
+
+        _, inv_order_u_slot = P.make_tmp_slot()
+        P.emit(
+            ArgsortNode(
+                x=P.slot_to_tid(order_slot),
+                out=P.slot_to_tid(inv_order_u_slot),
+                axis=0,
+            )
+        )
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(inv_order_u_slot),
+                out=P.slot_to_tid(out_slots[3]),
+                scalar_type=int32_st,
+            )
+        )
+
+        # idx = flat[order].to(int32) — the cast matches the eager reference
+        # and the int32 dtype advertised by moe_gather_inputs_fake.
+        _, idx_raw_slot = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(flat_slot),
+                out=P.slot_to_tid(idx_raw_slot),
+                index=IntOrVidOrTid.from_tid(P.slot_to_tid(order_slot)),
+                axis=0,
+            )
+        )
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(idx_raw_slot),
+                out=P.slot_to_tid(out_slots[1]),
+                scalar_type=int32_st,
+            )
+        )
+
+        top_k_const = emit_lifted_constant(P, top_k, torch.int32)
+        # FloorDivideNode routes integer tensors through mlx::divide, which
+        # promotes to float (at_least_float). Cast back before Take — otherwise
+        # gather rejects the indices ("must be integral").
+        _, row_idx_f_slot = P.make_tmp_slot()
+        P.emit(
+            FloorDivideNode(
+                a=P.slot_to_tid(order_slot),
+                b=P.slot_to_tid(top_k_const),
+                out=P.slot_to_tid(row_idx_f_slot),
+            )
+        )
+        _, row_idx_slot = P.make_tmp_slot()
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(row_idx_f_slot),
+                out=P.slot_to_tid(row_idx_slot),
+                scalar_type=int32_st,
+            )
+        )
+
+        _, x_gathered_slot = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(x_gathered_slot),
+                index=IntOrVidOrTid.from_tid(P.slot_to_tid(row_idx_slot)),
+                axis=0,
+            )
+        )
+        P.emit(
+            ExpandDimsNode(
+                x=P.slot_to_tid(x_gathered_slot),
+                out=P.slot_to_tid(out_slots[0]),
+                axis=-2,
+            )
+        )
+
+        emit_flag(1)
+
+    def emit_unsorted():
+        _, x_rep_slot = P.make_tmp_slot()
+        P.emit(
+            RepeatNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(x_rep_slot),
+                repeats=IntOrVid.from_literal(top_k),
+                axis=0,
+            )
+        )
+        P.emit(
+            ExpandDimsNode(
+                x=P.slot_to_tid(x_rep_slot),
+                out=P.slot_to_tid(out_slots[0]),
+                axis=-2,
+            )
+        )
+
+        # idx = expert_indices.flatten().to(int32) — mirror the eager
+        # reference: [N, top_k] -> [N*top_k], int32. Passing the unflattened
+        # 2-D tensor through would break gather_mm's index broadcasting for
+        # 1 < N <= sort_cutoff and diverge from the fake's advertised meta.
+        _, idx_flat_slot = P.make_tmp_slot()
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(expert_indices),
+                out=P.slot_to_tid(idx_flat_slot),
+                shape=[IntOrVid.from_literal(-1)],
+            )
+        )
+        P.emit(
+            AsTypeNode(
+                x=P.slot_to_tid(idx_flat_slot),
+                out=P.slot_to_tid(out_slots[1]),
+                scalar_type=int32_st,
+            )
+        )
+
+        emit_flag(0)
+
+        # Identity permutation (inverse of no-reorder). Semantically correct
+        # for unsorted, and safe if scatter ever takes the sorted branch:
+        # Take(down, arange) is a no-op instead of crashing on empty(0).
+        nk_iov = emit_product(P, [m_iov, IntOrVid.from_literal(top_k)])
+        P.emit(
+            ARangeNode(
+                out=P.slot_to_tid(out_slots[3]),
+                start=IntOrVid.from_literal(0),
+                stop=nk_iov,
+                step=IntOrVid.from_literal(1),
+                scalar_type=int32_st,
+            )
+        )
+
+    # cond = (M - 1) // sort_cutoff: 0 (-> else/unsorted) for M <= sort_cutoff,
+    # >= 1 (-> then/sorted) for M > sort_cutoff. The IfNode rule is nonzero ->
+    # then. If M is a compile-time literal, both fold and emit_if_else picks
+    # one branch — no IfNode emitted.
+    cond = emit_floordiv(
+        P,
+        emit_sub_int(P, m_iov, IntOrVid.from_literal(1)),
+        IntOrVid.from_literal(sort_cutoff),
+    )
+
+    # Seed the sorted_indices_flag memo: cond has the same truthiness as the
+    # 0-d flag tensor in out_slots[2], so downstream gather_mm/gather_qmm and
+    # moe_scatter_outputs can consume it as an IntOrVid directly instead of
+    # each emitting an ItemIntNode (which forces a device sync per read).
+    memo = getattr(P, "_sorted_indices_flag_memo", None)
+    if memo is None:
+        memo = P._sorted_indices_flag_memo = {}
+    memo[id(out_slots[2])] = cond
+
+    emit_if_else(P, cond, emit_sorted, emit_unsorted)
+    return out_slots
+
+
+@REGISTRY.register(target=[torch.ops.mlx.moe_scatter_outputs.default])
+def _moe_scatter_outputs_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Lowering for mlx::moe_scatter_outputs. down [N*top_k, 1, H] -> squeeze
+    -> (gather if sorted) -> reshape [N, top_k, H]. The sorted/unsorted
+    condition comes from _resolve_sorted_indices_flag: a memoized shape-derived
+    Vid when sort_experts was produced by moe_gather_inputs (folding both ops
+    onto the same branch under static shapes), an ItemIntNode otherwise.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        IntOrVid,
+        IntOrVidOrTid,
+        ReshapeNode,
+        SqueezeNode,
+        TakeNode,
+    )
+
+    args = P.args(n)
+    down, sort_experts, inv_order = args[0], args[1], args[2]
+    top_k = args[3]  # static int
+    if not isinstance(top_k, int) or top_k < 1:
+        raise ValueError(
+            f"moe_scatter_outputs: top_k must be a static int >= 1, got {top_k!r}"
+        )
+
+    out_slot = P.make_or_get_slot(n)
+
+    _, down_sq_slot = P.make_tmp_slot()
+    P.emit(
+        SqueezeNode(x=P.slot_to_tid(down), out=P.slot_to_tid(down_sq_slot), dims=[-2])
+    )
+
+    cond = _resolve_sorted_indices_flag(P, sort_experts)
+
+    n_top_k_iov = emit_shape(P, n.args[0], down, end_dim=1)[0]  # N * top_k
+    n_iov = emit_floordiv(P, n_top_k_iov, IntOrVid.from_literal(top_k))
+
+    def emit_then():  # prefill: scatter back
+        _, gathered_slot = P.make_tmp_slot()
+        P.emit(
+            TakeNode(
+                x=P.slot_to_tid(down_sq_slot),
+                out=P.slot_to_tid(gathered_slot),
+                index=IntOrVidOrTid.from_tid(P.slot_to_tid(inv_order)),
+                axis=0,
+            )
+        )
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(gathered_slot),
+                out=P.slot_to_tid(out_slot),
+                shape=[n_iov, IntOrVid.from_literal(top_k), IntOrVid.from_literal(-1)],
+            )
+        )
+
+    def emit_else():  # decode: no scatter
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(down_sq_slot),
+                out=P.slot_to_tid(out_slot),
+                shape=[n_iov, IntOrVid.from_literal(top_k), IntOrVid.from_literal(-1)],
+            )
+        )
+
+    emit_if_else(P, cond, emit_then, emit_else)
+    return out_slot
+
 
 
 @REGISTRY.register(
