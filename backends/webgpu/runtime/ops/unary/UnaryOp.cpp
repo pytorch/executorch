@@ -45,8 +45,12 @@ void add_unary_op(
   if (in_tensor.buffer == nullptr || out_tensor.buffer == nullptr) {
     throw std::runtime_error(std::string(op_name) + ": null buffer binding");
   }
+  // fp32-only backend: reject int operands (would be read as f32).
+  if (in_tensor.is_int || out_tensor.is_int) {
+    throw std::runtime_error(std::string(op_name) + ": int dtype unsupported");
+  }
 
-  // 4-byte (fp32) alignment guard on both operands; also the dtype guard.
+  // 4-byte (fp32) alignment guard on both operands.
   if (in_tensor.nbytes % sizeof(float) != 0 ||
       out_tensor.nbytes % sizeof(float) != 0) {
     throw std::runtime_error(
