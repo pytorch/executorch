@@ -34,6 +34,19 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_flip import FlipModule
+from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
+from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
+from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
+from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
+    GridSampler2dModule,
+)
+from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
+from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
+from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
+from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
+from executorch.backends.webgpu.test.ops.test_pow import PowModule
+from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
@@ -70,6 +83,17 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
     SqueezeModule,
 )
 
+from executorch.backends.webgpu.test.ops.test_unary_activations import (
+    _lin as _unary_lin,
+    CLAMP_CONFIGS,
+    ClampModule,
+    HARDTANH_CONFIGS,
+    HardtanhModule,
+    POW_SCALAR_CONFIGS,
+    PowScalarModule,
+    UNARY_G1,
+    UnaryModule,
+)
 from executorch.backends.webgpu.test.ops.test_unsqueeze import (
     CONFIGS as _UNSQUEEZE_CONFIGS,
     UnsqueezeModule,
@@ -172,6 +196,299 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
             for n, (shape, fn) in configs.items()
         ],
         golden_dtype="float32",  # gather/copy: fp64 bit-identical, skip dual-oracle
+    )
+
+
+@register_op_test("minimum")
+def _minimum_suite() -> WebGPUTestSuite:
+    # Same-shape numeric coverage (flat binary kernel; broadcast stays smoke).
+    return WebGPUTestSuite(
+        module_factory=lambda: MinimumModule(),
+        cases=[
+            Case(name="2d", inputs=((M1, M2), (M1, M2))),
+            Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+        ],
+    )
+
+
+@register_op_test("pow")
+def _pow_suite() -> WebGPUTestSuite:
+    # Positive base avoids pow(neg, frac)=NaN; exponent spans negative+positive.
+    return WebGPUTestSuite(
+        module_factory=lambda: PowModule(),
+        cases=[
+            Case(
+                name="2d",
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
+            Case(
+                name="3d",
+                inputs=(
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
+        ],
+    )
+
+
+def _reduce_suite(module_cls) -> WebGPUTestSuite:
+    # Last-dim reduction; both keepdim variants over a 2d and a 3d shape.
+    return WebGPUTestSuite(
+        module_factory=lambda keepdim: module_cls(keepdim),
+        cases=[
+            Case(name="keepdim_2d", construct={"keepdim": True}, inputs=((M1, M2),)),
+            Case(name="nodim_2d", construct={"keepdim": False}, inputs=((M1, M2),)),
+            Case(
+                name="keepdim_3d",
+                construct={"keepdim": True},
+                inputs=((S, S1, S2),),
+            ),
+            Case(
+                name="nodim_3d",
+                construct={"keepdim": False},
+                inputs=((S, S1, S2),),
+            ),
+        ],
+    )
+
+
+@register_op_test("amax")
+def _amax_suite() -> WebGPUTestSuite:
+    return _reduce_suite(AmaxModule)
+
+
+@register_op_test("amin")
+def _amin_suite() -> WebGPUTestSuite:
+    return _reduce_suite(AminModule)
+
+
+@register_op_test("flip")
+def _flip_suite() -> WebGPUTestSuite:
+    # Reverse various dims; pure data movement -> float32 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda dims: FlipModule(dims),
+        cases=[
+            Case(name="last", construct={"dims": [-1]}, inputs=((M1, M2),)),
+            Case(name="dim0", construct={"dims": [0]}, inputs=((M1, M2),)),
+            Case(name="both_3d", construct={"dims": [0, 2]}, inputs=((S, S1, S2),)),
+            Case(name="mid_3d", construct={"dims": [1]}, inputs=((S, S1, S2),)),
+            Case(
+                name="multi_4d",
+                construct={"dims": [1, 3]},
+                inputs=((XS, S, S1, S2),),
+            ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("repeat")
+def _repeat_suite() -> WebGPUTestSuite:
+    # Tile along dims; pure data movement -> float32 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda repeats: RepeatModule(repeats),
+        cases=[
+            Case(name="tile_1d", construct={"repeats": [2]}, inputs=((XS,),)),
+            Case(name="tile_2d", construct={"repeats": [2, 2]}, inputs=((XS, S),)),
+            Case(
+                name="prepend_3d",
+                construct={"repeats": [1, 3, 2]},
+                inputs=((XS, S),),
+            ),
+            Case(
+                name="prepend_ext",
+                construct={"repeats": [2, 3, 1]},
+                inputs=((XS, S),),
+            ),
+            Case(
+                name="tile_3d",
+                construct={"repeats": [2, 1, 2]},
+                inputs=((XS, S, S1),),
+            ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("conv1d_dw")
+def _conv1d_dw_suite() -> WebGPUTestSuite:
+    # Depthwise 1D conv (aten.convolution, depthwise config); fp64 oracle.
+    def mk(C, kernel, stride, padding, dilation, bias):
+        return Conv1dDWModule(C, kernel, stride, padding, dilation, bias)
+
+    def case(name, C, L, kernel, stride, padding, dilation, bias):
+        return Case(
+            name=name,
+            construct={
+                "C": C,
+                "kernel": kernel,
+                "stride": stride,
+                "padding": padding,
+                "dilation": dilation,
+                "bias": bias,
+            },
+            inputs=((1, C, L),),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=mk,
+        cases=[
+            case("k3s1p1", 4, 8, 3, 1, 1, 1, True),
+            case("k3s2p1", 4, 8, 3, 2, 1, 1, True),
+            case("dil2", 3, 10, 3, 1, 2, 2, True),
+            case("k5_nobias", 5, 7, 5, 1, 0, 1, False),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("grid_sampler_2d")
+def _grid_sampler_2d_suite() -> WebGPUTestSuite:
+    # Bilinear grid sample (border, align_corners); real fp math -> fp64 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda: GridSampler2dModule(),
+        cases=[
+            Case(name="sq", construct={}, inputs=((1, 2, 4, 4), (1, 3, 3, 2))),
+            Case(
+                name="wide_in",
+                construct={},
+                inputs=((1, 1, 3, 5), (1, 4, 4, 2)),
+            ),
+            Case(name="batch", construct={}, inputs=((2, 3, 4, 4), (2, 2, 6, 2))),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("pixel_shuffle")
+def _pixel_shuffle_suite() -> WebGPUTestSuite:
+    # Channel->space rearrange; pure data movement -> float32 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda r: PixelShuffleModule(r),
+        cases=[
+            Case(name="r2", construct={"r": 2}, inputs=((1, 8, 2, 3),)),
+            Case(name="r2_batch", construct={"r": 2}, inputs=((2, 4, 3, 3),)),
+            Case(name="r3", construct={"r": 3}, inputs=((1, 9, 2, 2),)),
+            Case(name="r2_3d", construct={"r": 2}, inputs=((4, 2, 2),)),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("avg_pool2d")
+def _avg_pool2d_suite() -> WebGPUTestSuite:
+    # Windowed spatial average; real fp math -> float64 oracle at 1e-3.
+    def mk(kernel, stride, padding, count_include_pad, ceil_mode, divisor):
+        return AvgPool2dModule(
+            kernel, stride, padding, count_include_pad, ceil_mode, divisor
+        )
+
+    def case(name, k, s, p, cip, ceil_mode, divisor, shape):
+        return Case(
+            name=name,
+            construct={
+                "kernel": k,
+                "stride": s,
+                "padding": p,
+                "count_include_pad": cip,
+                "ceil_mode": ceil_mode,
+                "divisor": divisor,
+            },
+            inputs=(shape,),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=mk,
+        cases=[
+            case("basic", [2, 2], [2, 2], [0, 0], True, False, None, (1, 2, 4, 4)),
+            case("pad_cip", [3, 3], [2, 2], [1, 1], True, False, None, (1, 2, 5, 5)),
+            case(
+                "pad_nocip", [3, 3], [2, 2], [1, 1], False, False, None, (1, 2, 5, 5)
+            ),
+            case("asym", [3, 2], [2, 3], [1, 1], True, False, None, (2, 3, 5, 7)),
+            case("divisor", [2, 2], [2, 2], [0, 0], True, False, 3, (1, 1, 4, 4)),
+            # ceil_mode: last window overhangs -> exercises the overhang divisor
+            # branch (beh/bew > 0) + the ceil output-size (3x3 vs floor 2x2).
+            case("ceil_cip", [2, 2], [2, 2], [0, 0], True, True, None, (1, 1, 5, 5)),
+            case(
+                "ceil_nocip", [3, 3], [2, 2], [0, 0], False, True, None, (1, 2, 5, 5)
+            ),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("native_group_norm")
+def _group_norm_suite() -> WebGPUTestSuite:
+    # 2-pass norm returning (out, mean, rstd); the multi-output golden verifies
+    # both the reduce (mean/rstd) and normalize (out) passes. float64 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda num_channels, num_groups: GroupNormModule(
+            num_channels, num_groups
+        ),
+        cases=[
+            Case(
+                name="c4_g2",
+                construct={"num_channels": 4, "num_groups": 2},
+                inputs=((2, 4, 3, 5),),
+            ),
+            Case(
+                name="c6_g3",
+                construct={"num_channels": 6, "num_groups": 3},
+                inputs=((1, 6, 2, 2),),
+            ),
+            Case(
+                name="c4_g1",
+                construct={"num_channels": 4, "num_groups": 1},
+                inputs=((1, 4, 3, 3),),
+            ),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("index_select")
+def _index_select_suite() -> WebGPUTestSuite:
+    # Gather rows along dim via a baked int index; float32 oracle. Only the float
+    # input is a runtime tensor (the index is a graph constant).
+    return WebGPUTestSuite(
+        module_factory=lambda dim, index: IndexSelectModule(dim, index),
+        cases=[
+            Case(
+                name="dim0_1d",
+                construct={"dim": 0, "index": [0, 2, 4, 1]},
+                inputs=((S,),),
+            ),
+            Case(
+                name="dim0_2d",
+                construct={"dim": 0, "index": [3, 0, 1]},
+                inputs=((XS + 1, S1),),
+            ),
+            Case(
+                name="dim1_2d",
+                construct={"dim": 1, "index": [5, 2, 0, 2]},
+                inputs=((XS + 1, S1),),
+            ),
+            Case(
+                name="dim1_3d",
+                construct={"dim": 1, "index": [4, 0, 2]},
+                inputs=((XS, S, S1),),
+            ),
+            Case(
+                name="dim2_3d",
+                construct={"dim": 2, "index": [6, 1, 4]},
+                inputs=((XS, S, S1),),
+            ),
+        ],
+        golden_dtype="float32",
     )
 
 
@@ -285,4 +602,69 @@ def _cat_suite() -> WebGPUTestSuite:
             for n, (shapes, dim) in _CAT_CONFIGS.items()
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
+    )
+
+
+def _unary_g1_factory(torch_fn, gen):
+    # A per-op no-param-activation suite (mat + rank3), reused across UNARY_G1.
+    def _suite() -> WebGPUTestSuite:
+        return WebGPUTestSuite(
+            module_factory=lambda: UnaryModule(torch_fn),
+            cases=[
+                Case(name="mat", inputs=(InputSpec(shape=(M1, M2), gen=gen),)),
+                Case(name="rank3", inputs=(InputSpec(shape=(S1, M1, M2), gen=gen),)),
+            ],
+        )
+
+    return _suite
+
+
+for _g1_op, (_g1_fn, _g1_gen) in UNARY_G1.items():
+    register_op_test(_g1_op)(_unary_g1_factory(_g1_fn, _g1_gen))
+
+
+@register_op_test("clamp")
+def _clamp_suite() -> WebGPUTestSuite:
+    # min_none exercises the None -> -inf substitution in clamp_impl.
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: ClampModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in CLAMP_CONFIGS.items()
+        ],
+    )
+
+
+@register_op_test("hardtanh")
+def _hardtanh_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: HardtanhModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in HARDTANH_CONFIGS.items()
+        ],
+    )
+
+
+@register_op_test("pow_scalar")
+def _pow_scalar_suite() -> WebGPUTestSuite:
+    # Positive base: WGSL pow(neg base)=NaN for any exponent; exponent baked.
+    return WebGPUTestSuite(
+        module_factory=lambda exponent: PowScalarModule(exponent),
+        cases=[
+            Case(
+                name=n,
+                construct={"exponent": e},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(0.1, 4.0)),),
+            )
+            for n, e in POW_SCALAR_CONFIGS.items()
+        ],
     )
