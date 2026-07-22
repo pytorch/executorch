@@ -35,6 +35,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CONFIGS as _CAT_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
+from executorch.backends.webgpu.test.ops.test_pow import PowModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
@@ -193,6 +194,30 @@ def _minimum_suite() -> WebGPUTestSuite:
         cases=[
             Case(name="2d", inputs=((M1, M2), (M1, M2))),
             Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+        ],
+    )
+
+
+@register_op_test("pow")
+def _pow_suite() -> WebGPUTestSuite:
+    # Positive base avoids pow(neg, frac)=NaN; exponent spans negative+positive.
+    return WebGPUTestSuite(
+        module_factory=lambda: PowModule(),
+        cases=[
+            Case(
+                name="2d",
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
+            Case(
+                name="3d",
+                inputs=(
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
         ],
     )
 
