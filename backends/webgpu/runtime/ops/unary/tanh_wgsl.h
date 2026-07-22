@@ -12,9 +12,9 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from sigmoid.wgsl - DO NOT EDIT.
-// wgsl-sha256: 557a9ca337edf26863fc29db2cf2db4e783131ca89254c052eb4600764ef7a35
-inline constexpr const char* kSigmoidWGSL = R"(
+// @generated from tanh.wgsl - DO NOT EDIT.
+// wgsl-sha256: 5bd7eb1c6411940d84a9b311884f35b39f15b82103b14bab02902290ed6b0339
+inline constexpr const char* kTanhWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
@@ -33,12 +33,13 @@ fn main(
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    let x = input[idx];
+    output[idx] = tanh(clamp(x, -15.0, 15.0));
 }
 )";
 
-inline constexpr uint32_t kSigmoidWorkgroupSizeX = 256;
-inline constexpr uint32_t kSigmoidWorkgroupSizeY = 1;
-inline constexpr uint32_t kSigmoidWorkgroupSizeZ = 1;
+inline constexpr uint32_t kTanhWorkgroupSizeX = 256;
+inline constexpr uint32_t kTanhWorkgroupSizeY = 1;
+inline constexpr uint32_t kTanhWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
