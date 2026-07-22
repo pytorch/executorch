@@ -12,9 +12,9 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from sigmoid.wgsl - DO NOT EDIT.
-// wgsl-sha256: 557a9ca337edf26863fc29db2cf2db4e783131ca89254c052eb4600764ef7a35
-inline constexpr const char* kSigmoidWGSL = R"(
+// @generated from exp.wgsl - DO NOT EDIT.
+// wgsl-sha256: 3171399bc36acf9c1cb2a03c2a31038318203c4c63ab03c4881df7a660346020
+inline constexpr const char* kExpWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
@@ -33,12 +33,13 @@ fn main(
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    let x = input[idx];
+    output[idx] = exp(x);
 }
 )";
 
-inline constexpr uint32_t kSigmoidWorkgroupSizeX = 256;
-inline constexpr uint32_t kSigmoidWorkgroupSizeY = 1;
-inline constexpr uint32_t kSigmoidWorkgroupSizeZ = 1;
+inline constexpr uint32_t kExpWorkgroupSizeX = 256;
+inline constexpr uint32_t kExpWorkgroupSizeY = 1;
+inline constexpr uint32_t kExpWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
