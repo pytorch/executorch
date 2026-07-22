@@ -14,13 +14,12 @@ class TestCMakeConfiguration(unittest.TestCase):
         source = cmake.read_text()
         wasm_branch = """if(EMSCRIPTEN)
   target_compile_options(webgpu_backend PUBLIC \"--use-port=emdawnwebgpu\")
+  target_link_options(webgpu_backend PUBLIC \"--use-port=emdawnwebgpu\")
 else()"""
 
         self.assertIn(wasm_branch, source)
-        branch_start = source.index(wasm_branch)
-        branch_end = source.index("\nendif()", branch_start)
-        self.assertIn("find_package(Dawn REQUIRED)", source[branch_start:branch_end])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        # Dawn is linked only in the native (else) branch, never under EMSCRIPTEN.
+        # Split on the branch head so the assertion does not depend on which
+        # endif() (the nested APPLE one vs the outer one) appears first.
+        native_branch = source.split(wasm_branch, 1)[1]
+        self.assertIn("find_package(Dawn REQUIRED)", native_branch)

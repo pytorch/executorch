@@ -281,7 +281,7 @@ class Llama3_2_3B_Instruct(LLMModelConfig):
     transform_weight = True
     # The Llama3_2 enabled should be instruct, however, Llama's tokenizer does not provide utility to apply chat template.
     instruct_model = False
-    num_sharding = 3
+    num_sharding = 4
     masked_softmax = False
     seq_mse_candidates = 0
     r1 = False

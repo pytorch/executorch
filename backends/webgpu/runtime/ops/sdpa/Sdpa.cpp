@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
@@ -189,7 +189,7 @@ static StreamingAttentionK16Params make_streaming_attention_k16_params(
   return p;
 }
 
-bool streaming_attention_k16_device_supported(WGPUDevice device) {
+static bool streaming_attention_k16_device_supported(WGPUDevice device) {
   WGPULimits limits = {};
   const WebGPUContext* context = get_default_webgpu_context();
   return context != nullptr && context->shader_f16_supported &&
@@ -200,7 +200,7 @@ bool streaming_attention_k16_device_supported(WGPUDevice device) {
       limits.maxComputeWorkgroupStorageSize >= 14720u;
 }
 
-utils::WgCount streaming_attention_k16_grid(
+static utils::WgCount streaming_attention_k16_grid(
     WGPUDevice device,
     int64_t S,
     int64_t Hkv,
@@ -209,8 +209,7 @@ utils::WgCount streaming_attention_k16_grid(
       (static_cast<uint64_t>(S) * static_cast<uint64_t>(g) + 31u) / 32u;
   const uint64_t workgroups = static_cast<uint64_t>(Hkv) * groups_per_kv;
   if (workgroups == 0u || workgroups > UINT32_MAX) {
-    throw std::runtime_error(
-        "WebGPU sdpa: K16 workgroup count exceeds uint32");
+    throw std::runtime_error("WebGPU sdpa: K16 workgroup count exceeds uint32");
   }
   if (workgroups > utils::queried_max_workgroups(device)) {
     throw std::runtime_error(
@@ -509,12 +508,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const WGPUDevice device = graph.device();
   const WGPUBuffer k16_buffers[] = {
-      q.buffer,
-      k.buffer,
-      v.buffer,
-      k_cache.buffer,
-      v_cache.buffer,
-      out.buffer};
+      q.buffer, k.buffer, v.buffer, k_cache.buffer, v_cache.buffer, out.buffer};
   bool k16_buffers_distinct = true;
   for (size_t i = 0; i < 6; i++) {
     for (size_t j = i + 1; j < 6; j++) {
@@ -522,8 +516,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           k16_buffers_distinct && k16_buffers[i] != k16_buffers[j];
     }
   }
-  const bool k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 &&
-      g == 4 && D == 64 && scale == 0.125f && out.dims == q.dims &&
+  const bool k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 && g == 4 &&
+      D == 64 && scale == 0.125f && out.dims == q.dims &&
       k16_buffers_distinct && streaming_attention_k16_device_supported(device);
   const uint32_t uc_wg =
       utils::clamp_workgroup_size(device, kUpdateCacheWorkgroupSizeX);
@@ -621,8 +615,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           static_cast<uint64_t>(state.context_len);
       const uint64_t qk_tiles = static_cast<uint64_t>(Hq) *
           static_cast<uint64_t>(utils::div_up(state.s, kSdpaTileM)) *
-          static_cast<uint64_t>(
-              utils::div_up(state.context_len, kSdpaTileN));
+          static_cast<uint64_t>(utils::div_up(state.context_len, kSdpaTileN));
       const uint64_t softmax_rows =
           static_cast<uint64_t>(Hq) * static_cast<uint64_t>(state.s);
       const uint64_t av_tiles = static_cast<uint64_t>(Hq) *
@@ -644,6 +637,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           gr.device(), static_cast<uint32_t>(av_tiles), av_wg, "AV(resize)");
     }
     state.use_fd = fd_eligible && state.s == 1;
+    // make_sdpa_fd_decode_state requires D % 4 == 0; the op-level guard above
+    // ("head_dim (D) must be a multiple of 4") rejects any other D before this
+    // lambda runs, so eager construction here can never throw on it.
     if (fd_eligible) {
       state.fd = make_sdpa_fd_decode_state(
           gr.device(), Hq, Hkv, D, state.context_len, g, scale);
@@ -688,8 +684,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool dual_route =
       utils::should_record_sdpa_dual_route(
           fd_eligible, dynamic_sequence, dynamic_pos);
-  const bool record_k16 =
-      k16_eligible && (dual_route || !initial_state.use_fd);
+  const bool record_k16 = k16_eligible && (dual_route || !initial_state.use_fd);
   const bool record_materialized =
       !k16_eligible && (dual_route || !initial_state.use_fd);
   const bool record_fd = dual_route || initial_state.use_fd;
@@ -907,10 +902,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       if (fixed_use_fd) {
         throw std::runtime_error("WebGPU sdpa: static route changed");
       }
-      gr.dispatch_at(k16_idx).workgroup_count_x =
-          state.streaming_k16_grid.x;
-      gr.dispatch_at(k16_idx).workgroup_count_y =
-          state.streaming_k16_grid.y;
+      gr.dispatch_at(k16_idx).workgroup_count_x = state.streaming_k16_grid.x;
+      gr.dispatch_at(k16_idx).workgroup_count_y = state.streaming_k16_grid.y;
     } else {
       if (fixed_use_fd) {
         throw std::runtime_error("WebGPU sdpa: static route changed");

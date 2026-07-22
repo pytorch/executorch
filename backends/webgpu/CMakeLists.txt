@@ -65,6 +65,9 @@ target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 # Native builds link Dawn (Tint) and the platform GPU libraries.
 if(EMSCRIPTEN)
   target_compile_options(webgpu_backend PUBLIC "--use-port=emdawnwebgpu")
+  # --use-port is also required at link time: the link step pulls in the port's
+  # headers, JS glue, and libraries for consumers that link webgpu_backend.
+  target_link_options(webgpu_backend PUBLIC "--use-port=emdawnwebgpu")
 else()
   find_package(Threads REQUIRED)
   find_package(Dawn REQUIRED)
