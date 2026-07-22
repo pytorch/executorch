@@ -93,6 +93,20 @@ std::vector<int8_t> load_int8_bin(const std::string& path, size_t numel) {
   return g;
 }
 
+std::vector<int64_t> load_int64_bin(const std::string& path, size_t numel) {
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    return {};
+  }
+  std::vector<int64_t> g(numel);
+  const size_t n = std::fread(g.data(), sizeof(int64_t), numel, f);
+  std::fclose(f);
+  if (n != numel) {
+    return {};
+  }
+  return g;
+}
+
 bool within_tol(
     const float* out,
     const float* golden,

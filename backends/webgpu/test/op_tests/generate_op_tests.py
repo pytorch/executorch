@@ -79,6 +79,10 @@ def _write_int8(t: torch.Tensor, path: str) -> None:
     t.detach().contiguous().cpu().numpy().astype("<i1").tofile(path)
 
 
+def _write_int64(t: torch.Tensor, path: str) -> None:
+    t.detach().contiguous().cpu().numpy().astype("<i8").tofile(path)
+
+
 def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[dict]:
     """Export one case; write its .pte + input/golden .bin(s). Returns one manifest
     entry per output tensor (multi-output ops emit N; single-output ops emit one,
@@ -125,10 +129,15 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
     for out_index in range(n_out):
         raw = golden_outs[out_index]
         is_int8 = raw.dtype == torch.int8
+        is_int64 = raw.dtype in (torch.int64, torch.int32)
         if is_int8:
             # int8-output ops (quantize): byte-exact golden, no fp32 cast/oracle.
             out_t = raw
             out_dtype = "int8"
+        elif is_int64:
+            # int64-index ops (argmax/argmin): exact golden, no fp32 cast/oracle.
+            out_t = raw.to(torch.int64)
+            out_dtype = "int64"
         else:
             out_t = raw.to(torch.float32)
             out_dtype = "float32"
@@ -146,6 +155,8 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
         golden_rel = f"{case_id}{suffix}.golden.bin"
         if is_int8:
             _write_int8(out_t, os.path.join(out_dir, golden_rel))
+        elif is_int64:
+            _write_int64(out_t, os.path.join(out_dir, golden_rel))
         else:
             _write_fp32(out_t, os.path.join(out_dir, golden_rel))
         entries.append(

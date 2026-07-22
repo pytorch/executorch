@@ -35,6 +35,12 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CONFIGS as _CAT_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
+from executorch.backends.webgpu.test.ops.test_argmax import (
+    argmax_tie_gen,
+    argmin_tie_gen,
+    ArgmaxModule,
+    ArgminModule,
+)
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
@@ -1020,6 +1026,35 @@ def _dequant_const_suite() -> WebGPUTestSuite:
         cases=[
             Case(name="edges", construct={"scale": 0.05, "zero_point": 0}, inputs=()),
             Case(name="zp", construct={"scale": 0.1, "zero_point": 7}, inputs=()),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("argmax")
+def _argmax_suite() -> WebGPUTestSuite:
+    # Last-dim argmax -> int64 index. randn puts the max at an INTERIOR index
+    # (exercises the walk); the tie case pins the strict-`>` first-occurrence.
+    return WebGPUTestSuite(
+        module_factory=lambda: ArgmaxModule(),
+        cases=[
+            Case(name="2d", inputs=((M1, M2),)),
+            Case(name="3d", inputs=((S, S1, S2),)),
+            Case(name="tie", inputs=(InputSpec(shape=(3, 6), gen=argmax_tie_gen),)),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("argmin")
+def _argmin_suite() -> WebGPUTestSuite:
+    # Last-dim argmin -> int64 index; randn interior min + strict-`<` tie case.
+    return WebGPUTestSuite(
+        module_factory=lambda: ArgminModule(),
+        cases=[
+            Case(name="2d", inputs=((M1, M2),)),
+            Case(name="3d", inputs=((S, S1, S2),)),
+            Case(name="tie", inputs=(InputSpec(shape=(3, 6), gen=argmin_tie_gen),)),
         ],
         golden_dtype="float32",
     )
