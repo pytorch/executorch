@@ -69,6 +69,7 @@ Key differences between the two modes:
 | `--max_context_len` | 1024 | Maximum context length |
 | `--input_len` | 32 | Input sequence length per forward pass. In multifunction mode, this is the prefill sequence length. |
 | `--dtype` | `fp16` | Model dtype (`fp16` or `fp32`). The ANE requires fp16. |
+| `--sliding_window` | (off) | Sliding-window attention size. When set, every layer uses a KV cache of this many tokens instead of `max_context_len - input_len`. Required for Mistral / Gemma3 / Gemma4 / Llama4-style models trained with sliding-window attention; lets longer contexts run without growing per-layer attention compute or KV cache memory. |
 
 ### Quantization Options
 | Option | Default | Description |
@@ -94,6 +95,7 @@ The static model has several ANE optimizations, including:
 * Splitting linear layers for improved performance (controlled by target_split_size and max_splits args)
 * Splitting the pte into multiple Core ML pieces for improved performance (can be disabled with no_graph_breaks)
 * Re-writing SDPA to avoid 5-D tensors to improve performance.  This also fixes an accuracy bug that was introduced in iOS 26 (addresses this: https://github.com/pytorch/executorch/issues/15833)
+* Sliding-window attention (`--sliding_window N`) caps each layer's KV cache at `N` tokens regardless of `max_context_len`.  For models trained with sliding-window attention (Mistral 7B uses 4096; Gemma 3/Gemma 4 alternate sliding and full layers), this both matches training behavior and roughly halves KV-cache memory plus per-token attention FLOPs at long context.  Per-layer mixed sliding/full attention is not yet exposed; today every layer shares the same window when the flag is set.
 
 We are working on adding a C++ runner as well.
 
