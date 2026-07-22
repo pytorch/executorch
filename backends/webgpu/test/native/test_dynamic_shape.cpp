@@ -240,6 +240,88 @@ constexpr float kBk64DownRtol = 8e-2f;
 constexpr float kBk64DownNrmse = 1.5e-2f;
 constexpr float kBk64DownTailNrmse = 2e-2f;
 
+void expect_bk64_tensor(
+    const executorch::aten::Tensor& output,
+    const std::vector<float>& golden,
+    int m_rows,
+    int width,
+    const std::string& label) {
+  const size_t numel = static_cast<size_t>(m_rows) * width;
+  ASSERT_EQ(static_cast<size_t>(output.numel()), numel) << label;
+  ASSERT_EQ(golden.size(), numel) << label;
+  const float* data = output.const_data_ptr<float>();
+  double error_sq_sum = 0.0;
+  double golden_sq_sum = 0.0;
+  double tail_error_sq_sum = 0.0;
+  double tail_golden_sq_sum = 0.0;
+  bool within_tolerance = true;
+  const size_t tail_begin = static_cast<size_t>(m_rows - 1) * width;
+  for (size_t i = 0; i < numel; ++i) {
+    ASSERT_TRUE(std::isfinite(data[i])) << label << " i=" << i;
+    ASSERT_TRUE(std::isfinite(golden[i])) << label << " golden i=" << i;
+    const double error = static_cast<double>(data[i]) - golden[i];
+    const float abs_error = std::fabs(static_cast<float>(error));
+    const float rel_error = abs_error / std::fmax(std::fabs(golden[i]), 1e-6f);
+    within_tolerance &= abs_error <= kBk64Atol || rel_error <= kBk64Rtol;
+    error_sq_sum += error * error;
+    golden_sq_sum += static_cast<double>(golden[i]) * golden[i];
+    if (i >= tail_begin) {
+      tail_error_sq_sum += error * error;
+      tail_golden_sq_sum += static_cast<double>(golden[i]) * golden[i];
+    }
+  }
+  EXPECT_TRUE(within_tolerance) << label << " hybrid tolerance";
+  EXPECT_LT(std::sqrt(error_sq_sum / golden_sq_sum), kBk64Nrmse)
+      << label << " full-output NRMSE";
+  EXPECT_LT(std::sqrt(tail_error_sq_sum / tail_golden_sq_sum), kBk64TailNrmse)
+      << label << " final-row NRMSE";
+
+  for (size_t i :
+       {size_t{0}, static_cast<size_t>(width - 1), tail_begin, numel - 1}) {
+    const float abs_error = std::fabs(data[i] - golden[i]);
+    const float rel_error = abs_error / std::fmax(std::fabs(golden[i]), 1e-6f);
+    EXPECT_TRUE(abs_error <= kBk64Atol || rel_error <= kBk64Rtol)
+        << label << " boundary i=" << i;
+  }
+}
+
+void run_bk64_qkv(
+    Module& module,
+    int m_rows,
+    const char* prefix,
+    int q_width = kBk64N,
+    int k_width = kBk64KvN,
+    int v_width = kBk64KvN,
+    bool separate_v_input = false) {
+  const std::string base =
+      g_dir + "/" + prefix + ".S" + std::to_string(m_rows) + ".";
+  auto input = read_bin(base + "input.bin");
+  ASSERT_EQ(input.size(), static_cast<size_t>(m_rows) * kBk64K);
+  auto input_tensor = make_tensor_ptr({m_rows, kBk64K}, std::move(input));
+  std::vector<EValue> inputs{EValue(input_tensor)};
+  decltype(input_tensor) v_input_tensor;
+  if (separate_v_input) {
+    auto v_input = read_bin(base + "v_input.bin");
+    ASSERT_EQ(v_input.size(), static_cast<size_t>(m_rows) * kBk64K);
+    v_input_tensor = make_tensor_ptr({m_rows, kBk64K}, std::move(v_input));
+    inputs.emplace_back(v_input_tensor);
+  }
+  auto result = module.forward(inputs);
+  ASSERT_TRUE(result.ok()) << prefix << " M=" << m_rows;
+  ASSERT_EQ(result.get().size(), 3) << prefix << " M=" << m_rows;
+  const int widths[] = {q_width, k_width, v_width};
+  const char* names[] = {"q", "k", "v"};
+  for (size_t i = 0; i < 3; ++i) {
+    ASSERT_TRUE(result.get()[i].isTensor()) << prefix << " output " << names[i];
+    expect_bk64_tensor(
+        result.get()[i].toTensor(),
+        read_bin(base + names[i] + ".bin"),
+        m_rows,
+        widths[i],
+        std::string(prefix) + " M=" + std::to_string(m_rows) + " " + names[i]);
+  }
+}
+
 void run_bk64_linear(
     Module& module,
     int m_rows,
@@ -719,6 +801,38 @@ TEST(DynamicShape, QuantizedLinearBk64ReusedGraphAndFallbacks) {
   run_bk64_linear(kv_shape, 128, "dyn_linear_bk64_kv_shape", kBk64K, kBk64KvN);
 }
 
+TEST(DynamicShape, QuantizedLinearBk64QkvReusedGraphAndFallbacks) {
+  Module candidate(g_dir + "/dyn_qkv_bk64.pte");
+  ASSERT_EQ(candidate.load_forward(), Error::Ok) << "load dyn_qkv_bk64.pte";
+  for (int m_rows : {512, 511, 508, 128, 127, 16, 2, 1, 508, 512}) {
+    run_bk64_qkv(candidate, m_rows, "dyn_qkv_bk64");
+  }
+
+  Module group32(g_dir + "/dyn_qkv_bk64_group32.pte");
+  ASSERT_EQ(group32.load_forward(), Error::Ok);
+  run_bk64_qkv(group32, 128, "dyn_qkv_bk64_group32");
+
+  Module bias(g_dir + "/dyn_qkv_bk64_bias.pte");
+  ASSERT_EQ(bias.load_forward(), Error::Ok);
+  run_bk64_qkv(bias, 128, "dyn_qkv_bk64_bias");
+
+  Module wrong_width(g_dir + "/dyn_qkv_bk64_wrong_width.pte");
+  ASSERT_EQ(wrong_width.load_forward(), Error::Ok);
+  run_bk64_qkv(
+      wrong_width, 128, "dyn_qkv_bk64_wrong_width", kBk64N, kBk64N, kBk64KvN);
+
+  Module different_input(g_dir + "/dyn_qkv_bk64_different_input.pte");
+  ASSERT_EQ(different_input.load_forward(), Error::Ok);
+  run_bk64_qkv(
+      different_input,
+      128,
+      "dyn_qkv_bk64_different_input",
+      kBk64N,
+      kBk64KvN,
+      kBk64KvN,
+      true);
+}
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 void expect_single_q4_profile(
     const char* expected_name,
@@ -814,6 +928,102 @@ TEST(DynamicShape, QuantizedLinearBk64ProfileSoleWriter) {
     run_bk64_linear(module, 128, negative.fixture, kBk64K, negative.n);
     expect_single_q4_profile(
         "linear_q4gsw_steel", negative.expected_x, negative.fixture, 128);
+  }
+}
+
+TEST(DynamicShape, QuantizedLinearBk64QkvProfileSoleWriter) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !context->shader_f16_supported) {
+    GTEST_SKIP() << "QKV timestamp or shader-f16 capability unavailable";
+  }
+  WGPULimits limits = {};
+  if (wgpuDeviceGetLimits(context->device, &limits) != WGPUStatus_Success ||
+      limits.maxComputeInvocationsPerWorkgroup < 256u ||
+      limits.maxComputeWorkgroupSizeX < 16u ||
+      limits.maxComputeWorkgroupSizeY < 16u ||
+      limits.maxComputeWorkgroupStorageSize < 16384u ||
+      limits.maxComputeWorkgroupsPerDimension < 384u) {
+    GTEST_SKIP() << "QKV workgroup limits unavailable";
+  }
+  const auto q4_profiles = [&]() {
+    std::vector<std::string> names;
+    for (const auto& duration : context->querypool->results()) {
+      if (duration.kernel_name.rfind("linear_q4gsw", 0) == 0) {
+        names.push_back(duration.kernel_name);
+      }
+    }
+    return names;
+  };
+
+  Module candidate(g_dir + "/dyn_qkv_bk64.pte");
+  ASSERT_EQ(candidate.load_forward(), Error::Ok);
+  for (int m_rows : {512, 508, 128}) {
+    run_bk64_qkv(candidate, m_rows, "dyn_qkv_bk64");
+    const auto names = q4_profiles();
+    ASSERT_EQ(names.size(), 1) << "M=" << m_rows;
+    EXPECT_EQ(names[0], "linear_q4gsw_bk64_qkv") << "M=" << m_rows;
+    const auto& profile = context->querypool->results();
+    const auto active =
+        std::find_if(profile.begin(), profile.end(), [](const auto& d) {
+          return d.kernel_name == "linear_q4gsw_bk64_qkv";
+        });
+    ASSERT_NE(active, profile.end());
+    EXPECT_EQ(active->global_wg[0], m_rows == 128 ? 96u : 384u);
+    EXPECT_EQ(active->global_wg[1], 1u);
+  }
+
+  for (int m_rows : {511, 127, 16, 2}) {
+    run_bk64_qkv(candidate, m_rows, "dyn_qkv_bk64");
+    const auto names = q4_profiles();
+    ASSERT_EQ(names.size(), 3) << "M=" << m_rows;
+    EXPECT_FALSE(contains_name(names, "linear_q4gsw_bk64_qkv"));
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_steel"), 3)
+        << "M=" << m_rows;
+  }
+
+  run_bk64_qkv(candidate, 1, "dyn_qkv_bk64");
+  const auto decode_names = q4_profiles();
+  ASSERT_EQ(decode_names.size(), 3);
+  EXPECT_EQ(
+      std::count(
+          decode_names.begin(), decode_names.end(), "linear_q4gsw_coop4_bicol"),
+      3);
+  EXPECT_FALSE(contains_name(decode_names, "linear_q4gsw_bk64_qkv"));
+
+  for (int m_rows : {508, 512}) {
+    run_bk64_qkv(candidate, m_rows, "dyn_qkv_bk64");
+    const auto names = q4_profiles();
+    ASSERT_EQ(names.size(), 1) << "re-entry M=" << m_rows;
+    EXPECT_EQ(names[0], "linear_q4gsw_bk64_qkv") << "re-entry M=" << m_rows;
+  }
+
+  struct NegativeRoute {
+    const char* fixture;
+    int q_width;
+    bool separate_v_input;
+  };
+  for (const auto& negative : std::vector<NegativeRoute>{
+           {"dyn_qkv_bk64_group32", kBk64N, false},
+           {"dyn_qkv_bk64_bias", kBk64N, false},
+           {"dyn_qkv_bk64_wrong_width", kBk64N, false},
+           {"dyn_qkv_bk64_different_input", kBk64N, true}}) {
+    Module module(g_dir + "/" + negative.fixture + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << negative.fixture;
+    run_bk64_qkv(
+        module,
+        128,
+        negative.fixture,
+        negative.q_width,
+        std::string(negative.fixture).find("wrong_width") != std::string::npos
+            ? kBk64N
+            : kBk64KvN,
+        kBk64KvN,
+        negative.separate_v_input);
+    const auto names = q4_profiles();
+    ASSERT_EQ(names.size(), 3) << negative.fixture;
+    EXPECT_FALSE(contains_name(names, "linear_q4gsw_bk64_qkv"))
+        << negative.fixture;
   }
 }
 

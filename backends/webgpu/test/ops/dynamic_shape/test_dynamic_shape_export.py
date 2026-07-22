@@ -342,6 +342,7 @@ BK64_GROUP = 64
 BK64_MAXM = 512
 BK64_LIVE_M = (BK64_MAXM, 511, 508, 128, 127, 1)
 BK64_OPTIMIZED_M = (BK64_MAXM, 508, 128)
+BK64_QKV_LIVE_M = (BK64_MAXM, 511, 508, 128, 127, 16, 2, 1)
 
 
 SWIGLU_MAXM = 512
@@ -489,11 +490,12 @@ def _make_bk64_model(
     n: int = BK64_N,
     group: int = BK64_GROUP,
     bias: bool = False,
+    seed: int = 11,
 ) -> torch.nn.Module:
     from torchao.quantization.granularity import PerGroup
     from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
-    torch.manual_seed(11)
+    torch.manual_seed(seed)
     model = torch.nn.Linear(k, n, bias=bias).eval()
     if model.bias is not None:
         with torch.no_grad():
@@ -526,6 +528,34 @@ class Bk64ShapeAwareLinear(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.projection(x).reshape(1, x.shape[0], self.output_width)
+
+
+class Bk64Qkv(torch.nn.Module):
+    def __init__(
+        self,
+        *,
+        widths=(BK64_N, BK64_KV_N, BK64_KV_N),
+        group: int = BK64_GROUP,
+        bias: bool = False,
+        separate_v_input: bool = False,
+    ) -> None:
+        super().__init__()
+        self.q = _make_bk64_model(n=widths[0], group=group, bias=bias, seed=21)
+        self.k = _make_bk64_model(n=widths[1], group=group, bias=bias, seed=22)
+        self.v = _make_bk64_model(n=widths[2], group=group, bias=bias, seed=23)
+        self.widths = widths
+        self.separate_v_input = separate_v_input
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        v_input: torch.Tensor | None = None,
+    ):
+        q = self.q(x).reshape(1, x.shape[0], self.widths[0])
+        k = self.k(x).reshape(1, x.shape[0], self.widths[1])
+        v_source = v_input if self.separate_v_input else x
+        v = self.v(v_source).reshape(1, v_source.shape[0], self.widths[2])
+        return q, k, v
 
 
 def _export_bk64_program(
@@ -604,6 +634,66 @@ def _export_dynamic_bk64_linear_cases(out_dir: str) -> None:
         n=BK64_KV_N,
         live_m=[128],
     )
+    _export_dynamic_bk64_qkv_cases(out_dir)
+
+
+def _export_dynamic_bk64_qkv_case(
+    out_dir: str,
+    prefix: str,
+    model: Bk64Qkv,
+    live_m,
+) -> None:
+    inputs = (_bk64_input(BK64_MAXM, BK64_K),)
+    if model.separate_v_input:
+        inputs += (torch.flip(inputs[0], dims=[-1]).contiguous(),)
+    m_dim = torch.export.Dim("m", min=1, max=BK64_MAXM)
+    dynamic_shapes = tuple({0: m_dim} for _ in inputs)
+    ep = torch.export.export(model.eval(), inputs, dynamic_shapes=dynamic_shapes)
+    if not any(node.target == torch.ops.aten.sym_size.int for node in ep.graph.nodes):
+        raise RuntimeError(f"{prefix}: dynamic QKV fixture lost aten.sym_size.int")
+    et = _lower_fully_delegated(ep, prefix)
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
+        f.write(et.buffer)
+    print(f"Exported {prefix}.pte")
+    for m in live_m:
+        x = _bk64_input(m, BK64_K)
+        case_inputs = (x,)
+        if model.separate_v_input:
+            case_inputs += (torch.flip(x, dims=[-1]).contiguous(),)
+        outputs = (
+            _bk64_golden(model.q, case_inputs[0]),
+            _bk64_golden(model.k, case_inputs[0]),
+            _bk64_golden(model.v, case_inputs[-1]),
+        )
+        base = os.path.join(out_dir, f"{prefix}.S{m}.")
+        case_inputs[0].detach().numpy().astype("<f4").tofile(base + "input.bin")
+        if model.separate_v_input:
+            case_inputs[1].detach().numpy().astype("<f4").tofile(base + "v_input.bin")
+        for name, output in zip(("q", "k", "v"), outputs):
+            output.detach().numpy().astype("<f4").tofile(base + name + ".bin")
+        print(f"  golden {prefix} M={m}")
+
+
+def _export_dynamic_bk64_qkv_cases(out_dir: str) -> None:
+    _export_dynamic_bk64_qkv_case(
+        out_dir,
+        "dyn_qkv_bk64",
+        Bk64Qkv(),
+        BK64_QKV_LIVE_M,
+    )
+    for prefix, model in (
+        ("dyn_qkv_bk64_group32", Bk64Qkv(group=32)),
+        ("dyn_qkv_bk64_bias", Bk64Qkv(bias=True)),
+        (
+            "dyn_qkv_bk64_wrong_width",
+            Bk64Qkv(widths=(BK64_N, BK64_N, BK64_KV_N)),
+        ),
+        (
+            "dyn_qkv_bk64_different_input",
+            Bk64Qkv(separate_v_input=True),
+        ),
+    ):
+        _export_dynamic_bk64_qkv_case(out_dir, prefix, model, [128])
 
 
 def _export_static_linear(out_dir: str, m: int, prefix: str) -> None:
@@ -955,6 +1045,27 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_linear_bk64_group32.pte",
                 "dyn_linear_bk64_bias.pte",
                 "dyn_linear_bk64_kv_shape.pte",
+                "dyn_qkv_bk64.pte",
+                "dyn_qkv_bk64.S512.input.bin",
+                "dyn_qkv_bk64.S512.q.bin",
+                "dyn_qkv_bk64.S512.k.bin",
+                "dyn_qkv_bk64.S512.v.bin",
+                "dyn_qkv_bk64.S511.input.bin",
+                "dyn_qkv_bk64.S511.q.bin",
+                "dyn_qkv_bk64.S511.k.bin",
+                "dyn_qkv_bk64.S511.v.bin",
+                "dyn_qkv_bk64.S508.q.bin",
+                "dyn_qkv_bk64.S508.k.bin",
+                "dyn_qkv_bk64.S508.v.bin",
+                "dyn_qkv_bk64.S128.q.bin",
+                "dyn_qkv_bk64.S127.q.bin",
+                "dyn_qkv_bk64.S16.q.bin",
+                "dyn_qkv_bk64.S2.q.bin",
+                "dyn_qkv_bk64.S1.q.bin",
+                "dyn_qkv_bk64_group32.pte",
+                "dyn_qkv_bk64_bias.pte",
+                "dyn_qkv_bk64_wrong_width.pte",
+                "dyn_qkv_bk64_different_input.pte",
             ]
             for name in expected:
                 with self.subTest(artifact=name):
