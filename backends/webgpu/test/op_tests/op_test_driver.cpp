@@ -85,19 +85,55 @@ class OpCase : public ::testing::Test {
         out_tensor.sizes().begin(), out_tensor.sizes().end());
     EXPECT_EQ(out_shape, e_.golden.shape)
         << "output shape != golden shape (numel matched but dims differ)";
-    auto golden = load_fp32_bin(e_.golden.path, gn);
-    ASSERT_FALSE(golden.empty()) << "missing/short golden: " << e_.golden.path;
-
-    float max_abs = 0.0f, max_rel = 0.0f;
-    EXPECT_TRUE(within_tol(
-        out_tensor.const_data_ptr<float>(),
-        golden.data(),
-        static_cast<int>(gn),
-        e_.atol,
-        e_.rtol,
-        &max_abs,
-        &max_rel))
-        << "max_abs=" << max_abs << " max_rel=" << max_rel;
+    if (e_.golden.dtype == "int8") {
+      // int8-output ops (quantize) compare byte-exact: a discrete grid, so any
+      // deviation is a real bug, not tolerance.
+      auto golden = load_int8_bin(e_.golden.path, gn);
+      ASSERT_FALSE(golden.empty())
+          << "missing/short golden: " << e_.golden.path;
+      const int8_t* out_p = out_tensor.const_data_ptr<int8_t>();
+      int mism = -1;
+      for (size_t i = 0; i < gn; i++) {
+        if (out_p[i] != golden[i]) {
+          mism = static_cast<int>(i);
+          break;
+        }
+      }
+      EXPECT_EQ(mism, -1) << "int8 mismatch at index " << mism
+                          << ": out=" << (mism >= 0 ? int(out_p[mism]) : 0)
+                          << " golden=" << (mism >= 0 ? int(golden[mism]) : 0);
+    } else if (e_.golden.dtype == "int64") {
+      // int64-index ops (argmax/argmin) compare exact: indices are discrete.
+      auto golden = load_int64_bin(e_.golden.path, gn);
+      ASSERT_FALSE(golden.empty())
+          << "missing/short golden: " << e_.golden.path;
+      const int64_t* out_p = out_tensor.const_data_ptr<int64_t>();
+      int mism = -1;
+      for (size_t i = 0; i < gn; i++) {
+        if (out_p[i] != golden[i]) {
+          mism = static_cast<int>(i);
+          break;
+        }
+      }
+      EXPECT_EQ(mism, -1) << "int64 mismatch at index " << mism << ": out="
+                          << (mism >= 0 ? (long long)out_p[mism] : 0)
+                          << " golden="
+                          << (mism >= 0 ? (long long)golden[mism] : 0);
+    } else {
+      auto golden = load_fp32_bin(e_.golden.path, gn);
+      ASSERT_FALSE(golden.empty())
+          << "missing/short golden: " << e_.golden.path;
+      float max_abs = 0.0f, max_rel = 0.0f;
+      EXPECT_TRUE(within_tol(
+          out_tensor.const_data_ptr<float>(),
+          golden.data(),
+          static_cast<int>(gn),
+          e_.atol,
+          e_.rtol,
+          &max_abs,
+          &max_rel))
+          << "max_abs=" << max_abs << " max_rel=" << max_rel;
+    }
   }
 
  private:
