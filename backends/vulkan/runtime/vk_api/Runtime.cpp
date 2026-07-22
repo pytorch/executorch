@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 
 namespace vkcompute {
@@ -474,13 +475,18 @@ Adapter* set_and_get_external_adapter(
     const VkInstance instance,
     const VkPhysicalDevice physical_device,
     const VkDevice logical_device) {
-  static const std::unique_ptr<Adapter> p_external_adapter =
-      init_external_adapter(
-          instance,
-          physical_device,
-          logical_device,
-          1,
-          set_and_get_pipeline_cache_data_path(""));
+  static std::mutex external_adapter_mutex;
+  static std::unique_ptr<Adapter> p_external_adapter;
+
+  const std::lock_guard<std::mutex> lock(external_adapter_mutex);
+  if (!p_external_adapter) {
+    p_external_adapter = init_external_adapter(
+        instance,
+        physical_device,
+        logical_device,
+        1,
+        set_and_get_pipeline_cache_data_path(""));
+  }
 
   return p_external_adapter.get();
 }
