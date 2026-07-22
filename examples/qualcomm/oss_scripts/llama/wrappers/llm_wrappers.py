@@ -184,21 +184,49 @@ class TextDecoder(Component):
         )
 
         # load static llama model args
-        params_path = (
-            config.params_path if control_args.params is None else control_args.params
-        )
-        with open(params_path) as f:
-            self.model_args = process_model_args(
-                control_args, ModelArgs(**json.load(f)), self.quant_recipe, config, mode
+        if control_args.decoder_model == "gemma4-e2b":
+            from executorch.examples.models.gemma4.text_decoder.gemma4_config import (
+                Gemma4Config,
             )
+
+            params_path = config.params_path
+            self.gemma4_config = Gemma4Config.from_json(params_path)
+            self.gemma4_config.use_kv_cache = True
+            self.gemma4_config.max_batch_size = 1
+            self.gemma4_config.max_seq_len = control_args.max_seq_len
+            self.gemma4_config.max_context_len = control_args.max_context_len
+            self.model_args = None
+        else:
+            params_path = (
+                config.params_path
+                if control_args.params is None
+                else control_args.params
+            )
+            with open(params_path) as f:
+                self.model_args = process_model_args(
+                    control_args,
+                    ModelArgs(**json.load(f)),
+                    self.quant_recipe,
+                    config,
+                    mode,
+                )
         # prepare instance
         self.tok_embedding, self.decoder = self._prepare_model()
 
         # check if sharding required
         if self.decoder and self.config.num_sharding > 1:
+            layer_prefix_offsets = None
+            if self.control_args.decoder_model == "gemma4-e2b":
+                n_self = self.gemma4_config.num_self_decoder_layers
+                layer_prefix_offsets = {
+                    "model.self_decoder.layers": 0,
+                    "model.cross_decoder.layers": n_self,
+                }
             SplitGraph, setting = model_sharding.get_split_graph_pass(
                 self.meta["get_n_layers"],
                 shares=self.config.num_sharding,
+                pattern=self._get_sharding_get_pattern(),
+                layer_prefix_offsets=layer_prefix_offsets,
             )
             self.passes_job[SplitGraph] = setting
             self.dep_table[SplitGraph] = [FoldQDQ]
@@ -217,30 +245,58 @@ class TextDecoder(Component):
             else None
         )
 
+    def _get_sharding_get_pattern(self):
+        if self.control_args.decoder_model == "gemma4-e2b":
+            prefixes = [
+                "model.cross_decoder.layers",
+                "model.self_decoder.layers",
+            ]
+        else:
+            prefixes = [
+                "layers",
+            ]
+        prefix_alt = "|".join(re.escape(p) for p in prefixes)
+        return rf"^(?:{prefix_alt})\.(\d+)"
+
     def _prepare_model(self):  # noqa: C901
         if (instance := self._get_model_instance()) is None:
             return None, None
         tok_embedding, decoder = instance
         # load parameters for HF models
         if self.control_args.checkpoint is None:
-            checkpoint = download_and_convert_hf_checkpoint(
-                self.config.repo_id,
-                self.config.convert_weights.__func__,
-            )
-            state_dict = torch.load(
-                checkpoint, weights_only=True, map_location="cpu", mmap=True
-            )
-            if self.control_args.decoder_model in {
-                "gemma-2b",
-                "gemma2-2b",
-                "gemma3-1b",
-            }:
-                for k, v in state_dict.items():
-                    if "norm" not in k:
-                        continue
-                    # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
-                    # See https://github.com/huggingface/transformers/pull/29402
-                    state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
+            if self.control_args.decoder_model == "gemma4-e2b":
+                from executorch.examples.qualcomm.oss_scripts.gemma4.text_decoder.convert_weights import (
+                    remap_keys,
+                )
+                from huggingface_hub import snapshot_download
+
+                state_dict = self.config.convert_weights.__func__(
+                    snapshot_download(repo_id=self.config.repo_id),
+                    self.gemma4_config,
+                    torch.float32,
+                )
+                state_dict = remap_keys(state_dict)
+            else:
+                checkpoint = download_and_convert_hf_checkpoint(
+                    self.config.repo_id,
+                    self.config.convert_weights.__func__,
+                )
+                state_dict = torch.load(
+                    checkpoint, weights_only=True, map_location="cpu", mmap=True
+                )
+                if self.control_args.decoder_model in {
+                    "gemma-2b",
+                    "gemma2-2b",
+                    "gemma3-1b",
+                }:
+                    for k, v in state_dict.items():
+                        if "norm" not in k:
+                            continue
+                        # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
+                        # See https://github.com/huggingface/transformers/pull/29402
+                        state_dict[k] = v.float() + torch.ones(
+                            v.shape, dtype=torch.float32
+                        )
         else:
             state_dict = torch.load(
                 self.control_args.checkpoint,
@@ -308,8 +364,8 @@ class TextDecoder(Component):
         for layer in decoder.layers:
             if getattr(layer.attention, "prepare_attention_conv", None):
                 layer.attention.prepare_attention_conv()
-            if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
-                layer.feed_forward.prepare_feedfoward_conv()
+            if getattr(layer.feed_forward, "prepare_feedforward_conv", None):
+                layer.feed_forward.prepare_feedforward_conv()
 
         decoder = convert_linear_to_conv2d(decoder)
 
@@ -320,16 +376,10 @@ class TextDecoder(Component):
 
         # check embedding fallback
         if self.control_args.embedding_quantize:
-            decoder = get_quant_embedding_transform(
-                embedding_quantize=self.control_args.embedding_quantize
-            )(decoder)
             self.passes_job[I64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "skip_node"
             ] = {"tokens"}
             if self.apply_embedding:
-                tok_embedding = get_quant_embedding_transform(
-                    embedding_quantize=self.control_args.embedding_quantize
-                )(tok_embedding)
                 self.tok_embedding_passes_job[I64toI32][
                     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
                 ]["skip_node"] = {"tokens"}
@@ -368,16 +418,47 @@ class TextDecoder(Component):
             # For gemma, we have preprocessed the weight of rmsnorm
             self.model_args.norm_type = "rmsnorm"
 
-        decoder: LlamaModel = LLM_VARIANT_ARCHS.get(
-            self.control_args.decoder_model, LlamaModel
-        )(
-            self.model_args,
-            ar_len=self.model_args.ar_len,
-            output_new_cache_only=True,
-            output_cache=True,
-            use_i64_token=use_i64_token,
-            **get_model_specific_kwargs(self.control_args, self.config),
-        )
+        if self.control_args.decoder_model == "gemma4-e2b":
+            from executorch.examples.qualcomm.oss_scripts.gemma4.model_wrapper import (
+                Gemma4TextModelWrapper,
+            )
+
+            ar_len = (
+                self.control_args.prefill_ar_len
+                if self.mode == Mode.PREFILL
+                else (
+                    self.control_args.max_context_len
+                    if self.mode == Mode.CALIBRATE
+                    else 1
+                )
+            )
+            extra_kwargs = {
+                "kv_io_bit_width": (
+                    self.quant_recipe.get_kv_io_bit_width()
+                    if self.quant_recipe
+                    else None
+                ),
+            }
+            decoder: Gemma4TextModelWrapper = Gemma4TextModelWrapper(
+                self.gemma4_config,
+                ar_len=ar_len,
+                output_new_cache_only=True,
+                output_cache=True,
+                use_i64_token=use_i64_token,
+                enable_masked_softmax=False,
+                **extra_kwargs,
+            )
+        else:
+            decoder: LlamaModel = LLM_VARIANT_ARCHS.get(
+                self.control_args.decoder_model, LlamaModel
+            )(
+                self.model_args,
+                ar_len=self.model_args.ar_len,
+                output_new_cache_only=True,
+                output_cache=True,
+                use_i64_token=use_i64_token,
+                **get_model_specific_kwargs(self.control_args, self.config),
+            )
 
         self.meta = decoder.get_metadata()
         # get example input
@@ -399,14 +480,27 @@ class TextDecoder(Component):
             ),
         }
         # shape of k caches and v caches
-        self.kv_cache_shape = {
-            # single head, kv input
-            (self.meta["get_head_dim"], self.meta["get_max_context_len"]),
-            (self.meta["get_max_context_len"], self.meta["get_head_dim"]),
-            # single head, kv output
-            (self.meta["get_head_dim"], self.meta["get_ar_len"]),
-            (self.meta["get_ar_len"], self.meta["get_head_dim"]),
-        }
+        if self.control_args.decoder_model == "gemma4-e2b":
+            # Gemma 4 has per-layer head_dim: sliding=256, full=512
+            kv_head_dims = {
+                self.meta["get_head_dim"],
+                self.meta["get_global_head_dim"],
+            }
+            self.kv_cache_shape = set()
+            for head_dim in kv_head_dims:
+                self.kv_cache_shape.add((head_dim, self.meta["get_max_context_len"]))
+                self.kv_cache_shape.add((self.meta["get_max_context_len"], head_dim))
+                self.kv_cache_shape.add((head_dim, self.meta["get_ar_len"]))
+                self.kv_cache_shape.add((self.meta["get_ar_len"], head_dim))
+        else:
+            self.kv_cache_shape = {
+                # single head, kv input
+                (self.meta["get_head_dim"], self.meta["get_max_context_len"]),
+                (self.meta["get_max_context_len"], self.meta["get_head_dim"]),
+                # single head, kv output
+                (self.meta["get_head_dim"], self.meta["get_ar_len"]),
+                (self.meta["get_ar_len"], self.meta["get_head_dim"]),
+            }
 
         if self.apply_embedding:
             self.tok_embedding_export_input = (
@@ -452,7 +546,7 @@ class TextDecoder(Component):
                 ]
                 kv_idx += 1
 
-    def _tag_ios(self, node, fixed_point_type):
+    def _tag_ios(self, node, fixed_point_type):  # noqa: C901
         atten_mask_shape = {
             (
                 self.meta["get_max_batch_size"],
@@ -465,6 +559,10 @@ class TextDecoder(Component):
         freq_shape = {
             (self.meta["get_ar_len"], self.meta["get_head_dim"] // 2),
         }
+        if self.control_args.decoder_model == "gemma4-e2b":
+            freq_shape.add(
+                (self.meta["get_ar_len"], self.meta["get_global_head_dim"] // 2)
+            )
 
         freq_op = {
             exir_ops.edge.aten.select.int,
@@ -473,7 +571,8 @@ class TextDecoder(Component):
 
         if node.op == "placeholder":
             if (
-                len(users := list(node.users)) == 1
+                len(users := list(node.users)) > 0
+                and "args_" in node.name
                 and users[0].meta["val"].size()[-2:] in self.kv_cache_shape
             ):
                 quant_io_type = fixed_point_type["kv_type"]
@@ -498,6 +597,22 @@ class TextDecoder(Component):
         if node.target in freq_op and node.meta["val"].size() in freq_shape:
             quant_io_type = fixed_point_type["io_type"]
 
+        if (
+            self.control_args.decoder_model == "gemma4-e2b"
+            and "stack_trace" in node.meta
+            and (
+                "per_layer_inputs[n_self:]" in node.meta["stack_trace"]
+                or "per_layer_inputs[i]" in node.meta["stack_trace"]
+            )
+        ):
+            quant_io_type = fixed_point_type["io_type"]
+
+        # tag donor kv
+        if self.control_args.decoder_model == "gemma4-e2b" and (
+            is_node_src_start_with_name(node, "full_k")
+            or is_node_src_start_with_name(node, "full_v")
+        ):
+            quant_io_type = fixed_point_type["io_type"]
         return quant_io_type
 
     def _quant_recipe_suggestion(
@@ -565,6 +680,16 @@ class TextDecoder(Component):
                 raise RuntimeError(
                     f"unknown logits io bit width {self.quant_recipe.get_logits_output_bit_width()}"
                 )
+
+        # embedding fallback and quantization
+        if self.control_args.embedding_quantize:
+            self.decoder = get_quant_embedding_transform(
+                embedding_quantize=self.control_args.embedding_quantize
+            )(self.decoder)
+            if self.apply_embedding:
+                self.tok_embedding = get_quant_embedding_transform(
+                    embedding_quantize=self.control_args.embedding_quantize
+                )(self.tok_embedding)
 
         data = request.method_data[TEXT_DECODER]
 
@@ -852,7 +977,12 @@ class HybridTextDecoder(Component):
                 if "args_" in node.name:
                     args_idx = int(node.name.split("_")[-1])
 
-                    if args_idx >= self.decode.meta["get_n_layers"]:
+                    n_cache_layers = (
+                        self.decode.meta["get_n_self_layers"]
+                        if self.control_args.decoder_model == "gemma4-e2b"
+                        else self.decode.meta["get_n_layers"]
+                    )
+                    if args_idx >= n_cache_layers:
                         v_input_cache_nodes.append(node)
                     else:
                         k_input_cache_nodes.append(node)
