@@ -38,7 +38,12 @@ WebGPUExecutionPlan plan_webgpu_execution(
     size_t output_count,
     ExecuteConfig config,
     const std::vector<SuppressibleOutput>& suppressible_outputs,
-    WebGPUGraphExecutionOptions options) {
+    WebGPUGraphExecutionOptions options,
+    const std::vector<bool>& enabled_dispatches) {
+  if (!enabled_dispatches.empty() &&
+      enabled_dispatches.size() != dispatch_count) {
+    throw std::runtime_error("WebGPU: enabled dispatch count mismatch");
+  }
   std::vector<bool> suppressed_dispatches(dispatch_count, false);
   std::vector<bool> copy_outputs(output_count, true);
   std::vector<bool> suppressed_outputs(output_count, false);
@@ -73,7 +78,8 @@ WebGPUExecutionPlan plan_webgpu_execution(
     std::vector<size_t> indices;
     indices.reserve(end - begin);
     for (size_t i = begin; i < end; i++) {
-      if (!suppressed_dispatches[i]) {
+      if (!suppressed_dispatches[i] &&
+          (enabled_dispatches.empty() || enabled_dispatches[i])) {
         indices.push_back(i);
       }
     }

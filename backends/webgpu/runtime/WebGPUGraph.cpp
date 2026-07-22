@@ -436,6 +436,12 @@ void WebGPUGraph::build(
       if (!a) {
         continue;
       }
+      if (oc->name()->str() == "sym_size.int" && a->size() >= 3 && values) {
+        const auto* out = values->Get(a->Get(2));
+        if (out && out->value_type() == vkgraph::GraphTypes::SymInt) {
+          dynamic_tensor_ids_.insert(static_cast<int>(a->Get(0)));
+        }
+      }
       // f16 KV: tag sdpa K/V cache values (args[3],[4]) for half-size alloc.
       // Inert unless kv_f16_ (runtime opt-in) is set.
       if (kv_f16_ && a->size() > 4 &&
@@ -1733,26 +1739,47 @@ bool should_timestamp_query() {
 void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
+  std::vector<bool> enabled_dispatches(n, true);
+  for (size_t i = 0; i < n; i++) {
+    if (dispatches_[i].kind != WebGPUDispatch::Kind::Compute) {
+      continue;
+    }
+    const bool zero_x = dispatches_[i].workgroup_count_x == 0;
+    const bool zero_y = dispatches_[i].workgroup_count_y == 0;
+    if (zero_x != zero_y) {
+      throw std::runtime_error("WebGPU: dispatch has a half-zero grid");
+    }
+    enabled_dispatches[i] = !zero_x;
+  }
   const WebGPUExecutionPlan plan = plan_webgpu_execution(
       n,
       output_copies_.size(),
       execute_config_,
       suppressible_outputs_,
-      options);
+      options,
+      enabled_dispatches);
 
   if (chunk == 0 || n <= chunk) {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
+    size_t active_compute_count = 0;
+    for (size_t i : plan.dispatch_chunks.front()) {
+      if (dispatches_[i].kind == WebGPUDispatch::Kind::Compute) {
+        active_compute_count++;
+      }
+    }
     // Bench: timestamp-query pool, null unless env-gated + feature present.
     WebGPUQueryPool* qp = nullptr;
-    if (should_timestamp_query() && n > 0) {
+    if (should_timestamp_query() && active_compute_count > 0) {
       if (auto* ctx = get_default_webgpu_context()) {
         if (ctx->timestamp_supported) {
-          if (!ctx->querypool || ctx->querypool->capacity() < n) {
+          if (!ctx->querypool ||
+              ctx->querypool->capacity() < active_compute_count) {
             ctx->querypool = std::make_unique<WebGPUQueryPool>();
-            ctx->querypool->initialize(device_, static_cast<uint32_t>(n));
+            ctx->querypool->initialize(
+                device_, static_cast<uint32_t>(active_compute_count));
           }
           qp = ctx->querypool.get();
-          qp->reset(static_cast<uint32_t>(n));
+          qp->reset(static_cast<uint32_t>(active_compute_count));
         }
       }
     }
@@ -1763,6 +1790,9 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     // One pass per dispatch: enforces storage RAW ordering across deps.
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    uint32_t query_index = 0;
+#endif
     for (size_t i : plan.dispatch_chunks.front()) {
       const auto& dispatch = dispatches_[i];
       if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
@@ -1780,7 +1810,7 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
       // tw must outlive BeginComputePass (the descriptor points at it).
       WGPUPassTimestampWrites tw = {};
       if (qp) {
-        tw = qp->writes_for(static_cast<uint32_t>(i));
+        tw = qp->writes_for(query_index);
         pass_desc.timestampWrites = &tw;
       }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -1796,10 +1826,11 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
       if (qp) {
         qp->record(
-            static_cast<uint32_t>(i),
+            query_index,
             dispatch.kernel_name,
             {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
             {1, 1, 1});
+        query_index++;
       }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
     }

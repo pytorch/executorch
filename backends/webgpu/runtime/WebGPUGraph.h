@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch::backends::webgpu {
@@ -189,6 +190,14 @@ class WebGPUGraph {
     symint_dim_sources_.push_back({symint_id, tensor_id, dim});
   }
 
+  bool tensor_has_dynamic_dims(int tensor_id) const {
+    return dynamic_tensor_ids_.count(tensor_id) != 0;
+  }
+
+  bool has_dynamic_shapes() const {
+    return !dynamic_tensor_ids_.empty();
+  }
+
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
   void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
@@ -223,6 +232,25 @@ class WebGPUGraph {
   }
   size_t num_dispatches() const {
     return dispatches_.size();
+  }
+
+  size_t register_dispatch_route_group(
+      const std::vector<utils::DispatchRange>& ranges) {
+    return dispatch_routes_.register_group(
+        dispatches_.size(), ranges, [&](size_t i) {
+          return dispatches_[i].kind == WebGPUDispatch::Kind::Compute;
+        });
+  }
+
+  void select_dispatch_route(
+      size_t group,
+      size_t active_route,
+      const std::vector<utils::WgCount>& active_grids) {
+    dispatch_routes_.select(
+        group, active_route, active_grids, [&](size_t i, utils::WgCount grid) {
+          dispatches_[i].workgroup_count_x = grid.x;
+          dispatches_[i].workgroup_count_y = grid.y;
+        });
   }
 
   WGPUDevice device() const {
@@ -383,6 +411,7 @@ class WebGPUGraph {
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
   std::vector<SymIntDimSource> symint_dim_sources_;
+  std::unordered_set<int> dynamic_tensor_ids_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
   struct ResizeHook {
@@ -434,6 +463,7 @@ class WebGPUGraph {
   std::vector<SuppressibleOutput> suppressible_outputs_;
 
   std::vector<WebGPUDispatch> dispatches_;
+  utils::DispatchRouteRegistry dispatch_routes_;
 
   // Prepack-routed constant sources (offset/named-key + size); the prepack node
   // materializes these once. constant_data_/named_data_map_ point at the .pte
