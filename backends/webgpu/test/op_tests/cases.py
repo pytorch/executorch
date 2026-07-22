@@ -71,6 +71,11 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
 )
 
 from executorch.backends.webgpu.test.ops.test_unary_activations import (
+    _lin as _unary_lin,
+    CLAMP_CONFIGS,
+    ClampModule,
+    HARDTANH_CONFIGS,
+    HardtanhModule,
     UNARY_G1,
     UnaryModule,
 )
@@ -308,3 +313,34 @@ def _unary_g1_factory(torch_fn, gen):
 
 for _g1_op, (_g1_fn, _g1_gen) in UNARY_G1.items():
     register_op_test(_g1_op)(_unary_g1_factory(_g1_fn, _g1_gen))
+
+
+@register_op_test("clamp")
+def _clamp_suite() -> WebGPUTestSuite:
+    # min_none exercises the None -> -inf substitution in clamp_impl.
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: ClampModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in CLAMP_CONFIGS.items()
+        ],
+    )
+
+
+@register_op_test("hardtanh")
+def _hardtanh_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: HardtanhModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in HARDTANH_CONFIGS.items()
+        ],
+    )

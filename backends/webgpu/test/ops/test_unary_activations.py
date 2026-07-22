@@ -27,6 +27,41 @@ class UnaryModule(torch.nn.Module):
         return self.fn(x)
 
 
+class ClampModule(torch.nn.Module):
+    """aten.clamp.default with baked bounds; `lo`/`hi` may be None (-> ±inf)."""
+
+    def __init__(self, lo, hi) -> None:
+        super().__init__()
+        self.lo = lo
+        self.hi = hi
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.clamp(x, self.lo, self.hi)
+
+
+class HardtanhModule(torch.nn.Module):
+    """aten.hardtanh.default with baked min/max bounds."""
+
+    def __init__(self, lo, hi) -> None:
+        super().__init__()
+        self.lo = lo
+        self.hi = hi
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.hardtanh(x, self.lo, self.hi)
+
+
+# name -> (lo, hi) construct kwargs. `min_none` exercises the None -> -inf path.
+CLAMP_CONFIGS = {
+    "both": (-2.0, 3.0),
+    "min_none": (None, 3.0),
+}
+HARDTANH_CONFIGS = {
+    "default": (-1.0, 1.0),
+    "wide": (-2.0, 2.0),
+}
+
+
 def _lin(lo: float, hi: float):
     """Deterministic linspace input of the requested shape over [lo, hi]."""
 
