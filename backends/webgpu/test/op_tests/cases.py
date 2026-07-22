@@ -44,6 +44,12 @@ from executorch.backends.webgpu.test.ops.test_logical_and import (
     la_gen_b,
     LogicalAndModule,
 )
+from executorch.backends.webgpu.test.ops.test_bitwise import (
+    BitwiseAndModule,
+    BitwiseNotModule,
+    bw_gen_a,
+    bw_gen_b,
+)
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
 from executorch.backends.webgpu.test.ops.test_argmax import (
     argmax_tie_gen,
@@ -330,6 +336,46 @@ def _logical_and_suite() -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda shape: LogicalAndModule(shape),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("bitwise_and")
+def _bitwise_and_suite() -> WebGPUTestSuite:
+    # bool bitwise AND == logical_and for canonical 0/1 (shares the handler).
+    # Two masks derived on-GPU from float inputs via gt.Tensor (baked zeros),
+    # distinct a/b seeds (AND ~25% True); all shapes numel % 4 == 0.
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={"shape": shape},
+            inputs=(
+                InputSpec(shape=shape, gen=bw_gen_a),
+                InputSpec(shape=shape, gen=bw_gen_b),
+            ),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda shape: BitwiseAndModule(shape),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("bitwise_not")
+def _bitwise_not_suite() -> WebGPUTestSuite:
+    # bool NOT (1-x): one mask derived on-GPU from a float input via gt.Tensor
+    # (baked zeros), inverted -> bool (~50% True); all shapes numel % 4 == 0.
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={"shape": shape},
+            inputs=(InputSpec(shape=shape, gen=bw_gen_a),),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda shape: BitwiseNotModule(shape),
         cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
         golden_dtype="float32",
     )
