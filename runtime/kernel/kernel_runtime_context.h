@@ -8,11 +8,14 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
@@ -106,6 +109,31 @@ class KernelRuntimeContext {
   MemoryAllocator* temp_allocator_ = nullptr;
   Error failure_state_ = Error::Ok;
 };
+
+namespace internal {
+
+// Cold path for codegen-emitted boxed kernel wrappers. Logs the error and
+// sets the kernel's failure state when an EValue arg unpack fails. The
+// wrapper must still `return` after calling this.
+#if defined(__GNUC__) || defined(__clang__)
+[[gnu::cold]]
+#endif
+inline void kernel_arg_fail(
+    KernelRuntimeContext& context,
+    Error error,
+    const char* kernel_name,
+    const char* arg_name,
+    uint8_t actual_tag) {
+  ET_LOG(
+      Error,
+      "%s: arg '%s' has unexpected EValue tag %u",
+      kernel_name,
+      arg_name,
+      static_cast<unsigned>(actual_tag));
+  context.fail(error);
+}
+
+} // namespace internal
 
 } // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch
