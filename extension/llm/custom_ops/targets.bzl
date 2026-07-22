@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/build:build_variables.bzl", "EXTENSION_LLM_CUSTOM_OPS_BUCK_SRCS")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
     "get_vec_preprocessor_flags",
@@ -22,6 +22,61 @@ def _get_quantized_preproc_flags():
     else:
         return ["-DENABLE_CUSTOM_QUANTIZED_SDPA"]
 
+def _get_quantized_moe_deps():
+    """torchao dependencies for `llama::quantized_moe_ffn`.
+
+    xplat: full optimized torchao linear kernel (aarch64 NEON + portable
+    scalar), which also transitively brings in weight_packing headers.
+
+    fbcode: weight-packing headers only (for the reference
+    unpack+dequant+cpublas::gemm fallback). The optimized torchao
+    linear_operator is not linked on fbcode.
+    """
+    if runtime.is_oss:
+        return []
+    if is_xplat():
+        return [
+            "//xplat/pytorch/ao/torchao/csrc/cpu/shared_kernels:op_library_common",
+            "//xplat/pytorch/ao/torchao/csrc/cpu/torch_free_kernels:weight_packing",
+        ] + select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": [
+                "//xplat/pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_torch_free",
+            ],
+        })
+    return [
+        "fbcode//pytorch/ao/torchao/csrc/cpu/shared_kernels:op_library_common",
+        "fbcode//pytorch/ao/torchao/csrc/cpu/torch_free_kernels:weight_packing",
+    ]
+
+def _get_quantized_moe_preproc_flags():
+    if runtime.is_oss:
+        return []
+    if is_xplat():
+        return select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": [
+                "-DENABLE_QUANTIZED_MOE_FFN",
+                "-DTORCHAO_BUILD_CPU_AARCH64=1",
+                "-DTORCHAO_ENABLE_ARM_NEON_DOT=1",
+            ],
+        })
+    return []
+
+def _get_quantized_moe_aot_packer_deps():
+    """The Python source transform calls `torch.ops.torchao._pack_8bit_act_4bit_weight`,
+    which is registered by torchao's AOT (aten) library. Pull this in
+    only on fbcode so that Python tests can pack experts; xplat builds
+    do not need the AOT packer.
+    """
+    if runtime.is_oss:
+        return []
+    if is_xplat():
+        return []
+    return [
+        "fbcode//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
+    ]
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -35,6 +90,7 @@ def define_common_targets():
             exported_headers = [
                 "op_fallback.h",
                 "op_fast_hadamard_transform.h",
+                "op_moe.h",
                 "op_sdpa.h",
                 "op_update_cache.h",
             ],
@@ -42,7 +98,8 @@ def define_common_targets():
                 "op_sdpa_impl.h",
             ],
             exported_preprocessor_flags = get_vec_preprocessor_flags() +
-                _get_quantized_preproc_flags(),
+                _get_quantized_preproc_flags() +
+                _get_quantized_moe_preproc_flags(),
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/kernels/portable/cpu:scalar_utils",
@@ -54,8 +111,9 @@ def define_common_targets():
             deps = [
                 "//executorch/kernels/portable/cpu/util:reduce_util",
                 "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
-            ] + get_vec_deps() + _get_quantized_sdpa_deps(),
+            ] + get_vec_deps() + _get_quantized_sdpa_deps() + _get_quantized_moe_deps(),
             compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors", "-Wno-error=pass-failed"] + get_compiler_optimization_flags() +
+            (["-isystem", "xplat/pytorch/ao"] if is_xplat() else []) +
             select({
                 "DEFAULT": [],
                 "ovr_config//cpu:arm64": ["-march=armv8.2-a+dotprod"],
@@ -70,6 +128,7 @@ def define_common_targets():
             name = "custom_ops_aot_lib" + mkl_dep,
             srcs = [
                 "op_fast_hadamard_transform_aten.cpp",
+                "op_moe_aot.cpp",
                 "op_sdpa_aot.cpp",
                 "op_tile_crop.cpp",
                 "op_tile_crop_aot.cpp",
@@ -124,6 +183,27 @@ def define_common_targets():
             ":custom_ops",
         ],
     )
+
+    runtime.cxx_test(
+        name = "op_moe_test",
+        srcs = [
+            "test_op_moe.cpp",
+        ],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/kernels/test:test_util",
+            ":custom_ops",
+        ],
+    )
+
+    # NOTE: the Python test for `llama::quantized_moe_ffn` lives in the
+    # fbcode-only BUCK file because it needs fbcode-specific
+    # `preload_deps` (`:custom_ops_aot_lib_mkl_noomp`,
+    # `:custom_ops_aot_py`) and the `portable_lib` python binding to
+    # bootstrap the AOT-side custom op registration. See the
+    # `test_quantized_moe` target in `BUCK`.
 
     ## For preprocess
     runtime.python_library(
