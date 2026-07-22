@@ -3,6 +3,7 @@
 
 struct Params {
   num_elements: u32,
+  minimum: f32,
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
@@ -16,5 +17,5 @@ fn main(
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    output[idx] = pow(input[idx], params.minimum);
 }
