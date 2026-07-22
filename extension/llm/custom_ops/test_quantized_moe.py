@@ -358,22 +358,22 @@ class TestMetaKernelValidation(unittest.TestCase):
         wrapper.m = moe
         replace_moe_with_quantized_op(wrapper, group_size=32, weight_nbit=4)
         r = wrapper.m
-        return dict(
-            x=torch.empty((4, r.dim), dtype=torch.float32, device="meta"),
-            gate_weight=r.gate_weight.to("meta"),
-            expert_bias=r.expert_bias.to("meta"),
-            packed_w1=r.packed_w1.to("meta"),
-            packed_w3=r.packed_w3.to("meta"),
-            packed_w2=r.packed_w2.to("meta"),
-            num_activated_experts=r.num_activated_experts,
-            num_experts=r.num_experts,
-            hidden_dim=r.hidden_dim,
-            dim=r.dim,
-            group_size=r.group_size,
-            weight_nbit=r.weight_nbit,
-            score_func=r.score_func,
-            route_scale=r.route_scale,
-        )
+        return {
+            "x": torch.empty((4, r.dim), dtype=torch.float32, device="meta"),
+            "gate_weight": r.gate_weight.to("meta"),
+            "expert_bias": r.expert_bias.to("meta"),
+            "packed_w1": r.packed_w1.to("meta"),
+            "packed_w3": r.packed_w3.to("meta"),
+            "packed_w2": r.packed_w2.to("meta"),
+            "num_activated_experts": r.num_activated_experts,
+            "num_experts": r.num_experts,
+            "hidden_dim": r.hidden_dim,
+            "dim": r.dim,
+            "group_size": r.group_size,
+            "weight_nbit": r.weight_nbit,
+            "score_func": r.score_func,
+            "route_scale": r.route_scale,
+        }
 
     def test_rejects_3d_input(self) -> None:
         kw = self._make_valid_inputs()
