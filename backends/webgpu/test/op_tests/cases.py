@@ -34,6 +34,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
@@ -70,6 +71,15 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
     SqueezeModule,
 )
 
+from executorch.backends.webgpu.test.ops.test_unary_activations import (
+    _lin as _unary_lin,
+    CLAMP_CONFIGS,
+    ClampModule,
+    HARDTANH_CONFIGS,
+    HardtanhModule,
+    UNARY_G1,
+    UnaryModule,
+)
 from executorch.backends.webgpu.test.ops.test_unsqueeze import (
     CONFIGS as _UNSQUEEZE_CONFIGS,
     UnsqueezeModule,
@@ -172,6 +182,18 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
             for n, (shape, fn) in configs.items()
         ],
         golden_dtype="float32",  # gather/copy: fp64 bit-identical, skip dual-oracle
+    )
+
+
+@register_op_test("minimum")
+def _minimum_suite() -> WebGPUTestSuite:
+    # Same-shape numeric coverage (flat binary kernel; broadcast stays smoke).
+    return WebGPUTestSuite(
+        module_factory=lambda: MinimumModule(),
+        cases=[
+            Case(name="2d", inputs=((M1, M2), (M1, M2))),
+            Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+        ],
     )
 
 
@@ -285,4 +307,53 @@ def _cat_suite() -> WebGPUTestSuite:
             for n, (shapes, dim) in _CAT_CONFIGS.items()
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
+    )
+
+
+def _unary_g1_factory(torch_fn, gen):
+    # A per-op no-param-activation suite (mat + rank3), reused across UNARY_G1.
+    def _suite() -> WebGPUTestSuite:
+        return WebGPUTestSuite(
+            module_factory=lambda: UnaryModule(torch_fn),
+            cases=[
+                Case(name="mat", inputs=(InputSpec(shape=(M1, M2), gen=gen),)),
+                Case(name="rank3", inputs=(InputSpec(shape=(S1, M1, M2), gen=gen),)),
+            ],
+        )
+
+    return _suite
+
+
+for _g1_op, (_g1_fn, _g1_gen) in UNARY_G1.items():
+    register_op_test(_g1_op)(_unary_g1_factory(_g1_fn, _g1_gen))
+
+
+@register_op_test("clamp")
+def _clamp_suite() -> WebGPUTestSuite:
+    # min_none exercises the None -> -inf substitution in clamp_impl.
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: ClampModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in CLAMP_CONFIGS.items()
+        ],
+    )
+
+
+@register_op_test("hardtanh")
+def _hardtanh_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: HardtanhModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in HARDTANH_CONFIGS.items()
+        ],
     )
