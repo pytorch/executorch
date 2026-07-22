@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
@@ -16,6 +16,8 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_k16_causal_bound_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_qwen3_k16_causal_bound_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_qwen3_q32_k16_causal_bound_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
@@ -200,17 +202,82 @@ bool streaming_attention_k16_device_supported(WGPUDevice device) {
       limits.maxComputeWorkgroupStorageSize >= 14720u;
 }
 
+constexpr uint32_t kQwen3K16QueryTile = 16u;
+constexpr uint32_t kQwen3Q32K16QueryTile = 32u;
+constexpr uint32_t kQwen3Q16K16StorageBytes = 512u * 4u * sizeof(float) +
+    512u * 4u * sizeof(uint16_t) + 128u * 2u * sizeof(float) +
+    3u * 16u * sizeof(float);
+constexpr uint32_t kQwen3K16StorageBytes = kQwen3Q16K16StorageBytes;
+constexpr uint32_t kQwen3Q32K16StorageBytes = 22912u;
+
+constexpr bool streaming_attention_k16_workgroup_count_fits(
+    int64_t S,
+    int64_t Hkv,
+    int64_t g,
+    uint32_t query_tile,
+    uint32_t max_workgroups) {
+  if (S <= 0 || Hkv <= 0 || g <= 0 || query_tile == 0u ||
+      max_workgroups == 0u) {
+    return false;
+  }
+  if (static_cast<uint64_t>(S) > UINT64_MAX / static_cast<uint64_t>(g)) {
+    return false;
+  }
+  const uint64_t logical_rows =
+      static_cast<uint64_t>(S) * static_cast<uint64_t>(g);
+  if (logical_rows > UINT64_MAX - (query_tile - 1u)) {
+    return false;
+  }
+  const uint64_t groups_per_kv = (logical_rows + query_tile - 1u) / query_tile;
+  if (groups_per_kv > UINT64_MAX / static_cast<uint64_t>(Hkv)) {
+    return false;
+  }
+  const uint64_t workgroups = groups_per_kv * static_cast<uint64_t>(Hkv);
+  return workgroups > 0u && workgroups <= UINT32_MAX &&
+      workgroups <= max_workgroups;
+}
+
+static_assert(
+    streaming_attention_k16_workgroup_count_fits(65528, 8, 2, 16, 65535));
+static_assert(
+    !streaming_attention_k16_workgroup_count_fits(65529, 8, 2, 16, 65535));
+
+bool qwen3_q16_k16_device_supported(WGPUDevice device) {
+  WGPULimits limits = {};
+  const WebGPUContext* context = get_default_webgpu_context();
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeWorkgroupSizeX >= 16u &&
+      limits.maxComputeWorkgroupSizeY >= 8u &&
+      limits.maxComputeInvocationsPerWorkgroup >= 128u &&
+      limits.maxComputeWorkgroupStorageSize >= kQwen3K16StorageBytes &&
+      limits.maxStorageBuffersPerShaderStage >= 4u;
+}
+
+bool qwen3_q32_k16_device_supported(WGPUDevice device) {
+  WGPULimits limits = {};
+  const WebGPUContext* context = get_default_webgpu_context();
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeWorkgroupSizeX >= 32u &&
+      limits.maxComputeWorkgroupSizeY >= 8u &&
+      limits.maxComputeInvocationsPerWorkgroup >= 256u &&
+      limits.maxComputeWorkgroupStorageSize >= kQwen3Q32K16StorageBytes &&
+      limits.maxStorageBuffersPerShaderStage >= 4u;
+}
+
 utils::WgCount streaming_attention_k16_grid(
     WGPUDevice device,
     int64_t S,
     int64_t Hkv,
-    int64_t g) {
+    int64_t g,
+    uint32_t query_tile) {
   const uint64_t groups_per_kv =
-      (static_cast<uint64_t>(S) * static_cast<uint64_t>(g) + 31u) / 32u;
+      (static_cast<uint64_t>(S) * static_cast<uint64_t>(g) + query_tile - 1u) /
+      query_tile;
   const uint64_t workgroups = static_cast<uint64_t>(Hkv) * groups_per_kv;
   if (workgroups == 0u || workgroups > UINT32_MAX) {
-    throw std::runtime_error(
-        "WebGPU sdpa: K16 workgroup count exceeds uint32");
+    throw std::runtime_error("WebGPU sdpa: K16 workgroup count exceeds uint32");
   }
   if (workgroups > utils::queried_max_workgroups(device)) {
     throw std::runtime_error(
@@ -440,6 +507,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (D != k_cache.dims[cn - 1]) {
     throw std::runtime_error("WebGPU sdpa: q and k_cache head_dim mismatch");
   }
+  if (k_cache.dims[cn - 2] != Hkv) {
+    throw std::runtime_error("WebGPU sdpa: k and k_cache num_heads mismatch");
+  }
   if (k_cache.dims != v_cache.dims) {
     throw std::runtime_error("WebGPU sdpa: k_cache and v_cache shape mismatch");
   }
@@ -509,12 +579,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const WGPUDevice device = graph.device();
   const WGPUBuffer k16_buffers[] = {
-      q.buffer,
-      k.buffer,
-      v.buffer,
-      k_cache.buffer,
-      v_cache.buffer,
-      out.buffer};
+      q.buffer, k.buffer, v.buffer, k_cache.buffer, v_cache.buffer, out.buffer};
   bool k16_buffers_distinct = true;
   for (size_t i = 0; i < 6; i++) {
     for (size_t j = i + 1; j < 6; j++) {
@@ -522,9 +587,39 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           k16_buffers_distinct && k16_buffers[i] != k16_buffers[j];
     }
   }
-  const bool k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 &&
+  const bool qwen3_k16_geometry = Hq == 16 && Hkv == 8 && g == 2 && D == 128 &&
+      scale == 1.0f / std::sqrt(128.0f) && out.dims == q.dims;
+  // Q16 is the default route for exact Qwen3 geometry; Q32 is an explicit
+  // autotuning candidate selected only via the sdpa_query_tile RuntimeSpec.
+  const bool qwen3_query_tile_requested = qwen3_k16_geometry;
+  const bool qwen3_q32_requested =
+      graph.sdpa_query_tile() == static_cast<int>(kQwen3Q32K16QueryTile) &&
+      qwen3_query_tile_requested;
+  const uint32_t qwen3_query_tile =
+      qwen3_q32_requested ? kQwen3Q32K16QueryTile : kQwen3K16QueryTile;
+  const bool qwen3_device_supported =
+      qwen3_query_tile_requested &&
+      (qwen3_q32_requested ? qwen3_q32_k16_device_supported(device)
+                           : qwen3_q16_k16_device_supported(device)) &&
+      streaming_attention_k16_workgroup_count_fits(
+          S, Hkv, g, qwen3_query_tile, utils::queried_max_workgroups(device));
+  const bool qwen3_k16_selected =
+      qwen3_query_tile_requested && graph.kv_f16() && qwen3_device_supported;
+  const bool qwen3_q32_selected = qwen3_k16_selected && qwen3_q32_requested;
+  const bool llama_k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 &&
       g == 4 && D == 64 && scale == 0.125f && out.dims == q.dims &&
-      k16_buffers_distinct && streaming_attention_k16_device_supported(device);
+      streaming_attention_k16_device_supported(device);
+  const bool k16_eligible =
+      k16_buffers_distinct && (llama_k16_eligible || qwen3_k16_selected);
+  const uint32_t k16_query_tile = qwen3_k16_selected ? qwen3_query_tile : 32u;
+  const char* k16_shader = qwen3_q32_selected
+      ? kStreamingAttentionQwen3Q32K16CausalBoundWGSL
+      : qwen3_k16_selected ? kStreamingAttentionQwen3K16CausalBoundWGSL
+                           : kStreamingAttentionK16CausalBoundWGSL;
+  const char* k16_label = qwen3_q32_selected
+      ? "sdpa_streaming_attention_qwen3_q32_k16_causal_bound"
+      : qwen3_k16_selected ? "sdpa_streaming_attention_qwen3_k16_causal_bound"
+                           : "sdpa_streaming_attention_k16_causal_bound";
   const uint32_t uc_wg =
       utils::clamp_workgroup_size(device, kUpdateCacheWorkgroupSizeX);
   const uint32_t qk_wg = utils::clamp_workgroup_size(
@@ -556,7 +651,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
                              qk_wg,
                              av_wg,
                              fd_eligible,
-                             k16_eligible](WebGPUGraph& gr) {
+                             k16_eligible,
+                             k16_query_tile](WebGPUGraph& gr) {
     SdpaLiveState state = {};
     const auto& q_live_dims = gr.cur_dims(q_id);
     state.s = q_live_dims[qn - 3];
@@ -608,8 +704,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     if (k16_eligible) {
       state.streaming_k16 = make_streaming_attention_k16_params(
           state.s, state.context_len, state.pos, Hq, Hkv, D);
-      state.streaming_k16_grid =
-          streaming_attention_k16_grid(gr.device(), state.s, Hkv, g);
+      state.streaming_k16_grid = streaming_attention_k16_grid(
+          gr.device(), state.s, Hkv, g, k16_query_tile);
     }
     state.update_cache_grid = {
         utils::compute_1d_workgroup_count(
@@ -621,8 +717,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           static_cast<uint64_t>(state.context_len);
       const uint64_t qk_tiles = static_cast<uint64_t>(Hq) *
           static_cast<uint64_t>(utils::div_up(state.s, kSdpaTileM)) *
-          static_cast<uint64_t>(
-              utils::div_up(state.context_len, kSdpaTileN));
+          static_cast<uint64_t>(utils::div_up(state.context_len, kSdpaTileN));
       const uint64_t softmax_rows =
           static_cast<uint64_t>(Hq) * static_cast<uint64_t>(state.s);
       const uint64_t av_tiles = static_cast<uint64_t>(Hq) *
@@ -685,11 +780,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool dynamic_sequence = graph.tensor_has_dynamic_dims(q_id) ||
       graph.tensor_has_dynamic_dims(k_id) ||
       graph.tensor_has_dynamic_dims(v_id);
-  const bool dual_route =
-      utils::should_record_sdpa_dual_route(
-          fd_eligible, dynamic_sequence, dynamic_pos);
-  const bool record_k16 =
-      k16_eligible && (dual_route || !initial_state.use_fd);
+  const bool dual_route = utils::should_record_sdpa_dual_route(
+      fd_eligible, dynamic_sequence, dynamic_pos);
+  const bool record_k16 = k16_eligible && (dual_route || !initial_state.use_fd);
   const bool record_materialized =
       !k16_eligible && (dual_route || !initial_state.use_fd);
   const bool record_fd = dual_route || initial_state.use_fd;
@@ -790,7 +883,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         : initial_state.streaming_k16_grid;
     build_dispatch(
         graph,
-        kStreamingAttentionK16CausalBoundWGSL,
+        k16_shader,
         k16_bindings,
         4,
         k16_buf,
@@ -799,7 +892,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         initial_grid.y,
         0,
         true,
-        "sdpa_streaming_attention_k16_causal_bound");
+        k16_label);
     k16_idx = graph.num_dispatches() - 1;
     k16_range.end = graph.num_dispatches();
   }
@@ -907,10 +1000,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       if (fixed_use_fd) {
         throw std::runtime_error("WebGPU sdpa: static route changed");
       }
-      gr.dispatch_at(k16_idx).workgroup_count_x =
-          state.streaming_k16_grid.x;
-      gr.dispatch_at(k16_idx).workgroup_count_y =
-          state.streaming_k16_grid.y;
+      gr.dispatch_at(k16_idx).workgroup_count_x = state.streaming_k16_grid.x;
+      gr.dispatch_at(k16_idx).workgroup_count_y = state.streaming_k16_grid.y;
     } else {
       if (fixed_use_fd) {
         throw std::runtime_error("WebGPU sdpa: static route changed");

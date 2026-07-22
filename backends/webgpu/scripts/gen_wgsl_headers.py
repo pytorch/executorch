@@ -431,14 +431,17 @@ def embedded_sha256(header_text: str) -> str:
 def _wg_size_const(base: str, axis: str, val: int) -> str:
     """One WorkgroupSize constant; wrap to <=80 cols so CLANGFORMAT accepts it.
 
-    Long shader names push the single-line form past the 80-col limit (clang-format
-    then breaks after '=' with a 4-space continuation indent); emit that wrapped
-    form up front so the generated header matches lintrunner's CLANGFORMAT.
+    Long shader names push the single-line form past the 80-col limit. Emit the
+    wrapped form that clang-format selects so generated headers stay byte-stable.
     """
-    decl = f"inline constexpr uint32_t k{base}WorkgroupSize{axis} ="
-    if len(decl) + len(f" {val};") > 80:
-        return f"{decl}\n    {val};\n"
-    return f"{decl} {val};\n"
+    name = f"k{base}WorkgroupSize{axis}"
+    prefix = f"inline constexpr uint32_t {name} ="
+    decl = f"{prefix} {val};"
+    if len(decl) > 85:
+        return f"inline constexpr uint32_t\n    {name} = {val};\n"
+    if len(decl) > 80:
+        return f"{prefix}\n    {val};\n"
+    return f"{decl}\n"
 
 
 def render_header(
@@ -463,6 +466,14 @@ def render_header(
         raise ValueError('shader contains )" which would close the R"( literal')
     base = symbol_base(name)
     x, y, z = parse_workgroup_size(wgsl_text)
+    provenance = f"// @generated from {provenance_stem}.wgsl - DO NOT EDIT."
+    if len(provenance) > 80:
+        provenance_lines = [
+            f"// @generated from {provenance_stem}.wgsl",
+            "// DO NOT EDIT.",
+        ]
+    else:
+        provenance_lines = [provenance]
 
     head = [
         _BSD_HEADER,
@@ -473,7 +484,7 @@ def render_header(
         "",
         "namespace executorch::backends::webgpu {",
         "",
-        f"// @generated from {provenance_stem}.wgsl - DO NOT EDIT.",
+        *provenance_lines,
         f"// wgsl-sha256: {wgsl_sha256(wgsl_text)}",
         f'inline constexpr const char* k{base}WGSL = R"(',
     ]

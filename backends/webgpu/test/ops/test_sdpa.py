@@ -40,6 +40,7 @@ class SdpaConfig:
     cmax: int  # kv-cache capacity
     input_pos: int  # number of prior tokens already in the cache (decode)
     denom: float = 16.0  # ramp divisor; small denom -> large logits (softmax stress)
+    kv_f16: bool = False
 
 
 # Single source of truth, mirrored by the C++ CONFIGS table in the native test.
@@ -64,6 +65,8 @@ CONFIGS = [
     # 2D-dispatch cap (>65535 wg): S=512 folds QK; S=2048 folds QK+softmax+AV (cap+1).
     SdpaConfig("llama1b_prefill_512", 32, 8, 64, 512, 512, 0),
     SdpaConfig("llama1b_prefill_2048", 32, 8, 64, 2048, 2048, 0),
+    SdpaConfig("qwen3_prefill", 16, 8, 128, 128, 256, 0, kv_f16=True),
+    SdpaConfig("qwen3_odd_boundary", 16, 8, 128, 17, 64, 31, kv_f16=True),
 ]
 
 
@@ -83,6 +86,7 @@ class ReplaySeq:
     d: int  # head dim
     cmax: int  # kv-cache capacity (>= sum(seq_lens))
     seq_lens: tuple[int, ...]
+    kv_f16: bool = False
 
 
 # Mirror Vulkan sdpa_test.cpp:856/867/875 (3 param sets); cmax = sum rounded up.
@@ -90,11 +94,18 @@ REPLAY_SEQS = [
     ReplaySeq("small", 8, 4, 4, 16, (3, 1, 1, 5, 1, 1, 2)),
     ReplaySeq("small_d", 6, 2, 8, 16, (3, 1, 1, 5, 1, 1)),
     ReplaySeq("llama3", 24, 8, 128, 256, (111, 1, 1, 1, 57, 1, 1)),
+    ReplaySeq("qwen3_fd", 16, 8, 128, 64, (17, 1), kv_f16=True),
 ]
+DYNAMIC_REPLAY_SEQS = [seq for seq in REPLAY_SEQS if not seq.kv_f16]
 
-# (head_dim, num_heads, num_kv_heads) from sdpa_test.cpp:856/867/875 -- guards a
-# transposition of the (hq, hkv, d) field order against the Vulkan source.
-VULKAN_PARAMS = {"small": (4, 8, 4), "small_d": (8, 6, 2), "llama3": (128, 24, 8)}
+# Guards transposition of the (hq, hkv, d) field order. The first three values
+# mirror Vulkan sdpa_test.cpp:856/867/875; Qwen3 extends the same contract.
+VULKAN_PARAMS = {
+    "small": (4, 8, 4),
+    "small_d": (8, 6, 2),
+    "llama3": (128, 24, 8),
+    "qwen3_fd": (128, 16, 8),
+}
 
 
 class SdpaModule(torch.nn.Module):
@@ -178,6 +189,12 @@ def _det_inputs(cfg: SdpaConfig):
     return q, k, v, k_cache, v_cache
 
 
+def _round_kv_for_storage(cfg: SdpaConfig, *tensors: torch.Tensor):
+    if not cfg.kv_f16:
+        return tensors
+    return tuple(tensor.to(torch.float16).to(torch.float32) for tensor in tensors)
+
+
 def _golden(cfg: SdpaConfig, q, k, v, k_cache, v_cache) -> torch.Tensor:
     """Reference attention output [1,S,Hq,D], computed in fp64 then cast to fp32.
 
@@ -189,6 +206,7 @@ def _golden(cfg: SdpaConfig, q, k, v, k_cache, v_cache) -> torch.Tensor:
     """
     context_len = cfg.s + cfg.input_pos
     g = cfg.hq // cfg.hkv
+    k, v, k_cache, v_cache = _round_kv_for_storage(cfg, k, v, k_cache, v_cache)
     qd, kd, vd = q.double(), k.double(), v.double()
     kcd, vcd = k_cache.double(), v_cache.double()
 
@@ -228,6 +246,35 @@ def _export_pte(cfg: SdpaConfig, q, k, v, kc, vc):
 
 
 class TestSdpa(unittest.TestCase):
+    def test_qwen3_fixture_contract(self) -> None:
+        configs = {cfg.name: cfg for cfg in CONFIGS}
+        expected = {
+            "qwen3_prefill": (16, 8, 128, 128, 256, 0),
+            "qwen3_odd_boundary": (16, 8, 128, 17, 64, 31),
+        }
+        for name, geometry in expected.items():
+            with self.subTest(config=name):
+                self.assertIn(name, configs)
+                cfg = configs[name]
+                self.assertEqual(
+                    (cfg.hq, cfg.hkv, cfg.d, cfg.s, cfg.cmax, cfg.input_pos),
+                    geometry,
+                )
+                self.assertTrue(cfg.kv_f16)
+
+        replays = {seq.name: seq for seq in REPLAY_SEQS}
+        self.assertIn("qwen3_fd", replays)
+        qwen3_fd = replays["qwen3_fd"]
+        self.assertEqual((qwen3_fd.hq, qwen3_fd.hkv, qwen3_fd.d), (16, 8, 128))
+        self.assertEqual(qwen3_fd.seq_lens, (17, 1))
+        self.assertTrue(qwen3_fd.kv_f16)
+
+        probe = torch.tensor([0.1], dtype=torch.float32)
+        (rounded,) = _round_kv_for_storage(configs["qwen3_prefill"], probe)
+        expected = probe.to(torch.float16).to(torch.float32)
+        torch.testing.assert_close(rounded, expected, atol=0.0, rtol=0.0)
+        self.assertFalse(torch.equal(rounded, probe))
+
     def test_sdpa_export_delegates(self) -> None:
         for cfg in CONFIGS:
             with self.subTest(config=cfg.name):
@@ -248,7 +295,12 @@ class TestSdpa(unittest.TestCase):
         for cfg in CONFIGS:
             with self.subTest(config=cfg.name):
                 q, k, v, kc, vc = _det_inputs(cfg)
-                eager = SdpaModule(cfg.input_pos)(q, k, v, kc.clone(), vc.clone())
+                eager_k, eager_v, eager_kc, eager_vc = _round_kv_for_storage(
+                    cfg, k, v, kc, vc
+                )
+                eager = SdpaModule(cfg.input_pos)(
+                    q, eager_k, eager_v, eager_kc.clone(), eager_vc.clone()
+                )
                 golden = _golden(cfg, q, k, v, kc, vc)
                 torch.testing.assert_close(eager, golden, atol=1e-4, rtol=1e-4)
 
@@ -277,10 +329,16 @@ class TestSdpa(unittest.TestCase):
                         s,
                         seq.cmax,
                         input_pos,
+                        kv_f16=seq.kv_f16,
                     )
                     q, k, v = _step_inputs(seq, t, s)
                     golden = _golden(cfg, q, k, v, kc, vc)
-                    eager = SdpaModule(input_pos)(q, k, v, kc.clone(), vc.clone())
+                    eager_k, eager_v, eager_kc, eager_vc = _round_kv_for_storage(
+                        cfg, k, v, kc, vc
+                    )
+                    eager = SdpaModule(input_pos)(
+                        q, eager_k, eager_v, eager_kc.clone(), eager_vc.clone()
+                    )
                     torch.testing.assert_close(eager, golden, atol=1e-4, rtol=1e-4)
                     kc[0, input_pos : input_pos + s] = k[0]
                     vc[0, input_pos : input_pos + s] = v[0]
@@ -302,6 +360,7 @@ class TestSdpa(unittest.TestCase):
                         s,
                         seq.cmax,
                         input_pos,
+                        kv_f16=seq.kv_f16,
                     )
                     q, k, v = _step_inputs(seq, t, s)
                     et = _export_pte(cfg, q, k, v, kc, vc)
@@ -347,7 +406,14 @@ def export_replay_sequences(out_dir: str) -> None:
         input_pos = 0
         for t, s in enumerate(seq.seq_lens):
             cfg = SdpaConfig(
-                f"{seq.name}_step{t}", seq.hq, seq.hkv, seq.d, s, seq.cmax, input_pos
+                f"{seq.name}_step{t}",
+                seq.hq,
+                seq.hkv,
+                seq.d,
+                s,
+                seq.cmax,
+                input_pos,
+                kv_f16=seq.kv_f16,
             )
             q, k, v = _step_inputs(seq, t, s)
             et = _export_pte(cfg, q, k, v, ref_kc, ref_vc)
@@ -421,7 +487,7 @@ def export_dynamic_decode(out_dir: str) -> None:
     Mirrors the host accumulation the native test threads: at step t the golden
     attends over input_pos=t prior tokens plus the new token.
     """
-    for seq in REPLAY_SEQS:
+    for seq in DYNAMIC_REPLAY_SEQS:
         assert DYN_DECODE_STEPS <= seq.cmax, f"{seq.name}: decode exceeds cmax"
         et = _export_dyn_pte(seq, 1)
         pte_path = os.path.join(out_dir, f"sdpa_dyn_{seq.name}.pte")
@@ -431,7 +497,14 @@ def export_dynamic_decode(out_dir: str) -> None:
         ref_vc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
         for t in range(DYN_DECODE_STEPS):
             cfg = SdpaConfig(
-                f"dyn_{seq.name}_step{t}", seq.hq, seq.hkv, seq.d, 1, seq.cmax, t
+                f"dyn_{seq.name}_step{t}",
+                seq.hq,
+                seq.hkv,
+                seq.d,
+                1,
+                seq.cmax,
+                t,
+                kv_f16=seq.kv_f16,
             )
             q, k, v = _step_inputs(seq, t, 1)
             golden = _golden(cfg, q, k, v, ref_kc, ref_vc).numpy().astype("<f4")
@@ -451,12 +524,19 @@ class TestSdpaDynamic(unittest.TestCase):
 
     def test_dynamic_decode_golden_matches_eager(self) -> None:
         # The threaded-cache decode golden must equal the eager op step-by-step.
-        for seq in REPLAY_SEQS:
+        for seq in DYNAMIC_REPLAY_SEQS:
             ref_kc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
             ref_vc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
             for t in range(DYN_DECODE_STEPS):
                 cfg = SdpaConfig(
-                    f"dyn_{seq.name}_step{t}", seq.hq, seq.hkv, seq.d, 1, seq.cmax, t
+                    f"dyn_{seq.name}_step{t}",
+                    seq.hq,
+                    seq.hkv,
+                    seq.d,
+                    1,
+                    seq.cmax,
+                    t,
+                    kv_f16=seq.kv_f16,
                 )
                 q, k, v = _step_inputs(seq, t, 1)
                 golden = _golden(cfg, q, k, v, ref_kc, ref_vc)
@@ -499,7 +579,7 @@ def export_incache_decode(out_dir: str) -> None:
     """One sdpa_incache_<name>.pte (mutable-buffer KV cache) + per-step decode
     goldens. forward() feeds only q/k/v + input_pos; the cache persists in-graph.
     """
-    for seq in REPLAY_SEQS:
+    for seq in DYNAMIC_REPLAY_SEQS:
         assert DYN_DECODE_STEPS <= seq.cmax, f"{seq.name}: decode exceeds cmax"
         m = DecodeCacheModule(seq.hkv, seq.d, seq.cmax)
         q, k, v = _step_inputs(seq, 0, 1)
@@ -517,7 +597,14 @@ def export_incache_decode(out_dir: str) -> None:
         ref_vc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
         for t in range(DYN_DECODE_STEPS):
             cfg = SdpaConfig(
-                f"incache_{seq.name}_step{t}", seq.hq, seq.hkv, seq.d, 1, seq.cmax, t
+                f"incache_{seq.name}_step{t}",
+                seq.hq,
+                seq.hkv,
+                seq.d,
+                1,
+                seq.cmax,
+                t,
+                kv_f16=seq.kv_f16,
             )
             q, k, v = _step_inputs(seq, t, 1)
             golden = _golden(cfg, q, k, v, ref_kc, ref_vc).numpy().astype("<f4")

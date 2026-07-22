@@ -98,6 +98,13 @@ Result<DelegateHandle*> WebGPUBackend::init(
       enable_f16_accumulate_gemm = spec.get();
     }
   }
+  int sdpa_query_tile = 0;
+  {
+    Result<int> spec = context.get_runtime_spec<int>("sdpa_query_tile");
+    if (spec.ok()) {
+      sdpa_query_tile = spec.get();
+    }
+  }
 
   try {
     graph->build(
@@ -105,7 +112,8 @@ Result<DelegateHandle*> WebGPUBackend::init(
         constant_data,
         context.get_named_data_map(),
         enable_f16_kv_cache,
-        enable_f16_accumulate_gemm);
+        enable_f16_accumulate_gemm,
+        sdpa_query_tile);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();

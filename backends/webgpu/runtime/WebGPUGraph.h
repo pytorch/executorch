@@ -103,7 +103,8 @@ class WebGPUGraph {
       const uint8_t* constant_data,
       const executorch::runtime::NamedDataMap* named_data_map = nullptr,
       bool f16_kv_cache = false,
-      bool f16_accumulate_gemm = false);
+      bool f16_accumulate_gemm = false,
+      int sdpa_query_tile = 0);
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
@@ -383,6 +384,12 @@ class WebGPUGraph {
     return f16_accumulate_gemm_;
   }
 
+  // Runtime-selected SDPA query-tile candidate; 0 = geometry default (Q16),
+  // 32 = Q32 candidate.
+  int sdpa_query_tile() const {
+    return sdpa_query_tile_;
+  }
+
  private:
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
   void record_active_route(const std::string& kernel_name);
@@ -391,6 +398,7 @@ class WebGPUGraph {
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
   bool f16_accumulate_gemm_ = false;
+  int sdpa_query_tile_ = 0;
 
  private:
   WGPUInstance instance_ = nullptr;

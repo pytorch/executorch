@@ -11,6 +11,7 @@
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <executorch/runtime/core/named_data_map.h>
+#include <executorch/runtime/core/portable_type/half.h>
 
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
@@ -808,7 +809,8 @@ void WebGPUGraph::build(
     const uint8_t* constant_data,
     const executorch::runtime::NamedDataMap* named_data_map,
     bool f16_kv_cache,
-    bool f16_accumulate_gemm) {
+    bool f16_accumulate_gemm,
+    int sdpa_query_tile) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -837,6 +839,10 @@ void WebGPUGraph::build(
   // f16-accumulate q4gsw steel prefill GEMM (runtime opt-in). QuantizedLinear
   // additionally gates the kernel on the negotiated shader-f16 feature.
   f16_accumulate_gemm_ = f16_accumulate_gemm;
+
+  // SDPA query-tile selector (runtime opt-in); 0 = geometry default (Q16),
+  // 32 = Q32 candidate. Read at the SDPA op-lowering selection site.
+  sdpa_query_tile_ = sdpa_query_tile;
 
   // Phase 1: Create all values
   const auto* values = graph->values();
@@ -1718,6 +1724,19 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
       continue;
     }
 
+    const bool buffer_is_fp16 = !tensor.is_int && tensor.elem_size == 2;
+    if (!in.host_is_int64 && buffer_is_fp16 && in.nbytes == live_nbytes * 2) {
+      const size_t numel = live_nbytes / sizeof(uint16_t);
+      const float* src = static_cast<const float*>(in.data);
+      std::vector<executorch::runtime::etensor::Half> narrowed(numel);
+      for (size_t e = 0; e < numel; e++) {
+        narrowed[e] = executorch::runtime::etensor::Half(src[e]);
+      }
+      wgpuQueueWriteBuffer(
+          queue_, tensor.buffer, 0, narrowed.data(), live_nbytes);
+      continue;
+    }
+
     throw std::runtime_error(
         "WebGPU: unsupported input copy for input " + std::to_string(i) +
         " (host " + std::to_string(in.nbytes) + " bytes" +
@@ -1761,7 +1780,8 @@ bool should_timestamp_query() {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 void WebGPUGraph::record_active_route(const std::string& kernel_name) {
   uint32_t bits = 0;
-  if (kernel_name == "sdpa_streaming_attention_k16_causal_bound") {
+  if (kernel_name.find("k16_causal_bound") != std::string::npos) {
+    // llama + qwen3 (Q16/Q32) streaming causal-bound kernels
     bits = kRoutePrefill | kRouteK16CausalBound;
   } else if (kernel_name == "sdpa_streaming_attention_k16") {
     bits = kRoutePrefill | kRouteK16;
@@ -2038,12 +2058,13 @@ void WebGPUGraph::copy_outputs(
     cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
     cb_info.callback = buffer_map_callback;
     cb_info.userdata1 = &cb_data[i];
+    const auto& tensor = tensors_[output_ids_[i]];
+    const bool widen_fp16 = !tensor.is_int && tensor.elem_size == 2 &&
+        outputs[i].second == tensor.cur_nbytes * 2;
+    const size_t map_nbytes =
+        widen_fp16 ? tensor.cur_nbytes : outputs[i].second;
     map_futures[i] = wgpuBufferMapAsync(
-        output_staging_buffers_[i],
-        WGPUMapMode_Read,
-        0,
-        outputs[i].second,
-        cb_info);
+        output_staging_buffers_[i], WGPUMapMode_Read, 0, map_nbytes, cb_info);
   }
 
   for (size_t i = 0; i < count; i++) {
@@ -2058,9 +2079,24 @@ void WebGPUGraph::copy_outputs(
       continue;
     }
     if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
+      const auto& tensor = tensors_[output_ids_[i]];
+      const bool widen_fp16 = !tensor.is_int && tensor.elem_size == 2 &&
+          outputs[i].second == tensor.cur_nbytes * 2;
+      const size_t map_nbytes =
+          widen_fp16 ? tensor.cur_nbytes : outputs[i].second;
       const void* mapped = wgpuBufferGetConstMappedRange(
-          output_staging_buffers_[i], 0, outputs[i].second);
-      std::memcpy(outputs[i].first, mapped, outputs[i].second);
+          output_staging_buffers_[i], 0, map_nbytes);
+      if (widen_fp16) {
+        const auto* src =
+            static_cast<const executorch::runtime::etensor::Half*>(mapped);
+        auto* dst = static_cast<float*>(outputs[i].first);
+        const size_t numel = map_nbytes / sizeof(*src);
+        for (size_t e = 0; e < numel; e++) {
+          dst[e] = static_cast<float>(src[e]);
+        }
+      } else {
+        std::memcpy(outputs[i].first, mapped, outputs[i].second);
+      }
       wgpuBufferUnmap(output_staging_buffers_[i]);
     } else {
       throw std::runtime_error("WebGPU buffer map failed for output");
