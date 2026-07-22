@@ -130,7 +130,12 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
         raw = golden_outs[out_index]
         is_int8 = raw.dtype == torch.int8
         is_int64 = raw.dtype in (torch.int64, torch.int32)
-        if is_int8:
+        is_bool = raw.dtype == torch.bool
+        if is_bool:
+            # bool-output ops (comparisons): byte-exact 0/1 golden written as int8.
+            out_t = raw.to(torch.int8)
+            out_dtype = "bool"
+        elif is_int8:
             # int8-output ops (quantize): byte-exact golden, no fp32 cast/oracle.
             out_t = raw
             out_dtype = "int8"
@@ -153,7 +158,7 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
         # Single-output ops keep the original name/golden; multi-output ops suffix.
         suffix = f"_out{out_index}" if n_out > 1 else ""
         golden_rel = f"{case_id}{suffix}.golden.bin"
-        if is_int8:
+        if is_bool or is_int8:
             _write_int8(out_t, os.path.join(out_dir, golden_rel))
         elif is_int64:
             _write_int64(out_t, os.path.join(out_dir, golden_rel))
