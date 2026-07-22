@@ -861,11 +861,7 @@ ROPE_MAXS = 16
 
 
 def _export_dynamic_rope(out_dir: str) -> None:
-    from executorch.backends.webgpu.test.ops.test_rope import (
-        _golden,
-        _inputs,
-        Shape,
-    )
+    from executorch.backends.webgpu.test.ops.test_rope import _golden, _inputs, Shape
     from executorch.examples.models.llama.rope import RotaryEmbedding
 
     xq, xk, fc, fs = _inputs(Shape("dyn", 1, ROPE_MAXS, ROPE_NH, ROPE_NKV, ROPE_HD))
