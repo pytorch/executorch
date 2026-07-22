@@ -22,6 +22,11 @@ from executorch.backends.nxp.tests.nsys_testing import (
     OUTPUTS_DIR,
 )
 
+from executorch.backends.nxp.tests.profiling_utils import (
+    get_neutron_converter_version,
+    get_neutron_driver_version,
+    get_neutron_kernel_kinds,
+)
 from executorch.devtools.inspector._inspector import Inspector
 from executorch.examples.models.mlperf_tiny import (
     DeepAutoEncoder,
@@ -65,12 +70,15 @@ def inspector_check(test_name: str) -> None:
       5. The profiling dump event does not have associated op types.
     """
 
+    # Global mapping of Neutron kernel IDs to names used by the delegate metadata parser.
+    kernel_kinds = {}
+
     def parse_delegate_metadata(
         delegate_metadatas: list[bytes],
     ) -> Union[list[str], dict[str, Any]]:
         """Metadata parser for Neutron Backend metadata.
 
-        The parser is a callable that deserializes the data and returns neutron kernel number.
+        The parser deserializes delegate metadata and converts kernel IDs into human-readable kernel names when available.
         The deserialized data is then added back to the corresponding event in the event block for user consumption.
         """
 
@@ -81,7 +89,13 @@ def inspector_check(test_name: str) -> None:
                 if function_code == 0:
                     metadata_list.append("Profiling dump")
                 else:
-                    metadata_list.append("Neutron kernel " + str(function_code))
+                    metadata_list.append(
+                        kernel_kinds.get(
+                            function_code, "Neutron kernel " + str(function_code)
+                        )
+                    )
+            elif len(metadata_bytes) == 2:
+                metadata_list.append("Profiling dump")
             else:
                 metadata_list.append("Invalid metadata size")
         return metadata_list
@@ -95,6 +109,16 @@ def inspector_check(test_name: str) -> None:
         assert os.path.isfile(
             file_path
         ), f"Required profiling file does not exist: {file_path}"
+
+    # Validate driver/converter version compatibility and load kernel names
+    # used to decode delegate metadata.
+    driver_version = get_neutron_driver_version(etdump_path)
+    converter_version = get_neutron_converter_version()
+    if driver_version:
+        assert (
+            driver_version == converter_version
+        ), "Driver and converter versions do not match"
+        kernel_kinds = get_neutron_kernel_kinds()
 
     # Create Inspector and parse profiling data.
     try:
@@ -123,18 +147,22 @@ def inspector_check(test_name: str) -> None:
 
     assert numeric_events, "No numeric delegate profiling events found"
 
-    # All delegate events except the last one should describe
-    # individual Neutron kernels.
+    # All numeric delegate events except the last contain either
+    # resolved kernel names or fallback "Neutron kernel <id>" metadata.
     for event in numeric_events[:-1]:
-        metadata = str(event.delegate_debug_metadatas)
-
-        assert "Neutron kernel" in metadata, (
-            f"Event {event.name}: expected 'Neutron kernel', " f"got {metadata}"
-        )
+        metadata = event.delegate_debug_metadatas
+        if kernel_kinds:
+            assert "Neutron kernel" not in metadata, (
+                f"Event {event.name}: expected kernel kind, " f"got {metadata}"
+            )
+        else:
+            assert "Neutron kernel" in metadata, (
+                f"Event {event.name}: expected 'Neutron kernel', " f"got {metadata}"
+            )
 
     # The final numeric event should represent the profiling dump.
     profiling_dump_event = numeric_events[-1]
-    profiling_metadata = str(profiling_dump_event.delegate_debug_metadatas)
+    profiling_metadata = profiling_dump_event.delegate_debug_metadatas
 
     assert "Profiling dump" in profiling_metadata, (
         f"Event {profiling_dump_event.name}: "
@@ -142,7 +170,7 @@ def inspector_check(test_name: str) -> None:
     )
 
     # Profiling dump event is expected to have no associated operators.
-    assert profiling_dump_event.op_types == [], (
+    assert not profiling_dump_event.op_types, (
         f"Event {profiling_dump_event.name}: expected empty op_types, "
         f"got {profiling_dump_event.op_types}"
     )
