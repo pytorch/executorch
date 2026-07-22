@@ -91,3 +91,22 @@ fbcode_target(_kind = runtime.python_test,
         "//caffe2:torch",
     ],
 )
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_quantized_moe",
+    srcs = [
+        "test_quantized_moe.py",
+    ],
+    preload_deps = [
+        ":custom_ops_aot_lib_mkl_noomp",
+        ":custom_ops_aot_py",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/models/llama:source_transformation",
+    ],
+)
