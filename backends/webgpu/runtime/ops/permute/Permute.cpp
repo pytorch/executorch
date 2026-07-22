@@ -27,8 +27,8 @@ struct PermuteParams {
   uint32_t perm[kTensorMetaMaxNdim];
 };
 static_assert(
-    sizeof(PermuteParams) == 16,
-    "PermuteParams must match the WGSL Params vec4<u32> (16 bytes)");
+    sizeof(PermuteParams) == 32,
+    "PermuteParams must match the WGSL Params array<vec4<u32>, 2> (32 bytes)");
 
 // permute: out coord d -> in coord perm[d] (Vulkan permute_buffer.glsl, NCHW).
 void permute_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -60,7 +60,7 @@ void permute_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   uint32_t perm[kTensorMetaMaxNdim];
   bool seen[kTensorMetaMaxNdim] = {};
   if (ndim > static_cast<int>(kTensorMetaMaxNdim)) {
-    throw std::runtime_error("permute: tensor rank exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("permute: tensor rank exceeds 8 (MAX_NDIM)");
   }
   for (int d = 0; d < ndim; d++) {
     int64_t p = dims[d];
