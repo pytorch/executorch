@@ -784,7 +784,11 @@ def _export_dynamic_k16_sdpa_case(
     d: int = K16_D,
     scale: float | None = None,
 ) -> None:
-    from backends.webgpu.test.ops.test_sdpa import _det_inputs, _golden, SdpaConfig
+    from executorch.backends.webgpu.test.ops.test_sdpa import (
+        _det_inputs,
+        _golden,
+        SdpaConfig,
+    )
 
     def cfg(s: int) -> "SdpaConfig":
         return SdpaConfig(

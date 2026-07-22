@@ -127,9 +127,12 @@ TEST(DispatchRoute, InvalidSelectionDoesNotMutateGrids) {
 TEST(DispatchRoute, RejectsInvalidAndMultiplyOwnedRanges) {
   const auto all_compute = [](size_t) { return true; };
   DispatchRouteRegistry registry;
-  EXPECT_ANY_THROW(registry.register_group(4, {{2, 1}}, all_compute));
-  EXPECT_ANY_THROW(registry.register_group(4, {{1, 1}}, all_compute));
-  EXPECT_ANY_THROW(registry.register_group(4, {{0, 5}}, all_compute));
+  // Each pairs the range under test with a valid second range so the group
+  // clears the size < 2 short-circuit and the range-validation loop is actually
+  // exercised: {2,1} inverted, {1,1} empty, {0,5} end past dispatch_count.
+  EXPECT_ANY_THROW(registry.register_group(4, {{2, 1}, {3, 4}}, all_compute));
+  EXPECT_ANY_THROW(registry.register_group(4, {{1, 1}, {3, 4}}, all_compute));
+  EXPECT_ANY_THROW(registry.register_group(4, {{0, 5}, {3, 4}}, all_compute));
   EXPECT_ANY_THROW(registry.register_group(4, {{0, 2}, {1, 3}}, all_compute));
 
   const size_t first =
